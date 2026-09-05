@@ -115,7 +115,7 @@ export default function PricingPage() {
           }}
         />
         <Reveal className="mx-auto max-w-3xl text-center">
-          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
+          <h1 className="font-display text-4xl tracking-tight sm:text-5xl md:text-6xl">
             Simple, transparent pricing
           </h1>
           <p className="mt-6 text-lg leading-8 text-gray-400">
@@ -196,7 +196,7 @@ export default function PricingPage() {
       <section className="border-b border-ink-700 px-6 py-16 md:py-24">
         <div className="mx-auto max-w-6xl">
           <Reveal>
-            <h2 className="text-center text-3xl font-bold tracking-tight sm:text-4xl">
+            <h2 className="font-display text-center text-3xl tracking-tight sm:text-4xl">
               Feature comparison
             </h2>
           </Reveal>
@@ -242,14 +242,14 @@ export default function PricingPage() {
       <section className="border-b border-ink-700 px-6 py-16 md:py-24">
         <div className="mx-auto max-w-3xl">
           <Reveal>
-            <h2 className="text-center text-3xl font-bold tracking-tight sm:text-4xl">
+            <h2 className="font-display text-center text-3xl tracking-tight sm:text-4xl">
               Frequently asked questions
             </h2>
           </Reveal>
           <RevealGroup className="mt-12 space-y-px overflow-hidden rounded-xl border border-ink-700 bg-ink-700">
             {faqs.map((faq) => (
               <RevealItem key={faq.question} className="bg-ink-900 p-6">
-                <h3 className="text-lg font-semibold text-foreground">{faq.question}</h3>
+                <h3 className="font-display text-lg text-foreground">{faq.question}</h3>
                 <p className="mt-2 leading-7 text-gray-400">{faq.answer}</p>
               </RevealItem>
             ))}
@@ -261,7 +261,7 @@ export default function PricingPage() {
       <section className="px-6 py-20 md:py-28">
         <Reveal className="relative mx-auto max-w-4xl overflow-hidden rounded-2xl border border-signal-500/30 bg-ink-900 px-6 py-16 text-center">
           <div className="absolute inset-0 -z-10 bg-grid mask-radial opacity-50" />
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Ready to get started?</h2>
+          <h2 className="font-display text-3xl tracking-tight sm:text-4xl">Ready to get started?</h2>
           <p className="mx-auto mt-4 max-w-xl text-gray-400">
             Start free with the open-source core. Upgrade whenever you need us to
             run it for you.

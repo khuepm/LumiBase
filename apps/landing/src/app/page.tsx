@@ -254,7 +254,7 @@ export default function Home() {
               <h3
                 className="m-0"
                 style={{
-                  font: "600 17px/24px var(--font-sans, inherit)",
+                  font: "400 21px/29px var(--font-display-stack)",
                   letterSpacing: "-0.1px",
                   color: "var(--foreground)",
                 }}
@@ -303,10 +303,8 @@ export default function Home() {
               [ FINAL TRANSMISSION ]
             </p>
             <h2
-              className="m-0 mt-3 uppercase"
+              className="font-display m-0 mt-3 text-[34px]"
               style={{
-                font: "800 34px/38px var(--font-sans, inherit)",
-                letterSpacing: "-0.01em",
                 color: "var(--foreground)",
               }}
             >

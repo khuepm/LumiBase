@@ -17,13 +17,13 @@ export default function Hero() {
   return (
     <section className="relative min-h-[150vh] px-5">
       <div className="sticky top-0 flex h-screen flex-col items-center pt-[13vh] text-center md:pt-[15vh]">
-        <motion.div style={{ y: yOut, opacity: opacityOut }}>
+        <motion.div className="w-full" style={{ y: yOut, opacity: opacityOut }}>
           <p className="label-mono m-0">
             [ THE CONTENT OPERATING SYSTEM · TOTALITY&nbsp;EDITION ]
           </p>
           <h1
-            className="mx-auto mb-0 mt-5 max-w-[900px] uppercase [font:800_44px/48px_var(--font-sans)] sm:[font:800_62px/64px_var(--font-sans)] md:[font:800_80px/80px_var(--font-sans)]"
-            style={{ letterSpacing: "-0.01em", color: "var(--foreground)" }}
+            className="mx-auto mb-0 mt-5 max-w-[960px] font-display text-[clamp(34px,10.8vw,42px)] sm:text-[62px] md:text-[80px]"
+            style={{ color: "var(--foreground)" }}
           >
             Your content,
             <br />
@@ -50,7 +50,7 @@ export default function Hero() {
             LumiBase is the Content Operating System — agents do the
             operational work, you set the intent and hold the veto.
           </p>
-          <div className="mt-8 flex justify-center gap-3">
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Link
               href="https://github.com/khuepm/lumibase"
               target="_blank"

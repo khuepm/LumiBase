@@ -51,9 +51,8 @@ export default function WipeTitle({
         {label}
       </motion.p>
       <motion.h2
-        className="m-0 mt-3 uppercase [font:800_34px/38px_var(--font-sans)] md:[font:800_48px/50px_var(--font-sans)]"
+        className="m-0 mt-3 font-display text-[34px] md:text-[48px]"
         style={{
-          letterSpacing: "-0.01em",
           color: "var(--foreground)",
           clipPath: clip,
         }}

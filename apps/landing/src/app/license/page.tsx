@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export default function License() {
   return (
     <div className="mx-auto max-w-4xl px-6 py-16">
-      <h1 className="text-4xl font-bold">Apache License 2.0</h1>
+      <h1 className="font-display text-4xl">Apache License 2.0</h1>
       <p className="mt-4 text-gray-400">
         LumiBase is open-source software released under the Apache License,
         Version 2.0. The relicense from MIT took effect in <code className="rounded bg-ink-800 px-2 py-1 text-signal-400">v0.23.0</code>;{" "}
@@ -38,7 +38,7 @@ limitations under the License.`}
 
       <div className="mt-12 space-y-8 [&_p]:mt-2 [&_p]:leading-7 [&_p]:text-gray-400 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1 [&_li]:text-gray-400">
         <section>
-          <h2 className="text-2xl font-semibold">What This Means</h2>
+          <h2 className="font-display text-2xl">What This Means</h2>
           <p>
             The Apache License 2.0 is a permissive license that allows you to:
           </p>
@@ -56,7 +56,7 @@ limitations under the License.`}
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">Requirements</h2>
+          <h2 className="font-display text-2xl">Requirements</h2>
           <p>
             When you distribute the Software (original or modified), you must
             include a copy of the license, retain existing copyright, patent,
@@ -66,7 +66,7 @@ limitations under the License.`}
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">No Warranty</h2>
+          <h2 className="font-display text-2xl">No Warranty</h2>
           <p>
             The software is provided "as is" without warranties or conditions of
             any kind. The authors and copyright holders are not liable for any
@@ -75,16 +75,22 @@ limitations under the License.`}
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">Third-Party Licenses</h2>
+          <h2 className="font-display text-2xl">Third-Party Licenses</h2>
           <p>
             LumiBase uses various open-source libraries with their own licenses. Please check the
             <code className="rounded bg-ink-800 px-2 py-1 text-signal-400">package.json</code> file and each
             library's license information for details.
           </p>
+          <p>
+            This website uses Literata and Archivo under the SIL Open Font License 1.1,
+            which permits commercial use and web embedding without a license fee.
+            Read the <a href="/fonts/licenses/Literata-OFL.txt" className="underline">Literata license</a>
+            {" "}and <a href="/fonts/licenses/Archivo-OFL.txt" className="underline">Archivo license</a>.
+          </p>
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">Contributing</h2>
+          <h2 className="font-display text-2xl">Contributing</h2>
           <p>
             By contributing to LumiBase, you agree that your contributions will be licensed under the Apache License 2.0.
             See our contributing guidelines for more information.
@@ -92,7 +98,7 @@ limitations under the License.`}
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">Questions?</h2>
+          <h2 className="font-display text-2xl">Questions?</h2>
           <p>
             If you have questions about licensing or need clarification, please open an issue on our
             <a href="https://github.com/khuepm/LumiBase" target="_blank" rel="noopener noreferrer" className="text-signal-400 hover:underline">GitHub repository</a>.

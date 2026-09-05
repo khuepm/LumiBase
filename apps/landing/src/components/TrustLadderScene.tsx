@@ -108,8 +108,7 @@ export default function TrustLadderScene() {
         <hr className="rule-dashed absolute inset-x-0 top-0" />
         <p className="label-mono m-0">[ 01B / EARNED AUTONOMY ]</p>
         <h2
-          className="m-0 mt-3 uppercase"
-          style={{ font: "800 34px/38px var(--font-sans, inherit)", letterSpacing: "-0.01em" }}
+          className="font-display m-0 mt-3 text-[34px]"
         >
           How much can it do on its own?
         </h2>
@@ -119,7 +118,7 @@ export default function TrustLadderScene() {
               <span className="label-mono">{r.tag}</span>
               <div
                 className="mt-1"
-                style={{ font: "600 19px/26px var(--font-sans, inherit)", color: "var(--foreground)" }}
+                style={{ font: "400 21px/29px var(--font-display-stack)", color: "var(--foreground)" }}
               >
                 {r.head}
               </div>
@@ -159,9 +158,8 @@ export default function TrustLadderScene() {
               transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
             >
               <h2
-                className="m-0 mt-4 uppercase [font:800_30px/34px_var(--font-sans)] md:[font:800_42px/46px_var(--font-sans)]"
+                className="m-0 mt-4 font-display text-[30px] md:text-[42px]"
                 style={{
-                  letterSpacing: "-0.01em",
                   color: isIncident ? "#ff9ec0" : "var(--foreground)",
                 }}
               >

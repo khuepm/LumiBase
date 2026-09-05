@@ -62,7 +62,7 @@ function IntentLead() {
         <h3
           className="mt-3"
           style={{
-            font: "600 clamp(25px,3vw,38px)/1.12 var(--font-sans, inherit)",
+            font: "400 clamp(25px,3vw,38px)/1.2 var(--font-display-stack)",
             letterSpacing: "-0.035em",
             color: "var(--foreground)",
           }}
@@ -423,7 +423,7 @@ function ConceptCard({
         </div>
         <h4
           className="mt-2.5"
-          style={{ font: `600 14px/20px ${sans}`, color: "var(--foreground)" }}
+          style={{ font: "400 19px/26px var(--font-display-stack)", color: "var(--foreground)" }}
         >
           {title}
         </h4>

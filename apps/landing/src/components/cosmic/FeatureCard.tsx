@@ -39,7 +39,7 @@ export default function FeatureCard({
       <div className="p-6">
         <div
           style={{
-            font: "600 19px/26px var(--font-sans, inherit)",
+            font: "400 21px/29px var(--font-display-stack)",
             letterSpacing: "-0.1px",
             color: "var(--foreground)",
           }}

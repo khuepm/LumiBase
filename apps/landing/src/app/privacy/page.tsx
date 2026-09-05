@@ -16,12 +16,12 @@ export const metadata: Metadata = {
 export default function PrivacyPolicy() {
   return (
     <div className="mx-auto max-w-4xl px-6 py-16">
-      <h1 className="text-4xl font-bold">Privacy Policy</h1>
+      <h1 className="font-display text-4xl">Privacy Policy</h1>
       <p className="mt-4 text-gray-400">Last updated: August 24, 2026</p>
 
-      <div className="mt-12 space-y-8 [&_h2]:text-2xl [&_h2]:font-semibold [&_h2]:text-foreground [&_p]:mt-2 [&_p]:leading-7 [&_p]:text-gray-400 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1 [&_li]:text-gray-400">
+      <div className="mt-12 space-y-8 [&_h2]:text-2xl [&_h2]:text-foreground [&_p]:mt-2 [&_p]:leading-7 [&_p]:text-gray-400 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1 [&_li]:text-gray-400">
         <section>
-          <h2 className="text-2xl font-semibold">1. Introduction</h2>
+          <h2 className="font-display text-2xl">1. Introduction</h2>
           <p>
             LumiBase ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains
             how we collect, use, and protect your information when you use our Service.
@@ -29,7 +29,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">2. Information We Collect</h2>
+          <h2 className="font-display text-2xl">2. Information We Collect</h2>
           <p>
             As an open-source project, LumiBase is designed to be self-hosted. When you deploy LumiBase on your
             own infrastructure, you have full control over your data. We do not collect or store any data from
@@ -60,7 +60,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">3. How We Use Your Information</h2>
+          <h2 className="font-display text-2xl">3. How We Use Your Information</h2>
           <p>
             We use the information we collect to:
           </p>
@@ -73,7 +73,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">4. Data Storage and Security</h2>
+          <h2 className="font-display text-2xl">4. Data Storage and Security</h2>
           <p>
             For self-hosted instances, all data is stored on your own infrastructure. We have no access to your
             content, user data, or any other information stored in your LumiBase instance.
@@ -85,7 +85,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">5. Third-Party Services</h2>
+          <h2 className="font-display text-2xl">5. Third-Party Services</h2>
           <p>
             Our website may use third-party services such as:
           </p>
@@ -111,7 +111,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">6. Cookies and your choice</h2>
+          <h2 className="font-display text-2xl">6. Cookies and your choice</h2>
           <p>
             This website sets no cookies until you allow analytics. If you do, Google Analytics
             stores <code>_ga</code> and <code>_ga_&lt;id&gt;</code> cookies to tell repeat visits
@@ -144,7 +144,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">7. Data Retention</h2>
+          <h2 className="font-display text-2xl">7. Data Retention</h2>
           <p>
             For self-hosted instances, data retention is entirely under your control. For our public website,
             we retain data only as long as necessary for the purposes outlined in this policy.
@@ -152,7 +152,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">8. Your Rights</h2>
+          <h2 className="font-display text-2xl">8. Your Rights</h2>
           <p>
             You have the right to:
           </p>
@@ -165,7 +165,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">9. Children's Privacy</h2>
+          <h2 className="font-display text-2xl">9. Children's Privacy</h2>
           <p>
             Our Service is not intended for children under 13. We do not knowingly collect personal information
             from children under 13.
@@ -173,7 +173,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">10. Changes to This Policy</h2>
+          <h2 className="font-display text-2xl">10. Changes to This Policy</h2>
           <p>
             We may update this Privacy Policy from time to time. We will notify you of any changes by posting the
             new policy on this page.
@@ -181,7 +181,7 @@ export default function PrivacyPolicy() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold">11. Contact Us</h2>
+          <h2 className="font-display text-2xl">11. Contact Us</h2>
           <p>
             If you have questions about this Privacy Policy, please contact us through our
             <a href="https://github.com/khuepm/lumibase" target="_blank" rel="noopener noreferrer" className="text-signal-400 hover:underline">GitHub repository</a>.
