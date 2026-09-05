@@ -9,7 +9,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Changed
+
+- Redesigned the landing footer with a flower video, oversized LumiBase wordmark,
+  responsive navigation, reduced-motion support, and an explicit video pause control.
+- Extended the footer's Literata heading typography across the landing site while
+  keeping Archivo for interface text and monospace for code. Included both font
+  licenses and links from the license page; no paid font license is required.
 
 ## [1.0.0-rc.1] - 2026-09-03
 
