@@ -47,6 +47,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          # The changed-files gate below diffs against the PR base, so the
+          # merge-base has to be in the clone.
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v7
@@ -81,19 +85,20 @@ jobs:
       # that stands in for a human reviewer — translations are hand-written and
       # merged without a second pass (`docs/.i18n/TASKS.md`).
       #
-      # Report-only here for the same reason as the verifier above: 77 of 142
-      # existing pairs still fail, mostly legacy machine-translated ones, and
-      # failing the job would block PRs that never touched them. The gate that
-      # bites today is in `stamp-pair.mjs`, which refuses to stamp a drifting
-      # pair — so no NEW translation can land unchecked. Drop the `|| true` when
-      # the backlog is clear.
-      - name: Check EN/VI structural parity (report only)
+      # Repo-wide run stays report-only: a backlog of legacy pairs still fails
+      # (48 of 148 at the time of writing; the older 77/142 figure in this
+      # comment was stale), and failing on those would block PRs that never
+      # touched them. The enforcing gate is the changed-files step below.
+      - name: Check EN/VI structural parity (report only, whole repo)
         run: node scripts/docs-i18n/check-parity.mjs || true
 
       - name: Write parity report
         run: node scripts/docs-i18n/check-parity.mjs --json > docs/.i18n/parity-report.json || true
 
+      # Artifacts are uploaded before the gate so a failing run still leaves the
+      # reports attached for whoever has to fix the pair.
       - name: Upload sync report
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: docs-i18n-report
@@ -103,6 +108,20 @@ jobs:
             docs/.i18n/parity-report.json
             docs/i18n-sync-log.md
           if-no-files-found: warn
+
+      # Enforcing gate, scoped to what this PR actually changed. A contributor
+      # is answerable for the pairs they touch, not for the inherited backlog —
+      # so this fails only when a changed doc is itself out of parity. That
+      # keeps the backlog from growing while leaving it to be retired
+      # separately; drop the scoping (and the `|| true` above) once it is clear.
+      - name: Enforce parity on docs changed by this PR
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          git diff --name-only --diff-filter=d \
+            "$(git merge-base HEAD FETCH_HEAD)" HEAD > /tmp/changed-files.txt
+          node scripts/docs-i18n/gate-changed-parity.mjs /tmp/changed-files.txt
 
   # ---------------------------------------------------------------------------
   # main: preservation + versioning. Rescues Vietnamese content that lives in an
