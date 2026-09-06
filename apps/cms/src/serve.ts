@@ -1,6 +1,12 @@
 import { serve } from '@hono/node-server';
 import type { Server as HttpServer } from 'node:http';
-import { createRuntime, getSharedRealtimeHub, leaderLockedCallback } from '@lumibase/runtime';
+// Node-only entry: `@lumibase/runtime/node` carries `createRuntime` (which
+// branches between adapters) and the ioredis-backed leader lock, and
+// `@lumibase/runtime/docker` the Docker adapters. Neither is exported from the
+// package root, because doing so put them in the Cloudflare Worker bundle and
+// broke Worker startup — see the note atop `packages/runtime/src/index.ts`.
+import { createRuntime, leaderLockedCallback } from '@lumibase/runtime/node';
+import { getSharedRealtimeHub } from '@lumibase/runtime/docker';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { schema } from '@lumibase/database';
 import cron, { type ScheduledTask } from 'node-cron';
@@ -11,6 +17,7 @@ import { bootstrapNodeObservability } from './observability/node';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPressureLimiter } from './pressure-limiter';
 import { startWorkerHealthServer } from './worker-health';
+import { setRuntimeFactory } from './middleware/runtime';
 import type { Bindings } from './env';
 
 type ProcessRole = 'web' | 'worker' | 'all';
@@ -52,13 +59,14 @@ async function main() {
   let server: ReturnType<typeof serve> | undefined;
   let workerHealthServer: HttpServer | undefined;
 
-  if (runHttp) {
-    // Inject runtime into Hono context for all requests.
-    app.use('*', async (c, next) => {
-      c.set('runtime', runtime);
-      await next();
-    });
+  // Hand the runtime we just built to `withRuntime` (registered inside
+  // `./index`) instead of injecting it with a second middleware. The old
+  // approach layered an override *after* `withRuntime` had already constructed
+  // its own Docker runtime, so every process ended up with two — two Redis
+  // connections, two pg pools — and discarded one on the first request.
+  setRuntimeFactory(() => runtime);
 
+  if (runHttp) {
     server = serve({
       fetch: (request, nodeBindings) => {
         const pressureResponse = pressureLimiter.handle(request);

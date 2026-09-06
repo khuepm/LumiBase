@@ -3,6 +3,23 @@ main = "src/cloudflare.ts"
 compatibility_date = "2024-10-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Keep the Docker adapters out of the Worker bundle.
+#
+# `withRuntime` reaches them via `await import('@lumibase/runtime/docker')` on a
+# branch that cannot execute under Workers, but a dynamic import is still a
+# static edge to the bundler: esbuild inlines the target. That shipped BullMQ,
+# ioredis, @aws-sdk/client-s3 and MeiliSearch inside the Worker (~8 MB), and
+# BullMQ 6's Postgres `sql-loader` calls `getDirname()` at module top level,
+# which throws where there is no `__dirname` and no `file:///` stack frame.
+# Result: the Worker failed to start and Cloudflare rejected every deploy with
+# validation error 10021, while `wrangler deploy --dry-run` stayed green because
+# it bundles without instantiating.
+#
+# The alias swaps that subpath for a stub which throws a descriptive error if the
+# unreachable branch ever runs. Verified by `pnpm verify:worker-bundle`.
+[alias]
+"@lumibase/runtime/docker" = "./src/runtime-docker-unavailable.ts"
+
 # Hyperdrive binding pools PostgreSQL connections at the edge.
 # Run `wrangler hyperdrive create lumibase-hyperdrive --connection-string=...`
 # and paste the resulting id below.

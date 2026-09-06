@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:03:22.000Z
+version: 2
+lastUpdated: 2026-09-01T16:48:56.430Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 9ec3924addf5c76e
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: be568838e320c7e9
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-09-01T16:48:56.430Z
+codeVerifiedHash: be568838e320c7e9
+codeVerifiedClaims: 10
 ---
 
 # Runtime Abstraction Layer (`@lumibase/runtime`)
@@ -27,9 +30,57 @@ packages/runtime/
 │   │   ├── cloudflare/       # Implementation for Cloudflare Workers
 │   │   └── docker/           # Implementation for Docker/Node
 │   ├── factory.ts            # createRuntime(env) selects by LUMIBASE_RUNTIME
-│   └── index.ts              # Public API
+│   ├── index.ts              # "." entry — Cloudflare-safe surface only
+│   ├── docker.ts             # "./docker" entry — Docker adapters
+│   └── node.ts               # "./node" entry — createRuntime + leader lock
 └── package.json              # deps: ioredis, @aws-sdk/client-s3, postgres, meilisearch, bullmq, prom-client
 ```
+
+## Three entry points, and why it matters
+
+| Import | Contains | Safe in a Worker? |
+|---|---|---|
+| `@lumibase/runtime` | Interfaces, cache helpers, memory providers, shared key handling, **Cloudflare** adapters | Yes |
+| `@lumibase/runtime/docker` | Docker adapters — Redis, BullMQ, S3, MeiliSearch, Imgproxy | **No** |
+| `@lumibase/runtime/node` | `createRuntime` (branches on `LUMIBASE_RUNTIME`) and the Redis leader lock | **No** |
+
+The split is not stylistic. The package root used to re-export everything, so the
+Cloudflare Worker bundle contained `bullmq`, `ioredis` and `@aws-sdk/client-s3`
+even though a Worker never uses them. BullMQ 6 then added a Postgres backend
+whose `sql-loader` resolves its own directory at **module top level** and throws
+where there is no `__dirname` and no `file:///` stack frame — precisely a bundled
+Worker. The Worker stopped starting, and Cloudflare rejected every deploy with
+validation error 10021.
+
+Rules that follow from it:
+
+- **Business logic imports the root only.** If you need `RuntimeContext` or a
+  provider interface, import it from `@lumibase/runtime` — those are types and
+  erase at build time.
+- **Node entry points** (`apps/cms/src/serve.ts`, CLI scripts under
+  `apps/cms/scripts/`) may import `/node` and `/docker`.
+- **Never import `/docker` from anything reachable by `apps/cms/src/index.ts`.**
+  That module is the Worker's app. A dynamic `await import()` is not an escape
+  hatch either: the bundler still inlines the target, so `wrangler.toml` aliases
+  the subpath to a stub for Worker builds.
+- **Adding an export to the root?** If its module needs a Node built-in or a
+  Node-only package as a *value* import, it belongs in a subpath. `import type`
+  is always fine.
+
+Two CI gates enforce this, and they are not interchangeable:
+
+```bash
+# asserts the built Worker contains no Docker-only code
+pnpm verify:worker-bundle
+# boots the Worker under workerd
+pnpm verify:worker-startup
+```
+
+`verify:worker-bundle` is the real fence. `verify:worker-startup` does **not**
+catch this class — with the Docker adapters deliberately restored, `wrangler dev`
+still booted successfully, because BullMQ's stack-scanning fallback finds a
+`file:///` frame locally and none in a deployed Worker. Treat a green startup
+probe as "no eager top-level throw", never as "this will deploy".
 
 ## The 6 Provider interfaces
 
