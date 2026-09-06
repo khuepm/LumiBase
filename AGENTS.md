@@ -147,3 +147,7 @@ Standard commands: see **Environment setup** / **Testing** above and `docs/en/de
 - Many packages’ `lint` scripts are stubs (`echo … && exit 0`); `pnpm lint` still exits 0.
 - Full `pnpm -F @lumibase/cms test` is long and **DB integration tests reset setup state** — do not run them against a shared local DB you care about. Prefer focused Vitest paths for smoke.
 - Husky `.husky/pre-commit` runs `pnpm test` (full suite).
+
+## Imported Claude Cowork project instructions
+
+Headless CMS đang được refactor thành Content OS dành cho Agent hoạt động
