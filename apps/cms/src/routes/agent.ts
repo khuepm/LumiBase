@@ -698,14 +698,15 @@ function canDecideApprovals(c: Context<AppEnv>): boolean {
  * returned the row, leaving the run parked in `awaiting_approval` and the tool
  * call in `pending_approval` — a success-shaped response with no side effect.
  *
- * Ordering matters. An approve first CLAIMS the row (`pending → deciding`) with
- * a conditional update, then executes, then finalizes (`deciding → approved`).
- * The claim is what serializes concurrent approves — without it both requests
- * pass the read-time `pending` check and both run the action. Writing
- * `approved` up front instead would leave the record claiming success when the
- * skill fails; leaving the row `pending` during execution would not serialize
- * at all. A rejection has no side effect to order, so it is written directly,
- * still guarded on `pending` so it cannot overwrite a concurrent approve.
+ * The claim → execute → finalize sequence lives in the harness, not here, so
+ * that this route, the agent-reviewer route and the legacy
+ * `/ai/approvals/:id/decide` all serialize against the SAME conditional
+ * update. An earlier version of this fix claimed the row in the route too;
+ * the harness then found the approval no longer `pending` and denied every
+ * single approve. One owner of that transition, not two.
+ *
+ * A rejection has no side effect to order, so it is written directly here,
+ * guarded on `pending` so it cannot overwrite a concurrent approve.
  */
 agentRouter.post('/approvals/:id/decide', async (c) => {
   const body = z.object({
@@ -754,49 +755,9 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
   };
 
   if (body.data.decision === 'approved') {
-    // Atomically claim the decision before doing any work. The read above is a
-    // read-then-act window: two concurrent approves both saw `pending` and both
-    // reached the harness, whose own guard is likewise a read-then-act and so
-    // does not serialize them (CWE-362/367). This conditional UPDATE is the
-    // serialization point — exactly one request affects a row and proceeds to
-    // execute; the loser gets 409 and never runs the action a second time.
-    const claimed = await db
-      .update(agentApprovals)
-      .set({
-        // `deciding` is the claim marker: it is not `pending`, so a concurrent
-        // request's identical UPDATE matches zero rows. It is not a terminal
-        // decision either, so a crash mid-execution leaves the action unrun and
-        // visibly stuck rather than silently recorded as approved.
-        status: 'deciding',
-        decidedBy: auth.userId ?? null,
-        decisionReason: body.data.reason ?? null,
-      })
-      .where(and(
-        eq(agentApprovals.id, approvalId),
-        eq(agentApprovals.siteId, siteId),
-        eq(agentApprovals.status, 'pending'),
-      ))
-      .returning({ id: agentApprovals.id });
-
-    if (claimed.length === 0) {
-      return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
-    }
-
-    /** Returns the claim to `pending` so the operator can retry or reject. */
-    const releaseClaim = () =>
-      db
-        .update(agentApprovals)
-        .set({ status: 'pending', decidedBy: null })
-        .where(and(
-          eq(agentApprovals.id, approvalId),
-          eq(agentApprovals.siteId, siteId),
-          eq(agentApprovals.status, 'deciding'),
-        ));
-
     if (!existing.legacyApprovalId) {
       // Without the stored action there is nothing to execute, and reporting
       // success here is exactly the success-shaped stub this issue forbids.
-      await releaseClaim();
       return c.json(
         {
           errors: [{
@@ -808,49 +769,45 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
       );
     }
 
+    // The harness owns the whole claim → execute → finalize sequence, and is
+    // the single serialization point shared by this route, the agent-reviewer
+    // route and the legacy `/ai/approvals/:id/decide`. Claiming the row here
+    // as well would take it out of `pending` before the harness looks, which
+    // is exactly what made the first version of this fix respond 409 to every
+    // approve.
     const { buildAuthorizedHarness } = await import('./ai');
-    let result;
-    try {
-      result = await buildAuthorizedHarness(c).executeApproved(
-        existing.legacyApprovalId,
-        auth.userId ?? auth.externalId ?? 'unknown',
-        auth.roles ?? [],
-      );
-    } catch (err) {
-      // An execution failure must be observable and retryable, never a
-      // half-decided row that no longer shows up as pending.
-      await releaseClaim();
-      throw err;
-    }
+    const result = await buildAuthorizedHarness(c).executeApproved(
+      existing.legacyApprovalId,
+      auth.userId ?? auth.externalId ?? 'unknown',
+      auth.roles ?? [],
+    );
 
     if (result.status !== 'executed') {
-      // Kill switch, cancellation, insufficient capability for the stored
-      // skill, or a genuine execution failure. Release the claim so the
-      // approval is pending again and the operator can retry or reject.
-      await releaseClaim();
+      // Kill switch, cancellation, expiry, a lost race, or a genuine failure.
+      // The harness has already released its claim, so the approval is pending
+      // again and an operator can retry or reject it.
       return c.json(
         { errors: [{ code: 'EXECUTION_FAILED', message: result.message ?? 'Execution failed' }] },
         409,
       );
     }
 
-    // The side effect happened; commit the decision. The harness commits the
-    // legacy `ai_approvals` row itself, but its own `agent_approvals` update is
-    // guarded on `status = 'pending'` and this row is `deciding`, so the claim
-    // holder finalizes it here.
+    // The harness committed the transition; re-read for the caller.
     const [decided] = await db
-      .update(agentApprovals)
-      .set({ status: 'approved', decidedAt: new Date() })
-      .where(and(
-        eq(agentApprovals.id, approvalId),
-        eq(agentApprovals.siteId, siteId),
-        // Only this claim holder finalizes. Guarding on `deciding` keeps the
-        // write from clobbering a row some other path has since moved.
-        eq(agentApprovals.status, 'deciding'),
-      ))
-      .returning();
-
+      .select()
+      .from(agentApprovals)
+      .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)))
+      .limit(1);
     const row = decided ?? existing;
+
+    // The decision reason is the route's to record; the harness does not carry it.
+    if (body.data.reason) {
+      await db
+        .update(agentApprovals)
+        .set({ decisionReason: body.data.reason })
+        .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)));
+    }
+
     observe(row);
     return c.json({
       data: row,
@@ -858,8 +815,43 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
     });
   }
 
-  // Rejection: guarded on `status = 'pending'` so a concurrent approve cannot
-  // be silently overwritten (CWE-362/367).
+  // Rejection also goes through the harness, for the same reason an approve
+  // does: `rejectApproval` claims `agent_approvals` first and only then takes
+  // the legacy record, so a reject and a concurrent approve contend for one
+  // row. Rejecting here first would take that row out of `pending`, the
+  // harness would then find nothing to claim, and the legacy record would be
+  // left behind — the parked action still executable through
+  // `/ai/approvals/:id/decide`.
+  if (existing.legacyApprovalId) {
+    const { buildAuthorizedHarness } = await import('./ai');
+    const rejected = await buildAuthorizedHarness(c).rejectApproval(
+      existing.legacyApprovalId,
+      auth.userId ?? auth.externalId ?? 'unknown',
+    );
+    if (!rejected) {
+      return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
+    }
+
+    const [decided] = await db
+      .select()
+      .from(agentApprovals)
+      .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)))
+      .limit(1);
+    const row = decided ?? existing;
+
+    if (body.data.reason) {
+      await db
+        .update(agentApprovals)
+        .set({ decisionReason: body.data.reason })
+        .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)));
+    }
+
+    observe(row);
+    return c.json({ data: row });
+  }
+
+  // No linked legacy record: nothing to execute later, so the reject is a
+  // plain guarded write here.
   const [record] = await db
     .update(agentApprovals)
     .set({
@@ -877,16 +869,6 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
 
   if (!record) {
     return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
-  }
-
-  // Keep the legacy record in step so the parked action can never be executed
-  // later through `/ai/approvals/:id/decide`.
-  if (existing.legacyApprovalId) {
-    const { buildAuthorizedHarness } = await import('./ai');
-    await buildAuthorizedHarness(c).rejectApproval(
-      existing.legacyApprovalId,
-      auth.userId ?? auth.externalId ?? 'unknown',
-    );
   }
 
   observe(record);

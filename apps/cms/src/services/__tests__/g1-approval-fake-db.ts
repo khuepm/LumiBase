@@ -17,6 +17,9 @@ import { getTableName } from 'drizzle-orm';
 
 export type Row = Record<string, unknown>;
 
+/** `updateGuards` key for an update that guards on status without writing it. */
+export const NO_STATUS_WRITE = 'NO_STATUS_WRITE';
+
 export interface TableState {
   rows: Row[];
   /** Rows a select/update sees. Defaults to every row. */
@@ -28,6 +31,10 @@ export interface TableState {
    * update setting status='deciding' only affects rows currently 'pending'".
    * Without this the stub would let every concurrent update succeed and a
    * serialization assertion would be accidentally true.
+   *
+   * Use the `NO_STATUS_WRITE` key for an update whose patch does not touch
+   * `status` at all but is still guarded on one — e.g. the reviewer annotating
+   * a row it requires to be `approved`.
    */
   updateGuards?: Record<string, string[]>;
 }
@@ -155,7 +162,9 @@ export function createFakeDb(seed: Record<string, Row[]> = {}): FakeDb {
       return {
         set: (patch: Row) => ({
           where: () => {
-            const required = state.updateGuards?.[String(patch['status'])];
+            const guardKey =
+              patch['status'] === undefined ? NO_STATUS_WRITE : String(patch['status']);
+            const required = state.updateGuards?.[guardKey];
             const targets = state.rows.filter(
               (row) =>
                 state.match(row) &&

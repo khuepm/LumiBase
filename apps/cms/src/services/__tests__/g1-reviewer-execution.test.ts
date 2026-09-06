@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { getTableName } from 'drizzle-orm';
 import { agentApprovals, agentGoals, agentRuns, settings } from '@lumibase/database';
 import { ReviewerService } from '../reviewer-service';
-import { createFakeDb, type Row } from './g1-approval-fake-db';
+import { createFakeDb, NO_STATUS_WRITE, type Row } from './g1-approval-fake-db';
 
 /**
  * G1 (#453) — the agent-reviewer decision path has the same execution gap as
@@ -49,6 +49,10 @@ function scenario(approvalOverrides: Row = {}) {
 
   // The stub does not parse `where`; each table answers only its own row set.
   fake.tables[SETTINGS]!.match = () => true;
+  // Mirrors the service's compare-and-set: the reviewer only ANNOTATES a row
+  // the executor already moved to `approved`, so an update that writes
+  // approverType must not match a row some other decision has since taken.
+  fake.tables[APPROVALS]!.updateGuards = { [NO_STATUS_WRITE]: ['approved'] };
   return fake;
 }
 
@@ -63,7 +67,12 @@ const baseInput = {
 describe('G1 — agent reviewer decision executes the parked action', () => {
   it('executes the stored action before finalizing a confident approve', async () => {
     const fake = scenario();
-    const execute = vi.fn().mockResolvedValue({ executed: true });
+    // The executor is the harness, which owns the atomic claim and commits the
+    // `approved` transition itself; the stub stands in for that commit.
+    const execute = vi.fn().mockImplementation(async () => {
+      fake.tables[APPROVALS]!.rows[0]!['status'] = 'approved';
+      return { executed: true };
+    });
     const service = new ReviewerService({ db: fake.db, siteId: 'site_a', execute });
     const outcome = await service.decide(baseInput);
 
@@ -71,6 +80,24 @@ describe('G1 — agent reviewer decision executes the parked action', () => {
     expect(execute.mock.calls[0]![0]).toMatchObject({ legacyApprovalId: 'legacy_1' });
     expect(outcome).toMatchObject({ outcome: 'decided', status: 'approved' });
     expect(fake.tables[APPROVALS]!.rows[0]!['status']).toBe('approved');
+    // Annotated with the reviewing agent, not re-decided.
+    expect(fake.tables[APPROVALS]!.rows[0]!['approverType']).toBe('agent');
+  });
+
+  it('escalates when another decision lands while the action is executing', async () => {
+    const fake = scenario();
+    // The action runs, but a human reject takes the row before the reviewer can
+    // annotate it. The reviewer must not report a clean agent decision.
+    const execute = vi.fn().mockImplementation(async () => {
+      fake.tables[APPROVALS]!.rows[0]!['status'] = 'rejected';
+      return { executed: true };
+    });
+
+    const service = new ReviewerService({ db: fake.db, siteId: 'site_a', execute });
+    const outcome = await service.decide(baseInput);
+
+    expect(outcome.outcome).toBe('escalated');
+    expect(fake.tables[APPROVALS]!.rows[0]!['status']).toBe('rejected');
   });
 
   it('does not finalize when execution fails — escalates and stays pending', async () => {

@@ -1,7 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { getTableName } from 'drizzle-orm';
-import { agentApprovals, aiApprovals } from '@lumibase/database';
+import {
+  activity,
+  agentApprovals,
+  agentFreezes,
+  agentGoals,
+  agentRuns,
+  agentToolCalls,
+  agentTools,
+  aiApprovals,
+  settings,
+} from '@lumibase/database';
 import type { AppEnv, AuthPrincipal } from '../../env';
 import { createFakeDb, type FakeDb, type Row } from '../../services/__tests__/g1-approval-fake-db';
 
@@ -9,40 +19,37 @@ import { createFakeDb, type FakeDb, type Row } from '../../services/__tests__/g1
  * G1 (#453) — a human decision on an agent approval must execute/resume the
  * parked action, not merely flip a status column.
  *
- * Baseline defect: `POST /agent/approvals/:id/decide` updated
- * `agent_approvals` and returned the row without ever invoking the harness,
- * so an approved `deleteCollection` produced a success-shaped response with
- * no side effect and left the run parked.
+ * These tests run the REAL route through the REAL harness. Only the leaf
+ * services are stubbed, so the spy sits at the service boundary where the side
+ * effect actually happens.
  *
- * Every assertion here counts SIDE EFFECTS (harness invocations, writes to
- * `ai_approvals`), not just the final approval status — a status-only fix
- * must not make these pass.
+ * That seam matters: an earlier version of this suite mocked `AISecureHarness`
+ * itself and passed while the route was answering 409 to every approve — the
+ * route claimed the row, and the harness then refused it for not being
+ * `pending`. Counting calls on a mocked harness proves nothing about mutations,
+ * so every assertion here counts real `SchemaService` invocations.
  */
 
-// The route must reach the harness to execute an approved action. Spying on
-// `executeApproved` lets these tests count real side effects without standing
-// up SchemaService/ItemService/LLM — the seam lives here, not in production.
-const executeApproved = vi.fn();
-const rejectApproval = vi.fn();
-vi.mock('../../services/ai-harness', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../services/ai-harness')>();
-  return {
-    ...actual,
-    AISecureHarness: class {
-      executeApproved = executeApproved;
-      rejectApproval = rejectApproval;
-    },
-  };
-});
-vi.mock('../../services/item-service-factory', () => ({
-  itemServiceForRequest: () => ({}),
+const T = (table: unknown) => getTableName(table as never);
+const AGENT_APPROVALS = T(agentApprovals);
+const AI_APPROVALS = T(aiApprovals);
+
+/** The side effect under test: the skill the approval has stored. */
+const deleteCollection = vi.fn();
+
+vi.mock('../../services/schema-service', () => ({
+  SchemaService: class {
+    deleteCollection = deleteCollection;
+  },
 }));
 
-// Imported after the mocks above are registered.
-const { agentRouter } = await import('../agent');
+// The harness touches assorted ItemService methods for provenance/coalescing;
+// none of them are what these tests assert on.
+vi.mock('../../services/item-service-factory', () => ({
+  itemServiceForRequest: () => new Proxy({}, { get: () => async () => undefined }),
+}));
 
-const AGENT_APPROVALS = getTableName(agentApprovals);
-const AI_APPROVALS = getTableName(aiApprovals);
+const { agentRouter } = await import('../agent');
 
 const adminPrincipal: AuthPrincipal = {
   userId: 'usr_admin',
@@ -58,75 +65,75 @@ const memberPrincipal: AuthPrincipal = {
   raw: {},
 };
 
-function pendingAgentApproval(overrides: Row = {}): Row {
-  return {
-    id: 'appr_1',
-    siteId: 'site_a',
-    runId: 'run_1',
-    legacyApprovalId: 'legacy_1',
-    subjectType: 'tool_call',
-    subjectId: 'tc_1',
-    kind: 'approval',
-    status: 'pending',
-    approvalPolicy: 'human',
-    requestedByAgent: 'lumibase-copilot',
-    expiresAt: null,
-    decidedAt: null,
-    decidedBy: null,
-    createdAt: new Date(Date.now() - 1000),
-    ...overrides,
-  };
-}
-
-function pendingLegacyApproval(overrides: Row = {}): Row {
-  return {
-    id: 'legacy_1',
-    siteId: 'site_a',
-    skillName: 'deleteCollection',
-    arguments: { name: 'posts' },
-    status: 'pending',
-    context: null,
-    agentName: 'lumibase-copilot',
-    decidedAt: null,
-    decidedBy: null,
-    createdAt: new Date(Date.now() - 1000),
-    ...overrides,
-  };
-}
-
-/** Rows the harness stub commits against, set by `seedFakeDb`. */
-let currentAgentRows: Row[] = [];
-
-function seedFakeDb(agentRows: Row[], legacyRows: Row[]): FakeDb {
-  currentAgentRows = agentRows;
+function seedFakeDb(agentOverrides: Row = {}, legacyOverrides: Row = {}): FakeDb {
   const fake = createFakeDb({
-    [AGENT_APPROVALS]: agentRows,
-    [AI_APPROVALS]: legacyRows,
+    [AGENT_APPROVALS]: [{
+      id: 'appr_1',
+      siteId: 'site_a',
+      runId: 'run_1',
+      legacyApprovalId: 'legacy_1',
+      subjectType: 'tool_call',
+      subjectId: 'tc_1',
+      kind: 'approval',
+      status: 'pending',
+      approvalPolicy: 'human',
+      requestedByAgent: 'lumibase-copilot',
+      expiresAt: null,
+      decidedAt: null,
+      decidedBy: null,
+      createdAt: new Date(Date.now() - 1000),
+      ...agentOverrides,
+    }],
+    [AI_APPROVALS]: [{
+      id: 'legacy_1',
+      siteId: 'site_a',
+      skillName: 'deleteCollection',
+      arguments: { name: 'posts' },
+      status: 'pending',
+      context: null,
+      agentName: 'lumibase-copilot',
+      decidedAt: null,
+      decidedBy: null,
+      createdAt: new Date(Date.now() - 1000),
+      ...legacyOverrides,
+    }],
+    [T(agentRuns)]: [{
+      id: 'run_1', siteId: 'site_a', goalId: 'goal_1', status: 'awaiting_approval', metrics: {},
+    }],
+    [T(agentGoals)]: [{ id: 'goal_1', siteId: 'site_a', parentGoalId: null }],
+    [T(agentToolCalls)]: [{ id: 'tc_1', siteId: 'site_a', runId: 'run_1', toolName: 'deleteCollection' }],
+    [T(agentFreezes)]: [],
+    [T(activity)]: [],
+    [T(settings)]: [],
+    [T(agentTools)]: [],
   });
-  // Site scoping is asserted explicitly by the tenant test below; the stub
-  // does not interpret `where`, so it applies the tenant predicate itself.
+
+  // Tenant scoping is asserted explicitly by its own test below; the stub does
+  // not interpret `where`, so it applies the predicate itself.
   fake.tables[AGENT_APPROVALS]!.match = (row) => row['siteId'] === 'site_a';
   fake.tables[AI_APPROVALS]!.match = (row) => row['siteId'] === 'site_a';
-  // Mirrors the route's compare-and-set guards: only a `pending` row can be
-  // claimed or rejected, and only a claimed (`deciding`) row can be released.
+
+  // Mirrors the real compare-and-set guards, so a serialization assertion is
+  // meaningful rather than accidentally true.
   fake.tables[AGENT_APPROVALS]!.updateGuards = {
     deciding: ['pending'],
     rejected: ['pending'],
     pending: ['deciding'],
+    approved: ['deciding'],
+  };
+  fake.tables[AI_APPROVALS]!.updateGuards = {
+    approved: ['pending'],
+    rejected: ['pending'],
   };
   return fake;
 }
 
 function buildApp(fake: FakeDb, auth: AuthPrincipal): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  // `buildAuthorizedHarness` resolves the LLM from the worker env; an empty
-  // env is the "no provider configured" case, which is correct here.
   app.use('*', async (c, next) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (c as any).env = {};
-    await next();
-  });
-  app.use('*', async (c, next) => {
+    // An empty worker env is the "no LLM provider configured" case, which is
+    // correct for a schema skill.
+    (c as never as { env: Record<string, unknown> }).env = {};
     c.set('auth', auth);
     c.set('db', fake.db);
     c.set('siteId', 'site_a');
@@ -147,114 +154,129 @@ async function decide(fake: FakeDb, body: Row, auth: AuthPrincipal = adminPrinci
 }
 
 beforeEach(() => {
-  executeApproved.mockReset();
-  rejectApproval.mockReset();
-  rejectApproval.mockResolvedValue(true);
-  // The real harness commits the `pending → approved` transition itself, only
-  // after the skill succeeded. The stub stands in for that commit so these
-  // route tests observe the same ordering.
-  executeApproved.mockImplementation(async () => {
-    for (const row of currentAgentRows) {
-      if (row['status'] === 'pending') row['status'] = 'approved';
-    }
-    return { status: 'executed', data: { deleted: true } };
-  });
+  deleteCollection.mockReset();
+  deleteCollection.mockResolvedValue({ deleted: true });
 });
 
 describe('G1 — human approval executes the parked action', () => {
-  it('executes the stored action exactly once on approve', async () => {
-    const fake = seedFakeDb([pendingAgentApproval()], [pendingLegacyApproval()]);
+  it('runs the stored action exactly once on approve', async () => {
+    const fake = seedFakeDb();
 
     const res = await decide(fake, { decision: 'approved' });
 
     expect(res.status).toBe(200);
-    expect(executeApproved).toHaveBeenCalledTimes(1);
-    // The legacy record carries the stored skill + arguments to execute.
-    expect(executeApproved.mock.calls[0]![0]).toBe('legacy_1');
-    expect(executeApproved.mock.calls[0]![1]).toBe('usr_admin');
+    // The real service was called — a mutation, not a status flip.
+    expect(deleteCollection).toHaveBeenCalledTimes(1);
+    expect(deleteCollection).toHaveBeenCalledWith('posts');
     expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('approved');
+    expect(fake.tables[AI_APPROVALS]!.rows[0]!['status']).toBe('approved');
   });
 
-  it('never executes on reject', async () => {
-    const fake = seedFakeDb([pendingAgentApproval()], [pendingLegacyApproval()]);
+  it('never runs the action on reject', async () => {
+    const fake = seedFakeDb();
 
     const res = await decide(fake, { decision: 'rejected' });
 
     expect(res.status).toBe(200);
-    expect(executeApproved).not.toHaveBeenCalled();
+    expect(deleteCollection).not.toHaveBeenCalled();
     expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('rejected');
   });
 
-  it('never executes an already-decided approval (no replay)', async () => {
+  it('never replays an already-decided approval', async () => {
     const fake = seedFakeDb(
-      [pendingAgentApproval({ status: 'approved', decidedAt: new Date() })],
-      [pendingLegacyApproval({ status: 'approved' })],
+      { status: 'approved', decidedAt: new Date() },
+      { status: 'approved' },
     );
 
     const res = await decide(fake, { decision: 'approved' });
 
     expect(res.status).toBe(409);
-    expect(executeApproved).not.toHaveBeenCalled();
+    expect(deleteCollection).not.toHaveBeenCalled();
   });
 
-  it('never executes an expired approval', async () => {
-    const fake = seedFakeDb(
-      [pendingAgentApproval({ expiresAt: new Date(Date.now() - 60_000) })],
-      [pendingLegacyApproval()],
-    );
+  it('never runs the action for an expired approval', async () => {
+    const fake = seedFakeDb({ expiresAt: new Date(Date.now() - 60_000) });
 
     const res = await decide(fake, { decision: 'approved' });
 
     expect(res.status).toBe(409);
-    expect(executeApproved).not.toHaveBeenCalled();
+    expect(deleteCollection).not.toHaveBeenCalled();
     expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('pending');
   });
 
-  it('never executes an approval belonging to another tenant', async () => {
-    const fake = seedFakeDb([pendingAgentApproval({ siteId: 'site_b' })], [pendingLegacyApproval()]);
+  it('never runs the action for another tenant', async () => {
+    const fake = seedFakeDb({ siteId: 'site_b' });
 
     const res = await decide(fake, { decision: 'approved' });
 
     expect(res.status).toBe(404);
-    expect(executeApproved).not.toHaveBeenCalled();
+    expect(deleteCollection).not.toHaveBeenCalled();
     expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('pending');
   });
 
-  it('never executes for a caller without approval capability', async () => {
-    const fake = seedFakeDb([pendingAgentApproval()], [pendingLegacyApproval()]);
+  it('never runs the action without the approval capability', async () => {
+    const fake = seedFakeDb();
 
     const res = await decide(fake, { decision: 'approved' }, memberPrincipal);
 
     expect(res.status).toBe(403);
-    expect(executeApproved).not.toHaveBeenCalled();
+    expect(deleteCollection).not.toHaveBeenCalled();
     expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('pending');
   });
 
-  it('does not double-execute under concurrent approve requests', async () => {
-    const fake = seedFakeDb([pendingAgentApproval()], [pendingLegacyApproval()]);
+  it('runs the action once under concurrent approves', async () => {
+    const fake = seedFakeDb();
 
     const responses = await Promise.all([
       decide(fake, { decision: 'approved' }),
       decide(fake, { decision: 'approved' }),
     ]);
 
-    // Exactly one request wins the pending→approved transition; the loser must
-    // not re-run the action (side-effect count, not just final status).
-    expect(executeApproved).toHaveBeenCalledTimes(1);
+    // Side-effect count, not final status: exactly one request may mutate.
+    expect(deleteCollection).toHaveBeenCalledTimes(1);
     expect(responses.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(responses.filter((r) => r.status === 409)).toHaveLength(1);
   });
 
-  it('reports execution failure instead of a success-shaped response', async () => {
-    const fake = seedFakeDb([pendingAgentApproval()], [pendingLegacyApproval()]);
-    executeApproved.mockResolvedValue({
-      status: 'denied',
-      message: 'SCHEMA_SERVICE_NOT_CONFIGURED',
-    });
+  it('runs the action once under a concurrent approve and reject', async () => {
+    const fake = seedFakeDb();
+
+    const [approve, reject] = await Promise.all([
+      decide(fake, { decision: 'approved' }),
+      decide(fake, { decision: 'rejected' }),
+    ]);
+
+    // Whoever loses must not leave a second mutation behind, and the two
+    // records must not disagree about the outcome.
+    expect(deleteCollection.mock.calls.length).toBeLessThanOrEqual(1);
+    const statuses = [approve.status, reject.status].sort();
+    expect(statuses).toEqual([200, 409]);
+    const agentStatus = fake.tables[AGENT_APPROVALS]!.rows[0]!['status'];
+    expect(['approved', 'rejected']).toContain(agentStatus);
+    expect(fake.tables[AI_APPROVALS]!.rows[0]!['status']).toBe(agentStatus);
+  });
+
+  it('reports a failing skill instead of a success-shaped response', async () => {
+    const fake = seedFakeDb();
+    deleteCollection.mockRejectedValue(new Error('SCHEMA_BOOM'));
 
     const res = await decide(fake, { decision: 'approved' });
 
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBe(409);
     const payload = (await res.json()) as { errors?: Array<{ message: string }> };
-    expect(payload.errors?.[0]?.message).toContain('SCHEMA_SERVICE_NOT_CONFIGURED');
+    expect(payload.errors?.[0]?.message).toContain('SCHEMA_BOOM');
+    // The claim is released, so the approval stays actionable.
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('pending');
+  });
+
+  it('leaves no approval stranded in `deciding` when the skill throws', async () => {
+    const fake = seedFakeDb();
+    deleteCollection.mockRejectedValue(new Error('boom'));
+
+    await decide(fake, { decision: 'approved' });
+
+    // A stranded `deciding` row disappears from Mission Control's pending
+    // inbox, so it must never be the resting state of a failed execution.
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).not.toBe('deciding');
   });
 });

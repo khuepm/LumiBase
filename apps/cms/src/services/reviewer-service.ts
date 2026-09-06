@@ -208,18 +208,33 @@ export class ReviewerService {
       return { outcome: 'escalated', reason: 'low_confidence', deepLink };
     }
 
-    await this.deps.db
+    // The executor (the harness) owns the atomic claim and has already moved
+    // the row to `approved`. This update only annotates it with the reviewing
+    // agent, and is guarded on `approved` so it can never resurrect a row that
+    // a human rejected while the skill was running (#453).
+    const annotated = await this.deps.db
       .update(agentApprovals)
       .set({
-        status: 'approved',
         approverType: 'agent',
         approverRunId: input.reviewerRunId,
-        decidedAt: new Date(),
         decisionReason: input.reason ?? `agent review (confidence ${input.confidence.toFixed(2)})`,
       })
       .where(
-        and(eq(agentApprovals.id, approval.id), eq(agentApprovals.siteId, this.deps.siteId)),
-      );
+        and(
+          eq(agentApprovals.id, approval.id),
+          eq(agentApprovals.siteId, this.deps.siteId),
+          eq(agentApprovals.status, 'approved'),
+        ),
+      )
+      .returning({ id: agentApprovals.id });
+
+    if (annotated.length === 0) {
+      // The action ran but the row is no longer `approved` — another decision
+      // landed first. Surface it instead of reporting a clean agent decision.
+      await this.escalate(approval.id, input, 'decision_changed_during_execution', deepLink);
+      return { outcome: 'escalated', reason: 'low_confidence', deepLink };
+    }
+
     return { outcome: 'decided', status: 'approved', approvalId: approval.id };
   }
 

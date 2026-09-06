@@ -2576,14 +2576,43 @@ export class AISecureHarness {
         contextMessage: record.context ?? undefined,
       });
     if (existingAgentApproval) {
-      if (existingAgentApproval.status !== 'pending') {
-        return { status: 'denied', message: 'Approval not found or already processed', runId: run.runId };
-      }
       if (existingAgentApproval.expiresAt && existingAgentApproval.expiresAt <= new Date()) {
         return { status: 'denied', message: 'Approval expired', runId: run.runId };
       }
-      // Cancellation wins over a late approval (Req 3.5).
+
+      // CLAIM the decision atomically before doing any work (#453).
+      //
+      // Reading `status === 'pending'` and then acting on it is a
+      // read-then-act window: two decisions (two humans, two agent reviewers,
+      // or one of each) both observe `pending` and both execute, so the side
+      // effect happens twice. The conditional UPDATE below is the
+      // serialization point — the database decides the winner, and exactly one
+      // caller sees a row come back.
+      //
+      // `deciding` is deliberately not a terminal status: if this process dies
+      // mid-execution the row is visibly stuck rather than silently recorded as
+      // approved. `releaseClaim` below returns it to `pending` on every path
+      // that does not complete.
+      const claimed = await this.db
+        .update(agentApprovals)
+        .set({ status: 'deciding', decidedBy: userId })
+        .where(
+          and(
+            eq(agentApprovals.id, existingAgentApproval.id),
+            eq(agentApprovals.siteId, this.siteId),
+            eq(agentApprovals.status, 'pending'),
+          ),
+        )
+        .returning({ id: agentApprovals.id });
+
+      if (claimed.length === 0) {
+        return { status: 'denied', message: 'Approval not found or already processed', runId: run.runId };
+      }
+
+      // Cancellation wins over a late approval (Req 3.5). Checked after the
+      // claim so the row is released rather than left in `deciding`.
       if (await this.runService.isCancelled(run.runId)) {
+        await this.releaseClaim(existingAgentApproval.id);
         return { status: 'denied', message: 'Run was cancelled', runId: run.runId };
       }
       // Resume the parked run; only the approved tool call executes —
@@ -2596,6 +2625,7 @@ export class AISecureHarness {
     const approvalKillSwitch = new KillSwitchService({ db: this.db, siteId: this.siteId });
     const approvalFrozenScope = await approvalKillSwitch.frozenScopeFor(record.agentName);
     if (approvalFrozenScope) {
+      if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
       return {
         status: 'denied',
         message: `frozen: agent runtime is frozen for this ${approvalFrozenScope}`,
@@ -2611,16 +2641,34 @@ export class AISecureHarness {
       approvalId: existingAgentApproval?.id ?? null,
     });
 
-    const result = await this.runSkill(
-      record.skillName,
-      record.arguments as Record<string, unknown>,
-      { runId: run.runId },
-    );
+    let result;
+    try {
+      result = await this.runSkill(
+        record.skillName,
+        record.arguments as Record<string, unknown>,
+        { runId: run.runId },
+      );
+    } catch (err) {
+      // A throwing skill must not strand the claim in `deciding`, where the
+      // approval disappears from the operator's pending inbox.
+      if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
+      const message = err instanceof Error ? err.message : String(err);
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'failed',
+        error: message,
+        approvalId: existingAgentApproval?.id ?? null,
+        latencyMs: Date.now() - startedAt,
+      });
+      await this.runService.failRun(run.runId, message);
+      return { status: 'denied', message, runId: run.runId, toolCallId };
+    }
 
     if (result.success) {
-      // Guard the transition on status='pending' so a concurrent decide/reject
-      // cannot be silently overwritten (CWE-362/367).
-      await this.db
+      // Commit the legacy record, guarded on `pending` so a concurrent
+      // decide/reject is not silently overwritten (CWE-362/367). The result is
+      // CHECKED: previously it was discarded, so a losing race still reported
+      // `executed` and the two records could disagree about what happened.
+      const legacyCommitted = await this.db
         .update(aiApprovals)
         .set({
           status: 'approved',
@@ -2633,8 +2681,38 @@ export class AISecureHarness {
             eq(aiApprovals.siteId, this.siteId),
             eq(aiApprovals.status, 'pending'),
           ),
+        )
+        .returning({ id: aiApprovals.id });
+
+      if (legacyCommitted.length === 0) {
+        // Another decision (e.g. a reject) took the legacy record while this
+        // skill was running. The side effect already happened and cannot be
+        // undone here, so report it rather than claiming success: the tool call
+        // and run record it, and the claim is released so the mismatch is
+        // visible instead of being papered over with a false `approved`.
+        if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
+        await this.runService.finishToolCall(toolCallId, {
+          status: 'executed',
+          output: result.data,
+          approvalId: existingAgentApproval?.id ?? null,
+          latencyMs: Date.now() - startedAt,
+        });
+        await this.runService.failRun(
+          run.runId,
+          'decision changed while the approved action was executing',
         );
+        return {
+          status: 'denied',
+          message:
+            'Approval was decided by another request while the action was executing; the action ran but the decision was not committed',
+          runId: run.runId,
+          toolCallId,
+        };
+      }
+
       if (existingAgentApproval) {
+        // Guarded on `deciding`: only the claim holder finalizes, so a decision
+        // that arrived through another entrypoint is never clobbered.
         await this.db
           .update(agentApprovals)
           .set({
@@ -2646,6 +2724,7 @@ export class AISecureHarness {
             and(
               eq(agentApprovals.id, existingAgentApproval.id),
               eq(agentApprovals.siteId, this.siteId),
+              eq(agentApprovals.status, 'deciding'),
             ),
           );
       }
@@ -2665,6 +2744,9 @@ export class AISecureHarness {
       };
     }
 
+    // The skill failed: release the claim so the approval is pending again and
+    // an operator can retry or reject it.
+    if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
     await this.runService.finishToolCall(toolCallId, {
       status: 'failed',
       error: result.error,
@@ -2676,6 +2758,26 @@ export class AISecureHarness {
   }
 
   /**
+   * Returns a claimed approval to `pending` so it stays retryable.
+   *
+   * Guarded on `deciding` so it can only ever undo THIS caller's claim: a
+   * decision that landed through another entrypoint in the meantime is left
+   * alone.
+   */
+  private async releaseClaim(agentApprovalId: string): Promise<void> {
+    await this.db
+      .update(agentApprovals)
+      .set({ status: 'pending', decidedBy: null })
+      .where(
+        and(
+          eq(agentApprovals.id, agentApprovalId),
+          eq(agentApprovals.siteId, this.siteId),
+          eq(agentApprovals.status, 'deciding'),
+        ),
+      );
+  }
+
+  /**
    * Rejects an approval record.
    * Updates the status to 'rejected' and records who rejected it and when.
    */
@@ -2683,6 +2785,54 @@ export class AISecureHarness {
     approvalId: string,
     userId: string,
   ): Promise<boolean> {
+    // A reject races the same decision boundary an approve does, so it has to
+    // contend for the SAME row first (#453).
+    //
+    // Previously this took the legacy record first and only then tried
+    // `agent_approvals` guarded on `pending`. Against a concurrent approve —
+    // which has by then claimed that row as `deciding` — the second update
+    // matched nothing and the two records were left disagreeing: legacy
+    // `rejected`, agent `pending`. Real-PostgreSQL concurrency showed this;
+    // the fake-DB suites did not.
+    //
+    // Claiming `agent_approvals` first makes the two decisions contend for one
+    // row, so exactly one of them proceeds.
+    if (this.agentHarnessEnabled) {
+      const claimedForReject = await this.db
+        .update(agentApprovals)
+        .set({
+          status: 'rejected',
+          decidedAt: new Date(),
+          decidedBy: userId,
+        })
+        .where(
+          and(
+            eq(agentApprovals.legacyApprovalId, approvalId),
+            eq(agentApprovals.siteId, this.siteId),
+            eq(agentApprovals.status, 'pending'),
+          ),
+        )
+        .returning({ id: agentApprovals.id });
+
+      // No linked agent approval at all is fine — a legacy-only record still
+      // rejects below. A linked row that is no longer `pending` means another
+      // decision owns it, so this reject loses and must not touch the legacy
+      // record either.
+      if (claimedForReject.length === 0) {
+        const [linked] = await this.db
+          .select({ id: agentApprovals.id })
+          .from(agentApprovals)
+          .where(
+            and(
+              eq(agentApprovals.legacyApprovalId, approvalId),
+              eq(agentApprovals.siteId, this.siteId),
+            ),
+          )
+          .limit(1);
+        if (linked) return false;
+      }
+    }
+
     // Only a still-pending approval can be rejected; the status guard makes the
     // reject atomic w.r.t. a concurrent approve (CWE-362/367). Returns whether
     // this call actually performed the rejection.
@@ -2702,25 +2852,6 @@ export class AISecureHarness {
       )
       .returning({ id: aiApprovals.id });
 
-    if (rejected.length === 0) return false;
-
-    if (this.agentHarnessEnabled) {
-      await this.db
-        .update(agentApprovals)
-        .set({
-          status: 'rejected',
-          decidedAt: new Date(),
-          decidedBy: userId,
-        })
-        .where(
-          and(
-            eq(agentApprovals.legacyApprovalId, approvalId),
-            eq(agentApprovals.siteId, this.siteId),
-            eq(agentApprovals.status, 'pending'),
-          ),
-        );
-    }
-
-    return true;
+    return rejected.length > 0;
   }
 }
