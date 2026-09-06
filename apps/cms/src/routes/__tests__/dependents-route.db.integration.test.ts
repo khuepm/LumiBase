@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { eq, sql } from 'drizzle-orm';
-import { collections, createDb, fields, relations, roles, sites, userSites, users, type Database } from '@lumibase/database';
+import { eq } from 'drizzle-orm';
+import { collections, fields, relations, roles, sites, userSites, users, type Database } from '@lumibase/database';
 import type { AppEnv } from '../../env';
 import { ItemService } from '../../services/item-service';
 import { itemsRouter } from '../items';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
  * Route-level DB-integration test (Req 2, 3, 5): preflight, the 409 block on
@@ -14,13 +15,11 @@ import { itemsRouter } from '../items';
  * **Validates: Requirements 2 (preflight), 3 (409 DEPENDENT_RECORDS_EXIST), 5 (resolve then delete)**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_deps_route_it';
 const ADMIN = 'usr_deps_route_admin';
 
-describe('items dependents routes — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('items dependents routes — DB integration', () => {
   let db: Database;
-  let canConnect = false;
 
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
@@ -35,21 +34,11 @@ describe('items dependents routes — DB integration', () => {
   app.route('/api/v1/items', itemsRouter);
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping dependents-route DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping dependents-route DB test: database not reachable.');
-    }
+    db = await connectDbIntegration('dependents-route');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
     await db.delete(users).where(eq(users.id, ADMIN)).catch(() => undefined);
   });
@@ -58,7 +47,6 @@ describe('items dependents routes — DB integration', () => {
   let relId = '';
 
   beforeEach(async () => {
-    if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.insert(sites).values({ id: SITE, name: 'Deps Route IT' });
     // The routes enforce real RBAC (dependents-service gates per-action): seed
@@ -81,7 +69,6 @@ describe('items dependents routes — DB integration', () => {
   });
 
   it('GET dependents returns a blocking report (Req 2)', async () => {
-    if (!canConnect) return;
     const res = await app.request(`/api/v1/items/articles/${articleId}/dependents`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { blocking: boolean; dependents: Array<{ count: number }> } };
@@ -90,7 +77,6 @@ describe('items dependents routes — DB integration', () => {
   });
 
   it('DELETE returns 409 DEPENDENT_RECORDS_EXIST when blocked (Req 3)', async () => {
-    if (!canConnect) return;
     const res = await app.request(`/api/v1/items/articles/${articleId}`, { method: 'DELETE' });
     expect(res.status).toBe(409);
     const body = (await res.json()) as { errors: Array<{ code: string }> };
@@ -98,7 +84,6 @@ describe('items dependents routes — DB integration', () => {
   });
 
   it('resolve (set_null) clears the dependents so the delete is no longer blocked (Req 5)', async () => {
-    if (!canConnect) return;
     const resolve = await app.request(`/api/v1/items/articles/${articleId}/resolve-dependents`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

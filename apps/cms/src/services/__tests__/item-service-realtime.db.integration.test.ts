@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { eq, sql } from 'drizzle-orm';
-import { collections, createDb, fields, sites, type Database } from '@lumibase/database';
+import { eq } from 'drizzle-orm';
+import { collections, fields, sites, type Database } from '@lumibase/database';
 import type { RealtimeEventLike, RealtimeProvider } from '@lumibase/runtime';
 import { ItemService } from '../item-service';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
  * Studio realtime broadcasts must be SIGNAL-ONLY: the fan-out reaches every
@@ -15,7 +16,6 @@ import { ItemService } from '../item-service';
  * construction — no row content on the wire).**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_rt_it';
 
 class CapturingRealtime implements RealtimeProvider {
@@ -28,31 +28,19 @@ class CapturingRealtime implements RealtimeProvider {
   }
 }
 
-describe('ItemService realtime broadcast — signal only', () => {
+describe.skipIf(!hasDbIntegrationUrl)('ItemService realtime broadcast — signal only', () => {
   let db: Database;
-  let canConnect = false;
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping realtime signal-only DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping realtime signal-only DB test: database not reachable.');
-    }
+    db = await connectDbIntegration('item-service-realtime');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.insert(sites).values({ id: SITE, name: 'RT IT' });
     const collId = (
@@ -65,7 +53,6 @@ describe('ItemService realtime broadcast — signal only', () => {
   });
 
   it('publishes the change signal without row data on create/update', async () => {
-    if (!canConnect) return;
     const realtime = new CapturingRealtime();
     const svc = new ItemService({ db, siteId: SITE, realtime });
 
