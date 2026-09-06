@@ -47,6 +47,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   platform, with a table pointing at the CMS image and the client packages, and
   explains why the starter listens on `8787` rather than `1989`; `lumibase`
   states that it is the client for a CMS you already run.
+- The README's platform path now states what Docker Compose actually gives you:
+  the API. The Studio is a separate static SPA — absent from both compose files
+  and from the CMS image — and the CMS serves no HTML, so `GET /setup` returns
+  `404`. Verified against the running production CMS. Getting an admin UI means
+  hosting `apps/studio/dist` yourself or completing first-run setup over
+  `POST /api/v1/setup/complete`. Logged as backlog B51 along with the
+  contradicting claim still in `docs/en/deployment/overview.md`.
 - The landing page's `SoftwareApplication` JSON-LD reads `softwareVersion` from
   `apps/landing/package.json` instead of a hardcoded string, so it tracks
   `pnpm version:sync` rather than drifting at the next bump.

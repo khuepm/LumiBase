@@ -104,9 +104,12 @@ Brings up the CMS plus everything it needs — PostgreSQL, Redis, MinIO, MeiliSe
 ```bash
 git clone https://github.com/khuepm/lumibase.git && cd lumibase
 docker compose -f docker/docker-compose.yml up -d
+curl http://localhost:1989/health
 ```
 
-Then open <http://localhost:1989/setup> to create the first admin. For a real deployment use the published image (`ghcr.io/khuepm/lumibase-cms`) with the production override and your own secrets — that path has decisions this one skips (TLS to the database, `ENCRYPTION_KEY`, CORS origins):
+This gives you the **API** on `:1989`. The Studio is a separate static SPA: it is not in the compose files and not in the CMS image, and the CMS serves no HTML — `GET /setup` returns `404 NOT_FOUND`. To get an admin UI, either run the Studio yourself (option 3 below, or any static host pointed at `apps/studio/dist` with `VITE_API_URL` set to the CMS origin), or complete first-run setup over the API with `POST /api/v1/setup/complete`. See [Deployment overview](./docs/en/deployment/overview.md#studio-api-connectivity).
+
+For a real deployment use the published image (`ghcr.io/khuepm/lumibase-cms`) with the production override and your own secrets — that path has decisions this one skips (TLS to the database, `ENCRYPTION_KEY`, CORS origins):
 
 ```bash
 cp docker/.env.example docker/.env      # JWT_SECRET, DATABASE_URL, DATABASE_SSL_MODE…
