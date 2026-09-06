@@ -61,6 +61,24 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- The scaffolded Cloudflare starter installs again (#450). The template declared
+  `@cloudflare/workers-types@^4.0.0` while the `wrangler@^4` beside it had moved
+  its peer to `^5`, so `npm install` in a freshly generated project failed with
+  ERESOLVE; the template now tracks the same major as `apps/cms`. Projects
+  scaffolded before this release keep the old range and will keep failing — there
+  is no backfill path into someone else's repository, so either scaffold again or
+  raise `@cloudflare/workers-types` to `^5` by hand.
+
+  Two checks close the gap that let this ship. `pnpm --filter create-lumibase
+  smoke` generates both templates, installs them with **npm and pnpm**, and
+  typechecks the result; a new `scaffold-smoke` CI job runs it whenever
+  `packages/create-lumibase/` changes. Exercising both package managers is the
+  point: npm rejects an incompatible peer graph, while pnpm merely warns and
+  installed the very same broken graph with exit 0, so a pnpm-only check would
+  have reported this as fixed while it was not. A second, offline test pins the
+  template's Workers Types major to the one `apps/cms` declares, so the drift is
+  caught on every commit rather than only when the network smoke runs.
+
 - Prerelease tags no longer fail the Pages deployment workflow (#451). The
   trigger glob `v*.*.*` matches `v1.0.0-rc.1`, but `pages-deploy.yml` validated
   tags against `vX.Y.Z` only, so every release candidate started the workflow
