@@ -436,6 +436,25 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
    * Requires db/siteId/keys; without them (offline registry) the skill fails
    * with a clear error instead of stubbing.
    */
+  /**
+   * A write handler whose service is absent must FAIL, not return a
+   * success-shaped stub (#453). An unwired dependency and a completed side
+   * effect are otherwise indistinguishable to the approval/audit trail: the
+   * approval resolves "executed", provenance records success, and nothing
+   * happened. Reads may still answer empty offline; writes may not.
+   *
+   * Mirrors the existing DEPLOYMENTS_NOT_CONFIGURED / CDC_FEED_NOT_CONFIGURED
+   * / LLM_NOT_CONFIGURED convention.
+   */
+  function requireService<T>(service: T | undefined, name: string): T {
+    if (!service) {
+      throw new Error(
+        `${name}_NOT_CONFIGURED: this skill performs a write and requires its service to be wired`,
+      );
+    }
+    return service;
+  }
+
   const deploymentService = async () => {
     if (!services.db || !services.siteId || !services.keys) {
       throw new Error('DEPLOYMENTS_NOT_CONFIGURED: deployment skills require a runtime KeyProvider');
@@ -501,11 +520,9 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'schema',
       handler: async (args) => {
         // Connects to: SchemaService.createCollection(input)
-        if (!schemaService) {
-          return { created: true };
-        }
+        const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
         const name = args['name'] as string;
-        const result = await schemaService.createCollection({
+        const result = await schemaServiceRef.createCollection({
           name,
           singleton: (args['singleton'] as boolean) ?? false,
         });
@@ -520,11 +537,9 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'schema',
       handler: async (args) => {
         // Connects to: SchemaService.deleteCollection(name)
-        if (!schemaService) {
-          return { deleted: true };
-        }
+        const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
         const name = args['name'] as string;
-        const result = await schemaService.deleteCollection(name);
+        const result = await schemaServiceRef.deleteCollection(name);
         return { deleted: true, result };
       },
     },
@@ -536,14 +551,12 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'schema',
       handler: async (args) => {
         // Connects to: SchemaService.createField(collectionName, input)
-        if (!schemaService) {
-          return { created: true };
-        }
+        const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
         const collection = args['collection'] as string;
         const name = args['name'] as string;
         const type = args['type'] as string;
         const required = (args['required'] as boolean) ?? false;
-        const result = await schemaService.createField(collection, { name, type, interface: 'input', required });
+        const result = await schemaServiceRef.createField(collection, { name, type, interface: 'input', required });
         return { created: true, field: result };
       },
     },
@@ -555,12 +568,10 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'schema',
       handler: async (args) => {
         // Connects to: SchemaService.deleteField(collectionName, fieldName)
-        if (!schemaService) {
-          return { deleted: true };
-        }
+        const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
         const collection = args['collection'] as string;
         const name = args['name'] as string;
-        const result = await schemaService.deleteField(collection, name);
+        const result = await schemaServiceRef.deleteField(collection, name);
         return { deleted: true, result };
       },
     },
@@ -590,13 +601,11 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'items',
       handler: async (args) => {
         // Connects to: ItemService.create(collectionName, payload)
-        if (!itemService) {
-          return { created: true };
-        }
+        const itemServiceRef = requireService(itemService, 'ITEM_SERVICE');
         const collection = args['collection'] as string;
         const data = (args['data'] as Record<string, unknown>) ?? {};
         const status = args['status'] as string | undefined;
-        const result = await itemService.create(collection, { data, status });
+        const result = await itemServiceRef.create(collection, { data, status });
         return { created: true, item: result };
       },
     },
@@ -608,14 +617,12 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'items',
       handler: async (args) => {
         // Connects to: ItemService.patch(collectionName, id, patch)
-        if (!itemService) {
-          return { updated: true };
-        }
+        const itemServiceRef = requireService(itemService, 'ITEM_SERVICE');
         const collection = args['collection'] as string;
         const id = args['id'] as string;
         const data = (args['data'] as Record<string, unknown>) ?? {};
         const status = args['status'] as string | undefined;
-        const result = await itemService.patch(collection, id, { data, ...(status ? { status } : {}) });
+        const result = await itemServiceRef.patch(collection, id, { data, ...(status ? { status } : {}) });
         return { updated: true, item: result };
       },
     },
@@ -627,12 +634,10 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'items',
       handler: async (args) => {
         // Connects to: ItemService.softDelete(collectionName, id)
-        if (!itemService) {
-          return { deleted: true };
-        }
+        const itemServiceRef = requireService(itemService, 'ITEM_SERVICE');
         const collection = args['collection'] as string;
         const id = args['id'] as string;
-        const result = await itemService.softDelete(collection, id);
+        const result = await itemServiceRef.softDelete(collection, id);
         return { deleted: true, result };
       },
     },
@@ -1131,8 +1136,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       requiredCapabilities: ['schema:create'],
       service: 'schema',
       handler: async (args) => {
-        if (!schemaService) return { created: true };
-        const relation = await schemaService.createRelation(args as never);
+        const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
+        const relation = await schemaServiceRef.createRelation(args as never);
         return { created: true, relation };
       },
     },
@@ -1143,8 +1148,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       requiredCapabilities: ['schema:delete'],
       service: 'schema',
       handler: async (args) => {
-        if (!schemaService) return { deleted: true };
-        await schemaService.deleteRelation(args['id'] as string);
+        const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
+        await schemaServiceRef.deleteRelation(args['id'] as string);
         return { deleted: true, id: args['id'] };
       },
     },
@@ -1167,8 +1172,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { created: true };
-        const role = await accessService.createRole({
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        const role = await accessServiceRef.createRole({
           name: args['name'] as string,
           key: args['key'] as string | undefined,
           description: args['description'] as string | undefined,
@@ -1188,8 +1193,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { deleted: true };
-        return accessService.deleteRole(args['id'] as string);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.deleteRole(args['id'] as string);
       },
     },
 
@@ -1211,8 +1216,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { created: true };
-        const policy = await accessService.createPolicy({
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        const policy = await accessServiceRef.createPolicy({
           name: args['name'] as string,
           key: args['key'] as string | undefined,
           description: args['description'] as string | undefined,
@@ -1232,8 +1237,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { deleted: true };
-        return accessService.deletePolicy(args['id'] as string);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.deletePolicy(args['id'] as string);
       },
     },
 
@@ -1255,8 +1260,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'intents',
       dangerous: true,
       handler: async (args) => {
-        if (!intentService) return { created: true };
-        const intent = await intentService.create(args as never);
+        const intentServiceRef = requireService(intentService, 'INTENT_SERVICE');
+        const intent = await intentServiceRef.create(args as never);
         return { created: true, intent };
       },
     },
@@ -1268,8 +1273,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'intents',
       dangerous: true,
       handler: async (args) => {
-        if (!intentService) return { deleted: true };
-        return intentService.remove(args['id'] as string);
+        const intentServiceRef = requireService(intentService, 'INTENT_SERVICE');
+        return intentServiceRef.remove(args['id'] as string);
       },
     },
 
@@ -1376,8 +1381,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { created: true };
-        return accessService.createApiKey({
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.createApiKey({
           name: args['name'] as string,
           description: args['description'] as string | undefined,
           expiresAt: (args['expiresAt'] as string | null | undefined) ?? undefined,
@@ -1393,8 +1398,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { rotated: true };
-        return accessService.rotateApiKey(args['id'] as string, args['expiresAt'] as string | null | undefined);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.rotateApiKey(args['id'] as string, args['expiresAt'] as string | null | undefined);
       },
     },
 
@@ -1405,8 +1410,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { revoked: true };
-        return accessService.revokeApiKey(args['id'] as string);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.revokeApiKey(args['id'] as string);
       },
     },
 
@@ -1428,8 +1433,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { invited: true };
-        const user = await accessService.inviteUser({
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        const user = await accessServiceRef.inviteUser({
           email: args['email'] as string,
           roleId: args['roleId'] as string | undefined,
         });
@@ -1444,8 +1449,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { updated: true };
-        return accessService.updateUser(args['id'] as string, {
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.updateUser(args['id'] as string, {
           roleId: (args['roleId'] as string | null | undefined),
           status: args['status'] as string | undefined,
         });
@@ -1459,8 +1464,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { removed: true };
-        return accessService.removeUser(args['id'] as string);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.removeUser(args['id'] as string);
       },
     },
 
@@ -1482,8 +1487,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { created: true };
-        const team = await accessService.createTeam({
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        const team = await accessServiceRef.createTeam({
           name: args['name'] as string,
           description: (args['description'] as string | null | undefined) ?? undefined,
         });
@@ -1498,8 +1503,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { deleted: true };
-        return accessService.deleteTeam(args['id'] as string);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.deleteTeam(args['id'] as string);
       },
     },
 
@@ -1510,8 +1515,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { added: true };
-        return accessService.addTeamMember(args['teamId'] as string, args['userId'] as string);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.addTeamMember(args['teamId'] as string, args['userId'] as string);
       },
     },
 
@@ -1522,8 +1527,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { removed: true };
-        return accessService.removeTeamMember(args['teamId'] as string, args['userId'] as string);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.removeTeamMember(args['teamId'] as string, args['userId'] as string);
       },
     },
 
@@ -1546,8 +1551,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { upserted: true };
-        const setting = await configService.upsertSetting({
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
+        const setting = await configServiceRef.upsertSetting({
           key: args['key'] as string,
           value: (args['value'] as Record<string, unknown>) ?? {},
           scope: args['scope'] as string | undefined,
@@ -1563,8 +1568,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { deleted: true };
-        return configService.deleteSetting(args['key'] as string);
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
+        return configServiceRef.deleteSetting(args['key'] as string);
       },
     },
 
@@ -1591,8 +1596,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { created: true };
-        const translation = await configService.createTranslation({
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
+        const translation = await configServiceRef.createTranslation({
           language: args['language'] as string,
           namespace: args['namespace'] as string,
           key: args['key'] as string,
@@ -1610,9 +1615,9 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { updated: true };
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
         const { id, ...patch } = args as Record<string, string>;
-        return configService.updateTranslation(String(id), patch);
+        return configServiceRef.updateTranslation(String(id), patch);
       },
     },
 
@@ -1623,8 +1628,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { deleted: true };
-        return configService.deleteTranslation(args['id'] as string);
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
+        return configServiceRef.deleteTranslation(args['id'] as string);
       },
     },
 
@@ -1646,8 +1651,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { created: true };
-        const webhook = await configService.createWebhook({
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
+        const webhook = await configServiceRef.createWebhook({
           name: args['name'] as string,
           url: args['url'] as string,
           actions: args['actions'] as string[] | undefined,
@@ -1667,9 +1672,9 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { updated: true };
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
         const { id, ...patch } = args as Record<string, unknown>;
-        return configService.updateWebhook(id as string, patch);
+        return configServiceRef.updateWebhook(id as string, patch);
       },
     },
 
@@ -1680,8 +1685,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { deleted: true };
-        return configService.deleteWebhook(args['id'] as string);
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
+        return configServiceRef.deleteWebhook(args['id'] as string);
       },
     },
 
@@ -1704,8 +1709,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!extensionsService) return { installed: true };
-        const extension = await extensionsService.installExtension({
+        const extensionsServiceRef = requireService(extensionsService, 'EXTENSIONS_SERVICE');
+        const extension = await extensionsServiceRef.installExtension({
           key: args['key'] as string | undefined,
           name: args['name'] as string,
           version: args['version'] as string,
@@ -1726,9 +1731,9 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!extensionsService) return { updated: true };
+        const extensionsServiceRef = requireService(extensionsService, 'EXTENSIONS_SERVICE');
         const { id, ...patch } = args as Record<string, unknown>;
-        return extensionsService.updateExtension(id as string, patch);
+        return extensionsServiceRef.updateExtension(id as string, patch);
       },
     },
 
@@ -1739,8 +1744,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!extensionsService) return { uninstalled: true };
-        return extensionsService.uninstallExtension(args['id'] as string);
+        const extensionsServiceRef = requireService(extensionsService, 'EXTENSIONS_SERVICE');
+        return extensionsServiceRef.uninstallExtension(args['id'] as string);
       },
     },
 

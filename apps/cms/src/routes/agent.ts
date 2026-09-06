@@ -642,7 +642,26 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
     return validationError(c, parsed.error);
   }
   const { ReviewerService, ReviewerError } = await import('../services/reviewer-service');
-  const service = new ReviewerService({ db: c.get('db'), siteId: c.get('siteId') });
+  const { buildAuthorizedHarness } = await import('./ai');
+  const auth = c.get('auth');
+  const service = new ReviewerService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    // A confident agent approval executes the stored action, exactly as a
+    // human approval does (#453). Same fully-wired harness, so a missing
+    // dependency fails loudly instead of resolving as a phantom side effect.
+    execute: async ({ legacyApprovalId }) => {
+      if (!legacyApprovalId) {
+        return { executed: false, message: 'Approval has no stored action to execute.' };
+      }
+      const result = await buildAuthorizedHarness(c).executeApproved(
+        legacyApprovalId,
+        auth.userId ?? auth.externalId ?? 'agent-reviewer',
+        auth.roles ?? [],
+      );
+      return { executed: result.status === 'executed', message: result.message };
+    },
+  });
   try {
     const data = await service.decide({
       approvalId: c.req.param('id'),
@@ -661,6 +680,33 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
   }
 });
 
+/**
+ * Deciding an approval is a governed write: it releases a parked, already
+ * risk-classified action. It requires the same capability as freezing/operating
+ * agents rather than mere tenant membership.
+ */
+function canDecideApprovals(c: Context<AppEnv>): boolean {
+  const roles = c.get('auth').roles ?? [];
+  return roles.includes('admin') || roles.includes('approvals:decide') || roles.includes('*');
+}
+
+/**
+ * Human approval decision (#453 / G1).
+ *
+ * An "approved" decision must EXECUTE or RESUME the stored action, not just
+ * flip a status column. Previously this handler updated `agent_approvals` and
+ * returned the row, leaving the run parked in `awaiting_approval` and the tool
+ * call in `pending_approval` — a success-shaped response with no side effect.
+ *
+ * Ordering matters. An approve first CLAIMS the row (`pending → deciding`) with
+ * a conditional update, then executes, then finalizes (`deciding → approved`).
+ * The claim is what serializes concurrent approves — without it both requests
+ * pass the read-time `pending` check and both run the action. Writing
+ * `approved` up front instead would leave the record claiming success when the
+ * skill fails; leaving the row `pending` during execution would not serialize
+ * at all. A rejection has no side effect to order, so it is written directly,
+ * still guarded on `pending` so it cannot overwrite a concurrent approve.
+ */
 agentRouter.post('/approvals/:id/decide', async (c) => {
   const body = z.object({
     decision: z.enum(['approved', 'rejected']),
@@ -673,14 +719,24 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
   const auth = c.get('auth');
+  const approvalId = c.req.param('id');
   const [existing] = await db
     .select()
     .from(agentApprovals)
-    .where(and(eq(agentApprovals.id, c.req.param('id')), eq(agentApprovals.siteId, siteId)))
+    .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)))
     .limit(1);
 
   if (!existing) {
     return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Approval not found' }] }, 404);
+  }
+  // Capability is checked after existence so a caller without it cannot use
+  // the response code to probe which approval ids exist in another tenant —
+  // a cross-tenant id already returned 404 above.
+  if (!canDecideApprovals(c)) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Capability "approvals:decide" is required.' }] },
+      403,
+    );
   }
   if (existing.status !== 'pending') {
     return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
@@ -689,25 +745,151 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
     return c.json({ errors: [{ code: 'EXPIRED', message: 'Approval expired' }] }, 409);
   }
 
+  const observe = (row: typeof agentApprovals.$inferSelect) => {
+    agentApprovalsTotal.inc({ subject_type: row.subjectType, status: row.status });
+    agentApprovalLatency.observe(
+      { subject_type: row.subjectType, status: row.status },
+      (Date.now() - row.createdAt.getTime()) / 1000,
+    );
+  };
+
+  if (body.data.decision === 'approved') {
+    // Atomically claim the decision before doing any work. The read above is a
+    // read-then-act window: two concurrent approves both saw `pending` and both
+    // reached the harness, whose own guard is likewise a read-then-act and so
+    // does not serialize them (CWE-362/367). This conditional UPDATE is the
+    // serialization point — exactly one request affects a row and proceeds to
+    // execute; the loser gets 409 and never runs the action a second time.
+    const claimed = await db
+      .update(agentApprovals)
+      .set({
+        // `deciding` is the claim marker: it is not `pending`, so a concurrent
+        // request's identical UPDATE matches zero rows. It is not a terminal
+        // decision either, so a crash mid-execution leaves the action unrun and
+        // visibly stuck rather than silently recorded as approved.
+        status: 'deciding',
+        decidedBy: auth.userId ?? null,
+        decisionReason: body.data.reason ?? null,
+      })
+      .where(and(
+        eq(agentApprovals.id, approvalId),
+        eq(agentApprovals.siteId, siteId),
+        eq(agentApprovals.status, 'pending'),
+      ))
+      .returning({ id: agentApprovals.id });
+
+    if (claimed.length === 0) {
+      return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
+    }
+
+    /** Returns the claim to `pending` so the operator can retry or reject. */
+    const releaseClaim = () =>
+      db
+        .update(agentApprovals)
+        .set({ status: 'pending', decidedBy: null })
+        .where(and(
+          eq(agentApprovals.id, approvalId),
+          eq(agentApprovals.siteId, siteId),
+          eq(agentApprovals.status, 'deciding'),
+        ));
+
+    if (!existing.legacyApprovalId) {
+      // Without the stored action there is nothing to execute, and reporting
+      // success here is exactly the success-shaped stub this issue forbids.
+      await releaseClaim();
+      return c.json(
+        {
+          errors: [{
+            code: 'NO_STORED_ACTION',
+            message: 'Approval has no stored action to execute.',
+          }],
+        },
+        422,
+      );
+    }
+
+    const { buildAuthorizedHarness } = await import('./ai');
+    let result;
+    try {
+      result = await buildAuthorizedHarness(c).executeApproved(
+        existing.legacyApprovalId,
+        auth.userId ?? auth.externalId ?? 'unknown',
+        auth.roles ?? [],
+      );
+    } catch (err) {
+      // An execution failure must be observable and retryable, never a
+      // half-decided row that no longer shows up as pending.
+      await releaseClaim();
+      throw err;
+    }
+
+    if (result.status !== 'executed') {
+      // Kill switch, cancellation, insufficient capability for the stored
+      // skill, or a genuine execution failure. Release the claim so the
+      // approval is pending again and the operator can retry or reject.
+      await releaseClaim();
+      return c.json(
+        { errors: [{ code: 'EXECUTION_FAILED', message: result.message ?? 'Execution failed' }] },
+        409,
+      );
+    }
+
+    // The side effect happened; commit the decision. The harness commits the
+    // legacy `ai_approvals` row itself, but its own `agent_approvals` update is
+    // guarded on `status = 'pending'` and this row is `deciding`, so the claim
+    // holder finalizes it here.
+    const [decided] = await db
+      .update(agentApprovals)
+      .set({ status: 'approved', decidedAt: new Date() })
+      .where(and(
+        eq(agentApprovals.id, approvalId),
+        eq(agentApprovals.siteId, siteId),
+        // Only this claim holder finalizes. Guarding on `deciding` keeps the
+        // write from clobbering a row some other path has since moved.
+        eq(agentApprovals.status, 'deciding'),
+      ))
+      .returning();
+
+    const row = decided ?? existing;
+    observe(row);
+    return c.json({
+      data: row,
+      meta: { execution: { status: result.status, runId: result.runId, toolCallId: result.toolCallId } },
+    });
+  }
+
+  // Rejection: guarded on `status = 'pending'` so a concurrent approve cannot
+  // be silently overwritten (CWE-362/367).
   const [record] = await db
     .update(agentApprovals)
     .set({
-      status: body.data.decision,
+      status: 'rejected',
       decidedAt: new Date(),
       decidedBy: auth.userId ?? null,
       decisionReason: body.data.reason ?? null,
     })
-    .where(and(eq(agentApprovals.id, c.req.param('id')), eq(agentApprovals.siteId, siteId)))
+    .where(and(
+      eq(agentApprovals.id, approvalId),
+      eq(agentApprovals.siteId, siteId),
+      eq(agentApprovals.status, 'pending'),
+    ))
     .returning();
 
   if (!record) {
-    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Approval not found' }] }, 404);
+    return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
   }
-  agentApprovalsTotal.inc({ subject_type: record.subjectType, status: record.status });
-  agentApprovalLatency.observe(
-    { subject_type: record.subjectType, status: record.status },
-    (Date.now() - record.createdAt.getTime()) / 1000,
-  );
+
+  // Keep the legacy record in step so the parked action can never be executed
+  // later through `/ai/approvals/:id/decide`.
+  if (existing.legacyApprovalId) {
+    const { buildAuthorizedHarness } = await import('./ai');
+    await buildAuthorizedHarness(c).rejectApproval(
+      existing.legacyApprovalId,
+      auth.userId ?? auth.externalId ?? 'unknown',
+    );
+  }
+
+  observe(record);
   return c.json({ data: record });
 });
 
