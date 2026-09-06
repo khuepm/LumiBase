@@ -5,7 +5,6 @@ import {
   collections,
   contentDrifts,
   contentIntents,
-  createDb,
   items,
   settings,
   sites,
@@ -14,6 +13,7 @@ import {
 import { DriftService } from '../drift-service';
 import { ReconcilerService } from '../reconciler-service';
 import { CONTENT_OS_SETTINGS_KEY } from '../feature-flags';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
  * DB-backed integration test for the Content OS reconciliation cycle
@@ -30,33 +30,20 @@ import { CONTENT_OS_SETTINGS_KEY } from '../feature-flags';
  * goal lineage, flag gating)**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_reconcile_it';
 const OTHER_SITE = 'site_reconcile_other';
 const COLLECTION = 'articles';
 
-describe('Reconciliation cycle — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('Reconciliation cycle — DB integration', () => {
   let db: Database;
-  let canConnect = false;
   let collectionId: string;
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping reconcile-cycle DB integration: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping reconcile-cycle DB integration: database not reachable.');
-      canConnect = false;
-    }
+    db = await connectDbIntegration('reconcile-cycle');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db
       .delete(sites)
       .where(sql`${sites.id} IN (${SITE}, ${OTHER_SITE})`)
@@ -64,7 +51,6 @@ describe('Reconciliation cycle — DB integration', () => {
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
     // Fresh slate: cascade from sites clears intents, drifts, goals, items.
     await db.delete(sites).where(sql`${sites.id} IN (${SITE}, ${OTHER_SITE})`);
     await db.insert(sites).values([
@@ -112,10 +98,9 @@ describe('Reconciliation cycle — DB integration', () => {
     return row!.id;
   }
 
-  it.runIf(TEST_DATABASE_URL)(
+  it(
     'seed intent → drift → goal → fix → resolved, with no duplicate drift across scans',
     async () => {
-      if (!canConnect) return;
       const intentId = await seedIntent(SITE);
       // One item violates `summary` required; one is clean.
       const brokenId = await seedItem(SITE, collectionId, { title: 'Hello', summary: '' });
@@ -182,8 +167,7 @@ describe('Reconciliation cycle — DB integration', () => {
     },
   );
 
-  it.runIf(TEST_DATABASE_URL)('the reconciler is a no-op when contentOs.reconciler is off', async () => {
-    if (!canConnect) return;
+  it('the reconciler is a no-op when contentOs.reconciler is off', async () => {
     // Flip the flag off for SITE.
     await db
       .update(settings)
@@ -205,8 +189,7 @@ describe('Reconciliation cycle — DB integration', () => {
     expect(await db.select().from(agentGoals).where(eq(agentGoals.siteId, SITE))).toHaveLength(0);
   });
 
-  it.runIf(TEST_DATABASE_URL)('drift scans never cross tenant boundaries', async () => {
-    if (!canConnect) return;
+  it('drift scans never cross tenant boundaries', async () => {
     // SITE has a violating item; the reconciler for SITE must never touch
     // OTHER_SITE's intent or produce drifts/goals there.
     const intentId = await seedIntent(SITE);

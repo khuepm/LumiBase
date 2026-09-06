@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   apiKeyPolicies,
   apiKeys,
   collections,
-  createDb,
   fields,
   permissions as permissionsTable,
   policies,
@@ -15,6 +14,7 @@ import {
 import { MemoryCacheProvider } from '@lumibase/runtime';
 import type { AppEnv } from '../../env';
 import { itemsRouter } from '../items';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 import {
   PermissionService,
   __resetPermissionProcessCacheForTests,
@@ -38,13 +38,11 @@ import {
  * **Validates: Req 2.5 (revoke → next request denied), Property P9**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_perm_revoke_it';
 const API_KEY = 'key_perm_revoke_it';
 
-describe('permission revocation — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('permission revocation — DB integration', () => {
   let db: Database;
-  let canConnect = false;
   let cache: MemoryCacheProvider;
   let policyId = '';
 
@@ -75,27 +73,16 @@ describe('permission revocation — DB integration', () => {
   app.route('/api/v1/items', itemsRouter);
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping permission-revocation DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping permission-revocation DB test: database not reachable.');
-    }
+    db = await connectDbIntegration('permission-revocation');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
     await db.delete(apiKeys).where(eq(apiKeys.id, API_KEY)).catch(() => undefined);
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
 
     // A fresh cache per case, and a cleared process store (#391) — otherwise a
     // later case could be answered from an earlier one's entry and pass for
@@ -156,10 +143,9 @@ describe('permission revocation — DB integration', () => {
       .where(and(eq(apiKeyPolicies.apiKeyId, API_KEY), eq(apiKeyPolicies.siteId, SITE)));
   }
 
-  it.skipIf(!TEST_DATABASE_URL)(
+  it(
     'grants the read while the policy is attached, then denies it with 403 on the next request after revoke (Req 2.5, P9)',
     async () => {
-      if (!canConnect) return;
 
       const granted = await app.request('/api/v1/items/posts');
       expect(granted.status).toBe(200);
@@ -183,10 +169,9 @@ describe('permission revocation — DB integration', () => {
     },
   );
 
-  it.skipIf(!TEST_DATABASE_URL)(
+  it(
     'keeps serving the stale grant when the write path forgets to bump — the bump is what revokes',
     async () => {
-      if (!canConnect) return;
 
       expect((await app.request('/api/v1/items/posts')).status).toBe(200);
 
@@ -204,10 +189,9 @@ describe('permission revocation — DB integration', () => {
     },
   );
 
-  it.skipIf(!TEST_DATABASE_URL)(
+  it(
     'denies from a cold cache too — the DB, not the cache, is the source of truth',
     async () => {
-      if (!canConnect) return;
 
       await detachPolicy();
 
@@ -217,10 +201,9 @@ describe('permission revocation — DB integration', () => {
     },
   );
 
-  it.skipIf(!TEST_DATABASE_URL)(
+  it(
     'revoking in one site leaves another site untouched (DoD 2b two-site check)',
     async () => {
-      if (!canConnect) return;
 
       const OTHER = `${SITE}_b`;
       const OTHER_KEY = `${API_KEY}_b`;

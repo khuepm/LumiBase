@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
-import { createDb, sites, users, type Database } from '@lumibase/database';
+import { sites, users, type Database } from '@lumibase/database';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../../__tests__/helpers/db-harness';
 import {
   issueRefreshToken,
   rotateRefreshToken,
@@ -19,36 +20,22 @@ import {
  * unset/unreachable so local + CI runs without a database stay green.
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_refresh_it';
 const USER = 'user_refresh_it';
 
-describe('Refresh-token flow — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('Refresh-token flow — DB integration', () => {
   let db: Database;
-  let canConnect = false;
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping refresh-token DB integration: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping refresh-token DB integration: database not reachable.');
-      canConnect = false;
-    }
+    db = await connectDbIntegration('refresh-token');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(sql`${sites.id} = ${SITE}`).catch(() => undefined);
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
     // Cascade from sites clears refresh_tokens + user_sites.
     await db.delete(sites).where(sql`${sites.id} = ${SITE}`);
     await db.delete(users).where(sql`${users.id} = ${USER}`);
@@ -57,7 +44,6 @@ describe('Refresh-token flow — DB integration', () => {
   });
 
   it('rotates a live token and detects reuse of the retired one', async () => {
-    if (!canConnect) return;
 
     const first = await issueRefreshToken(db, { siteId: SITE, userId: USER, audience: 'studio' }, undefined);
 
@@ -79,7 +65,6 @@ describe('Refresh-token flow — DB integration', () => {
   });
 
   it('lists and revokes sessions; prune sweeps expired rows', async () => {
-    if (!canConnect) return;
 
     await issueRefreshToken(db, { siteId: SITE, userId: USER, audience: 'studio' }, undefined);
     await issueRefreshToken(db, { siteId: SITE, userId: USER, audience: 'frontend' }, undefined);
@@ -98,7 +83,6 @@ describe('Refresh-token flow — DB integration', () => {
   });
 
   it('rejects an unknown token as invalid', async () => {
-    if (!canConnect) return;
     const out = await rotateRefreshToken(db, { rawToken: 'nope', siteId: SITE }, undefined);
     expect(out).toEqual({ ok: false, reason: 'invalid' });
   });

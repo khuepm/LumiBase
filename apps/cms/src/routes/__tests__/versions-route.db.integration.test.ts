@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { and, eq, sql } from 'drizzle-orm';
-import { collections, createDb, fields, revisions, roles, sites, userSites, users, type Database } from '@lumibase/database';
+import { and, eq } from 'drizzle-orm';
+import { collections, fields, revisions, roles, sites, userSites, users, type Database } from '@lumibase/database';
 import type { AppEnv } from '../../env';
 import { ItemService } from '../../services/item-service';
 import { itemsRouter } from '../items';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
  * Route-level tests for the content-versions endpoints (task 4.3): CRUD +
@@ -15,16 +16,14 @@ import { itemsRouter } from '../items';
  * **Validates: content-versioning Requirements 1, 2, 3 (HTTP layer)**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_ver_route_it';
 const ADMIN = 'usr_ver_route_admin';
 const VIEWER = 'usr_ver_route_viewer';
 
 type AuthVar = AppEnv['Variables']['auth'];
 
-describe('items versions routes — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('items versions routes — DB integration', () => {
   let db: Database;
-  let canConnect = false;
   let currentAuth: AuthVar;
 
   const adminAuth = { userId: ADMIN, email: 'ver-admin@x.dev', roles: ['admin'], raw: { dev: true } } as AuthVar;
@@ -42,21 +41,11 @@ describe('items versions routes — DB integration', () => {
   app.route('/api/v1/items', itemsRouter);
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping versions-route DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping versions-route DB test: database not reachable.');
-    }
+    db = await connectDbIntegration('versions-route');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
     await db.delete(users).where(eq(users.id, ADMIN)).catch(() => undefined);
     await db.delete(users).where(eq(users.id, VIEWER)).catch(() => undefined);
@@ -65,7 +54,6 @@ describe('items versions routes — DB integration', () => {
   let itemId = '';
 
   beforeEach(async () => {
-    if (!canConnect) return;
     currentAuth = adminAuth;
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.insert(sites).values({ id: SITE, name: 'Versions Route IT' });
@@ -110,7 +98,6 @@ describe('items versions routes — DB integration', () => {
   }
 
   it('CRUD: create → list → get → patch → delete, 409 on a duplicate key (Req 1)', async () => {
-    if (!canConnect) return;
     const created = await post(base(), { key: 'draft-a', name: 'Draft A' });
     expect(created.status).toBe(201);
 
@@ -140,7 +127,6 @@ describe('items versions routes — DB integration', () => {
   });
 
   it('compare returns main, version data and field-level changes (Req 2)', async () => {
-    if (!canConnect) return;
     await post(base(), { key: 'draft-b', name: 'Draft B' });
     await app.request(`${base()}/draft-b`, {
       method: 'PATCH',
@@ -160,7 +146,6 @@ describe('items versions routes — DB integration', () => {
   });
 
   it('promote applies the version via ItemService (revision written), removes it, reports meta.mainDiverged (Req 3)', async () => {
-    if (!canConnect) return;
     await post(base(), { key: 'draft-c', name: 'Draft C' });
     await app.request(`${base()}/draft-c`, {
       method: 'PATCH',
@@ -193,7 +178,6 @@ describe('items versions routes — DB integration', () => {
   });
 
   it('403 for a member without grants (RBAC via ItemService, Req permission-gate)', async () => {
-    if (!canConnect) return;
     currentAuth = viewerAuth;
     const res = await post(base(), { key: 'nope', name: 'Nope' });
     expect(res.status).toBe(403);
