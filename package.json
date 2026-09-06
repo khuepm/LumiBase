@@ -50,6 +50,8 @@
     "registry:check": "node scripts/check-registry-numbering.mjs",
     "settings:check": "node scripts/check-pnpm-settings-parity.mjs",
     "drift:check": "node scripts/check-override-drift.mjs",
+    "dist-tags:check": "node scripts/check-npm-dist-tags.mjs",
+    "dist-tags:fix": "node scripts/check-npm-dist-tags.mjs --fix",
     "check:all": "pnpm version:check && pnpm registry:check && pnpm settings:check && pnpm drift:check && pnpm scripts:test",
     "scripts:test": "node --test \"scripts/__tests__/*.test.mjs\"",
     "db:migrate:preflight": "pnpm --filter @lumibase/database migrate:preflight",
