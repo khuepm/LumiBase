@@ -273,6 +273,48 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   up recovery codes deliberately still requires a real TOTP code, since new
   codes for an unusable enrollment would only extend the outage. Runbook:
   `docs/en/operations/encryption-keys.md`.
+- **Cloudflare Worker deploys were rejected outright, and no gate noticed.**
+  Every deploy since BullMQ 6 landed failed with
+  `Uncaught Error: Could not determine sql-loader directory path` (Cloudflare
+  validation error 10021). `packages/runtime`'s barrel re-exported the Docker
+  adapters, `createRuntime` (which statically imports both), and a leader lock
+  that value-imports `ioredis` — so the Worker bundle contained `bullmq`, whose
+  new Postgres `sql-loader` resolves its own directory at **module top level**
+  and throws where there is no `__dirname` and no `file:///` stack frame. The
+  Worker therefore threw before serving anything.
+
+  It stayed invisible because `pnpm build` runs `wrangler deploy --dry-run`,
+  which bundles **without instantiating**, so no CI job ever booted the Worker.
+  `deploy-cms.yml` (dev/staging) had failed on every push since 2026-08-30 —
+  six days, run 33953796948 being the last of them. Production is owned by
+  `release.yml` and only runs on tags, so it had not broken yet, but it would
+  have at the next release, `v1.0.0` included.
+
+  Fixed by splitting the entry points: `@lumibase/runtime` is now
+  Cloudflare-safe, with the Docker adapters behind `@lumibase/runtime/docker` and
+  `createRuntime` plus the leader lock behind `@lumibase/runtime/node`. A dynamic
+  import is still a static edge for the bundler (measured — the Docker tree was
+  still inlined), so `wrangler.toml` additionally aliases the Docker subpath to a
+  stub that throws a descriptive error if that unreachable branch ever runs.
+  The Worker upload drops from **8848.98 KiB to 6085.28 KiB** — the former is
+  the figure in the last failing deploy log, the latter this build — with no
+  trace of `bullmq`, `ioredis`, `@aws-sdk/client-s3` or the `sql-loader` string
+  in any of the three environments. Closes #459; tracked as `B40`.
+- **New `worker-bundle` CI job so this class cannot pass `build` again.**
+  `pnpm verify:worker-bundle` asserts the Worker bundle's composition across all
+  three environments, and `pnpm verify:worker-startup` boots the Worker under
+  workerd. Note which one is load-bearing: the bundle assertion is the real
+  fence and was negative-tested (re-adding the Docker re-export turns it red).
+  The startup probe demonstrably does **not** catch this particular bug — with
+  the Docker adapters back in the bundle, `wrangler dev` still booted and served
+  `/health`, because BullMQ's stack-scanning fallback finds a `file:///` frame
+  locally and none in a deployed Worker. It is kept for eagerly-thrown top-level
+  errors, not as evidence that a deploy will succeed.
+- **Docker mode built two runtimes per process.** `serve.ts` injected its runtime
+  with a second middleware registered *after* `withRuntime`, which had already
+  constructed one — two Redis connections and two pg pools per process, one
+  discarded on the first request. It now registers a factory via
+  `setRuntimeFactory`, so there is exactly one.
 - **`perf-k6.yml` was an invalid workflow file, failing on every push for
   weeks.** Its `on:` never declared `push` at all — the failures were not the
   load-test job running and breaking. The `perf-gate` job's `if:` referenced
