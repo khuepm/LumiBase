@@ -93,6 +93,30 @@ export default Sentry.withSentry(
     const runtime = createCloudflareRuntime(env as unknown as Record<string, unknown>);
     ctx.waitUntil(runScheduledPageviewFlush(db, runtime));
 
+    // Abandoned approval claims (#453). A Worker eviction mid-execution leaves
+    // the approval `deciding` — stuck, and filtered out of Mission Control's
+    // pending inbox. Runs on the 5-minute tick like the pageview flush; the
+    // sweep only ever releases claims past the staleness window, so overlapping
+    // invocations and a live execution are both safe.
+    ctx.waitUntil(
+      import('./services/approval-claim-sweeper')
+        .then(({ sweepStaleApprovalClaims }) => sweepStaleApprovalClaims({ db }))
+        .then((released) => {
+          for (const claim of released) {
+            console.warn(
+              '[approval-claim-sweep] released abandoned claim',
+              JSON.stringify(claim),
+            );
+          }
+        })
+        .catch((err: unknown) => {
+          console.error(
+            '[approval-claim-sweep] failed',
+            err instanceof Error ? err.message : String(err),
+          );
+        }),
+    );
+
     if (controller.cron === '0 * * * *') {
       ctx.waitUntil(runScheduledRotation(db));
       ctx.waitUntil(runScheduledRefreshTokenPrune(db));

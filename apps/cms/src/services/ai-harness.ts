@@ -2595,7 +2595,16 @@ export class AISecureHarness {
       // that does not complete.
       const claimed = await this.db
         .update(agentApprovals)
-        .set({ status: 'deciding', decidedBy: userId })
+        .set({
+          status: 'deciding',
+          decidedBy: userId,
+          // Stamped at CLAIM time, not just at decision time: it is what tells
+          // the sweeper how long a `deciding` row has been held, and there is
+          // no `updatedAt` on this table to infer it from. Overwritten with the
+          // real decision timestamp on the success path, and cleared again by
+          // `releaseClaim` so a released row does not look decided.
+          decidedAt: new Date(),
+        })
         .where(
           and(
             eq(agentApprovals.id, existingAgentApproval.id),
@@ -2767,7 +2776,7 @@ export class AISecureHarness {
   private async releaseClaim(agentApprovalId: string): Promise<void> {
     await this.db
       .update(agentApprovals)
-      .set({ status: 'pending', decidedBy: null })
+      .set({ status: 'pending', decidedBy: null, decidedAt: null })
       .where(
         and(
           eq(agentApprovals.id, agentApprovalId),
