@@ -146,6 +146,71 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 failed/unknown outcome — DB integrat
     expect((await statusOf(approvalId)).status).toBe('failed');
   });
 
+  it('quarantines a crashed execution instead of re-offering it (mutation → crash → sweep → decide)', async () => {
+    const { legacyId, approvalId } = await seedPending();
+
+    // The crash case the sweeper exists for: the mutation lands, then the
+    // process dies before the approval is finalized. Simulated by claiming the
+    // row and mutating, then abandoning it — no in-process handler runs.
+    const deleteCollection = vi.fn().mockResolvedValue({ deleted: true });
+    await db.update(agentApprovals)
+      .set({ status: 'deciding', decidedBy: ADMIN, decidedAt: new Date(Date.now() - 60_000) })
+      .where(eq(agentApprovals.id, approvalId));
+    await deleteCollection();
+
+    const { sweepStaleApprovalClaims } = await import('../approval-claim-sweeper');
+    const swept = await sweepStaleApprovalClaims({ db }, new Date(), 30_000);
+    expect(swept.map((r) => r.approvalId)).toContain(approvalId);
+
+    // NOT pending: a crash is at least as ambiguous as an in-process failure,
+    // so it must not be waved back into the inbox where an ordinary approve
+    // would repeat the delete.
+    expect((await statusOf(approvalId)).status).toBe('failed');
+
+    // And the ordinary decision path refuses it.
+    const decided = await harnessWith(deleteCollection).executeApproved(legacyId, ADMIN, ['*']);
+    expect(decided.status).toBe('denied');
+    expect(deleteCollection).toHaveBeenCalledTimes(1);
+  });
+
+  it('quarantines when persistence fails after a successful mutation', async () => {
+    const { legacyId, approvalId } = await seedPending();
+
+    // The dangerous window: the skill has already mutated, and the harness
+    // throws while writing the outcome — before the approval leaves `deciding`.
+    // The outer catch used to release the claim unconditionally here, putting a
+    // completed delete straight back in the inbox to be run a second time.
+    //
+    // Injected by making the FIRST post-success statement fail, which is the
+    // legacy-approval update.
+    const deleteCollection = vi.fn().mockResolvedValue({ deleted: true });
+    const harness = harnessWith(deleteCollection);
+
+    const realUpdate = db.update.bind(db);
+    let mutated = false;
+    (db as unknown as { update: unknown }).update = (table: unknown) => {
+      // Fail the first update issued after the skill returned.
+      if (mutated) {
+        mutated = false;
+        throw new Error('connection lost while persisting the approval');
+      }
+      return realUpdate(table as never);
+    };
+    deleteCollection.mockImplementation(async () => {
+      mutated = true;
+      return { deleted: true };
+    });
+
+    await expect(harness.executeApproved(legacyId, ADMIN, ['*'])).rejects.toThrow(
+      /connection lost/,
+    );
+    (db as unknown as { update: unknown }).update = realUpdate;
+
+    expect(deleteCollection).toHaveBeenCalledTimes(1);
+    // Quarantined, not re-offered: the delete already happened.
+    expect((await statusOf(approvalId)).status).toBe('failed');
+  });
+
   it('a reopened approval executes again, exactly once', async () => {
     const { legacyId, approvalId } = await seedPending();
     const deleteCollection = vi.fn().mockRejectedValueOnce(new Error('boom'));

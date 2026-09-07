@@ -96,15 +96,15 @@ export default Sentry.withSentry(
     // Abandoned approval claims (#453). A Worker eviction mid-execution leaves
     // the approval `deciding` — stuck, and filtered out of Mission Control's
     // pending inbox. Runs on the 5-minute tick like the pageview flush; the
-    // sweep only ever releases claims past the staleness window, so overlapping
-    // invocations and a live execution are both safe.
+    // sweep only ever quarantines claims past the staleness window, so
+    // overlapping invocations and a live execution are both safe.
     ctx.waitUntil(
       import('./services/approval-claim-sweeper')
         .then(({ sweepStaleApprovalClaims }) => sweepStaleApprovalClaims({ db }))
         .then((released) => {
           for (const claim of released) {
             console.warn(
-              '[approval-claim-sweep] released abandoned claim',
+              '[approval-claim-sweep] quarantined abandoned claim',
               JSON.stringify(claim),
             );
           }

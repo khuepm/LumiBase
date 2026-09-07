@@ -133,6 +133,24 @@ interface SkillServices {
   /** KeyProvider for deployment token encryption/decryption. */
   keys?: KeyProvider;
   /**
+   * Marks a service as reached, for retry safety (#453).
+   *
+   * The injected services are proxied before they get here, but several are
+   * built INSIDE this factory (deployments, cdc-feed, content-versions) and
+   * would otherwise bypass that instrumentation entirely — a deployment could
+   * fire and the failure would still look retryable. Those factories run their
+   * result through this instead. Defaults to identity so the offline registry
+   * is unaffected.
+   */
+  trackTouch?: <T extends object>(service: T) => T;
+  /**
+   * Marks the execution as having reached a side effect, for handlers with no
+   * service object to proxy — `runFlow` writes through `db` and then executes
+   * an arbitrary flow graph. Called BEFORE the write, so an error during it is
+   * still classified as uncertain.
+   */
+  markTouched?: () => void;
+  /**
    * Configured LLM for generation skills.
    * - key absent: offline deterministic handlers (shared CORE_SKILLS test registry).
    * - `null`: the caller resolved the environment and found no provider —
@@ -455,13 +473,21 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     return service;
   }
 
+  /** Identity when absent: the offline registry has nothing to instrument. */
+  const trackTouch = services.trackTouch ?? (<T extends object>(service: T): T => service);
+  const markTouched = services.markTouched;
+
   const deploymentService = async () => {
     if (!services.db || !services.siteId || !services.keys) {
       throw new Error('DEPLOYMENTS_NOT_CONFIGURED: deployment skills require a runtime KeyProvider');
     }
     // Lazy import keeps the harness decoupled from the deployment module.
     const { DeploymentService } = await import('./deployment/deployment-service');
-    return new DeploymentService({ db: services.db, siteId: services.siteId, keys: services.keys });
+    // Tracked: a deployment reaches an external provider, so a failure after
+    // this point is the least retryable kind there is.
+    return trackTouch(
+      new DeploymentService({ db: services.db, siteId: services.siteId, keys: services.keys }),
+    );
   };
 
   const cdcFeedService = async () => {
@@ -476,12 +502,14 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         import('../modules/cdc/change-feed/retention'),
       ]);
     const retentionDays = await readRetentionDays(services.db, services.siteId);
-    return new SubscriptionService({
-      db: services.db,
-      siteId: services.siteId,
-      eventStore: new DrizzleCdcEventStore(services.db),
-      retentionDays,
-    });
+    return trackTouch(
+      new SubscriptionService({
+        db: services.db,
+        siteId: services.siteId,
+        eventStore: new DrizzleCdcEventStore(services.db),
+        retentionDays,
+      }),
+    );
   };
 
   /**
@@ -494,7 +522,9 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     if (!itemService || !db || !siteId) return null;
     // Agent-authored versions: createdBy stays null (the run stamps revision
     // provenance separately via ItemService.setProvenance on promote).
-    return new ContentVersionService({ db, siteId, userId: null, items: itemService });
+    return trackTouch(
+      new ContentVersionService({ db, siteId, userId: null, items: itemService }),
+    );
   };
 
   return {
@@ -1344,6 +1374,11 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           .where(and(eq(flows.id, id), eq(flows.siteId, siteId)));
         if (!flow) throw new Error('FLOW_NOT_FOUND: no flow with that id');
         const input = (args['input'] as Record<string, unknown>) ?? {};
+        // No service object to proxy: this writes through `db` directly and
+        // then executes an arbitrary flow graph, which is the widest side
+        // effect in the registry. Marked explicitly so a failure here is never
+        // classified as safely retryable (#453).
+        markTouched?.();
         const [run] = await db
           .insert(flowRuns)
           .values({ siteId, flowId: id, status: 'running', input })
@@ -1956,6 +1991,11 @@ class ServiceTouchTracker {
     this.touched = false;
   }
 
+  /** For handlers with no service object to proxy (e.g. direct `db` writes). */
+  markTouched(): void {
+    this.touched = true;
+  }
+
   /**
    * Wraps a service so any method call flips the flag. Non-function properties
    * pass through untouched, and the returned value is the real one — this only
@@ -2023,6 +2063,10 @@ export class AISecureHarness {
         siteId: config.siteId,
         // Tenant context + KeyProvider enable the deployment skills.
         keys: config.keys,
+        // Reaches the services this factory builds itself (deployments,
+        // cdc-feed, content-versions), which the constructor cannot proxy.
+        trackTouch: (service) => this.serviceTouch.wrap(service),
+        markTouched: () => this.serviceTouch.markTouched(),
         // Preserve the "offline registry" mode when callers never resolved
         // an LLM; forward null/instance when they did (Req 2.1/2.2).
         ...('llm' in config ? { llm: config.llm ?? null } : {}),
@@ -2686,7 +2730,15 @@ export class AISecureHarness {
     try {
       return await this.runClaimedApproval(record, userId, run, existingAgentApproval);
     } catch (err) {
-      if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
+      // Same rule as an in-band failure: only a claim that provably never
+      // reached a service is safe to re-offer. Releasing unconditionally here
+      // would undo the failed-state gate for the worst case of all — an
+      // exception AFTER a successful mutation, e.g. while persisting the
+      // legacy approval row.
+      if (existingAgentApproval) {
+        const message = err instanceof Error ? err.message : String(err);
+        await this.settleFailedClaim(existingAgentApproval.id, message);
+      }
       throw err;
     }
   }

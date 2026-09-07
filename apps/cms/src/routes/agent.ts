@@ -917,22 +917,56 @@ agentRouter.post('/approvals/:id/reopen', async (c) => {
     );
   }
 
-  // Only `failed` reopens. A decided approval must not be revived, and a
-  // `deciding` row belongs to a live execution or the claim sweeper.
-  const [reopened] = await db
-    .update(agentApprovals)
-    .set({
-      status: 'pending',
-      decidedAt: null,
-      decidedBy: null,
-      decisionReason: `reopened by ${auth.userId ?? 'unknown'}: ${parsed.data.reason}`.slice(0, 1000),
-    })
-    .where(and(
-      eq(agentApprovals.id, approvalId),
-      eq(agentApprovals.siteId, siteId),
-      eq(agentApprovals.status, 'failed'),
-    ))
-    .returning();
+  // The transition and its audit commit together. Reopening authorizes a second
+  // run of an action that may already have taken effect, so the record of who
+  // authorized it and why is part of the authorization — not a log line that
+  // may or may not follow it. Split, a failing insert would leave the approval
+  // executable again with no audit trail at all.
+  //
+  // Duck-typed like `config-import-service.ts`: the fake-DB route suites have
+  // no `transaction`, and the ordering is still correct without one.
+  const withTx = db as typeof db & {
+    transaction?: <T>(cb: (tx: typeof db) => Promise<T>) => Promise<T>;
+  };
+
+  const reopenWithin = async (tx: typeof db) => {
+    // Only `failed` reopens. A decided approval must not be revived, and a
+    // `deciding` row belongs to a live execution or the claim sweeper.
+    const [row] = await tx
+      .update(agentApprovals)
+      .set({
+        status: 'pending',
+        decidedAt: null,
+        decidedBy: null,
+        decisionReason: `reopened by ${auth.userId ?? 'unknown'}: ${parsed.data.reason}`.slice(0, 1000),
+      })
+      .where(and(
+        eq(agentApprovals.id, approvalId),
+        eq(agentApprovals.siteId, siteId),
+        eq(agentApprovals.status, 'failed'),
+      ))
+      .returning();
+
+    if (!row) return undefined;
+
+    await tx.insert(activity).values({
+      siteId,
+      action: 'approval.reopened',
+      payload: {
+        approvalId,
+        reopenedBy: auth.userId ?? null,
+        reason: parsed.data.reason,
+        previousReason: existing.decisionReason,
+      },
+    });
+
+    return row;
+  };
+
+  const reopened =
+    typeof withTx.transaction === 'function'
+      ? await withTx.transaction(reopenWithin)
+      : await reopenWithin(db);
 
   if (!reopened) {
     return c.json(
@@ -945,19 +979,6 @@ agentRouter.post('/approvals/:id/reopen', async (c) => {
       409,
     );
   }
-
-  // Audited: reopening authorizes a second run of an action that may already
-  // have taken effect, so who did it and why has to survive.
-  await db.insert(activity).values({
-    siteId,
-    action: 'approval.reopened',
-    payload: {
-      approvalId,
-      reopenedBy: auth.userId ?? null,
-      reason: parsed.data.reason,
-      previousReason: existing.decisionReason,
-    },
-  });
 
   return c.json({ data: reopened });
 });

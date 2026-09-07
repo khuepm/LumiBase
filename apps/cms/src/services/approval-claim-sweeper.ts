@@ -21,16 +21,26 @@ import { and, asc, eq, lt } from 'drizzle-orm';
  * only from `deciding`, so it can never touch a live execution or override a
  * real decision.
  *
- * ## What a released claim means
+ * ## Why the sweep quarantines instead of releasing
  *
- * Releasing says "no decision was recorded", NOT "nothing happened". The
- * process died at an unknown point, so the action may have run, partially run,
- * or not run at all — and no side effect is undone here. The approval returns
- * to `pending` because that is the state an operator can act on, and each
- * release writes an `approval.claim_released` activity row so the ambiguity is
- * on the record rather than silently resolved. Re-approving replays the action:
- * safe for an idempotent skill, and something to check first for one that is
- * not.
+ * A crash says "no decision was recorded", NOT "nothing happened". The process
+ * died at an unknown point, so the action may have run, partially run, or not
+ * at all — and no side effect is undone here.
+ *
+ * An earlier version returned these rows to `pending`, which put them straight
+ * back in the inbox where an ordinary approval re-ran the action. That defeats
+ * the whole point of the `failed` outcome the in-process paths use: a fault the
+ * process SURVIVED is quarantined, while a crash — strictly less knowable —
+ * would have been waved through fifteen minutes later.
+ *
+ * So a swept claim lands in `failed`, exactly where a touched-service failure
+ * lands, and rejoins normal work only through
+ * `POST /agent/approvals/:id/reopen` after a human verifies what happened.
+ *
+ * Elapsed time is not evidence the abandoned work stopped: a JavaScript
+ * timeout rejects a promise, it does not cancel the handler behind it, and a
+ * crashed process may have left an in-flight request at an external provider.
+ * The window bounds how long we WAIT, never what we conclude.
  */
 
 /**
@@ -51,7 +61,7 @@ export interface ApprovalClaimSweepDeps {
   db: Database;
 }
 
-export interface ReleasedClaim {
+export interface QuarantinedClaim {
   approvalId: string;
   siteId: string;
   /** How long the claim had been held, in ms — useful when triaging a crash. */
@@ -59,11 +69,11 @@ export interface ReleasedClaim {
 }
 
 /**
- * Releases every claim older than `staleAfterMs`. System-level, cross-site,
- * like the veto sweep: each row is released within its own site scope.
+ * Quarantines every claim older than `staleAfterMs`. System-level, cross-site,
+ * like the veto sweep: each row is handled within its own site scope.
  *
- * Returns what it released so a caller can log or alert on it. Safe to run
- * concurrently with itself and with live decisions — each release is a
+ * Returns what it quarantined so a caller can log or alert on it. Safe to run
+ * concurrently with itself and with live decisions — each write is a
  * conditional update guarded on `deciding` plus the same stale deadline, so a
  * claim that was renewed or finalized in the meantime is left alone.
  */
@@ -71,7 +81,7 @@ export async function sweepStaleApprovalClaims(
   deps: ApprovalClaimSweepDeps,
   now = new Date(),
   staleAfterMs = CLAIM_STALE_AFTER_MS,
-): Promise<ReleasedClaim[]> {
+): Promise<QuarantinedClaim[]> {
   const deadline = new Date(now.getTime() - staleAfterMs);
 
   const stale = await deps.db
@@ -86,51 +96,74 @@ export async function sweepStaleApprovalClaims(
     .orderBy(asc(agentApprovals.decidedAt))
     .limit(SWEEP_BATCH_SIZE);
 
-  const released: ReleasedClaim[] = [];
+  const quarantined: QuarantinedClaim[] = [];
 
   for (const row of stale) {
-    // Guarded on both `deciding` and the stale deadline: if the claim holder
-    // finalized, released, or re-claimed the row since the SELECT above, this
-    // affects zero rows and the sweep moves on. That is what makes the sweep
-    // safe to run against live traffic.
-    const undone = await deps.db
-      .update(agentApprovals)
-      .set({ status: 'pending', decidedBy: null, decidedAt: null })
-      .where(
-        and(
-          eq(agentApprovals.id, row.id),
-          eq(agentApprovals.siteId, row.siteId),
-          eq(agentApprovals.status, 'deciding'),
-          lt(agentApprovals.decidedAt, deadline),
-        ),
-      )
-      .returning({ id: agentApprovals.id });
-
-    if (undone.length === 0) continue;
-
     const heldForMs = row.decidedAt ? now.getTime() - row.decidedAt.getTime() : 0;
 
-    // The release itself is auditable. Without this the approval simply
-    // reappears as pending with no trace of the interrupted execution, and a
-    // reviewer re-approving it would have no way to know the action may have
-    // already run once.
-    await deps.db.insert(activity).values({
-      siteId: row.siteId,
-      action: 'approval.claim_released',
-      payload: {
-        approvalId: row.id,
-        claimedBy: row.decidedBy,
-        heldForMs,
-        staleAfterMs,
-        // Stated explicitly because it drives what a human should do next.
-        note:
-          'Execution was interrupted; the action may or may not have run. ' +
-          'Verify the intended side effect before re-approving.',
-      },
-    });
+    // Quarantine + audit commit together. Split, a failing audit insert would
+    // leave a row marked `failed` with no record of why it was interrupted —
+    // and the reopen decision depends on exactly that record. Duck-typed so the
+    // fake-DB suites, which have no `transaction`, still exercise the path.
+    const withTx = deps.db as Database & {
+      transaction?: <T>(cb: (tx: Database) => Promise<T>) => Promise<T>;
+    };
 
-    released.push({ approvalId: row.id, siteId: row.siteId, heldForMs });
+    const quarantineOne = async (tx: Database): Promise<boolean> => {
+      // Guarded on both `deciding` and the stale deadline: if the claim holder
+      // finalized, released, or re-claimed the row since the SELECT above, this
+      // affects zero rows and the sweep moves on. That is what makes the sweep
+      // safe to run against live traffic.
+      const undone = await tx
+        .update(agentApprovals)
+        .set({
+          // `failed`, not `pending`: a crashed execution is at least as
+          // ambiguous as one that failed in-process, so it goes through the
+          // same explicit reopen gate rather than back into the inbox as
+          // ordinary work.
+          status: 'failed',
+          decisionReason:
+            'execution was interrupted (claim abandoned); the side effect is unknown. ' +
+            'Verify before reopening.',
+        })
+        .where(
+          and(
+            eq(agentApprovals.id, row.id),
+            eq(agentApprovals.siteId, row.siteId),
+            eq(agentApprovals.status, 'deciding'),
+            lt(agentApprovals.decidedAt, deadline),
+          ),
+        )
+        .returning({ id: agentApprovals.id });
+
+      if (undone.length === 0) return false;
+
+      await tx.insert(activity).values({
+        siteId: row.siteId,
+        action: 'approval.claim_quarantined',
+        payload: {
+          approvalId: row.id,
+          claimedBy: row.decidedBy,
+          heldForMs,
+          staleAfterMs,
+          // Stated explicitly because it drives what a human should do next.
+          note:
+            'Execution was interrupted; the action may or may not have run. ' +
+            'Verify the intended side effect, then reopen the approval to retry.',
+        },
+      });
+      return true;
+    };
+
+    const didQuarantine =
+      typeof withTx.transaction === 'function'
+        ? await withTx.transaction(quarantineOne)
+        : await quarantineOne(deps.db);
+
+    if (didQuarantine) {
+      quarantined.push({ approvalId: row.id, siteId: row.siteId, heldForMs });
+    }
   }
 
-  return released;
+  return quarantined;
 }

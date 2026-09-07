@@ -90,10 +90,11 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 stale approval-claim sweeper — DB in
 
     const [row] = await db.select().from(agentApprovals)
       .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, SITE)));
-    // Back where Mission Control's `status === 'pending'` inbox can see it.
-    expect(row!.status).toBe('pending');
-    expect(row!.decidedBy).toBeNull();
-    expect(row!.decidedAt).toBeNull();
+    // Quarantined, NOT returned to pending: a crash is at least as ambiguous
+    // as an in-process failure, so it goes through the same explicit reopen
+    // gate rather than back into the inbox where an approve would re-run it.
+    expect(row!.status).toBe('failed');
+    expect(row!.decisionReason).toMatch(/interrupted/i);
   });
 
   it('records the release so the interrupted execution is not silent', async () => {
@@ -102,7 +103,7 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 stale approval-claim sweeper — DB in
     await sweepStaleApprovalClaims({ db });
 
     const rows = await db.select().from(activity)
-      .where(and(eq(activity.siteId, SITE), eq(activity.action, 'approval.claim_released')));
+      .where(and(eq(activity.siteId, SITE), eq(activity.action, 'approval.claim_quarantined')));
     expect(rows).toHaveLength(1);
 
     const payload = rows[0]!.payload as Record<string, unknown>;
@@ -149,7 +150,7 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 stale approval-claim sweeper — DB in
 
     const [row] = await db.select().from(agentApprovals)
       .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, SITE)));
-    expect(row!.status).toBe('pending');
+    expect(row!.status).toBe('failed');
   });
 
   it('releases the claim when a pre-execution step throws, not only the skill', async () => {
@@ -188,6 +189,47 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 stale approval-claim sweeper — DB in
     expect(row!.status).toBe('pending');
   });
 
+  it('rolls the quarantine back when its audit write fails', async () => {
+    const { approvalId } = await seedApproval('deciding', CLAIM_STALE_AFTER_MS + 60_000);
+
+    // The status change and its audit row must commit together. Without that, a
+    // failing insert would leave the approval marked `failed` with no record of
+    // why it was interrupted — and the reopen decision depends on that record.
+    //
+    // Injected through the transaction callback, because the writes go through
+    // the `tx` handle the driver supplies, not through `db` itself.
+    const realTransaction = db.transaction.bind(db);
+    (db as unknown as { transaction: unknown }).transaction = async (
+      cb: (tx: unknown) => Promise<unknown>,
+    ) =>
+      realTransaction(async (tx) => {
+        const realInsert = tx.insert.bind(tx);
+        (tx as unknown as { insert: unknown }).insert = () => ({
+          values: async () => {
+            throw new Error('audit insert failed');
+          },
+        });
+        try {
+          return await cb(tx);
+        } finally {
+          (tx as unknown as { insert: unknown }).insert = realInsert;
+        }
+      });
+
+    await expect(sweepStaleApprovalClaims({ db })).rejects.toThrow(/audit insert failed/);
+    (db as unknown as { transaction: unknown }).transaction = realTransaction;
+
+    // Rolled back to `deciding`: the next sweep retries the whole pair rather
+    // than leaving a quarantine nobody can explain.
+    const [row] = await db.select().from(agentApprovals)
+      .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, SITE)));
+    expect(row!.status).toBe('deciding');
+
+    const audits = await db.select().from(activity)
+      .where(and(eq(activity.siteId, SITE), eq(activity.action, 'approval.claim_quarantined')));
+    expect(audits).toHaveLength(0);
+  });
+
   it('is safe to run twice concurrently — one release, one audit row', async () => {
     await seedApproval('deciding', CLAIM_STALE_AFTER_MS + 60_000);
 
@@ -200,16 +242,17 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 stale approval-claim sweeper — DB in
     // and audits the release.
     expect(a!.length + b!.length).toBe(1);
     const rows = await db.select().from(activity)
-      .where(and(eq(activity.siteId, SITE), eq(activity.action, 'approval.claim_released')));
+      .where(and(eq(activity.siteId, SITE), eq(activity.action, 'approval.claim_quarantined')));
     expect(rows).toHaveLength(1);
   });
 
-  it('makes a swept approval decidable again, and it executes once', async () => {
+  it('does NOT make a swept approval decidable again — reopen is required', async () => {
     const { legacyId } = await seedApproval('deciding', CLAIM_STALE_AFTER_MS + 60_000);
 
     await sweepStaleApprovalClaims({ db });
 
-    // The whole point of releasing to `pending`: an operator can retry.
+    // The quarantine is the point: an ordinary approve must NOT re-run an
+    // action whose outcome nobody has verified.
     const deleteCollection = vi.fn().mockResolvedValue({ deleted: true });
     const harness = new AISecureHarness({
       db,
@@ -220,8 +263,8 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 stale approval-claim sweeper — DB in
 
     const result = await harness.executeApproved(legacyId, ADMIN, ['*']);
 
-    expect(result.status).toBe('executed');
-    expect(deleteCollection).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe('denied');
+    expect(deleteCollection).not.toHaveBeenCalled();
   });
 
   it('releases exactly the stale claims and nothing else', async () => {
@@ -266,7 +309,7 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 stale approval-claim sweeper — DB in
 
     const after = await db.select().from(agentApprovals).where(eq(agentApprovals.siteId, SITE));
     const statusById = Object.fromEntries(after.map((r) => [r.id, r.status]));
-    expect(statusById[ids['stale']!]).toBe('pending');
+    expect(statusById[ids['stale']!]).toBe('failed');
     expect(statusById[ids['fresh']!]).toBe('deciding');
     expect(statusById[ids['approved-old']!]).toBe('approved');
     expect(statusById[ids['rejected-old']!]).toBe('rejected');
