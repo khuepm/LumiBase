@@ -1923,6 +1923,59 @@ export const CORE_SKILLS: Record<string, SkillDefinition> = buildCoreSkills({});
  *   delegate to ItemService methods.
  * - When services are not provided, handlers return stub responses.
  */
+/**
+ * Records whether a skill handler reached a real service during one execution.
+ *
+ * ## Why this exists
+ *
+ * When an approved skill fails, the harness has to decide whether the approval
+ * is safe to retry. That turns on one question: did the handler get far enough
+ * to change anything?
+ *
+ * A failure BEFORE the first service call — a missing dependency, a validation
+ * error, the kill switch — provably had no side effect, so the approval can go
+ * back to `pending` and be retried freely. A failure AFTER one — a timeout mid
+ * request, a connection drop, an error on the second of two writes — leaves an
+ * unknown amount of work done. Retrying that can repeat a non-idempotent
+ * mutation, which is why such an approval stops at `failed` instead.
+ *
+ * The flag is set by proxying the services rather than by asking each of the
+ * 50+ handlers to declare it. A handler cannot forget to opt in, and a new
+ * skill is covered the day it is written. It deliberately over-reports: a
+ * read-only call marks the execution as touched, so an ambiguous failure is
+ * treated as unsafe. Erring toward "a human should look" is the point.
+ */
+class ServiceTouchTracker {
+  private touched = false;
+
+  get wasTouched(): boolean {
+    return this.touched;
+  }
+
+  reset(): void {
+    this.touched = false;
+  }
+
+  /**
+   * Wraps a service so any method call flips the flag. Non-function properties
+   * pass through untouched, and the returned value is the real one — this only
+   * observes, it never alters behaviour.
+   */
+  wrap<T extends object | undefined>(service: T): T {
+    if (!service) return service;
+    return new Proxy(service as object, {
+      get: (target, prop, receiver) => {
+        const value = Reflect.get(target, prop, receiver);
+        if (typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          this.touched = true;
+          return (value as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    }) as T;
+  }
+}
+
 export class AISecureHarness {
   private readonly db: Database;
   private readonly siteId: string;
@@ -1933,6 +1986,8 @@ export class AISecureHarness {
   private readonly itemService?: ItemService;
   private readonly queue?: QueueProvider;
   private readonly notify?: AgentNotifier;
+  /** Set when a skill handler reaches a service; drives retry safety (#453). */
+  private readonly serviceTouch = new ServiceTouchTracker();
 
   constructor(config: AISecureHarnessConfig) {
     this.db = config.db;
@@ -1955,13 +2010,15 @@ export class AISecureHarness {
     // When no services are provided, use the shared CORE_SKILLS object
     // (allows tests to mutate handlers directly on the exported object).
     if (hasService) {
+      // Services are proxied so the harness can tell a failure that never
+      // reached one (safe to retry) from a failure that did (ambiguous).
       this.skills = buildCoreSkills({
-        schemaService: config.schemaService,
-        itemService: config.itemService,
-        accessService: config.accessService,
-        intentService: config.intentService,
-        configService: config.configService,
-        extensionsService: config.extensionsService,
+        schemaService: this.serviceTouch.wrap(config.schemaService),
+        itemService: this.serviceTouch.wrap(config.itemService),
+        accessService: this.serviceTouch.wrap(config.accessService),
+        intentService: this.serviceTouch.wrap(config.intentService),
+        configService: this.serviceTouch.wrap(config.configService),
+        extensionsService: this.serviceTouch.wrap(config.extensionsService),
         db: config.db,
         siteId: config.siteId,
         // Tenant context + KeyProvider enable the deployment skills.
@@ -2680,6 +2737,10 @@ export class AISecureHarness {
       approvalId: existingAgentApproval?.id ?? null,
     });
 
+    // Fresh per execution: a harness instance can run more than one skill, and
+    // a stale flag would misclassify the next failure.
+    this.serviceTouch.reset();
+
     let result;
     try {
       result = await this.runSkill(
@@ -2689,9 +2750,10 @@ export class AISecureHarness {
       );
     } catch (err) {
       // A throwing skill must not strand the claim in `deciding`, where the
-      // approval disappears from the operator's pending inbox.
-      if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
+      // approval disappears from the operator's pending inbox — but it must
+      // not be blindly re-offered either if it already reached a service.
       const message = err instanceof Error ? err.message : String(err);
+      if (existingAgentApproval) await this.settleFailedClaim(existingAgentApproval.id, message);
       await this.runService.finishToolCall(toolCallId, {
         status: 'failed',
         error: message,
@@ -2783,9 +2845,11 @@ export class AISecureHarness {
       };
     }
 
-    // The skill failed: release the claim so the approval is pending again and
-    // an operator can retry or reject it.
-    if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
+    // The skill failed. Whether the approval is retryable depends on how far
+    // it got: see settleFailedClaim.
+    const outcome = existingAgentApproval
+      ? await this.settleFailedClaim(existingAgentApproval.id, result.error)
+      : 'pending';
     await this.runService.finishToolCall(toolCallId, {
       status: 'failed',
       error: result.error,
@@ -2793,7 +2857,15 @@ export class AISecureHarness {
       latencyMs: Date.now() - startedAt,
     });
     await this.runService.failRun(run.runId, result.error);
-    return { status: 'denied', message: result.error, runId: run.runId, toolCallId };
+    return {
+      status: 'denied',
+      message:
+        outcome === 'failed'
+          ? `${result.error} (approval marked failed: the action may have partially run; reopen it after verifying)`
+          : result.error,
+      runId: run.runId,
+      toolCallId,
+    };
   }
 
   /**
@@ -2803,6 +2875,46 @@ export class AISecureHarness {
    * decision that landed through another entrypoint in the meantime is left
    * alone.
    */
+  /**
+   * Ends a claim after a failure, choosing the outcome by whether the skill
+   * reached a service (#453).
+   *
+   * Not-touched → `pending`: the failure provably happened before any side
+   * effect, so the approval is safe to retry and returns to the operator's
+   * inbox as normal work.
+   *
+   * Touched → `failed`: an unknown amount of work was done. Automatically
+   * re-offering it invites a repeat of a non-idempotent mutation, so it stops
+   * here with the reason recorded, and a human decides via
+   * `POST /agent/approvals/:id/reopen` after checking what actually happened.
+   */
+  private async settleFailedClaim(
+    agentApprovalId: string,
+    reason: string,
+  ): Promise<'pending' | 'failed'> {
+    if (!this.serviceTouch.wasTouched) {
+      await this.releaseClaim(agentApprovalId);
+      return 'pending';
+    }
+
+    await this.db
+      .update(agentApprovals)
+      .set({
+        status: 'failed',
+        decidedAt: new Date(),
+        decisionReason:
+          `execution failed after the skill reached a service; the side effect is unknown. ${reason}`.slice(0, 1000),
+      })
+      .where(
+        and(
+          eq(agentApprovals.id, agentApprovalId),
+          eq(agentApprovals.siteId, this.siteId),
+          eq(agentApprovals.status, 'deciding'),
+        ),
+      );
+    return 'failed';
+  }
+
   private async releaseClaim(agentApprovalId: string): Promise<void> {
     await this.db
       .update(agentApprovals)

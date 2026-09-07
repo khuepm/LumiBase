@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import {
   agentApprovals,
@@ -94,9 +94,6 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 approval concurrency — DB integratio
     });
   }
 
-  beforeEach(() => {
-  });
-
   it('runs the approved action exactly once under concurrent approves', async () => {
     const { legacyId, approvalId } = await seedPendingApproval();
 
@@ -146,7 +143,7 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 approval concurrency — DB integratio
     expect(row!.status).toBe(legacyRow!.status);
   });
 
-  it('leaves the approval retryable, never stranded in `deciding`, when the skill fails', async () => {
+  it('never leaves the approval stranded in `deciding` when the skill fails', async () => {
     const { legacyId, approvalId } = await seedPendingApproval();
 
     const deleteCollection = vi.fn().mockRejectedValue(new Error('SCHEMA_BOOM'));
@@ -155,10 +152,15 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 approval concurrency — DB integratio
     expect(result.status).toBe('denied');
 
     // `deciding` is invisible to Mission Control's pending inbox, so a failed
-    // execution must never come to rest there.
+    // execution must never come to rest there. Which terminal state it takes
+    // depends on how far the skill got — that distinction has its own suite
+    // (g1-failed-outcome); here the property is only that the claim ended.
     const [row] = await db.select().from(agentApprovals)
       .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, SITE)));
-    expect(row!.status).toBe('pending');
+    expect(row!.status).not.toBe('deciding');
+    // This skill reached SchemaService before throwing, so the side effect is
+    // unknown and the approval is not silently re-offered.
+    expect(row!.status).toBe('failed');
   });
 
   it('keeps both records in step when a reject wins the race', async () => {

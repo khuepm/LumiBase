@@ -120,6 +120,8 @@ function seedFakeDb(agentOverrides: Row = {}, legacyOverrides: Row = {}): FakeDb
     rejected: ['pending'],
     pending: ['deciding'],
     approved: ['deciding'],
+    // A failure that reached a service settles here instead of re-opening.
+    failed: ['deciding'],
   };
   fake.tables[AI_APPROVALS]!.updateGuards = {
     approved: ['pending'],
@@ -156,6 +158,66 @@ async function decide(fake: FakeDb, body: Row, auth: AuthPrincipal = adminPrinci
 beforeEach(() => {
   deleteCollection.mockReset();
   deleteCollection.mockResolvedValue({ deleted: true });
+});
+
+describe('G1 — reopening a failed approval', () => {
+  async function reopen(fake: FakeDb, body: Row, auth: AuthPrincipal = adminPrincipal) {
+    return buildApp(fake, auth).request('/agent/approvals/appr_1/reopen', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('returns a failed approval to pending', async () => {
+    const fake = seedFakeDb({ status: 'failed' });
+    fake.tables[AGENT_APPROVALS]!.updateGuards = { pending: ['failed'] };
+
+    const res = await reopen(fake, { reason: 'verified the collection still exists' });
+
+    expect(res.status).toBe(200);
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('pending');
+  });
+
+  it('refuses to reopen an approval that is not failed', async () => {
+    for (const status of ['pending', 'approved', 'rejected', 'deciding']) {
+      const fake = seedFakeDb({ status });
+      fake.tables[AGENT_APPROVALS]!.updateGuards = { pending: ['failed'] };
+
+      const res = await reopen(fake, { reason: 'trying anyway' });
+
+      expect(res.status).toBe(409);
+      expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe(status);
+    }
+  });
+
+  it('requires the approval capability', async () => {
+    const fake = seedFakeDb({ status: 'failed' });
+    fake.tables[AGENT_APPROVALS]!.updateGuards = { pending: ['failed'] };
+
+    const res = await reopen(fake, { reason: 'let me in' }, memberPrincipal);
+
+    expect(res.status).toBe(403);
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('failed');
+  });
+
+  it('requires a reason — reopening authorizes a possible second side effect', async () => {
+    const fake = seedFakeDb({ status: 'failed' });
+
+    expect((await reopen(fake, {})).status).toBe(400);
+    expect((await reopen(fake, { reason: '' })).status).toBe(400);
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('failed');
+  });
+
+  it('does not reopen across tenants', async () => {
+    const fake = seedFakeDb({ status: 'failed', siteId: 'site_b' });
+    fake.tables[AGENT_APPROVALS]!.updateGuards = { pending: ['failed'] };
+
+    const res = await reopen(fake, { reason: 'wrong tenant' });
+
+    expect(res.status).toBe(404);
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('failed');
+  });
 });
 
 describe('G1 — human approval executes the parked action', () => {
@@ -265,8 +327,12 @@ describe('G1 — human approval executes the parked action', () => {
     expect(res.status).toBe(409);
     const payload = (await res.json()) as { errors?: Array<{ message: string }> };
     expect(payload.errors?.[0]?.message).toContain('SCHEMA_BOOM');
-    // The claim is released, so the approval stays actionable.
-    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('pending');
+    // The skill reached SchemaService before throwing, so the side effect is
+    // unknown: the approval stops at `failed` rather than being re-offered for
+    // a retry that could repeat a half-applied delete. A human reopens it via
+    // POST /agent/approvals/:id/reopen after checking.
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('failed');
+    expect(payload.errors?.[0]?.message).toMatch(/approval marked failed/i);
   });
 
   it('leaves no approval stranded in `deciding` when the skill throws', async () => {

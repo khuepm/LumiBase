@@ -1,4 +1,5 @@
 import {
+  activity,
   agentApprovals,
   agentGoals,
   agentRuns,
@@ -873,6 +874,92 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
 
   observe(record);
   return c.json({ data: record });
+});
+
+/**
+ * Reopens an approval that stopped at `failed` (#453).
+ *
+ * A skill that reached a service and then failed leaves an unknown amount of
+ * work done, so the approval is parked at `failed` rather than silently
+ * re-offered — retrying it could repeat a non-idempotent mutation. This is the
+ * deliberate way back: a human checks what actually happened and reopens it.
+ *
+ * Requires the same capability as deciding, because reopening is what makes a
+ * second execution possible. The reason is mandatory and audited: the whole
+ * point is a record of who judged the retry safe, and why.
+ */
+agentRouter.post('/approvals/:id/reopen', async (c) => {
+  const parsed = z
+    .object({ reason: z.string().min(1).max(1000) })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return validationError(c, parsed.error);
+  }
+
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const auth = c.get('auth');
+  const approvalId = c.req.param('id');
+
+  const [existing] = await db
+    .select()
+    .from(agentApprovals)
+    .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)))
+    .limit(1);
+
+  if (!existing) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Approval not found' }] }, 404);
+  }
+  if (!canDecideApprovals(c)) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Capability "approvals:decide" is required.' }] },
+      403,
+    );
+  }
+
+  // Only `failed` reopens. A decided approval must not be revived, and a
+  // `deciding` row belongs to a live execution or the claim sweeper.
+  const [reopened] = await db
+    .update(agentApprovals)
+    .set({
+      status: 'pending',
+      decidedAt: null,
+      decidedBy: null,
+      decisionReason: `reopened by ${auth.userId ?? 'unknown'}: ${parsed.data.reason}`.slice(0, 1000),
+    })
+    .where(and(
+      eq(agentApprovals.id, approvalId),
+      eq(agentApprovals.siteId, siteId),
+      eq(agentApprovals.status, 'failed'),
+    ))
+    .returning();
+
+  if (!reopened) {
+    return c.json(
+      {
+        errors: [{
+          code: 'CONFLICT',
+          message: `Only a failed approval can be reopened (this one is ${existing.status}).`,
+        }],
+      },
+      409,
+    );
+  }
+
+  // Audited: reopening authorizes a second run of an action that may already
+  // have taken effect, so who did it and why has to survive.
+  await db.insert(activity).values({
+    siteId,
+    action: 'approval.reopened',
+    payload: {
+      approvalId,
+      reopenedBy: auth.userId ?? null,
+      reason: parsed.data.reason,
+      previousReason: existing.decisionReason,
+    },
+  });
+
+  return c.json({ data: reopened });
 });
 
 agentRouter.get('/artifacts', async (c) => {
