@@ -48,6 +48,8 @@
     "version:sync": "node scripts/sync-version.mjs",
     "version:check": "node scripts/sync-version.mjs --check",
     "registry:check": "node scripts/check-registry-numbering.mjs",
+    "verify:worker-bundle": "node scripts/check-worker-bundle.mjs",
+    "verify:worker-startup": "node scripts/verify-worker-startup.mjs",
     "settings:check": "node scripts/check-pnpm-settings-parity.mjs",
     "drift:check": "node scripts/check-override-drift.mjs",
     "dist-tags:check": "node scripts/check-npm-dist-tags.mjs",

@@ -19,7 +19,10 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { jwtVerify } from 'jose';
 import { nanoid } from 'nanoid';
 import { parseClientMessage, type RealtimeEvent } from '@lumibase/contracts';
-import type { InProcessRealtimeHub, RealtimeEventLike } from '@lumibase/runtime';
+import type { RealtimeEventLike } from '@lumibase/runtime';
+// Type-only, so nothing is emitted — but this module is Node-only anyway
+// (dynamically imported by `serve.ts`).
+import type { InProcessRealtimeHub } from '@lumibase/runtime/docker';
 import { canSubscribe, shouldDeliver, toWireMessage } from './fan-out';
 
 const REALTIME_PATH = '/api/v1/realtime';
