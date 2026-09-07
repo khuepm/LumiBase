@@ -1,4 +1,5 @@
 import {
+  activity,
   agentApprovals,
   agentGoals,
   agentRuns,
@@ -642,7 +643,26 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
     return validationError(c, parsed.error);
   }
   const { ReviewerService, ReviewerError } = await import('../services/reviewer-service');
-  const service = new ReviewerService({ db: c.get('db'), siteId: c.get('siteId') });
+  const { buildAuthorizedHarness } = await import('./ai');
+  const auth = c.get('auth');
+  const service = new ReviewerService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    // A confident agent approval executes the stored action, exactly as a
+    // human approval does (#453). Same fully-wired harness, so a missing
+    // dependency fails loudly instead of resolving as a phantom side effect.
+    execute: async ({ legacyApprovalId }) => {
+      if (!legacyApprovalId) {
+        return { executed: false, message: 'Approval has no stored action to execute.' };
+      }
+      const result = await buildAuthorizedHarness(c).executeApproved(
+        legacyApprovalId,
+        auth.userId ?? auth.externalId ?? 'agent-reviewer',
+        auth.roles ?? [],
+      );
+      return { executed: result.status === 'executed', message: result.message };
+    },
+  });
   try {
     const data = await service.decide({
       approvalId: c.req.param('id'),
@@ -661,6 +681,34 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
   }
 });
 
+/**
+ * Deciding an approval is a governed write: it releases a parked, already
+ * risk-classified action. It requires the same capability as freezing/operating
+ * agents rather than mere tenant membership.
+ */
+function canDecideApprovals(c: Context<AppEnv>): boolean {
+  const roles = c.get('auth').roles ?? [];
+  return roles.includes('admin') || roles.includes('approvals:decide') || roles.includes('*');
+}
+
+/**
+ * Human approval decision (#453 / G1).
+ *
+ * An "approved" decision must EXECUTE or RESUME the stored action, not just
+ * flip a status column. Previously this handler updated `agent_approvals` and
+ * returned the row, leaving the run parked in `awaiting_approval` and the tool
+ * call in `pending_approval` — a success-shaped response with no side effect.
+ *
+ * The claim → execute → finalize sequence lives in the harness, not here, so
+ * that this route, the agent-reviewer route and the legacy
+ * `/ai/approvals/:id/decide` all serialize against the SAME conditional
+ * update. An earlier version of this fix claimed the row in the route too;
+ * the harness then found the approval no longer `pending` and denied every
+ * single approve. One owner of that transition, not two.
+ *
+ * A rejection has no side effect to order, so it is written directly here,
+ * guarded on `pending` so it cannot overwrite a concurrent approve.
+ */
 agentRouter.post('/approvals/:id/decide', async (c) => {
   const body = z.object({
     decision: z.enum(['approved', 'rejected']),
@@ -673,14 +721,24 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
   const auth = c.get('auth');
+  const approvalId = c.req.param('id');
   const [existing] = await db
     .select()
     .from(agentApprovals)
-    .where(and(eq(agentApprovals.id, c.req.param('id')), eq(agentApprovals.siteId, siteId)))
+    .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)))
     .limit(1);
 
   if (!existing) {
     return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Approval not found' }] }, 404);
+  }
+  // Capability is checked after existence so a caller without it cannot use
+  // the response code to probe which approval ids exist in another tenant —
+  // a cross-tenant id already returned 404 above.
+  if (!canDecideApprovals(c)) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Capability "approvals:decide" is required.' }] },
+      403,
+    );
   }
   if (existing.status !== 'pending') {
     return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
@@ -689,26 +747,219 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
     return c.json({ errors: [{ code: 'EXPIRED', message: 'Approval expired' }] }, 409);
   }
 
+  const observe = (row: typeof agentApprovals.$inferSelect) => {
+    agentApprovalsTotal.inc({ subject_type: row.subjectType, status: row.status });
+    agentApprovalLatency.observe(
+      { subject_type: row.subjectType, status: row.status },
+      (Date.now() - row.createdAt.getTime()) / 1000,
+    );
+  };
+
+  if (body.data.decision === 'approved') {
+    if (!existing.legacyApprovalId) {
+      // Without the stored action there is nothing to execute, and reporting
+      // success here is exactly the success-shaped stub this issue forbids.
+      return c.json(
+        {
+          errors: [{
+            code: 'NO_STORED_ACTION',
+            message: 'Approval has no stored action to execute.',
+          }],
+        },
+        422,
+      );
+    }
+
+    // The harness owns the whole claim → execute → finalize sequence, and is
+    // the single serialization point shared by this route, the agent-reviewer
+    // route and the legacy `/ai/approvals/:id/decide`. Claiming the row here
+    // as well would take it out of `pending` before the harness looks, which
+    // is exactly what made the first version of this fix respond 409 to every
+    // approve.
+    const { buildAuthorizedHarness } = await import('./ai');
+    const result = await buildAuthorizedHarness(c).executeApproved(
+      existing.legacyApprovalId,
+      auth.userId ?? auth.externalId ?? 'unknown',
+      auth.roles ?? [],
+    );
+
+    if (result.status !== 'executed') {
+      // Kill switch, cancellation, expiry, a lost race, or a genuine failure.
+      // The harness has already released its claim, so the approval is pending
+      // again and an operator can retry or reject it.
+      return c.json(
+        { errors: [{ code: 'EXECUTION_FAILED', message: result.message ?? 'Execution failed' }] },
+        409,
+      );
+    }
+
+    // The harness committed the transition; re-read for the caller.
+    const [decided] = await db
+      .select()
+      .from(agentApprovals)
+      .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)))
+      .limit(1);
+    const row = decided ?? existing;
+
+    // The decision reason is the route's to record; the harness does not carry it.
+    if (body.data.reason) {
+      await db
+        .update(agentApprovals)
+        .set({ decisionReason: body.data.reason })
+        .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)));
+    }
+
+    observe(row);
+    return c.json({
+      data: row,
+      meta: { execution: { status: result.status, runId: result.runId, toolCallId: result.toolCallId } },
+    });
+  }
+
+  // Rejection also goes through the harness, for the same reason an approve
+  // does: `rejectApproval` claims `agent_approvals` first and only then takes
+  // the legacy record, so a reject and a concurrent approve contend for one
+  // row. Rejecting here first would take that row out of `pending`, the
+  // harness would then find nothing to claim, and the legacy record would be
+  // left behind — the parked action still executable through
+  // `/ai/approvals/:id/decide`.
+  if (existing.legacyApprovalId) {
+    const { buildAuthorizedHarness } = await import('./ai');
+    const rejected = await buildAuthorizedHarness(c).rejectApproval(
+      existing.legacyApprovalId,
+      auth.userId ?? auth.externalId ?? 'unknown',
+    );
+    if (!rejected) {
+      return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
+    }
+
+    const [decided] = await db
+      .select()
+      .from(agentApprovals)
+      .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)))
+      .limit(1);
+    const row = decided ?? existing;
+
+    if (body.data.reason) {
+      await db
+        .update(agentApprovals)
+        .set({ decisionReason: body.data.reason })
+        .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)));
+    }
+
+    observe(row);
+    return c.json({ data: row });
+  }
+
+  // No linked legacy record: nothing to execute later, so the reject is a
+  // plain guarded write here.
   const [record] = await db
     .update(agentApprovals)
     .set({
-      status: body.data.decision,
+      status: 'rejected',
       decidedAt: new Date(),
       decidedBy: auth.userId ?? null,
       decisionReason: body.data.reason ?? null,
     })
-    .where(and(eq(agentApprovals.id, c.req.param('id')), eq(agentApprovals.siteId, siteId)))
+    .where(and(
+      eq(agentApprovals.id, approvalId),
+      eq(agentApprovals.siteId, siteId),
+      eq(agentApprovals.status, 'pending'),
+    ))
     .returning();
 
   if (!record) {
+    return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
+  }
+
+  observe(record);
+  return c.json({ data: record });
+});
+
+/**
+ * Reopens an approval that stopped at `failed` (#453).
+ *
+ * A skill that reached a service and then failed leaves an unknown amount of
+ * work done, so the approval is parked at `failed` rather than silently
+ * re-offered — retrying it could repeat a non-idempotent mutation. This is the
+ * deliberate way back: a human checks what actually happened and reopens it.
+ *
+ * Requires the same capability as deciding, because reopening is what makes a
+ * second execution possible. The reason is mandatory and audited: the whole
+ * point is a record of who judged the retry safe, and why.
+ */
+agentRouter.post('/approvals/:id/reopen', async (c) => {
+  const parsed = z
+    .object({ reason: z.string().min(1).max(1000) })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return validationError(c, parsed.error);
+  }
+
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const auth = c.get('auth');
+  const approvalId = c.req.param('id');
+
+  const [existing] = await db
+    .select()
+    .from(agentApprovals)
+    .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)))
+    .limit(1);
+
+  if (!existing) {
     return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Approval not found' }] }, 404);
   }
-  agentApprovalsTotal.inc({ subject_type: record.subjectType, status: record.status });
-  agentApprovalLatency.observe(
-    { subject_type: record.subjectType, status: record.status },
-    (Date.now() - record.createdAt.getTime()) / 1000,
-  );
-  return c.json({ data: record });
+  if (!canDecideApprovals(c)) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Capability "approvals:decide" is required.' }] },
+      403,
+    );
+  }
+
+  // Only `failed` reopens. A decided approval must not be revived, and a
+  // `deciding` row belongs to a live execution or the claim sweeper.
+  const [reopened] = await db
+    .update(agentApprovals)
+    .set({
+      status: 'pending',
+      decidedAt: null,
+      decidedBy: null,
+      decisionReason: `reopened by ${auth.userId ?? 'unknown'}: ${parsed.data.reason}`.slice(0, 1000),
+    })
+    .where(and(
+      eq(agentApprovals.id, approvalId),
+      eq(agentApprovals.siteId, siteId),
+      eq(agentApprovals.status, 'failed'),
+    ))
+    .returning();
+
+  if (!reopened) {
+    return c.json(
+      {
+        errors: [{
+          code: 'CONFLICT',
+          message: `Only a failed approval can be reopened (this one is ${existing.status}).`,
+        }],
+      },
+      409,
+    );
+  }
+
+  // Audited: reopening authorizes a second run of an action that may already
+  // have taken effect, so who did it and why has to survive.
+  await db.insert(activity).values({
+    siteId,
+    action: 'approval.reopened',
+    payload: {
+      approvalId,
+      reopenedBy: auth.userId ?? null,
+      reason: parsed.data.reason,
+      previousReason: existing.decisionReason,
+    },
+  });
+
+  return c.json({ data: reopened });
 });
 
 agentRouter.get('/artifacts', async (c) => {

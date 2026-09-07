@@ -1,6 +1,15 @@
 # create-lumibase
 
-Scaffold a new [LumiBase](https://lumibase.dev) project — an Edge-native Headless CMS — in seconds.
+Scaffold a starter project that follows [LumiBase](https://lumibase.dev)
+conventions — a minimal **Hono + Drizzle** app you own and extend.
+
+> **Two different things share the "LumiBase" name. This package is the starter, not the platform.**
+>
+> | You want… | Use | What you get |
+> |-----------|-----|--------------|
+> | A starter app to build on | `create-lumibase` (this package) | A minimal Hono + Drizzle project with a demo `posts` resource. **No** Collections API, Studio admin, Email, Flows, or AI harness. |
+> | The full Content OS platform | The CMS image `ghcr.io/khuepm/lumibase-cms`, or a clone of the [monorepo](https://github.com/khuepm/lumibase) | The complete platform: Collections API, Studio admin, permissions, Flows, AI agents, multi-tenancy. See [Deployment overview](https://docs.lumibase.dev/en/docs/deployment/overview). |
+> | To talk to a running CMS from your app | [`lumibase`](https://www.npmjs.com/package/lumibase) or [`@lumibase/sdk`](https://www.npmjs.com/package/@lumibase/sdk) | A typed REST/realtime client plus a CLI for type generation. |
 
 ```bash
 npm create lumibase@latest my-project
@@ -12,9 +21,15 @@ pnpm create lumibase my-project
 
 ## What it does
 
-`create-lumibase` bootstraps a ready-to-run LumiBase project into an empty
-directory, the same way `create-next-app` or `create-vite` scaffold their
-respective stacks. It is interactive by default and fully scriptable via flags.
+`create-lumibase` bootstraps a ready-to-run **starter** into an empty directory,
+the same way `create-next-app` or `create-vite` scaffold their respective
+stacks. It is interactive by default and fully scriptable via flags.
+
+What it gives you is a small Hono server with a `posts` resource wired the way
+LumiBase wires things — `nanoid()` identifiers, a `site_id` column on every
+domain table, the `{ data }` / `{ errors }` response envelope, and Zod request
+validation — so the habits you build here carry over to the platform. It is not
+a copy of the platform, and it does not run the Studio.
 
 ## Interactive flow
 
@@ -72,6 +87,17 @@ pnpm run db:generate       # generate the first migration
 pnpm run db:migrate        # apply it
 pnpm dev                   # http://localhost:8787
 ```
+
+Verify it:
+
+```bash
+curl http://localhost:8787/          # {"name":"my-blog","status":"ok"}
+curl http://localhost:8787/posts     # {"data":[]}
+```
+
+The starter listens on `8787` (change it with `PORT` in `.env`). That is
+deliberately **not** `1989` — `1989` is the LumiBase CMS's own port, and the
+starter is your app, not the CMS, so the two can run side by side.
 
 ## Requirements
 

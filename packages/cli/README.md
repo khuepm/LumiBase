@@ -2,6 +2,11 @@
 
 [LumiBase](https://lumibase.dev) in one package — the JS/TS client plus the `lumibase` CLI: generate TypeScript types from a live schema, check that your setup can reach the CMS, scaffold a project.
 
+> **This is the client, not the server.** It talks to a LumiBase CMS you are
+> already running. To run the CMS itself, use the image
+> `ghcr.io/khuepm/lumibase-cms` or the [monorepo](https://github.com/khuepm/lumibase) —
+> see [Deployment overview](https://docs.lumibase.dev/en/docs/deployment/overview).
+
 ```bash
 npm install lumibase
 ```

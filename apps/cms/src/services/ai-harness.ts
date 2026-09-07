@@ -436,6 +436,25 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
    * Requires db/siteId/keys; without them (offline registry) the skill fails
    * with a clear error instead of stubbing.
    */
+  /**
+   * A write handler whose service is absent must FAIL, not return a
+   * success-shaped stub (#453). An unwired dependency and a completed side
+   * effect are otherwise indistinguishable to the approval/audit trail: the
+   * approval resolves "executed", provenance records success, and nothing
+   * happened. Reads may still answer empty offline; writes may not.
+   *
+   * Mirrors the existing DEPLOYMENTS_NOT_CONFIGURED / CDC_FEED_NOT_CONFIGURED
+   * / LLM_NOT_CONFIGURED convention.
+   */
+  function requireService<T>(service: T | undefined, name: string): T {
+    if (!service) {
+      throw new Error(
+        `${name}_NOT_CONFIGURED: this skill performs a write and requires its service to be wired`,
+      );
+    }
+    return service;
+  }
+
   const deploymentService = async () => {
     if (!services.db || !services.siteId || !services.keys) {
       throw new Error('DEPLOYMENTS_NOT_CONFIGURED: deployment skills require a runtime KeyProvider');
@@ -501,11 +520,9 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'schema',
       handler: async (args) => {
         // Connects to: SchemaService.createCollection(input)
-        if (!schemaService) {
-          return { created: true };
-        }
+        const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
         const name = args['name'] as string;
-        const result = await schemaService.createCollection({
+        const result = await schemaServiceRef.createCollection({
           name,
           singleton: (args['singleton'] as boolean) ?? false,
         });
@@ -520,11 +537,9 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'schema',
       handler: async (args) => {
         // Connects to: SchemaService.deleteCollection(name)
-        if (!schemaService) {
-          return { deleted: true };
-        }
+        const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
         const name = args['name'] as string;
-        const result = await schemaService.deleteCollection(name);
+        const result = await schemaServiceRef.deleteCollection(name);
         return { deleted: true, result };
       },
     },
@@ -536,14 +551,12 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'schema',
       handler: async (args) => {
         // Connects to: SchemaService.createField(collectionName, input)
-        if (!schemaService) {
-          return { created: true };
-        }
+        const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
         const collection = args['collection'] as string;
         const name = args['name'] as string;
         const type = args['type'] as string;
         const required = (args['required'] as boolean) ?? false;
-        const result = await schemaService.createField(collection, { name, type, interface: 'input', required });
+        const result = await schemaServiceRef.createField(collection, { name, type, interface: 'input', required });
         return { created: true, field: result };
       },
     },
@@ -555,12 +568,10 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'schema',
       handler: async (args) => {
         // Connects to: SchemaService.deleteField(collectionName, fieldName)
-        if (!schemaService) {
-          return { deleted: true };
-        }
+        const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
         const collection = args['collection'] as string;
         const name = args['name'] as string;
-        const result = await schemaService.deleteField(collection, name);
+        const result = await schemaServiceRef.deleteField(collection, name);
         return { deleted: true, result };
       },
     },
@@ -590,13 +601,11 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'items',
       handler: async (args) => {
         // Connects to: ItemService.create(collectionName, payload)
-        if (!itemService) {
-          return { created: true };
-        }
+        const itemServiceRef = requireService(itemService, 'ITEM_SERVICE');
         const collection = args['collection'] as string;
         const data = (args['data'] as Record<string, unknown>) ?? {};
         const status = args['status'] as string | undefined;
-        const result = await itemService.create(collection, { data, status });
+        const result = await itemServiceRef.create(collection, { data, status });
         return { created: true, item: result };
       },
     },
@@ -608,14 +617,12 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'items',
       handler: async (args) => {
         // Connects to: ItemService.patch(collectionName, id, patch)
-        if (!itemService) {
-          return { updated: true };
-        }
+        const itemServiceRef = requireService(itemService, 'ITEM_SERVICE');
         const collection = args['collection'] as string;
         const id = args['id'] as string;
         const data = (args['data'] as Record<string, unknown>) ?? {};
         const status = args['status'] as string | undefined;
-        const result = await itemService.patch(collection, id, { data, ...(status ? { status } : {}) });
+        const result = await itemServiceRef.patch(collection, id, { data, ...(status ? { status } : {}) });
         return { updated: true, item: result };
       },
     },
@@ -627,12 +634,10 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'items',
       handler: async (args) => {
         // Connects to: ItemService.softDelete(collectionName, id)
-        if (!itemService) {
-          return { deleted: true };
-        }
+        const itemServiceRef = requireService(itemService, 'ITEM_SERVICE');
         const collection = args['collection'] as string;
         const id = args['id'] as string;
-        const result = await itemService.softDelete(collection, id);
+        const result = await itemServiceRef.softDelete(collection, id);
         return { deleted: true, result };
       },
     },
@@ -1131,8 +1136,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       requiredCapabilities: ['schema:create'],
       service: 'schema',
       handler: async (args) => {
-        if (!schemaService) return { created: true };
-        const relation = await schemaService.createRelation(args as never);
+        const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
+        const relation = await schemaServiceRef.createRelation(args as never);
         return { created: true, relation };
       },
     },
@@ -1143,8 +1148,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       requiredCapabilities: ['schema:delete'],
       service: 'schema',
       handler: async (args) => {
-        if (!schemaService) return { deleted: true };
-        await schemaService.deleteRelation(args['id'] as string);
+        const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
+        await schemaServiceRef.deleteRelation(args['id'] as string);
         return { deleted: true, id: args['id'] };
       },
     },
@@ -1167,8 +1172,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { created: true };
-        const role = await accessService.createRole({
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        const role = await accessServiceRef.createRole({
           name: args['name'] as string,
           key: args['key'] as string | undefined,
           description: args['description'] as string | undefined,
@@ -1188,8 +1193,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { deleted: true };
-        return accessService.deleteRole(args['id'] as string);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.deleteRole(args['id'] as string);
       },
     },
 
@@ -1211,8 +1216,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { created: true };
-        const policy = await accessService.createPolicy({
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        const policy = await accessServiceRef.createPolicy({
           name: args['name'] as string,
           key: args['key'] as string | undefined,
           description: args['description'] as string | undefined,
@@ -1232,8 +1237,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { deleted: true };
-        return accessService.deletePolicy(args['id'] as string);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.deletePolicy(args['id'] as string);
       },
     },
 
@@ -1255,8 +1260,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'intents',
       dangerous: true,
       handler: async (args) => {
-        if (!intentService) return { created: true };
-        const intent = await intentService.create(args as never);
+        const intentServiceRef = requireService(intentService, 'INTENT_SERVICE');
+        const intent = await intentServiceRef.create(args as never);
         return { created: true, intent };
       },
     },
@@ -1268,8 +1273,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'intents',
       dangerous: true,
       handler: async (args) => {
-        if (!intentService) return { deleted: true };
-        return intentService.remove(args['id'] as string);
+        const intentServiceRef = requireService(intentService, 'INTENT_SERVICE');
+        return intentServiceRef.remove(args['id'] as string);
       },
     },
 
@@ -1376,8 +1381,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { created: true };
-        return accessService.createApiKey({
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.createApiKey({
           name: args['name'] as string,
           description: args['description'] as string | undefined,
           expiresAt: (args['expiresAt'] as string | null | undefined) ?? undefined,
@@ -1393,8 +1398,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { rotated: true };
-        return accessService.rotateApiKey(args['id'] as string, args['expiresAt'] as string | null | undefined);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.rotateApiKey(args['id'] as string, args['expiresAt'] as string | null | undefined);
       },
     },
 
@@ -1405,8 +1410,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { revoked: true };
-        return accessService.revokeApiKey(args['id'] as string);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.revokeApiKey(args['id'] as string);
       },
     },
 
@@ -1428,8 +1433,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { invited: true };
-        const user = await accessService.inviteUser({
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        const user = await accessServiceRef.inviteUser({
           email: args['email'] as string,
           roleId: args['roleId'] as string | undefined,
         });
@@ -1444,8 +1449,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { updated: true };
-        return accessService.updateUser(args['id'] as string, {
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.updateUser(args['id'] as string, {
           roleId: (args['roleId'] as string | null | undefined),
           status: args['status'] as string | undefined,
         });
@@ -1459,8 +1464,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { removed: true };
-        return accessService.removeUser(args['id'] as string);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.removeUser(args['id'] as string);
       },
     },
 
@@ -1482,8 +1487,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { created: true };
-        const team = await accessService.createTeam({
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        const team = await accessServiceRef.createTeam({
           name: args['name'] as string,
           description: (args['description'] as string | null | undefined) ?? undefined,
         });
@@ -1498,8 +1503,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { deleted: true };
-        return accessService.deleteTeam(args['id'] as string);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.deleteTeam(args['id'] as string);
       },
     },
 
@@ -1510,8 +1515,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { added: true };
-        return accessService.addTeamMember(args['teamId'] as string, args['userId'] as string);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.addTeamMember(args['teamId'] as string, args['userId'] as string);
       },
     },
 
@@ -1522,8 +1527,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!accessService) return { removed: true };
-        return accessService.removeTeamMember(args['teamId'] as string, args['userId'] as string);
+        const accessServiceRef = requireService(accessService, 'ACCESS_SERVICE');
+        return accessServiceRef.removeTeamMember(args['teamId'] as string, args['userId'] as string);
       },
     },
 
@@ -1546,8 +1551,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { upserted: true };
-        const setting = await configService.upsertSetting({
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
+        const setting = await configServiceRef.upsertSetting({
           key: args['key'] as string,
           value: (args['value'] as Record<string, unknown>) ?? {},
           scope: args['scope'] as string | undefined,
@@ -1563,8 +1568,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { deleted: true };
-        return configService.deleteSetting(args['key'] as string);
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
+        return configServiceRef.deleteSetting(args['key'] as string);
       },
     },
 
@@ -1591,8 +1596,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { created: true };
-        const translation = await configService.createTranslation({
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
+        const translation = await configServiceRef.createTranslation({
           language: args['language'] as string,
           namespace: args['namespace'] as string,
           key: args['key'] as string,
@@ -1610,9 +1615,9 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { updated: true };
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
         const { id, ...patch } = args as Record<string, string>;
-        return configService.updateTranslation(String(id), patch);
+        return configServiceRef.updateTranslation(String(id), patch);
       },
     },
 
@@ -1623,8 +1628,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { deleted: true };
-        return configService.deleteTranslation(args['id'] as string);
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
+        return configServiceRef.deleteTranslation(args['id'] as string);
       },
     },
 
@@ -1646,8 +1651,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { created: true };
-        const webhook = await configService.createWebhook({
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
+        const webhook = await configServiceRef.createWebhook({
           name: args['name'] as string,
           url: args['url'] as string,
           actions: args['actions'] as string[] | undefined,
@@ -1667,9 +1672,9 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { updated: true };
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
         const { id, ...patch } = args as Record<string, unknown>;
-        return configService.updateWebhook(id as string, patch);
+        return configServiceRef.updateWebhook(id as string, patch);
       },
     },
 
@@ -1680,8 +1685,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!configService) return { deleted: true };
-        return configService.deleteWebhook(args['id'] as string);
+        const configServiceRef = requireService(configService, 'CONFIG_SERVICE');
+        return configServiceRef.deleteWebhook(args['id'] as string);
       },
     },
 
@@ -1704,8 +1709,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!extensionsService) return { installed: true };
-        const extension = await extensionsService.installExtension({
+        const extensionsServiceRef = requireService(extensionsService, 'EXTENSIONS_SERVICE');
+        const extension = await extensionsServiceRef.installExtension({
           key: args['key'] as string | undefined,
           name: args['name'] as string,
           version: args['version'] as string,
@@ -1726,9 +1731,9 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!extensionsService) return { updated: true };
+        const extensionsServiceRef = requireService(extensionsService, 'EXTENSIONS_SERVICE');
         const { id, ...patch } = args as Record<string, unknown>;
-        return extensionsService.updateExtension(id as string, patch);
+        return extensionsServiceRef.updateExtension(id as string, patch);
       },
     },
 
@@ -1739,8 +1744,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       dangerous: true,
       handler: async (args) => {
-        if (!extensionsService) return { uninstalled: true };
-        return extensionsService.uninstallExtension(args['id'] as string);
+        const extensionsServiceRef = requireService(extensionsService, 'EXTENSIONS_SERVICE');
+        return extensionsServiceRef.uninstallExtension(args['id'] as string);
       },
     },
 
@@ -1918,6 +1923,59 @@ export const CORE_SKILLS: Record<string, SkillDefinition> = buildCoreSkills({});
  *   delegate to ItemService methods.
  * - When services are not provided, handlers return stub responses.
  */
+/**
+ * Records whether a skill handler reached a real service during one execution.
+ *
+ * ## Why this exists
+ *
+ * When an approved skill fails, the harness has to decide whether the approval
+ * is safe to retry. That turns on one question: did the handler get far enough
+ * to change anything?
+ *
+ * A failure BEFORE the first service call — a missing dependency, a validation
+ * error, the kill switch — provably had no side effect, so the approval can go
+ * back to `pending` and be retried freely. A failure AFTER one — a timeout mid
+ * request, a connection drop, an error on the second of two writes — leaves an
+ * unknown amount of work done. Retrying that can repeat a non-idempotent
+ * mutation, which is why such an approval stops at `failed` instead.
+ *
+ * The flag is set by proxying the services rather than by asking each of the
+ * 50+ handlers to declare it. A handler cannot forget to opt in, and a new
+ * skill is covered the day it is written. It deliberately over-reports: a
+ * read-only call marks the execution as touched, so an ambiguous failure is
+ * treated as unsafe. Erring toward "a human should look" is the point.
+ */
+class ServiceTouchTracker {
+  private touched = false;
+
+  get wasTouched(): boolean {
+    return this.touched;
+  }
+
+  reset(): void {
+    this.touched = false;
+  }
+
+  /**
+   * Wraps a service so any method call flips the flag. Non-function properties
+   * pass through untouched, and the returned value is the real one — this only
+   * observes, it never alters behaviour.
+   */
+  wrap<T extends object | undefined>(service: T): T {
+    if (!service) return service;
+    return new Proxy(service as object, {
+      get: (target, prop, receiver) => {
+        const value = Reflect.get(target, prop, receiver);
+        if (typeof value !== 'function') return value;
+        return (...args: unknown[]) => {
+          this.touched = true;
+          return (value as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    }) as T;
+  }
+}
+
 export class AISecureHarness {
   private readonly db: Database;
   private readonly siteId: string;
@@ -1928,6 +1986,8 @@ export class AISecureHarness {
   private readonly itemService?: ItemService;
   private readonly queue?: QueueProvider;
   private readonly notify?: AgentNotifier;
+  /** Set when a skill handler reaches a service; drives retry safety (#453). */
+  private readonly serviceTouch = new ServiceTouchTracker();
 
   constructor(config: AISecureHarnessConfig) {
     this.db = config.db;
@@ -1950,13 +2010,15 @@ export class AISecureHarness {
     // When no services are provided, use the shared CORE_SKILLS object
     // (allows tests to mutate handlers directly on the exported object).
     if (hasService) {
+      // Services are proxied so the harness can tell a failure that never
+      // reached one (safe to retry) from a failure that did (ambiguous).
       this.skills = buildCoreSkills({
-        schemaService: config.schemaService,
-        itemService: config.itemService,
-        accessService: config.accessService,
-        intentService: config.intentService,
-        configService: config.configService,
-        extensionsService: config.extensionsService,
+        schemaService: this.serviceTouch.wrap(config.schemaService),
+        itemService: this.serviceTouch.wrap(config.itemService),
+        accessService: this.serviceTouch.wrap(config.accessService),
+        intentService: this.serviceTouch.wrap(config.intentService),
+        configService: this.serviceTouch.wrap(config.configService),
+        extensionsService: this.serviceTouch.wrap(config.extensionsService),
         db: config.db,
         siteId: config.siteId,
         // Tenant context + KeyProvider enable the deployment skills.
@@ -2571,14 +2633,82 @@ export class AISecureHarness {
         contextMessage: record.context ?? undefined,
       });
     if (existingAgentApproval) {
-      if (existingAgentApproval.status !== 'pending') {
-        return { status: 'denied', message: 'Approval not found or already processed', runId: run.runId };
-      }
       if (existingAgentApproval.expiresAt && existingAgentApproval.expiresAt <= new Date()) {
         return { status: 'denied', message: 'Approval expired', runId: run.runId };
       }
-      // Cancellation wins over a late approval (Req 3.5).
+
+      // CLAIM the decision atomically before doing any work (#453).
+      //
+      // Reading `status === 'pending'` and then acting on it is a
+      // read-then-act window: two decisions (two humans, two agent reviewers,
+      // or one of each) both observe `pending` and both execute, so the side
+      // effect happens twice. The conditional UPDATE below is the
+      // serialization point — the database decides the winner, and exactly one
+      // caller sees a row come back.
+      //
+      // `deciding` is deliberately not a terminal status: if this process dies
+      // mid-execution the row is visibly stuck rather than silently recorded as
+      // approved. `releaseClaim` below returns it to `pending` on every path
+      // that does not complete.
+      const claimed = await this.db
+        .update(agentApprovals)
+        .set({
+          status: 'deciding',
+          decidedBy: userId,
+          // Stamped at CLAIM time, not just at decision time: it is what tells
+          // the sweeper how long a `deciding` row has been held, and there is
+          // no `updatedAt` on this table to infer it from. Overwritten with the
+          // real decision timestamp on the success path, and cleared again by
+          // `releaseClaim` so a released row does not look decided.
+          decidedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(agentApprovals.id, existingAgentApproval.id),
+            eq(agentApprovals.siteId, this.siteId),
+            eq(agentApprovals.status, 'pending'),
+          ),
+        )
+        .returning({ id: agentApprovals.id });
+
+      if (claimed.length === 0) {
+        return { status: 'denied', message: 'Approval not found or already processed', runId: run.runId };
+      }
+    }
+
+    // Everything from here to the end of the decision runs while the claim is
+    // held, so it is wrapped as one unit: any throw releases the claim before
+    // it propagates. Releasing at individual call sites is not enough —
+    // `isCancelled`, `markRunning`, `frozenScopeFor` and `appendToolCall` all
+    // talk to the database, and an ordinary connection error in any of them
+    // used to strand the row in `deciding`, where Mission Control's
+    // `status === 'pending'` inbox cannot see it.
+    try {
+      return await this.runClaimedApproval(record, userId, run, existingAgentApproval);
+    } catch (err) {
+      if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
+      throw err;
+    }
+  }
+
+  /**
+   * The claimed portion of an approved execution.
+   *
+   * Split out so `executeApprovedWithAudit` can wrap the entire claimed
+   * lifetime in one try/catch. Every early return here is a decision that
+   * releases the claim itself; every throw is caught by the caller.
+   */
+  private async runClaimedApproval(
+    record: typeof aiApprovals.$inferSelect,
+    userId: string,
+    run: { goalId: string; runId: string; agentName: string },
+    existingAgentApproval: typeof agentApprovals.$inferSelect | undefined,
+  ): Promise<HarnessExecutionResult> {
+    if (existingAgentApproval) {
+      // Cancellation wins over a late approval (Req 3.5). Checked after the
+      // claim so the row is released rather than left in `deciding`.
       if (await this.runService.isCancelled(run.runId)) {
+        await this.releaseClaim(existingAgentApproval.id);
         return { status: 'denied', message: 'Run was cancelled', runId: run.runId };
       }
       // Resume the parked run; only the approved tool call executes —
@@ -2591,6 +2721,7 @@ export class AISecureHarness {
     const approvalKillSwitch = new KillSwitchService({ db: this.db, siteId: this.siteId });
     const approvalFrozenScope = await approvalKillSwitch.frozenScopeFor(record.agentName);
     if (approvalFrozenScope) {
+      if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
       return {
         status: 'denied',
         message: `frozen: agent runtime is frozen for this ${approvalFrozenScope}`,
@@ -2606,16 +2737,39 @@ export class AISecureHarness {
       approvalId: existingAgentApproval?.id ?? null,
     });
 
-    const result = await this.runSkill(
-      record.skillName,
-      record.arguments as Record<string, unknown>,
-      { runId: run.runId },
-    );
+    // Fresh per execution: a harness instance can run more than one skill, and
+    // a stale flag would misclassify the next failure.
+    this.serviceTouch.reset();
+
+    let result;
+    try {
+      result = await this.runSkill(
+        record.skillName,
+        record.arguments as Record<string, unknown>,
+        { runId: run.runId },
+      );
+    } catch (err) {
+      // A throwing skill must not strand the claim in `deciding`, where the
+      // approval disappears from the operator's pending inbox — but it must
+      // not be blindly re-offered either if it already reached a service.
+      const message = err instanceof Error ? err.message : String(err);
+      if (existingAgentApproval) await this.settleFailedClaim(existingAgentApproval.id, message);
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'failed',
+        error: message,
+        approvalId: existingAgentApproval?.id ?? null,
+        latencyMs: Date.now() - startedAt,
+      });
+      await this.runService.failRun(run.runId, message);
+      return { status: 'denied', message, runId: run.runId, toolCallId };
+    }
 
     if (result.success) {
-      // Guard the transition on status='pending' so a concurrent decide/reject
-      // cannot be silently overwritten (CWE-362/367).
-      await this.db
+      // Commit the legacy record, guarded on `pending` so a concurrent
+      // decide/reject is not silently overwritten (CWE-362/367). The result is
+      // CHECKED: previously it was discarded, so a losing race still reported
+      // `executed` and the two records could disagree about what happened.
+      const legacyCommitted = await this.db
         .update(aiApprovals)
         .set({
           status: 'approved',
@@ -2628,8 +2782,38 @@ export class AISecureHarness {
             eq(aiApprovals.siteId, this.siteId),
             eq(aiApprovals.status, 'pending'),
           ),
+        )
+        .returning({ id: aiApprovals.id });
+
+      if (legacyCommitted.length === 0) {
+        // Another decision (e.g. a reject) took the legacy record while this
+        // skill was running. The side effect already happened and cannot be
+        // undone here, so report it rather than claiming success: the tool call
+        // and run record it, and the claim is released so the mismatch is
+        // visible instead of being papered over with a false `approved`.
+        if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
+        await this.runService.finishToolCall(toolCallId, {
+          status: 'executed',
+          output: result.data,
+          approvalId: existingAgentApproval?.id ?? null,
+          latencyMs: Date.now() - startedAt,
+        });
+        await this.runService.failRun(
+          run.runId,
+          'decision changed while the approved action was executing',
         );
+        return {
+          status: 'denied',
+          message:
+            'Approval was decided by another request while the action was executing; the action ran but the decision was not committed',
+          runId: run.runId,
+          toolCallId,
+        };
+      }
+
       if (existingAgentApproval) {
+        // Guarded on `deciding`: only the claim holder finalizes, so a decision
+        // that arrived through another entrypoint is never clobbered.
         await this.db
           .update(agentApprovals)
           .set({
@@ -2641,6 +2825,7 @@ export class AISecureHarness {
             and(
               eq(agentApprovals.id, existingAgentApproval.id),
               eq(agentApprovals.siteId, this.siteId),
+              eq(agentApprovals.status, 'deciding'),
             ),
           );
       }
@@ -2660,6 +2845,11 @@ export class AISecureHarness {
       };
     }
 
+    // The skill failed. Whether the approval is retryable depends on how far
+    // it got: see settleFailedClaim.
+    const outcome = existingAgentApproval
+      ? await this.settleFailedClaim(existingAgentApproval.id, result.error)
+      : 'pending';
     await this.runService.finishToolCall(toolCallId, {
       status: 'failed',
       error: result.error,
@@ -2667,7 +2857,75 @@ export class AISecureHarness {
       latencyMs: Date.now() - startedAt,
     });
     await this.runService.failRun(run.runId, result.error);
-    return { status: 'denied', message: result.error, runId: run.runId, toolCallId };
+    return {
+      status: 'denied',
+      message:
+        outcome === 'failed'
+          ? `${result.error} (approval marked failed: the action may have partially run; reopen it after verifying)`
+          : result.error,
+      runId: run.runId,
+      toolCallId,
+    };
+  }
+
+  /**
+   * Returns a claimed approval to `pending` so it stays retryable.
+   *
+   * Guarded on `deciding` so it can only ever undo THIS caller's claim: a
+   * decision that landed through another entrypoint in the meantime is left
+   * alone.
+   */
+  /**
+   * Ends a claim after a failure, choosing the outcome by whether the skill
+   * reached a service (#453).
+   *
+   * Not-touched → `pending`: the failure provably happened before any side
+   * effect, so the approval is safe to retry and returns to the operator's
+   * inbox as normal work.
+   *
+   * Touched → `failed`: an unknown amount of work was done. Automatically
+   * re-offering it invites a repeat of a non-idempotent mutation, so it stops
+   * here with the reason recorded, and a human decides via
+   * `POST /agent/approvals/:id/reopen` after checking what actually happened.
+   */
+  private async settleFailedClaim(
+    agentApprovalId: string,
+    reason: string,
+  ): Promise<'pending' | 'failed'> {
+    if (!this.serviceTouch.wasTouched) {
+      await this.releaseClaim(agentApprovalId);
+      return 'pending';
+    }
+
+    await this.db
+      .update(agentApprovals)
+      .set({
+        status: 'failed',
+        decidedAt: new Date(),
+        decisionReason:
+          `execution failed after the skill reached a service; the side effect is unknown. ${reason}`.slice(0, 1000),
+      })
+      .where(
+        and(
+          eq(agentApprovals.id, agentApprovalId),
+          eq(agentApprovals.siteId, this.siteId),
+          eq(agentApprovals.status, 'deciding'),
+        ),
+      );
+    return 'failed';
+  }
+
+  private async releaseClaim(agentApprovalId: string): Promise<void> {
+    await this.db
+      .update(agentApprovals)
+      .set({ status: 'pending', decidedBy: null, decidedAt: null })
+      .where(
+        and(
+          eq(agentApprovals.id, agentApprovalId),
+          eq(agentApprovals.siteId, this.siteId),
+          eq(agentApprovals.status, 'deciding'),
+        ),
+      );
   }
 
   /**
@@ -2678,6 +2936,54 @@ export class AISecureHarness {
     approvalId: string,
     userId: string,
   ): Promise<boolean> {
+    // A reject races the same decision boundary an approve does, so it has to
+    // contend for the SAME row first (#453).
+    //
+    // Previously this took the legacy record first and only then tried
+    // `agent_approvals` guarded on `pending`. Against a concurrent approve —
+    // which has by then claimed that row as `deciding` — the second update
+    // matched nothing and the two records were left disagreeing: legacy
+    // `rejected`, agent `pending`. Real-PostgreSQL concurrency showed this;
+    // the fake-DB suites did not.
+    //
+    // Claiming `agent_approvals` first makes the two decisions contend for one
+    // row, so exactly one of them proceeds.
+    if (this.agentHarnessEnabled) {
+      const claimedForReject = await this.db
+        .update(agentApprovals)
+        .set({
+          status: 'rejected',
+          decidedAt: new Date(),
+          decidedBy: userId,
+        })
+        .where(
+          and(
+            eq(agentApprovals.legacyApprovalId, approvalId),
+            eq(agentApprovals.siteId, this.siteId),
+            eq(agentApprovals.status, 'pending'),
+          ),
+        )
+        .returning({ id: agentApprovals.id });
+
+      // No linked agent approval at all is fine — a legacy-only record still
+      // rejects below. A linked row that is no longer `pending` means another
+      // decision owns it, so this reject loses and must not touch the legacy
+      // record either.
+      if (claimedForReject.length === 0) {
+        const [linked] = await this.db
+          .select({ id: agentApprovals.id })
+          .from(agentApprovals)
+          .where(
+            and(
+              eq(agentApprovals.legacyApprovalId, approvalId),
+              eq(agentApprovals.siteId, this.siteId),
+            ),
+          )
+          .limit(1);
+        if (linked) return false;
+      }
+    }
+
     // Only a still-pending approval can be rejected; the status guard makes the
     // reject atomic w.r.t. a concurrent approve (CWE-362/367). Returns whether
     // this call actually performed the rejection.
@@ -2697,25 +3003,6 @@ export class AISecureHarness {
       )
       .returning({ id: aiApprovals.id });
 
-    if (rejected.length === 0) return false;
-
-    if (this.agentHarnessEnabled) {
-      await this.db
-        .update(agentApprovals)
-        .set({
-          status: 'rejected',
-          decidedAt: new Date(),
-          decidedBy: userId,
-        })
-        .where(
-          and(
-            eq(agentApprovals.legacyApprovalId, approvalId),
-            eq(agentApprovals.siteId, this.siteId),
-            eq(agentApprovals.status, 'pending'),
-          ),
-        );
-    }
-
-    return true;
+    return rejected.length > 0;
   }
 }

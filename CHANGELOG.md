@@ -9,13 +9,74 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Added
+
+- Root `.env.example`. The file was already anticipated — `.gitignore` carried
+  `!.env.example` — but never existed, so both the README and
+  `docs/en/deployment/local-development.md` instructed readers to copy a file
+  that was not there. Documents all sixteen local-development variables and
+  states plainly that nothing auto-loads them (`set -a && source .env`).
+- `pnpm dist-tags:check` / `dist-tags:fix` (`scripts/check-npm-dist-tags.mjs`),
+  reported by the release workflow after publishing. The publish step already
+  chose `--tag next` for a prerelease, and that was not enough: npm assigns
+  `latest` on a package's **first** publish regardless of `--tag`. `lumibase`
+  and `@lumibase/contracts` were both born at `1.0.0-rc.1`, so `npm i lumibase`
+  resolves to a release candidate while `npm i @lumibase/sdk` resolves to
+  `0.26.0` — two generations of the same product. The check distinguishes drift
+  that could be repaired (a stable version exists but `latest` points past it)
+  from the state that cannot (no stable version exists at all), warning rather
+  than failing on the latter. In CI it is **report-only**: epic #331 states
+  dist-tags must not be moved automatically, and #448 records the owner's
+  decision to keep `latest` on the RC for `lumibase`, so retagging stays a
+  deliberate act via `pnpm dist-tags:fix`.
+
 ### Changed
 
+- Rewrote the README quick start as three labelled paths — starter via
+  `create-lumibase`, the full platform via Docker Compose, and a contributor
+  checkout — replacing a monorepo-only snippet that could not work as written
+  (no database step, no environment step, and a "Studio placeholder dashboard"
+  claim several releases out of date).
+- Condensed the README release-policy section: the current release plus the
+  Docker command, with the version-by-version chain left to `CHANGELOG.md`. The
+  `v0.5.0` Content OS foundation and its pillars stay named in the README as the
+  baseline later releases build upon. Merged the duplicate "Core Features" list
+  into "Key Features"; the two had drifted apart and read as two README halves.
+- Clarified the npm front pages for the packages people reach for first:
+  `create-lumibase` now opens by stating it scaffolds a **starter**, not the
+  platform, with a table pointing at the CMS image and the client packages, and
+  explains why the starter listens on `8787` rather than `1989`; `lumibase`
+  states that it is the client for a CMS you already run.
+- The landing page's `SoftwareApplication` JSON-LD reads `softwareVersion` from
+  `apps/landing/package.json` instead of a hardcoded string, so it tracks
+  `pnpm version:sync` rather than drifting at the next bump.
+
+- Removed page-level horizontal scrolling caused by full-bleed landing scenes,
+  preserving vertical sticky scenes and scrolling inside code panels.
 - Redesigned the landing footer with a flower video, oversized LumiBase wordmark,
   responsive navigation, reduced-motion support, and an explicit video pause control.
 - Extended the footer's Literata heading typography across the landing site while
   keeping Archivo for interface text and monospace for code. Included both font
   licenses and links from the license page; no paid font license is required.
+
+### Fixed
+
+- Prerelease tags no longer fail the Pages deployment workflow (#451). The
+  trigger glob `v*.*.*` matches `v1.0.0-rc.1`, but `pages-deploy.yml` validated
+  tags against `vX.Y.Z` only, so every release candidate started the workflow
+  and aborted at tag validation before building anything — a red run for a tag
+  that was never meant to deploy to production. Prereleases now skip the job,
+  using the same `!contains(github.ref_name, '-')` expression `release.yml`
+  applies to `deploy-cloudflare-pages-apps`, so the two cannot disagree about
+  what a prerelease is. Manual dispatch is exempt and its validator accepts
+  prereleases, which makes redeploying a specific RC by hand possible; the `tag`
+  input is now required, since omitting it fell back to the branch name and hit
+  the same validation error despite the input describing that as supported.
+- Corrected the README's link to the AI skills guide (`docs/ai-skills.md` →
+  `docs/en/ai-skills.md`), the only broken internal link in the file.
+- Aligned the version stated on the README, in `package.json`, and in the
+  landing page's structured data. The three had been reporting `v0.26.0`,
+  `1.0.0-rc.1`, and `1.0.0-rc.1` at the same time.
 
 ## [1.0.0-rc.1] - 2026-09-03
 

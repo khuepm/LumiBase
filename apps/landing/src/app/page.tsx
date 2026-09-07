@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+// Read the version rather than restating it: `pnpm version:sync` maintains
+// apps/landing/package.json, and a hardcoded string here drifts at the next
+// bump — it already had, sitting at a different version than the README.
+import { version as lumibaseVersion } from "../../package.json";
 import Hero from "@/components/Hero";
 import ProductSection, { type SectionData } from "@/components/ProductSection";
 import {
@@ -31,7 +35,7 @@ const softwareApplicationJsonLd = {
   operatingSystem: "Cloudflare Workers, Docker, Node.js",
   description:
     "LumiBase is a Content Operating System: an edge-native, AI-native headless CMS where governed agents operate content against declarative SLOs while humans set intent, taste, and accountability.",
-  softwareVersion: "1.0.0-rc.1",
+  softwareVersion: lumibaseVersion,
   codeRepository: "https://github.com/khuepm/lumibase",
   license: "https://lumibase.dev/license",
   isAccessibleForFree: true,

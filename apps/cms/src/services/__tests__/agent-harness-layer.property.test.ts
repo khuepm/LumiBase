@@ -57,6 +57,10 @@ function createHarnessDb(activeSiteId: string, seed: Partial<Record<string, Row[
     legacyApprovals: [...(seed.legacyApprovals ?? [])],
     // Publish gate dependency: no active constitution → gate passes.
     constitutions: [...(seed.constitutions ?? [])],
+    // Catch-all for tables this fake does not model by name (e.g. the
+    // kill-switch's agent_freezes, read on the approval-execution path). An
+    // empty set is the correct answer for all of them here: nothing frozen.
+    unknown: [],
   };
 
   const visible = (key: string) => {
