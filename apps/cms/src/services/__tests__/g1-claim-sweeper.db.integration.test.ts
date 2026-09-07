@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   activity,
   agentApprovals,
@@ -7,11 +7,11 @@ import {
   agentRuns,
   agentToolCalls,
   aiApprovals,
-  createDb,
   sites,
   users,
   type Database,
 } from '@lumibase/database';
+import { connectDbIntegration, hasDbIntegrationUrl } from './g1-db-integration';
 import { AISecureHarness } from '../ai-harness';
 import { CLAIM_STALE_AFTER_MS, sweepStaleApprovalClaims } from '../approval-claim-sweeper';
 
@@ -32,33 +32,19 @@ import { CLAIM_STALE_AFTER_MS, sweepStaleApprovalClaims } from '../approval-clai
  * **Validates: #453 acceptance — interrupted execution is observable and retryable**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_g1_sweep';
 const ADMIN = 'usr_g1_sweep_admin';
 
-describe('G1 stale approval-claim sweeper — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('G1 stale approval-claim sweeper — DB integration', () => {
   let db: Database;
-  let canConnect = false;
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping G1 sweeper DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping G1 sweeper DB test: database not reachable.');
-      return;
-    }
+    db = await connectDbIntegration();
     await db.insert(sites).values({ id: SITE, name: 'G1 sweeper' }).onConflictDoNothing();
     await db.insert(users).values({ id: ADMIN, email: 'g1-sweep@example.dev' }).onConflictDoNothing();
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE));
   });
 
@@ -96,7 +82,6 @@ describe('G1 stale approval-claim sweeper — DB integration', () => {
   }
 
   it('releases a claim abandoned past the stale window', async () => {
-    if (!canConnect) return;
     const { approvalId } = await seedApproval('deciding', CLAIM_STALE_AFTER_MS + 60_000);
 
     const released = await sweepStaleApprovalClaims({ db });
@@ -112,7 +97,6 @@ describe('G1 stale approval-claim sweeper — DB integration', () => {
   });
 
   it('records the release so the interrupted execution is not silent', async () => {
-    if (!canConnect) return;
     const { approvalId } = await seedApproval('deciding', CLAIM_STALE_AFTER_MS + 60_000);
 
     await sweepStaleApprovalClaims({ db });
@@ -129,7 +113,6 @@ describe('G1 stale approval-claim sweeper — DB integration', () => {
   });
 
   it('leaves a fresh claim alone — a live execution is never interrupted', async () => {
-    if (!canConnect) return;
     const { approvalId } = await seedApproval('deciding', 30_000);
 
     const released = await sweepStaleApprovalClaims({ db });
@@ -141,7 +124,6 @@ describe('G1 stale approval-claim sweeper — DB integration', () => {
   });
 
   it('never touches a decided approval, however old', async () => {
-    if (!canConnect) return;
     for (const status of ['approved', 'rejected', 'pending'] as const) {
       const { approvalId } = await seedApproval(status, CLAIM_STALE_AFTER_MS * 10);
 
@@ -155,7 +137,6 @@ describe('G1 stale approval-claim sweeper — DB integration', () => {
   });
 
   it('honours the staleness window it is given', async () => {
-    if (!canConnect) return;
     const { approvalId } = await seedApproval('deciding', 60_000);
 
     // One minute old. Under the default window it is a live execution and must
@@ -171,8 +152,43 @@ describe('G1 stale approval-claim sweeper — DB integration', () => {
     expect(row!.status).toBe('pending');
   });
 
+  it('releases the claim when a pre-execution step throws, not only the skill', async () => {
+    // Fault injection BEFORE the skill runs. `isCancelled`, `markRunning`,
+    // `frozenScopeFor` and `appendToolCall` all query the database after the
+    // claim is taken; an ordinary connection error in any of them used to
+    // strand the row in `deciding`, invisible to the pending inbox. The whole
+    // claimed lifetime is wrapped now, so the claim comes back either way.
+    const { legacyId, approvalId } = await seedApproval('pending', null);
+
+    const deleteCollection = vi.fn();
+    const harness = new AISecureHarness({
+      db,
+      siteId: SITE,
+      schemaService: { deleteCollection } as never,
+      enableAgentHarnessAudit: true,
+    });
+
+    // Fail the first `agent_runs` read the claimed section performs.
+    const runService = (harness as unknown as { runService: { isCancelled: unknown } }).runService;
+    const original = runService.isCancelled;
+    runService.isCancelled = async () => {
+      throw new Error('connection terminated unexpectedly');
+    };
+
+    await expect(harness.executeApproved(legacyId, ADMIN, ['*'])).rejects.toThrow(
+      /connection terminated/,
+    );
+    runService.isCancelled = original;
+
+    // The action never ran, and the approval is actionable again — no sweeper
+    // needed for a fault the process survived.
+    expect(deleteCollection).not.toHaveBeenCalled();
+    const [row] = await db.select().from(agentApprovals)
+      .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, SITE)));
+    expect(row!.status).toBe('pending');
+  });
+
   it('is safe to run twice concurrently — one release, one audit row', async () => {
-    if (!canConnect) return;
     await seedApproval('deciding', CLAIM_STALE_AFTER_MS + 60_000);
 
     const [a, b] = await Promise.all([
@@ -189,7 +205,6 @@ describe('G1 stale approval-claim sweeper — DB integration', () => {
   });
 
   it('makes a swept approval decidable again, and it executes once', async () => {
-    if (!canConnect) return;
     const { legacyId } = await seedApproval('deciding', CLAIM_STALE_AFTER_MS + 60_000);
 
     await sweepStaleApprovalClaims({ db });
@@ -210,7 +225,6 @@ describe('G1 stale approval-claim sweeper — DB integration', () => {
   });
 
   it('releases exactly the stale claims and nothing else', async () => {
-    if (!canConnect) return;
     // A mixed table is what makes the two predicates separable. With a single
     // row, a sweep missing either guard still looks correct; here, dropping the
     // deadline sweeps `fresh`, and dropping the `deciding` guard sweeps the old

@@ -2617,7 +2617,37 @@ export class AISecureHarness {
       if (claimed.length === 0) {
         return { status: 'denied', message: 'Approval not found or already processed', runId: run.runId };
       }
+    }
 
+    // Everything from here to the end of the decision runs while the claim is
+    // held, so it is wrapped as one unit: any throw releases the claim before
+    // it propagates. Releasing at individual call sites is not enough —
+    // `isCancelled`, `markRunning`, `frozenScopeFor` and `appendToolCall` all
+    // talk to the database, and an ordinary connection error in any of them
+    // used to strand the row in `deciding`, where Mission Control's
+    // `status === 'pending'` inbox cannot see it.
+    try {
+      return await this.runClaimedApproval(record, userId, run, existingAgentApproval);
+    } catch (err) {
+      if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
+      throw err;
+    }
+  }
+
+  /**
+   * The claimed portion of an approved execution.
+   *
+   * Split out so `executeApprovedWithAudit` can wrap the entire claimed
+   * lifetime in one try/catch. Every early return here is a decision that
+   * releases the claim itself; every throw is caught by the caller.
+   */
+  private async runClaimedApproval(
+    record: typeof aiApprovals.$inferSelect,
+    userId: string,
+    run: { goalId: string; runId: string; agentName: string },
+    existingAgentApproval: typeof agentApprovals.$inferSelect | undefined,
+  ): Promise<HarnessExecutionResult> {
+    if (existingAgentApproval) {
       // Cancellation wins over a late approval (Req 3.5). Checked after the
       // claim so the row is released rather than left in `deciding`.
       if (await this.runService.isCancelled(run.runId)) {

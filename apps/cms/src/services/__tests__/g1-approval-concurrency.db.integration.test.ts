@@ -1,16 +1,16 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   agentApprovals,
   agentGoals,
   agentRuns,
   agentToolCalls,
   aiApprovals,
-  createDb,
   sites,
   users,
   type Database,
 } from '@lumibase/database';
+import { connectDbIntegration, hasDbIntegrationUrl } from './g1-db-integration';
 import { AISecureHarness } from '../ai-harness';
 
 /**
@@ -29,27 +29,14 @@ import { AISecureHarness } from '../ai-harness';
  * **Validates: #453 acceptance — duplicate/concurrent approve, approve-vs-reject**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_g1_conc';
 const ADMIN = 'usr_g1_conc_admin';
 
-describe('G1 approval concurrency — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('G1 approval concurrency — DB integration', () => {
   let db: Database;
-  let canConnect = false;
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping G1 concurrency DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping G1 concurrency DB test: database not reachable.');
-      return;
-    }
+    db = await connectDbIntegration();
 
     await db.insert(sites).values({ id: SITE, name: 'G1 concurrency' })
       .onConflictDoNothing();
@@ -58,7 +45,6 @@ describe('G1 approval concurrency — DB integration', () => {
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE));
   });
 
@@ -109,11 +95,9 @@ describe('G1 approval concurrency — DB integration', () => {
   }
 
   beforeEach(() => {
-    if (!canConnect) return;
   });
 
   it('runs the approved action exactly once under concurrent approves', async () => {
-    if (!canConnect) return;
     const { legacyId, approvalId } = await seedPendingApproval();
 
     const deleteCollection = vi.fn().mockResolvedValue({ deleted: true });
@@ -139,7 +123,6 @@ describe('G1 approval concurrency — DB integration', () => {
   });
 
   it('runs the action at most once under a concurrent approve and reject', async () => {
-    if (!canConnect) return;
     const { legacyId, approvalId } = await seedPendingApproval();
 
     const deleteCollection = vi.fn().mockResolvedValue({ deleted: true });
@@ -164,7 +147,6 @@ describe('G1 approval concurrency — DB integration', () => {
   });
 
   it('leaves the approval retryable, never stranded in `deciding`, when the skill fails', async () => {
-    if (!canConnect) return;
     const { legacyId, approvalId } = await seedPendingApproval();
 
     const deleteCollection = vi.fn().mockRejectedValue(new Error('SCHEMA_BOOM'));
@@ -180,7 +162,6 @@ describe('G1 approval concurrency — DB integration', () => {
   });
 
   it('keeps both records in step when a reject wins the race', async () => {
-    if (!canConnect) return;
     const { legacyId, approvalId } = await seedPendingApproval();
 
     const deleteCollection = vi.fn().mockResolvedValue({ deleted: true });
@@ -203,7 +184,6 @@ describe('G1 approval concurrency — DB integration', () => {
   });
 
   it('does not replay an approval that was already decided', async () => {
-    if (!canConnect) return;
     const { legacyId } = await seedPendingApproval();
 
     const deleteCollection = vi.fn().mockResolvedValue({ deleted: true });
