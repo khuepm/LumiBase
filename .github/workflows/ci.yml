@@ -533,3 +533,99 @@ jobs:
       # under workerd. See the SCOPE note in the script for what it cannot catch.
       - name: Boot the Worker under workerd
         run: pnpm verify:worker-startup
+
+  scaffold-smoke:
+    name: Scaffolded starters install and typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # #450: the Cloudflare template declared `@cloudflare/workers-types@^4.0.0`
+    # while the `wrangler@^4` beside it had moved its peer to `^5.<date>`, so
+    # every `npm install` of a freshly scaffolded Cloudflare project died with
+    # ERESOLVE. The repo could not see it because no test installed a generated
+    # project — `create-lumibase`'s unit tests cover argument parsing and file
+    # emission, and a peer conflict only exists once something resolves a graph.
+    #
+    # Both package managers are exercised on purpose. npm fails hard on a bad
+    # peer graph and is what catches this class; pnpm only warns and installed
+    # the very same wrong graph with exit 0, so verifying pnpm alone would have
+    # declared #450 fixed while it was not.
+    #
+    # Scoped to changes under the scaffolder: this job reaches the npm registry
+    # four times, and making every unrelated PR depend on that would trade one
+    # flake class for another.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Does this change touch the scaffolder?
+        id: scope
+        shell: bash
+        # Values arrive through env, not `${{ }}` interpolated into the script.
+        # A branch name is attacker-controllable on a fork PR, and splicing it
+        # into a shell line is the standard Actions injection hole.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --quiet origin "$BASE_REF"
+            base="origin/$BASE_REF"
+          else
+            base="$PUSH_BEFORE"
+          fi
+          # A first push or a force-push leaves no usable base — `before` comes
+          # through as forty zeros. Run the smoke rather than skip it: a false
+          # run costs minutes, a false skip lets the regression through.
+          #
+          # `cat-file -e`, not `rev-parse --verify`: the latter accepts any
+          # 40-hex string as syntactically valid and exits 0 for objects that do
+          # not exist, so it would wave the all-zero SHA straight through into a
+          # `git diff` that then fails the job under `set -e`.
+          if ! git cat-file -e "${base}^{commit}" 2> /dev/null; then
+            echo "no usable base ref; running the smoke"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$base"...HEAD | grep -q '^packages/create-lumibase/'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "packages/create-lumibase is untouched; skipping the install smoke"
+          fi
+
+      - name: Setup Node
+        if: steps.scope.outputs.changed == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        if: steps.scope.outputs.changed == 'true'
+        run: corepack enable
+
+      - name: Setup pnpm
+        if: steps.scope.outputs.changed == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+          run_install: false
+
+      - name: Install dependencies
+        if: steps.scope.outputs.changed == 'true'
+        run: pnpm install --frozen-lockfile
+
+      # The scaffolder's bin shim loads `dist/`, so the smoke needs a build of
+      # the working tree — the point is to test these templates, not the ones
+      # already published to npm.
+      - name: Build create-lumibase
+        if: steps.scope.outputs.changed == 'true'
+        run: pnpm --filter create-lumibase build
+
+      - name: Smoke-test both templates with npm and pnpm
+        if: steps.scope.outputs.changed == 'true'
+        run: pnpm --filter create-lumibase smoke

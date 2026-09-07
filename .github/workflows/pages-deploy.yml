@@ -1,5 +1,17 @@
 name: Deploy Pages
 
+# Stable production deployment for the four Cloudflare Pages sites, plus a
+# manual redeploy path for a chosen tag.
+#
+# The trigger glob `v*.*.*` matches `v1.0.0-rc.1`, so a release candidate used
+# to start this workflow and then hit a `^v[0-9]+\.[0-9]+\.[0-9]+$` validator
+# that rejects prereleases — a red run for a tag that was never meant to deploy
+# here (issue #451, run 33715778982). The trigger and the validator disagreed
+# about what a deployable tag is. Prereleases now **skip** the job instead of
+# failing it, matching how `release.yml` gates its own `deploy-pages` matrix.
+#
+# A manual dispatch may still target a prerelease deliberately, which is the one
+# case a redeploy tool is most needed for, so the validator accepts both shapes.
 on:
   push:
     tags:
@@ -7,26 +19,34 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to deploy (for example v0.4.2). Defaults to the selected ref."
-        required: false
+        description: "Release tag to deploy (for example v0.26.0 or v1.0.0-rc.1). Required — a branch name is not deployable."
+        required: true
         type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: pages-deploy-${{ github.event.inputs.tag || github.ref_name }}
+  group: pages-deploy-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 env:
   NODE_VERSION: 24
   WRANGLER_SEND_METRICS: "false"
-  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   deploy:
     name: Build and deploy Pages apps
     runs-on: ubuntu-latest
+    # Prerelease tags skip this stable production workflow (#451). Same
+    # expression `release.yml` uses on its `deploy-cloudflare-pages-apps` and
+    # `deploy-cloudflare-worker-cms` jobs, so the two files cannot drift apart on
+    # what "prerelease" means. A manual dispatch is exempt: choosing an RC by
+    # hand is an explicit act, not an accident.
+    # Only the `github` context is legal in a job-level `if` — an `env` lookup
+    # here invalidates the whole workflow file (see backlog B31).
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '-') }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -53,10 +73,13 @@ jobs:
           git submodule update --init --depth=1 apps/marketplace
           git config --global --unset url."https://x-access-token:${MARKETPLACE_SUBMODULE_TOKEN}@github.com/lumibase-ai/".insteadOf
 
+      # Accepts prereleases (`v1.0.0-rc.1`) as well as stable tags. The previous
+      # stable-only pattern made a release candidate unpublishable here even by
+      # hand, which is the one case a manual redeploy tool is most needed for.
       - name: Validate release tag
         run: |
-          if ! [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "RELEASE_TAG must match vX.Y.Z, got: $RELEASE_TAG" >&2
+          if ! [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::tag must match vX.Y.Z or vX.Y.Z-prerelease, got: '$RELEASE_TAG'. Branch names are not deployable — pass a tag." >&2
             exit 1
           fi
 

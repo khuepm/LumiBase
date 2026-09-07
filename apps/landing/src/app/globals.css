@@ -90,6 +90,9 @@ html {
 body {
   color: var(--foreground);
   background: transparent;
+  /* Full-bleed scenes use 100vw, which includes the vertical scrollbar.
+     Clip their excess without creating a scroll container for sticky scenes. */
+  overflow-x: clip;
 }
 
 /* ── Page backdrop — warp starfield + vignette ────────────────────
