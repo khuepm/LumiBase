@@ -232,6 +232,42 @@ describe('adminPathGuard — bypass behaviour', () => {
     const body = (await res.json()) as { ok: boolean; tag: string | null };
     expect(body.tag).toBe('STUDIO_HTML');
   });
+
+  // Docker deployment where the CMS serves the Studio itself. Vite builds with
+  // `base: '/'`, so the shell asks for `/assets/…` absolutely regardless of
+  // which path served it — without this bypass the browser gets the canonical
+  // 404 for every chunk and the Studio renders nothing.
+  it.each(['/assets/index-abc123.js', '/assets/nested/chunk.css', '/sw.js'])(
+    'bypasses the Studio build output at %s without reading state',
+    async (path) => {
+      const { db, state } = makeFakeDb({
+        state: 'initialized',
+        adminPath: '/lumi-7f3a9c',
+      });
+      const app = buildApp(db);
+      const res = await app.request(path);
+      expect(res.status).toBe(200);
+      // Prefix bypass fires before the cache lookup, same as /api/*.
+      expect(state.selectCount).toBe(0);
+    },
+  );
+
+  it('does not widen the bypass to lookalike root paths', async () => {
+    // `/assetsomething` and `/sw.json` must stay Studio scope, or the bypass
+    // becomes a hole rather than a doorway. `/assets` itself does bypass — the
+    // trailing-slash prefix treats the bare segment as part of the scope, the
+    // same way `/api` does — and `serve-studio.ts` answers it with a 404
+    // because a directory is not a servable asset.
+    const { db } = makeFakeDb({
+      state: 'initialized',
+      adminPath: '/lumi-7f3a9c',
+    });
+    const app = buildApp(db);
+    for (const path of ['/assetsomething', '/sw.json', '/assets.js']) {
+      const res = await app.request(path);
+      expect(res.status, `${path} must not bypass`).toBe(404);
+    }
+  });
 });
 
 // ── 404 cases (Req 5.1, 5.6, 5.7) ──────────────────────────────────────

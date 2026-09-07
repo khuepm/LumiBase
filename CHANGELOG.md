@@ -11,6 +11,45 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 
+- **The Docker image now serves the Studio.** Until this release no shipped
+  artifact contained it: neither compose file referenced the Studio, the image
+  copied only `apps/cms/dist`, and the CMS served no HTML — so a self-hoster
+  following the docs reached `GET /setup` and got a `404`, while
+  `docs/en/deployment/overview.md` claimed Docker served the Studio from the
+  same origin. That sentence is now true rather than deleted.
+
+  Where it answers: `/setup` and `/<adminPath>/…` return the SPA shell,
+  `/assets/*` and `/sw.js` return the build output, and `/`, `/admin`, `/studio`
+  and every other path still return the indistinguishable `404`. The Hide-Login
+  guarantee (admin-setup-wizard Req 5.1/5.6) is unchanged: an admin path that
+  differs by one character still 404s, and the bundle refuses to embed the admin
+  path at build time. The Property 7 indistinguishability test was re-run and
+  passes. What the change concedes is narrow — someone holding a valid
+  content-hashed filename can tell a Studio is hosted on the origin, but not
+  where the login is.
+
+  Two optional variables: `LUMIBASE_STUDIO_DIST` overrides the bundle location
+  (default `./studio`), and `LUMIBASE_SERVE_STUDIO=false` runs API-only. Turn it
+  off when the Studio is also on Pages in front of this CMS, because two copies
+  can drift to different versions. A missing bundle degrades to API-only with a
+  log line, which is the previous behaviour; a *misconfigured*
+  `LUMIBASE_STUDIO_DIST` warns loudly rather than degrading silently.
+
+  Cloudflare is unaffected — Workers has no filesystem, so the Studio stays a
+  Pages deployment there, and `serve-studio` is imported only by `serve.ts` so
+  `@hono/node-server/serve-static` cannot reach the Workers bundle.
+
+  Two notes for anyone extending this. Serving the SPA needs a catch-all, and a
+  naive one also answers `/api/v1/nonexistent` with `index.html` and a `200`;
+  mounting order does not prevent it, because Hono returns control to the
+  catch-all after `app.route('/api/v1', api)` matches without finalizing. An
+  explicit reserved-prefix list is the guard, and it is tested. Separately, a
+  missing file under `/assets/` returns `404` rather than the shell — a
+  deliberate divergence from Cloudflare Pages, which answers `200` with HTML and
+  hands the browser markup where it expected JavaScript. That divergence found a
+  real bug on its first run: `index.html` references a `favicon.svg` that does
+  not exist in the repository, which Pages has been masking with a `200`.
+
 - Root `.env.example`. The file was already anticipated — `.gitignore` carried
   `!.env.example` — but never existed, so both the README and
   `docs/en/deployment/local-development.md` instructed readers to copy a file

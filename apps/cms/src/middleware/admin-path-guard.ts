@@ -124,6 +124,27 @@ const NEVER_STUDIO_SCOPE_PREFIXES: ReadonlyArray<string> = [
   '/setup',
   '/test-auth',
   '/.well-known/',
+  // Studio build output, for the Docker deployment where the CMS serves the
+  // SPA itself (`serve-studio.ts`). `apps/studio/dist` emits exactly three
+  // entries at its root — `assets/`, `index.html`, `sw.js` — and Vite builds
+  // with `base: '/'`, so the shell references `/assets/…` absolutely no matter
+  // which path served it. Without these two the browser fetches the bundle and
+  // gets the canonical 404, i.e. a Studio that renders nothing.
+  //
+  // What this concedes: someone holding a valid content-hashed filename can
+  // confirm a Studio is hosted on this origin. They cannot learn *where* the
+  // login is — the admin path is server-side state and the build refuses to
+  // embed it (`assertNoAdminPathEnv`) — and `/`, `/admin`, `/studio` still
+  // return the canonical 404, so the Hide-Login guarantee of Req 5.1/5.6 is
+  // unchanged. Filenames are only discoverable from `index.html`, which is
+  // served at `/setup` (already bypassed above) or under the admin path.
+  //
+  // The alternative, kept on the shelf: build the Studio with `base: './'` and
+  // serve it only under the admin path, where `/<adminPath>/assets/…` already
+  // passes this guard and nothing here needs to change. That concedes nothing
+  // but moves the risk into the Studio build and the Pages deployment.
+  '/assets/',
+  '/sw.js',
 ];
 
 // ── module-level state cache ────────────────────────────────────────────
