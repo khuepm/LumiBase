@@ -11,7 +11,7 @@ import {
   users,
   type Database,
 } from '@lumibase/database';
-import { connectDbIntegration, hasDbIntegrationUrl } from './g1-db-integration';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 import { AISecureHarness } from '../ai-harness';
 import { CLAIM_STALE_AFTER_MS, sweepStaleApprovalClaims } from '../approval-claim-sweeper';
 
@@ -39,7 +39,7 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 stale approval-claim sweeper — DB in
   let db: Database;
 
   beforeAll(async () => {
-    db = await connectDbIntegration();
+    db = await connectDbIntegration('g1-claim-sweeper');
     await db.insert(sites).values({ id: SITE, name: 'G1 sweeper' }).onConflictDoNothing();
     await db.insert(users).values({ id: ADMIN, email: 'g1-sweep@example.dev' }).onConflictDoNothing();
   });

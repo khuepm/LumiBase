@@ -10,7 +10,7 @@ import {
   users,
   type Database,
 } from '@lumibase/database';
-import { connectDbIntegration, hasDbIntegrationUrl } from './g1-db-integration';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 import { AISecureHarness } from '../ai-harness';
 
 /**
@@ -36,7 +36,7 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 approval concurrency — DB integratio
   let db: Database;
 
   beforeAll(async () => {
-    db = await connectDbIntegration();
+    db = await connectDbIntegration('g1-approval-concurrency');
 
     await db.insert(sites).values({ id: SITE, name: 'G1 concurrency' })
       .onConflictDoNothing();
