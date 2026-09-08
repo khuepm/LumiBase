@@ -11,6 +11,23 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Changed
 
+- **EN/VI documentation parity is now enforced on the pairs a PR changes.** The
+  parity check already ran on pull requests but was report-only (`|| true`), so
+  nothing stopped the backlog from growing. Enforcing it repo-wide is not an
+  option either — 48 of 148 pairs still fail, mostly legacy machine-translated
+  ones — so the gate is scoped to what the PR actually touched: a contributor
+  answers for the pairs they edited, and the inherited backlog is retired on
+  its own schedule.
+  The changed-file list deliberately **includes deletions and renames**.
+  Excluding them left a hole wide enough to bypass the gate entirely: a PR
+  deleting only `docs/vi/x.md` orphaned the EN side, supplied no changed doc,
+  and the gate exited 0. A pair is now checked whenever either locale appears
+  in the diff — one surviving locale fails, both locales deleted passes, since
+  retiring a doc in both languages is legitimate and must not need an override.
+  Contributor-facing only; no runtime code changed.
+
+### Changed
+
 - Redesigned the landing footer with a flower video, oversized LumiBase wordmark,
   responsive navigation, reduced-motion support, and an explicit video pause control.
 - Extended the footer's Literata heading typography across the landing site while
