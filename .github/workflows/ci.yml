@@ -472,3 +472,64 @@ jobs:
 
       - name: Lint workflow files
         run: ./actionlint
+
+  worker-bundle:
+    name: Worker bundle excludes Docker adapters
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # `pnpm build` runs `wrangler deploy --dry-run`, which bundles the Worker
+    # WITHOUT instantiating it. A module that throws at top level therefore
+    # builds green and then fails when Cloudflare starts it. That is exactly what
+    # happened: BullMQ 6 arrived through `@lumibase/runtime`'s barrel, its
+    # Postgres `sql-loader` resolves its own directory at module scope, and every
+    # deploy was rejected with validation error 10021 while CI stayed green.
+    #
+    # The reliable fence is bundle composition, not a local boot: with the Docker
+    # adapters re-added, `wrangler dev` still booted fine — the throw only
+    # happens in a deployed Worker, which has no `file:///` stack frames for
+    # BullMQ's fallback to find. So the bundle assertion below is the gate; the
+    # startup probe is a complementary check for eagerly-thrown errors.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Build all three Worker environments: the alias that keeps the Docker
+      # subtree out is declared once at the top level of wrangler.toml, so a
+      # future env block overriding it would only show up here.
+      - name: Build Worker (default env) and assert bundle composition
+        run: |
+          pnpm --filter @lumibase/cms build
+          pnpm verify:worker-bundle
+
+      - name: Build Worker (staging) and assert bundle composition
+        run: |
+          pnpm --filter @lumibase/cms build:staging
+          pnpm verify:worker-bundle
+
+      - name: Build Worker (production) and assert bundle composition
+        run: |
+          pnpm --filter @lumibase/cms build:production
+          pnpm verify:worker-bundle
+
+      # Complementary, and deliberately last: proves the module graph evaluates
+      # under workerd. See the SCOPE note in the script for what it cannot catch.
+      - name: Boot the Worker under workerd
+        run: pnpm verify:worker-startup
