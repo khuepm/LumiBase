@@ -98,6 +98,14 @@ export const dbIntegrationUrl: string | undefined = resolveDbIntegrationUrl();
 export const hasDbIntegrationUrl: boolean = dbIntegrationUrl !== undefined;
 
 /**
+ * Query parameters whose value is a credential rather than a connection option.
+ *
+ * Shared by both redactors below: a DSN carrying `?password=…` must be masked
+ * whether it arrives as the configured URL or embedded in a driver's error text.
+ */
+const SECRET_PARAM = /^(password|passwd|pwd|token|secret|key|sslpassword|apikey|api_key)$/i;
+
+/**
  * Strip credentials out of a connection string so it can appear in a failure
  * message.
  *
@@ -116,9 +124,8 @@ export function redactConnectionString(raw: string): string {
 
   if (url.password) url.password = '***';
 
-  const SECRET_PARAMS = /^(password|passwd|pwd|token|secret|key|sslpassword|apikey|api_key)$/i;
   for (const name of [...url.searchParams.keys()]) {
-    if (SECRET_PARAMS.test(name)) url.searchParams.set(name, '***');
+    if (SECRET_PARAM.test(name)) url.searchParams.set(name, '***');
   }
 
   return url.toString();
@@ -133,9 +140,21 @@ export function redactConnectionString(raw: string): string {
  * embedded URL is cheaper than auditing every driver's error shapes.
  */
 export function redactSecretsInMessage(message: string): string {
-  return message.replace(
-    /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+):([^\s/@]+)@/gi,
-    (_full, scheme: string, user: string) => `${scheme}${user}:***@`,
+  return (
+    message
+      // `scheme://user:password@host` — mask the userinfo password.
+      .replace(
+        /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+):([^\s/@]+)@/gi,
+        (_full, scheme: string, user: string) => `${scheme}${user}:***@`,
+      )
+      // `?password=…` / `&token=…` — a DSN can carry the credential in the
+      // query string instead, with no userinfo segment to catch it. Masking
+      // stops at the next separator so the rest of the message survives.
+      .replace(
+        /([?&])([a-z_][a-z0-9_.-]*)=([^\s&#]+)/gi,
+        (full, sep: string, name: string, _value: string) =>
+          SECRET_PARAM.test(name) ? `${sep}${name}=***` : full,
+      )
   );
 }
 
@@ -153,6 +172,20 @@ function describeCause(cause: unknown): string {
  *
  * A distinct type so the tripwire and the harness's own tests can assert on the
  * failure mode rather than on message text.
+ *
+ * ## Why the original error is not attached as `cause`
+ *
+ * Redacting only this message is not enough. `new Error(msg, { cause })` keeps
+ * the driver's own error object reachable, and every reporter that renders an
+ * error chain — `util.inspect`, vitest's own output, most log shippers — prints
+ * that nested error verbatim. The parent message would read `target:
+ * postgresql://u:***@h/db` while the line under it printed the real password
+ * the driver put in its own message.
+ *
+ * So the cause is folded into this message through {@link describeCause} (name,
+ * driver code and a redacted message — the parts worth diagnosing) and the
+ * object itself is dropped. `cause` stays `undefined`, which is what keeps the
+ * redaction true for the whole rendered chain rather than only for `.message`.
  */
 export class DbIntegrationUnreachableError extends Error {
   constructor(
@@ -160,13 +193,14 @@ export class DbIntegrationUnreachableError extends Error {
     readonly target: string,
     cause: unknown,
   ) {
+    // Deliberately no `{ cause }`: see the note above. `describeCause` carries
+    // the diagnosable part across, redacted.
     super(
       `DB integration suite "${label}" could not reach the database.\n` +
         `  DATABASE_URL is set, so these tests were requested and did NOT run.\n` +
         `  target: ${target}\n` +
         `  cause:  ${describeCause(cause)}\n` +
         `  Start a database and re-run, or unset DATABASE_URL to skip DB suites.`,
-      { cause },
     );
     this.name = 'DbIntegrationUnreachableError';
   }

@@ -1,3 +1,4 @@
+import { inspect } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   redactConnectionString,
@@ -20,6 +21,8 @@ import {
  */
 
 const UNREACHABLE = 'postgresql://lumibase:s3cr3t@127.0.0.1:9999/nonexistent';
+/** Same unreachable target, credential in the query string instead of userinfo. */
+const UNREACHABLE_QUERY = 'postgresql://127.0.0.1:9999/nonexistent?password=s3cr3t&sslmode=require';
 
 /**
  * Load a fresh copy of the harness under a chosen `DATABASE_URL`.
@@ -104,6 +107,27 @@ describe('redactSecretsInMessage', () => {
     expect(out).toContain('lumibase:***@');
   });
 
+  it('masks a credential carried in the DSN query string', () => {
+    // A DSN can put the password in the query string, with no userinfo segment
+    // for the first pattern to catch. Reviewed case: this string came back
+    // completely unchanged.
+    const out = redactSecretsInMessage('driver failed postgresql://h/db?password=s3cr3t');
+    expect(out).not.toContain('s3cr3t');
+    expect(out).toBe('driver failed postgresql://h/db?password=***');
+  });
+
+  it('masks every secret-looking parameter but keeps connection options', () => {
+    const out = redactSecretsInMessage(
+      'postgresql://h/db?sslmode=require&password=s3cr3t&token=tok123&application_name=cms',
+    );
+    expect(out).not.toContain('s3cr3t');
+    expect(out).not.toContain('tok123');
+    // Diagnosable, non-secret options must survive — that is the point of
+    // printing the target at all.
+    expect(out).toContain('sslmode=require');
+    expect(out).toContain('application_name=cms');
+  });
+
   it('passes through text with no credentials', () => {
     expect(redactSecretsInMessage('connect ECONNREFUSED 127.0.0.1:9999')).toBe(
       'connect ECONNREFUSED 127.0.0.1:9999',
@@ -144,5 +168,40 @@ describe('connectDbIntegration', () => {
     // the diagnostic for a suite that forgot the gate. It still must not pass
     // quietly.
     await expect(harness.connectDbIntegration('harness-self-test')).rejects.toThrow(/skipIf/);
+  });
+
+  it('keeps the password out of the fully rendered error chain, not just .message', async () => {
+    // Asserting on `.message` alone passed while the raw driver error still
+    // travelled along as `{ cause }` — and every reporter that renders a chain
+    // (util.inspect, vitest, log shippers) printed that nested error verbatim.
+    const harness = await loadHarnessWith(UNREACHABLE);
+    const error = await harness.connectDbIntegration('chain').catch((e: unknown) => e);
+
+    const rendered = inspect(error, { depth: 10 });
+    expect(rendered).not.toContain('s3cr3t');
+    // Still diagnosable: host and port survive redaction.
+    expect(rendered).toContain('127.0.0.1:9999');
+    // The mechanism, asserted directly so re-attaching a cause fails here.
+    expect((error as Error).cause).toBeUndefined();
+  });
+
+  it('keeps a query-string password out of the rendered chain too', async () => {
+    const harness = await loadHarnessWith(UNREACHABLE_QUERY);
+    const error = await harness.connectDbIntegration('chain-query').catch((e: unknown) => e);
+
+    const rendered = inspect(error, { depth: 10 });
+    expect(rendered).not.toContain('s3cr3t');
+    expect(rendered).toContain('127.0.0.1:9999');
+  });
+
+  it('leaks nothing through JSON or String rendering either', async () => {
+    // Two more ways a reporter can render an error. Neither must expose it.
+    const harness = await loadHarnessWith(UNREACHABLE);
+    const error = await harness.connectDbIntegration('chain-json').catch((e: unknown) => e);
+
+    expect(String(error)).not.toContain('s3cr3t');
+    expect(JSON.stringify(error, Object.getOwnPropertyNames(error as object))).not.toContain(
+      's3cr3t',
+    );
   });
 });
