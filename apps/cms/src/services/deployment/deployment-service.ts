@@ -1,9 +1,10 @@
 import { and, desc, eq, gte, inArray, ne } from 'drizzle-orm';
 import { deploymentTargets, deployments, type Database } from '@lumibase/database';
-import type { KeyProvider } from '@lumibase/runtime';
+import type { KeyProvider, RateLimiterProvider } from '@lumibase/runtime';
 import { AuditLogger } from '../../modules/audit/logger';
 import { getProvider, TERMINAL_STATUSES, type DeploymentRef, type ProviderTarget } from './providers';
 import { decryptToken, encryptToken } from './token-vault';
+import { checkDeployTriggerRate, type DeployTriggerRateLimit } from './trigger-rate-limit';
 import '../deployment/providers/index';
 
 /**
@@ -19,6 +20,15 @@ export interface DeploymentServiceDeps {
   db: Database;
   siteId: string;
   keys: KeyProvider;
+  /**
+   * Runtime rate limiter for the per-target trigger brake (Req 9.5). Request
+   * paths pass `c.get('runtime').rateLimiter`; callers without a runtime
+   * context (flow handlers, AI harness, queue workers) may omit it and get the
+   * per-isolate fallback from `trigger-rate-limit.ts`.
+   */
+  rateLimiter?: RateLimiterProvider;
+  /** Override the default trigger budget (tests / operator tuning). */
+  triggerRateLimit?: DeployTriggerRateLimit;
 }
 
 export interface CreateTargetInput {
@@ -235,6 +245,34 @@ export class DeploymentService {
         return recent;
       }
     }
+    // Hard per-target rate limit (Req 9.5). Deliberately placed AFTER the
+    // coalescing branch and BEFORE the Provider call, so budget is spent only
+    // by triggers that actually hit the Provider API. Applies to every
+    // `triggerSource`: the budget protects the tenant's Provider account, and
+    // a runaway flow or agent burns build minutes exactly like a runaway
+    // script would. Auto triggers stay well under it via `coalesceWindowMs`.
+    // Rejection happens before any insert — no `deployments` row is created.
+    const rate = await checkDeployTriggerRate(
+      this.deps.rateLimiter,
+      this.deps.siteId,
+      targetId,
+      this.deps.triggerRateLimit,
+    );
+    if (!rate.allowed) {
+      this.audit('deployment.trigger.rate_limited', {
+        targetId,
+        provider: target.provider,
+        source,
+        retryAfterSeconds: rate.retryAfterSeconds,
+      });
+      throw new DeploymentError(
+        'RATE_LIMITED',
+        'Too many deploy triggers for this target. Please try again later.',
+        undefined,
+        rate.retryAfterSeconds,
+      );
+    }
+
     let ref: DeploymentRef | null = null;
     let errorMessage: string | null = null;
     try {
@@ -401,6 +439,8 @@ export class DeploymentError extends Error {
     public readonly code: string,
     message: string,
     public readonly deployment?: typeof deployments.$inferSelect,
+    /** Back-off hint surfaced on 429 responses (`RATE_LIMITED`). */
+    public readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'DeploymentError';
