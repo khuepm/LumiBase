@@ -119,7 +119,13 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags origin "${{ github.base_ref }}"
-          git diff --name-only --diff-filter=d \
+          # NO --diff-filter=d: a deleted path is exactly the case the gate has
+          # to see. Excluding deletions meant a PR removing only docs/vi/x.md
+          # orphaned the EN side and handed the gate an empty list, which
+          # exited 0. Renames are the same hole, via the vanished old path.
+          # The gate decides what to do per pair: both sides gone is a
+          # deliberate retirement and passes, one side left fails.
+          git diff --name-only \
             "$(git merge-base HEAD FETCH_HEAD)" HEAD > /tmp/changed-files.txt
           node scripts/docs-i18n/gate-changed-parity.mjs /tmp/changed-files.txt
 
