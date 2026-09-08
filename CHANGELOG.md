@@ -9,6 +9,21 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Fixed
+
+- **A DB integration suite pointed at a database that is not there no longer
+  reports as passing.** All 20 `*.db.integration.test.ts` suites gated
+  themselves with `if (!canConnect) return;` — and an early return is a
+  *passing* test, so a run against a closed port produced `20 passed / 76
+  passed / exit 0`, byte-for-byte indistinguishable from a real run. It had
+  already misled: three consecutive "3/3 pass" runs during earlier work had
+  executed nothing after the session's Postgres died. The two situations now
+  differ in outcome, because they differ in intent: `DATABASE_URL` absent means
+  nobody asked for DB tests, so the suite reports **skipped**; `DATABASE_URL`
+  set but unreachable means someone asked and did not get them, so the suite
+  **fails** loudly. A source-scan tripwire keeps the old shape from returning.
+  Contributor-facing only — no runtime code changed.
+
 ### Changed
 
 - Redesigned the landing footer with a flower video, oversized LumiBase wordmark,
