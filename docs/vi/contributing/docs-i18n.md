@@ -1,14 +1,14 @@
 ---
 title: Docs i18n Sync
 sourceLang: en
-version: 3
-lastUpdated: 2026-08-02T17:29:27.319Z
+version: 4
+lastUpdated: 2026-09-08T21:06:29.319Z
 translatedFrom: en
-sourceHash: fe0bd18530a46592
+sourceHash: dec76e7ef1afaebb
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T17:29:27.319Z
-codeVerifiedHash: fe0bd18530a46592
+codeVerified: 2026-09-08T21:06:29.319Z
+codeVerifiedHash: dec76e7ef1afaebb
 codeVerifiedClaims: 10
 ---
 
@@ -126,10 +126,17 @@ Khi không có API key, `--apply` thoát với mã `2` và chỉ bạn sang
 `.github/workflows/docs-i18n-sync.yml` chạy khi có thay đổi dưới `docs/**` hoặc
 `scripts/docs-i18n/**`:
 
-- **Pull requests:** chạy detect + kiểm code-reference + kiểm parity, tất cả đều
-  report-only. Upload các report dưới dạng artifact; không ghi gì cả. Report-only vì
-  corpus hiện có vẫn còn finding — cửa thực sự chặn hôm nay là `stamp-pair.mjs`, không
-  bản dịch mới nào qua được nó mà chưa được kiểm.
+- **Pull requests:** chạy detect + kiểm code-reference + kiểm parity, rồi một
+  **gate có hiệu lực chặn, giới hạn trong những cặp mà PR này đã sửa**. Lượt chạy
+  parity trên toàn repo vẫn report-only — backlog thừa hưởng vẫn đang đỏ, và chặn
+  những PR chưa từng chạm vào nó là phạt sai người — nhưng một cặp bạn đã sửa thì
+  phải nhất quán, không thì check đỏ. Các report được upload artifact **trước** khi
+  gate chạy, nên một lần chạy đỏ vẫn để lại report cho người phải đi sửa.
+  Gate đọc danh sách file thay đổi **bao gồm cả file bị xoá và bị rename**: một cặp
+  chỉ còn một locale sống sót thì đỏ (đúng ca orphan), còn một cặp bị xoá ở **cả
+  hai** locale thì xanh, vì cho một doc về hưu là chuyện hợp lệ. Cùng với
+  `stamp-pair.mjs` — không bản dịch mới nào qua được mà chưa được kiểm — nay là hai
+  hàng rào, chứ không còn là một report chỉ để tham khảo.
 - **Push lên `main`:** preservation + version stamp, rồi commit trở lại. Nó
   **không** dịch, và số cặp còn tồn đọng được in vào job summary để backlog luôn
   nhìn thấy được.
