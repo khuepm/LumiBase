@@ -9,7 +9,57 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Security
+
+- **Inbound deployment webhooks now require a real provider signature.** The
+  `POST /api/v1/deployments/webhook/:provider` receiver verifies HMAC/JWS over
+  the raw request bytes using Web Crypto (so the same code runs on Workers and
+  Node): **Vercel** HMAC-SHA1 hex in `x-vercel-signature`, **Netlify** a compact
+  JWS/HS256 in `x-webhook-signature`. Comparison is constant-time and folds the
+  length difference into the result, so a malformed or wrong-length signature
+  returns `401 INVALID_SIGNATURE` rather than raising a `500`. The shared secret
+  is read from the per-site setting `deployment.webhook.<provider>` (value
+  `{ "secret": "…" }`) — never from a request header — and an unconfigured
+  secret fails closed.
+  For Netlify, verifying the signature was not sufficient on its own: the body
+  is not part of a JWS signing input, so an authentic JWS captured from one
+  notification could authenticate a **different** body. The payload must now
+  also bind to the bytes on the wire — its `sha256` claim is compared against
+  the digest of the raw body (a payload that is itself the raw body is also
+  accepted, since that binds too). Rejected requests write nothing, so a forged
+  webhook can no longer move a deployment's status.
+  Response shapes are unchanged; status still converges through the 30s poller
+  if webhooks are not configured at all.
+
+  **Upgrade note.** This is a behaviour change for anyone who relied on the
+  earlier presence-only guard, which accepted a request as long as *some*
+  signature header was present. Configure the provider's webhook secret under
+  the per-site setting `deployment.webhook.<provider>` and use the same value in
+  the Vercel/Netlify notification config; until you do, inbound webhooks are
+  rejected with `401` (deployment status keeps syncing via the poller, so
+  nothing breaks silently).
+
 ### Added
+
+- **Deploy triggers are now rate-limited per target.** `POST /api/v1/deployments/targets/:id/deploy`
+  was gated on "site admin" and "target is active" — who may trigger, never how
+  often — so anything holding admin credentials (a script, a stuck flow, an
+  agent loop) could keep starting provider-billed builds until the tenant's
+  Vercel/Netlify account throttled or its build minutes were gone. A two-tier
+  fixed window now caps each target at 5 triggers / 60 s and 30 / 3600 s,
+  keyed on `siteId` **and** target id so no two targets share a budget and no
+  site can spend another's. Over the limit the request is rejected with `429`
+  `{ "errors": [{ "code": "RATE_LIMITED", "retryAfterSeconds": n }] }` plus
+  `Retry-After`; no `deployments` row is written and the attempt is audited as
+  `deployment.trigger.rate_limited`.
+  The check sits after the coalescing branch and before the outbound provider
+  call, so budget is spent only by triggers that actually reach the provider —
+  a coalesced flow deploy costs nothing. It applies to every trigger source
+  rather than manual ones alone: the cap protects the tenant's provider account
+  regardless of who asked, and flow auto-deploys already stay far below it via
+  `coalesceWindowMs`. It runs on the runtime rate limiter (Redis `INCR` on
+  Docker, cache/isolate on Workers) and **fails open** when that limiter is
+  unreachable, since a limiter outage must not take deploys down.
 
 - **The Docker image now serves the Studio.** Until this release no shipped
   artifact contained it: neither compose file referenced the Studio, the image

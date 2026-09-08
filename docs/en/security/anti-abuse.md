@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:21:22.765Z
+version: 2
+lastUpdated: 2026-09-07T15:23:17.206Z
 sourceLang: en
-contentHash: e1112e0c60482f60
-codeVerified: 2026-08-02T19:21:22.765Z
-codeVerifiedHash: e1112e0c60482f60
-codeVerifiedClaims: 70
+contentHash: 6029fc9470a0c3a9
+codeVerified: 2026-09-07T15:23:17.206Z
+codeVerifiedHash: 6029fc9470a0c3a9
+codeVerifiedClaims: 72
 ---
 
 # Anti-Abuse Mechanisms & Best Practices
@@ -90,6 +90,14 @@ with `Retry-After`, and never let a denied request extend the window.
   site** so one tenant cannot exhaust another's budget. Returns `429 RATE_LIMITED`
   with `X-RateLimit-*` headers. Backed by the runtime cache (KV on Workers); it
   **fails open** and is not a precise quota.
+- **Deploy trigger limiter** — `apps/cms/src/services/deployment/trigger-rate-limit.ts`
+  caps deploy triggers **per target** (`rl:deploy:<tier>:<siteId>:<targetId>`) at
+  5 / 60 s burst + 30 / 3600 s sustained, on top of the admin gate: each accepted
+  trigger starts a provider-billed build, so the budget protects the tenant's
+  provider account from a runaway script, flow or agent. Enforced for every
+  `triggerSource`; returns `429 RATE_LIMITED` + `Retry-After` and creates no
+  `deployments` row. Uses the runtime `RateLimiterProvider` (Redis `INCR` on
+  Docker) and **fails open** when the limiter is unreachable.
 - **Policy** — login thresholds live in the `settings` table
   (`login_security_policy`) with a `STANDARD_LOCKOUT_POLICY` fallback, so
   operators tune limits without redeploying.

@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 1
-lastUpdated: 2026-08-02T19:21:22.765Z
+version: 2
+lastUpdated: 2026-09-07T15:23:17.206Z
 sourceLang: en
 translatedFrom: en
-sourceHash: e1112e0c60482f60
+sourceHash: 6029fc9470a0c3a9
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:21:22.765Z
-codeVerifiedHash: e1112e0c60482f60
-codeVerifiedClaims: 70
+codeVerified: 2026-09-07T15:23:17.206Z
+codeVerifiedHash: 6029fc9470a0c3a9
+codeVerifiedClaims: 72
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -94,6 +94,14 @@ kèm `Retry-After`, và không bao giờ để một request bị từ chối k�
   tenant không thể vắt cạn ngân sách của tenant khác. Trả `429 RATE_LIMITED` kèm
   header `X-RateLimit-*`. Dựa trên runtime cache (KV trên Workers); nó **fail
   open** và không phải quota chính xác.
+- **Limiter trigger deploy** — `apps/cms/src/services/deployment/trigger-rate-limit.ts`
+  giới hạn trigger deploy **theo từng target** (`rl:deploy:<tier>:<siteId>:<targetId>`)
+  ở mức 5 / 60 s (burst) + 30 / 3600 s (sustained), nằm trên gate admin: mỗi
+  trigger được nhận đều khởi động một build do provider tính phí, nên budget này
+  bảo vệ tài khoản provider của tenant khỏi script, flow hay agent chạy loạn. Áp
+  cho mọi `triggerSource`; trả `429 RATE_LIMITED` + `Retry-After` và không tạo
+  dòng `deployments` nào. Dùng `RateLimiterProvider` của runtime (Redis `INCR` ở
+  Docker) và **fail open** khi limiter không truy cập được.
 - **Policy** — ngưỡng login nằm trong bảng `settings` (`login_security_policy`)
   với fallback `STANDARD_LOCKOUT_POLICY`, nên operator chỉnh giới hạn mà không cần
   redeploy.
