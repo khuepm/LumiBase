@@ -125,7 +125,7 @@ jobs:
           # exited 0. Renames are the same hole, via the vanished old path.
           # The gate decides what to do per pair: both sides gone is a
           # deliberate retirement and passes, one side left fails.
-          git diff --name-only \
+          git diff --name-only --no-renames \
             "$(git merge-base HEAD FETCH_HEAD)" HEAD > /tmp/changed-files.txt
           node scripts/docs-i18n/gate-changed-parity.mjs /tmp/changed-files.txt
 

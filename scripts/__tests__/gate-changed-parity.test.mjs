@@ -38,6 +38,13 @@ const treeOf = (...present) => {
   return (locale, rel) => set.has(`${locale}/${rel}`);
 };
 
+// Git hooks export GIT_DIR/GIT_INDEX_FILE and other repository selectors.
+// A cwd alone does not isolate a fixture: inherited selectors can reinitialize
+// or change the parent checkout. Remove every Git override in child processes.
+const fixtureEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
+);
+
 test('maps both locales of a doc to one rel', () => {
   const rels = relsFromChangedFiles('docs/en/features/x.md\ndocs/vi/features/x.md\n');
   assert.deepEqual(rels, ['features/x.md']);
@@ -127,12 +134,43 @@ test('a one-sided rename fails on the orphaned old path', () => {
   );
 });
 
+test('real rename output retains the old orphan when the destination pair already exists', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-parity-rename-'));
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', env: fixtureEnv });
+  try {
+    git('init', '-q', '-b', 'main');
+    git('config', 'user.email', 'test@example.com');
+    git('config', 'user.name', 'test');
+    for (const file of ['en/old.md', 'vi/old.md', 'vi/new.md']) {
+      const full = path.join(repo, 'docs', file);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, '# Same document\n');
+    }
+    git('add', '-A');
+    git('commit', '-qm', 'base');
+    const base = git('rev-parse', 'HEAD').trim();
+    git('mv', 'docs/en/old.md', 'docs/en/new.md');
+    git('commit', '-qm', 'move EN');
+    const exists = (locale, rel) => fs.existsSync(path.join(repo, 'docs', locale, rel));
+    // Rename detection reports only the destination, which is a valid pair.
+    const missed = classifyPairs(relsFromChangedFiles(git('diff', '--name-only', '-M', base, 'HEAD')), exists);
+    assert.equal(missed.halfDeleted.length, 0);
+    // Execute the workflow's actual diff command rather than inventing a list.
+    const workflow = fs.readFileSync(new URL('../../.github/workflows/docs-i18n-sync.yml', import.meta.url), 'utf8');
+    const flags = workflow.match(/git diff (--name-only[^\n\\]*)/)[1].trim().split(/\s+/);
+    const seen = classifyPairs(relsFromChangedFiles(git('diff', ...flags, base, 'HEAD')), exists);
+    assert.deepEqual(seen.halfDeleted.map(({ rel }) => rel), ['old.md']);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test("git diff without --diff-filter=d reports deletions and renames", () => {
   // The workflow's own command, against a real repo. This is the assertion
   // that would have caught the bug: with --diff-filter=d the deleted path is
   // absent from this list, the gate receives nothing, and it exits 0.
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-parity-git-'));
-  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', env: fixtureEnv });
 
   try {
     git('init', '-q', '-b', 'main');
