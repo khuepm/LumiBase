@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 3
-lastUpdated: 2026-09-01T19:25:55.158Z
+version: 4
+lastUpdated: 2026-09-08T21:00:34.356Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 859fe974c6e95bce
+sourceHash: 4575c3d9c04845cc
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-01T19:25:55.158Z
-codeVerifiedHash: 859fe974c6e95bce
-codeVerifiedClaims: 7
+codeVerified: 2026-09-08T21:00:34.356Z
+codeVerifiedHash: 4575c3d9c04845cc
+codeVerifiedClaims: 9
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -139,38 +139,48 @@ describe('POST /api/v1/ai/chat', () => {
 
 ### DB-backed integration tests
 
-Một số suite chạy SQL thật đối với một Postgres live (drift→goal transition, fingerprint dedupe, partial unique index, tenant scoping). Chúng tuân theo pattern `DATABASE_URL` dùng chung: khi biến này không được set hoặc database không kết nối được, suite sẽ **tự skip** kèm một cảnh báo để `pnpm test` chỉ chạy local và CI không có database vẫn giữ trạng thái xanh.
+Một số suite chạy SQL thật đối với một Postgres live (drift→goal transition, fingerprint dedupe, partial unique index, tenant scoping). Chúng dùng chung một harness, `apps/cms/src/__tests__/helpers/db-harness.ts`, và harness này phân biệt được điều mà pattern `canConnect` cũ không phân biệt nổi:
+
+| Tình huống | Kết quả | Vì sao |
+|---|---|---|
+| `DATABASE_URL` vắng | **skipped** | Không ai yêu cầu chạy test DB. |
+| `DATABASE_URL` có nhưng không kết nối được | **failed** | Có người yêu cầu test DB và đã không nhận được. |
+
+Dòng thứ hai mới là điểm chính. Convention trước đây chặn mọi hook và test bằng `if (!canConnect) return`, mà **một early return là một test PASS** — nên một lần chạy đối với database không tồn tại vẫn báo `20 passed / 76 passed / exit 0`, không cách nào phân biệt với một lần chạy thật. Hãy viết suite như sau:
 
 ```typescript
-const TEST_DATABASE_URL = process.env.DATABASE_URL
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness'
 
-describe('My DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('My DB integration', () => {
   let db: Database
-  let canConnect = false
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) return
-    try {
-      db = createDb(TEST_DATABASE_URL)
-      await db.execute(sql`SELECT 1`)
-      canConnect = true
-    } catch {
-      canConnect = false
-    }
+    // Throws if the database does not answer — the suite fails, never skips.
+    db = await connectDbIntegration('my-suite')
+  })
+
+  afterAll(async () => {
+    if (!db) return // beforeAll may have thrown
+    // …cleanup
   })
 
   beforeEach(async () => {
-    if (!canConnect) return
     // Reset shared tables; cascade from `sites` clears tenant-scoped rows.
     await db.delete(sites).where(/* this suite's site ids */)
   })
 
-  it.runIf(TEST_DATABASE_URL)('does the thing', async () => {
-    if (!canConnect) return
-    // …
+  it('does the thing', async () => {
+    // No connection guard: reaching here means the database answered.
   })
 })
 ```
+
+Từ đó có hai quy tắc:
+
+- Đặt `describe.skipIf(!hasDbIntegrationUrl)` ở describe **cấp cao nhất**, để vitest in ra một `skipped` thật thay vì đếm những assertion chưa từng chạy.
+- Không dùng `if (!canConnect) return` ở bất cứ đâu. Một tripwire quét source (`db-integration-guard.wiring.test.ts`) làm đỏ build khi thấy shape cũ, và khi thấy bất kỳ `*.db.integration.test.ts` nào không import harness — một suite chỉ có thể *quên* harness, mà không test hành vi nào quan sát được việc đó.
+
+Một `describe` cấp cao nhất không có gate chỉ được phép khi nó không chạm tới database (ví dụ một helper thuần nằm cạnh suite); tripwire assert đúng điều này.
 
 Chạy chúng đối với một database local:
 
@@ -187,7 +197,9 @@ DATABASE_URL="postgres://lumibase:lumibase_dev@localhost:5433/lumibase" \
   pnpm -F @lumibase/cms test
 ```
 
-> **File parallelism.** Khi `DATABASE_URL` được set, `apps/cms/vitest.config.ts` tự động tắt `fileParallelism`. Các integration suite dùng chung một database và reset các bảng dùng chung trong `beforeEach`, nên chạy song song các file của chúng có thể khiến reset của một file xóa sạch fixture của file khác giữa chừng test. Không có database, các test tự skip và phần còn lại của suite chạy hoàn toàn song song.
+> **Một `DATABASE_URL` cũ nay sẽ fail.** Nếu shell của bạn đang export `DATABASE_URL` trỏ tới một database không còn chạy, các suite DB sẽ **đỏ** thay vì xanh một cách im lặng. Đó là chủ ý — đúng cái failure mà harness này ra đời để loại bỏ. Bỏ biến đó đi để skip suite DB, hoặc bật database lên.
+
+> **File parallelism.** Khi `DATABASE_URL` được set, `apps/cms/vitest.config.ts` tự động tắt `fileParallelism`. Các integration suite dùng chung một database và reset các bảng dùng chung trong `beforeEach`, nên chạy song song các file của chúng có thể khiến reset của một file xóa sạch fixture của file khác giữa chừng test. Không có database, các test được skip và phần còn lại của suite chạy hoàn toàn song song.
 
 ## Test conventions
 

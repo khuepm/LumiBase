@@ -1,11 +1,11 @@
 ---
-version: 3
-lastUpdated: 2026-09-01T19:25:55.158Z
+version: 4
+lastUpdated: 2026-09-08T21:00:34.356Z
 sourceLang: en
-contentHash: 859fe974c6e95bce
-codeVerified: 2026-09-01T19:25:55.158Z
-codeVerifiedHash: 859fe974c6e95bce
-codeVerifiedClaims: 7
+contentHash: 4575c3d9c04845cc
+codeVerified: 2026-09-08T21:00:34.356Z
+codeVerifiedHash: 4575c3d9c04845cc
+codeVerifiedClaims: 9
 ---
 
 # Testing Guide
@@ -133,38 +133,48 @@ describe('POST /api/v1/ai/chat', () => {
 
 ### DB-backed integration tests
 
-Some suites exercise real SQL against a live Postgres (drift→goal transitions, fingerprint dedupe, partial unique indexes, tenant scoping). They follow the shared `DATABASE_URL` pattern: when the variable is unset or the database is unreachable, the suite **self-skips** with a warning so local-only `pnpm test` and CI without a database stay green.
+Some suites exercise real SQL against a live Postgres (drift→goal transitions, fingerprint dedupe, partial unique indexes, tenant scoping). They share one harness, `apps/cms/src/__tests__/helpers/db-harness.ts`, and it draws a distinction the older `canConnect` pattern could not:
+
+| Situation | Outcome | Why |
+|---|---|---|
+| `DATABASE_URL` absent | **skipped** | Nobody asked for DB tests. |
+| `DATABASE_URL` set but unreachable | **failed** | Someone asked for DB tests and did not get them. |
+
+That second row is the point. The previous convention gated every hook and test with `if (!canConnect) return`, and **an early return is a passing test** — so a run against a database that was not there reported `20 passed / 76 passed / exit 0`, indistinguishable from a real run. Write suites like this instead:
 
 ```typescript
-const TEST_DATABASE_URL = process.env.DATABASE_URL
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness'
 
-describe('My DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('My DB integration', () => {
   let db: Database
-  let canConnect = false
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) return
-    try {
-      db = createDb(TEST_DATABASE_URL)
-      await db.execute(sql`SELECT 1`)
-      canConnect = true
-    } catch {
-      canConnect = false
-    }
+    // Throws if the database does not answer — the suite fails, never skips.
+    db = await connectDbIntegration('my-suite')
+  })
+
+  afterAll(async () => {
+    if (!db) return // beforeAll may have thrown
+    // …cleanup
   })
 
   beforeEach(async () => {
-    if (!canConnect) return
     // Reset shared tables; cascade from `sites` clears tenant-scoped rows.
     await db.delete(sites).where(/* this suite's site ids */)
   })
 
-  it.runIf(TEST_DATABASE_URL)('does the thing', async () => {
-    if (!canConnect) return
-    // …
+  it('does the thing', async () => {
+    // No connection guard: reaching here means the database answered.
   })
 })
 ```
+
+Two rules follow from it:
+
+- `describe.skipIf(!hasDbIntegrationUrl)` on the **top-level** describe, so vitest prints a real `skipped` instead of counting assertions that never ran.
+- No `if (!canConnect) return` anywhere. A source-scan tripwire (`db-integration-guard.wiring.test.ts`) fails the build on the old shape, and on any `*.db.integration.test.ts` that does not import the harness — a suite can only *forget* the harness, which no behavioural test can observe.
+
+An ungated top-level `describe` is allowed only when it touches no database at all (e.g. a pure helper living beside the suite); the tripwire asserts exactly that.
 
 Run them against a local database:
 
@@ -181,7 +191,9 @@ DATABASE_URL="postgres://lumibase:lumibase_dev@localhost:5433/lumibase" \
   pnpm -F @lumibase/cms test
 ```
 
-> **File parallelism.** When `DATABASE_URL` is set, `apps/cms/vitest.config.ts` disables `fileParallelism` automatically. Integration suites share one database and reset shared tables in `beforeEach`, so running their files concurrently lets one file's reset wipe another's fixtures mid-test. Without a database the tests self-skip and the rest of the suite runs fully parallel.
+> **A stale `DATABASE_URL` now fails.** If your shell exports `DATABASE_URL` for a database that is no longer running, DB suites go **red** rather than quietly green. That is deliberate — it is the failure this harness exists to remove. Unset the variable to skip DB suites, or start the database.
+
+> **File parallelism.** When `DATABASE_URL` is set, `apps/cms/vitest.config.ts` disables `fileParallelism` automatically. Integration suites share one database and reset shared tables in `beforeEach`, so running their files concurrently lets one file's reset wipe another's fixtures mid-test. Without a database the tests skip and the rest of the suite runs fully parallel.
 
 ## Test conventions
 
