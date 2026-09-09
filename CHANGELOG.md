@@ -26,6 +26,19 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   retiring a doc in both languages is legitimate and must not need an override.
   Contributor-facing only; no runtime code changed.
 
+### Security
+
+- **Bumped `nodemailer` to `9.1.1` and the tree-wide `js-yaml` override to
+  `^4.3.2`**, clearing the two high-severity advisories that began failing the
+  dependency-audit gate. Both are denial-of-service issues reachable from
+  attacker-shaped input: [GHSA-2x7j-588g-ccc2](https://github.com/advisories/GHSA-2x7j-588g-ccc2)
+  (quadratic time in nodemailer's `addressparser` on a crafted address list)
+  and [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh)
+  (`maxTotalMergeKeys` failing to bound CPU for empty YAML merge sources,
+  reached via `gray-matter` in `apps/docs`). Both fixes stay inside the current
+  major, so no API surface changes; the `gray-matter` patch still applies,
+  since js-yaml 4.3.2 keeps the `load`/`dump` API it targets.
+
 ### Changed
 
 - Redesigned the landing footer with a flower video, oversized LumiBase wordmark,
@@ -3428,4 +3441,3 @@ Initial tagged release.
 [0.2.1]: https://github.com/khuepm/lumibase/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/khuepm/lumibase/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/khuepm/lumibase/releases/tag/v0.1.0
-
