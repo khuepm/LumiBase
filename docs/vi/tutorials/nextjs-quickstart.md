@@ -1,14 +1,14 @@
 ---
 title: Next.js Quickstart — Hiển thị nội dung LumiBase
-version: 1
-lastUpdated: 2026-08-02T19:05:15.812Z
+version: 2
+lastUpdated: 2026-09-09T02:48:55.566Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 36f30e29b1d22d3e
+sourceHash: 98c93683315019ed
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:05:15.812Z
-codeVerifiedHash: 36f30e29b1d22d3e
+codeVerified: 2026-09-09T02:48:55.566Z
+codeVerifiedHash: 98c93683315019ed
 codeVerifiedClaims: 14
 ---
 
@@ -54,7 +54,7 @@ Bạn sẽ:
 2. Hoàn tất setup wizard và tạo collection `posts` với vài item đã publish.
 3. Tạo API key dài hạn và xác nhận `siteId`.
 4. Dựng app Next.js nhỏ để đọc các bài viết đó — đầu tiên bằng `fetch` thuần, sau đó bằng
-   `@lumibase/sdk`.
+   SDK chính thức, cài qua `lumibase`.
 
 Kết thúc, bạn có trang `http://localhost:3000` liệt kê các bài viết nằm trong LumiBase.
 
@@ -109,7 +109,7 @@ pnpm install
 docker compose -f docker/docker-compose.yml up -d
 
 # Database migrations
-pnpm -F @lumibase/database db:migrate
+pnpm db:migrate
 
 # Start CMS API (:1989) + Studio (:2026)
 pnpm dev
@@ -339,31 +339,46 @@ Bạn sẽ thấy các bài viết đã xuất bản. Đây là hình ảnh ph�
 
 SDK giúp loại bỏ các code mẫu (dựng URL, headers, mã hóa bộ lọc) và trả về kết quả có type.
 
+Cài `lumibase` — package này re-export SDK và kèm luôn CLI `lumibase`, nên chỉ cần
+một runtime dependency là đủ cho cả hai. `@lumibase/sdk` vẫn được hỗ trợ như
+package ở tầng thấp hơn nếu bạn chỉ muốn client mà không cần CLI; các import bên
+dưới giống nhau ở cả hai cách. Xem
+[cây quyết định](../getting-started.md#which-path-do-i-need) nếu bạn chưa rõ mình
+đang đi theo hướng nào.
+
 ```bash
-npm install @lumibase/sdk
+npm install lumibase
 ```
 
 ```ts
 // lib/lumibase.ts
-import { createClient } from '@lumibase/sdk'
+import { createLumiClient } from 'lumibase'
 
-export const lumibase = createClient({
+export const lumibase = createLumiClient({
   url: process.env.LUMIBASE_API_URL!,
   siteId: process.env.LUMIBASE_SITE_ID!,
   token: process.env.LUMIBASE_TOKEN!, // static API key — skips the login flow
 })
 ```
 
+Client là lớp transport, không phải façade: mỗi thao tác là một hàm **command**
+riêng mà bạn truyền vào `client.request(...)`, nhờ vậy bundle vẫn
+tree-shakeable. `readItems` trả về envelope `{ data, meta }`, nên hãy đọc `.data`
+để lấy danh sách bản ghi.
+
 ```tsx
 // app/page.tsx
+import { readItems } from 'lumibase'
 import { lumibase } from '@/lib/lumibase'
 
 export default async function Home() {
-  const posts = await lumibase.items('posts').readMany({
-    filter: { status: { _eq: 'published' } },
-    sort: ['-created_at'],
-    limit: 20,
-  })
+  const { data: posts } = await lumibase.request(
+    readItems('posts', {
+      filter: { status: { _eq: 'published' } },
+      sort: ['-created_at'],
+      limit: 20,
+    }),
+  )
   return (
     <main style={{ maxWidth: 640, margin: '2rem auto', fontFamily: 'system-ui' }}>
       <h1>Posts from LumiBase</h1>
@@ -478,7 +493,7 @@ Tutorial này được **ghim vào phiên bản LumiBase tối thiểu** và ch�
 - `GET /api/v1/items/:collection` bộ lọc chấp nhận **cả** `filter=<JSON>` và
   dạng ngoặc vuông `filter[field][_op]=value` (JSON ưu tiên hơn nếu gửi cả hai); `sort=<csv>`
 - `GET /api/v1/site` trả về tenant đang hoạt động; id mặc định `__default__`
-- `@lumibase/sdk` `createClient({ url, siteId, token }).items(c).readMany(...)`
+- `lumibase` (hoặc `@lumibase/sdk`) `createLumiClient({ url, siteId, token }).request(readItems(c, ...))`
 - Giới hạn tốc độ trả về `429 RATE_LIMITED` kèm `Retry-After`; mục "Production & security" bao phủ thêm `503 RATE_LIMIT_UNAVAILABLE` và
   header `Deprecation`/`Sunset`, cả hai **được thêm từ `0.24.0`** (luồng cốt lõi ở trên vẫn hoạt động không đổi từ `0.9.0`)
 

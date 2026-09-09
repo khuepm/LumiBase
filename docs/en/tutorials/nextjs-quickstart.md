@@ -1,11 +1,11 @@
 ---
 title: Next.js Quickstart — Display LumiBase Content
-version: 1
-lastUpdated: 2026-08-02T19:05:15.812Z
+version: 2
+lastUpdated: 2026-09-09T02:48:55.566Z
 sourceLang: en
-contentHash: 36f30e29b1d22d3e
-codeVerified: 2026-08-02T19:05:15.812Z
-codeVerifiedHash: 36f30e29b1d22d3e
+contentHash: 98c93683315019ed
+codeVerified: 2026-09-09T02:48:55.566Z
+codeVerifiedHash: 98c93683315019ed
 codeVerifiedClaims: 14
 ---
 
@@ -52,7 +52,7 @@ You will:
 2. Complete the setup wizard and create a `posts` collection with a few published items.
 3. Mint a long-lived API key and find your `siteId`.
 4. Build a tiny Next.js app that reads those posts — first with plain `fetch`, then with
-   the official `@lumibase/sdk`.
+   the official SDK, installed as `lumibase`.
 
 By the end you'll have a working `http://localhost:3000` page listing posts that live in
 LumiBase.
@@ -108,7 +108,7 @@ pnpm install
 docker compose -f docker/docker-compose.yml up -d
 
 # Database migrations
-pnpm -F @lumibase/database db:migrate
+pnpm db:migrate
 
 # Start CMS API (:1989) + Studio (:2026)
 pnpm dev
@@ -340,31 +340,46 @@ You should see your published posts. Here's roughly what renders:
 The SDK removes the boilerplate (URL building, headers, filter encoding) and returns typed
 results.
 
+Install `lumibase` — it re-exports the SDK and ships the `lumibase` CLI, so one
+runtime dependency covers both. `@lumibase/sdk` remains supported as the
+lower-level package if you want the client without the CLI; the imports below are
+identical either way. See the
+[decision tree](../getting-started.md#which-path-do-i-need) if you are unsure
+which path you are on.
+
 ```bash
-npm install @lumibase/sdk
+npm install lumibase
 ```
 
 ```ts
 // lib/lumibase.ts
-import { createClient } from '@lumibase/sdk'
+import { createLumiClient } from 'lumibase'
 
-export const lumibase = createClient({
+export const lumibase = createLumiClient({
   url: process.env.LUMIBASE_API_URL!,
   siteId: process.env.LUMIBASE_SITE_ID!,
   token: process.env.LUMIBASE_TOKEN!, // static API key — skips the login flow
 })
 ```
 
+The client is a transport, not a façade: operations are separate **command**
+functions you hand to `client.request(...)`, which keeps the bundle
+tree-shakeable. `readItems` returns the `{ data, meta }` envelope, so read
+`.data` for the rows.
+
 ```tsx
 // app/page.tsx
+import { readItems } from 'lumibase'
 import { lumibase } from '@/lib/lumibase'
 
 export default async function Home() {
-  const posts = await lumibase.items('posts').readMany({
-    filter: { status: { _eq: 'published' } },
-    sort: ['-created_at'],
-    limit: 20,
-  })
+  const { data: posts } = await lumibase.request(
+    readItems('posts', {
+      filter: { status: { _eq: 'published' } },
+      sort: ['-created_at'],
+      limit: 20,
+    }),
+  )
   return (
     <main style={{ maxWidth: 640, margin: '2rem auto', fontFamily: 'system-ui' }}>
       <h1>Posts from LumiBase</h1>
@@ -504,7 +519,7 @@ the table above and re-verify — see DoD §5):
 - `GET /api/v1/items/:collection` filter accepts **both** `filter=<JSON>` and
   `filter[field][_op]=value` bracket form (JSON wins if both sent); `sort=<csv>`
 - `GET /api/v1/site` returns the active tenant; default id `__default__`
-- `@lumibase/sdk` `createClient({ url, siteId, token }).items(c).readMany(...)`
+- `lumibase` (or `@lumibase/sdk`) `createLumiClient({ url, siteId, token }).request(readItems(c, ...))`
 - Rate limiting returns `429 RATE_LIMITED` with `Retry-After`; the "Production &
   security" section additionally covers `503 RATE_LIMIT_UNAVAILABLE` and
   `Deprecation`/`Sunset` headers, both **added in `0.24.0`** (the core flow above still
