@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-09-03T03:08:24.413Z
+version: 4
+lastUpdated: 2026-09-09T02:48:53.968Z
 sourceLang: en
 translatedFrom: en
-sourceHash: d282d0c44f29ea3c
+sourceHash: a226cf176b001643
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-03T03:08:24.413Z
-codeVerifiedHash: d282d0c44f29ea3c
+codeVerified: 2026-09-09T02:48:53.968Z
+codeVerifiedHash: a226cf176b001643
 codeVerifiedClaims: 18
 ---
 
@@ -129,5 +129,6 @@ Bước health gọi endpoint `/health` không cần xác thực (`apps/cms/src/
 ## Liên quan
 
 - [SDK — typegen](../sdk/typegen.md) — API lập trình nằm sau `lumibase types`
-- [Bắt đầu](../getting-started.md) — chạy một CMS để CLI trỏ vào
+- [Bắt đầu — chọn hướng nào?](../getting-started.md#which-path-do-i-need) — starter vs platform vs consumer client, và `lumibase` nằm ở đâu
+- [Phát triển cục bộ](../deployment/local-development.md) — chạy CMS/Studio mà CLI này trỏ vào
 - [npm publishing](../release/npm-publishing.md) — cách package được phát hành

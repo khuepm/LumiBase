@@ -1,8 +1,8 @@
 ---
-version: 3
-lastUpdated: 2026-09-03T03:28:27.348Z
+version: 4
+lastUpdated: 2026-09-09T02:49:01.933Z
 sourceLang: en
-contentHash: 8cf1cd4a4d0711d2
+contentHash: 6936a8fe0bd36606
 ---
 
 # Getting Started — Scaffold a new project with `create-lumibase`
@@ -11,14 +11,69 @@ contentHash: 8cf1cd4a4d0711d2
 empty directory you run a single command and get a ready-to-run project,
 similar to `create-next-app` or `create-vite`.
 
-> **Two different things share the "LumiBase" name — pick the right one:**
->
-> | You want… | Use | What you get |
-> |-----------|-----|--------------|
-> | A starter app to build on | `create-lumibase` (this page) | A minimal **Hono + Drizzle** project with a demo `posts` resource. No Collections API, Studio, Email, or the rest of the platform. |
-> | The full Content OS platform | The CMS image `ghcr.io/khuepm/lumibase-cms` or a clone of the [monorepo](https://github.com/khuepm/lumibase) | The complete platform: Collections API, Studio admin, Email, Flows, AI, multi-tenancy, etc. See [Local development](./deployment/local-development.md) and [Deployment overview](./deployment/overview.md). |
->
-> The scaffold below is the **starter**, not the platform.
+> **Three different things share the "LumiBase" name.** Pick your path before you
+> install anything — the [decision tree](#which-path-do-i-need) below tells you
+> which one you actually need, and the rest of this page documents the first one.
+
+## Which path do I need?
+
+```
+What are you building?
+│
+├─ "I want a small backend of my own to build on."
+│     → the STARTER:  npm create lumibase@latest my-app
+│       A minimal Hono + Drizzle project with a demo `posts` resource.
+│       NOT the Content OS: no Collections API, no Studio, no Email/Flows/AI.
+│       § Quick start (this page)
+│
+├─ "I want the actual Content OS — Studio, collections, multi-tenancy."
+│     → the PLATFORM:  Docker image, Cloudflare Workers, or a monorepo clone
+│       CMS API on :1989 and Studio on :2026, which you run and administer.
+│       § Local development, § Deployment overview
+│
+└─ "I already have a frontend (Next.js, Nuxt, SvelteKit…) and want to read
+    content from a LumiBase that is already running."
+      → the CONSUMER CLIENT:  npm install lumibase
+        The typed SDK plus the `lumibase` CLI in one runtime dependency.
+        § Next.js Quickstart, § CLI, § JS SDK
+```
+
+The three are not alternatives to each other — a real project usually ends up
+with the **platform** running somewhere and the **consumer client** installed in
+its frontend. The **starter** is a separate, self-contained thing: it is your own
+Hono app, not a LumiBase instance.
+
+| | Starter | Platform | Consumer client |
+|---|---|---|---|
+| **You install** | `create-lumibase` (one-off, via `npm create`) | the CMS image / a clone, not an npm dependency | `lumibase` in `dependencies` |
+| **You get** | a Hono + Drizzle app you own | Collections API, Studio, Email, Flows, AI, multi-tenancy | `createLumiClient`, typed reads, `lumibase types` / `doctor` |
+| **Runs at** | `http://localhost:8787` (your app) | `http://localhost:1989` API · `http://localhost:2026` Studio | your frontend's own port |
+| **Needs a running CMS?** | No | It *is* the CMS | Yes — the platform, self-hosted or managed |
+| **Start here** | [Quick start](#quick-start) | [Local development](./deployment/local-development.md) · [Deployment overview](./deployment/overview.md) | [Next.js Quickstart](./tutorials/nextjs-quickstart.md) · [CLI](./cli/index.md) |
+
+### `lumibase` vs `@lumibase/sdk`
+
+Both publish the same client. Install **`lumibase`** unless you have a reason not
+to: its library entry re-exports `@lumibase/sdk`, so one name in `dependencies`
+covers both the runtime client and the `lumibase` command.
+
+```bash
+# SDK + CLI, one dependency
+npm install lumibase
+```
+
+```ts
+import { createLumiClient } from 'lumibase';
+```
+
+- It belongs in **`dependencies`**, not `devDependencies` — you import it at
+  runtime. Use `-D` only if you install it purely to run `lumibase types` in CI
+  and never import the client.
+- **`@lumibase/sdk`** remains supported as the lower-level package for consumers
+  that want the client without the CLI. `lumibase` depends on it rather than
+  bundling it, so importing both still yields one copy of every class and type.
+- Full details: [CLI](./cli/index.md) · [JS SDK](./sdk/javascript.md) ·
+  [TypeGen](./sdk/typegen.md).
 
 > **Package:** [`create-lumibase`](../../packages/create-lumibase) ·
 > **Published as:** `create-lumibase` on npm ·

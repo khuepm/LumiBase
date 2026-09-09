@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-09-03T03:08:24.413Z
+version: 4
+lastUpdated: 2026-09-09T02:48:53.968Z
 sourceLang: en
-contentHash: d282d0c44f29ea3c
-codeVerified: 2026-09-03T03:08:24.413Z
-codeVerifiedHash: d282d0c44f29ea3c
+contentHash: a226cf176b001643
+codeVerified: 2026-09-09T02:48:53.968Z
+codeVerifiedHash: a226cf176b001643
 codeVerifiedClaims: 18
 ---
 
@@ -126,5 +126,6 @@ The health probe calls the unauthenticated `/health` endpoint (`apps/cms/src/rou
 ## Related
 
 - [SDK — typegen](../sdk/typegen.md) — the programmatic API behind `lumibase types`
-- [Getting started](../getting-started.md) — running a CMS to point the CLI at
+- [Getting started — which path do I need?](../getting-started.md#which-path-do-i-need) — starter vs platform vs consumer client, and where `lumibase` fits
+- [Local development](../deployment/local-development.md) — running the CMS/Studio this CLI points at
 - [npm publishing](../release/npm-publishing.md) — how the package is released

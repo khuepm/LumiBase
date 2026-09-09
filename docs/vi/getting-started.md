@@ -1,9 +1,9 @@
 ---
-version: 2
-lastUpdated: 2026-09-03T03:28:27.348Z
+version: 3
+lastUpdated: 2026-09-09T02:49:01.933Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8cf1cd4a4d0711d2
+sourceHash: 6936a8fe0bd36606
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -12,14 +12,71 @@ syncStatus: human-translated
 
 `create-lumibase` là công cụ bootstrap dự án chính thức của LumiBase. Từ một thư mục trống bạn chạy một lệnh duy nhất và có ngay một dự án sẵn sàng chạy, tương tự `create-next-app` hay `create-vite`.
 
-> **Hai khái niệm khác nhau cùng mang tên "LumiBase" — chọn đúng nhu cầu của bạn:**
->
-> | Bạn muốn… | Dùng | Những gì bạn nhận được |
-> |-----------|-----|--------------|
-> | Một ứng dụng khởi đầu để xây dựng tiếp | `create-lumibase` (trang này) | Một dự án **Hono + Drizzle** tối giản với tài nguyên mẫu `posts`. Không bao gồm Collections API, Studio, Email, hay các phần còn lại của nền tảng. |
-> | Nền tảng Content OS đầy đủ | Image CMS `ghcr.io/khuepm/lumibase-cms` hoặc bản clone của [monorepo](https://github.com/khuepm/lumibase) | Nền tảng hoàn chỉnh: Collections API, Studio admin, Email, Flows, AI, multi-tenancy, v.v. Xem [Phát triển cục bộ](./deployment/local-development.md) và [Tổng quan triển khai](./deployment/overview.md). |
->
-> Bộ khung bên dưới là **starter**, không phải nền tảng.
+> **Ba thứ khác nhau cùng mang tên "LumiBase".** Hãy chọn hướng đi trước khi cài
+> bất cứ thứ gì — [cây quyết định](#which-path-do-i-need) bên dưới cho biết bạn
+> thực sự cần cái nào, và phần còn lại của trang này tài liệu hóa cái thứ nhất.
+
+## Which path do I need?
+
+```
+Bạn đang xây gì?
+│
+├─ "Tôi muốn một backend nhỏ của riêng mình để phát triển tiếp."
+│     → STARTER:  npm create lumibase@latest my-app
+│       Một dự án Hono + Drizzle tối giản với tài nguyên mẫu `posts`.
+│       KHÔNG phải Content OS: không có Collections API, không Studio,
+│       không Email/Flows/AI.
+│       § Quick start (trang này)
+│
+├─ "Tôi muốn chính Content OS — Studio, collections, multi-tenancy."
+│     → PLATFORM:  Docker image, Cloudflare Workers, hoặc clone monorepo
+│       CMS API ở :1989 và Studio ở :2026, do bạn tự chạy và quản trị.
+│       § Phát triển cục bộ, § Tổng quan triển khai
+│
+└─ "Tôi đã có frontend (Next.js, Nuxt, SvelteKit…) và muốn đọc nội dung
+    từ một LumiBase đang chạy."
+      → CONSUMER CLIENT:  npm install lumibase
+        SDK có type kèm CLI `lumibase` trong một runtime dependency.
+        § Next.js Quickstart, § CLI, § JS SDK
+```
+
+Ba hướng này không phải lựa chọn loại trừ nhau — một dự án thực tế thường có
+**platform** chạy ở đâu đó và **consumer client** được cài trong frontend của nó.
+**Starter** là một thứ riêng biệt, độc lập: đó là app Hono của bạn, không phải một
+instance LumiBase.
+
+| | Starter | Platform | Consumer client |
+|---|---|---|---|
+| **Bạn cài** | `create-lumibase` (chạy một lần, qua `npm create`) | image CMS / bản clone, không phải npm dependency | `lumibase` trong `dependencies` |
+| **Bạn nhận được** | một app Hono + Drizzle thuộc về bạn | Collections API, Studio, Email, Flows, AI, multi-tenancy | `createLumiClient`, đọc dữ liệu có type, `lumibase types` / `doctor` |
+| **Chạy tại** | `http://localhost:8787` (app của bạn) | `http://localhost:1989` API · `http://localhost:2026` Studio | port riêng của frontend |
+| **Cần một CMS đang chạy?** | Không | Nó *chính là* CMS | Có — platform, tự host hoặc managed |
+| **Bắt đầu ở đây** | [Quick start](#quick-start) | [Phát triển cục bộ](./deployment/local-development.md) · [Tổng quan triển khai](./deployment/overview.md) | [Next.js Quickstart](./tutorials/nextjs-quickstart.md) · [CLI](./cli/index.md) |
+
+### `lumibase` vs `@lumibase/sdk`
+
+Cả hai đều publish cùng một client. Hãy cài **`lumibase`** trừ khi bạn có lý do
+riêng: library entry của nó re-export `@lumibase/sdk`, nên một tên trong
+`dependencies` là đủ cho cả runtime client và lệnh `lumibase`.
+
+```bash
+# SDK + CLI, một dependency
+npm install lumibase
+```
+
+```ts
+import { createLumiClient } from 'lumibase';
+```
+
+- Nó thuộc **`dependencies`**, không phải `devDependencies` — bạn import nó ở
+  runtime. Chỉ dùng `-D` nếu bạn cài thuần để chạy `lumibase types` trong CI và
+  không bao giờ import client.
+- **`@lumibase/sdk`** vẫn được hỗ trợ như package tầng thấp hơn cho các consumer
+  muốn client mà không cần CLI. `lumibase` *phụ thuộc vào* nó chứ không bundle
+  lại, nên khi import cả hai bạn vẫn chỉ có một bản duy nhất của mỗi class và
+  mỗi type.
+- Chi tiết đầy đủ: [CLI](./cli/index.md) · [JS SDK](./sdk/javascript.md) ·
+  [TypeGen](./sdk/typegen.md).
 
 > **Package:** [`create-lumibase`](../../packages/create-lumibase) ·
 > **Published as:** `create-lumibase` trên npm ·
