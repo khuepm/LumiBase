@@ -28,7 +28,7 @@ Phần lớn item hoãn đã được ghi rõ trong chính spec. Ngoại lệ l�
 
 | Spec | Trạng thái | Quyết định |
 |---|---|---|
-| deployment-integrations | PARTIAL: rate-limit cho deploy hooks (Open) · idempotency test (Partial) · HMAC/JWS webhook signing (Partial) | Core deploy-hooks đã ship trong 0.x và giữ nguyên contract; 3 item còn lại là hardening additive → ship ở 1.x. Webhook signing là security-hardening ưu tiên cao nhất của nhóm này — đưa lên đầu backlog 1.1. |
+| deployment-integrations | ~~rate-limit cho deploy hooks~~ (**fixed** — task 6.2, per-target two-tier limiter) · ~~idempotency test~~ (**fixed** — task 9.3, 2026-09-07: `status-poller-idempotency.db.integration.test.ts` chạy thật trên Postgres, 5/5; đã kiểm âm bằng cách bỏ guard) · ~~HMAC/JWS webhook signing~~ (**fixed** — task 12.3, HMAC-SHA1 Vercel + JWS/HS256 Netlify với body-digest binding, constant-time, fail-closed) | Core deploy-hooks đã ship trong 0.x và giữ nguyên contract. Cả ba item của nhóm này nay đã đóng; không còn việc mở, không chặn tag. Còn lại duy nhất một mục **không phải code**: xác nhận endpoint Vercel/Netlify trên API sống (design §11 TODO). |
 
 ## Post-v1 — proposal/roadmap, chưa bắt đầu
 

@@ -18,6 +18,7 @@ import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPressureLimiter } from './pressure-limiter';
 import { startWorkerHealthServer } from './worker-health';
 import { setRuntimeFactory } from './middleware/runtime';
+import { mountStudio } from './serve-studio';
 import type { Bindings } from './env';
 
 type ProcessRole = 'web' | 'worker' | 'all';
@@ -66,7 +67,33 @@ async function main() {
   // connections, two pg pools — and discarded one on the first request.
   setRuntimeFactory(() => runtime);
 
+
   if (runHttp) {
+    // Serve the Studio SPA from this process when its bundle is present. Node
+    // only: Workers has no filesystem, so on Cloudflare the Studio stays a
+    // separate Pages deployment. `serve-studio` is imported nowhere else, which
+    // is what keeps `@hono/node-server/serve-static` out of the Workers bundle
+    // — the same containment `node-cron` relies on.
+    //
+    // Mounted after every route in `index.ts` (already registered at import)
+    // so the API answers for itself; the module's reserved-prefix list is what
+    // stops the SPA catch-all from turning API 404s into HTML.
+    const studio = mountStudio(app, process.env as Record<string, string | undefined>);
+    if (studio.mounted) {
+      console.log(`[lumibase-cms] Serving Studio from ${studio.root}`);
+    } else if (studio.reason === 'disabled') {
+      console.log('[lumibase-cms] Studio disabled via LUMIBASE_SERVE_STUDIO — running API-only');
+    } else if (studio.reason === 'configured-but-missing') {
+      // Loud: someone asked for the Studio and named a path that has no
+      // index.html. Silently running API-only here is how a broken deployment
+      // looks healthy.
+      console.warn(
+        `[lumibase-cms] LUMIBASE_STUDIO_DIST=${studio.root} has no index.html — running API-only`,
+      );
+    } else {
+      console.log('[lumibase-cms] Studio bundle not present — running API-only');
+    }
+
     server = serve({
       fetch: (request, nodeBindings) => {
         const pressureResponse = pressureLimiter.handle(request);
@@ -108,6 +135,7 @@ async function main() {
   let rotationTask: ScheduledTask | undefined;
   let pageviewFlushTask: ScheduledTask | undefined;
   let vetoSweepTask: ScheduledTask | undefined;
+  let claimSweepTask: ScheduledTask | undefined;
   let schedulerTask: ScheduledTask | undefined;
   let retentionTask: ScheduledTask | undefined;
   let deploymentPollTask: ScheduledTask | undefined;
@@ -338,6 +366,44 @@ async function main() {
     ),
   );
 
+  // ── Abandoned approval claims (#453) ────────────────────────────────────
+  //
+  // Deciding an approval claims the row (`pending → deciding`) so exactly one
+  // decision executes it. Every in-process failure path settles that claim;
+  // what none of them can cover is the process dying mid-execution, which
+  // leaves the row `deciding` — stuck, and invisible to Mission Control's
+  // `status === 'pending'` inbox. This sweep moves claims older than the
+  // staleness window to `failed`, so recovery goes through the same explicit
+  // reopen gate an in-process failure does. Guarded conditional updates, so it
+  // can never interrupt a live execution.
+  const { sweepStaleApprovalClaims } = await import('./services/approval-claim-sweeper');
+  claimSweepTask = cron.schedule(
+    '*/5 * * * *',
+    leaderLockedCallback(
+      'approval-claim-sweep',
+      240_000,
+      () => {
+        void sweepStaleApprovalClaims({ db: rotatorDb })
+          .then((released) => {
+            for (const claim of released) {
+              console.warn(
+                '[approval-claim-sweep] quarantined abandoned claim',
+                JSON.stringify({
+                  approvalId: claim.approvalId,
+                  siteId: claim.siteId,
+                  heldForMs: claim.heldForMs,
+                }),
+              );
+            }
+          })
+          .catch((err) => {
+            console.error('[approval-claim-sweep] failed', formatSafeError(err));
+          });
+      },
+      lockOpts,
+    ),
+  );
+
   // ── Content scheduler (regulated-content-readiness task 7; Req 7.3/7.4) ──
   //
   // A 1-minute tick applies due publish/unpublish transitions. Each flip is a
@@ -458,6 +524,7 @@ async function main() {
     rotationTask?.stop();
     pageviewFlushTask?.stop();
     vetoSweepTask?.stop();
+    claimSweepTask?.stop();
     schedulerTask?.stop();
     retentionTask?.stop();
     deploymentPollTask?.stop();

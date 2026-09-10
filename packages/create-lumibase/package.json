@@ -16,6 +16,7 @@
     "build": "tsup src/index.ts --format esm --dts --clean && node scripts/postbuild.mjs",
     "dev": "tsup src/index.ts --format esm --watch",
     "test": "vitest --run",
+    "smoke": "node scripts/smoke-scaffold.mjs",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .turbo dist"
   },

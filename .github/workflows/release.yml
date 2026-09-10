@@ -501,3 +501,21 @@ jobs:
           NODE
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # The step above picks `--tag next` for a prerelease, and that is still
+      # not enough: npm assigns `latest` on a package's **first** publish
+      # regardless of `--tag`. `lumibase` and `@lumibase/contracts` were both
+      # born at `1.0.0-rc.1` and ended up with `latest` on the RC, so
+      # `npm i lumibase` and `npm i @lumibase/sdk` resolve to two different
+      # generations of the same product.
+      #
+      # Report only — this step never mutates the registry. Epic #331 states
+      # "không tự đổi dist-tag", and #448 records that the owner deliberately
+      # chose to keep `latest = 1.0.0-rc.1` for `lumibase`. Moving a dist-tag is
+      # therefore a human decision: run `pnpm dist-tags:fix` when that decision
+      # has been made.
+      - name: Verify npm dist-tags
+        if: steps.check_token.outputs.has_token == 'true'
+        run: node scripts/check-npm-dist-tags.mjs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

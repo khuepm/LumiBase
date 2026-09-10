@@ -20,8 +20,32 @@ import type { Database } from '@lumibase/database';
 // deliberately error rather than stub. They are covered by their own unit
 // tests (deployment/__tests__, cdc-feed-skills-hitl.test.ts), including the
 // dangerous→HITL classification of triggerDeployment/deleteCdcSubscription.
+/**
+ * Since #453 the same "no offline behaviour" rule covers every WRITE handler:
+ * without its service it throws `*_NOT_CONFIGURED` instead of returning a
+ * success-shaped stub, so a serviceless harness cannot execute it. Probed by
+ * behaviour rather than by name so a newly added skill classifies itself; the
+ * missing-service contract is asserted in g1-missing-service.test.ts.
+ */
+async function hasNoOfflineBehaviour(name: string): Promise<boolean> {
+  try {
+    await CORE_SKILLS[name]!.handler({});
+    return false;
+  } catch (err) {
+    return /NOT_CONFIGURED/.test(err instanceof Error ? err.message : String(err));
+  }
+}
+
+const noOfflineSkills = new Set<string>(
+  (await Promise.all(
+    Object.keys(CORE_SKILLS).map(async (name) => ((await hasNoOfflineBehaviour(name)) ? name : '')),
+  )).filter(Boolean),
+);
+
 const validSkillNames = Object.keys(CORE_SKILLS).filter(
-  (name) => !['deployments', 'cdc-feed'].includes(CORE_SKILLS[name]?.service ?? ''),
+  (name) =>
+    !['deployments', 'cdc-feed'].includes(CORE_SKILLS[name]?.service ?? '') &&
+    !noOfflineSkills.has(name),
 );
 
 // Arbitrary: pick a valid skill name from CORE_SKILLS

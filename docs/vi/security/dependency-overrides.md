@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-08-30T16:44:53.762Z
+version: 4
+lastUpdated: 2026-09-10T02:54:35.184Z
 sourceLang: en
 translatedFrom: en
-sourceHash: aee0ac3265b6420f
+sourceHash: 0d4f14a158c581b6
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-30T16:44:53.762Z
-codeVerifiedHash: aee0ac3265b6420f
+codeVerified: 2026-09-10T02:54:35.184Z
+codeVerifiedHash: 0d4f14a158c581b6
 codeVerifiedClaims: 6
 ---
 
@@ -51,7 +51,7 @@ resolution / patch hash mới, rồi `pnpm settings:check` để xác nhận hai
 
 | Package | Pin tới | Lý do | Gỡ khi |
 | --- | --- | --- | --- |
-| `js-yaml` | `^4.3.1` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — DoS độ phức tạp bậc hai (quadratic) trong xử lý merge-key của YAML (moderate), và [GHSA-mxjm-jjmh-r63x](https://github.com/advisories/GHSA-mxjm-jjmh-r63x) — tiêu thụ CPU bậc hai khi resolve `!!omap`, chưa vá ở dưới `4.3.1` (high). Được kéo vào gián tiếp bởi `gray-matter@4.0.3`, vốn hard-pin js-yaml 3.x. Xem ghi chú patch bên dưới. | `gray-matter` (hoặc thứ tiêu thụ nó) phụ thuộc js-yaml `>=4.2.0` trực tiếp, **và** không dependency nào khác tái introduce range 3.x. Xác minh bằng `pnpm why js-yaml`. |
+| `js-yaml` | `^4.3.2` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — DoS độ phức tạp bậc hai (quadratic) trong xử lý merge-key của YAML (moderate), [GHSA-mxjm-jjmh-r63x](https://github.com/advisories/GHSA-mxjm-jjmh-r63x) — tiêu thụ CPU bậc hai khi resolve `!!omap`, chưa vá ở dưới `4.3.1` (high), và [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh) — `maxTotalMergeKeys` không giới hạn CPU cho merge source rỗng, chưa vá ở dưới `4.3.2` (high). Được kéo vào gián tiếp bởi `gray-matter@4.0.3`, vốn hard-pin js-yaml 3.x. Xem ghi chú patch bên dưới. | `gray-matter` (hoặc thứ tiêu thụ nó) phụ thuộc js-yaml `>=4.2.0` trực tiếp, **và** không dependency nào khác tái introduce range 3.x. Xác minh bằng `pnpm why js-yaml`. |
 | `dompurify` | `^3.4.13` | Advisory bảo mật (đã xử lý qua Dependabot), sau đó nâng thêm vì [GHSA-8v5p-ggcr-6q56](https://github.com/advisories/GHSA-8v5p-ggcr-6q56) — việc gỡ hook `IN_PLACE` để lại một subtree bị tách rời, cho phép bypass sanitizer ở `<=3.4.12` (moderate). | Một consumer trực tiếp/gián tiếp tự yêu cầu `>=3.4.13`. |
 | `esbuild` | `^0.28.2` | Advisory RCE qua request tới dev-server của esbuild (`<=0.24.2`). | Mọi consumer (vite, tsx, v.v.) yêu cầu `>=0.28.2`. |
 | `form-data` | `^4.0.6` | Advisory bảo mật (random boundary không an toàn). | Mọi consumer yêu cầu `>=4.0.6`. |
@@ -157,7 +157,7 @@ Kiểm bằng `cargo tree -i glib` sau khi bump `tauri`.
 **Vì sao cần:** `gray-matter@4.0.3` là bản phát hành mới nhất và thực chất đã ngừng bảo trì.
 Nó hard-pin `js-yaml@^3.13.1` và gọi `safeLoad`/`safeDump`. Các hàm đó đã bị **gỡ bỏ** trong
 js-yaml 4.x (nơi `load`/`dump` an toàn mặc định — và `safeLoad` là stub *ném lỗi*). Vì
-override `js-yaml: ^4.3.1` (ở trên) nâng js-yaml toàn cây để vá
+override `js-yaml: ^4.3.2` (ở trên) nâng js-yaml toàn cây để vá
 [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68), gray-matter sẽ crash
 lúc parse nếu không có patch này. gray-matter chỉ được dùng ở thời điểm build/dev trong
 [`apps/docs`](../../../apps/docs/src/plugins/vite-plugin-docs-loader.ts) để parse front

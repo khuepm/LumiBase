@@ -26,6 +26,9 @@ function service(c: Context<AppEnv>): DeploymentService {
     db: c.get('db'),
     siteId: c.get('siteId'),
     keys: c.get('runtime').keys,
+    // Per-target trigger brake (Req 9.5) — distributed limiter from the
+    // runtime abstraction, never a Cloudflare binding.
+    rateLimiter: c.get('runtime').rateLimiter,
   });
 }
 
@@ -44,6 +47,14 @@ async function webhookSecret(c: Context<AppEnv>, providerKey: string): Promise<s
 
 function fail(c: Context<AppEnv>, err: unknown) {
   if (err instanceof DeploymentError) {
+    if (err.code === 'RATE_LIMITED') {
+      const retryAfterSeconds = err.retryAfterSeconds ?? 60;
+      c.header('Retry-After', String(retryAfterSeconds));
+      return c.json(
+        { errors: [{ code: err.code, message: err.message, retryAfterSeconds }] },
+        429,
+      );
+    }
     const httpStatus = err.code === 'NOT_FOUND' ? 404 : err.code === 'TRIGGER_FAILED' ? 502 : 400;
     return c.json({ errors: [{ code: err.code, message: err.message }] }, httpStatus);
   }

@@ -17,6 +17,35 @@ import type { Database } from '@lumibase/database';
  * **Validates: Requirements 3.1, 3.2, 6.1**
  */
 
+/**
+ * Skills with no offline behaviour: their handler requires a service that this
+ * serviceless harness does not have, so it throws `*_NOT_CONFIGURED` rather
+ * than returning a success-shaped stub (#453 — an unwired dependency must never
+ * be indistinguishable from a real side effect).
+ *
+ * Derived by probing the handler rather than by name, so a newly added write
+ * skill is classified by what it actually does. The missing-service contract
+ * itself is asserted in g1-missing-service.test.ts.
+ */
+async function hasNoOfflineBehaviour(name: string): Promise<boolean> {
+  try {
+    await CORE_SKILLS[name]!.handler({});
+    return false;
+  } catch (err) {
+    return /NOT_CONFIGURED/.test(err instanceof Error ? err.message : String(err));
+  }
+}
+
+const NO_OFFLINE_SKILLS = new Set<string>(
+  (await Promise.all(
+    Object.keys(CORE_SKILLS).map(async (name) => ((await hasNoOfflineBehaviour(name)) ? name : '')),
+  )).filter(Boolean),
+);
+
+function isOfflineWriteSkill(name: string): boolean {
+  return NO_OFFLINE_SKILLS.has(name);
+}
+
 // Safe skills that will execute successfully (not dangerous, handlers return data)
 const SAFE_SKILL_NAMES = Object.entries(CORE_SKILLS)
   .filter(([name, skill]) => {
@@ -26,7 +55,11 @@ const SAFE_SKILL_NAMES = Object.entries(CORE_SKILLS)
     // require a runtime KeyProvider / real tenant db, absent here) and
     // deliberately error instead of stubbing — they are covered by
     // deployment/__tests__ and cdc-feed-skills-hitl.test.ts instead.
-    const noOffline = ['deployments', 'cdc-feed'].includes(skill.service);
+    // Since #453 every WRITE handler behaves the same way: without its service
+    // it throws `*_NOT_CONFIGURED` rather than returning a success-shaped stub,
+    // so a serviceless harness can only exercise read handlers. The
+    // missing-service contract itself is covered by g1-missing-service.test.ts.
+    const noOffline = ['deployments', 'cdc-feed'].includes(skill.service) || isOfflineWriteSkill(name);
     return !requiresSchemaWrite && !startsWithDelete && !noOffline;
   })
   .map(([name]) => name);
@@ -38,7 +71,8 @@ const SAFE_SKILL_NAMES = Object.entries(CORE_SKILLS)
 // so they can't be executed in this mock harness; their approval/execution
 // paths are covered in deployment tests and cdc-feed-skills-hitl.test.ts.
 const ALL_SKILL_NAMES = Object.entries(CORE_SKILLS)
-  .filter(([, skill]) => !['deployments', 'cdc-feed'].includes(skill.service))
+  .filter(([name, skill]) =>
+    !['deployments', 'cdc-feed'].includes(skill.service) && !isOfflineWriteSkill(name))
   .map(([name]) => name);
 
 // Arbitrary: approvalId — nanoid-like string (21 alphanumeric chars)
