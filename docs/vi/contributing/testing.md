@@ -7,9 +7,9 @@ translatedFrom: en
 sourceHash: 4575c3d9c04845cc
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-08T21:00:34.356Z
+codeVerified: 2026-09-10T19:51:39.334Z
 codeVerifiedHash: 4575c3d9c04845cc
-codeVerifiedClaims: 9
+codeVerifiedClaims: 10
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -286,3 +286,46 @@ Test chạy tự động trên mỗi PR và push lên `main`:
 ```
 
 PR không thể được merge nếu test fail hoặc coverage tụt xuống dưới ngưỡng.
+
+## Kiểm thử hiệu năng k6
+
+Các script tải nằm trong `apps/cms/k6/`. Chúng dùng [Grafana k6](https://k6.io/) và được kiểm tra trong CI qua `.github/workflows/perf-k6.yml`.
+
+### Quy trình chạy local
+
+```bash
+# 1. Start dependencies
+docker compose -f docker/docker-compose.yml up -d postgres redis
+
+# 2. Migrate + seed (CI uses SEED_ITEMS=1000 per collection; full baseline = 100000)
+DATABASE_URL=postgres://lumibase:lumibase_dev@localhost:5432/lumibase \
+  pnpm -F @lumibase/database migrate
+SEED_ITEMS=1000 DATABASE_URL=postgres://lumibase:lumibase_dev@localhost:5432/lumibase \
+  pnpm exec tsx apps/cms/k6/seed.ts
+
+# 3. Start CMS
+DATABASE_URL=postgres://lumibase:lumibase_dev@localhost:5432/lumibase \
+  REDIS_URL=redis://localhost:6379 \
+  JWT_SECRET=local-dev \
+  pnpm -F @lumibase/cms exec tsx src/serve.ts
+
+# 4. Run scripts (install k6: https://k6.io/docs/get-started/installation/)
+k6 run --env BASE_URL=http://localhost:1989 apps/cms/k6/smoke.js
+k6 run --env BASE_URL=http://localhost:1989 \
+     --env SITE_ID=site_load_a \
+     --env COLLECTION=articles \
+     apps/cms/k6/load-deliver.js
+```
+
+Số liệu baseline được lưu dưới `.kiro/specs/high-load-cache-readiness/baseline/` dưới dạng JSON (config + p50/p95/p99 + các metric tùy chỉnh). Chạy lại sau những thay đổi đáng kể về cache hoặc hạ tầng và commit một file mới có ngày — không sửa trực tiếp baseline cũ.
+
+### Thay đổi ngưỡng
+
+Ngưỡng được định nghĩa trong khối `export const options.thresholds` của từng script (ví dụ `load-deliver.js`). Chỉ thay đổi khi:
+
+1. Có baseline JSON mới chứng minh ngưỡng cũ không thực tế, hoặc
+2. Một suy giảm hiệu năng có chủ ý đã được chấp thuận và ghi trong bảng roadmap §2.
+
+Trong CI, giữ ngưỡng không vượt quá **baseline × 1.2** (design §13.3). Sau khi tăng ngưỡng, cập nhật file ghi chú baseline tương ứng và nêu thay đổi trong PR.
+
+Workflow `perf-k6` tải lên `load-deliver-summary.json` làm artifact khi chạy đầy đủ. Job `validate-scripts` luôn chạy `k6 inspect` để script hỏng bị phát hiện sớm mà không cần Docker.
