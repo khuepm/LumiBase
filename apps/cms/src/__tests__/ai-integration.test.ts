@@ -160,6 +160,35 @@ function createFullFlowMockDb(siteId: string) {
   return { db, store, updateCalls };
 }
 
+
+/**
+ * Minimal SchemaService stand-in so the approve step exercises a REAL side
+ * effect. Since #453 a schema write with no SchemaService throws
+ * `SCHEMA_SERVICE_NOT_CONFIGURED` rather than returning `{ created: true }` —
+ * an unwired dependency must never look like a completed action. These
+ * end-to-end assertions therefore need a service to execute against; the
+ * missing-service contract is covered by
+ * `services/__tests__/g1-missing-service.test.ts`.
+ */
+function createSchemaServiceStub() {
+  const calls: Array<{ method: string; args: unknown }> = [];
+  const service = {
+    calls,
+    listCollections: async () => [],
+    createCollection: async (input: unknown) => {
+      calls.push({ method: 'createCollection', args: input });
+      return { name: (input as { name: string }).name };
+    },
+    deleteCollection: async (name: string) => {
+      calls.push({ method: 'deleteCollection', args: name });
+      return { deleted: name };
+    },
+  };
+  return service as unknown as ConstructorParameters<typeof AISecureHarness>[0]['schemaService'] & {
+    calls: Array<{ method: string; args: unknown }>;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Test Suite 1: Full End-to-End Flow
 // ---------------------------------------------------------------------------
@@ -179,7 +208,18 @@ describe('AI Integration: Full end-to-end flow (Chat → Harness → DB → Appr
 
     // Step 2: Harness evaluates the skill — createCollection requires schema:create → dangerous
     const { db, store, updateCalls } = createFullFlowMockDb(SITE_ID);
-    const harness = new AISecureHarness({ db, siteId: SITE_ID });
+    const schemaService = createSchemaServiceStub();
+    // `enableAgentHarnessAudit: false` keeps this test on the legacy
+    // (non-audit) path it was written for: passing a service would otherwise
+    // switch the harness into the agent_runs/tool_calls audit flow, which
+    // needs a much richer DB mock. The audit path is covered by
+    // `services/__tests__/` and the G1 route tests.
+    const harness = new AISecureHarness({
+      db,
+      siteId: SITE_ID,
+      schemaService,
+      enableAgentHarnessAudit: false,
+    });
 
     const executeResult = await harness.execute(
       intent!.skillName,
@@ -207,6 +247,10 @@ describe('AI Integration: Full end-to-end flow (Chat → Harness → DB → Appr
     // Step 5: Skill executes successfully → record updated to 'approved'
     expect(approveResult.status).toBe('executed');
     expect(approveResult.data).toBeDefined();
+    // The side effect really reached the service, not a stub (#453).
+    expect(schemaService.calls).toEqual([
+      { method: 'createCollection', args: { name: 'products', singleton: false } },
+    ]);
     expect(store[0]!.status).toBe('approved');
     expect(store[0]!.decidedBy).toBe(USER_ID);
     expect(store[0]!.decidedAt).toBeInstanceOf(Date);
@@ -253,7 +297,18 @@ describe('AI Integration: Full end-to-end flow (Chat → Harness → DB → Appr
 
     // Step 2: Harness evaluates — deleteCollection requires schema:delete AND starts with 'delete' → dangerous
     const { db, store, updateCalls } = createFullFlowMockDb(SITE_ID);
-    const harness = new AISecureHarness({ db, siteId: SITE_ID });
+    const schemaService = createSchemaServiceStub();
+    // `enableAgentHarnessAudit: false` keeps this test on the legacy
+    // (non-audit) path it was written for: passing a service would otherwise
+    // switch the harness into the agent_runs/tool_calls audit flow, which
+    // needs a much richer DB mock. The audit path is covered by
+    // `services/__tests__/` and the G1 route tests.
+    const harness = new AISecureHarness({
+      db,
+      siteId: SITE_ID,
+      schemaService,
+      enableAgentHarnessAudit: false,
+    });
 
     const executeResult = await harness.execute(
       intent!.skillName,
@@ -276,6 +331,7 @@ describe('AI Integration: Full end-to-end flow (Chat → Harness → DB → Appr
 
     // Step 5: Executed successfully
     expect(approveResult.status).toBe('executed');
+    expect(schemaService.calls).toEqual([{ method: 'deleteCollection', args: 'posts' }]);
     expect(store[0]!.status).toBe('approved');
     expect(updateCalls[0]!.data['decidedBy']).toBe(USER_ID);
   });

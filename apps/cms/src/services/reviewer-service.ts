@@ -80,6 +80,18 @@ export function reviewDomainFor(subjectType: string, toolName?: string): string 
 export interface ReviewerServiceDeps {
   db: Database;
   siteId: string;
+  /**
+   * Executes the approval's stored action (#453 / G1). A confident agent
+   * approval is a real decision: it must run or resume the parked action, not
+   * just flip `agent_approvals.status`. Injected by the route so this service
+   * stays free of request/service-construction concerns.
+   *
+   * Returns whether the action actually executed. When it is absent, `decide`
+   * refuses to finalize rather than recording a side effect that never
+   * happened — escalating to a human instead.
+   */
+  execute?: (approval: { legacyApprovalId: string | null; approvalId: string }) =>
+    Promise<{ executed: boolean; message?: string }>;
 }
 
 export class ReviewerService {
@@ -178,19 +190,75 @@ export class ReviewerService {
       return { outcome: 'escalated', reason, deepLink };
     }
 
-    await this.deps.db
+    // A confident approve must produce the side effect it authorizes. Without
+    // an executor — or when execution fails — the approval is NOT finalized:
+    // it escalates to a human and stays pending, so no run is recorded as
+    // approved-and-done while the action never ran (#453).
+    if (!this.deps.execute) {
+      await this.escalate(approval.id, input, 'not_executable', deepLink);
+      return { outcome: 'escalated', reason: 'low_confidence', deepLink };
+    }
+
+    const executed = await this.deps.execute({
+      legacyApprovalId: approval.legacyApprovalId ?? null,
+      approvalId: approval.id,
+    });
+    if (!executed.executed) {
+      await this.escalate(approval.id, input, 'execution_failed', deepLink, executed.message);
+      return { outcome: 'escalated', reason: 'low_confidence', deepLink };
+    }
+
+    // The executor (the harness) owns the atomic claim and has already moved
+    // the row to `approved`. This update only annotates it with the reviewing
+    // agent, and is guarded on `approved` so it can never resurrect a row that
+    // a human rejected while the skill was running (#453).
+    const annotated = await this.deps.db
       .update(agentApprovals)
       .set({
-        status: 'approved',
         approverType: 'agent',
         approverRunId: input.reviewerRunId,
-        decidedAt: new Date(),
         decisionReason: input.reason ?? `agent review (confidence ${input.confidence.toFixed(2)})`,
       })
       .where(
-        and(eq(agentApprovals.id, approval.id), eq(agentApprovals.siteId, this.deps.siteId)),
-      );
+        and(
+          eq(agentApprovals.id, approval.id),
+          eq(agentApprovals.siteId, this.deps.siteId),
+          eq(agentApprovals.status, 'approved'),
+        ),
+      )
+      .returning({ id: agentApprovals.id });
+
+    if (annotated.length === 0) {
+      // The action ran but the row is no longer `approved` — another decision
+      // landed first. Surface it instead of reporting a clean agent decision.
+      await this.escalate(approval.id, input, 'decision_changed_during_execution', deepLink);
+      return { outcome: 'escalated', reason: 'low_confidence', deepLink };
+    }
+
     return { outcome: 'decided', status: 'approved', approvalId: approval.id };
+  }
+
+  /** Records an escalation so an un-executed approval is visible, not silent. */
+  private async escalate(
+    approvalId: string,
+    input: ReviewDecisionInput,
+    reason: string,
+    deepLink: string,
+    message?: string,
+  ): Promise<void> {
+    await this.deps.db.insert(activity).values({
+      siteId: this.deps.siteId,
+      action: 'review.escalated',
+      payload: maskSecrets({
+        approvalId,
+        reviewerRunId: input.reviewerRunId,
+        reason,
+        confidence: input.confidence,
+        comment: input.reason ?? null,
+        message: message ?? null,
+        deepLink,
+      }) as Record<string, unknown>,
+    });
   }
 
   private async toolNameOf(toolCallId: string): Promise<string | undefined> {

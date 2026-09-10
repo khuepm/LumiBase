@@ -135,6 +135,7 @@ async function main() {
   let rotationTask: ScheduledTask | undefined;
   let pageviewFlushTask: ScheduledTask | undefined;
   let vetoSweepTask: ScheduledTask | undefined;
+  let claimSweepTask: ScheduledTask | undefined;
   let schedulerTask: ScheduledTask | undefined;
   let retentionTask: ScheduledTask | undefined;
   let deploymentPollTask: ScheduledTask | undefined;
@@ -365,6 +366,44 @@ async function main() {
     ),
   );
 
+  // ── Abandoned approval claims (#453) ────────────────────────────────────
+  //
+  // Deciding an approval claims the row (`pending → deciding`) so exactly one
+  // decision executes it. Every in-process failure path settles that claim;
+  // what none of them can cover is the process dying mid-execution, which
+  // leaves the row `deciding` — stuck, and invisible to Mission Control's
+  // `status === 'pending'` inbox. This sweep moves claims older than the
+  // staleness window to `failed`, so recovery goes through the same explicit
+  // reopen gate an in-process failure does. Guarded conditional updates, so it
+  // can never interrupt a live execution.
+  const { sweepStaleApprovalClaims } = await import('./services/approval-claim-sweeper');
+  claimSweepTask = cron.schedule(
+    '*/5 * * * *',
+    leaderLockedCallback(
+      'approval-claim-sweep',
+      240_000,
+      () => {
+        void sweepStaleApprovalClaims({ db: rotatorDb })
+          .then((released) => {
+            for (const claim of released) {
+              console.warn(
+                '[approval-claim-sweep] quarantined abandoned claim',
+                JSON.stringify({
+                  approvalId: claim.approvalId,
+                  siteId: claim.siteId,
+                  heldForMs: claim.heldForMs,
+                }),
+              );
+            }
+          })
+          .catch((err) => {
+            console.error('[approval-claim-sweep] failed', formatSafeError(err));
+          });
+      },
+      lockOpts,
+    ),
+  );
+
   // ── Content scheduler (regulated-content-readiness task 7; Req 7.3/7.4) ──
   //
   // A 1-minute tick applies due publish/unpublish transitions. Each flip is a
@@ -485,6 +524,7 @@ async function main() {
     rotationTask?.stop();
     pageviewFlushTask?.stop();
     vetoSweepTask?.stop();
+    claimSweepTask?.stop();
     schedulerTask?.stop();
     retentionTask?.stop();
     deploymentPollTask?.stop();

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import type { ComponentType } from 'react';
-import { Bot, Boxes, CheckCircle2, ClipboardCheck, Database, Loader2, Play, RefreshCw, Wrench } from 'lucide-react';
+import { AlertTriangle, Bot, Boxes, CheckCircle2, ClipboardCheck, Database, Loader2, Play, RefreshCw, RotateCcw, Wrench } from 'lucide-react';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 
 type Tab = 'runs' | 'tools' | 'approvals' | 'artifacts' | 'memory';
@@ -33,6 +33,12 @@ interface AgentApproval {
   approvalPolicy: string;
   requestedByAgent: string;
   createdAt: string;
+  /**
+   * Why a `failed` approval is quarantined — written by the claim sweeper or
+   * by an in-process failure. The operator needs it to decide what to verify
+   * before reopening, so it is surfaced rather than left in the database.
+   */
+  decisionReason?: string | null;
 }
 
 interface AgentArtifact {
@@ -194,7 +200,7 @@ export function AgentHarnessPage() {
         <>
           {tab === 'runs' && <RunsTable runs={runs} />}
           {tab === 'tools' && <ToolsTable tools={tools} />}
-          {tab === 'approvals' && <ApprovalsTable approvals={approvals} />}
+          {tab === 'approvals' && <ApprovalsTable approvals={approvals} onChanged={() => void load()} />}
           {tab === 'artifacts' && <ArtifactsTable artifacts={artifacts} />}
           {tab === 'memory' && <MemoryPanel memory={memory} />}
         </>
@@ -217,14 +223,149 @@ function ToolsTable({ tools }: { tools: AgentTool[] }) {
   ])} />;
 }
 
-function ApprovalsTable({ approvals }: { approvals: AgentApproval[] }) {
-  return <DataTable columns={['Approval', 'Subject', 'Status', 'Policy', 'Agent']} rows={approvals.map((approval) => [
-    approval.id,
-    approval.subjectType,
-    approval.status,
-    approval.approvalPolicy,
-    approval.requestedByAgent,
-  ])} />;
+/**
+ * Approvals, with the operator recovery path for quarantined ones.
+ *
+ * A `failed` approval is one whose execution was interrupted or errored after
+ * it may already have taken effect, so it is deliberately NOT ordinary work
+ * any more: it will not re-run until a human states what they verified. That
+ * makes this table the only place the recovery exists, which is why it renders
+ * the quarantine reason and a Reopen action instead of just a status string.
+ *
+ * Reopen asks for a reason and sends it to `POST /agent/approvals/:id/reopen`,
+ * which records who authorized the retry alongside the transition.
+ */
+function ApprovalsTable({ approvals, onChanged }: { approvals: AgentApproval[]; onChanged: () => void }) {
+  const [reopening, setReopening] = useState<string | null>(null);
+  const [reason, setReason] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const reopen = async (approval: AgentApproval) => {
+    // The endpoint requires a non-empty reason; enforce it here too so the
+    // operator gets the message inline rather than a 400.
+    if (reason.trim().length === 0) {
+      setError('A reason is required — it is recorded as the authorization to retry.');
+      return;
+    }
+    setBusyId(approval.id);
+    setError(null);
+    try {
+      await agentRequest(`/approvals/${approval.id}/reopen`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      setReopening(null);
+      setReason('');
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Reopen failed');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const quarantined = approvals.filter((approval) => approval.status === 'failed');
+
+  return (
+    <div className="space-y-3">
+      {quarantined.length > 0 && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <span>
+            {quarantined.length} approval{quarantined.length === 1 ? '' : 's'} interrupted mid-execution.
+            The action may or may not have run — verify the intended effect, then reopen to retry.
+          </span>
+        </div>
+      )}
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      <div className="overflow-hidden rounded-md border bg-background">
+        <table className="w-full table-fixed text-left text-sm">
+          <thead className="border-b bg-muted/50 text-xs uppercase text-muted-foreground">
+            <tr>
+              {['Approval', 'Subject', 'Status', 'Policy', 'Agent', ''].map((column, index) => (
+                <th key={column || `actions-${index}`} className="px-3 py-2 font-medium">{column}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {approvals.length === 0 ? (
+              <tr><td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">No records.</td></tr>
+            ) : approvals.map((approval) => (
+              <Fragment key={approval.id}>
+                <tr className="border-b last:border-0">
+                  <td className="truncate px-3 py-2" title={approval.id}>{approval.id}</td>
+                  <td className="truncate px-3 py-2" title={approval.subjectType}>{approval.subjectType}</td>
+                  <td className="truncate px-3 py-2" title={approval.status}>
+                    {approval.status === 'failed' ? (
+                      <span className="inline-flex items-center gap-1 text-amber-700">
+                        <AlertTriangle className="h-3 w-3" /> quarantined
+                      </span>
+                    ) : approval.status}
+                  </td>
+                  <td className="truncate px-3 py-2" title={approval.approvalPolicy}>{approval.approvalPolicy}</td>
+                  <td className="truncate px-3 py-2" title={approval.requestedByAgent}>{approval.requestedByAgent}</td>
+                  <td className="px-3 py-2">
+                    {approval.status === 'failed' && (
+                      <button
+                        type="button"
+                        onClick={() => { setReopening(approval.id); setReason(''); setError(null); }}
+                        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                      >
+                        <RotateCcw className="h-3 w-3" /> Reopen
+                      </button>
+                    )}
+                  </td>
+                </tr>
+                {approval.status === 'failed' && approval.decisionReason && (
+                  <tr className="border-b last:border-0 bg-muted/30">
+                    <td colSpan={6} className="px-3 py-2 text-xs text-muted-foreground">{approval.decisionReason}</td>
+                  </tr>
+                )}
+                {reopening === approval.id && (
+                  <tr className="border-b last:border-0 bg-muted/50">
+                    <td colSpan={6} className="px-3 py-3">
+                      <label className="block text-xs font-medium" htmlFor={`reopen-${approval.id}`}>
+                        What did you verify? Recorded as the authorization to retry.
+                      </label>
+                      <div className="mt-2 flex gap-2">
+                        <input
+                          id={`reopen-${approval.id}`}
+                          value={reason}
+                          onChange={(event) => setReason(event.target.value)}
+                          maxLength={1000}
+                          className="flex-1 rounded-md border bg-background px-2 py-1 text-sm"
+                          placeholder="e.g. checked Vercel — no deployment was created"
+                        />
+                        <button
+                          type="button"
+                          disabled={busyId === approval.id}
+                          onClick={() => void reopen(approval)}
+                          className="inline-flex items-center gap-1 rounded-md border px-3 py-1 text-sm hover:bg-muted disabled:opacity-50"
+                        >
+                          {busyId === approval.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+                          Confirm reopen
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setReopening(null); setReason(''); setError(null); }}
+                          className="rounded-md px-3 py-1 text-sm text-muted-foreground hover:bg-muted"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 /**

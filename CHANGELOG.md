@@ -9,6 +9,42 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Fixed
+
+- **Approving an agent action now executes it, exactly once.** Approving used to
+  record a decision without running the stored action, and the decision path
+  read-then-acted, so two concurrent approvals could both pass the read and
+  both execute. Deciding is now `claim → execute → finalize`: a conditional
+  update moves the row to `deciding` so exactly one decision executes, and only
+  a completed execution records `approved`.
+- **A failure that may already have taken effect is no longer re-offered as
+  ordinary work.** If a skill touched a service and then failed, returning the
+  approval to `pending` invited a second side effect. Those approvals now land
+  in `failed` — quarantined, out of the inbox, re-runnable only through
+  `POST /api/v1/agent/approvals/:id/reopen` with a stated reason. The
+  transition and its `approval.reopened` audit record commit together, since
+  the record of who authorized a possible second execution is part of the
+  authorization.
+- **A crashed execution no longer strands the approval, invisibly.** A process
+  dying mid-execution (OOM kill, Worker eviction, a deploy rolling the pod)
+  left the row in `deciding` forever, and because the inbox filters on pending
+  it also stopped being visible — stuck *and* invisible. A 15-minute sweep now
+  quarantines abandoned claims into `failed` (not `pending`: a crash says "no
+  decision was recorded", never "nothing happened") together with an
+  `approval.claim_quarantined` activity record explaining what to verify.
+  Elapsed time is not treated as evidence the abandoned work stopped — a JS
+  timeout rejects a promise without cancelling the handler behind it.
+- **Every side-effecting skill is covered, not just the injected ones.** The
+  touch tracker proxied the six injected services but missed three the harness
+  builds itself (deployments, cdc-feed, content-versions) and `runFlow`, which
+  writes straight through `db` — so a `triggerDeployment` could fire at an
+  external provider, fail afterwards, and still be sent back to `pending` for a
+  second deploy.
+- **The Studio surfaces the recovery.** The Approvals tab now says how many
+  approvals were interrupted, shows the reason recorded for each, and offers
+  **Reopen** on exactly those rows, requiring the reason that is stored as the
+  authorization to retry.
+
 ### Security
 
 - **Inbound deployment webhooks now require a real provider signature.** The

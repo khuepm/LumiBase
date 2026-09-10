@@ -5,6 +5,10 @@ import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
 import { AISecureHarness } from '../services/ai-harness';
+import { AccessService } from '../services/access-service';
+import { ConfigService } from '../services/config-service';
+import { ExtensionsService } from '../services/extensions-service';
+import { IntentService } from '../services/intent-service';
 import { SchemaService } from '../services/schema-service';
 import { itemServiceForRequest } from '../services/item-service-factory';
 import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
@@ -44,6 +48,45 @@ export const aiRouter = new Hono<AppEnv>();
 function getUserCapabilities(c: Context<AppEnv>): string[] {
   const auth = c.get('auth');
   return Array.isArray(auth.roles) ? auth.roles : [];
+}
+
+/**
+ * Builds a harness with every governed service wired, for the paths that
+ * actually execute an approved action.
+ *
+ * Approval decisions are the one place where an unwired dependency is
+ * indistinguishable from a completed side effect, so the decision paths must
+ * not construct a partially-wired harness. Previously `/ai/approvals/:id/decide`
+ * omitted access/intent/config/extensions while `routes/mcp.ts` wired them —
+ * so an approved `access:*`/`intents:*`/`config:*`/`extensions:*` skill (all
+ * forced dangerous, hence all park for approval) resolved with its service
+ * absent. Both decision routes now share this builder.
+ */
+export function buildAuthorizedHarness(c: Context<AppEnv>): AISecureHarness {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const auth = c.get('auth');
+  const runtime = c.get('runtime');
+  const llm = createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>);
+
+  return new AISecureHarness({
+    db,
+    siteId,
+    schemaService: new SchemaService({ db, siteId, cache: runtime.cache }),
+    // Request-scoped so an executed skill enforces the same row/field RBAC the
+    // caller's own token would.
+    itemService: itemServiceForRequest(c),
+    accessService: new AccessService({ db, siteId, userId: auth.userId ?? null, cache: runtime.cache }),
+    intentService: new IntentService({ db, siteId, userId: auth.userId ?? null, llm }),
+    configService: new ConfigService({ db, siteId }),
+    extensionsService: new ExtensionsService({ db, siteId, userId: auth.userId ?? null }),
+    llm,
+    queue: runtime.queue,
+    notify: buildAgentNotifier(c),
+    // An approved `triggerDeployment` executes here — without the KeyProvider
+    // the approval would resolve into a configuration error.
+    keys: runtime.keys,
+  });
 }
 
 function requireAdmin(c: Context<AppEnv>) {
@@ -497,24 +540,7 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
 
   if (decision === 'approved') {
     // Wire up real services for skill execution on approval only after authorization.
-    const schemaService = new SchemaService({
-      db,
-      siteId,
-      cache: runtime.cache,
-    });
-    const itemService = itemServiceForRequest(c);
-    const authorizedHarness = new AISecureHarness({
-      db,
-      siteId,
-      schemaService,
-      itemService,
-      llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
-      queue: runtime.queue,
-      notify: buildAgentNotifier(c),
-      // An approved `triggerDeployment` executes here — without the
-      // KeyProvider the approval would resolve into a configuration error.
-      keys: runtime.keys,
-    });
+    const authorizedHarness = buildAuthorizedHarness(c);
     const result = await authorizedHarness.executeApproved(
       approvalId,
       userId,

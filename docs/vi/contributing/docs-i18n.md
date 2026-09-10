@@ -1,10 +1,10 @@
 ---
 title: Docs i18n Sync
 sourceLang: en
-version: 4
-lastUpdated: 2026-09-08T21:06:29.319Z
+version: 5
+lastUpdated: 2026-09-10T18:46:03.939Z
 translatedFrom: en
-sourceHash: dec76e7ef1afaebb
+sourceHash: de2580e713420bb0
 mtEngine: manual
 syncStatus: human-translated
 codeVerified: 2026-09-08T21:06:29.319Z
@@ -100,8 +100,11 @@ code?* Một cặp có thể pass một cái và fail hai cái còn lại.
 còn ở ngôn ngữ nguồn, mất mục, identifier bị dịch, link sai đích, phần cuối bị cắt.
 Stamp là thứ khiến một cặp đọc ra "up-to-date" ở mọi chỗ khác, nên nó là điểm cuối
 cùng còn chặn được một bản dịch tệ, và sau nó không có reviewer nào nữa. Chỉ dùng
-`--allow-structure-drift` cho trường hợp lệch có chủ ý, và nên đặt waiver
-`<!-- check-parity: allow <check> -->` trong doc để lý do nằm ngay cạnh chỗ lệch.
+`--allow-structure-drift` cho trường hợp lệch có chủ ý. Công cụ tự ghi waiver
+`<!-- check-parity: allow <check> -->` vào tài liệu đích cho đúng các loại kiểm tra
+được bỏ qua, kèm thời điểm và lệnh đã ghi nhận ngoại lệ. Giải thích lý do trong
+commit message. Stamp lại không tạo waiver trùng; các loại kiểm tra khác vẫn chặn.
+Nếu verification thất bại thì không ghi waiver.
 `--verified` cũng từ chối khi còn claim nào stale, và từ chối khi một doc không có
 claim nào tooling kiểm được — "không có gì để kiểm" không phải là pass, nên file đó
 được stamp mà không kèm cờ và cần người đọc lại.
