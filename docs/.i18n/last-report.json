@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-09-10T01:31:20.188Z",
-  "mode": "preserve-only",
-  "effectiveMode": "preserve-only",
+  "generatedAt": "2026-09-10T02:54:36.204Z",
+  "mode": "plan",
+  "effectiveMode": "plan",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 147,
-    "planned": 1
+    "upToDate": 148,
+    "planned": 0
   },
   "actions": [
     {
@@ -1658,13 +1658,13 @@
     },
     {
       "rel": "security/dependency-overrides.md",
-      "type": "translate",
-      "reason": "source changed since last sync",
+      "type": "up-to-date",
+      "reason": "in sync",
       "enLang": "en",
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
-      "willTranslate": true,
+      "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0
     },

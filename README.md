@@ -54,7 +54,9 @@ Built Edge-native on Cloudflare Workers for high-performance multi-website deliv
 - **Provenance-first revisions:** every revision records the agent/run/model, references, constitution hash, evaluation, and approver — exposed on the Delivery API via `?provenance=true`
 - **Multi-agent newsroom:** a role library with planner delegation, narrow per-role capability grants, and agent-as-reviewer gated approvals with a self-review ban
 - **Studio Mission Control:** exception inbox, trust ledger, kill-switch UI, and per-field pin badges
-- **Edge-first + true multi-tenancy:** Cloudflare Workers delivery, hard `site_id` isolation, page-hydration API, per-field AES-GCM encryption, and type-safe SDKs
+- **Agent Harness:** goals, context, capabilities, approvals, evaluations, and artifact commits — the governed surface every agent acts through
+- **Edge-first + true multi-tenancy:** Cloudflare Workers + Hyperdrive delivery, hard `site_id` isolation, a page-hydration API that returns layout and data in one payload, per-field AES-GCM encryption, and type-safe SDKs
+- **GitOps ready:** `cms config:export` puts roles and schemas in version control, so configuration moves between environments as code
 
 ## Folder Structure (Turborepo)
 
@@ -83,22 +85,73 @@ lumibase/
 
 ## Quick start
 
+Three different things get called "installing LumiBase". Pick the one you actually want.
+
+### 1. A starter app to build on
+
+Scaffolds a minimal **Hono + Drizzle** project with a demo `posts` resource — LumiBase conventions, not the platform. No Studio, no Collections API.
+
 ```bash
-pnpm install
-pnpm --filter @lumibase/cms dev      # Hono API on :1989
-pnpm --filter @lumibase/studio dev   # Studio SPA on :2026 (proxies /api → :1989)
+npm create lumibase@latest my-project
 ```
 
-The Studio placeholder dashboard pings `/api/v1/utils/health` to verify the wire-up. Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is in [`docs/en/roadmap/tasks.md`](./docs/en/roadmap/tasks.md). For production release operations, see the upgrade runbooks in [English](./docs/en/operations/upgrades.md) and [Vietnamese](./docs/vi/operations/upgrades.md).
+Guide: [`docs/en/getting-started.md`](./docs/en/getting-started.md) · package: [`create-lumibase`](https://www.npmjs.com/package/create-lumibase)
+
+### 2. The full Content OS platform
+
+Brings up the CMS plus everything it needs — PostgreSQL, Redis, MinIO, MeiliSearch, imgproxy — with development credentials already wired into the compose file.
+
+```bash
+git clone https://github.com/khuepm/lumibase.git && cd lumibase
+docker compose -f docker/docker-compose.yml up -d
+curl http://localhost:1989/health
+```
+
+That gives you the **API** on `:1989`. The development compose image mounts source for hot reload rather than building, so it has no Studio bundle and runs API-only — pair it with `pnpm studio:dev` (option 3), or use the published image below, which ships the Studio.
+
+```bash
+cp docker/.env.example docker/.env      # set JWT_SECRET; DATABASE_SSL_MODE=disable for the bundled Postgres
+LUMIBASE_VERSION=1.0.0-rc.1 docker compose \
+  -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+```
+
+The image serves the Studio from the same origin as the API, so there is no second deployment and no CORS entry to configure. Open <http://localhost:1989/setup> to create the first admin; afterwards the Studio lives under the admin path that setup chose. `/`, `/admin` and `/studio` deliberately return an indistinguishable `404` — the login location is not meant to be discoverable. Set `LUMIBASE_SERVE_STUDIO=false` to run API-only when you host the Studio separately. Details: [Deployment overview](./docs/en/deployment/overview.md#studio-api-connectivity) · [Deployment checklist](./docs/en/DEPLOYMENT-CHECKLIST.md)
+
+Runbook: [Deployment overview](./docs/en/deployment/overview.md) · [Deployment checklist](./docs/en/DEPLOYMENT-CHECKLIST.md)
+
+### 3. A development checkout (contributors)
+
+```bash
+git clone https://github.com/khuepm/lumibase.git && cd lumibase
+pnpm install
+cp .env.example .env                    # set JWT_SECRET; defaults match the compose stack
+set -a && source .env && set +a         # nothing auto-loads .env, including db:migrate
+
+# infrastructure only — leave the `cms` service out so it does not take :1989
+docker compose -f docker/docker-compose.yml up -d \
+  postgres redis minio minio-init meilisearch imgproxy
+pnpm db:migrate
+
+pnpm cms:dev                            # Hono API on :1989
+pnpm studio:dev                         # Studio SPA on :2026 (proxies /api → :1989)
+```
+
+Requires Node ≥ 22 and pnpm 9.12.0 (pinned via `packageManager`). Full guide: [Local development](./docs/en/deployment/local-development.md).
+
+**Prerequisites for 2 and 3:** Docker + Docker Compose. Everything else the stack needs comes from the compose file.
+
+Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is in [`docs/en/roadmap/tasks.md`](./docs/en/roadmap/tasks.md). For production release operations, see the upgrade runbooks in [English](./docs/en/operations/upgrades.md) and [Vietnamese](./docs/vi/operations/upgrades.md).
 
 ## Release policy
 
 Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
 
-Current release: `v0.26.0` (`2026-08-24`) — **New landing identity, documentation parity, and the high-load cache programme closed out**. The marketing site ships the editorial "eclipse" identity: a scroll-driven stage where the eclipse *is* the scroll, a new brand mark, and a `prefers-reduced-motion` path that renders a static totality instead. The EN/VI documentation backlog is closed — 146/146 pairs up-to-date, no single-sided pair left, which was the reader-facing failure of choosing Vietnamese and being served English — and DoD §4a makes locale parity a condition of the PR that breaks it rather than a cleanup campaign. `high-load-cache-readiness` P0–P2 code is complete (Cache Provider v2 with tag purge, `runtime.edgeCache`, single-flight/SWR, async audit, distributed rate limiter, leader lock, `items` indexes); only the k6 re-measurements are outstanding, and `v1-release-criteria.md` §7 does not gate the 1.0 tag on them. Five cache-stack correctness gaps close with it — most consequentially an `immutable, max-age=31536000` media promise served on URLs that were **not** a function of their content, so a re-upload left browsers pinned to the old bytes for a year with no purge channel able to reach them. On the supply-chain side the dependency-audit gate is green again (`fast-uri` ≥4.1.3, `hono` 4.12.34 for the CORS ReDoS, `nanoid`, `js-yaml`, `dompurify`, `brace-expansion`), and pnpm 10 can no longer silently drop every override: all three `pnpm` keys are declared in both `package.json` and `pnpm-workspace.yaml`, with `pnpm settings:check` failing the build if they drift. No migrations. Built on **`v0.25.0`** (`2026-08-02`) — **Public (anonymous) realm, cache-penetration defence, and Node 22+**. Adds the third authorization realm from ADR-011: an unauthenticated request resolves to the site's opt-in `public` role instead of a blanket 401, so content is served publicly *through* the permission layer with row filters and field masks still in force — least-privilege by check constraint (migration `0012`), GET/HEAD on allow-listed content paths only. Public reads also gain a three-layer penetration defence (identifier shape guards, negative-cache tombstones, Delivery IP rate limiting) so a flood of nonexistent slugs no longer reaches Postgres. This release batches the dependency majors (jose 6, zod 4, node-cron 4, execa 10, react 19 alignment, graphql 17) and **requires Node 22+**; jose v6 removed the `KeyLike` export, so anything typing keys through it moves to `CryptoKey`. Built on **`v0.24.1`** (`2026-07-21`) — **Shell version alignment**. Brings the Tauri desktop/mobile app (`@lumibase/shell`) `src-tauri` version metadata (`tauri.conf.json`, `Cargo.toml`, `Cargo.lock`) in lockstep with the monorepo release, so the desktop auto-updater compares against the correct version (PR #287). Built on **`v0.24.0`** (`2026-07-21`) — **Unified Tauri 2 desktop + mobile app**. A native shell (`@lumibase/shell`) wraps the Studio SPA for desktop (signed auto-update) and mobile (Android/iOS) with hybrid bundled/remote asset delivery (PR #171); adds NVIDIA + Vertex AI LLM providers and read-only MCP insights tools (PR #273, #274), plus GraphQL query cost limits, setup-complete rate braking, and prototype-pollution hardening (PR #278, #280, #276). Built on **`v0.23.0`** (`2026-07-14`) — **Git integration, Change Feed schema capture, and relicense to Apache 2.0**. Adds per-site GitHub/GitLab repository connections with PR/CI tracking, GitOps reconcile, and opt-in preview environments (migration `0009`, PR #172); Change Feed now captures schema (DDL) changes and supports long-polling, plus a documented OpenAPI/SDK surface (migration `0008`, PR #252); visitor/pageview counting and extension signing land as first-party modules (migrations `0010`/`0011`, PR #261); and the project license changes from MIT to Apache License 2.0, effective this release — `v0.22.0` remains the final MIT-licensed release. It builds on **`v0.22.0`** (`2026-07-12`, CDC Change Feed end to end & realtime hardening — outbox capture, pull API, dispatcher, extension integration, retention, Studio surface, skills/MCP, migration `0007`), **`v0.21.0`** (`2026-07-08`, self-service auth realms & Cloudflare Pages pipeline repair — subscriber registration, rotating refresh tokens, per-realm session TTLs, migrations `0005`/`0006`), **`v0.20.0`** (backend + SDK gap-closing across 7 specs & high-load/cache readiness), **`v0.19.0`** (CWE Top 100 closeout, Visual Flow Builder triggers & marketplace community features), **`v0.18.0`** (custom domains & translation memory), **`v0.17.0`** (`lumibase_` table namespace & Content Releases), **`v0.16.0`** (code-first configuration & auto-deploy from Flows), **`v0.15.0`** (realtime audience plane & cosmic design system), **`v0.14.0`** (push notifications & MCP path-traversal hardening), **`v0.13.0`** (deployment integrations & cross-collection search), **`v0.12.0`** (privacy & compliance suite, Directus-style interfaces & tenant isolation hardening), **`v0.11.0`** (Insights, content versioning & tenant-scoped search), **`v0.10.0`** (MCP everywhere), **`v0.9.0`** (regulated/sensitive content readiness), and the **`v0.5.0` Content OS foundation** — which remain the baseline this release builds upon, not replaces.
+Current release: `v1.0.0-rc.1` (`2026-09-03`) — **first release candidate for the stable 1.0 contract**. Introduces the unified [`lumibase`](https://www.npmjs.com/package/lumibase) package (JS/TS client + the `lumibase` CLI: `types`, `doctor`, `init`) while [`@lumibase/sdk`](https://www.npmjs.com/package/@lumibase/sdk) and [`create-lumibase`](https://www.npmjs.com/package/create-lumibase) keep working unchanged. Follows the `0.26.0` migration path; no new migrations.
+
+Every release before this one is summarised in [`CHANGELOG.md`](./CHANGELOG.md), including the **`v0.5.0` Content OS foundation** — intents/SLOs, control-loop reconciliation, the L0–L4 trust ledger, the veto window, the four-scope kill switch, the tenant constitution, provenance-first revisions, the multi-agent newsroom, and Studio Mission Control. That foundation remains the baseline every later release builds upon, not replaces.
 
 ```bash
-LUMIBASE_VERSION=0.26.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+LUMIBASE_VERSION=1.0.0-rc.1 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
 See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.
@@ -155,19 +208,9 @@ Includes everything in Hobby tier plus:
 [🎯 Become a Sponsor](https://github.com/sponsors/khuepm) and unlock these exclusive resources!
 -->
 
-## Core Features
-
-1. **Edge-First:** Runs entirely on Cloudflare Workers & Hyperdrive.
-2. **True Multi-Tenancy:** Hard-coded `site_id` isolation.
-3. **Page Hydration API:** Delivers layout and data in a single payload.
-4. **GitOps Ready:** `cms config:export` for roles and schemas.
-5. **Agent Harness:** Govern AI agents with goals, context, capabilities, approvals, evaluations, and artifact commits.
-
----
-
 ## 📚 AI Skills Documentation
 
-For detailed AI-assisted development guidance, including database architecture patterns, edge optimization strategies, and UI/UX integration patterns, see [`docs/ai-skills.md`](./docs/ai-skills.md). This comprehensive guide provides the prompts and patterns used to accelerate LumiBase development with AI assistance.
+For detailed AI-assisted development guidance, including database architecture patterns, edge optimization strategies, and UI/UX integration patterns, see [`docs/en/ai-skills.md`](./docs/en/ai-skills.md). This comprehensive guide provides the prompts and patterns used to accelerate LumiBase development with AI assistance.
 
 ---
 

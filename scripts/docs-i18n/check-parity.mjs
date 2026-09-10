@@ -118,17 +118,22 @@ function inlineCode(body) {
  * In-page anchors (`#deployment-steps`) are generated from heading text, so a
  * correctly translated doc *must* have different ones — comparing their values
  * would flag every good translation. Their count still has to match: a missing
- * anchor link means a missing cross-reference. Everything else (relative paths,
- * URLs) must match exactly; a translated file path is a broken link.
+ * anchor link means a missing cross-reference. Fragments on relative Markdown
+ * links follow the same rule because the target heading is translated; compare
+ * their file paths while preserving fragments on external URLs. Everything else
+ * must match exactly: a translated file path is a broken link.
  */
-function linkTargets(body) {
+export function linkTargets(body) {
   const files = [];
   let anchors = 0;
   const re = /\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
   let m;
   while ((m = re.exec(withoutFences(body))) !== null) {
     if (m[1].startsWith('#')) anchors += 1;
-    else files.push(m[1]);
+    else {
+      const localMarkdown = !/^[a-z][a-z0-9+.-]*:/i.test(m[1]) && !m[1].startsWith('//');
+      files.push(localMarkdown ? m[1].replace(/(?<=\.md)#[^#]*$/i, '') : m[1]);
+    }
   }
   return { files, anchors };
 }
