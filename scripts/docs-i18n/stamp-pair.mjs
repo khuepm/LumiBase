@@ -22,9 +22,9 @@
 //     --allow-structure-drift
 //                    stamp even though `check-parity.mjs` reports the two sides
 //                    are not the same document. Only for a deliberate divergence,
-//                    and say why in the commit message — prefer a
-//                    `<!-- check-parity: allow <check> -->` waiver in the doc so
-//                    the reason lives next to the divergence.
+//                    and say why in the commit message. Persists a dated
+//                    `<!-- check-parity: allow <check> -->` waiver in the target
+//                    document for the checks actually bypassed.
 //
 // STRUCTURAL GATE
 // ---------------
@@ -170,7 +170,16 @@ if (WANT_VERIFIED) {
 // unconditionally inflated the target on every re-stamp — re-recording
 // provenance is not a new revision — which drifted the two sides' numbers apart
 // and made them uncomparable. Both locales now version on real change only.
-const { fmRaw: tgtFm, body: tgtBody } = splitFrontMatter(fs.readFileSync(tgtAbs, 'utf8'));
+const { fmRaw: tgtFm, body: originalTgtBody } = splitFrontMatter(fs.readFileSync(tgtAbs, 'utf8'));
+// Persist only observed exceptions, after every refusal gate has passed.
+// Existing waivers are already respected by checkPair, so repeat stamping
+// adds nothing and newly failing check categories remain visible to the gate.
+const waivedChecks = [...new Set(blocking.map((problem) => problem.check))].sort();
+const tgtBody = ALLOW_DRIFT && waivedChecks.length
+  ? `<!-- check-parity: allow ${waivedChecks.join(' ')} -->\n` +
+    `<!-- Recorded by stamp-pair --allow-structure-drift on ${now}. See commit history for rationale. -->\n\n` +
+    originalTgtBody.replace(/^\n+/, '')
+  : originalTgtBody;
 const tgtPrevSourceHash = readKey(tgtFm, 'sourceHash');
 let tgtVersion = Number(readKey(tgtFm, 'version') || 0);
 if (tgtPrevSourceHash !== srcHash) tgtVersion += 1;
