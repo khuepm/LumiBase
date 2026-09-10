@@ -50,7 +50,7 @@ still agree.
 
 | Package | Pinned to | Reason | Remove when |
 | --- | --- | --- | --- |
-| `js-yaml` | `^4.3.1` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — quadratic-complexity DoS in YAML merge-key handling (moderate), and [GHSA-mxjm-jjmh-r63x](https://github.com/advisories/GHSA-mxjm-jjmh-r63x) — quadratic CPU consumption resolving `!!omap`, unpatched below `4.3.1` (high). Pulled in transitively by `gray-matter@4.0.3`, which hard-pins js-yaml 3.x. See the patch note below. | `gray-matter` (or whatever consumes it) depends on js-yaml `>=4.2.0` directly, **and** no other dependency reintroduces a 3.x range. Verify with `pnpm why js-yaml`. |
+| `js-yaml` | `^4.3.2` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — quadratic-complexity DoS in YAML merge-key handling (moderate), [GHSA-mxjm-jjmh-r63x](https://github.com/advisories/GHSA-mxjm-jjmh-r63x) — quadratic CPU consumption resolving `!!omap`, unpatched below `4.3.1` (high), and [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh) — `maxTotalMergeKeys` does not bound CPU for empty merge sources, unpatched below `4.3.2` (high). Pulled in transitively by `gray-matter@4.0.3`, which hard-pins js-yaml 3.x. See the patch note below. | `gray-matter` (or whatever consumes it) depends on js-yaml `>=4.2.0` directly, **and** no other dependency reintroduces a 3.x range. Verify with `pnpm why js-yaml`. |
 | `dompurify` | `^3.4.13` | Security advisory (resolved via Dependabot), then raised for [GHSA-8v5p-ggcr-6q56](https://github.com/advisories/GHSA-8v5p-ggcr-6q56) — an `IN_PLACE` hook removal leaves a detached subtree, allowing sanitizer bypass at `<=3.4.12` (moderate). | A direct/transitive consumer requires `>=3.4.13` on its own. |
 | `esbuild` | `^0.28.2` | esbuild dev-server request RCE advisory (`<=0.24.2`). | All consumers (vite, tsx, etc.) require `>=0.28.2`. |
 | `form-data` | `^4.0.6` | Security advisory (unsafe random boundary). | All consumers require `>=4.0.6`. |
@@ -157,7 +157,7 @@ Check with `cargo tree -i glib` after a `tauri` bump.
 **Why it's needed:** `gray-matter@4.0.3` is the latest published release and is effectively
 unmaintained. It hard-pins `js-yaml@^3.13.1` and calls `safeLoad`/`safeDump`. Those
 functions were **removed** in js-yaml 4.x (where `load`/`dump` are safe by default — and
-where `safeLoad` is a stub that *throws*). Because the `js-yaml: ^4.3.1` override (above)
+where `safeLoad` is a stub that *throws*). Because the `js-yaml: ^4.3.2` override (above)
 upgrades js-yaml tree-wide to fix [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68),
 gray-matter would crash at parse time without this patch. gray-matter is used only at
 build/dev time in [`apps/docs`](../../../apps/docs/src/plugins/vite-plugin-docs-loader.ts)
