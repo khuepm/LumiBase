@@ -2,6 +2,20 @@
 
 Append-only history of automated EN ⇄ VI documentation syncs. Each run records language detection, preserved content and translation actions so no source content is silently lost.
 
+## 2026-09-10T01:31:20.188Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 148
+
+Summary — up-to-date: 147, translated: 0, preserved: 0, conflicts: 0, planned: 1
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `security/dependency-overrides.md` | en → vi | source changed since last sync |
+
+---
+
 ## 2026-09-07T15:32:47.745Z — mode `plan` (effective `plan`)
 
 Engine: `claude` · API key: absent · files scanned: 148
@@ -9153,4 +9167,3 @@ Summary — up-to-date: 0, translated: 0, preserved: 0, conflicts: 0, planned: 1
 | `ui/studio-ui-spec.md` | vi → en | en duplicates vi content; replace en with English translation |
 
 ---
-

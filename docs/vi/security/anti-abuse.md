@@ -7,7 +7,7 @@ translatedFrom: en
 sourceHash: 6029fc9470a0c3a9
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-07T15:23:17.206Z
+codeVerified: 2026-09-10T02:17:10.994Z
 codeVerifiedHash: 6029fc9470a0c3a9
 codeVerifiedClaims: 72
 ---
@@ -27,8 +27,8 @@ mới đi theo cùng một pattern, và (3) liệt kê các khoảng trống (ga
 lựa chọn có chủ đích, không phải do sơ suất.
 
 Về thiết kế guard runtime sâu hơn và bản audit ánh xạ CWE, xem các tài liệu đồng
-hành được cross-link ở phần "Tài liệu liên quan" — trang này giữ ở tầng bản
-đồ/best-practice và không lặp lại chi tiết của chúng.
+hành được cross-link ở phần [Tài liệu liên quan](#tài-liệu-liên-quan) — trang này
+giữ ở tầng bản đồ/best-practice và không lặp lại chi tiết của chúng.
 
 Nguyên tắc dẫn dắt là **defense-in-depth** (phòng thủ nhiều lớp): không lớp nào
 được tin là đủ. Mỗi lớp đều giả định lớp phía trước nó có thể bị vượt qua.
@@ -53,8 +53,8 @@ Nguyên tắc dẫn dắt là **defense-in-depth** (phòng thủ nhiều lớp):
 ```
 
 Tầng ứng dụng lo brute-force, anomaly và lạm dụng ở tầng nghiệp vụ. DDoS thể tích
-và chống bot chung được kỳ vọng xử lý ở upstream (xem phần Khoảng trống & khuyến
-nghị bên dưới).
+và chống bot chung được kỳ vọng xử lý ở upstream (xem phần
+[Khoảng trống](#khoảng-trống--khuyến-nghị)).
 
 ## Cơ chế hiện có (registry)
 
@@ -76,7 +76,8 @@ kèm `Retry-After`, và không bao giờ để một request bị từ chối k�
   sách **dùng chung** 3 request / IP / giờ cho *cả* `/recover` lẫn `/forgot-path`
   (key theo IP đơn thuần, nên kẻ tấn công không thể nhân đôi ngân sách bằng cách
   chia đều qua hai path). Cửa sổ cố định; `Retry-After` giảm đơn điệu. Limiter này
-  **in-memory theo từng process** (xem phần Khoảng trống & khuyến nghị bên dưới).
+  **in-memory theo từng process** (xem phần
+  [Khoảng trống](#khoảng-trống--khuyến-nghị)).
 - **Brake cho setup** — bề mặt setup công khai (mount *trước* auth, chỉ truy cập
   được khi chưa khởi tạo) bị throttle theo IP trong
   `apps/cms/src/modules/setup/routes.ts`: `GET /setup/state` ở 60 req / 60 s, và
@@ -86,7 +87,8 @@ kèm `Retry-After`, và không bao giờ để một request bị từ chối k�
   bằng 0 cho mỗi request bị chặn. Trả `429 RATE_LIMITED` + `Retry-After`. Hàng rào
   cứng chống tạo trùng admin đầu tiên vẫn là `SELECT … FOR UPDATE` trên singleton
   `system_state` cộng unique index — brake này là defence-in-depth. Nó **in-memory
-  theo từng isolate** (xem phần Khoảng trống & khuyến nghị bên dưới).
+  theo từng isolate** (xem phần
+  [Khoảng trống](#khoảng-trống--khuyến-nghị)).
 - **Throttle API chung** — `apps/cms/src/middleware/rate-limit.ts`
   (`withRateLimit`) là một lưới an toàn cửa sổ-cố-định thô trên bề mặt REST/GraphQL
   đã xác thực: mặc định 300 req / 60 s (`LUMIBASE_RATE_LIMIT_MAX` / `_WINDOW_S`),

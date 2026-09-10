@@ -147,19 +147,32 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   platform, with a table pointing at the CMS image and the client packages, and
   explains why the starter listens on `8787` rather than `1989`; `lumibase`
   states that it is the client for a CMS you already run.
-- The README's platform path now states what Docker Compose actually gives you:
-  the API. The Studio is a separate static SPA — absent from both compose files
-  and from the CMS image — and the CMS serves no HTML, so `GET /setup` returns
-  `404`. Verified against the running production CMS. Getting an admin UI means
-  hosting `apps/studio/dist` yourself or completing first-run setup over
-  `POST /api/v1/setup/complete`. Logged as backlog B51 along with the
-  contradicting claim still in `docs/en/deployment/overview.md`.
+- Updated the README's platform path to match the shipped Docker experience:
+  the CMS image builds and serves the Studio SPA, including first-run setup,
+  while Cloudflare deployments continue to host the Studio separately.
 - The landing page's `SoftwareApplication` JSON-LD reads `softwareVersion` from
   `apps/landing/package.json` instead of a hardcoded string, so it tracks
   `pnpm version:sync` rather than drifting at the next bump.
 
 - Removed page-level horizontal scrolling caused by full-bleed landing scenes,
   preserving vertical sticky scenes and scrolling inside code panels.
+- **EN/VI documentation parity is now enforced on the pairs a PR changes.** The
+  parity check already ran on pull requests but was report-only (`|| true`), so
+  nothing stopped the backlog from growing. Enforcing it repo-wide is not an
+  option either — 48 of 148 pairs still fail, mostly legacy machine-translated
+  ones — so the gate is scoped to what the PR actually touched: a contributor
+  answers for the pairs they edited, and the inherited backlog is retired on
+  its own schedule.
+  The changed-file list deliberately **includes deletions and renames**.
+  Excluding them left a hole wide enough to bypass the gate entirely: a PR
+  deleting only `docs/vi/x.md` orphaned the EN side, supplied no changed doc,
+  and the gate exited 0. A pair is now checked whenever either locale appears
+  in the diff — one surviving locale fails, both locales deleted passes, since
+  retiring a doc in both languages is legitimate and must not need an override.
+  Relative Markdown links compare their file path while allowing translated
+  heading fragments, and in-page link counts still catch omitted references.
+  Contributor-facing only; no runtime code changed.
+
 - Redesigned the landing footer with a flower video, oversized LumiBase wordmark,
   responsive navigation, reduced-motion support, and an explicit video pause control.
 - Extended the footer's Literata heading typography across the landing site while
