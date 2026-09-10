@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-09-10T02:54:35.184Z
+version: 5
+lastUpdated: 2026-09-10T21:54:17.369Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 0d4f14a158c581b6
+sourceHash: 8158614ce4b2ac56
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-10T02:54:35.184Z
-codeVerifiedHash: 0d4f14a158c581b6
+codeVerified: 2026-09-10T21:54:17.369Z
+codeVerifiedHash: 8158614ce4b2ac56
 codeVerifiedClaims: 6
 ---
 
@@ -64,7 +64,7 @@ resolution / patch hash mới, rồi `pnpm settings:check` để xác nhận hai
 | `brace-expansion@1` | `^1.1.16` | [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) — DoS do expansion thời gian mũ với các nhóm `{}` không expand liên tiếp (high), được backport về nhánh 1.x ở `1.1.16`. **Chỉ dev** — đi vào qua `minimatch@3` từ ESLint và các plugin, nên không bao giờ xuất hiện trong `pnpm audit --prod`. Key theo major (cùng dạng với scope `nanoid@3`) vì hai major không tương thích cùng tồn tại; xem [Advisory không vá được](#advisory-không-vá-được) để biết vì sao không gộp 1.x vào 5.x được. | Không còn gì trong cây resolve `minimatch@3` (`pnpm why brace-expansion -r`), lúc đó hai dòng `brace-expansion@*` gộp lại làm một. |
 | `brace-expansion@5` | `^5.0.8` | [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) — DoS do độ dài expansion không giới hạn gây crash OOM tiến trình (high), vá ở `5.0.8`. **Chỉ dev** — đi vào qua `minimatch@10` từ `glob`, `eslint`, `@typescript-eslint/typescript-estree`. Dependency trôi tự nhiên đã kéo phần lớn cây lên `5.0.9`, nhưng `minimatch@10.2.5` vẫn giữ một bản `5.0.7`; sàn này dọn nốt bản sót đó. | Giống dòng `@1`. |
 | `@types/react` | `19.2.18` | **Không phải pin bảo mật** — ép React 19 types toàn workspace để Studio/Docs/Landing/`@lumibase/ui` typecheck cùng major với runtime React 19. | Trôi lệch giữa các app không còn là mối lo, hoặc workspace cố ý tách React major trở lại. |
-| `@types/react-dom` | `19.2.4` | Giống `@types/react` — nhất quán type React 19. | Giống `@types/react`. |
+| `@types/react-dom` | `19.2.7` | Giống `@types/react` — nhất quán type React 19. Vì là pin chính xác, đây cũng là mục thứ hai `pnpm drift:check` bắt được: đợt bump nhóm minor-and-patch nâng `apps/{docs,landing,studio}` lên `^19.2.7` trong khi pin này vẫn ở `19.2.5`, nên importer trong lockfile vẫn ghi `specifier: 19.2.5`. Nâng pin cùng nhịp với manifest. | Giống `@types/react`. |
 
 ## Bảng audit ignore
 
