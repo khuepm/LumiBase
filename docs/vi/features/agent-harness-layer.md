@@ -6,10 +6,26 @@ translatedFrom: en
 sourceHash: 9b1cd7a0097a7dee
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-08T21:14:35.111Z
+codeVerified: 2026-09-10T05:00:35.120Z
 codeVerifiedHash: 9b1cd7a0097a7dee
 codeVerifiedClaims: 18
 ---
+
+<!--
+  check-parity: allow headings code-fences inline-code links tables bulk
+
+  Cặp EN/VI này KHÔNG phải một bản dịch. Bản VI là một tài liệu khác — đề xuất
+  8 mục có đánh số, 10 heading so với 25 của bản EN và dài khoảng 1/3 — có từ
+  trước, không phải do PR nào gần đây gây ra.
+
+  Waiver này chỉ ghi nhận hiện trạng để gate parity không chặn những thay đổi
+  KHÔNG liên quan tới nó; nó không chấp nhận hiện trạng đó là đúng. Việc dịch
+  lại bản VI cho khớp bản EN được theo dõi ở B60 trong
+  `.kiro/steering/out-of-scope-backlog.md`.
+
+  GỠ waiver này ngay khi B60 xong — lúc đó cặp phải qua được parity mà không
+  cần miễn trừ nào.
+-->
 
 # Agent Harness Layer
 
