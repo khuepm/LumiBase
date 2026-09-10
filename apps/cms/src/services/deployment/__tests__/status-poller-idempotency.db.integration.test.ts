@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { and, eq, sql } from 'drizzle-orm';
-import { createDb, deploymentTargets, deployments, sites, type Database } from '@lumibase/database';
+import { and, eq } from 'drizzle-orm';
+import { deploymentTargets, deployments, sites, type Database } from '@lumibase/database';
 import { EnvKeyProvider } from '@lumibase/runtime';
 import { DeploymentService } from '../deployment-service';
 import { sweepPending } from '../status-poller';
 import { registerProvider, type DeploymentProvider, type DeploymentRef } from '../providers';
 import { encryptToken } from '../token-vault';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../../__tests__/helpers/db-harness';
 
 /**
  * DB-backed status-poller idempotency (deployment-integrations task 9.3;
@@ -15,13 +16,12 @@ import { encryptToken } from '../token-vault';
  * Postgres, because it is the database — not the TypeScript — that decides
  * whether the row is still eligible to flip.
  *
- * Skips (does not fail) when DATABASE_URL is unset or unreachable, matching
- * the convention of the other `*.db.integration.test.ts` files.
+ * Skips when DATABASE_URL is absent; fails when a configured database is
+ * unreachable, following the shared DB integration harness contract.
  *
  * **Validates: Requirements 3.4, 7.3, 9.4**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE_A = 'site_deploy_poll_a';
 const SITE_B = 'site_deploy_poll_b';
 const PROVIDER_KEY = 'it-fake-provider';
@@ -81,35 +81,23 @@ const errorRef = (id: string): DeploymentRef => ({
   completedAt: OTHER_AT,
 });
 
-describe('Deployment status poller — DB idempotency', () => {
+describe.skipIf(!hasDbIntegrationUrl)('Deployment status poller — DB idempotency', () => {
   let db: Database;
-  let canConnect = false;
   let targetA = '';
   let targetB = '';
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping deployment poller DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping deployment poller DB test: database not reachable.');
-    }
+    db = await connectDbIntegration('deployment-status-poller');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return; // beforeAll may have failed
     for (const site of [SITE_A, SITE_B]) {
       await db.delete(sites).where(eq(sites.id, site)).catch(() => undefined);
     }
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
     replies.clear();
     statusCalls.length = 0;
     for (const site of [SITE_A, SITE_B]) {
@@ -166,7 +154,6 @@ describe('Deployment status poller — DB idempotency', () => {
   const service = (siteId: string) => new DeploymentService({ db, siteId, keys });
 
   it('a repeat sweep is a no-op and completedAt is written exactly once (Req 3.4)', async () => {
-    if (!canConnect) return;
     const depId = await seedDeployment(SITE_A, targetA, 'pd_once');
     script('pd_once', { ref: readyRef('pd_once') });
 
@@ -195,7 +182,6 @@ describe('Deployment status poller — DB idempotency', () => {
   });
 
   it('the conditional UPDATE rejects a write that lost the race (Req 3.4)', async () => {
-    if (!canConnect) return;
     const depId = await seedDeployment(SITE_A, targetA, 'pd_race');
     // Both concurrent sweeps read the row while it is still `building`; the
     // guard decides which write commits. The two answers differ, so a blended
@@ -217,7 +203,6 @@ describe('Deployment status poller — DB idempotency', () => {
   });
 
   it('one failing deployment does not abort the sweep (Req 9.4)', async () => {
-    if (!canConnect) return;
     const badId = await seedDeployment(SITE_A, targetA, 'pd_bad', 'queued');
     const goodId = await seedDeployment(SITE_A, targetA, 'pd_good');
     script('pd_bad', { throws: 'provider 503' });
@@ -244,7 +229,6 @@ describe('Deployment status poller — DB idempotency', () => {
   });
 
   it('webhook and poller converge without double-writing (Req 7.3)', async () => {
-    if (!canConnect) return;
     const depId = await seedDeployment(SITE_A, targetA, 'pd_hook');
     script('pd_hook', { ref: errorRef('pd_hook') });
 
@@ -269,7 +253,6 @@ describe('Deployment status poller — DB idempotency', () => {
   });
 
   it('sweeping site A never touches site B (DoD §2b two-site check)', async () => {
-    if (!canConnect) return;
     // Same providerDeploymentId in both tenants — the worst case for a query
     // that forgot its site filter.
     const depA = await seedDeployment(SITE_A, targetA, 'pd_shared');

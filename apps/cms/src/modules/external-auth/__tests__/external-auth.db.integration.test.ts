@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { SignJWT, generateKeyPair } from 'jose';
-import { authExternalIssuers, createDb, roles, sites, userSites, users, type Database } from '@lumibase/database';
+import { authExternalIssuers, roles, sites, userSites, users, type Database } from '@lumibase/database';
 import { ExternalIssuerService } from '../../../services/external-issuer-service';
 import { verifyExternalJwt, type TrustedIssuer, type VerifierDeps } from '../verifier';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../../__tests__/helpers/db-harness';
 
 /**
  * DB-backed tests for external JWT auth (Req 2, 6, 9): issuer CRUD + uniqueness,
@@ -14,41 +15,28 @@ import { verifyExternalJwt, type TrustedIssuer, type VerifierDeps } from '../ver
  * **Validates: Requirements 2 (CRUD/unique), 6 (role mapping → site roles), 9 (JIT)**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_extauth_it';
 const ISSUER = 'https://idp.example.com/';
 
-describe('External JWT auth — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('External JWT auth — DB integration', () => {
   let db: Database;
-  let canConnect = false;
   let editorRoleId = '';
   let publicKey: CryptoKey;
   let privateKey: CryptoKey;
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping external-auth DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping external-auth DB test: database not reachable.');
-    }
+    db = await connectDbIntegration('external-auth');
     const kp = await generateKeyPair('RS256');
     publicKey = kp.publicKey;
     privateKey = kp.privateKey;
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.delete(users).where(eq(users.externalId, 'ext-1')).catch(() => undefined);
     await db.insert(sites).values({ id: SITE, name: 'ExtAuth IT' });
@@ -64,7 +52,6 @@ describe('External JWT auth — DB integration', () => {
   }
 
   it('creates an issuer and rejects a duplicate (Req 2)', async () => {
-    if (!canConnect) return;
     const input = {
       issuer: ISSUER,
       jwksUri: 'https://idp.example.com/jwks',
@@ -80,7 +67,6 @@ describe('External JWT auth — DB integration', () => {
   });
 
   it('issuer CRUD drops the auth:issuers:<siteId> cache entry (Req 8.6, 2.6 — task 6.3)', async () => {
-    if (!canConnect) return;
     const deletes: string[] = [];
     const cache = {
       async get<T>(): Promise<T | null> {
@@ -121,7 +107,6 @@ describe('External JWT auth — DB integration', () => {
   });
 
   it('rejects an HS256 algorithm in config (Req 2.3)', async () => {
-    if (!canConnect) return;
     await expect(
       svc().create({
         issuer: ISSUER,
@@ -134,7 +119,6 @@ describe('External JWT auth — DB integration', () => {
   });
 
   it('end-to-end: token role maps to a site role and JIT-creates user+membership (Req 6, 9)', async () => {
-    if (!canConnect) return;
     await svc().create({
       issuer: ISSUER,
       jwksUri: 'https://idp.example.com/jwks',

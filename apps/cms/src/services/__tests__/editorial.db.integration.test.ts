@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   collections,
   contentReviews,
-  createDb,
   items,
   sites,
   users,
@@ -11,6 +10,7 @@ import {
 } from '@lumibase/database';
 import { ItemService, ItemServiceError } from '../item-service';
 import { EditorialService } from '../editorial-service';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
  * DB-backed editorial workflow integration (task 8.6; Req 8, 9). Skips when
@@ -19,37 +19,24 @@ import { EditorialService } from '../editorial-service';
  * **Validates: Requirements 8.2, 8.3, 9.1, 9.3**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_editorial_it';
 const GATED = 'gated_articles';
 const OPEN = 'open_articles';
 
-describe('Editorial workflow — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('Editorial workflow — DB integration', () => {
   let db: Database;
-  let canConnect = false;
   let gatedId: string;
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping editorial DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping editorial DB test: database not reachable.');
-    }
+    db = await connectDbIntegration('editorial');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.delete(users).where(eq(users.id, 'author')).catch(() => undefined);
     await db.delete(users).where(eq(users.id, 'reviewer')).catch(() => undefined);
@@ -72,7 +59,6 @@ describe('Editorial workflow — DB integration', () => {
   const editorial = (userId: string) => new EditorialService({ db, siteId: SITE, userId });
 
   it('blocks direct draft -> published on a workflow collection (Req 8.2)', async () => {
-    if (!canConnect) return;
     const item = await svc('author').create(GATED, { data: { title: 'X' } });
     await expect(
       svc('author').patch(GATED, item.id, { status: 'published' }),
@@ -80,7 +66,6 @@ describe('Editorial workflow — DB integration', () => {
   });
 
   it('allows the review -> approve -> published path with a separate reviewer', async () => {
-    if (!canConnect) return;
     const item = await svc('author').create(GATED, { data: { title: 'Y' } });
 
     await editorial('author').submitReview(GATED, item.id, { assignedTo: 'reviewer' });
@@ -107,14 +92,12 @@ describe('Editorial workflow — DB integration', () => {
   });
 
   it('leaves workflow-off collections unchanged: draft -> published directly (Req 8.3)', async () => {
-    if (!canConnect) return;
     const item = await svc('author').create(OPEN, { data: { title: 'Z' } });
     const published = await svc('author').patch(OPEN, item.id, { status: 'published' });
     expect(published.status).toBe('published');
   });
 
   it('rejects with reason returns the item to draft', async () => {
-    if (!canConnect) return;
     const item = await svc('author').create(GATED, { data: { title: 'R' } });
     await editorial('author').submitReview(GATED, item.id);
     await editorial('reviewer').reject(GATED, item.id, { reason: 'needs work' });

@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   collections,
-  createDb,
   fields,
   items,
   sites,
@@ -16,22 +15,21 @@ import { adminEncryptionRouter } from '../admin-encryption';
 import { hashPassword } from '../../services/auth/password';
 import { readEnvelopeSetting } from '../../services/crypto/envelope-settings';
 import { ItemService } from '../../services/item-service';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
  * DB-backed route test for envelope-mode step-up + migration (task 3.6; Req 4.5).
  * Skips when DATABASE_URL is unset/unreachable.
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_envelope_route_it';
 const COLLECTION = 'patients';
 const KEK = Buffer.alloc(32, 55).toString('base64');
 const PASSWORD = 'CorrectHorse!42';
 const USER_ID = 'usr_envelope_admin';
 
-describe('POST /admin/encryption/envelope — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('POST /admin/encryption/envelope — DB integration', () => {
   let db: Database;
-  let canConnect = false;
   const keyProvider = new EnvKeyProvider(new Map([['v0', KEK]]), 'v0');
 
   // Minimal app injecting the context the router expects from upstream middleware.
@@ -46,27 +44,16 @@ describe('POST /admin/encryption/envelope — DB integration', () => {
   app.route('/', adminEncryptionRouter);
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping envelope route DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping envelope route DB test: database not reachable.');
-    }
+    db = await connectDbIntegration('admin-encryption-envelope');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
     await db.delete(users).where(eq(users.id, USER_ID)).catch(() => undefined);
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.delete(users).where(eq(users.id, USER_ID));
     await db.insert(sites).values({ id: SITE, name: 'Envelope Route IT' });
@@ -86,7 +73,6 @@ describe('POST /admin/encryption/envelope — DB integration', () => {
   });
 
   it('rejects a wrong step-up password (401) and leaves the mode unchanged', async () => {
-    if (!canConnect) return;
     const res = await app.request('/envelope', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -99,7 +85,6 @@ describe('POST /admin/encryption/envelope — DB integration', () => {
   });
 
   it('enables envelope mode with a correct password and migrates existing records', async () => {
-    if (!canConnect) return;
     const res = await app.request('/envelope', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

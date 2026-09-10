@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   auditLog,
   collections,
-  createDb,
   fieldAccessLog,
   fields,
   items,
@@ -16,6 +15,7 @@ import { EnvKeyProvider } from '@lumibase/runtime';
 import { ItemService } from '../item-service';
 import { ErasureService } from '../erasure-service';
 import { sweepRetention } from '../scheduler-worker';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
  * DB-backed erasure / retention / SAR integration (tasks 9.5, 10.4; Req 11-13).
@@ -24,38 +24,25 @@ import { sweepRetention } from '../scheduler-worker';
  * **Validates: Requirements 11.2, 11.3, 12.2, 12.4, 13.1-13.3**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_erasure_it';
 const COLLECTION = 'patients';
 const KEY = Buffer.alloc(32, 33).toString('base64');
 
-describe('Erasure / retention / SAR — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('Erasure / retention / SAR — DB integration', () => {
   let db: Database;
-  let canConnect = false;
   let collectionId: string;
   const keyProvider = new EnvKeyProvider(new Map([['v0', KEY]]), 'v0');
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping erasure DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping erasure DB test: database not reachable.');
-    }
+    db = await connectDbIntegration('erasure-retention-sar');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.delete(auditLog).where(eq(auditLog.siteId, SITE)).catch(() => undefined);
     await db.insert(sites).values({ id: SITE, name: 'Erasure IT' });
@@ -73,7 +60,6 @@ describe('Erasure / retention / SAR — DB integration', () => {
   const svc = () => new ItemService({ db, siteId: SITE, keyProvider });
 
   it('erasure hard-deletes item + revisions but preserves the data_erased audit (Req 11.2, 11.3)', async () => {
-    if (!canConnect) return;
     const item = await svc().create(COLLECTION, { data: { patientId: 'p-1', ssn: '111' } });
     // create writes a revision.
     expect((await db.select().from(revisions).where(eq(revisions.itemId, item.id))).length).toBe(1);
@@ -98,7 +84,6 @@ describe('Erasure / retention / SAR — DB integration', () => {
   });
 
   it('SAR export returns decrypted subject data + provenance and audits sar_exported (Req 13)', async () => {
-    if (!canConnect) return;
     await svc().create(COLLECTION, { data: { patientId: 'p-2', ssn: '222' } });
 
     const { records, count } = await svc().exportSubject(COLLECTION, { patientId: 'p-2' });
@@ -114,7 +99,6 @@ describe('Erasure / retention / SAR — DB integration', () => {
   });
 
   it('retention sweep applies hard_delete past maxAgeDays and audits retention_applied (Req 12)', async () => {
-    if (!canConnect) return;
     const item = await svc().create(COLLECTION, { data: { patientId: 'p-3', ssn: '333' } });
     // Backdate createdAt beyond the policy window.
     await db

@@ -1,16 +1,16 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   agentGoals,
   agentRuns,
   collections,
-  createDb,
   items,
   revisions,
   sites,
   type Database,
 } from '@lumibase/database';
 import { VetoService } from '../veto-service';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
  * DB-backed test for the enriched `VetoService.listPending`
@@ -24,39 +24,25 @@ import { VetoService } from '../veto-service';
  * **Validates: Requirements 8.1, 8.2, 8.4**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_veto_listing_it';
 const COLLECTION = 'articles';
 
-describe('VetoService.listPending — enriched staged listing', () => {
+describe.skipIf(!hasDbIntegrationUrl)('VetoService.listPending — enriched staged listing', () => {
   let db: Database;
-  let canConnect = false;
   let collectionId: string;
   let itemId: string;
   let runId: string;
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping veto listPending DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping veto listPending DB test: database not reachable.');
-      canConnect = false;
-    }
+    db = await connectDbIntegration('veto-list-pending');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
     // Fresh slate: cascade from the site clears items, revisions, approvals.
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.insert(sites).values({ id: SITE, name: 'Veto listing IT' });
@@ -86,7 +72,6 @@ describe('VetoService.listPending — enriched staged listing', () => {
   });
 
   it('returns collection, itemId, patch and agentRole alongside the approval (Req 8.1)', async () => {
-    if (!canConnect) return;
     const service = new VetoService({ db, siteId: SITE });
     const staged = await service.stageItemPatch({
       runId,
@@ -113,7 +98,6 @@ describe('VetoService.listPending — enriched staged listing', () => {
   });
 
   it('keeps the entry with null context when the staging revision is gone (Req 8.2)', async () => {
-    if (!canConnect) return;
     const service = new VetoService({ db, siteId: SITE });
     const staged = await service.stageItemPatch({
       runId,
@@ -135,7 +119,6 @@ describe('VetoService.listPending — enriched staged listing', () => {
   });
 
   it('never leaks stagings from another site (Req 8.3)', async () => {
-    if (!canConnect) return;
     const service = new VetoService({ db, siteId: SITE });
     await service.stageItemPatch({
       runId,
