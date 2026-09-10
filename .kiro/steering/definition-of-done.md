@@ -101,10 +101,15 @@ Với feature đụng tới auth/token, base URL API, build output của Studio,
 > là tiếng Anh. Đóng backlog đó ở 0.26.0 mất một đợt dịch riêng. Rẻ hơn nhiều nếu mỗi
 > PR tự giữ parity.
 >
-> Cơ giới hoá hiện có (chạy được nhưng **advisory**): `pnpm docs:i18n:detect` báo cặp
-> lệch, `pnpm docs:i18n:parity` so cấu trúc, `pnpm docs:i18n:verify` so claim với code.
-> Workflow `docs-i18n-sync.yml` gọi `check-parity` với `|| true` nên **không chặn CI** —
-> vì vậy checklist dưới đây là hàng rào thật, đừng trông vào CI đỏ.
+> Cơ giới hoá hiện có: `pnpm docs:i18n:detect` báo cặp lệch, `pnpm docs:i18n:parity`
+> so cấu trúc, `pnpm docs:i18n:verify` so claim với code.
+> Trong `docs-i18n-sync.yml`, lượt `check-parity` **toàn repo** vẫn `|| true`
+> (advisory — backlog thừa hưởng còn đỏ), **nhưng** bước
+> `gate-changed-parity.mjs` **chặn CI** với đúng những cặp mà PR chạm vào, kể cả
+> khi PR đó **xoá** hoặc **rename** một locale: còn một bên sống sót là đỏ, xoá cả
+> hai bên là xanh. Nghĩa là "advisory" giờ chỉ đúng với backlog cũ, không đúng với
+> việc bạn đang sửa — nhưng checklist dưới đây vẫn rộng hơn CI (CI so cấu trúc, nó
+> không đọc được bản dịch có đúng nghĩa hay không), nên đừng chỉ trông vào CI xanh.
 >
 > **Tiêu chí thừa còn hơn thiếu:** phân vân file có cần sync → sync; phân vân có cần
 > stamp → stamp.

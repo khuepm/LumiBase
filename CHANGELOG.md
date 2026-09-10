@@ -47,6 +47,34 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Security
 
+- **Inbound deployment webhooks now require a real provider signature.** The
+  `POST /api/v1/deployments/webhook/:provider` receiver verifies HMAC/JWS over
+  the raw request bytes using Web Crypto (so the same code runs on Workers and
+  Node): **Vercel** HMAC-SHA1 hex in `x-vercel-signature`, **Netlify** a compact
+  JWS/HS256 in `x-webhook-signature`. Comparison is constant-time and folds the
+  length difference into the result, so a malformed or wrong-length signature
+  returns `401 INVALID_SIGNATURE` rather than raising a `500`. The shared secret
+  is read from the per-site setting `deployment.webhook.<provider>` (value
+  `{ "secret": "…" }`) — never from a request header — and an unconfigured
+  secret fails closed.
+  For Netlify, verifying the signature was not sufficient on its own: the body
+  is not part of a JWS signing input, so an authentic JWS captured from one
+  notification could authenticate a **different** body. The payload must now
+  also bind to the bytes on the wire — its `sha256` claim is compared against
+  the digest of the raw body (a payload that is itself the raw body is also
+  accepted, since that binds too). Rejected requests write nothing, so a forged
+  webhook can no longer move a deployment's status.
+  Response shapes are unchanged; status still converges through the 30s poller
+  if webhooks are not configured at all.
+
+  **Upgrade note.** This is a behaviour change for anyone who relied on the
+  earlier presence-only guard, which accepted a request as long as *some*
+  signature header was present. Configure the provider's webhook secret under
+  the per-site setting `deployment.webhook.<provider>` and use the same value in
+  the Vercel/Netlify notification config; until you do, inbound webhooks are
+  rejected with `401` (deployment status keeps syncing via the poller, so
+  nothing breaks silently).
+
 - **Bumped `nodemailer` to `9.1.1` and the tree-wide `js-yaml` override to
   `^4.3.2`**, clearing the two high-severity advisories that began failing the
   dependency-audit gate. Both are denial-of-service issues reachable from
@@ -59,6 +87,65 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   since js-yaml 4.3.2 keeps the `load`/`dump` API it targets.
 
 ### Added
+
+- **Deploy triggers are now rate-limited per target.** `POST /api/v1/deployments/targets/:id/deploy`
+  was gated on "site admin" and "target is active" — who may trigger, never how
+  often — so anything holding admin credentials (a script, a stuck flow, an
+  agent loop) could keep starting provider-billed builds until the tenant's
+  Vercel/Netlify account throttled or its build minutes were gone. A two-tier
+  fixed window now caps each target at 5 triggers / 60 s and 30 / 3600 s,
+  keyed on `siteId` **and** target id so no two targets share a budget and no
+  site can spend another's. Over the limit the request is rejected with `429`
+  `{ "errors": [{ "code": "RATE_LIMITED", "retryAfterSeconds": n }] }` plus
+  `Retry-After`; no `deployments` row is written and the attempt is audited as
+  `deployment.trigger.rate_limited`.
+  The check sits after the coalescing branch and before the outbound provider
+  call, so budget is spent only by triggers that actually reach the provider —
+  a coalesced flow deploy costs nothing. It applies to every trigger source
+  rather than manual ones alone: the cap protects the tenant's provider account
+  regardless of who asked, and flow auto-deploys already stay far below it via
+  `coalesceWindowMs`. It runs on the runtime rate limiter (Redis `INCR` on
+  Docker, cache/isolate on Workers) and **fails open** when that limiter is
+  unreachable, since a limiter outage must not take deploys down.
+
+- **The Docker image now serves the Studio.** Until this release no shipped
+  artifact contained it: neither compose file referenced the Studio, the image
+  copied only `apps/cms/dist`, and the CMS served no HTML — so a self-hoster
+  following the docs reached `GET /setup` and got a `404`, while
+  `docs/en/deployment/overview.md` claimed Docker served the Studio from the
+  same origin. That sentence is now true rather than deleted.
+
+  Where it answers: `/setup` and `/<adminPath>/…` return the SPA shell,
+  `/assets/*` and `/sw.js` return the build output, and `/`, `/admin`, `/studio`
+  and every other path still return the indistinguishable `404`. The Hide-Login
+  guarantee (admin-setup-wizard Req 5.1/5.6) is unchanged: an admin path that
+  differs by one character still 404s, and the bundle refuses to embed the admin
+  path at build time. The Property 7 indistinguishability test was re-run and
+  passes. What the change concedes is narrow — someone holding a valid
+  content-hashed filename can tell a Studio is hosted on the origin, but not
+  where the login is.
+
+  Two optional variables: `LUMIBASE_STUDIO_DIST` overrides the bundle location
+  (default `./studio`), and `LUMIBASE_SERVE_STUDIO=false` runs API-only. Turn it
+  off when the Studio is also on Pages in front of this CMS, because two copies
+  can drift to different versions. A missing bundle degrades to API-only with a
+  log line, which is the previous behaviour; a *misconfigured*
+  `LUMIBASE_STUDIO_DIST` warns loudly rather than degrading silently.
+
+  Cloudflare is unaffected — Workers has no filesystem, so the Studio stays a
+  Pages deployment there, and `serve-studio` is imported only by `serve.ts` so
+  `@hono/node-server/serve-static` cannot reach the Workers bundle.
+
+  Two notes for anyone extending this. Serving the SPA needs a catch-all, and a
+  naive one also answers `/api/v1/nonexistent` with `index.html` and a `200`;
+  mounting order does not prevent it, because Hono returns control to the
+  catch-all after `app.route('/api/v1', api)` matches without finalizing. An
+  explicit reserved-prefix list is the guard, and it is tested. Separately, a
+  missing file under `/assets/` returns `404` rather than the shell — a
+  deliberate divergence from Cloudflare Pages, which answers `200` with HTML and
+  hands the browser markup where it expected JavaScript. That divergence found a
+  real bug on its first run: `index.html` references a `favicon.svg` that does
+  not exist in the repository, which Pages has been masking with a `200`.
 
 - Root `.env.example`. The file was already anticipated — `.gitignore` carried
   `!.env.example` — but never existed, so both the README and
@@ -96,12 +183,32 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   platform, with a table pointing at the CMS image and the client packages, and
   explains why the starter listens on `8787` rather than `1989`; `lumibase`
   states that it is the client for a CMS you already run.
+- Updated the README's platform path to match the shipped Docker experience:
+  the CMS image builds and serves the Studio SPA, including first-run setup,
+  while Cloudflare deployments continue to host the Studio separately.
 - The landing page's `SoftwareApplication` JSON-LD reads `softwareVersion` from
   `apps/landing/package.json` instead of a hardcoded string, so it tracks
   `pnpm version:sync` rather than drifting at the next bump.
 
 - Removed page-level horizontal scrolling caused by full-bleed landing scenes,
   preserving vertical sticky scenes and scrolling inside code panels.
+- **EN/VI documentation parity is now enforced on the pairs a PR changes.** The
+  parity check already ran on pull requests but was report-only (`|| true`), so
+  nothing stopped the backlog from growing. Enforcing it repo-wide is not an
+  option either — 48 of 148 pairs still fail, mostly legacy machine-translated
+  ones — so the gate is scoped to what the PR actually touched: a contributor
+  answers for the pairs they edited, and the inherited backlog is retired on
+  its own schedule.
+  The changed-file list deliberately **includes deletions and renames**.
+  Excluding them left a hole wide enough to bypass the gate entirely: a PR
+  deleting only `docs/vi/x.md` orphaned the EN side, supplied no changed doc,
+  and the gate exited 0. A pair is now checked whenever either locale appears
+  in the diff — one surviving locale fails, both locales deleted passes, since
+  retiring a doc in both languages is legitimate and must not need an override.
+  Relative Markdown links compare their file path while allowing translated
+  heading fragments, and in-page link counts still catch omitted references.
+  Contributor-facing only; no runtime code changed.
+
 - Redesigned the landing footer with a flower video, oversized LumiBase wordmark,
   responsive navigation, reduced-motion support, and an explicit video pause control.
 - Extended the footer's Literata heading typography across the landing site while
@@ -109,6 +216,24 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   licenses and links from the license page; no paid font license is required.
 
 ### Fixed
+
+- The scaffolded Cloudflare starter installs again (#450). The template declared
+  `@cloudflare/workers-types@^4.0.0` while the `wrangler@^4` beside it had moved
+  its peer to `^5`, so `npm install` in a freshly generated project failed with
+  ERESOLVE; the template now tracks the same major as `apps/cms`. Projects
+  scaffolded before this release keep the old range and will keep failing — there
+  is no backfill path into someone else's repository, so either scaffold again or
+  raise `@cloudflare/workers-types` to `^5` by hand.
+
+  Two checks close the gap that let this ship. `pnpm --filter create-lumibase
+  smoke` generates both templates, installs them with **npm and pnpm**, and
+  typechecks the result; a new `scaffold-smoke` CI job runs it whenever
+  `packages/create-lumibase/` changes. Exercising both package managers is the
+  point: npm rejects an incompatible peer graph, while pnpm merely warns and
+  installed the very same broken graph with exit 0, so a pnpm-only check would
+  have reported this as fixed while it was not. A second, offline test pins the
+  template's Workers Types major to the one `apps/cms` declares, so the drift is
+  caught on every commit rather than only when the network smoke runs.
 
 - Prerelease tags no longer fail the Pages deployment workflow (#451). The
   trigger glob `v*.*.*` matches `v1.0.0-rc.1`, but `pages-deploy.yml` validated
@@ -3521,4 +3646,3 @@ Initial tagged release.
 [0.2.1]: https://github.com/khuepm/lumibase/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/khuepm/lumibase/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/khuepm/lumibase/releases/tag/v0.1.0
-

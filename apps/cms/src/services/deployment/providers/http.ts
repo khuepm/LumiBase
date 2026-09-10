@@ -53,10 +53,39 @@ export function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/**
+ * SHA-256 of `body` as lowercase hex. Netlify's JWS payload carries this digest
+ * (`{ "sha256": "…" }`) so the signature can be bound to the exact bytes.
+ */
+export async function sha256Hex(body: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 /** base64url-encode raw bytes (JWS signing input compare). */
 function b64url(bytes: ArrayBuffer): string {
   const bin = String.fromCharCode(...new Uint8Array(bytes));
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Decode the payload segment of a compact JWS to text. Returns `null` for any
+ * malformed input — callers must treat that as a verification failure, never as
+ * an exception (a client-supplied header must not be able to raise a 500).
+ */
+export function decodeJwsPayload(jws: string): string | null {
+  const parts = jws.split('.');
+  if (parts.length !== 3) return null;
+  const seg = parts[1] ?? '';
+  try {
+    const b64 = seg.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+    const bin = atob(padded);
+    const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return null;
+  }
 }
 
 /**

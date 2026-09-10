@@ -18,6 +18,7 @@ import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPressureLimiter } from './pressure-limiter';
 import { startWorkerHealthServer } from './worker-health';
 import { setRuntimeFactory } from './middleware/runtime';
+import { mountStudio } from './serve-studio';
 import type { Bindings } from './env';
 
 type ProcessRole = 'web' | 'worker' | 'all';
@@ -66,7 +67,33 @@ async function main() {
   // connections, two pg pools — and discarded one on the first request.
   setRuntimeFactory(() => runtime);
 
+
   if (runHttp) {
+    // Serve the Studio SPA from this process when its bundle is present. Node
+    // only: Workers has no filesystem, so on Cloudflare the Studio stays a
+    // separate Pages deployment. `serve-studio` is imported nowhere else, which
+    // is what keeps `@hono/node-server/serve-static` out of the Workers bundle
+    // — the same containment `node-cron` relies on.
+    //
+    // Mounted after every route in `index.ts` (already registered at import)
+    // so the API answers for itself; the module's reserved-prefix list is what
+    // stops the SPA catch-all from turning API 404s into HTML.
+    const studio = mountStudio(app, process.env as Record<string, string | undefined>);
+    if (studio.mounted) {
+      console.log(`[lumibase-cms] Serving Studio from ${studio.root}`);
+    } else if (studio.reason === 'disabled') {
+      console.log('[lumibase-cms] Studio disabled via LUMIBASE_SERVE_STUDIO — running API-only');
+    } else if (studio.reason === 'configured-but-missing') {
+      // Loud: someone asked for the Studio and named a path that has no
+      // index.html. Silently running API-only here is how a broken deployment
+      // looks healthy.
+      console.warn(
+        `[lumibase-cms] LUMIBASE_STUDIO_DIST=${studio.root} has no index.html — running API-only`,
+      );
+    } else {
+      console.log('[lumibase-cms] Studio bundle not present — running API-only');
+    }
+
     server = serve({
       fetch: (request, nodeBindings) => {
         const pressureResponse = pressureLimiter.handle(request);

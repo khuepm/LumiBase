@@ -1,12 +1,12 @@
 ---
-version: 2
-lastUpdated: 2026-07-28T10:20:15.340Z
+version: 4
+lastUpdated: 2026-09-07T15:32:41.098Z
 sourceLang: en
 syncStatus: source
-contentHash: 0ba8c0326e531abc
-codeVerified: 2026-07-28T10:20:15.340Z
-codeVerifiedHash: 0ba8c0326e531abc
-codeVerifiedClaims: 32
+contentHash: db3d36504104f971
+codeVerified: 2026-09-07T15:32:41.098Z
+codeVerifiedHash: db3d36504104f971
+codeVerifiedClaims: 34
 ---
 
 # Deployment Integrations (Vercel / Netlify)
@@ -47,7 +47,7 @@ Provider API tokens are **never stored in plaintext**. On create, the token is e
 Two complementary paths keep a deployment's status current:
 
 - **Status poller** — a 30s cron (`apps/cms/src/services/deployment/status-poller.ts`, registered in `serve.ts`) sweeps every non-terminal deployment and syncs it from the provider. Each sync is a guarded conditional update (only flips `queued`/`building`) and a single provider error never aborts the sweep — re-running is a no-op.
-- **Inbound webhook** — `POST /api/v1/deployments/webhook/:provider` (public, pre-auth) receives provider-pushed status events. It is intentionally outside the authenticated surface because the provider authenticates by **signing the request body**, not a bearer token; it still runs `withTenant` + `withDb`. The signature is verified for real over the raw body via Web Crypto: **Vercel** uses HMAC-SHA1 (`x-vercel-signature`), **Netlify** a JWS/HS256 (`x-webhook-signature`), compared in constant time. The shared secret is read from the per-site setting `deployment.webhook.<provider>` (value `{ "secret": "…" }`) — **never** from a request header. If no secret is configured, every webhook request is rejected (`401 INVALID_SIGNATURE`); status still syncs via the poller.
+- **Inbound webhook** — `POST /api/v1/deployments/webhook/:provider` (public, pre-auth) receives provider-pushed status events. It is intentionally outside the authenticated surface because the provider authenticates by **signing the request body**, not a bearer token; it still runs `withTenant` + `withDb`. The signature is verified for real over the raw body via Web Crypto: **Vercel** uses HMAC-SHA1 (`x-vercel-signature`), **Netlify** a JWS/HS256 (`x-webhook-signature`), compared in constant time. For Netlify the signature check alone is not enough — the body is not part of a JWS signing input — so the payload must also bind to these bytes: its `sha256` claim is compared against the digest of the raw body (a payload that *is* the raw body is also accepted). Without that, an authentic JWS captured from one notification would authenticate a different body. A signature of the wrong length, an undecodable payload or a body tampered after signing all return `401`, never a `500`. The shared secret is read from the per-site setting `deployment.webhook.<provider>` (value `{ "secret": "…" }`) — **never** from a request header. If no secret is configured, every webhook request is rejected (`401 INVALID_SIGNATURE`); status still syncs via the poller.
 
 ## 5. REST API
 
@@ -66,6 +66,20 @@ All routes are under `/api/v1/deployments`, on the authenticated + tenant-scoped
 | `POST /:id/refresh` | Force a status sync from the provider |
 
 SDK (`@lumibase/sdk`): `client.deployments.targets.{list,create,update,delete,deploy}` and `client.deployments.{list,get,logs,refresh}`, typed with `DeploymentTargetResource` / `DeploymentResource`.
+
+### 5a. Trigger rate limit
+
+Every accepted trigger starts a provider-billed build, so `POST /targets/:id/deploy` is capped **per target** on top of the admin gate (`apps/cms/src/services/deployment/trigger-rate-limit.ts`):
+
+| Tier | Budget |
+|---|---|
+| Burst | 5 triggers / 60 s |
+| Sustained | 30 triggers / 3600 s |
+
+- **Scope** — budget keys carry both `site_id` and the target id (`rl:deploy:<tier>:<siteId>:<targetId>`), so two targets never share a budget and one site can never exhaust another's.
+- **Applies to every trigger source** — manual, flow (`auto`) and agent triggers all consume the same per-target budget, because the limit protects the tenant's provider account regardless of who asked. Flow auto-deploys normally stay far below it thanks to `coalesceWindowMs`; a coalesced trigger reuses an existing build and does **not** spend budget (the check runs just before the outbound provider call).
+- **Exceeded** — the request is rejected with `429` and `{ "errors": [{ "code": "RATE_LIMITED", "retryAfterSeconds": <n> }] }` plus a `Retry-After` header. No `deployments` row is created for a rejected trigger; the attempt is audited as `deployment.trigger.rate_limited`.
+- **Fail-open** — if the rate limiter backend is unreachable the trigger is allowed; a limiter outage must not take deploys down. The admin gate and the `status='active'` target check still apply.
 
 ## 6. Auto-deploy via Flows
 

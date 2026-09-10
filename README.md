@@ -104,15 +104,18 @@ Brings up the CMS plus everything it needs — PostgreSQL, Redis, MinIO, MeiliSe
 ```bash
 git clone https://github.com/khuepm/lumibase.git && cd lumibase
 docker compose -f docker/docker-compose.yml up -d
+curl http://localhost:1989/health
 ```
 
-Then open <http://localhost:1989/setup> to create the first admin. For a real deployment use the published image (`ghcr.io/khuepm/lumibase-cms`) with the production override and your own secrets — that path has decisions this one skips (TLS to the database, `ENCRYPTION_KEY`, CORS origins):
+That gives you the **API** on `:1989`. The development compose image mounts source for hot reload rather than building, so it has no Studio bundle and runs API-only — pair it with `pnpm studio:dev` (option 3), or use the published image below, which ships the Studio.
 
 ```bash
-cp docker/.env.example docker/.env      # JWT_SECRET, DATABASE_URL, DATABASE_SSL_MODE…
+cp docker/.env.example docker/.env      # set JWT_SECRET; DATABASE_SSL_MODE=disable for the bundled Postgres
 LUMIBASE_VERSION=1.0.0-rc.1 docker compose \
   -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
+
+The image serves the Studio from the same origin as the API, so there is no second deployment and no CORS entry to configure. Open <http://localhost:1989/setup> to create the first admin; afterwards the Studio lives under the admin path that setup chose. `/`, `/admin` and `/studio` deliberately return an indistinguishable `404` — the login location is not meant to be discoverable. Set `LUMIBASE_SERVE_STUDIO=false` to run API-only when you host the Studio separately. Details: [Deployment overview](./docs/en/deployment/overview.md#studio-api-connectivity) · [Deployment checklist](./docs/en/DEPLOYMENT-CHECKLIST.md)
 
 Runbook: [Deployment overview](./docs/en/deployment/overview.md) · [Deployment checklist](./docs/en/DEPLOYMENT-CHECKLIST.md)
 
