@@ -17,11 +17,11 @@ function Setup() {
           <code>npm run cms:up</code> — starts the CMS and Studio
         </li>
         <li>
-          <code>npm run cms:logs</code> — copy the <code>SETUP_TOKEN</code> into{' '}
-          <code>.env</code>
+          <code>npm run cms:bootstrap</code> — first admin, public read access
+          and a browser-safe key
         </li>
         <li>
-          <code>npm run cms:bootstrap</code> then <code>npm run cms:seed</code>
+          <code>npm run cms:seed</code> — sample posts
         </li>
       </ol>
     </main>
