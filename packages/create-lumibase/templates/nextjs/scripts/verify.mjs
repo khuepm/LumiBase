@@ -52,6 +52,35 @@ const DENIED = new Set([401, 403]);
  */
 const DENIED_OR_HIDDEN = new Set([401, 403, 404]);
 
+/**
+ * Read the `data` array out of a successful response, or explain why it is not
+ * one.
+ *
+ * An HTTP 200 is not proof of anything on its own: a proxy error page, a
+ * gateway timeout rendered as HTML, or an envelope that changed shape all
+ * arrive as "success". Treating those as an empty list is how a verifier
+ * reports "no drafts are visible" about a response that never contained items
+ * at all — a false pass of exactly the kind this script exists to prevent.
+ *
+ * So the documented envelope is required: an object with a `data` array.
+ */
+function readList(body) {
+  if (typeof body === 'string') {
+    const head = body.trim().slice(0, 40).replace(/\s+/g, ' ');
+    return { ok: false, why: `expected JSON, got a non-JSON body ("${head}…")` };
+  }
+  if (!body || typeof body !== 'object') {
+    return { ok: false, why: `expected a JSON object, got ${body === null ? 'null' : typeof body}` };
+  }
+  if (!Array.isArray(body.data)) {
+    return {
+      ok: false,
+      why: `expected a { data: [...] } envelope, got keys: ${Object.keys(body).join(', ') || 'none'}`,
+    };
+  }
+  return { ok: true, items: body.data };
+}
+
 let failures = 0;
 let skipped = 0;
 
@@ -108,8 +137,13 @@ async function main() {
     api(path, { ...init, token: key, headers: { origin: PUBLIC_ORIGIN, ...init.headers } });
 
   // 1 — can read published content
-  const list = await asPublic(`/api/v1/items/${COLLECTION}?limit=100`);
-  const items = list?.data ?? [];
+  const list = readList(await asPublic(`/api/v1/items/${COLLECTION}?limit=100`));
+  if (!list.ok) {
+    check('publishable key reads published posts', false, list.why);
+    console.error('\n✖ The list response is malformed; later checks would be meaningless.\n');
+    process.exit(1);
+  }
+  const items = list.items;
   check('publishable key reads published posts', items.length > 0, `${items.length} item(s)`);
 
   // 2 — cannot see drafts
@@ -133,8 +167,11 @@ async function main() {
   if (!adminToken) {
     skip('the draft is unreachable by direct id', 'LUMIBASE_ADMIN_TOKEN not set');
   } else {
-    const all = await api(`/api/v1/items/${COLLECTION}?limit=200`, { token: adminToken });
-    const draft = (all?.data ?? []).find((i) => i?.status && i.status !== 'published');
+    const all = readList(await api(`/api/v1/items/${COLLECTION}?limit=200`, { token: adminToken }));
+    if (!all.ok) {
+      check('the draft is unreachable by direct id', false, `admin list: ${all.why}`);
+    } else {
+    const draft = all.items.find((i) => i?.status && i.status !== 'published');
 
     if (!draft) {
       skip(
@@ -148,6 +185,7 @@ async function main() {
         DENIED_OR_HIDDEN,
       );
     }
+    }
   }
 
   // 2c — asking for drafts explicitly must not produce any.
@@ -155,9 +193,17 @@ async function main() {
   // Two acceptable outcomes, and they are checked separately: the server either
   // refuses the query (401/403) or answers with an empty list. A 500 is neither.
   try {
-    const asked = await asPublic(`/api/v1/items/${COLLECTION}?status=draft&limit=50`);
-    const got = asked?.data ?? [];
-    check('asking for status=draft returns nothing', got.length === 0, `${got.length} item(s)`);
+    const asked = readList(await asPublic(`/api/v1/items/${COLLECTION}?status=draft&limit=50`));
+    if (!asked.ok) {
+      // An unreadable 200 tells us nothing about whether drafts are exposed.
+      check('asking for status=draft returns nothing', false, asked.why);
+    } else {
+      check(
+        'asking for status=draft returns nothing',
+        asked.items.length === 0,
+        `${asked.items.length} item(s)`,
+      );
+    }
   } catch (err) {
     if (err instanceof CmsError && DENIED.has(err.status)) {
       check('asking for status=draft returns nothing', true, `denied with ${err.status}`);
