@@ -9,7 +9,8 @@
  *   1. The key can read published posts.
  *   2. The key CANNOT see the draft — by list, by direct id, or by asking.
  *   3. The key cannot write.
- *   4. The key cannot read another tenant's content.
+ *   4. The key cannot read another tenant's content (set
+ *      LUMIBASE_VERIFY_OTHER_SITE to a second existing site id).
  *
  * (2) is the one worth keeping. `GET /api/v1/items` has no implicit
  * published-only filter, so a read grant made without `publishedOnly` would
@@ -228,26 +229,45 @@ async function main() {
 
   // 4 — cannot cross tenants.
   //
-  // Skipped by default, and that is deliberate. Presenting the key with a
-  // foreign X-Lumi-Site does correctly return 401 — but on the published image
-  // it also CRASHES the CMS: the denial is written to the audit log under the
-  // client-supplied site id, which no row in `sites` matches, so the insert
-  // violates a foreign key and takes the process down. One request from an
-  // unauthenticated caller is enough.
+  // Two different probes, because they exercise different things and only one
+  // of them is dangerous:
   //
-  // Running this check would therefore knock over your own container. Opt in
-  // with LUMIBASE_VERIFY_CROSS_TENANT=1 once that is fixed upstream (#469).
-  if (process.env.LUMIBASE_VERIFY_CROSS_TENANT === '1') {
-    await expectDenied('publishable key cannot read another site', () =>
-      api(`/api/v1/items/${COLLECTION}?limit=1`, {
-        token: key,
-        headers: { origin: PUBLIC_ORIGIN, 'x-lumi-site': 'some-other-site' },
-      }),
+  //   (a) an EXISTING other site — the real isolation question: does a key
+  //       bound to site A read site B? Safe to run, and on by default. Point
+  //       LUMIBASE_VERIFY_OTHER_SITE at a second site id to enable it.
+  //
+  //   (b) a NON-EXISTENT site id — this crashes the published CMS (#469): the
+  //       denial is audited under a site id no row matches, the insert violates
+  //       a foreign key, and the rethrow lands in a fire-and-forget flush. One
+  //       request is enough, so it stays opt-in.
+  //
+  // Verified against a live instance: with a real second site the request is
+  // refused with 401 and the server stays up (health 200 across repeats); with
+  // a made-up id the process dies. That difference is why these are separate.
+  const otherSite = process.env.LUMIBASE_VERIFY_OTHER_SITE;
+  if (otherSite) {
+    await expectDenied(
+      `publishable key cannot read another site (${otherSite})`,
+      () =>
+        api(`/api/v1/items/${COLLECTION}?limit=1`, {
+          token: key,
+          headers: { origin: PUBLIC_ORIGIN, 'x-lumi-site': otherSite },
+        }),
+      DENIED_OR_HIDDEN,
     );
   } else {
     skip(
       'publishable key cannot read another site',
-      'it crashes the published CMS (#469) — set LUMIBASE_VERIFY_CROSS_TENANT=1 to run it',
+      'set LUMIBASE_VERIFY_OTHER_SITE to a second existing site id',
+    );
+  }
+
+  if (process.env.LUMIBASE_VERIFY_CROSS_TENANT === '1') {
+    await expectDenied('a non-existent site id is refused', () =>
+      api(`/api/v1/items/${COLLECTION}?limit=1`, {
+        token: key,
+        headers: { origin: PUBLIC_ORIGIN, 'x-lumi-site': 'some-other-site' },
+      }),
     );
   }
 
