@@ -42,6 +42,7 @@ function buildTemplateContext(config: ProjectConfig): Record<string, unknown> {
     packageManager: config.packageManager,
     isCloudflare: config.template === 'cloudflare',
     isDefault: config.template === 'default',
+    isNextjs: config.template === 'nextjs',
     year: new Date().getFullYear(),
   };
 }
