@@ -241,6 +241,38 @@ describe('nextjs template — onboarding matches the real flow', () => {
   });
 });
 
+describe('nextjs template — errors are identified, not lumped together', () => {
+  it('confirms COLLECTION_EXISTS rather than treating any 409/422 as existing', () => {
+    // Swallowing every 409/422 as "already there" would hide a validation
+    // failure or a real conflict and carry on as if the collection were fine.
+    const bootstrap = read('scripts/bootstrap.mjs');
+    expect(bootstrap).toMatch(/COLLECTION_EXISTS/);
+  });
+});
+
+describe('nextjs template — tenant isolation is testable', () => {
+  it('probes a real second site by default, and a fake id only on request', () => {
+    // These are different questions. A real second site answers the isolation
+    // question and is safe. A non-existent id crashes the published CMS (#469),
+    // so it stays opt-in — running cms:verify must not kill the user's server.
+    const verify = read('scripts/verify.mjs');
+    expect(verify).toMatch(/LUMIBASE_VERIFY_OTHER_SITE/);
+    expect(verify).toMatch(/LUMIBASE_VERIFY_CROSS_TENANT === '1'/);
+  });
+});
+
+describe('nextjs template — the read-only connect path is documented', () => {
+  it('tells a user with an existing CMS what to set and what it needs', () => {
+    // Without this, path A of the contract exists only in the spec: a reader
+    // with a running CMS sees a Docker quickstart and nothing else.
+    const readme = read('README.md.hbs');
+    expect(readme).toMatch(/Connecting to a CMS you already run/);
+    expect(readme).toMatch(/No editable fields/);
+    const page = read('app/page.tsx');
+    expect(page).toMatch(/Already have a LumiBase instance/);
+  });
+});
+
 describe('nextjs template — package manifest', () => {
   it('depends on lumibase at runtime, not as a dev dependency', () => {
     // #332: a scaffolded project must actually use LumiBase, not merely

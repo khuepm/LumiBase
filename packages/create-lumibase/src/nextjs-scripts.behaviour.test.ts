@@ -173,7 +173,11 @@ describe('cms:bootstrap — a token in .env is not proof it still works', () => 
         return json([{ name: 'title' }, { name: 'slug' }, { name: 'body' }]);
       }
       if (url.startsWith('/api/v1/collections/posts')) return json({ name: 'posts' });
-      if (url === '/api/v1/collections') return { status: 409, body: JSON.stringify({ errors: [{ code: 'EXISTS' }] }) };
+      if (url === '/api/v1/collections') {
+        // The real code the CMS returns; bootstrap now checks for exactly this
+        // rather than accepting any 409.
+        return { status: 409, body: JSON.stringify({ errors: [{ code: 'COLLECTION_EXISTS' }] }) };
+      }
       if (url.includes('/access/grants/public/enable')) return json({ roleId: 'role-public' });
       if (url.includes('/access/grants/public')) return json({});
 
