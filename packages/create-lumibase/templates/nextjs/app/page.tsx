@@ -24,6 +24,15 @@ function Setup() {
           <code>npm run cms:seed</code> — sample posts
         </li>
       </ol>
+
+      <p className="alt">
+        <strong>Already have a LumiBase instance?</strong> Skip all of that. Put
+        its URL, your site id and a <em>publishable</em> key (
+        <code>lbk_pub_…</code>) in <code>.env</code> and run{' '}
+        <code>npm run dev</code>. The CMS needs a <code>posts</code> collection
+        with <code>title</code>/<code>slug</code>/<code>body</code> fields and a
+        published-only read grant — see the README.
+      </p>
     </main>
   );
 }

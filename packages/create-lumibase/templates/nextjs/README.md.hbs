@@ -25,6 +25,46 @@ separate migrate step. `cms:bootstrap` writes the publishable key back into
 Studio ships **inside the CMS image**, so the same container serves both the API
 and the admin UI.
 
+## Connecting to a CMS you already run
+
+The Docker stack above is one of two paths. If a LumiBase instance already
+exists, skip `cms:up`/`cms:bootstrap` entirely — this website only ever reads,
+so all it needs is three values in `.env`:
+
+```bash
+NEXT_PUBLIC_LUMIBASE_URL=https://cms.example.com
+NEXT_PUBLIC_LUMIBASE_SITE_ID=your-site-id
+NEXT_PUBLIC_LUMIBASE_PUBLISHABLE_KEY=lbk_pub_…
+```
+
+Then `npm run dev`. No admin token is involved, and none should be: the values
+above are the only ones the browser needs.
+
+Whoever administers that CMS has to provide four things, and the last one is the
+part people miss:
+
+1. **A publishable key** — created in Studio under Access → API keys, marked
+   publishable (its token starts with `lbk_pub_`), with your site's origin in
+   its allowed-origins list. An empty allowlist works from anywhere, which is
+   not what you want for a key that ships to browsers.
+2. **A read grant for the collection**, restricted to published rows.
+   `GET /api/v1/items` applies no published-only filter of its own, so a grant
+   without that restriction serves drafts to every visitor.
+3. **A `posts` collection** — or change `COLLECTION` in `scripts/lumibase.mjs`
+   and the query in `lib/lumibase.ts` to match what the CMS actually calls it.
+4. **Fields declared on that collection** (`title`, `slug`, `body`). A
+   collection with no declared fields still accepts and returns item JSON, so
+   the website may look fine while Studio shows "No editable fields" and nobody
+   can edit anything. If editors report that, this is why.
+
+Check the result before trusting it:
+
+```bash
+npm run cms:verify
+```
+
+It needs only the publishable key, and it fails if drafts are reachable.
+
 ## Try the round trip
 
 1. Open Studio and sign in as `LUMIBASE_ADMIN_EMAIL`.
@@ -56,7 +96,8 @@ npm run cms:verify
 
 It uses the publishable key — never the admin token — to prove it can read
 published posts, **cannot** see the seeded draft (by list, by direct id, and by
-asking for `status=draft`), and cannot write. The seed deliberately leaves one
+asking for `status=draft`), cannot write, and — with
+`LUMIBASE_VERIFY_OTHER_SITE` set — cannot read a second site's content. The seed deliberately leaves one
 post unpublished so this check has something real to catch.
 
 A refusal only counts when the server actually refused: 401 or 403 — plus 404
@@ -97,12 +138,22 @@ Two CMS bugs shape this starter. Both are upstream, not in the template:
   `JWT_SECRET`; replace the secrets first if you need access from another
   device.
 
-- **A forged site header crashes the CMS** ([#469]). Sending `X-Lumi-Site` for a site
-  that does not exist correctly returns 401, but the denial is then written to
-  the audit log under that same id — which no row in `sites` matches, so the
-  insert violates a foreign key and takes the process down. One request is
-  enough. `cms:verify` therefore skips its cross-tenant probe by default; opt in
-  with `LUMIBASE_VERIFY_CROSS_TENANT=1` once this is fixed.
+- **A forged site header crashes the CMS** ([#469]). Sending `X-Lumi-Site` for a
+  site that **does not exist** correctly returns 401, but the denial is then
+  written to the audit log under that same id — which no row in `sites` matches,
+  so the insert violates a foreign key and takes the process down. One request
+  is enough.
+
+  Only non-existent ids do this. Presenting the key against a *real* second site
+  is refused with 401 and leaves the server healthy, so that check — the one
+  that actually tests tenant isolation — runs normally:
+
+  ```bash
+  LUMIBASE_VERIFY_OTHER_SITE=<another site id> npm run cms:verify
+  ```
+
+  The non-existent-id probe stays behind `LUMIBASE_VERIFY_CROSS_TENANT=1` until
+  this is fixed, so `cms:verify` cannot knock over your own CMS.
 
 [#469]: https://github.com/khuepm/LumiBase/issues/469
 [#470]: https://github.com/khuepm/LumiBase/issues/470
