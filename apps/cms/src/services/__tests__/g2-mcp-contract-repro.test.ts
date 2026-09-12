@@ -3,7 +3,7 @@ import { getTableName } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Database } from '@lumibase/database';
 import type { AppEnv, AuthPrincipal } from '../../env';
-import { AISecureHarness, CORE_SKILLS } from '../ai-harness';
+import { AISecureHarness, CORE_SKILLS, isControlPlaneSkill } from '../ai-harness';
 import { McpService, type McpHarnessPort } from '../mcp-service';
 import { ToolRegistryService } from '../tool-registry-service';
 
@@ -536,6 +536,31 @@ describe('G2 repro · the harness capability model is not the REST RBAC model', 
 });
 
 describe('G2 repro · the two transports are separate contracts', () => {
+  it('R11: the admin backstop is per-SKILL — createItem is NOT control-plane on HTTP either', () => {
+    /**
+     * Review correction. An earlier revision of the stdio-side `S5` comment
+     * claimed `/items` tools gain an admin backstop on HTTP MCP. That is FALSE
+     * for `createItem`, and the old assertion could not catch it because it only
+     * compared REST prefix lists — which are identical either way.
+     *
+     * `routes/mcp.ts` gates a `tools/call` on `isControlPlaneSkill(skill, name)`,
+     * i.e. per-SKILL, not per-prefix. Pinning it here (the only place the
+     * classifier is importable) so the audit table cannot drift back.
+     */
+    // Genuine asymmetry in BOTH admin gating and agent governance:
+    expect(isControlPlaneSkill(CORE_SKILLS['deleteItem']!, 'deleteItem')).toBe(true);
+    expect(isControlPlaneSkill(CORE_SKILLS['deleteCollection']!, 'deleteCollection')).toBe(true);
+
+    // Asymmetry ONLY in agent governance — no admin backstop on either side.
+    // This is also the tool whose L0/L1 gate is missing (GP2/GP3).
+    expect(isControlPlaneSkill(CORE_SKILLS['createItem']!, 'createItem')).toBe(false);
+    expect(isControlPlaneSkill(CORE_SKILLS['updateItem']!, 'updateItem')).toBe(false);
+
+    // Reads stay open to non-admins on both transports.
+    expect(isControlPlaneSkill(CORE_SKILLS['listItems']!, 'listItems')).toBe(false);
+    expect(isControlPlaneSkill(CORE_SKILLS['listCollections']!, 'listCollections')).toBe(false);
+  });
+
   it('R9: the FULL HTTP MCP registry is camelCase and contains no snake_case name', async () => {
     const registry = new ToolRegistryService(registryDb(), 'site_1', CORE_SKILLS);
     const httpNames = (await registry.listTools()).map((t) => t.name);

@@ -250,9 +250,12 @@ describe('G2 repro · the admin backstop is per-prefix, not per-transport', () =
      * So a stdio tool targeting one of those IS admin-gated. The gap is
      * confined to prefixes NOT on that list — notably `/collections`,
      * `/fields` and `/items`, which rely on per-route schema/item permission
-     * instead. Those are exactly the prefixes whose HTTP MCP counterparts are
-     * additionally admin-gated by the `mcp.ts` control-plane backstop, so the
-     * asymmetry is real but narrow.
+     * instead.
+     *
+     * Whether the HTTP MCP counterpart adds an admin backstop is decided
+     * per-SKILL by `isControlPlaneSkill`, NOT per-prefix — see the per-tool
+     * breakdown at the end of this test. Conflating the two produced a wrong
+     * claim in an earlier revision.
      *
      * This test pins the classification so the audit table cannot drift back
      * to the over-broad claim. It reads the tool's own declared REST target,
@@ -288,13 +291,43 @@ describe('G2 repro · the admin backstop is per-prefix, not per-transport', () =
     expect(isGuarded(await restTargetOf('revoke_api_key', { id: 'k1', confirm: true }))).toBe(true);
     expect(isGuarded(await restTargetOf('delete_flow', { id: 'f1', confirm: true }))).toBe(true);
 
-    // Un-guarded prefixes: this is where the asymmetry with HTTP MCP actually
-    // lives. `/collections` and `/items` rely on per-route schema/item
-    // permission only, while their HTTP MCP counterparts are additionally
-    // admin-gated by the `mcp.ts` control-plane backstop.
+    // Un-guarded prefixes: `/collections` and `/items` are NOT in the
+    // control-plane list, so they rely on per-route schema/item permission only.
     expect(isGuarded(await restTargetOf('delete_collection', { name: 'posts', confirm: true }))).toBe(false);
+    expect(isGuarded(await restTargetOf('delete_item', { collection: 'posts', id: 'i1', confirm: true }))).toBe(false);
     expect(
       isGuarded(await restTargetOf('create_item', { collection: 'posts', data: { t: 1 } })),
     ).toBe(false);
+
+    // ── The asymmetry, stated precisely (review correction) ────────────────
+    // An earlier version of this comment claimed `/items` tools are "admin-gated
+    // on HTTP MCP". That was WRONG for `create_item`: `isControlPlaneSkill` is
+    // FALSE for `createItem` (items:write is not a mutating `schema:*` cap and
+    // the name is not `delete*`), so the `mcp.ts` backstop does not apply to it
+    // on either transport. The old assertion could not catch the error because
+    // it only checked the REST prefix list, which is identical either way.
+    //
+    // Correct picture, per tool:
+    //
+    //   delete_item / deleteItem
+    //     stdio → DELETE /items/:c/:id · un-guarded prefix · no agent governance
+    //     HTTP  → control-plane (delete* rule) ⇒ admin backstop + HITL
+    //     ⇒ genuine asymmetry in BOTH admin gating and agent governance.
+    //
+    //   delete_collection / deleteCollection
+    //     stdio → DELETE /collections/:name · un-guarded prefix · schema:delete only
+    //     HTTP  → control-plane (schema:delete) ⇒ admin backstop + HITL
+    //     ⇒ genuine asymmetry in BOTH.
+    //
+    //   create_item / createItem
+    //     stdio → POST /items/:c · un-guarded prefix · RBAC via PermissionService
+    //     HTTP  → NOT control-plane ⇒ NO admin backstop either
+    //     ⇒ asymmetry ONLY in agent governance (autonomy/HITL/kill switch/audit),
+    //        NOT in admin gating. This is also the tool whose L0/L1 gate is
+    //        missing entirely on the governed side — see GP2/GP3 in the CMS repro.
+    //
+    // The HTTP-side classification is asserted where `isControlPlaneSkill` is
+    // importable (CMS repro, `R11`), because this package does not depend on
+    // `apps/cms` and cannot import it without a manifest change.
   });
 });
