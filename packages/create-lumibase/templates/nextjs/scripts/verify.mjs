@@ -54,6 +54,46 @@ async function main() {
       : `LEAKED ${leaked.length} non-published item(s)`,
   );
 
+  // 2b — cannot reach the draft by its own id either.
+  //
+  // Checking the list alone is not enough: a row filter that only applied to
+  // list queries would still hand over the draft on a direct GET. The id comes
+  // from the admin token (server-side, never in the browser) precisely so the
+  // public key is asked for something we know exists.
+  const adminToken = process.env.LUMIBASE_ADMIN_TOKEN;
+  if (adminToken) {
+    const all = await api(`/api/v1/items/${COLLECTION}?limit=200`, { token: adminToken });
+    const draft = (all?.data ?? []).find((i) => i?.status && i.status !== 'published');
+
+    if (!draft) {
+      check('a draft exists to test against', false, 'seed one with: npm run cms:seed');
+    } else {
+      let reached = false;
+      try {
+        await asPublic(`/api/v1/items/${COLLECTION}/${draft.id}`);
+        reached = true;
+      } catch (err) {
+        if (!(err instanceof CmsError)) throw err;
+      }
+      check('the draft is unreachable by direct id', !reached, `id ${draft.id}`);
+    }
+  } else {
+    console.log('  · direct-id draft check skipped (LUMIBASE_ADMIN_TOKEN not set)');
+  }
+
+  // 2c — asking for drafts explicitly must not produce any.
+  const asked = await asPublic(`/api/v1/items/${COLLECTION}?status=draft&limit=50`).catch(
+    (err) => {
+      if (err instanceof CmsError) return { data: [] };
+      throw err;
+    },
+  );
+  check(
+    'asking for status=draft returns nothing',
+    (asked?.data ?? []).length === 0,
+    `${(asked?.data ?? []).length} item(s)`,
+  );
+
   // 3 — cannot write
   let wrote = false;
   try {

@@ -69,6 +69,38 @@ describe("initCommand", () => {
     ]);
   });
 
+  it("forwards --template untouched, so both entrypoints offer the same set", () => {
+    // #332: `npm create lumibase` and `lumibase init` must never drift. They
+    // cannot, structurally — init does not re-implement the scaffolder, it
+    // runs `create-lumibase@<this CLI's version>` and hands it argv verbatim.
+    // This pins the "verbatim" half: a template the scaffolder gains is
+    // reachable through init on the same release, with no change here.
+    //
+    // The version pin is the other half, and it has a consequence worth
+    // stating: init resolves the scaffolder from the REGISTRY, so a template
+    // that exists in this repo is not reachable through `lumibase init` until
+    // create-lumibase is published. Until then it fails inside the scaffolder
+    // with ENOENT on the template directory — the name is valid, the published
+    // artifact simply predates it.
+    const seen: string[] = [];
+    initCommand(["my-site", "--template", "nextjs"], {
+      version: "9.9.9",
+      userAgent: "npm/10.9.0 node/v22.0.0",
+      run: (_command, args) => {
+        seen.push(...args);
+        return 0;
+      },
+    });
+
+    expect(seen).toEqual([
+      "--yes",
+      "create-lumibase@9.9.9",
+      "my-site",
+      "--template",
+      "nextjs",
+    ]);
+  });
+
   it("defaults to this package version", () => {
     let spec: string | undefined;
     initCommand([], {
