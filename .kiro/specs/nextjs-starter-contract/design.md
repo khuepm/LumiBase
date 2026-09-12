@@ -258,17 +258,65 @@ ls node_modules/create-lumibase/dist/templates     # must list: nextjs
 ./node_modules/.bin/create-lumibase my-site --template nextjs --pm npm --no-git
 ```
 
-**What this does and does not prove.** It exercises the `npm create` path
-against the artifact just built. It does **not** prove `lumibase init` resolves
-the same artifact: `init` fetches `create-lumibase@<CLI version>` from the
-registry (`packages/cli/src/commands/init.ts:20-45`), and the unit test covering
-it asserts only that argv is forwarded — a mocked runner, not a resolution test.
+This exercises the `npm create` path. The second entrypoint needs a registry,
+because `init` fetches `create-lumibase@<CLI version>` rather than resolving
+anything locally (`packages/cli/src/commands/init.ts:20-45`), and the unit test
+covering it mocks the runner. §5.4 proves it against a disposable one.
 
-Proving the second entrypoint requires publishing, or a disposable local
-registry (e.g. Verdaccio) with the registry URL pointed at it for the duration of
-the test. Until one of those happens, the honest statement is the one in §2:
-`npm create` works today, `lumibase init` reaches parity after the next publish.
-Verified rather than assumed — see §9.
+### 5.4 Proving `lumibase init` against a local registry
+
+```bash
+# 1. a disposable registry, proxying npmjs for everything else
+npx verdaccio@6 --config conf/config.yaml --listen 4873
+curl -X PUT -H 'content-type: application/json' \
+  -d '{"name":"test","password":"test1234"}' \
+  http://localhost:4873/-/user/org.couchdb.user:test     # → auth token
+
+# 2. publish all three, with pnpm — `npm publish` does NOT rewrite
+#    `workspace:*`, so a package published that way is uninstallable
+cd packages/sdk            && pnpm publish --registry=http://localhost:4873 --tag latest --no-git-checks
+cd ../cli                  && pnpm publish --registry=http://localhost:4873 --tag latest --no-git-checks
+cd ../create-lumibase      && pnpm publish --registry=http://localhost:4873 --tag latest --no-git-checks
+
+# 3. install the CLI from the registry, outside the monorepo
+cd "$(mktemp -d)" && npm init -y
+echo 'registry=http://localhost:4873' > .npmrc
+npm i lumibase
+
+# 4. the actual test — init must resolve the scaffolder holding the new template
+rm -rf ~/.npm/_npx/*                     # npx caches by spec, not by registry
+npm_config_registry=http://localhost:4873 \
+  ./node_modules/.bin/lumibase init my-site --template nextjs --pm npm --no-git
+```
+
+Four things this surfaced that a plan on paper would not have:
+
+- **`npm publish` leaves `workspace:*` in the manifest.** Only `pnpm publish`
+  rewrites it to the real version. Published the wrong way, `lumibase` reaches
+  the registry depending on `@lumibase/sdk@workspace:*`, which no client can
+  resolve. §5.3's `npm pack` recipe is unaffected — it packs `create-lumibase`,
+  which has no workspace dependencies — but the CLI must go through pnpm.
+- **npx caches by package spec, not by registry.** A previous
+  `create-lumibase@1.0.0-rc.1` fetched from npmjs is reused even after the
+  registry changes, so the first run failed with ENOENT on the template
+  directory — the public artifact, exactly as §2 describes. Clearing
+  `~/.npm/_npx` is part of the procedure, not an aside.
+- **`npm publish` also ignores `publishConfig` fields that pnpm applies.**
+  Published with npm, `@lumibase/sdk` reached the registry with
+  `types: "./src/index.ts"` — a path excluded from `files`, so it does not exist
+  in the tarball. The install succeeds and only fails later, at `tsc`, with
+  "Module 'lumibase' has no exported member 'createLumiClient'". Re-published
+  with pnpm the field resolves to `./dist/index.d.ts` and typecheck passes. This
+  is a release-mechanics hazard beyond this ticket: any publish of these
+  packages must go through pnpm.
+- **Verdaccio listens on IPv6.** It reports `http://localhost:4873`; probing
+  `127.0.0.1` gets nothing.
+
+Result: `lumibase init --template nextjs` scaffolds successfully; diffing its
+output against `npm create lumibase` from the same registry shows **only the
+project name**; and the generated project installs from that registry and
+typechecks clean (`tsc --noEmit`, exit 0). The two entrypoints are equivalent in
+practice, not merely by construction. See §9.5.
 
 ## 6. Where SDK/API support is needed
 
@@ -526,7 +574,37 @@ The six items left open by round 3:
    for the template, and backlog rows **B64** (#469) and **B65** (#470) pointing
    at the existing issues. No duplicate issues were created.
 
-### 9.5 Divergences from the original contract
+### 9.5 `lumibase init` proven against a local registry
+
+Round 3 flagged that the mocked init-runner test is not evidence that both real
+entrypoints resolve the new artifact. A disposable Verdaccio settles it.
+
+| Step | Result |
+|---|---|
+| Publish `@lumibase/sdk`, `lumibase`, `create-lumibase` (pnpm) | ✔ all three, `workspace:*` rewritten to `1.0.0-rc.1` |
+| `npm i lumibase` from that registry, outside the monorepo | ✔ 3 packages |
+| `lumibase init my-site --template nextjs` | ✔ scaffolded |
+| `diff` against `npm create lumibase` from the same registry | ✔ **only the project name differs** |
+| `npm install` + `tsc --noEmit` in the generated project | ✔ exit 0 |
+
+Two hazards this exposed, neither visible without actually publishing:
+
+- **`npm publish` does not rewrite `workspace:*`**, so `lumibase` reached the
+  registry depending on `@lumibase/sdk@workspace:*` — uninstallable. Only
+  `pnpm publish` rewrites it.
+- **`npm publish` ignores `publishConfig` fields pnpm applies**, so
+  `@lumibase/sdk` published with `types: "./src/index.ts"` — a path not in
+  `files`, so absent from the tarball. Installing succeeded; `tsc` then failed
+  with "Module 'lumibase' has no exported member 'createLumiClient'". Both
+  packages must be published with pnpm; §5.4 records this.
+
+The first ENOENT run is worth keeping too: before the npx cache was cleared,
+`lumibase init --template nextjs` failed exactly as §2 predicts for the public
+artifact, which is the behaviour users see until `create-lumibase` is published
+again. The release dependency in §2 is unchanged — this proves the mechanism,
+not that the public registry already has the template.
+
+### 9.6 Divergences from the original contract
 
 - **Redis added to the compose file.** Without it the Docker runtime falls back
   to `127.0.0.1:6379` and floods the log with **506 ECONNREFUSED lines**, burying
