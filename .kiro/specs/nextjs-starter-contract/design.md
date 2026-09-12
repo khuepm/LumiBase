@@ -299,12 +299,12 @@ Toàn bộ vòng đời chạy trên instance thật (cold install ngoài monore
 | Draft lấy theo **id trực tiếp** | ✔ không lấy được (`ZYkt-txK…`) |
 | Truy vấn `?status=draft` bằng public key | ✔ trả 0 item |
 
-### 9.1 Hai lỗi CMS phát hiện khi chạy thật
+### 9.1 Hai lỗi CMS phát hiện khi chạy thật (issue #469, #470)
 
 Cả hai **nằm ngoài phạm vi #332** (không được sửa `apps/cms`), đã né trong
 template và ghi vào README của starter:
 
-**(a) Cờ setup token khoá chết instance.** `printSetupTokenIfRequired`
+**(a) Cờ setup token khoá chết instance — #470.** `printSetupTokenIfRequired`
 (`apps/cms/src/modules/setup/setup-token.ts:148`) có unit test nhưng **không
 được gọi từ đâu** lúc khởi động — grep toàn repo chỉ ra 3 kết quả, đều trong
 chính file đó. Bật `LUMIBASE_REQUIRE_SETUP_TOKEN=true` ⇒ `/setup/state` trả
@@ -312,7 +312,7 @@ chính file đó. Bật `LUMIBASE_REQUIRE_SETUP_TOKEN=true` ⇒ `/setup/state` t
 không có cách nào lấy token. Đã kiểm chứng trực tiếp. ⇒ compose **không** bật cờ
 này; stack chỉ bind localhost.
 
-**(b) Header site giả làm sập CMS — DoS không cần xác thực.** `withTenant` chỉ
+**(b) Header site giả làm sập CMS — DoS không cần xác thực — #469.** `withTenant` chỉ
 kiểm tra *định dạng* của `X-Lumi-Site` (`apps/cms/src/middleware/tenant.ts:29-43`),
 không kiểm tra site có tồn tại. Khi từ chối api key, `auditApiKeyUseDenied` ghi
 audit với chính site id do client gửi (`apps/cms/src/middleware/auth.ts:93`), vi

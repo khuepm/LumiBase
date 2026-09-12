@@ -77,19 +77,22 @@ failure is safe.
 
 Two CMS bugs shape this starter. Both are upstream, not in the template:
 
-- **The setup-token gate locks you out.** `LUMIBASE_REQUIRE_SETUP_TOKEN` makes
+- **The setup-token gate locks you out** ([#470]). `LUMIBASE_REQUIRE_SETUP_TOKEN` makes
   `/setup/complete` demand a token that the server never prints — the
   mint-and-print helper exists and is unit-tested, but nothing calls it at
   startup. The compose file therefore leaves the flag off, and the stack binds
   to localhost instead. Run `cms:bootstrap` promptly: until you do, anyone who
   can reach port 1989 can claim the admin account.
 
-- **A forged site header crashes the CMS.** Sending `X-Lumi-Site` for a site
+- **A forged site header crashes the CMS** ([#469]). Sending `X-Lumi-Site` for a site
   that does not exist correctly returns 401, but the denial is then written to
   the audit log under that same id — which no row in `sites` matches, so the
   insert violates a foreign key and takes the process down. One request is
   enough. `cms:verify` therefore skips its cross-tenant probe by default; opt in
   with `LUMIBASE_VERIFY_CROSS_TENANT=1` once this is fixed.
+
+[#469]: https://github.com/khuepm/LumiBase/issues/469
+[#470]: https://github.com/khuepm/LumiBase/issues/470
 
 ## Going to production
 

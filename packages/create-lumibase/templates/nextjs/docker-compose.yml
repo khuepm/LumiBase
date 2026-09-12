@@ -55,7 +55,7 @@ services:
       # this stack is ever reachable from anywhere but your machine.
       JWT_SECRET: dev_secret_key
       ENCRYPTION_KEY: dev_secret_key
-      # Deliberately NOT setting LUMIBASE_REQUIRE_SETUP_TOKEN here.
+      # Deliberately NOT setting LUMIBASE_REQUIRE_SETUP_TOKEN here — see #470.
       #
       # The CMS can gate setup behind a one-time token, but v1.0.0-rc.1 never
       # prints it: the mint-and-print helper exists and is unit-tested, yet

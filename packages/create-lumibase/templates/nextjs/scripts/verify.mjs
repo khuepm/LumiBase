@@ -117,7 +117,7 @@ async function main() {
   // unauthenticated caller is enough.
   //
   // Running this check would therefore knock over your own container. Opt in
-  // with LUMIBASE_VERIFY_CROSS_TENANT=1 once that is fixed upstream.
+  // with LUMIBASE_VERIFY_CROSS_TENANT=1 once that is fixed upstream (#469).
   if (process.env.LUMIBASE_VERIFY_CROSS_TENANT === '1') {
     let crossed = false;
     try {
