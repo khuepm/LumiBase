@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { getTableName } from 'drizzle-orm';
+import { Hono } from 'hono';
 import type { Database } from '@lumibase/database';
+import type { AppEnv, AuthPrincipal } from '../../env';
 import { AISecureHarness, CORE_SKILLS } from '../ai-harness';
 import { McpService, type McpHarnessPort } from '../mcp-service';
 import { ToolRegistryService } from '../tool-registry-service';
@@ -553,5 +555,187 @@ describe('G2 repro · the two transports are separate contracts', () => {
     }
     expect(httpNames).toContain('createItem');
     expect(httpNames).toContain('deleteCollection');
+  });
+});
+
+/**
+ * ── ROUTE-LEVEL REPRO (RT1–RT4) ──────────────────────────────────────────────
+ *
+ * Self-identified gap, not raised in review: the handoff asks to reproduce
+ * "list-tools → call", and until now the HTTP side only exercised
+ * `McpService` + `ToolRegistryService` in isolation, while the stdio side had a
+ * real client. These cases close that asymmetry by driving the actual
+ * `POST /api/v1/mcp` handler (`routes/mcp.ts`) over Hono, with the REAL
+ * `AISecureHarness`, REAL `ToolRegistryService` and REAL `McpService` — only
+ * the database and the runtime bindings are fakes.
+ *
+ * They live in this file because the B-02 grant covers exactly the two
+ * existing repro files; adding a third under `routes/__tests__/` would need a
+ * new grant. Noted so the location is a deliberate constraint, not sloppiness.
+ *
+ * `getContentOsFlags` is stubbed to `{ mcp: true }` because the flag defaults
+ * OFF and would otherwise 404 before the handler is reached. That default is
+ * itself part of the compatibility matrix, asserted in RT4.
+ */
+describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools → call', () => {
+  const flagState = { mcp: true, vetoWindow: false };
+
+  /** Builds an app mounting the real mcpRouter on a fake request context. */
+  async function buildApp(auth: AuthPrincipal, db: Database) {
+    vi.doMock('../feature-flags', () => ({
+      getContentOsFlags: vi.fn().mockResolvedValue(flagState),
+      __esModule: true,
+    }));
+    vi.resetModules();
+    const { mcpRouter } = await import('../../routes/mcp');
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('auth', auth);
+      c.set('siteId', 'site_1');
+      c.set('requestId', 'req_1');
+      c.set('db', db as never);
+      c.set('runtime', {
+        cache: { get: async () => null, set: async () => undefined, invalidateByTag: async () => undefined },
+        search: undefined,
+        queue: undefined,
+        keys: undefined,
+        edgeCache: undefined,
+        realtime: undefined,
+      } as never);
+      c.env = {} as never;
+      await next();
+    });
+    app.route('/api/v1/mcp', mcpRouter);
+    return app;
+  }
+
+  async function rpc(
+    app: Hono<AppEnv>,
+    method: string,
+    params?: Record<string, unknown>,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    const res = await app.request('/api/v1/mcp', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, ...(params ? { params } : {}) }),
+    });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  }
+
+  const ADMIN: AuthPrincipal = { userId: 'u_admin', email: 'admin@example.com', roles: ['admin'], raw: {} };
+
+  it('RT1: tools/list over HTTP advertises {type:"object"} for every tool [end-to-end]', async () => {
+    const { db } = governedDb();
+    const { body, status } = await rpc(await buildApp(ADMIN, db), 'tools/list');
+
+    expect(status).toBe(200);
+    const tools = (body.result as { tools: Array<{ name: string; inputSchema: Record<string, unknown> }> }).tools;
+
+    // Same claim as R1, but now proven through the real route rather than the
+    // service in isolation — this is what an MCP client actually receives.
+    expect(tools.length).toBeGreaterThan(50);
+    expect(tools.every((t) => JSON.stringify(t.inputSchema) === '{"type":"object"}')).toBe(true);
+    expect(tools.filter((t) => t.inputSchema['properties'] !== undefined)).toEqual([]);
+  });
+
+  it('RT2: a client obeying tools/list still cannot form a valid call — {} passes the advertised schema', async () => {
+    const { db } = governedDb();
+    const app = await buildApp(ADMIN, db);
+
+    // Step 1: discover, exactly as a client would.
+    const listed = await rpc(app, 'tools/list');
+    const tools = (listed.body.result as { tools: Array<{ name: string; inputSchema: Record<string, unknown> }> }).tools;
+    const createItem = tools.find((t) => t.name === 'createItem');
+    expect(createItem).toBeDefined();
+
+    // Step 2: `{}` fully satisfies the advertised contract `{type:'object'}`,
+    // so a well-behaved client has no way to know `collection` is required.
+    expect(createItem!.inputSchema).toEqual({ type: 'object' });
+
+    // Step 3: send it. CURRENT: accepted at the boundary, dispatched to the
+    // harness, and it fails deep inside the real ItemService — surfacing to the
+    // MCP client as a raw JavaScript TypeError:
+    //
+    //   {"status":"denied","runId":"…",
+    //    "message":"Cannot read properties of undefined (reading 'length')"}
+    //
+    // Two separate defects in one response:
+    //   (a) no input validation at the boundary — the JSON-RPC code is NOT
+    //       -32602 and no VALIDATION error is produced;
+    //   (b) the internal failure is leaked verbatim as the tool-result message,
+    //       so a client sees an engine stack-trace string instead of "field
+    //       `collection` is required".
+    // EXPECTED: -32602 / a structured VALIDATION denial naming the field,
+    // raised before any dispatch.
+    const called = await rpc(app, 'tools/call', { name: 'createItem', arguments: {} });
+    expect(called.status).toBe(200);
+    expect(JSON.stringify(called.body)).not.toMatch(/-32602/);
+    expect(JSON.stringify(called.body)).not.toMatch(/[Ii]nput validation error/);
+
+    const decision = (called.body.result as { structuredContent: { status: string; message?: string } })
+      .structuredContent;
+    expect(decision.status).toBe('denied');
+    // Pin the leak so a fix cannot quietly keep it: this must become a
+    // structured validation message, not stay an internal TypeError string.
+    expect(decision.message).toMatch(/Cannot read properties of undefined/);
+    expect(decision.message).not.toMatch(/collection/);
+  });
+
+  it('RT3: a dangerous call over HTTP surfaces a governed decision in the tool result', async () => {
+    const { db, insertedInto } = governedDb();
+    const app = await buildApp(ADMIN, db);
+
+    const called = await rpc(app, 'tools/call', {
+      name: 'deleteCollection',
+      arguments: { name: 'posts' },
+    });
+
+    expect(called.status).toBe(200);
+    const result = called.body.result as {
+      structuredContent: { status: string; approvalId?: string };
+      isError?: boolean;
+    };
+
+    // The governed decision (pending_approval + an approval id) rides inside
+    // the tool result rather than a protocol error — end-to-end confirmation of
+    // the design the parity property test only shows against a mock.
+    expect(result.structuredContent.status).toBe('pending_approval');
+    expect(result.structuredContent.approvalId).toBeDefined();
+    expect(result.isError).toBe(false);
+    expect(insertedInto('lumibase_ai_approvals')).toHaveLength(1);
+
+    // SCOPE: `approvalId` here comes from the fake insert's `returning()`, not
+    // from a database. It shows the id is PROPAGATED to the client; it does not
+    // show the id resolves at the decision endpoint. That remains a DB gate.
+    //
+    // CONTRACT FINDING (new, for §4 of the PR): the id handed to the client is
+    // the **`agent_approvals`** id, not the `ai_approvals` id. `execute()`
+    // inserts into BOTH tables, and `toToolDecision()` prefers
+    // `agentApprovalId ?? approvalId`. Two id spaces therefore exist, decided by
+    // two different endpoints (`routes/agent.ts` for agent approvals,
+    // `routes/ai.ts` for the legacy ai approvals). "Approval ID dùng được" must
+    // state WHICH space the MCP client receives and WHICH endpoint accepts it;
+    // otherwise a client can hold a valid-looking id and call the wrong route.
+    // Verified here by the id prefix produced by the table-aware fake.
+    expect(result.structuredContent.approvalId).toMatch(/^lumibase_agent_approvals_/);
+  });
+
+  it('RT4: with contentOs.mcp off (the default) the whole surface 404s — compatibility gate', async () => {
+    const { db } = governedDb();
+    flagState.mcp = false;
+    try {
+      const app = await buildApp(ADMIN, db);
+      const listed = await rpc(app, 'tools/list');
+      expect(listed.status).toBe(404);
+      expect((listed.body.errors as Array<{ code: string }>)[0]?.code).toBe('MCP_DISABLED');
+    } finally {
+      flagState.mcp = true;
+    }
+
+    // Why this matters to the contract: `contentOs.mcp` defaults OFF, so on
+    // most sites `POST /api/v1/mcp` does not exist. Any plan that migrates
+    // stdio write tools onto `tools/call` must therefore fail explicitly here
+    // rather than fall back to REST — a fallback that triggers exactly when
+    // governance is unavailable is a bypass of governance.
   });
 });
