@@ -136,10 +136,25 @@ items via `POST /api/v1/items/:collection`
 
 ### 4.2 A seed that is safe to re-run
 
-Following the pattern the repo already uses: stable ids plus
-`onConflictDoNothing`, as in
-`packages/database/scripts/seed-content-os-demo.ts:109,127,166`. The seed is
-site-scoped and runs **server-side** during bootstrap.
+The original draft proposed stable ids plus `onConflictDoNothing`, copying
+`packages/database/scripts/seed-content-os-demo.ts:109,127,166`. That pattern
+belongs to scripts that talk to the database directly; this seed goes through
+the REST API, where `ON CONFLICT` is not available and item ids are
+server-assigned.
+
+**What is implemented:** each sample is looked up by its own slug before being
+created —
+`GET /api/v1/items/posts?filter={"slug":{"_eq":"…"}}&limit=1` — and created only
+when absent. Idempotence is therefore by slug, not by id.
+
+Looking the slug up server-side (rather than listing the collection and
+searching the page that comes back) is what keeps it correct once the collection
+outgrows one page; see §9.2. The filter spans both statuses, so an existing
+draft counts as already-seeded, and existing content is never overwritten: the
+script only ever creates what is missing.
+
+The seed is site-scoped and runs **server-side**, with the admin token, never
+from the browser.
 
 ### 4.3 Public client — publishable key
 
@@ -219,11 +234,41 @@ Tenant resolution: the **`X-Lumi-Site`** header is the primary path
 
 ### 5.3 Cold-install commands (outside the monorepo, no `workspace:*`)
 
+`npm pack` packs whatever directory it runs in, so it must run **inside the
+package** — from the repo root it would pack the root manifest instead and the
+test would prove nothing. The artifact path is then passed absolutely, because
+the install runs in a different directory:
+
 ```bash
-pnpm -F create-lumibase build && npm pack
-cd "$(mktemp -d)" && npm i <tarball>
-npx create-lumibase my-site --template nextjs --pm npm --no-git
+# 1. build, then pack from the package directory itself
+pnpm -F create-lumibase build
+cd packages/create-lumibase && npm pack          # → create-lumibase-<version>.tgz
+TARBALL="$PWD/create-lumibase-1.0.0-rc.1.tgz"    # absolute: install runs elsewhere
+
+# 2. install it somewhere with no connection to this repo
+cd "$(mktemp -d)"
+npm init -y >/dev/null
+npm i --ignore-scripts "$TARBALL"
+
+# 3. confirm the artifact is the one just built, not a registry copy
+node -p "require('create-lumibase/package.json').version"
+ls node_modules/create-lumibase/dist/templates     # must list: nextjs
+
+# 4. scaffold from it
+./node_modules/.bin/create-lumibase my-site --template nextjs --pm npm --no-git
 ```
+
+**What this does and does not prove.** It exercises the `npm create` path
+against the artifact just built. It does **not** prove `lumibase init` resolves
+the same artifact: `init` fetches `create-lumibase@<CLI version>` from the
+registry (`packages/cli/src/commands/init.ts:20-45`), and the unit test covering
+it asserts only that argv is forwarded — a mocked runner, not a resolution test.
+
+Proving the second entrypoint requires publishing, or a disposable local
+registry (e.g. Verdaccio) with the registry URL pointed at it for the duration of
+the test. Until one of those happens, the honest statement is the one in §2:
+`npm create` works today, `lumibase init` reaches parity after the next publish.
+Verified rather than assumed — see §9.
 
 ## 6. Where SDK/API support is needed
 
@@ -437,7 +482,51 @@ All five are pinned by tests in `nextjs-template.test.ts` (30 → 40).
 
 Tests: 40 → 50.
 
-### 9.4 Divergences from the original contract
+### 9.4 Remaining acceptance items — closed
+
+The six items left open by round 3:
+
+1. **Spec §5.3 pack command** — rewritten. `npm pack` packs the directory it
+   runs in, so the recipe now `cd`s into the package, captures an absolute
+   tarball path (the install runs elsewhere), and verifies the installed
+   artifact is the one just built (`dist/templates` must list `nextjs`). It also
+   states plainly what the recipe does *not* prove: `lumibase init` resolves
+   from the registry, and the unit test covering it mocks the runner, so proving
+   that entrypoint needs a publish or a disposable local registry.
+
+2. **Spec §4.2 wording** — corrected. It described stable ids plus
+   `onConflictDoNothing`, which belongs to scripts talking to the database
+   directly; this seed goes through the REST API, where `ON CONFLICT` is not
+   available and ids are server-assigned. It now documents what is implemented:
+   a per-slug lookup.
+
+3. **Existing-CMS connect path** — documented in the starter's README (a
+   "Connecting to a CMS you already run" section: the three `.env` values, and
+   the four things the CMS administrator must provide) and surfaced in the setup
+   screen. The fourth prerequisite is called out explicitly, because it is the
+   one that bites: a collection with no declared fields still accepts and
+   returns item JSON, so the website looks fine while Studio shows "No editable
+   fields".
+
+4. **Two-existing-sites isolation evidence** — obtained. A real second site
+   (`site_tenant_b`) was created and the publishable key presented against it:
+   **401, and the server stayed healthy across repeats**. That matters beyond
+   the check itself — it shows #469 is triggered by *non-existent* site ids, not
+   by cross-tenant access as such. The two probes are now separate: the real-site
+   one (`LUMIBASE_VERIFY_OTHER_SITE`) is the isolation test and runs normally;
+   the non-existent-id one stays behind `LUMIBASE_VERIFY_CROSS_TENANT=1` until
+   #469 is fixed.
+
+5. **`COLLECTION_EXISTS`** — confirmed rather than inferred. The service raises
+   that code with 409 (`apps/cms/src/services/schema-service.ts:436`), verified
+   against a live instance. Bootstrap now matches the code; any other 409/422 is
+   a real failure and propagates instead of being mistaken for "already there".
+
+6. **CHANGELOG + out-of-scope backlog** — added: an `[Unreleased] / Added` entry
+   for the template, and backlog rows **B64** (#469) and **B65** (#470) pointing
+   at the existing issues. No duplicate issues were created.
+
+### 9.5 Divergences from the original contract
 
 - **Redis added to the compose file.** Without it the Docker runtime falls back
   to `127.0.0.1:6379` and floods the log with **506 ECONNREFUSED lines**, burying

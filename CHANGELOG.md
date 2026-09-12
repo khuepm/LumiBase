@@ -100,6 +100,41 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 
+- **`npm create lumibase --template nextjs` scaffolds a working website, not a
+  starting point.** The two existing templates give you a server to build on;
+  this one gives you a site that already works: a Next.js front end, a CMS with
+  Studio in one container, a `posts` collection with real fields, and seeded
+  content you can edit and publish. The point of #332 was to make that loop
+  provable end to end, so the generated project ships `cms:bootstrap`,
+  `cms:seed` and `cms:verify` and all three are re-runnable.
+
+  The browser never holds an admin credential, and two independent things keep
+  that true. It gets a *publishable* key (`lbk_pub_…`), origin-locked and bound
+  to one site, while the admin token stays in a variable with no `NEXT_PUBLIC_`
+  prefix so Next.js cannot inline it. And the public read grant carries
+  `publishedOnly`, which matters more than it sounds: `GET /api/v1/items`
+  applies no published-only filter of its own, so a grant without it would serve
+  drafts to every visitor. The seed deliberately leaves one post unpublished so
+  `cms:verify` has a real draft to fail on, and it checks the list, the item by
+  its own id, an explicit `status=draft` query, a write attempt, and — given a
+  second site id — cross-tenant isolation.
+
+  A refusal only counts when the server actually refused. An earlier version
+  treated any failed request as proof of a working guard, so an HTTP 500 read as
+  "denied" and a broken server produced a green run; it now requires 401/403
+  (plus 404 where hiding a row *is* the refusal) and a well-formed response
+  envelope, and reports checks it could not run as skipped rather than passed.
+
+  The CMS image is pinned by digest rather than tag, because no semver tag
+  contains Studio yet — the commit adding it postdates the last release build —
+  and `edge`, which does, is rebuilt on every push to main. Every published port
+  binds `127.0.0.1`: the stack ships development secrets, and the setup-token
+  gate is deliberately left off because enabling it locks an instance out
+  ([#470](https://github.com/khuepm/LumiBase/issues/470)).
+
+  `lumibase init --template nextjs` resolves the scaffolder from the registry,
+  so it reaches this template only after `create-lumibase` is published again.
+
 - **Deploy triggers are now rate-limited per target.** `POST /api/v1/deployments/targets/:id/deploy`
   was gated on "site admin" and "target is active" — who may trigger, never how
   often — so anything holding admin credentials (a script, a stuck flow, an
