@@ -1,0 +1,84 @@
+# LumiBase CMS + Studio for local development.
+#
+# This pulls a PUBLISHED image rather than building from source, pinned by
+# DIGEST rather than by tag. That is deliberate, and the reason is specific:
+#
+#   - `1.0.0-rc.1` and every other semver tag were built before the CMS learned
+#     to serve Studio, so `/app/studio` does not exist in them. Studio would
+#     simply 404.
+#   - `latest` still points at the 0.x line — a major behind the scaffolder.
+#   - `edge` does contain Studio, but it is a moving tag: it is rebuilt on every
+#     push to main, so it would silently change underneath you.
+#
+# The digest below is the `edge` build of commit 683a0270, verified to contain
+# /app/studio/index.html. It cannot drift. Re-pin it when a semver release
+# finally ships Studio.
+#
+# The image serves BOTH the REST API and the Studio SPA on the same port, so
+# there is no second container to run.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: lumibase
+      POSTGRES_USER: lumibase
+      POSTGRES_PASSWORD: lumibase_dev
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lumibase"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  cms:
+    image: ghcr.io/khuepm/lumibase-cms@sha256:3f125caabb455bd66cdbece68c7af82a65fea3e7f30db0938ac8219701577ebf
+    environment:
+      LUMIBASE_RUNTIME: docker
+      DATABASE_URL: postgresql://lumibase:lumibase_dev@postgres:5432/lumibase
+      PORT: "1989"
+      # Local development values. Both are REQUIRED for login to work at all
+      # (the CMS refuses to sign a JWT without a secret). Replace them before
+      # this stack is ever reachable from anywhere but your machine.
+      JWT_SECRET: dev_secret_key
+      ENCRYPTION_KEY: dev_secret_key
+      # Deliberately NOT setting LUMIBASE_REQUIRE_SETUP_TOKEN here.
+      #
+      # The CMS can gate setup behind a one-time token, but v1.0.0-rc.1 never
+      # prints it: the mint-and-print helper exists and is unit-tested, yet
+      # nothing calls it at startup. Turning the flag on therefore makes
+      # /setup/complete answer SETUP_TOKEN_REQUIRED forever, with no way to
+      # obtain the token — a locked-out instance, not a hardened one.
+      #
+      # This stack is bound to localhost, so the exposure is a local port
+      # rather than the internet. Run `npm run cms:bootstrap` promptly: until
+      # you do, anyone who can reach :1989 can claim the admin account.
+      # The website runs on :3000 and calls the API on :1989 — a cross-origin
+      # pair, so the browser sends a preflight the CMS must accept.
+      CORS_ALLOWED_ORIGINS: ${LUMIBASE_PUBLIC_ORIGIN:-http://localhost:3000}
+      # Without this the Docker runtime falls back to 127.0.0.1:6379 and floods
+      # the log with ECONNREFUSED, which buries anything worth reading.
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "${CMS_PORT:-1989}:1989"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:

@@ -1,0 +1,109 @@
+# {{projectName}}
+
+A Next.js website backed by LumiBase — CMS, Studio, and seeded content.
+
+## Quick start
+
+```bash
+cp .env.example .env
+npm run cms:up        # CMS + Studio + Postgres + Redis
+npm run cms:bootstrap # first admin + public read grant + publishable key
+npm run cms:seed      # sample posts
+npm run dev           # http://localhost:3000
+```
+
+The CMS container runs database migrations itself on first boot, so there is no
+separate migrate step. `cms:bootstrap` writes the publishable key back into
+`.env` for you.
+
+| What | Where |
+|---|---|
+| Website | http://localhost:3000 |
+| API | http://localhost:1989 |
+| Studio | http://localhost:1989/`LUMIBASE_ADMIN_PATH` |
+
+Studio ships **inside the CMS image**, so the same container serves both the API
+and the admin UI.
+
+## Try the round trip
+
+1. Open Studio and sign in as `LUMIBASE_ADMIN_EMAIL`.
+2. Edit a post in `posts`, then publish it.
+3. Reload the website. The change is there — no rebuild, no mock data.
+
+## How the browser stays least-privilege
+
+The website is public: everyone reads it, nobody signs in. So the browser must
+never hold an admin credential. Two separate mechanisms make that true.
+
+**A publishable key, not an admin token.** `cms:bootstrap` creates a key whose
+token starts with `lbk_pub_`. It is read-only, locked to
+`LUMIBASE_PUBLIC_ORIGIN`, and bound to one site — presented against a different
+site it is rejected rather than falling back to its own. The admin token stays in
+`LUMIBASE_ADMIN_TOKEN`, which has no `NEXT_PUBLIC_` prefix, so Next.js cannot
+inline it into the client bundle.
+
+**A published-only row filter.** The public grant is created with
+`publishedOnly`, which compiles to `status = published`. This matters more than
+it looks: `GET /api/v1/items` applies **no** implicit published-only filter of
+its own, so a grant made without it would serve drafts to every visitor.
+
+Both are checked, not just asserted:
+
+```bash
+npm run cms:verify
+```
+
+It uses the publishable key — never the admin token — to prove it can read
+published posts, **cannot** see the seeded draft, and cannot write. The seed
+deliberately leaves one post unpublished so this check has something real to
+catch. (The cross-tenant probe is opt-in; see Known issues.)
+
+## Scripts
+
+| Script | What it does |
+|---|---|
+| `npm run dev` | Next.js dev server |
+| `npm run cms:up` / `cms:down` | start / stop CMS + Postgres + Redis |
+| `npm run cms:logs` | follow the CMS logs |
+| `npm run cms:bootstrap` | first admin, public read grant, publishable key |
+| `npm run cms:seed` | sample posts — re-runnable, never duplicates |
+| `npm run cms:verify` | assert the public client is safe |
+
+`cms:bootstrap` and `cms:seed` are both idempotent, so re-running after a partial
+failure is safe.
+
+## Known issues in v1.0.0-rc.1
+
+Two CMS bugs shape this starter. Both are upstream, not in the template:
+
+- **The setup-token gate locks you out.** `LUMIBASE_REQUIRE_SETUP_TOKEN` makes
+  `/setup/complete` demand a token that the server never prints — the
+  mint-and-print helper exists and is unit-tested, but nothing calls it at
+  startup. The compose file therefore leaves the flag off, and the stack binds
+  to localhost instead. Run `cms:bootstrap` promptly: until you do, anyone who
+  can reach port 1989 can claim the admin account.
+
+- **A forged site header crashes the CMS.** Sending `X-Lumi-Site` for a site
+  that does not exist correctly returns 401, but the denial is then written to
+  the audit log under that same id — which no row in `sites` matches, so the
+  insert violates a foreign key and takes the process down. One request is
+  enough. `cms:verify` therefore skips its cross-tenant probe by default; opt in
+  with `LUMIBASE_VERIFY_CROSS_TENANT=1` once this is fixed.
+
+## Going to production
+
+This stack is for local development:
+
+- `JWT_SECRET` and `ENCRYPTION_KEY` in `docker-compose.yml` are dev values —
+  replace them.
+- The CMS image is pinned by **digest**, not by tag, and that is deliberate:
+  every semver tag so far — `1.0.0-rc.1` included — was built before the CMS
+  learned to serve Studio, so Studio 404s on them; `latest` points at the 0.x
+  line; and `edge`, which does carry Studio, is rebuilt on every push to main.
+  The digest names a build verified to contain Studio and cannot drift. Re-pin
+  it once a semver release ships Studio.
+- Set `LUMIBASE_PUBLIC_ORIGIN` to your real origin before deploying: an empty
+  allowlist lets a publishable key be used from anywhere.
+
+Docs → https://docs.lumibase.dev
