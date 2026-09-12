@@ -337,7 +337,51 @@ Reliably reproduced: a single request → 401 → `health` = 000.
 `LUMIBASE_VERIFY_CROSS_TENANT=1`; otherwise `cms:verify` would knock over the
 user's own CMS.
 
-### 9.2 Divergences from the original contract
+### 9.2 Review round 2 (`5187608588`) — five findings, all valid
+
+Reviewed at `e3e97d00`; every finding was reproduced before fixing.
+
+1. **[P1] The stack was published on every interface.** `"1989:1989"` publishes
+   on `0.0.0.0` — Docker binds all interfaces unless a host IP is given. With the
+   setup-token gate off and a fixed dev `JWT_SECRET`, anyone on the same network
+   could claim the admin account, which contradicts the "binds to localhost"
+   argument the README used to justify leaving the gate off. All three services
+   now bind `127.0.0.1`; confirmed by `docker compose config` (`host_ip:
+   127.0.0.1`) and by the running container's port table.
+
+2. **[P2] `cms:verify` passed against a broken server.** `catch (err) { if
+   (!(err instanceof CmsError)) throw err }` treated *any* HTTP failure as a
+   successful denial, so a 500 read as "the guard worked". Reproduced with a
+   fixture that answers 500: the old script reported the write and
+   `status=draft` checks as ✔. Now only 401/403 count as a denial — plus 404
+   where hiding a row *is* the refusal, which is how this CMS answers a filtered
+   read (verified: same id → draft for the admin token, 404 for the publishable
+   key, 200 for a published id). Anything else fails and prints the status;
+   un-runnable checks report SKIPPED separately from the pass count.
+
+3. **[P2] Bootstrap minted a key on every run.** Step 5 always POSTed a new
+   publishable key, so a retry left extra live keys carrying read access with
+   nothing to revoke them. It now reuses the existing key, rotates it when the
+   local token is gone, and creates one only when none exists. Re-running twice
+   leaves exactly one key with one role (verified). The role attachment is also
+   checked first: `api_key_roles` has no ON CONFLICT clause and a
+   `(api_key_id, role_id)` primary key, so re-posting the same pair errors rather
+   than no-opping — my earlier "idempotent on the server" assumption was wrong.
+
+4. **[P2] The seed could duplicate past 200 items.** It listed `limit=200` and
+   searched that page, so a sample sitting on page two read as missing. Now each
+   sample is looked up by its own slug with a server-side filter. Demonstrated on
+   a 213-item collection: the old script recreated all three samples; the new one
+   creates none, and `hello-lumibase` stays a single row.
+
+5. **[P2] The onboarding screen asked for a token the stack never issues.**
+   `app/page.tsx` still told users to copy `SETUP_TOKEN` out of the logs after
+   the gate was disabled — the README and CLI next-steps had been updated, that
+   page had not. It now names the real flow.
+
+All five are pinned by tests in `nextjs-template.test.ts` (30 → 40).
+
+### 9.3 Divergences from the original contract
 
 - **Redis added to the compose file.** Without it the Docker runtime falls back
   to `127.0.0.1:6379` and floods the log with **506 ECONNREFUSED lines**, burying

@@ -55,9 +55,16 @@ npm run cms:verify
 ```
 
 It uses the publishable key — never the admin token — to prove it can read
-published posts, **cannot** see the seeded draft, and cannot write. The seed
-deliberately leaves one post unpublished so this check has something real to
-catch. (The cross-tenant probe is opt-in; see Known issues.)
+published posts, **cannot** see the seeded draft (by list, by direct id, and by
+asking for `status=draft`), and cannot write. The seed deliberately leaves one
+post unpublished so this check has something real to catch.
+
+A refusal only counts when the server actually refused: 401 or 403 — plus 404
+where hiding a row *is* the refusal. Any other status, a 500 included, fails the
+run rather than being read as "denied", because a check that passes because the
+server is broken is worse than no check at all. Checks that cannot run are
+reported as SKIPPED, not folded into the pass count. (The cross-tenant probe is
+opt-in; see Known issues.)
 
 ## Scripts
 
@@ -71,7 +78,10 @@ catch. (The cross-tenant probe is opt-in; see Known issues.)
 | `npm run cms:verify` | assert the public client is safe |
 
 `cms:bootstrap` and `cms:seed` are both idempotent, so re-running after a partial
-failure is safe.
+failure is safe. Bootstrap reuses the publishable key it already created (or
+rotates it if the local token is gone) rather than minting a second one, and the
+seed looks each sample up by its own slug, so it stays correct however large the
+collection grows.
 
 ## Known issues in v1.0.0-rc.1
 
@@ -81,8 +91,11 @@ Two CMS bugs shape this starter. Both are upstream, not in the template:
   `/setup/complete` demand a token that the server never prints — the
   mint-and-print helper exists and is unit-tested, but nothing calls it at
   startup. The compose file therefore leaves the flag off, and the stack binds
-  to localhost instead. Run `cms:bootstrap` promptly: until you do, anyone who
-  can reach port 1989 can claim the admin account.
+  to loopback instead — every published port in `docker-compose.yml` names
+  `127.0.0.1`, which is what makes leaving the gate off defensible. Deleting
+  that prefix exposes an admin account protected only by a fixed dev
+  `JWT_SECRET`; replace the secrets first if you need access from another
+  device.
 
 - **A forged site header crashes the CMS** ([#469]). Sending `X-Lumi-Site` for a site
   that does not exist correctly returns 401, but the denial is then written to

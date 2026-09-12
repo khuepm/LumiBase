@@ -117,6 +117,87 @@ describe('nextjs template — the CMS image is pinned', () => {
   });
 });
 
+describe('nextjs template — the stack stays on loopback', () => {
+  // The compose file leaves the setup-token gate off (#470), and the argument
+  // for that being acceptable is entirely "this only listens on localhost".
+  // `"1989:1989"` would quietly break that argument: Docker publishes on ALL
+  // interfaces unless a host IP is given, so anyone on the same network could
+  // claim the admin account of a stack using a fixed dev JWT_SECRET.
+  it.each(['1989', '5432', '6379'])('binds port %s to 127.0.0.1', (port) => {
+    const compose = read('docker-compose.yml');
+    const mapping = new RegExp(`- "([^"]*:)?\\$\\{[A-Z_]+:-${port}\\}:${port}"`).exec(compose);
+
+    expect(mapping, `no published mapping found for ${port}`).toBeTruthy();
+    expect(
+      mapping?.[1],
+      `port ${port} is published on all interfaces. The starter ships dev ` +
+        'secrets and no setup-token gate, so every mapping must name 127.0.0.1.',
+    ).toBe('127.0.0.1:');
+  });
+});
+
+describe('nextjs template — verification cannot pass on a broken server', () => {
+  // A check that treats *any* failure as "denied" passes when the server is
+  // simply broken: a 500 reads exactly like a refusal. That turns the one
+  // script whose job is to prove the site is safe into a rubber stamp.
+  it('only accepts 401/403 as a denial', () => {
+    const verify = read('scripts/verify.mjs');
+    expect(verify).toMatch(/DENIED\s*=\s*new Set\(\[401,\s*403\]\)/);
+    expect(verify).toMatch(/DENIED\.has\(err\.status\)/);
+  });
+
+  it('never swallows an unexpected error as a pass', () => {
+    // The old shape — `catch (err) { if (!(err instanceof CmsError)) throw err }`
+    // — accepted every HTTP status as proof of a working guard.
+    const verify = read('scripts/verify.mjs');
+    expect(verify).not.toMatch(/if\s*\(!\(err instanceof CmsError\)\)\s*throw err;\s*\n\s*\}/);
+  });
+
+  it('reports skipped checks separately from passing ones', () => {
+    const verify = read('scripts/verify.mjs');
+    expect(verify).toMatch(/SKIPPED/);
+    expect(verify).toMatch(/skipped \+= 1/);
+  });
+});
+
+describe('nextjs template — bootstrap and seed are re-runnable', () => {
+  it('reuses an existing publishable key instead of minting another', () => {
+    // Bootstrap is explicitly re-runnable (a retry after a partial failure),
+    // so an unconditional POST would leave extra live keys carrying read
+    // access with nothing to revoke them.
+    const bootstrap = read('scripts/bootstrap.mjs');
+    expect(bootstrap).toMatch(/reusing the existing key/);
+    expect(bootstrap).toMatch(/rotate/);
+  });
+
+  it('checks the role attachment before posting it', () => {
+    // `api_key_roles` has no ON CONFLICT clause and a (api_key_id, role_id)
+    // primary key, so re-attaching the same role errors rather than no-opping.
+    const bootstrap = read('scripts/bootstrap.mjs');
+    expect(bootstrap).toMatch(/role already attached/);
+  });
+
+  it('looks a seed slug up by filter rather than scanning one page', () => {
+    // Listing the first N items and searching them is wrong as soon as the
+    // collection outgrows that page: the sample reads as missing and gets
+    // duplicated over a post the user may have edited.
+    const seed = read('scripts/seed.mjs');
+    expect(seed).toMatch(/filter=/);
+    expect(seed).not.toMatch(/limit=200/);
+  });
+});
+
+describe('nextjs template — onboarding matches the real flow', () => {
+  it('does not ask for a setup token the stack never issues', () => {
+    // The compose file deliberately leaves the gate off (#470), so telling a
+    // new user to copy SETUP_TOKEN out of the logs sends them looking for
+    // something that is never printed.
+    const page = read('app/page.tsx');
+    expect(page).not.toMatch(/SETUP_TOKEN/);
+    expect(page).toMatch(/cms:bootstrap/);
+  });
+});
+
 describe('nextjs template — package manifest', () => {
   it('depends on lumibase at runtime, not as a dev dependency', () => {
     // #332: a scaffolded project must actually use LumiBase, not merely
