@@ -1,0 +1,32 @@
+# ─── Browser-visible (NEXT_PUBLIC_*) ─────────────────────────────────────────
+# These are inlined into the client bundle. Only ever put least-privilege
+# values here: a publishable key, never an admin token.
+
+NEXT_PUBLIC_LUMIBASE_URL=http://localhost:1989
+NEXT_PUBLIC_LUMIBASE_SITE_ID=__default__
+# Created by `npm run cms:bootstrap`. Starts with `lbk_pub_`, is read-only and
+# can only ever see published items.
+NEXT_PUBLIC_LUMIBASE_PUBLISHABLE_KEY=
+
+# ─── Server-only ─────────────────────────────────────────────────────────────
+# Never prefixed with NEXT_PUBLIC_, so Next.js cannot leak these to the browser.
+
+# Only needed if you enable LUMIBASE_REQUIRE_SETUP_TOKEN on the container.
+# The default stack does not: v1.0.0-rc.1 gates setup behind the token but
+# never prints one, so enabling it locks setup out entirely.
+LUMIBASE_SETUP_TOKEN=
+
+# First administrator, created by `npm run cms:bootstrap`.
+LUMIBASE_ADMIN_EMAIL=admin@example.com
+# Must be 12+ chars with upper, lower, digit and symbol — the CMS enforces it.
+LUMIBASE_ADMIN_PASSWORD=Change-Me-N0w!
+# Studio lives at http://localhost:1989/<this path>. Keep it unguessable.
+LUMIBASE_ADMIN_PATH=admin-a7f3c1
+
+# Short-lived admin access token, written by `npm run cms:bootstrap` and used
+# only by `npm run cms:seed`. Server-side only.
+LUMIBASE_ADMIN_TOKEN=
+
+# Origin allowed to use the publishable key. An empty allowlist means the key
+# works from anywhere, so this is set explicitly.
+LUMIBASE_PUBLIC_ORIGIN=http://localhost:3000
