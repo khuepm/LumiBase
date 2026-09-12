@@ -45,8 +45,20 @@ một template = thêm thư mục + nới union type.
 **Không drift giữa hai entrypoint:** `lumibase init` không re-implement scaffold —
 nó chạy `dlx create-lumibase@<đúng version của CLI>`
 (`packages/cli/src/commands/init.ts:20-45`). Contract này **không sửa**
-`init.ts`; chỉ bổ sung test khẳng định `--template nextjs` đi qua được cả
-`npm create` lẫn `lumibase init`.
+`init.ts`; chỉ bổ sung test (`init.test.ts`) khẳng định `--template nextjs`
+được forward nguyên vẹn.
+
+⚠️ **Phụ thuộc phát hành — reviewer nêu đúng (P2.2).** `init` resolve scaffolder
+từ **registry**, nên template mới chưa dùng được qua `lumibase init` cho tới khi
+`create-lumibase` được publish lại. Đã kiểm chứng: bản `create-lumibase@1.0.0-rc.1`
+trên npm chỉ đóng gói `templates/cloudflare` + `templates/default`, và
+`npx create-lumibase@1.0.0-rc.1 x --template nextjs` **fail bằng ENOENT** trên
+thư mục template. Validate `--template` không bắt được ca này vì tên hợp lệ —
+chỉ artifact đã phát hành là cũ.
+
+⇒ `npm create` (qua tarball/`dist` mới) đã chạy đúng ngay bây giờ;
+`lumibase init` đạt tương đương **sau** lần publish kế tiếp. Không có thay đổi
+code nào làm được điều đó sớm hơn.
 
 ## 3. Hai đường backend
 
@@ -184,7 +196,9 @@ build.
 | `packages/create-lumibase/src/index.ts` | sửa — union `Template`, một prompt choice |
 | `packages/create-lumibase/src/scaffold.ts` | sửa — cờ `isNextjs` trong context |
 | `packages/create-lumibase/src/templates.test.ts` | sửa — mở rộng `it.each` sang `nextjs` |
-| `packages/create-lumibase/src/*.test.ts` | mới/sửa — test scaffold + assertion chống rò token |
+| `packages/create-lumibase/src/nextjs-template.test.ts` | mới — bất biến an toàn (không rò credential, `publishedOnly`, pin digest) |
+| `packages/create-lumibase/src/utils/print.ts` | sửa — next-steps cho template `nextjs` |
+| `packages/cli/src/commands/init.test.ts` | sửa — khoá việc forward `--template` nguyên vẹn |
 
 **Không đụng:** `packages/sdk/**`, `apps/studio/**`, root manifest/lockfile,
 `.github/workflows/**`, docs/spec dùng chung. `#334` sở hữu reference example —
@@ -247,9 +261,11 @@ Không có chế độ anonymous/publishable.
 
 Owner chỉ đạo implement luôn, nên cả bốn được quyết theo đề xuất:
 
-1. **#450**: ghi nhận là known-fail có dẫn chiếu, không chặn #332. Template
-   `nextjs` **cài được sạch** (xem §9), nên lỗi ERESOLVE của Cloudflare không
-   lây sang đường đi mới.
+1. **#450**: **rút lại** đề nghị known-fail. Reviewer đúng (P2.4): tôi suy ra
+   "Cloudflare hiện không cài được" từ header `templates.test.ts`, nhưng đoạn
+   đó mô tả sự cố **trước** khi fix. Kiểm chứng thật: scaffold `cloudflare` rồi
+   `npm install` → **added 63 packages, không ERESOLVE**. Vậy không có
+   reproduction, không cần waiver. #450 vẫn cần acceptance riêng của reviewer.
 2. **Row-filter `status = published`**: chốt bắt buộc. API đã có sẵn cờ
    `publishedOnly` (`apps/cms/src/routes/access-grants.ts:82`) biên dịch thành
    `{ status: { _eq: 'published' } }`
@@ -277,7 +293,11 @@ Toàn bộ vòng đời chạy trên instance thật (cold install ngoài monore
 | `cms:verify` | ✔ đọc được published, **không thấy draft**, không ghi được |
 | Website render | ✔ hiện 2 bài published, **không hiện draft** |
 | Publish draft → reload | ✔ bài xuất hiện (0 → 1), dữ liệu thật |
-| Rò token trong HTML | ✔ 0 lần xuất hiện admin token/password |
+| Rò token trong HTML runtime | ✔ 0 lần xuất hiện admin token/password |
+| **Sentinel build production** | ✔ sentinel admin/password **0 file** trong `.next`; publishable key **2 file** (đối chứng dương) |
+| **Studio trong browser** | ✔ đăng nhập được, mở `posts`, thấy 3 item: 1 `DRAFT` + 2 `PUBLISHED` |
+| Draft lấy theo **id trực tiếp** | ✔ không lấy được (`ZYkt-txK…`) |
+| Truy vấn `?status=draft` bằng public key | ✔ trả 0 item |
 
 ### 9.1 Hai lỗi CMS phát hiện khi chạy thật
 
