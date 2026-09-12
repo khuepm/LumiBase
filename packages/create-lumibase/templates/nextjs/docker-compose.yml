@@ -24,8 +24,10 @@ services:
       POSTGRES_DB: lumibase
       POSTGRES_USER: lumibase
       POSTGRES_PASSWORD: lumibase_dev
+    # Loopback only. Nothing outside this machine needs the database, and the
+    # password here is a development default.
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -36,8 +38,9 @@ services:
 
   redis:
     image: redis:7-alpine
+    # Loopback only; Redis has no auth configured here.
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -72,8 +75,17 @@ services:
       # Without this the Docker runtime falls back to 127.0.0.1:6379 and floods
       # the log with ECONNREFUSED, which buries anything worth reading.
       REDIS_URL: redis://redis:6379
+    # Bound to loopback DELIBERATELY, and it is what makes the note above
+    # defensible: with the setup-token gate off (#470) and a fixed dev
+    # JWT_SECRET, publishing this on 0.0.0.0 would let anyone who can reach the
+    # port claim the admin account. `1989:1989` would do exactly that — Docker
+    # publishes on ALL interfaces unless a host IP is given.
+    #
+    # Reaching this from another device (a phone on the same Wi-Fi, a colleague)
+    # is not a matter of deleting `127.0.0.1`: replace JWT_SECRET and
+    # ENCRYPTION_KEY first, and put a real origin in LUMIBASE_PUBLIC_ORIGIN.
     ports:
-      - "${CMS_PORT:-1989}:1989"
+      - "127.0.0.1:${CMS_PORT:-1989}:1989"
     depends_on:
       postgres:
         condition: service_healthy
