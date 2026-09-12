@@ -111,8 +111,12 @@ async function ensureCollection(token) {
     });
     console.log('      done');
   } catch (err) {
-    // A second run finds it already there. Anything else is a real failure.
-    if (err instanceof CmsError && (err.status === 409 || err.status === 422)) {
+    // A second run finds it already there — but only COLLECTION_EXISTS means
+    // that. Treating every 409/422 as "already there" would hide a validation
+    // failure or a genuine conflict and carry on as if the collection were
+    // fine, which is how a broken setup reaches the user looking successful.
+    const code = err instanceof CmsError ? err.body?.errors?.[0]?.code : undefined;
+    if (code === 'COLLECTION_EXISTS') {
       console.log('      already exists — skipping');
     } else {
       throw err;
