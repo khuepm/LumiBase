@@ -3,9 +3,9 @@
  *
  *   npm run cms:seed
  *
- * Idempotence is by slug, not by database id: the script reads what is already
- * in the collection and only creates what is missing. Running it twice leaves
- * three posts, not six.
+ * Idempotence is by slug, not by database id: each sample is looked up by its
+ * own slug before being created, so running this twice leaves three posts, not
+ * six — and it stays correct however large the collection grows.
  *
  * One post is deliberately left as a draft. It is what proves the public
  * website cannot see unpublished content — see `npm run cms:verify`.
@@ -40,15 +40,20 @@ async function main() {
 
   console.log(`Seeding "${COLLECTION}"…\n`);
 
-  // Ask for both statuses so an existing draft counts as already-seeded.
-  const existing = await api(`/api/v1/items/${COLLECTION}?limit=200`, { token });
-  const bySlug = new Set(
-    (existing?.data ?? []).map((item) => item?.slug ?? item?.data?.slug).filter(Boolean),
-  );
-
   let created = 0;
   for (const post of POSTS) {
-    if (bySlug.has(post.slug)) {
+    // Ask the server about THIS slug rather than listing the collection and
+    // searching the page we got back. Listing looks simpler and is wrong once
+    // the collection outgrows one page: a sample post sitting on page two reads
+    // as missing, and seeding creates a duplicate of a post the user may have
+    // since edited.
+    //
+    // The filter also covers both statuses, so an existing draft counts as
+    // already-seeded.
+    const filter = encodeURIComponent(JSON.stringify({ slug: { _eq: post.slug } }));
+    const found = await api(`/api/v1/items/${COLLECTION}?filter=${filter}&limit=1`, { token });
+
+    if ((found?.data ?? []).length > 0) {
       console.log(`  = ${post.slug} (already there)`);
       continue;
     }

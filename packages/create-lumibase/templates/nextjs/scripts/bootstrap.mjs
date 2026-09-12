@@ -141,37 +141,97 @@ async function enablePublicRead(token) {
   return roleId;
 }
 
-async function createPublishableKey(token, roleId) {
-  step(5, 'Creating a publishable (browser-safe) API key…');
+/** The name the starter's key is registered under, used to find it again. */
+const KEY_NAME = 'Website (publishable)';
 
-  const created = await api('/api/v1/api-keys', {
-    method: 'POST',
-    token,
-    body: {
-      name: 'Website (publishable)',
-      description: 'Read-only key embedded in the Next.js site.',
-      publishable: true,
-      // An EMPTY allowlist means the key works from anywhere, so it is always
-      // set explicitly here.
-      allowedOrigins: [PUBLIC_ORIGIN],
-    },
-  });
+/**
+ * Ensure exactly ONE publishable key exists, and return a usable token.
+ *
+ * Creating a key unconditionally looks harmless because the script is "run
+ * once", but bootstrap is explicitly re-runnable: a retry after a partial
+ * failure, or simply running it twice, would leave extra live keys carrying
+ * read access, with nothing to revoke them. So this reuses what is already
+ * there:
+ *
+ *   - a key with this name and a token still in `.env`  → reuse it as-is
+ *   - a key with this name but no usable token locally  → rotate it (same key,
+ *     fresh token) rather than minting a second one
+ *   - no key                                            → create one
+ *
+ * Rotation is the honest move for the middle case: the plaintext is returned
+ * only at creation, so a lost token cannot be recovered — but the key's
+ * identity, roles and origin allowlist survive, and the old token stops
+ * working, which is what you want from a credential you have lost track of.
+ */
+async function ensurePublishableKey(token, roleId) {
+  step(5, 'Ensuring a publishable (browser-safe) API key…');
 
-  const keyId = created?.data?.id;
-  const plaintext = created?.data?.token;
-  if (!keyId || !plaintext) {
-    throw new Error('Key creation returned no token — it is shown only once.');
+  const existing = await api('/api/v1/api-keys', { token });
+  const mine = (existing?.data ?? []).find(
+    (k) => k?.name === KEY_NAME && k?.publishable && !k?.revokedAt,
+  );
+
+  const envToken = process.env.NEXT_PUBLIC_LUMIBASE_PUBLISHABLE_KEY;
+
+  let keyId;
+  let plaintext;
+
+  if (mine && envToken) {
+    console.log('      reusing the existing key');
+    keyId = mine.id;
+    plaintext = envToken;
+  } else if (mine) {
+    console.log('      key exists but no local token — rotating it');
+    const rotated = await api(`/api/v1/api-keys/${mine.id}/rotate`, { method: 'POST', token, body: {} });
+    keyId = mine.id;
+    plaintext = rotated?.data?.token;
+    if (!plaintext) throw new Error('Rotation returned no token.');
+  } else {
+    const created = await api('/api/v1/api-keys', {
+      method: 'POST',
+      token,
+      body: {
+        name: KEY_NAME,
+        description: 'Read-only key embedded in the Next.js site.',
+        publishable: true,
+        // An EMPTY allowlist means the key works from anywhere, so it is always
+        // set explicitly here.
+        allowedOrigins: [PUBLIC_ORIGIN],
+      },
+    });
+    keyId = created?.data?.id;
+    plaintext = created?.data?.token;
+    if (!keyId || !plaintext) {
+      throw new Error('Key creation returned no token — it is shown only once.');
+    }
+    console.log('      created');
   }
 
-  // A key with no role carries no permissions at all: an api_key principal is
-  // built with `roles: []`, so it does not inherit the anonymous realm.
-  await api(`/api/v1/api-keys/${keyId}/roles`, {
-    method: 'POST',
-    token,
-    body: { roleId },
-  });
+  // Attach the role only when it is not already attached.
+  //
+  // The server does NOT treat a repeat attach as a no-op: the insert into
+  // `api_key_roles` has no ON CONFLICT clause and the primary key is
+  // (api_key_id, role_id), so re-posting the same pair errors rather than
+  // doing nothing. Checking first is what makes re-running bootstrap safe.
+  //
+  // It still has to run on the reuse path: a key created by an earlier run that
+  // failed before this point would otherwise stay permission-less, since an
+  // api_key principal is built with `roles: []` and inherits nothing.
+  const detail = await api(`/api/v1/api-keys/${keyId}`, { token });
+  const attached = (detail?.data?.roles ?? []).some(
+    (r) => r === roleId || r?.roleId === roleId || r?.id === roleId,
+  );
 
-  console.log('      done');
+  if (attached) {
+    console.log('      role already attached');
+  } else {
+    await api(`/api/v1/api-keys/${keyId}/roles`, {
+      method: 'POST',
+      token,
+      body: { roleId },
+    });
+  }
+
   return plaintext;
 }
 
@@ -187,7 +247,7 @@ async function main() {
 
   await ensureCollection(token);
   const roleId = await enablePublicRead(token);
-  const publishableKey = await createPublishableKey(token, roleId);
+  const publishableKey = await ensurePublishableKey(token, roleId);
 
   step(6, 'Writing .env…');
   await updateEnvFile({
