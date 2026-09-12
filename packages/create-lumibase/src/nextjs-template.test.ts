@@ -187,6 +187,49 @@ describe('nextjs template — bootstrap and seed are re-runnable', () => {
   });
 });
 
+describe('nextjs template — the collection is actually editable', () => {
+  it('creates fields through the field endpoint, not the collection body', () => {
+    // POST /collections validates with a schema that has no `fields` key, so
+    // Zod strips it: the request returns 201 and creates a collection with no
+    // fields at all. Items still save (item validation accepts undeclared JSON),
+    // so nothing looks wrong until Studio shows "No editable fields" and the
+    // edit flow this starter exists to demonstrate is dead.
+    const bootstrap = read('scripts/bootstrap.mjs');
+    expect(bootstrap).toMatch(/collections\/\$\{COLLECTION\}\/fields\/\$\{name\}/);
+    expect(bootstrap).toMatch(/method: 'PUT'/);
+  });
+
+  it('reads existing fields from the fields endpoint', () => {
+    // `GET /collections/:name` returns the collection row with no `fields`
+    // key, so reading them from there yields an empty set — which would make
+    // the post-check vacuous and re-PUT every field on every run.
+    const bootstrap = read('scripts/bootstrap.mjs');
+    expect(bootstrap).toMatch(/collections\/\$\{COLLECTION\}\/fields`/);
+  });
+
+  it('fails loudly when the fields did not register', () => {
+    const bootstrap = read('scripts/bootstrap.mjs');
+    expect(bootstrap).toMatch(/No editable fields/);
+  });
+});
+
+describe('nextjs template — a key belongs to one project', () => {
+  it('identifies its key by an owner tag, not a shared display name', () => {
+    // Every generated project used the same name, so a second site would find
+    // the first site's key and rotate it — breaking a live website while still
+    // not working itself, since rotation keeps the original origin allowlist.
+    const bootstrap = read('scripts/bootstrap.mjs');
+    expect(bootstrap).toMatch(/starterOwner/);
+    expect(bootstrap).toMatch(/isOwnedByThisProject/);
+  });
+
+  it('spends the stored token before trusting it', () => {
+    // A token in .env proves nothing: it may be revoked or rotated elsewhere.
+    const bootstrap = read('scripts/bootstrap.mjs');
+    expect(bootstrap).toMatch(/async function tokenWorks/);
+  });
+});
+
 describe('nextjs template — onboarding matches the real flow', () => {
   it('does not ask for a setup token the stack never issues', () => {
     // The compose file deliberately leaves the gate off (#470), so telling a

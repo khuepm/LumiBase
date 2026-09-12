@@ -381,7 +381,63 @@ Reviewed at `e3e97d00`; every finding was reproduced before fixing.
 
 All five are pinned by tests in `nextjs-template.test.ts` (30 → 40).
 
-### 9.3 Divergences from the original contract
+### 9.3 Review round 3 (`c43ac32b`) — four findings, all valid
+
+1. **[P1] The collection had no fields, so Studio could not edit anything.**
+   `POST /api/v1/collections` validates with `collectionInputSchema`, which has
+   no `fields` property (`apps/cms/src/routes/collections.ts:15,165`) — Zod
+   stripped the array, the request returned 201, and the collection was created
+   empty. Seeded items still saved because item validation accepts undeclared
+   JSON keys, so nothing looked wrong until Studio rendered "No editable
+   fields". The edit→publish→read loop this starter exists to demonstrate was
+   never actually exercised; my earlier evidence had published through the API,
+   not through the UI. Confirmed on a live instance: `GET
+   /collections/posts/fields` returned 0.
+
+   Fields are now provisioned through `PUT /collections/:name/fields/:field`
+   (an upsert), reconciled on every run — including when the collection already
+   exists — and verified afterwards, failing loudly if any field is missing.
+
+   Fixing this surfaced a second, quieter bug in my own fix: I read existing
+   fields from `GET /collections/:name`, which returns the collection row with
+   **no `fields` key**, so the check was vacuous and re-PUT every field each
+   run. It now reads `GET /collections/:name/fields`.
+
+   Proven end to end in a browser: Studio shows "Edit item" with `title`,
+   `slug` and `body`; editing the title and saving reports "Saved"; and the
+   publishable key then reads the edited title while still not seeing the draft.
+
+2. **[P2] A token in `.env` was trusted without being checked.** Any non-empty
+   value counted as the key's token, so a revoked or externally rotated token
+   was written back unchanged: bootstrap exited 0 while the website kept getting
+   401, and rerunning could not recover. The token is now spent against the API
+   the website uses, with the Origin the browser sends, before the reuse path is
+   taken; 401/403 triggers rotation. Other failures bubble — a broken CMS must
+   not read as "the token is fine". The freshly chosen token is re-checked after
+   the role is attached, and bootstrap refuses to write a token it could not use.
+
+3. **[P2] A display name did not establish ownership of a key.** Every
+   generated project searched for the same `Website (publishable)` name, so a
+   second site bootstrapped against the same CMS would select the first site's
+   key and rotate it — breaking a live website while still not working itself,
+   since rotation preserves the original origin allowlist. Ownership is now
+   carried in the key's metadata as `starterOwner: lumibase-starter:<origin>`,
+   with the origin as the natural key.
+
+4. **[P2] The verifier accepted a malformed 200 as an empty draft list.**
+   `asked?.data ?? []` treated an HTML error page or a changed envelope as "no
+   drafts visible". Responses are now required to be a `{ data: [...] }`
+   envelope before an empty result is read as proof.
+
+   Per the reviewer's note that source-string assertions cannot catch this, the
+   suite gained **behavioural tests** (`nextjs-scripts.behaviour.test.ts`) that
+   run the real scripts against a stub CMS. Confirmed they catch the regression:
+   against the pre-fix `verify.mjs` the two malformed-response tests fail and the
+   output reads `✔ All checks passed` — the exact false pass reported.
+
+Tests: 40 → 50.
+
+### 9.4 Divergences from the original contract
 
 - **Redis added to the compose file.** Without it the Docker runtime falls back
   to `127.0.0.1:6379` and floods the log with **506 ECONNREFUSED lines**, burying
