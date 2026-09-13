@@ -331,3 +331,130 @@ describe('G2 repro · the admin backstop is per-prefix, not per-transport', () =
     // `apps/cms` and cannot import it without a manifest change.
   });
 });
+
+describe('G2 repro · body envelope: stdio gửi field ra top level, không bọc data', () => {
+  /**
+   * Nửa stdio của repro envelope (review vòng 3, P1). Nửa CMS là `R12`/`R13`
+   * trong `apps/cms/.../g2-mcp-contract-repro.test.ts`, nhận đúng hai body dưới
+   * đây rồi cho chạy qua `itemsRouter` thật: `create` → **400**,
+   * `patch` → **200 nhưng patch rỗng**.
+   *
+   * Tách hai nửa vì hai package **không phụ thuộc nhau**; nối trực tiếp sẽ cần
+   * đổi manifest, vượt grant bước 1. Bài học phương pháp: bảng mapping ở các
+   * head trước so "schema quảng bá" với "args skill đọc" nên **không thể** thấy
+   * lớp lỗi này — phải so cả **body thật sự gửi đi**.
+   */
+  it('S6: create_item spread field ra top level; update_item gửi bare — cả hai thiếu envelope data', async () => {
+    const { tools, calls } = registryOnly();
+
+    await tools.get('create_item')!.handler({
+      collection: 'posts',
+      data: { title: 'x' },
+      status: 'draft',
+    });
+    await tools.get('update_item')!.handler({
+      collection: 'posts',
+      id: 'item_1',
+      data: { title: 'new title' },
+    });
+
+    expect(calls).toHaveLength(2);
+
+    // CURRENT: `client.post(path, { ...itemData, status })` — `title` nằm ở TOP
+    // LEVEL, không có key `data`. REST `createSchema` đòi `data: record` ⇒ 400.
+    expect(calls[0]!.path).toBe('/items/posts');
+    expect(calls[0]!.body).toEqual({ title: 'x', status: 'draft' });
+    expect(Object.keys(calls[0]!.body as object)).not.toContain('data');
+
+    // CURRENT: `client.patch(path, itemData)` — gửi bare. REST `patchSchema`
+    // strip key lạ ⇒ service nhận `{}`, nhưng response vẫn 200.
+    expect(calls[1]!.path).toBe('/items/posts/item_1');
+    expect(calls[1]!.body).toEqual({ title: 'new title' });
+    expect(Object.keys(calls[1]!.body as object)).not.toContain('data');
+
+    // EXPECTED cho cả hai: `{ data: { title: … }, status? }`.
+  });
+});
+
+describe('G2 repro · inventory có phân loại ngữ nghĩa (review vòng 3, P2)', () => {
+  /**
+   * Head trước báo `98 write / 40 mapped / 58 unmapped`. Review vòng 3 đúng ở hai
+   * điểm và test này khoá lại cả hai:
+   *
+   * 1. **98 là số handler dùng method khác GET, KHÔNG phải 98 mutation.** Có 7
+   *    tool dùng POST nhưng ngữ nghĩa là đọc/preview, cộng 1 tool là hành động
+   *    tốn phí provider (`translate_text`) cần lớp riêng.
+   * 2. **"Không khớp tên" ≠ "không có skill".** `cdc_subscription_replay` đã có
+   *    skill `replayCdcSubscription`, chỉ khác thứ tự từ trong alias.
+   *
+   * Đối chiếu alias bằng **token-set** (chuẩn hoá rồi sort token) thay vì
+   * camelCase thuần — chính chỗ head trước bỏ lọt.
+   */
+
+  /** Chuẩn hoá tên thành tập token đã sort, để so alias bất kể thứ tự từ. */
+  const tokens = (s: string) =>
+    s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join('|');
+
+  /** POST/PATCH nhưng ngữ nghĩa đọc/preview — KHÔNG được disable chỉ vì method. */
+  const READ_VIA_POST = [
+    'check_permission',
+    'check_access_conflicts',
+    'dry_run_access_import',
+    'diff_schema',
+    'lookup_tm',
+    'query_insights',
+    'run_panel',
+  ];
+
+  /** Hành động có chi phí/provider ngoài — lớp riêng, không phải content mutation. */
+  const PROVIDER_ACTION = ['translate_text'];
+
+  it('S7: 7 tool non-GET là đọc/preview và 1 tool là hành động provider — không xếp chung mutation', async () => {
+    const { client } = await liveClient();
+    const names = (await client.listTools()).tools.map((t) => t.name);
+
+    for (const n of [...READ_VIA_POST, ...PROVIDER_ACTION]) {
+      expect(names, `${n} có trong registry`).toContain(n);
+    }
+
+    // Khoá phân loại: các tool này dùng POST, nên bộ đếm "method != GET" xếp
+    // chúng vào write. Đó là lý do con số 98 không phải số mutation.
+    expect(READ_VIA_POST).toHaveLength(7);
+    expect(PROVIDER_ACTION).toHaveLength(1);
+  });
+
+  it('S8: cdc_subscription_replay là ALIAS của replayCdcSubscription — camelCase thuần bỏ lọt', () => {
+    // camelCase thuần: cdc_subscription_replay -> cdcSubscriptionReplay ≠ skill nào.
+    const camel = (s: string) => s.replace(/_([a-z0-9])/g, (_m, c: string) => c.toUpperCase());
+    expect(camel('cdc_subscription_replay')).toBe('cdcSubscriptionReplay');
+
+    // token-set: khớp chính xác skill thật.
+    expect(tokens('cdc_subscription_replay')).toBe(tokens('replayCdcSubscription'));
+
+    // Không phải mọi tool chưa khớp tên đều có alias — kiểm âm để test không
+    // trở thành phát biểu rỗng.
+    expect(tokens('create_release')).not.toBe(tokens('createCollection'));
+    expect(tokens('update_collection')).not.toBe(tokens('createCollection'));
+  });
+
+  it('S9: create_collection advertise 18 property và 32 tool toàn registry có confirm', async () => {
+    const { client } = await liveClient();
+    const listed = await client.listTools();
+
+    // Sửa số của head trước (19 property / thiếu 17): đo lại đúng là 18, và
+    // skill chỉ đọc `name` + `singleton` ⇒ thiếu **16**.
+    const cc = listed.tools.find((t) => t.name === 'create_collection');
+    const props = Object.keys((cc!.inputSchema as { properties: Record<string, unknown> }).properties);
+    expect(props).toHaveLength(18);
+    expect(props).toContain('name');
+    expect(props).toContain('singleton');
+
+    // `confirm` đếm trên TOÀN registry là 32 — head trước ghi "~20" mà không nêu
+    // mẫu đếm, nên ghi rõ mẫu ở đây.
+    const withConfirm = listed.tools.filter((t) => {
+      const s = t.inputSchema as { properties?: Record<string, unknown> };
+      return Boolean(s.properties && Object.hasOwn(s.properties, 'confirm'));
+    });
+    expect(withConfirm).toHaveLength(32);
+  });
+});

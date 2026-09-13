@@ -764,3 +764,123 @@ describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools �
     // governance is unavailable is a bypass of governance.
   });
 });
+
+/**
+ * ── R12/R13 — BODY-ENVELOPE REPRO (review vòng 3, P1) ────────────────────────
+ *
+ * Bảng mapping ở các head trước so "schema quảng bá" với "args mà handler skill
+ * đọc", và vì thế **bỏ qua hoàn toàn body REST thật sự được gửi**. Review vòng 3
+ * tái hiện hai lỗi baseline mà cách so đó không thể thấy. Đây là nửa CMS của
+ * repro: nhận đúng hai body mà stdio phát ra (nửa kia là `S6` trong
+ * `packages/mcp-server`, assert chính xác hai body đó) rồi cho chạy qua
+ * `itemsRouter` THẬT.
+ *
+ * Tách hai nửa vì `apps/cms` và `packages/mcp-server` **không phụ thuộc nhau**;
+ * nối trực tiếp sẽ cần đổi manifest, vượt grant bước 1.
+ *
+ * EVIDENCE CLASS: route thật + Zod schema thật; `ItemService` là spy. Không DB,
+ * không auth middleware, không network.
+ */
+describe('G2 repro · body envelope: REST từ chối / âm thầm bỏ nội dung', () => {
+  async function buildItemsApp() {
+    const created: Array<[string, unknown]> = [];
+    const patched: Array<[string, string, unknown]> = [];
+    const spy = {
+      create: vi.fn((collection: string, payload: unknown) => {
+        created.push([collection, payload]);
+        return Promise.resolve({ id: 'item_1' });
+      }),
+      patch: vi.fn((collection: string, id: string, payload: unknown) => {
+        patched.push([collection, id, payload]);
+        return Promise.resolve({ id });
+      }),
+      setProvenance: vi.fn(),
+      beginWriteCoalescing: vi.fn(),
+      flushCoalescedWrites: vi.fn().mockResolvedValue(undefined),
+    };
+
+    vi.doMock('../item-service-factory', () => ({
+      itemServiceForRequest: () => spy,
+      itemServiceForSystem: () => spy,
+      permissionServiceForRequest: () => ({ canAccess: async () => true }),
+      buildRequestPermissionContext: () => ({}),
+    }));
+    vi.resetModules();
+    const { itemsRouter } = await import('../../routes/items');
+
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('auth', { userId: 'u1', roles: ['admin'], raw: {} } as AuthPrincipal);
+      c.set('siteId', 'site_1');
+      c.set('requestId', 'req_1');
+      c.set('db', {} as never);
+      c.set('runtime', { cache: {}, search: undefined, queue: undefined } as never);
+      c.env = {} as never;
+      await next();
+    });
+    app.route('/api/v1/items', itemsRouter);
+    return { app, created, patched };
+  }
+
+  it('R12: body create_item thật ({title,status} — KHÔNG có envelope data) bị REST trả 400', async () => {
+    const { app, created } = await buildItemsApp();
+
+    // Đây đúng là body `packages/mcp-server/src/tools/items.ts` phát ra:
+    //   client.post(`/items/${collection}`, { ...itemData, status })
+    // tức field của item bị spread ra TOP LEVEL, không bọc trong `data`.
+    const res = await app.request('/api/v1/items/posts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'x', status: 'draft' }),
+    });
+
+    // CURRENT: `createSchema` đòi `data: record` ⇒ 400 VALIDATION, service không
+    // hề được gọi. Nghĩa là `create_item` của stdio **chưa từng chạy được** với
+    // đúng contract nó tự quảng bá.
+    // EXPECTED: body phải là `{ data: { title }, status }`.
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { errors: Array<{ code: string }> };
+    expect(body.errors[0]?.code).toBe('VALIDATION');
+    expect(created).toHaveLength(0);
+
+    // Control: bọc đúng envelope thì qua được.
+    const ok = await app.request('/api/v1/items/posts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ data: { title: 'x' }, status: 'draft' }),
+    });
+    expect(ok.status).toBe(201);
+    expect(created).toHaveLength(1);
+    expect(created[0]![1]).toMatchObject({ data: { title: 'x' }, status: 'draft' });
+  });
+
+  it('R13: body update_item thật ({title} bare) trả 200 nhưng ItemService nhận patch RỖNG', async () => {
+    const { app, patched } = await buildItemsApp();
+
+    // Body thật: `client.patch(path, itemData)` — gửi thẳng field, không envelope.
+    const res = await app.request('/api/v1/items/posts/item_1', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'new title' }),
+    });
+
+    // CURRENT: `patchSchema` có mọi field optional và Zod **strip** key lạ, nên
+    // `title` bị loại âm thầm. Kết quả: **200 OK** với patch rỗng — nguy hơn ca
+    // 400 ở R12, vì client tưởng đã cập nhật thành công trong khi không có gì
+    // thay đổi. Đây là mất dữ liệu ngầm, không phải lỗi hiển thị.
+    // EXPECTED: body phải là `{ data: { title } }`.
+    expect(res.status).toBe(200);
+    expect(patched).toHaveLength(1);
+    expect(patched[0]![2]).toEqual({});
+
+    // Control: bọc đúng envelope thì nội dung tới được service.
+    const ok = await app.request('/api/v1/items/posts/item_1', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ data: { title: 'new title' } }),
+    });
+    expect(ok.status).toBe(200);
+    expect(patched).toHaveLength(2);
+    expect(patched[1]![2]).toMatchObject({ data: { title: 'new title' } });
+  });
+});
