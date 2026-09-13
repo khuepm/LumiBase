@@ -15,6 +15,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { execFile } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,18 +28,24 @@ const scriptsDir = resolve(
   '../templates/nextjs/scripts',
 );
 
-type Handler = (req: { method: string; url: string }) => {
+type Handler = (req: {
+  method: string;
+  url: string;
+  headers: Record<string, string | string[] | undefined>;
+}) => {
   status: number;
   body: string;
   type?: string;
 };
 
 const servers: Server[] = [];
+const workdirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(
-    servers.splice(0).map((s) => new Promise<void>((done) => s.close(() => done()))),
-  );
+  await Promise.all([
+    ...servers.splice(0).map((s) => new Promise<void>((done) => s.close(() => done()))),
+    ...workdirs.splice(0).map((d) => rm(d, { recursive: true, force: true })),
+  ]);
 });
 
 /** Start a stub CMS and return its base URL. */
@@ -48,7 +56,11 @@ async function stubCms(handler: Handler): Promise<string> {
       res.end('ok');
       return;
     }
-    const out = handler({ method: req.method ?? 'GET', url: req.url ?? '' });
+    const out = handler({
+      method: req.method ?? 'GET',
+      url: req.url ?? '',
+      headers: req.headers as Record<string, string | string[] | undefined>,
+    });
     res.writeHead(out.status, { 'content-type': out.type ?? 'application/json' });
     res.end(out.body);
   });
@@ -60,25 +72,47 @@ async function stubCms(handler: Handler): Promise<string> {
   return `http://127.0.0.1:${address.port}`;
 }
 
-/** Run a starter script and capture its outcome. */
+/**
+ * Run a starter script and capture its outcome.
+ *
+ * Every run gets a throwaway working directory, and that is not tidiness. A
+ * successful bootstrap ends by calling `updateEnvFile()`, which writes `.env`
+ * **relative to cwd** — so a subprocess inheriting the runner's directory wrote
+ * fixture credentials straight into `packages/create-lumibase/.env`. A test
+ * that modifies the repository it is testing is a bug in the test, whether or
+ * not the file happens to be gitignored.
+ */
 async function runScript(
   script: string,
   env: Record<string, string>,
-): Promise<{ code: number; out: string }> {
+): Promise<{ code: number; out: string; cwd: string }> {
+  const cwd = await mkdtemp(join(tmpdir(), 'lumibase-starter-test-'));
+  workdirs.push(cwd);
+
   try {
     const { stdout, stderr } = await run('node', [join(scriptsDir, script)], {
+      cwd,
       env: { ...process.env, ...env },
     });
-    return { code: 0, out: stdout + stderr };
+    return { code: 0, out: stdout + stderr, cwd };
   } catch (err) {
     const e = err as { code?: number; stdout?: string; stderr?: string };
-    return { code: e.code ?? 1, out: (e.stdout ?? '') + (e.stderr ?? '') };
+    return { code: e.code ?? 1, out: (e.stdout ?? '') + (e.stderr ?? ''), cwd };
   }
 }
 
 const PUBLISHED_ITEM = { id: 'pub1', status: 'published', data: { slug: 'a', title: 'A' } };
 
-describe('cms:verify — a malformed 200 is not a passing check', () => {
+/**
+ * Each test spawns a real Node process, which costs roughly a second before the
+ * script under test runs at all. Several of those in parallel on a loaded
+ * machine overrun vitest's 5s default and fail as timeouts that read like logic
+ * errors — they are not. The work itself is milliseconds; this budget is for
+ * process startup.
+ */
+const TIMEOUT = 30_000;
+
+describe('cms:verify — a malformed 200 is not a passing check', { timeout: TIMEOUT }, () => {
   it('fails when the draft query answers 200 with an HTML error page', async () => {
     // The exact shape review round 3 reproduced: everything else behaves, but a
     // proxy returns an HTML error for one query. `body?.data ?? []` read that as
@@ -157,33 +191,37 @@ describe('cms:verify — a malformed 200 is not a passing check', () => {
   });
 });
 
-describe('cms:bootstrap — a token in .env is not proof it still works', () => {
-  it('rotates instead of reusing when the stored token is rejected', async () => {
-    // Review round 3: a revoked token was written back unchanged and bootstrap
-    // exited 0, leaving the website on 401 with no way to recover by rerunning.
-    let rotated = false;
-
-    const url = await stubCms(({ method, url }) => {
+describe('cms:bootstrap — a token in .env is not proof it still works', { timeout: TIMEOUT }, () => {
+  /** A stub CMS that is fully provisioned except for the key's token state. */
+  function bootstrapStub(opts: {
+    /** The token the fixture treats as still valid. */
+    liveToken: string;
+    onRotate: () => void;
+  }): Handler {
+    return ({ method, url }) => {
       const json = (data: unknown) => ({ status: 200, body: JSON.stringify({ data }) });
+      const deny = () => ({
+        status: 401,
+        body: JSON.stringify({ errors: [{ code: 'UNAUTHENTICATED' }] }),
+      });
 
-      if (url.startsWith('/api/v1/setup/state')) return { status: 200, body: JSON.stringify({ state: 'initialized' }) };
+      if (url.startsWith('/api/v1/setup/state')) {
+        return { status: 200, body: JSON.stringify({ state: 'initialized' }) };
+      }
       if (url.startsWith('/api/v1/auth/login')) return json({ token: 'admin-token' });
-      // Fields live on their own endpoint; bootstrap reads them from there.
       if (url.startsWith('/api/v1/collections/posts/fields')) {
         return json([{ name: 'title' }, { name: 'slug' }, { name: 'body' }]);
       }
       if (url.startsWith('/api/v1/collections/posts')) return json({ name: 'posts' });
       if (url === '/api/v1/collections') {
-        // The real code the CMS returns; bootstrap now checks for exactly this
-        // rather than accepting any 409.
         return { status: 409, body: JSON.stringify({ errors: [{ code: 'COLLECTION_EXISTS' }] }) };
       }
       if (url.includes('/access/grants/public/enable')) return json({ roleId: 'role-public' });
       if (url.includes('/access/grants/public')) return json({});
 
       if (url.includes('/rotate')) {
-        rotated = true;
-        return json({ token: 'lbk_pub_fresh' });
+        opts.onRotate();
+        return json({ token: opts.liveToken });
       }
       if (url === '/api/v1/api-keys' && method === 'GET') {
         return json([
@@ -198,23 +236,87 @@ describe('cms:bootstrap — a token in .env is not proof it still works', () => 
       }
       if (/\/api-keys\/key1$/.test(url)) return json({ roles: [{ roleId: 'role-public' }] });
 
-      // The probe that decides reuse-vs-rotate: the stale token is refused,
-      // the fresh one works.
+      // The probe that decides reuse-vs-rotate, and the assertion that matters:
+      // only the live token authenticates. Everything else is refused the way
+      // the CMS refuses a revoked key.
       if (url.startsWith('/api/v1/items/posts')) {
         return { status: 200, body: JSON.stringify({ data: [] }) };
       }
       return json({});
+    };
+  }
+
+  it('rotates when the stored token is refused, and finishes successfully', async () => {
+    // The revoked-token case proper: a token IS present, and the server answers
+    // 401 for it. An earlier version of this test passed an empty string, which
+    // short-circuits inside tokenWorks() before any request — so it exercised
+    // the missing-token path while claiming to cover revocation.
+    let rotated = false;
+    const REVOKED = 'lbk_pub_revoked';
+    const LIVE = 'lbk_pub_fresh';
+
+    const stub = bootstrapStub({ liveToken: LIVE, onRotate: () => { rotated = true; } });
+    const url = await stubCms((req) => {
+      if (req.url.startsWith('/api/v1/items/posts')) {
+        const auth = String(req.headers.authorization ?? '');
+        if (auth.includes(REVOKED)) {
+          return { status: 401, body: JSON.stringify({ errors: [{ code: 'UNAUTHENTICATED' }] }) };
+        }
+        return { status: 200, body: JSON.stringify({ data: [] }) };
+      }
+      return stub(req);
     });
 
     const result = await runScript('bootstrap.mjs', {
       NEXT_PUBLIC_LUMIBASE_URL: url,
       LUMIBASE_ADMIN_EMAIL: 'admin@example.com',
       LUMIBASE_ADMIN_PASSWORD: 'Change-Me-N0w!',
-      // Deliberately absent: this is the "token was lost" case, which must
-      // rotate rather than reuse nothing.
-      NEXT_PUBLIC_LUMIBASE_PUBLISHABLE_KEY: '',
+      NEXT_PUBLIC_LUMIBASE_PUBLISHABLE_KEY: REVOKED,
     });
 
-    expect(rotated, `bootstrap did not rotate:\n${result.out}`).toBe(true);
+    expect(rotated, `bootstrap did not rotate a refused token:\n${result.out}`).toBe(true);
+    expect(result.code, result.out).toBe(0);
+    expect(result.out).toMatch(/rotating/);
+  });
+
+  it('reuses the token when it still authenticates', async () => {
+    // The control. Without it, "rotates" above could pass because the script
+    // always rotates, which would be its own bug.
+    let rotated = false;
+    const LIVE = 'lbk_pub_live';
+
+    const url = await stubCms(bootstrapStub({ liveToken: LIVE, onRotate: () => { rotated = true; } }));
+
+    const result = await runScript('bootstrap.mjs', {
+      NEXT_PUBLIC_LUMIBASE_URL: url,
+      LUMIBASE_ADMIN_EMAIL: 'admin@example.com',
+      LUMIBASE_ADMIN_PASSWORD: 'Change-Me-N0w!',
+      NEXT_PUBLIC_LUMIBASE_PUBLISHABLE_KEY: LIVE,
+    });
+
+    expect(result.code, result.out).toBe(0);
+    expect(rotated, `bootstrap rotated a working token:\n${result.out}`).toBe(false);
+    expect(result.out).toMatch(/reusing the existing key/);
+  });
+
+  it('writes .env into its own working directory, never the caller\'s', async () => {
+    // The regression this file caused: the subprocess inherited vitest's cwd
+    // and updateEnvFile() wrote fixture credentials into the repository.
+    const url = await stubCms(bootstrapStub({ liveToken: 'lbk_pub_live', onRotate: () => {} }));
+
+    const result = await runScript('bootstrap.mjs', {
+      NEXT_PUBLIC_LUMIBASE_URL: url,
+      LUMIBASE_ADMIN_EMAIL: 'admin@example.com',
+      LUMIBASE_ADMIN_PASSWORD: 'Change-Me-N0w!',
+      NEXT_PUBLIC_LUMIBASE_PUBLISHABLE_KEY: 'lbk_pub_live',
+    });
+
+    expect(result.code, result.out).toBe(0);
+    const written = await readFile(join(result.cwd, '.env'), 'utf8');
+    expect(written).toMatch(/NEXT_PUBLIC_LUMIBASE_PUBLISHABLE_KEY=/);
+
+    // And nothing landed next to the package being tested.
+    const strayEnv = join(dirname(fileURLToPath(import.meta.url)), '..', '.env');
+    await expect(readFile(strayEnv, 'utf8')).rejects.toThrow();
   });
 });
