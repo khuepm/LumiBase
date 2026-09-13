@@ -83,7 +83,7 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "tsup": "^8.5.1",

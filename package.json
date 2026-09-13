@@ -65,12 +65,12 @@
     "husky": "^9.1.7",
     "turbo": "^2.10.12",
     "typescript": "^5.6.2",
-    "wrangler": "^4.127.0"
+    "wrangler": "^4.129.0"
   },
   "pnpm": {
     "overrides": {
       "@types/react": "19.2.18",
-      "@types/react-dom": "19.2.5",
+      "@types/react-dom": "19.2.7",
       "brace-expansion@1": "^1.1.16",
       "brace-expansion@5": "^5.0.8",
       "dompurify": "^3.4.13",

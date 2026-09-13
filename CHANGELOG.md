@@ -9,6 +9,61 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Changed
+
+- **Dependency batch: 27 minor/patch bumps, Vitest 5, Framer Motion 13.** The
+  group bump carries `zod` 4.4→4.6, `next` 16.3.3→16.3.4, `hono` 4.13.5→4.13.7,
+  `wrangler` 4.127→4.129, `bullmq` 6.3.1→6.3.4, `lucide-react` 1.34→1.41 and
+  `@types/node` 26.4.0→26.4.1 among others. Vitest moves to `5.0.0` across all
+  eleven packages that run it, and `apps/landing` to Framer Motion `13.2.0`.
+  Nothing in the public surface changes.
+
+  Two of the four upgrades needed a fix before they were honest, and both were
+  the same shape — a declaration that read correctly while the thing it
+  described did not happen:
+
+  - `pnpm.overrides.@types/react-dom` was an exact pin at `19.2.5` while the
+    bump raised `apps/{docs,landing,studio}` to `^19.2.7`. Overrides apply to
+    direct dependencies too, so the pin won and every lockfile importer still
+    recorded `specifier: 19.2.5` — the manifests claimed a version that was not
+    installed. `pnpm drift:check` caught it, which is the second time that gate
+    has paid for itself (the first was the `vite` 7-vs-8 incident it was built
+    for). The pin now moves with the manifests.
+  - `apps/docs` registered its Testing Library matchers through the bare
+    `@testing-library/jest-dom` entry, which declares them on the global
+    `jest.Matchers` interface. Vitest read that interface up to v4 and stopped
+    in v5, so under `5.0.0` every `toBeInTheDocument` / `toHaveAttribute` /
+    `toHaveClass` lost its type — fifteen `TS2339` errors that failed
+    `typecheck` **and** `build` while the tests themselves kept passing at
+    runtime. It now imports `@testing-library/jest-dom/vitest`, which is what
+    `apps/studio` already did; that difference is the whole reason only one of
+    the two apps broke.
+
+  Framer Motion 13's only breaking change is dropping `@emotion/is-prop-valid`
+  as an optional dependency, and this workspace has no CSS-in-JS at all, so it
+  could not apply. Because `apps/landing` has no component tests, that was
+  verified in a real browser rather than inferred: the page renders with 96
+  elements carrying Framer Motion's inline transform/opacity styles, no console
+  errors and no uncaught exceptions, against a 12.43 baseline of 95 on the same
+  1053-element tree.
+
+- **`baseUrl` removed from the `apps/docs` and `apps/studio` tsconfigs.** Both
+  set it to `"."`, so dropping it changes nothing today: `paths` without
+  `baseUrl` resolve relative to the tsconfig, which is the same directory, and
+  Vite resolves `@/*` from its own `resolve.alias` regardless. TypeScript 7
+  removed the option outright (`TS5102`), so this is groundwork rather than a
+  fix — verified on 5.9.3 to keep `typecheck`, `build` and `lint` green.
+
+  TypeScript 7 itself is **not** adopted. Its native compiler works here — the
+  full workspace typechecks 18/18, and in 8.5s against 2m9s on 5.9.3 — but 7.0
+  ships without the programmatic compiler API, and two tools the build depends
+  on refuse to run: `typescript-eslint` throws `does not support TS 7.0` at
+  require time, failing lint for `apps/{landing,consumer}`, and `tsup --dts`
+  crashes inside `rollup-plugin-dts` reading `ts.sys.useCaseSensitiveFileNames`,
+  which breaks the build of all six published packages including the
+  semver-frozen `@lumibase/sdk` types. Tracked as `B63` in the out-of-scope
+  backlog, pending the stable API in 7.1.
+
 ### Fixed
 
 - **A DB integration suite pointed at a database that is not there no longer
