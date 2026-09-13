@@ -72,25 +72,50 @@ export class AuditLogBatcher {
   push(job: AuditQueueJob): void {
     this.buffer.push(job);
     if (this.buffer.length >= AUDIT_BATCH_MAX) {
-      void this.scheduleFlush();
+      this.flushDetached();
       return;
     }
     if (!this.flushTimer) {
       this.flushTimer = setTimeout(() => {
         this.flushTimer = undefined;
-        void this.scheduleFlush();
+        this.flushDetached();
       }, AUDIT_BATCH_FLUSH_MS);
       (this.flushTimer as { unref?: () => void }).unref?.();
     }
+  }
+
+  /**
+   * Fire-and-forget flush. Nobody awaits these, so the rejection handler is
+   * mandatory — without it a failing INSERT (e.g. an FK violation from a bad
+   * `site_id`) becomes an unhandled rejection and takes the process down.
+   * Audit logging must never be able to crash request handling.
+   */
+  private flushDetached(): void {
+    this.scheduleFlush().catch(() => undefined);
   }
 
   async flush(): Promise<void> {
     await this.scheduleFlush();
   }
 
+  /**
+   * Chain a flush after any in-flight one.
+   *
+   * The stored `flushing` promise MUST always be settled-or-fulfilled, never
+   * rejected: it is both (a) the tail every subsequent flush chains onto and
+   * (b) reachable from the fire-and-forget `flushDetached()` path, whose
+   * callers have no way to observe it. A rejection stored here would both
+   * poison every later flush and surface as an unhandled rejection that kills
+   * the process. `runFlush` already logs its own failure, so swallowing here
+   * loses no diagnostics.
+   *
+   * The returned promise still rejects, so `flush()` callers that DO await can
+   * observe the error.
+   */
   private scheduleFlush(): Promise<void> {
-    this.flushing = this.flushing.then(() => this.runFlush());
-    return this.flushing;
+    const next = this.flushing.then(() => this.runFlush());
+    this.flushing = next.catch(() => undefined);
+    return next;
   }
 
   private async runFlush(): Promise<void> {
