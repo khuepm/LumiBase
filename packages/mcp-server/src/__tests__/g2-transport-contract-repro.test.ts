@@ -409,32 +409,94 @@ describe('G2 repro · inventory có phân loại ngữ nghĩa (review vòng 3, P
   /** Hành động có chi phí/provider ngoài — lớp riêng, không phải content mutation. */
   const PROVIDER_ACTION = ['translate_text'];
 
-  it('S7: 7 tool non-GET là đọc/preview và 1 tool là hành động provider — không xếp chung mutation', async () => {
-    const { client } = await liveClient();
-    const names = (await client.listTools()).tools.map((t) => t.name);
+  /**
+   * S7 — **PHẠM VI BẰNG CHỨNG** (sửa theo review vòng 4).
+   *
+   * Bản trước chỉ assert 8 tên tồn tại và độ dài hai mảng literal, nên đổi
+   * handler của một tool đọc thành write vẫn **không** làm nó đỏ. Đó là
+   * inventory example, không phải hàng rào.
+   *
+   * Bản này **gọi handler thật** và khoá **REST target** (method + path) của
+   * từng tool. Nhờ đó đổi endpoint hay method của bất kỳ tool nào trong nhóm sẽ
+   * làm test đỏ.
+   *
+   * Điều test này **KHÔNG** chứng minh: rằng các route đó là read theo ngữ nghĩa.
+   * Phán đoán đó đến từ đọc code CMS (`routes/permissions.ts`, `routes/access.ts`,
+   * `routes/collections.ts`, `routes/translation-memory.ts`, `routes/insights.ts`,
+   * `services/insights-service.ts`) — không phải từ đây. Test chỉ khoá **đầu vào**
+   * của phán đoán để nó không trôi âm thầm.
+   */
+  it('S7: khoá REST target của 7 tool đọc-qua-POST + 1 provider action (không phải bằng chứng ngữ nghĩa)', async () => {
+    const expected: Record<string, string> = {
+      check_permission: 'POST /permissions/check',
+      check_access_conflicts: 'POST /access/conflicts/check',
+      dry_run_access_import: 'POST /access/import?dryRun=true',
+      diff_schema: 'POST /collections/diff',
+      lookup_tm: 'POST /tm/lookup',
+      // Cả hai đi qua `/dashboards/...`; `query_insights` là ad-hoc preview
+      // (mô tả tool tự ghi "Read-only"), `run_panel` chạy panel đã lưu.
+      query_insights: 'POST /dashboards/d1/panels/preview',
+      run_panel: 'POST /dashboards/d1/panels/p1/data',
+      translate_text: 'POST /tm/translate',
+    };
+    const args: Record<string, Record<string, unknown>> = {
+      check_permission: { collection: 'posts', action: 'read' },
+      check_access_conflicts: {},
+      dry_run_access_import: { payload: {} },
+      diff_schema: { collections: [] },
+      lookup_tm: { source: 'hello', sourceLanguage: 'en', targetLanguage: 'vi' },
+      query_insights: { dashboardId: 'd1', collection: 'posts', aggregate: 'count' },
+      run_panel: { dashboardId: 'd1', panelId: 'p1' },
+      translate_text: { text: 'hello', targetLanguage: 'vi' },
+    };
 
-    for (const n of [...READ_VIA_POST, ...PROVIDER_ACTION]) {
-      expect(names, `${n} có trong registry`).toContain(n);
+    const observed: Record<string, string> = {};
+    for (const name of [...READ_VIA_POST, ...PROVIDER_ACTION]) {
+      const fresh = registryOnly();
+      const entry = fresh.tools.get(name);
+      expect(entry, `${name} có trong registry`).toBeDefined();
+      await entry!.handler(args[name] ?? {});
+      expect(fresh.calls.length, `${name} phát đúng 1 REST call`).toBe(1);
+      observed[name] = `${fresh.calls[0]!.method} ${fresh.calls[0]!.path}`;
     }
 
-    // Khoá phân loại: các tool này dùng POST, nên bộ đếm "method != GET" xếp
-    // chúng vào write. Đó là lý do con số 98 không phải số mutation.
-    expect(READ_VIA_POST).toHaveLength(7);
-    expect(PROVIDER_ACTION).toHaveLength(1);
+    // Khoá từng target một, không chỉ đếm mảng.
+    expect(observed).toEqual(expected);
+
+    // Và đây là lý do "98" không phải số mutation: cả 8 tool đều dùng POST,
+    // nên bộ đếm theo HTTP method xếp chúng vào write.
+    expect(Object.values(observed).every((v) => v.startsWith('POST '))).toBe(true);
   });
 
-  it('S8: cdc_subscription_replay là ALIAS của replayCdcSubscription — camelCase thuần bỏ lọt', () => {
-    // camelCase thuần: cdc_subscription_replay -> cdcSubscriptionReplay ≠ skill nào.
+  /**
+   * S8 — **PHẠM VI BẰNG CHỨNG** (sửa theo review vòng 4).
+   *
+   * Bản trước chỉ chuẩn hoá **chuỗi literal**, nên xoá/đổi tên
+   * `replayCdcSubscription` phía CMS vẫn **không** làm nó đỏ. Bản này giới hạn
+   * claim đúng phạm vi: token-set là **thuật toán tìm CANDIDATE**, không phải
+   * bằng chứng skill tồn tại hay tương đương ngữ nghĩa.
+   *
+   * Phần "skill có thật trong `CORE_SKILLS`" được assert ở **`R14`** phía CMS —
+   * nơi import được registry thật. `packages/mcp-server` không phụ thuộc
+   * `apps/cms` nên không thể kiểm ở đây mà không đổi manifest.
+   */
+  it('S8: token-set tìm CANDIDATE alias mà camelCase bỏ lọt (không phải bằng chứng skill tồn tại)', () => {
+    // camelCase thuần: cdc_subscription_replay -> cdcSubscriptionReplay.
     const camel = (s: string) => s.replace(/_([a-z0-9])/g, (_m, c: string) => c.toUpperCase());
     expect(camel('cdc_subscription_replay')).toBe('cdcSubscriptionReplay');
 
-    // token-set: khớp chính xác skill thật.
+    // token-set coi hai tên này là cùng một tập token ⇒ candidate.
     expect(tokens('cdc_subscription_replay')).toBe(tokens('replayCdcSubscription'));
+    // …nhưng camelCase thuần thì không, nên phương pháp cũ bỏ lọt.
+    expect(camel('cdc_subscription_replay')).not.toBe('replayCdcSubscription');
 
-    // Không phải mọi tool chưa khớp tên đều có alias — kiểm âm để test không
-    // trở thành phát biểu rỗng.
+    // Kiểm âm: token-set không biến mọi thứ thành candidate.
     expect(tokens('create_release')).not.toBe(tokens('createCollection'));
     expect(tokens('update_collection')).not.toBe(tokens('createCollection'));
+
+    // Ghi rõ giới hạn suy luận: "không trùng token" KHÔNG kết luận được
+    // "không có skill tương đương" — nó chỉ nói thuật toán này không tìm ra
+    // candidate. Kết luận cuối cần soát ngữ nghĩa từng tool (Quyết định 1).
   });
 
   it('S9: create_collection advertise 18 property và 32 tool toàn registry có confirm', async () => {

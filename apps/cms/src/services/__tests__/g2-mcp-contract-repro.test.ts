@@ -561,6 +561,54 @@ describe('G2 repro · the two transports are separate contracts', () => {
     expect(isControlPlaneSkill(CORE_SKILLS['listCollections']!, 'listCollections')).toBe(false);
   });
 
+  it('R14: mọi skill trong bảng mapping 41 ứng viên PHẢI tồn tại trong CORE_SKILLS thật', () => {
+    /**
+     * Hàng rào mà `S8` phía stdio không thể dựng (nó không import được registry
+     * này). Review vòng 4 đúng: `S8` chỉ chuẩn hoá chuỗi literal, nên xoá/đổi tên
+     * skill phía CMS vẫn không làm nó đỏ. `R14` đóng đúng lỗ đó.
+     *
+     * Nếu ai xoá hoặc đổi tên bất kỳ skill nào dưới đây, test đỏ ngay — nên bảng
+     * mapping trong PR không thể trôi khỏi registry thật.
+     */
+    const MAPPED_SKILLS = [
+      // items
+      'createItem', 'updateItem', 'deleteItem',
+      // schema
+      'createCollection', 'deleteCollection', 'deleteField', 'createRelation', 'deleteRelation',
+      // access
+      'createRole', 'deleteRole', 'createPolicy', 'deletePolicy',
+      // automation
+      'createFlow', 'deleteFlow', 'runFlow', 'createIntent', 'deleteIntent',
+      // config
+      'createWebhook', 'updateWebhook', 'deleteWebhook',
+      'createTranslation', 'updateTranslation', 'deleteTranslation',
+      'upsertSetting', 'deleteSetting',
+      // cdc — gồm alias `cdc_subscription_replay` → `replayCdcSubscription`
+      'createCdcSubscription', 'deleteCdcSubscription', 'replayCdcSubscription',
+      // api keys
+      'createApiKey', 'rotateApiKey', 'revokeApiKey',
+      // users & teams
+      'inviteUser', 'updateUser', 'removeUser',
+      'createTeam', 'deleteTeam', 'addTeamMember', 'removeTeamMember',
+      // extensions
+      'installExtension', 'updateExtension', 'uninstallExtension',
+    ];
+
+    // 41 ứng viên mutation map được (40 theo tên + 1 alias).
+    expect(MAPPED_SKILLS).toHaveLength(41);
+    expect(new Set(MAPPED_SKILLS).size).toBe(41);
+
+    for (const name of MAPPED_SKILLS) {
+      expect(CORE_SKILLS[name], `${name} tồn tại trong CORE_SKILLS`).toBeDefined();
+      expect(CORE_SKILLS[name]!.name, `${name} khai đúng tên của chính nó`).toBe(name);
+    }
+
+    // Chốt riêng ca alias: đây là mắt xích mà camelCase thuần bỏ lọt, nên nó
+    // phải được kiểm trên registry thật, không chỉ trên chuỗi.
+    expect(CORE_SKILLS['replayCdcSubscription']).toBeDefined();
+    expect(CORE_SKILLS['cdcSubscriptionReplay']).toBeUndefined();
+  });
+
   it('R9: the FULL HTTP MCP registry is camelCase and contains no snake_case name', async () => {
     const registry = new ToolRegistryService(registryDb(), 'site_1', CORE_SKILLS);
     const httpNames = (await registry.listTools()).map((t) => t.name);
@@ -600,19 +648,37 @@ describe('G2 repro · the two transports are separate contracts', () => {
  *
  * `getContentOsFlags` is stubbed to `{ mcp: true }` because the flag defaults
  * OFF and would otherwise 404 before the handler is reached. That default is
- * itself part of the compatibility matrix, asserted in RT4.
+ * itself part of the compatibility matrix, asserted in RT4 — and the DEFAULT
+ * value comes from reading `services/feature-flags.ts`, not from RT4 (RT4 only
+ * proves `mcp: false` ⇒ 404). Stated because an earlier revision blurred the two.
  */
-describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools → call', () => {
-  const flagState = { mcp: true, vetoWindow: false };
 
-  /** Builds an app mounting the real mcpRouter on a fake request context. */
-  async function buildApp(auth: AuthPrincipal, db: Database) {
-    vi.doMock('../feature-flags', () => ({
-      getContentOsFlags: vi.fn().mockResolvedValue(flagState),
-      __esModule: true,
-    }));
-    vi.resetModules();
-    const { mcpRouter } = await import('../../routes/mcp');
+/**
+ * Mutable flag state + a single hoisted mock, so `routes/mcp` is imported
+ * exactly ONCE for the whole file. See the perf note on `buildApp` below.
+ */
+const { flagState } = vi.hoisted(() => ({
+  flagState: { mcp: true, vetoWindow: false } as { mcp: boolean; vetoWindow: boolean },
+}));
+
+vi.mock('../feature-flags', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../feature-flags')>();
+  return { ...actual, getContentOsFlags: async () => flagState };
+});
+
+// Imported once, at module load — deliberately outside any test's time budget.
+const { mcpRouter } = await import('../../routes/mcp');
+describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools → call', () => {
+  /**
+   * `buildApp` chỉ dựng Hono; router đã được import MỘT LẦN ở module scope.
+   *
+   * Trước đây hàm này gọi `vi.resetModules()` + `await import('../../routes/mcp')`
+   * ở **mỗi** test, nên lần đầu phải cold-import cả cây route và tính vào budget
+   * của RT1: đo được **18.6s** (reviewer đo ~24.9s) so với 214–357ms của
+   * RT2/RT3/RT4. Nguyên nhân là chi phí import, không phải tranh tài nguyên —
+   * nên cách sửa là bỏ re-import, KHÔNG nới `testTimeout`.
+   */
+  function buildApp(auth: AuthPrincipal, db: Database) {
     const app = new Hono<AppEnv>();
     app.use('*', async (c, next) => {
       c.set('auth', auth);
@@ -651,7 +717,7 @@ describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools �
 
   it('RT1: tools/list over HTTP advertises {type:"object"} for every tool [end-to-end]', async () => {
     const { db } = governedDb();
-    const { body, status } = await rpc(await buildApp(ADMIN, db), 'tools/list');
+    const { body, status } = await rpc(buildApp(ADMIN, db), 'tools/list');
 
     expect(status).toBe(200);
     const tools = (body.result as { tools: Array<{ name: string; inputSchema: Record<string, unknown> }> }).tools;
@@ -665,7 +731,7 @@ describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools �
 
   it('RT2: a client obeying tools/list still cannot form a valid call — {} passes the advertised schema', async () => {
     const { db } = governedDb();
-    const app = await buildApp(ADMIN, db);
+    const app = buildApp(ADMIN, db);
 
     // Step 1: discover, exactly as a client would.
     const listed = await rpc(app, 'tools/list');
@@ -708,7 +774,7 @@ describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools �
 
   it('RT3: a dangerous call over HTTP surfaces a governed decision in the tool result', async () => {
     const { db, insertedInto } = governedDb();
-    const app = await buildApp(ADMIN, db);
+    const app = buildApp(ADMIN, db);
 
     const called = await rpc(app, 'tools/call', {
       name: 'deleteCollection',
@@ -749,7 +815,7 @@ describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools �
     const { db } = governedDb();
     flagState.mcp = false;
     try {
-      const app = await buildApp(ADMIN, db);
+      const app = buildApp(ADMIN, db);
       const listed = await rpc(app, 'tools/list');
       expect(listed.status).toBe(404);
       expect((listed.body.errors as Array<{ code: string }>)[0]?.code).toBe('MCP_DISABLED');
@@ -835,9 +901,14 @@ describe('G2 repro · body envelope: REST từ chối / âm thầm bỏ nội du
     });
 
     // CURRENT: `createSchema` đòi `data: record` ⇒ 400 VALIDATION, service không
-    // hề được gọi. Nghĩa là `create_item` của stdio **chưa từng chạy được** với
-    // đúng contract nó tự quảng bá.
+    // hề được gọi.
     // EXPECTED: body phải là `{ data: { title }, status }`.
+    //
+    // PHẠM VI CLAIM (siết theo review vòng 4): test chứng minh **payload thông
+    // thường nêu trong test này** bị từ chối. Nó KHÔNG chứng minh `create_item`
+    // "chưa từng chạy được với mọi input" — ví dụ input mà `data` tình cờ là một
+    // key của chính item (`{ data: {...} }`) sẽ thoả `createSchema`. Phát biểu
+    // "chưa từng chạy được" ở head trước là nói quá.
     expect(res.status).toBe(400);
     const body = (await res.json()) as { errors: Array<{ code: string }> };
     expect(body.errors[0]?.code).toBe('VALIDATION');
@@ -865,10 +936,14 @@ describe('G2 repro · body envelope: REST từ chối / âm thầm bỏ nội du
     });
 
     // CURRENT: `patchSchema` có mọi field optional và Zod **strip** key lạ, nên
-    // `title` bị loại âm thầm. Kết quả: **200 OK** với patch rỗng — nguy hơn ca
-    // 400 ở R12, vì client tưởng đã cập nhật thành công trong khi không có gì
-    // thay đổi. Đây là mất dữ liệu ngầm, không phải lỗi hiển thị.
+    // `title` bị loại âm thầm. Kết quả: **200 OK** với patch rỗng.
     // EXPECTED: body phải là `{ data: { title } }`.
+    //
+    // PHẠM VI CLAIM (siết theo review vòng 4): test chứng minh nội dung update
+    // **bị bỏ qua** và response là **success-shaped no-op**. Nó KHÔNG chứng minh
+    // dữ liệu cũ trong DB bị xoá hay hỏng — không có DB trong probe này. Nguy ở
+    // chỗ client nhận 200 rồi tin là đã cập nhật, không phải ở chỗ mất dữ liệu
+    // đã lưu.
     expect(res.status).toBe(200);
     expect(patched).toHaveLength(1);
     expect(patched[0]![2]).toEqual({});
