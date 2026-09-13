@@ -545,18 +545,18 @@ describe('G2 repro · inventory có phân loại ngữ nghĩa (review vòng 3, P
   });
 });
 
-describe('G2 repro · result shape: quy ước trả về của hai bên không tương thích', () => {
+describe('G2 repro · result-shape probes: forwarding and wrapper behaviour', () => {
   /**
    * Khoảng trống còn lại của bảng mapping, review vòng 3 đã chỉ:
    * *"result createCollection là `{created:true,collection:row}` ở skill nhưng
    * stdio trả row; adapter phải xử lý rõ executed/pending/denied, không coi
    * pending là thành công mutation."*
    *
-   * Đây là phần tôi chưa đo. Hai phát hiện dưới đây là kết quả đo thật, và
-   * `S10` là ca nghiêm trọng nhất tìm được ở lượt này.
+   * Các probe dưới đây đo những hành vi cụ thể; chúng không suy rộng kết quả
+   * sang toàn bộ candidate mapping.
    */
 
-  it('S10: delete tool của stdio TỰ dựng câu "đã xoá" và bỏ qua response — pending sẽ bị báo là đã xong', async () => {
+  it('S10: fault injection — delete tool ignores a fulfilled decision-shaped value', async () => {
     const tools = new Map<string, (a: Record<string, unknown>) => Promise<unknown>>();
     const server = {
       registerTool: (n: string, _c: unknown, h: (a: Record<string, unknown>) => Promise<unknown>) => tools.set(n, h),
@@ -566,10 +566,8 @@ describe('G2 repro · result shape: quy ước trả về của hai bên không 
      * ── LOẠI BẰNG CHỨNG: fault-injection probe cho RỦI RO MIGRATION ─────────
      * (phân loại lại theo review vòng 6)
      *
-     * Payload dưới đây là **payload tổng hợp mô phỏng một decision sau adapter**,
-     * KHÔNG phải nguyên response governed hiện tại. Cụ thể, các khác biệt đã
-     * được reviewer chỉ ra và tôi xác nhận:
-     *   - `toToolDecision` KHÔNG có field `executed`;
+     * Giá trị dưới đây dùng đúng field của `McpToolDecision`, nhưng KHÔNG phải
+     * nguyên response governed hiện tại. Cụ thể:
      *   - MCP bọc decision trong `content` / `structuredContent` / `isError`,
      *     rồi JSON-RPC bọc thêm một lớp `result`;
      *   - `DELETE /collections/:name` hiện trả **204** sau khi đã thực thi.
@@ -581,16 +579,16 @@ describe('G2 repro · result shape: quy ước trả về của hai bên không 
      * người dùng sẽ bị báo sai. Đó là rủi ro của bước migration, không phải lỗi
      * production đang xảy ra.
      */
-    const pendingPayload = { status: 'pending_approval', approvalId: 'apr_1', executed: false };
+    const injectedDecision = { status: 'pending_approval', approvalId: 'apr_1' } as const;
     const cms = {
-      get: vi.fn(() => Promise.resolve(pendingPayload)),
-      post: vi.fn(() => Promise.resolve(pendingPayload)),
-      patch: vi.fn(() => Promise.resolve(pendingPayload)),
-      put: vi.fn(() => Promise.resolve(pendingPayload)),
-      delete: vi.fn(() => Promise.resolve(pendingPayload)),
+      get: vi.fn(() => Promise.resolve(injectedDecision)),
+      post: vi.fn(() => Promise.resolve(injectedDecision)),
+      patch: vi.fn(() => Promise.resolve(injectedDecision)),
+      put: vi.fn(() => Promise.resolve(injectedDecision)),
+      delete: vi.fn(() => Promise.resolve(injectedDecision)),
       getText: vi.fn(() => Promise.resolve('x')),
       getRootText: vi.fn(() => Promise.resolve('x')),
-      postRaw: vi.fn(() => Promise.resolve(pendingPayload)),
+      postRaw: vi.fn(() => Promise.resolve(injectedDecision)),
     };
     registerAllTools(server as never, cms as unknown as LumiBaseClient);
 

@@ -609,24 +609,22 @@ describe('G2 repro · the two transports are separate contracts', () => {
     expect(CORE_SKILLS['cdcSubscriptionReplay']).toBeUndefined();
   });
 
-  it('R15: result shape của skill KHÔNG đồng nhất — envelope vs kết quả service trần', async () => {
+  it('R15: handlers apply different wrappers to representative service results', async () => {
     /**
      * Nửa CMS của khoảng trống result-shape (review vòng 3 nêu, tôi chưa đo).
      * Nửa stdio là `S10`/`S11`.
      *
-     * Đo bằng cách chạy thật handler với service giả trả về một sentinel row,
-     * rồi xem skill bọc kết quả thế nào. Kết luận: tồn tại **hai** quy ước khác
-     * nhau **trong cùng registry**, nên "mapping result" không thể là một phép
-     * biến đổi duy nhất.
+     * Chạy handler thật với service giả trả về shape đại diện theo source, rồi
+     * đo cách từng handler bọc kết quả. Probe chỉ kết luận wrapper khác nhau ở
+     * bốn skill được gọi; không suy rộng sang toàn registry.
      */
     const ROW = { id: 'row_1', __sentinel: 'SERVICE_ROW' };
 
     // Shape THẬT của service, đọc từ source (sửa theo review vòng 6 — bản trước
     // dùng sentinel row cho mọi method nên kết luận "deleteRole trả row trần"
     // là artefact của mock, không phải hành vi thật):
-    //   AccessService.deleteRole      → { deleted: true, id }   (access-service.ts:84-89)
-    //   AccessService.deletePolicy    → { deleted: true, id }   (access-service.ts:107-113)
-    //   SchemaService.deleteCollection→ { ok: true }            (schema-service.ts:521)
+    //   AccessService.deleteRole       → { deleted: true, id }
+    //   SchemaService.deleteCollection → { ok: true }
     const REAL_DELETE_ROLE = { deleted: true, id: 'r1' };
     const REAL_DELETE_COLLECTION = { ok: true } as const;
 
