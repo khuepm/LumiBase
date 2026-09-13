@@ -1,0 +1,7 @@
+{
+  "url": "http://127.0.0.1:1989",
+  "siteId": "__default__",
+  "typegen": {
+    "out": "src/lumibase-types.d.ts"
+  }
+}
