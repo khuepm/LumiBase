@@ -604,7 +604,56 @@ artifact, which is the behaviour users see until `create-lumibase` is published
 again. The release dependency in §2 is unchanged — this proves the mechanism,
 not that the public registry already has the template.
 
-### 9.6 Divergences from the original contract
+### 9.6 Review round 4 (`02615ce3`) — two findings, both valid
+
+Both were introduced by round-3 fixes, which is the useful part: each new guard
+is itself something that can be wrong.
+
+1. **[P2] The behavioural tests wrote into the repository.** The subprocess
+   inherited vitest's cwd, and a successful bootstrap ends in `updateEnvFile()`,
+   which writes `.env` **relative to cwd** — so running the suite wrote fixture
+   credentials into `packages/create-lumibase/.env`. Confirmed by inspecting the
+   file. It is gitignored, so nothing could reach a commit, but that is luck:
+   a test that modifies the repository under test is a bug in the test. Each run
+   now gets a temporary directory, removed afterwards, and one test asserts the
+   file lands there and not beside the package.
+
+   The reviewer also caught that the revoked-token case was mis-covered: the
+   test named for it passed an **empty** token, which short-circuits inside
+   `tokenWorks()` before any request — so it exercised the missing-token path
+   under the wrong name. It now passes a token the fixture answers 401 for, and
+   a second test covers the opposite direction (a working token must be reused,
+   not rotated) so "rotates" cannot pass because the script always rotates.
+
+   Fixing this exposed a flake the same tests had introduced: each spawns a real
+   Node process (~1s before the script runs), and several in parallel overran
+   vitest's 5s default, failing as timeouts that read like logic errors. The
+   suite failed 1-in-3 runs; with an explicit startup budget it passed 5
+   consecutive runs.
+
+2. **[P2] A missing collection was accepted as tenant isolation.** The
+   cross-site probe was passed `DENIED_OR_HIDDEN`, so it accepted 404. That set
+   exists for one case — an item id known to exist, where 404 can only mean
+   "hidden from you" and beats 403, which would confirm the id is real. Neither
+   half holds for a whole-collection read on another site: a site B with no
+   `posts` collection answers 404 too, so an empty second site would pass a
+   check that proves nothing.
+
+   Reproduced with a fixture where site B answers `404 COLLECTION_NOT_FOUND`:
+   the old script printed `✔ denied with 404` and exited 0. It now requires
+   401/403 — what the CMS answers for a key/site mismatch, refused before a
+   principal is built — and passes again once the fixture answers 401.
+   `DENIED_OR_HIDDEN` is now used at exactly one call site.
+
+Tests: 53 → 55.
+
+**Note on typecheck.** Earlier rounds reported `turbo run typecheck` as 18/18;
+that was partly cache. Forced (`--force`), `@lumibase/docs` reports 47 TS errors
+— **pre-existing on `main`**, verified by checking out `main` and running the
+same command, and untouched by this PR. The two packages this PR changes
+(`create-lumibase`, `lumibase`) typecheck clean without cache.
+
+### 9.7 Divergences from the original contract
 
 - **Redis added to the compose file.** Without it the Docker runtime falls back
   to `127.0.0.1:6379` and floods the log with **506 ECONNREFUSED lines**, burying
