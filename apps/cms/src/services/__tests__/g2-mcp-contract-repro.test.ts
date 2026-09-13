@@ -621,13 +621,22 @@ describe('G2 repro · the two transports are separate contracts', () => {
      */
     const ROW = { id: 'row_1', __sentinel: 'SERVICE_ROW' };
 
+    // Shape THẬT của service, đọc từ source (sửa theo review vòng 6 — bản trước
+    // dùng sentinel row cho mọi method nên kết luận "deleteRole trả row trần"
+    // là artefact của mock, không phải hành vi thật):
+    //   AccessService.deleteRole      → { deleted: true, id }   (access-service.ts:84-89)
+    //   AccessService.deletePolicy    → { deleted: true, id }   (access-service.ts:107-113)
+    //   SchemaService.deleteCollection→ { ok: true }            (schema-service.ts:521)
+    const REAL_DELETE_ROLE = { deleted: true, id: 'r1' };
+    const REAL_DELETE_COLLECTION = { ok: true } as const;
+
     const schemaService = {
       createCollection: vi.fn(() => Promise.resolve(ROW)),
-      deleteCollection: vi.fn(() => Promise.resolve(ROW)),
+      deleteCollection: vi.fn(() => Promise.resolve(REAL_DELETE_COLLECTION)),
     };
     const accessService = {
       createRole: vi.fn(() => Promise.resolve(ROW)),
-      deleteRole: vi.fn(() => Promise.resolve(ROW)),
+      deleteRole: vi.fn(() => Promise.resolve(REAL_DELETE_ROLE)),
     };
     const harness = new AISecureHarness({
       db: {} as Database,
@@ -645,21 +654,30 @@ describe('G2 repro · the two transports are separate contracts', () => {
     const createdRole = await harness.runSkill('createRole', { name: 'editor' });
     expect((createdRole as { data: unknown }).data).toEqual({ created: true, role: ROW });
 
-    // Quy ước B — trả **thẳng** kết quả service, không envelope, không cờ
+    // Quy ước B — **pass-through**: trả thẳng kết quả service, handler không bọc
     const deletedRole = await harness.runSkill('deleteRole', { id: 'r1' });
     expect(deletedRole.success).toBe(true);
-    expect((deletedRole as { data: unknown }).data).toEqual(ROW);
+    expect((deletedRole as { data: unknown }).data).toEqual(REAL_DELETE_ROLE);
 
-    // …trong khi cùng động từ `delete` ở nhánh schema lại bọc envelope:
+    // …trong khi cùng động từ `delete` ở nhánh schema lại **bọc thêm một lớp**,
+    // nên kết quả service bị lồng vào `result`:
     const deletedCollection = await harness.runSkill('deleteCollection', { name: 'posts' });
-    expect((deletedCollection as { data: unknown }).data).toEqual({ deleted: true, result: ROW });
+    expect((deletedCollection as { data: unknown }).data).toEqual({
+      deleted: true,
+      result: REAL_DELETE_COLLECTION,
+    });
 
-    // CURRENT: `deleteRole` trả row trần còn `deleteCollection` trả envelope —
-    // hai quy ước khác nhau cho cùng một loại hành động, trong cùng registry.
-    // Cộng với `S10` (stdio tự dựng câu "đã xoá") thì có **ba** quy ước result
-    // cùng tồn tại: câu người đọc / row trần / envelope có cờ.
-    // EXPECTED: một quy ước result duy nhất ở nguồn contract chung, và adapter
-    // phải phân biệt được executed / pending_approval / denied.
+    // ── PHẠM VI CLAIM (siết theo review vòng 6) ───────────────────────────
+    // Điều test này chứng minh: **cách handler BỌC kết quả không đồng nhất** —
+    // `deleteRole` pass-through, `deleteCollection` bọc thêm `{deleted, result}`,
+    // dù cả hai service đều đã tự trả cờ. Nên client phải bóc hai kiểu khác nhau
+    // cho cùng một loại hành động, trong cùng registry.
+    //
+    // Điều test này **KHÔNG** chứng minh: rằng mọi cặp trong 41 candidate đều
+    // không tương thích về result. Nó kiểm **4 skill**. Khác shape của domain
+    // payload cũng không tự nó là lỗi — cái cần chuẩn hoá là **status/decision**
+    // (executed / pending_approval / denied), không phải ép mọi payload domain
+    // về một cấu trúc.
   });
 
   it('R9: the FULL HTTP MCP registry is camelCase and contains no snake_case name', async () => {

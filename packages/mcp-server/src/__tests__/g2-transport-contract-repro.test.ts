@@ -562,8 +562,25 @@ describe('G2 repro · result shape: quy ước trả về của hai bên không 
       registerTool: (n: string, _c: unknown, h: (a: Record<string, unknown>) => Promise<unknown>) => tools.set(n, h),
     };
 
-    // CMS trả về một payload nói rõ **CHƯA** thực thi — đúng hình dạng mà
-    // governed transport sẽ trả khi hành động bị park chờ approval.
+    /**
+     * ── LOẠI BẰNG CHỨNG: fault-injection probe cho RỦI RO MIGRATION ─────────
+     * (phân loại lại theo review vòng 6)
+     *
+     * Payload dưới đây là **payload tổng hợp mô phỏng một decision sau adapter**,
+     * KHÔNG phải nguyên response governed hiện tại. Cụ thể, các khác biệt đã
+     * được reviewer chỉ ra và tôi xác nhận:
+     *   - `toToolDecision` KHÔNG có field `executed`;
+     *   - MCP bọc decision trong `content` / `structuredContent` / `isError`,
+     *     rồi JSON-RPC bọc thêm một lớp `result`;
+     *   - `DELETE /collections/:name` hiện trả **204** sau khi đã thực thi.
+     *
+     * Vì vậy test này **KHÔNG** tái hiện "CMS live park → stdio báo deleted".
+     * Nó chứng minh một điều hẹp hơn nhưng vẫn đáng giá: handler **bỏ qua hoàn
+     * toàn** giá trị fulfilled của client và tự dựng câu khẳng định — nên NẾU
+     * một adapter tương lai đưa decision (kể cả pending) vào đúng đường này thì
+     * người dùng sẽ bị báo sai. Đó là rủi ro của bước migration, không phải lỗi
+     * production đang xảy ra.
+     */
     const pendingPayload = { status: 'pending_approval', approvalId: 'apr_1', executed: false };
     const cms = {
       get: vi.fn(() => Promise.resolve(pendingPayload)),
@@ -584,8 +601,9 @@ describe('G2 repro · result shape: quy ước trả về của hai bên không 
     const text = result.content[0]!.text;
 
     // CURRENT: handler làm `await client.delete(...)` rồi **tự** dựng câu khẳng
-    // định, không hề đọc response. Nên dù CMS nói `pending_approval`, client MCP
-    // vẫn nhận "Collection "posts" deleted." với `isError` falsy.
+    // định, không hề đọc giá trị fulfilled. Nên bất kể client trả gì — kể cả một
+    // decision nói rõ chưa thực thi — MCP client vẫn nhận
+    // "Collection "posts" deleted." với `isError` falsy.
     // EXPECTED: result phải phản ánh executed / pending_approval / denied, và
     // pending KHÔNG được trình bày như mutation đã hoàn tất.
     expect(text).toContain('deleted');
