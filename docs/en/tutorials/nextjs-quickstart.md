@@ -1,20 +1,29 @@
 ---
 title: Next.js Quickstart — Display LumiBase Content
-version: 1
-lastUpdated: 2026-08-02T19:05:15.812Z
+version: 3
+lastUpdated: 2026-09-13T12:58:01.496Z
 sourceLang: en
-contentHash: 36f30e29b1d22d3e
-codeVerified: 2026-08-02T19:05:15.812Z
-codeVerifiedHash: 36f30e29b1d22d3e
-codeVerifiedClaims: 14
+contentHash: 8517ebf6d2842ff5
+codeVerified: 2026-09-13T12:58:01.496Z
+codeVerifiedHash: 8517ebf6d2842ff5
+codeVerifiedClaims: 26
 ---
+
+<!--
+  check-parity: allow code-fences
+  Reason: the EN/VI code blocks are byte-identical; the only differences are
+  TRAILING comments (e.g. `# open http://localhost:3000` vs `# mở ...`), which
+  are prose and are meant to be translated. check-parity strips whole-line
+  comments but not trailing ones, so it reports these as drift. Verified by
+  diffing both sides with trailing comments removed — no code difference.
+-->
 
 <!--
   ┌──────────────────────────────────────────────────────────────────────────┐
   │ TUTORIAL VERSIONING — read before editing                                  │
   │                                                                            │
   │ applies_to_min: 0.9.0   ← lowest LumiBase version this tutorial is valid   │
-  │ verified_on:    0.10.0  ← version it was last actually tested against      │
+  │ verified_on:    1.0.0-rc.1  ← version it was last actually tested against      │
   │                                                                            │
   │ This tutorial is intentionally version-pinned. Do NOT clone it per         │
   │ release. Only bump `verified_on` (and, if a breaking change forces it,     │
@@ -31,7 +40,7 @@ codeVerifiedClaims: 14
 <p><strong>Go from a clean machine to a Next.js page rendering content from LumiBase.</strong></p>
 
 <p>
-  <img alt="LumiBase version" src="https://img.shields.io/badge/LumiBase-%E2%89%A5%200.9.0%20%C2%B7%20verified%200.10.0-F5A623?style=for-the-badge">
+  <img alt="LumiBase version" src="https://img.shields.io/badge/LumiBase-%E2%89%A5%200.9.0%20%C2%B7%20verified%201.0.0-rc.1-F5A623?style=for-the-badge">
   <img alt="Level" src="https://img.shields.io/badge/Level-Beginner-3DDC97?style=for-the-badge">
   <img alt="Time" src="https://img.shields.io/badge/Time-~20%20min-4A90E2?style=for-the-badge">
   <img alt="Stack" src="https://img.shields.io/badge/Next.js-App%20Router-black?style=for-the-badge&logo=next.js">
@@ -41,7 +50,7 @@ codeVerifiedClaims: 14
 
 > [!NOTE]
 > **Which LumiBase version is this for?** Valid from **LumiBase `0.9.0`** onward (last
-> verified on `0.10.0`).
+> verified on `1.0.0-rc.1`).
 > It stays valid for any newer release **until** one of the API contracts in the
 > [Compatibility](#compatibility) table changes — see that section to pick the right
 > version, with the newest on top.
@@ -51,8 +60,8 @@ You will:
 1. Run LumiBase locally (CMS API + Studio).
 2. Complete the setup wizard and create a `posts` collection with a few published items.
 3. Mint a long-lived API key and find your `siteId`.
-4. Build a tiny Next.js app that reads those posts — first with plain `fetch`, then with
-   the official `@lumibase/sdk`.
+4. Build a tiny Next.js app that reads those posts with the official `lumibase`
+   package (plain `fetch` is shown afterwards as an alternative).
 
 By the end you'll have a working `http://localhost:3000` page listing posts that live in
 LumiBase.
@@ -160,7 +169,7 @@ In **Studio** (`http://localhost:2026`):
 <thead><tr><th>#</th><th>Action</th></tr></thead>
 <tbody>
 <tr><td>1</td><td>Go to <strong>Collections → New Collection</strong>, name it <code>posts</code>.</td></tr>
-<tr><td>2</td><td>Add fields: <code>title</code> (String), <code>body</code> (Text), <code>status</code> (Select: <code>draft</code> / <code>published</code>, default <code>draft</code>).</td></tr>
+<tr><td>2</td><td>Add fields: <code>title</code> (String), <code>body</code> (Text). Do <strong>not</strong> add a <code>status</code> field — every item already has a built-in <code>status</code> column that the publish workflow drives.</td></tr>
 <tr><td>3</td><td>Save the collection.</td></tr>
 <tr><td>4</td><td>Go to <strong>Content → posts → New Item</strong>. Create 2–3 items and set <code>status</code> = <strong>published</strong>.</td></tr>
 </tbody>
@@ -233,6 +242,41 @@ curl http://localhost:1989/api/v1/site \
 > Keep the `lbk_…` key **server-side only** — never ship it to the browser. We use it from
 > a Next.js Server Component below, so it never leaves your server.
 
+**4d. Give the key least privilege.** A fresh key carries no permissions. Rather
+than attaching the Administrator role, create a policy that can only *read*
+`posts`, restrict it to published items, and attach it through a role:
+
+```bash
+# A policy whose single rule is "read published posts"
+curl -X POST http://localhost:1989/api/v1/policies \
+  -H "Content-Type: application/json" -H "Authorization: Bearer <token-from-4a>" \
+  -H "X-Lumi-Site: __default__" \
+  -d '{ "name": "Blog read-only" }'
+
+curl -X POST http://localhost:1989/api/v1/policies/<policy-id>/permissions \
+  -H "Content-Type: application/json" -H "Authorization: Bearer <token-from-4a>" \
+  -H "X-Lumi-Site: __default__" \
+  -d '{ "collection": "posts", "action": "read",
+        "permissions": { "status": { "_eq": "published" } } }'
+
+# A role that carries the policy, then attach the role to the key
+curl -X POST http://localhost:1989/api/v1/roles \
+  -H "Content-Type: application/json" -H "Authorization: Bearer <token-from-4a>" \
+  -H "X-Lumi-Site: __default__" -d '{ "name": "Blog Reader" }'
+
+curl -X POST http://localhost:1989/api/v1/roles/<role-id>/policies \
+  -H "Content-Type: application/json" -H "Authorization: Bearer <token-from-4a>" \
+  -H "X-Lumi-Site: __default__" -d '{ "policyId": "<policy-id>" }'
+
+curl -X POST http://localhost:1989/api/v1/api-keys/<key-id>/roles \
+  -H "Content-Type: application/json" -H "Authorization: Bearer <token-from-4a>" \
+  -H "X-Lumi-Site: __default__" -d '{ "roleId": "<role-id>" }'
+```
+
+The rule is enforced **server-side**: a request from this key that omits
+`status=published`, or asks for a draft by id, still gets back only published
+items (`404` for the draft). A write attempt answers `403`.
+
 ---
 
 ## Step 5 — Create the Next.js app
@@ -258,48 +302,60 @@ LUMIBASE_TOKEN=lbk_live_xxxxxxxxxxxxxxxx
 
 ---
 
-## Step 6 (Option A) — Fetch with plain `fetch`
+## Step 6 — Fetch with the SDK
 
-No extra dependency. Replace `app/page.tsx`:
+Install `lumibase`. One package gives you both the client you import at runtime
+and the `lumibase` CLI used in Step 7:
+
+```bash
+npm install lumibase
+```
+
+Create the client once. It is imported only from Server Components, so the token
+never reaches the browser:
+
+```ts
+// lib/lumibase.ts
+import { createLumiClient, legacyRest, type ItemRow } from 'lumibase'
+
+// Your collection's content fields, as declared in Studio.
+export interface PostFields {
+  title: string
+  body: string
+  [key: string]: unknown
+}
+
+export type Post = ItemRow<PostFields>
+
+export const lumibase = createLumiClient<{ posts: PostFields }>({
+  url: process.env.LUMIBASE_API_URL!,
+  siteId: process.env.LUMIBASE_SITE_ID!,
+  token: process.env.LUMIBASE_TOKEN!, // static API key — skips the login flow
+}).with(legacyRest())
+```
 
 ```tsx
 // app/page.tsx
-type Post = { id: string; title: string; body: string; status: string }
-
-async function getPosts(): Promise<Post[]> {
-  const url = new URL('/api/v1/items/posts', process.env.LUMIBASE_API_URL)
-  // The `filter` param accepts two equivalent forms — pick either:
-  //   (A) JSON string:
-  url.searchParams.set('filter', JSON.stringify({ status: { _eq: 'published' } }))
-  //   (B) Bracket form (handy for hand-written URLs):
-  //   url.searchParams.set('filter[status][_eq]', 'published')
-  url.searchParams.set('sort', '-created_at')
-
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${process.env.LUMIBASE_TOKEN}`,
-      'X-Lumi-Site': process.env.LUMIBASE_SITE_ID!,
-    },
-    next: { revalidate: 60 }, // ISR-style cache; use 'no-store' for always-fresh
-  })
-
-  if (!res.ok) throw new Error(`LumiBase responded ${res.status}: ${await res.text()}`)
-
-  const json = (await res.json()) as { data: Post[] }
-  return json.data
-}
+import { lumibase, type Post } from '@/lib/lumibase'
 
 export default async function Home() {
-  const posts = await getPosts()
+  // `status` is a dedicated list parameter, not a filter. Sorting uses the
+  // structural column's snake_case name.
+  const { data: posts } = await lumibase.items('posts').list({
+    status: 'published',
+    sort: ['-created_at'],
+    limit: 20,
+  })
+
   return (
     <main style={{ maxWidth: 640, margin: '2rem auto', fontFamily: 'system-ui' }}>
       <h1>Posts from LumiBase</h1>
       {posts.length === 0 && <p>No published posts yet.</p>}
       <ul>
-        {posts.map((post) => (
+        {posts.map((post: Post) => (
           <li key={post.id} style={{ marginBottom: '1.5rem' }}>
-            <h2>{post.title}</h2>
-            <p>{post.body}</p>
+            <h2>{post.data.title}</h2>
+            <p>{post.data.body}</p>
           </li>
         ))}
       </ul>
@@ -307,6 +363,11 @@ export default async function Home() {
   )
 }
 ```
+
+> [!IMPORTANT]
+> **Content fields live under `.data`.** A row is an `ItemRow`: structural
+> columns (`id`, `status`, `createdAt`, …) are at the top level, while the
+> fields you declared are nested — `post.data.title`, not `post.title`.
 
 Run it:
 
@@ -333,57 +394,122 @@ You should see your published posts. Here's roughly what renders:
 <sub><em>Illustration of the rendered page (not a live screenshot).</em></sub>
 </div>
 
----
-
-## Step 6 (Option B) — Fetch with the SDK
-
-The SDK removes the boilerplate (URL building, headers, filter encoding) and returns typed
-results.
-
-```bash
-npm install @lumibase/sdk
-```
-
-```ts
-// lib/lumibase.ts
-import { createClient } from '@lumibase/sdk'
-
-export const lumibase = createClient({
-  url: process.env.LUMIBASE_API_URL!,
-  siteId: process.env.LUMIBASE_SITE_ID!,
-  token: process.env.LUMIBASE_TOKEN!, // static API key — skips the login flow
-})
-```
+Reading a single post works the same way. Every non-2xx answer throws a
+`LumiError` carrying the status, which maps cleanly onto `notFound()`:
 
 ```tsx
-// app/page.tsx
-import { lumibase } from '@/lib/lumibase'
+// app/posts/[id]/page.tsx
+import { notFound } from 'next/navigation'
+import { LumiError } from 'lumibase'
+import { lumibase, type Post } from '@/lib/lumibase'
 
-export default async function Home() {
-  const posts = await lumibase.items('posts').readMany({
-    filter: { status: { _eq: 'published' } },
-    sort: ['-created_at'],
-    limit: 20,
-  })
+export default async function PostPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  let post: Post
+
+  try {
+    const res = await lumibase.items('posts').detail(id)
+    post = res.data
+  } catch (err) {
+    if (err instanceof LumiError && err.status === 404) return notFound()
+    throw err
+  }
+
   return (
-    <main style={{ maxWidth: 640, margin: '2rem auto', fontFamily: 'system-ui' }}>
-      <h1>Posts from LumiBase</h1>
-      {posts.length === 0 && <p>No published posts yet.</p>}
-      <ul>
-        {posts.map((post: any) => (
-          <li key={post.id} style={{ marginBottom: '1.5rem' }}>
-            <h2>{post.title}</h2>
-            <p>{post.body}</p>
-          </li>
-        ))}
-      </ul>
-    </main>
+    <article>
+      <h1>{post.data.title}</h1>
+      <p>{post.data.body}</p>
+    </article>
   )
 }
 ```
 
-Same result, less code. For typed `post.title` instead of `any`, generate types from your
-schema — see [SDK type generation](../sdk/typegen.md).
+A draft the credential cannot see answers `404` — the same path as an unknown
+id — so unpublished content can never surface.
+
+> **Already depend on `@lumibase/sdk`?** It exports the identical client —
+> `lumibase` simply re-exports it so one name covers both the client and the
+> CLI. Swap `from 'lumibase'` for `from '@lumibase/sdk'` and everything above
+> works unchanged.
+
+---
+
+## Step 7 — Generate types in CI
+
+`lumibase types` turns the live schema into TypeScript definitions. Commit the
+output and let CI fail when it drifts from the schema.
+
+Create `lumibase.config.json` next to `package.json` (it is meant to be
+committed — it holds no secret):
+
+```json
+{
+  "url": "http://localhost:1989",
+  "siteId": "__default__",
+  "typegen": { "out": "src/lumibase-types.d.ts" }
+}
+```
+
+```bash
+npx lumibase types          # write src/lumibase-types.d.ts — commit it
+npx lumibase types --check  # exits non-zero if the file is stale
+npx lumibase doctor         # show the resolved config and probe connectivity
+```
+
+> [!IMPORTANT]
+> **Typegen needs a staff user token, not an API key.**
+> `GET /api/v1/typegen/schema` sits behind the Studio access wall, which
+> requires a user principal. An API key is rejected with `403` even when its
+> role grants `schema:read`. Use a staff user's access token as a build-time
+> secret for typegen, and keep the read-only API key from Step 4 for the
+> runtime reads your pages do.
+
+The generated file is deterministic — no host, site id or timestamp in its
+header — so the same committed file verifies against any instance:
+
+```yaml
+- run: npm ci
+- run: npx lumibase types --check
+  env:
+    LUMIBASE_URL: ${{ secrets.LUMIBASE_URL }}
+    LUMIBASE_SITE_ID: ${{ secrets.LUMIBASE_SITE_ID }}
+    LUMIBASE_TOKEN: ${{ secrets.LUMIBASE_TYPEGEN_TOKEN }}
+```
+
+---
+
+## Alternative — the same read with plain `fetch`
+
+The SDK only wraps the HTTP API; nothing stops you calling it directly if you
+would rather not add a dependency. You give up typed results and typegen, and
+you rebuild the URL, headers and filter encoding yourself:
+
+```tsx
+// app/page.tsx
+type Post = { id: string; status: string; data: { title: string; body: string } }
+
+async function getPosts(): Promise<Post[]> {
+  const url = new URL('/api/v1/items/posts', process.env.LUMIBASE_API_URL)
+  url.searchParams.set('status', 'published')
+  // The `filter` param accepts two equivalent forms — pick either:
+  //   (A) JSON string:       filter={"status":{"_eq":"published"}}
+  //   (B) Bracket form:      filter[status][_eq]=published
+  url.searchParams.set('sort', '-created_at')
+
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${process.env.LUMIBASE_TOKEN}`,
+      'X-Lumi-Site': process.env.LUMIBASE_SITE_ID!,
+    },
+    next: { revalidate: 60 }, // ISR-style cache; use 'no-store' for always-fresh
+  })
+
+  if (!res.ok) throw new Error(`LumiBase responded ${res.status}: ${await res.text()}`)
+
+  const json = (await res.json()) as { data: Post[] }
+  return json.data
+}
+```
 
 ---
 
@@ -491,7 +617,7 @@ contract it relies on actually changes. Pick the row matching your LumiBase vers
 <table>
 <thead><tr><th>LumiBase version</th><th>This tutorial</th><th>Notes</th></tr></thead>
 <tbody>
-<tr><td><strong>0.9.0 → latest</strong></td><td>✅ This page (verified on <code>0.10.0</code>)</td><td>Login returns <code>{ data: { token } }</code>; API keys via <code>POST /api/v1/api-keys</code> (<code>lbk_</code> prefix); items filter accepts JSON <em>and</em> bracket form; default site <code>__default__</code>.</td></tr>
+<tr><td><strong>0.9.0 → latest</strong></td><td>✅ This page (verified on <code>1.0.0-rc.1</code>)</td><td>Login returns <code>{ data: { token } }</code>; API keys via <code>POST /api/v1/api-keys</code> (<code>lbk_</code> prefix); items filter accepts JSON <em>and</em> bracket form; default site <code>__default__</code>.</td></tr>
 <tr><td>&lt; 0.9.0</td><td>⚠️ Not covered</td><td>Earlier releases predate the contracts above. Upgrade to ≥ 0.9.0, or adapt the auth/filter calls to your version.</td></tr>
 </tbody>
 </table>
@@ -504,7 +630,11 @@ the table above and re-verify — see DoD §5):
 - `GET /api/v1/items/:collection` filter accepts **both** `filter=<JSON>` and
   `filter[field][_op]=value` bracket form (JSON wins if both sent); `sort=<csv>`
 - `GET /api/v1/site` returns the active tenant; default id `__default__`
-- `@lumibase/sdk` `createClient({ url, siteId, token }).items(c).readMany(...)`
+- `lumibase` (re-exports `@lumibase/sdk`) —
+  `createLumiClient({ url, siteId, token }).with(legacyRest()).items(c).list(...)` /
+  `.detail(id)`; rows are `ItemRow` with content fields under `.data`
+- `lumibase types` / `types --check` read `GET /api/v1/typegen/schema`, which
+  requires a **staff user** principal (an API key gets `403`)
 - Rate limiting returns `429 RATE_LIMITED` with `Retry-After`; the "Production &
   security" section additionally covers `503 RATE_LIMIT_UNAVAILABLE` and
   `Deprecation`/`Sunset` headers, both **added in `0.24.0`** (the core flow above still

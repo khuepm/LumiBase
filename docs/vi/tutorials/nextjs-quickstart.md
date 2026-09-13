@@ -1,23 +1,32 @@
 ---
 title: Next.js Quickstart — Hiển thị nội dung LumiBase
-version: 1
-lastUpdated: 2026-08-02T19:05:15.812Z
+version: 3
+lastUpdated: 2026-09-13T12:58:01.496Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 36f30e29b1d22d3e
+sourceHash: 8517ebf6d2842ff5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:05:15.812Z
-codeVerifiedHash: 36f30e29b1d22d3e
-codeVerifiedClaims: 14
+codeVerified: 2026-09-13T12:58:01.496Z
+codeVerifiedHash: 8517ebf6d2842ff5
+codeVerifiedClaims: 26
 ---
+
+<!--
+  check-parity: allow code-fences
+  Reason: the EN/VI code blocks are byte-identical; the only differences are
+  TRAILING comments (e.g. `# open http://localhost:3000` vs `# mở ...`), which
+  are prose and are meant to be translated. check-parity strips whole-line
+  comments but not trailing ones, so it reports these as drift. Verified by
+  diffing both sides with trailing comments removed — no code difference.
+-->
 
 <!--
   ┌──────────────────────────────────────────────────────────────────────────┐
   │ TUTORIAL VERSIONING — đọc trước khi sửa                                     │
   │                                                                            │
   │ applies_to_min: 0.9.0   ← phiên bản LumiBase thấp nhất tutorial còn đúng   │
-  │ verified_on:    0.10.0  ← phiên bản đã thực sự test lần gần nhất           │
+  │ verified_on:    1.0.0-rc.1  ← phiên bản đã thực sự test lần gần nhất           │
   │                                                                            │
   │ Tutorial này cố tình pin theo version. KHÔNG clone tut này theo từng       │
   │ release. Chỉ bump `verified_on` (và `applies_to_min` nếu có breaking       │
@@ -34,7 +43,7 @@ codeVerifiedClaims: 14
 <p><strong>Xây dựng trang Next.js đầu tiên với nội dung được phân phối từ LumiBase.</strong></p>
 
 <p>
-  <img alt="LumiBase version" src="https://img.shields.io/badge/LumiBase-%E2%89%A5%200.9.0%20%C2%B7%20verified%200.10.0-F5A623?style=for-the-badge">
+  <img alt="LumiBase version" src="https://img.shields.io/badge/LumiBase-%E2%89%A5%200.9.0%20%C2%B7%20verified%201.0.0-rc.1-F5A623?style=for-the-badge">
   <img alt="Level" src="https://img.shields.io/badge/C%E1%BA%A5p%20%C4%91%E1%BB%99-C%C6%A1%20b%E1%BA%A3n-3DDC97?style=for-the-badge">
   <img alt="Time" src="https://img.shields.io/badge/Th%E1%BB%9Di%20gian-~20%20ph%C3%BAt-4A90E2?style=for-the-badge">
   <img alt="Stack" src="https://img.shields.io/badge/Next.js-App%20Router-black?style=for-the-badge&logo=next.js">
@@ -44,7 +53,7 @@ codeVerifiedClaims: 14
 
 > [!NOTE]
 > **Tutorial này cho phiên bản nào?** Đúng từ **LumiBase `0.9.0`** trở lên (verify gần nhất
-> trên `0.10.0`). Vẫn đúng cho các bản
+> trên `1.0.0-rc.1`). Vẫn đúng cho các bản
 > mới hơn **cho tới khi** một trong các API contract ở bảng [Tương thích](#compatibility)
 > thay đổi — xem bảng đó để chọn đúng version, **mới nhất ở trên cùng**.
 
@@ -53,8 +62,8 @@ Bạn sẽ:
 1. Chạy LumiBase ở local (CMS API + Studio).
 2. Hoàn tất setup wizard và tạo collection `posts` với vài item đã publish.
 3. Tạo API key dài hạn và xác nhận `siteId`.
-4. Dựng app Next.js nhỏ để đọc các bài viết đó — đầu tiên bằng `fetch` thuần, sau đó bằng
-   `@lumibase/sdk`.
+4. Dựng app Next.js nhỏ để đọc các bài viết đó bằng package `lumibase` chính thức
+   (`fetch` thuần được trình bày sau như một lựa chọn thay thế).
 
 Kết thúc, bạn có trang `http://localhost:3000` liệt kê các bài viết nằm trong LumiBase.
 
@@ -160,7 +169,7 @@ Trong **Studio** (`http://localhost:2026`):
 <thead><tr><th>#</th><th>Thao tác</th></tr></thead>
 <tbody>
 <tr><td>1</td><td>Vào <strong>Collections → New Collection</strong>, đặt tên là <code>posts</code>.</td></tr>
-<tr><td>2</td><td>Thêm các trường: <code>title</code> (String), <code>body</code> (Text), <code>status</code> (Select: <code>draft</code> / <code>published</code>, mặc định <code>draft</code>).</td></tr>
+<tr><td>2</td><td>Thêm các trường: <code>title</code> (String), <code>body</code> (Text). <strong>Không</strong> thêm trường <code>status</code> — mỗi item đã có sẵn cột <code>status</code> dựng sẵn do luồng publish điều khiển.</td></tr>
 <tr><td>3</td><td>Lưu collection.</td></tr>
 <tr><td>4</td><td>Vào <strong>Content → posts → New Item</strong>. Tạo 2–3 mục và đặt <code>status</code> = <strong>published</strong>.</td></tr>
 </tbody>
@@ -233,6 +242,41 @@ curl http://localhost:1989/api/v1/site \
 > Giữ key `lbk_…` **chỉ ở phía server** — không bao giờ gửi xuống browser. Bên dưới ta dùng
 > nó từ Next.js Server Component nên nó không rời khỏi server.
 
+**4d. Cấp quyền tối thiểu cho key.** Key mới tạo chưa có quyền nào. Thay vì gắn
+role Administrator, hãy tạo một policy chỉ *đọc* `posts`, giới hạn ở item đã
+publish, rồi gắn qua một role:
+
+```bash
+# Policy với đúng một quy tắc: "đọc các bài đã publish"
+curl -X POST http://localhost:1989/api/v1/policies \
+  -H "Content-Type: application/json" -H "Authorization: Bearer <token-from-4a>" \
+  -H "X-Lumi-Site: __default__" \
+  -d '{ "name": "Blog read-only" }'
+
+curl -X POST http://localhost:1989/api/v1/policies/<policy-id>/permissions \
+  -H "Content-Type: application/json" -H "Authorization: Bearer <token-from-4a>" \
+  -H "X-Lumi-Site: __default__" \
+  -d '{ "collection": "posts", "action": "read",
+        "permissions": { "status": { "_eq": "published" } } }'
+
+# Role mang policy đó, rồi gắn role vào key
+curl -X POST http://localhost:1989/api/v1/roles \
+  -H "Content-Type: application/json" -H "Authorization: Bearer <token-from-4a>" \
+  -H "X-Lumi-Site: __default__" -d '{ "name": "Blog Reader" }'
+
+curl -X POST http://localhost:1989/api/v1/roles/<role-id>/policies \
+  -H "Content-Type: application/json" -H "Authorization: Bearer <token-from-4a>" \
+  -H "X-Lumi-Site: __default__" -d '{ "policyId": "<policy-id>" }'
+
+curl -X POST http://localhost:1989/api/v1/api-keys/<key-id>/roles \
+  -H "Content-Type: application/json" -H "Authorization: Bearer <token-from-4a>" \
+  -H "X-Lumi-Site: __default__" -d '{ "roleId": "<role-id>" }'
+```
+
+Quy tắc được áp dụng **ở phía server**: request từ key này dù bỏ qua
+`status=published`, hay hỏi thẳng id của một bản nháp, vẫn chỉ nhận về item đã
+publish (`404` với bản nháp). Thao tác ghi trả về `403`.
+
 ---
 
 ## Step 5 — Create the Next.js app
@@ -258,48 +302,60 @@ LUMIBASE_TOKEN=lbk_live_xxxxxxxxxxxxxxxx
 
 ---
 
-## Step 6 (Option A) — Fetch with plain `fetch`
+## Step 6 — Fetch with the SDK
 
-Không cần dependency thêm. Thay nội dung `app/page.tsx`:
+Cài `lumibase`. Một package cung cấp cả client bạn import lúc chạy lẫn CLI
+`lumibase` dùng ở Step 7:
+
+```bash
+npm install lumibase
+```
+
+Tạo client một lần. Nó chỉ được import từ Server Component nên token không bao
+giờ xuống tới browser:
+
+```ts
+// lib/lumibase.ts
+import { createLumiClient, legacyRest, type ItemRow } from 'lumibase'
+
+// Các trường nội dung của collection, đúng như khai báo trong Studio.
+export interface PostFields {
+  title: string
+  body: string
+  [key: string]: unknown
+}
+
+export type Post = ItemRow<PostFields>
+
+export const lumibase = createLumiClient<{ posts: PostFields }>({
+  url: process.env.LUMIBASE_API_URL!,
+  siteId: process.env.LUMIBASE_SITE_ID!,
+  token: process.env.LUMIBASE_TOKEN!, // API key tĩnh — bỏ qua luồng login
+}).with(legacyRest())
+```
 
 ```tsx
 // app/page.tsx
-type Post = { id: string; title: string; body: string; status: string }
-
-async function getPosts(): Promise<Post[]> {
-  const url = new URL('/api/v1/items/posts', process.env.LUMIBASE_API_URL)
-  // The `filter` param accepts two equivalent forms — pick either:
-  //   (A) JSON string:
-  url.searchParams.set('filter', JSON.stringify({ status: { _eq: 'published' } }))
-  //   (B) Bracket form (handy for hand-written URLs):
-  //   url.searchParams.set('filter[status][_eq]', 'published')
-  url.searchParams.set('sort', '-created_at')
-
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${process.env.LUMIBASE_TOKEN}`,
-      'X-Lumi-Site': process.env.LUMIBASE_SITE_ID!,
-    },
-    next: { revalidate: 60 }, // ISR-style cache; use 'no-store' for always-fresh
-  })
-
-  if (!res.ok) throw new Error(`LumiBase responded ${res.status}: ${await res.text()}`)
-
-  const json = (await res.json()) as { data: Post[] }
-  return json.data
-}
+import { lumibase, type Post } from '@/lib/lumibase'
 
 export default async function Home() {
-  const posts = await getPosts()
+  // `status` là tham số riêng của list, không phải filter. Sắp xếp dùng tên
+  // snake_case của cột cấu trúc.
+  const { data: posts } = await lumibase.items('posts').list({
+    status: 'published',
+    sort: ['-created_at'],
+    limit: 20,
+  })
+
   return (
     <main style={{ maxWidth: 640, margin: '2rem auto', fontFamily: 'system-ui' }}>
       <h1>Posts from LumiBase</h1>
       {posts.length === 0 && <p>No published posts yet.</p>}
       <ul>
-        {posts.map((post) => (
+        {posts.map((post: Post) => (
           <li key={post.id} style={{ marginBottom: '1.5rem' }}>
-            <h2>{post.title}</h2>
-            <p>{post.body}</p>
+            <h2>{post.data.title}</h2>
+            <p>{post.data.body}</p>
           </li>
         ))}
       </ul>
@@ -308,13 +364,18 @@ export default async function Home() {
 }
 ```
 
-Chạy dự án:
+> [!IMPORTANT]
+> **Trường nội dung nằm trong `.data`.** Mỗi dòng là một `ItemRow`: các cột cấu
+> trúc (`id`, `status`, `createdAt`, …) nằm ở cấp ngoài cùng, còn các trường bạn
+> khai báo thì lồng bên trong — `post.data.title`, không phải `post.title`.
+
+Chạy thử:
 
 ```bash
-npm run dev   # open http://localhost:3000
+npm run dev   # mở http://localhost:3000
 ```
 
-Bạn sẽ thấy các bài viết đã xuất bản. Đây là hình ảnh phỏng dựng kết quả:
+Bạn sẽ thấy các bài đã publish. Giao diện render đại khái như sau:
 
 <div align="center">
 <table border="0" width="520"><tr><td style="border:1px solid #d0d7de;border-radius:10px;padding:20px 28px;background:#ffffff;">
@@ -330,58 +391,123 @@ Bạn sẽ thấy các bài viết đã xuất bản. Đây là hình ảnh ph�
 </div>
 </div>
 </td></tr></table>
-<sub><em>Hình ảnh minh họa trang kết quả (không phải ảnh chụp thực tế).</em></sub>
+<sub><em>Minh hoạ trang đã render (không phải ảnh chụp thật).</em></sub>
 </div>
 
----
-
-## Step 6 (Option B) — Fetch with the SDK
-
-SDK giúp loại bỏ các code mẫu (dựng URL, headers, mã hóa bộ lọc) và trả về kết quả có type.
-
-```bash
-npm install @lumibase/sdk
-```
-
-```ts
-// lib/lumibase.ts
-import { createClient } from '@lumibase/sdk'
-
-export const lumibase = createClient({
-  url: process.env.LUMIBASE_API_URL!,
-  siteId: process.env.LUMIBASE_SITE_ID!,
-  token: process.env.LUMIBASE_TOKEN!, // static API key — skips the login flow
-})
-```
+Đọc một bài đơn lẻ cũng tương tự. Mọi phản hồi khác 2xx đều ném `LumiError` kèm
+status, ánh xạ gọn sang `notFound()`:
 
 ```tsx
-// app/page.tsx
-import { lumibase } from '@/lib/lumibase'
+// app/posts/[id]/page.tsx
+import { notFound } from 'next/navigation'
+import { LumiError } from 'lumibase'
+import { lumibase, type Post } from '@/lib/lumibase'
 
-export default async function Home() {
-  const posts = await lumibase.items('posts').readMany({
-    filter: { status: { _eq: 'published' } },
-    sort: ['-created_at'],
-    limit: 20,
-  })
+export default async function PostPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  let post: Post
+
+  try {
+    const res = await lumibase.items('posts').detail(id)
+    post = res.data
+  } catch (err) {
+    if (err instanceof LumiError && err.status === 404) return notFound()
+    throw err
+  }
+
   return (
-    <main style={{ maxWidth: 640, margin: '2rem auto', fontFamily: 'system-ui' }}>
-      <h1>Posts from LumiBase</h1>
-      {posts.length === 0 && <p>No published posts yet.</p>}
-      <ul>
-        {posts.map((post: any) => (
-          <li key={post.id} style={{ marginBottom: '1.5rem' }}>
-            <h2>{post.title}</h2>
-            <p>{post.body}</p>
-          </li>
-        ))}
-      </ul>
-    </main>
+    <article>
+      <h1>{post.data.title}</h1>
+      <p>{post.data.body}</p>
+    </article>
   )
 }
 ```
 
-Cùng kết quả nhưng ít code hơn. Để có type cho `post.title` thay vì `any`, sinh type từ schema — xem [Sinh type SDK](../sdk/typegen.md).
+Một bản nháp mà credential không được phép thấy sẽ trả `404` — cùng đường đi với
+một id không tồn tại — nên nội dung chưa publish không thể lộ ra.
+
+> **Đang phụ thuộc `@lumibase/sdk`?** Nó export đúng cùng một client —
+> `lumibase` chỉ re-export lại để một cái tên bao trọn cả client lẫn CLI. Đổi
+> `from 'lumibase'` thành `from '@lumibase/sdk'` là mọi thứ ở trên chạy nguyên vẹn.
+
+---
+
+## Step 7 — Generate types in CI
+
+`lumibase types` biến schema đang chạy thành định nghĩa TypeScript. Hãy commit
+kết quả và để CI báo lỗi khi nó lệch với schema.
+
+Tạo `lumibase.config.json` cạnh `package.json` (file này để commit — nó không
+chứa secret):
+
+```json
+{
+  "url": "http://localhost:1989",
+  "siteId": "__default__",
+  "typegen": { "out": "src/lumibase-types.d.ts" }
+}
+```
+
+```bash
+npx lumibase types          # ghi src/lumibase-types.d.ts — hãy commit
+npx lumibase types --check  # thoát khác 0 nếu file đã cũ
+npx lumibase doctor         # xem cấu hình đã resolve và kiểm tra kết nối
+```
+
+> [!IMPORTANT]
+> **Typegen cần token của staff user, không phải API key.**
+> `GET /api/v1/typegen/schema` nằm sau bức tường Studio access vốn đòi principal
+> là user. API key bị từ chối với `403` kể cả khi role của nó có `schema:read`.
+> Hãy dùng access token của một staff user làm secret lúc build cho typegen, còn
+> API key chỉ-đọc ở Step 4 thì để cho các lượt đọc lúc chạy của trang.
+
+File sinh ra mang tính tất định — header không chứa host, site id hay timestamp
+— nên cùng một file đã commit verify được trên mọi instance:
+
+```yaml
+- run: npm ci
+- run: npx lumibase types --check
+  env:
+    LUMIBASE_URL: ${{ secrets.LUMIBASE_URL }}
+    LUMIBASE_SITE_ID: ${{ secrets.LUMIBASE_SITE_ID }}
+    LUMIBASE_TOKEN: ${{ secrets.LUMIBASE_TYPEGEN_TOKEN }}
+```
+
+---
+
+## Alternative — the same read with plain `fetch`
+
+SDK chỉ bọc lại HTTP API; không có gì ngăn bạn gọi thẳng nếu không muốn thêm
+dependency. Đổi lại bạn mất kết quả có kiểu và mất typegen, đồng thời phải tự
+dựng URL, header và mã hoá filter:
+
+```tsx
+// app/page.tsx
+type Post = { id: string; status: string; data: { title: string; body: string } }
+
+async function getPosts(): Promise<Post[]> {
+  const url = new URL('/api/v1/items/posts', process.env.LUMIBASE_API_URL)
+  url.searchParams.set('status', 'published')
+  // Tham số `filter` nhận hai dạng tương đương — chọn dạng nào cũng được:
+  //   (A) chuỗi JSON:   filter={"status":{"_eq":"published"}}
+  //   (B) dạng ngoặc:   filter[status][_eq]=published
+  url.searchParams.set('sort', '-created_at')
+
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${process.env.LUMIBASE_TOKEN}`,
+      'X-Lumi-Site': process.env.LUMIBASE_SITE_ID!,
+    },
+    next: { revalidate: 60 }, // cache kiểu ISR; dùng 'no-store' nếu cần luôn mới
+  })
+
+  if (!res.ok) throw new Error(`LumiBase responded ${res.status}: ${await res.text()}`)
+
+  const json = (await res.json()) as { data: Post[] }
+  return json.data
+}
+```
 
 ---
 
@@ -466,7 +592,7 @@ Tutorial này được **ghim vào phiên bản LumiBase tối thiểu** và ch�
 <table>
 <thead><tr><th>Phiên bản LumiBase</th><th>Tutorial này</th><th>Ghi chú</th></tr></thead>
 <tbody>
-<tr><td><strong>0.9.0 → mới nhất</strong></td><td>✅ Trang này (đã verify trên <code>0.10.0</code>)</td><td>Đăng nhập trả về <code>{ data: { token } }</code>; API key qua <code>POST /api/v1/api-keys</code> (tiền tố <code>lbk_</code>); bộ lọc item chấp nhận định dạng JSON <em>và</em> ngoặc vuông; site mặc định <code>__default__</code>.</td></tr>
+<tr><td><strong>0.9.0 → mới nhất</strong></td><td>✅ Trang này (đã verify trên <code>1.0.0-rc.1</code>)</td><td>Đăng nhập trả về <code>{ data: { token } }</code>; API key qua <code>POST /api/v1/api-keys</code> (tiền tố <code>lbk_</code>); bộ lọc item chấp nhận định dạng JSON <em>và</em> ngoặc vuông; site mặc định <code>__default__</code>.</td></tr>
 <tr><td>&lt; 0.9.0</td><td>⚠️ Chưa bao phủ</td><td>Các bản cũ hơn trước thời điểm có các hợp đồng trên. Hãy nâng cấp lên ≥ 0.9.0, hoặc điều chỉnh các cuộc gọi auth/filter theo phiên bản của bạn.</td></tr>
 </tbody>
 </table>
@@ -478,7 +604,11 @@ Tutorial này được **ghim vào phiên bản LumiBase tối thiểu** và ch�
 - `GET /api/v1/items/:collection` bộ lọc chấp nhận **cả** `filter=<JSON>` và
   dạng ngoặc vuông `filter[field][_op]=value` (JSON ưu tiên hơn nếu gửi cả hai); `sort=<csv>`
 - `GET /api/v1/site` trả về tenant đang hoạt động; id mặc định `__default__`
-- `@lumibase/sdk` `createClient({ url, siteId, token }).items(c).readMany(...)`
+- `lumibase` (re-export `@lumibase/sdk`) —
+  `createLumiClient({ url, siteId, token }).with(legacyRest()).items(c).list(...)` /
+  `.detail(id)`; mỗi dòng là `ItemRow` với trường nội dung nằm trong `.data`
+- `lumibase types` / `types --check` đọc `GET /api/v1/typegen/schema`, vốn đòi
+  principal là **staff user** (API key nhận `403`)
 - Giới hạn tốc độ trả về `429 RATE_LIMITED` kèm `Retry-After`; mục "Production & security" bao phủ thêm `503 RATE_LIMIT_UNAVAILABLE` và
   header `Deprecation`/`Sunset`, cả hai **được thêm từ `0.24.0`** (luồng cốt lõi ở trên vẫn hoạt động không đổi từ `0.9.0`)
 
