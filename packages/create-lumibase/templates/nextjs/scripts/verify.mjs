@@ -48,8 +48,10 @@ const DENIED = new Set([401, 403]);
  * against a live CMS: the same id returns the draft to the admin token, 404 to
  * the publishable key, while a published id returns 200 to both.
  *
- * This is deliberately NOT accepted for writes: there, a 404 means the route is
- * wrong and the test proved nothing.
+ * Deliberately NOT used anywhere else. For a write, a 404 means the route is
+ * wrong. For the cross-site probe, a site with no `posts` collection answers
+ * 404 too, so accepting it would let an empty second site pass a test that
+ * proves nothing about isolation. Both must see a real refusal.
  */
 const DENIED_OR_HIDDEN = new Set([401, 403, 404]);
 
@@ -246,6 +248,14 @@ async function main() {
   // a made-up id the process dies. That difference is why these are separate.
   const otherSite = process.env.LUMIBASE_VERIFY_OTHER_SITE;
   if (otherSite) {
+    // Strictly 401/403 — NOT the relaxed set used for the draft-by-id read.
+    //
+    // That exception is justified only because the id is known to exist, so a
+    // 404 can mean nothing but "hidden from you". Here it is ambiguous: a site
+    // that simply has no `posts` collection answers 404 too, and accepting it
+    // would let an empty site B pass a test that proves nothing about
+    // isolation. The CMS refuses a key/site mismatch with 401 before a
+    // principal is even built, so that is what this must see.
     await expectDenied(
       `publishable key cannot read another site (${otherSite})`,
       () =>
@@ -253,7 +263,6 @@ async function main() {
           token: key,
           headers: { origin: PUBLIC_ORIGIN, 'x-lumi-site': otherSite },
         }),
-      DENIED_OR_HIDDEN,
     );
   } else {
     skip(
