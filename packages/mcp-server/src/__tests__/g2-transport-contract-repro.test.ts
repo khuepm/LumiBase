@@ -74,6 +74,36 @@ function registryOnly() {
   return { tools, calls };
 }
 
+/**
+ * Registry dùng CHUNG, dựng đúng MỘT lần cho cả file.
+ *
+ * Vì sao: `registerAllTools` đăng ký ~161 tool kèm dựng Zod schema, nên gọi nó
+ * nhiều lần trong một test là đắt. `S7` từng gọi `registryOnly()` **8 lần** và
+ * reviewer đo được **5179ms** so với `testTimeout` mặc định **5000ms** của
+ * package này (không có `vitest.config`), nên nó fail lần đầu rồi pass lần chạy
+ * lại. Đó là chi phí đăng ký, không phải hành vi cần kiểm — nên cách sửa là
+ * dựng một lần, KHÔNG nới timeout.
+ *
+ * Handler là closure trên client giả và không giữ trạng thái riêng, nên dùng lại
+ * an toàn; cô lập giữa các lần gọi bằng cách xoá recorder.
+ */
+const shared = registryOnly();
+
+/**
+ * Gọi một tool trên registry chung và trả về CHỈ các REST call của lần gọi đó.
+ * Thay cho việc dựng lại cả registry mỗi lần.
+ */
+async function callToolIsolated(
+  name: string,
+  args: Record<string, unknown>,
+): Promise<Array<{ method: string; path: string; body?: unknown }>> {
+  const entry = shared.tools.get(name);
+  expect(entry, `${name} có trong registry`).toBeDefined();
+  shared.calls.length = 0;
+  await entry!.handler(args);
+  return [...shared.calls];
+}
+
 const openConnections: Array<() => Promise<void>> = [];
 
 /**
@@ -269,14 +299,11 @@ describe('G2 repro · the admin backstop is per-prefix, not per-transport', () =
     const isGuarded = (path: string) =>
       GUARDED_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
 
-    /** Runs one tool on a fresh recorder and returns the REST path it targeted. */
+    /** Runs one tool on the shared registry and returns the REST path it targeted. */
     async function restTargetOf(name: string, args: Record<string, unknown>): Promise<string> {
-      const fresh = registryOnly();
-      const entry = fresh.tools.get(name);
-      expect(entry, `${name} is registered`).toBeDefined();
-      await entry!.handler(args);
-      expect(fresh.calls.length, `${name} issued exactly one REST call`).toBe(1);
-      return fresh.calls[0]!.path;
+      const calls = await callToolIsolated(name, args);
+      expect(calls.length, `${name} issued exactly one REST call`).toBe(1);
+      return calls[0]!.path;
     }
 
     // Sanity: the tools under test exist on this surface.
@@ -452,12 +479,9 @@ describe('G2 repro · inventory có phân loại ngữ nghĩa (review vòng 3, P
 
     const observed: Record<string, string> = {};
     for (const name of [...READ_VIA_POST, ...PROVIDER_ACTION]) {
-      const fresh = registryOnly();
-      const entry = fresh.tools.get(name);
-      expect(entry, `${name} có trong registry`).toBeDefined();
-      await entry!.handler(args[name] ?? {});
-      expect(fresh.calls.length, `${name} phát đúng 1 REST call`).toBe(1);
-      observed[name] = `${fresh.calls[0]!.method} ${fresh.calls[0]!.path}`;
+      const calls = await callToolIsolated(name, args[name] ?? {});
+      expect(calls.length, `${name} phát đúng 1 REST call`).toBe(1);
+      observed[name] = `${calls[0]!.method} ${calls[0]!.path}`;
     }
 
     // Khoá từng target một, không chỉ đếm mảng.
@@ -518,5 +542,88 @@ describe('G2 repro · inventory có phân loại ngữ nghĩa (review vòng 3, P
       return Boolean(s.properties && Object.hasOwn(s.properties, 'confirm'));
     });
     expect(withConfirm).toHaveLength(32);
+  });
+});
+
+describe('G2 repro · result shape: quy ước trả về của hai bên không tương thích', () => {
+  /**
+   * Khoảng trống còn lại của bảng mapping, review vòng 3 đã chỉ:
+   * *"result createCollection là `{created:true,collection:row}` ở skill nhưng
+   * stdio trả row; adapter phải xử lý rõ executed/pending/denied, không coi
+   * pending là thành công mutation."*
+   *
+   * Đây là phần tôi chưa đo. Hai phát hiện dưới đây là kết quả đo thật, và
+   * `S10` là ca nghiêm trọng nhất tìm được ở lượt này.
+   */
+
+  it('S10: delete tool của stdio TỰ dựng câu "đã xoá" và bỏ qua response — pending sẽ bị báo là đã xong', async () => {
+    const tools = new Map<string, (a: Record<string, unknown>) => Promise<unknown>>();
+    const server = {
+      registerTool: (n: string, _c: unknown, h: (a: Record<string, unknown>) => Promise<unknown>) => tools.set(n, h),
+    };
+
+    // CMS trả về một payload nói rõ **CHƯA** thực thi — đúng hình dạng mà
+    // governed transport sẽ trả khi hành động bị park chờ approval.
+    const pendingPayload = { status: 'pending_approval', approvalId: 'apr_1', executed: false };
+    const cms = {
+      get: vi.fn(() => Promise.resolve(pendingPayload)),
+      post: vi.fn(() => Promise.resolve(pendingPayload)),
+      patch: vi.fn(() => Promise.resolve(pendingPayload)),
+      put: vi.fn(() => Promise.resolve(pendingPayload)),
+      delete: vi.fn(() => Promise.resolve(pendingPayload)),
+      getText: vi.fn(() => Promise.resolve('x')),
+      getRootText: vi.fn(() => Promise.resolve('x')),
+      postRaw: vi.fn(() => Promise.resolve(pendingPayload)),
+    };
+    registerAllTools(server as never, cms as unknown as LumiBaseClient);
+
+    const result = (await tools.get('delete_collection')!({ name: 'posts', confirm: true })) as {
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    };
+    const text = result.content[0]!.text;
+
+    // CURRENT: handler làm `await client.delete(...)` rồi **tự** dựng câu khẳng
+    // định, không hề đọc response. Nên dù CMS nói `pending_approval`, client MCP
+    // vẫn nhận "Collection "posts" deleted." với `isError` falsy.
+    // EXPECTED: result phải phản ánh executed / pending_approval / denied, và
+    // pending KHÔNG được trình bày như mutation đã hoàn tất.
+    expect(text).toContain('deleted');
+    expect(text).not.toContain('pending');
+    expect(text).not.toContain('apr_1');
+    expect(result.isError ?? false).toBe(false);
+
+    // Cùng lớp lỗi với các delete tool khác — không phải ca lẻ.
+    for (const [name, args] of [
+      ['delete_item', { collection: 'posts', id: 'i1', confirm: true }],
+      ['delete_role', { id: 'r1', confirm: true }],
+      ['delete_field', { collection: 'posts', field_name: 'title', confirm: true }],
+    ] as Array<[string, Record<string, unknown>]>) {
+      const r = (await tools.get(name)!(args)) as { content: Array<{ text: string }> };
+      expect(r.content[0]!.text, `${name} tự khẳng định đã xoá`).toMatch(/deleted/i);
+      expect(r.content[0]!.text, `${name} không nêu pending`).not.toMatch(/pending/i);
+    }
+  });
+
+  it('S11: alias cdc_subscription_replay lệch tên key và có `cursor` không đối ứng', async () => {
+    const { client } = await liveClient();
+    const listed = await client.listTools();
+    const replay = listed.tools.find((t) => t.name === 'cdc_subscription_replay');
+    const props = Object.keys((replay!.inputSchema as { properties: Record<string, unknown> }).properties);
+
+    // stdio quảng bá snake_case + `cursor`.
+    expect(props.sort()).toEqual(['cursor', 'occurred_after', 'subscription_id']);
+
+    // Skill `replayCdcSubscription` đọc `subscriptionId` / `occurredAfter` và
+    // KHÔNG đọc `cursor` (xem `ai-harness.ts`), nên alias này cần:
+    //   1. đổi tên 2 key: subscription_id → subscriptionId,
+    //      occurred_after → occurredAfter;
+    //   2. quyết định số phận `cursor` — hiện không có đường vào skill;
+    //   3. xử lý default: skill làm `String(args['occurredAfter'] ?? '')` nên
+    //      thiếu giá trị sẽ thành chuỗi rỗng chứ không phải "không truyền".
+    // Đây là lý do "có alias" chưa đồng nghĩa "map được ngay".
+    expect(props).toContain('cursor');
+    expect(props).not.toContain('subscriptionId');
+    expect(props).not.toContain('occurredAfter');
   });
 });

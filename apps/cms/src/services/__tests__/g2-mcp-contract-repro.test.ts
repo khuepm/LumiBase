@@ -609,6 +609,59 @@ describe('G2 repro · the two transports are separate contracts', () => {
     expect(CORE_SKILLS['cdcSubscriptionReplay']).toBeUndefined();
   });
 
+  it('R15: result shape của skill KHÔNG đồng nhất — envelope vs kết quả service trần', async () => {
+    /**
+     * Nửa CMS của khoảng trống result-shape (review vòng 3 nêu, tôi chưa đo).
+     * Nửa stdio là `S10`/`S11`.
+     *
+     * Đo bằng cách chạy thật handler với service giả trả về một sentinel row,
+     * rồi xem skill bọc kết quả thế nào. Kết luận: tồn tại **hai** quy ước khác
+     * nhau **trong cùng registry**, nên "mapping result" không thể là một phép
+     * biến đổi duy nhất.
+     */
+    const ROW = { id: 'row_1', __sentinel: 'SERVICE_ROW' };
+
+    const schemaService = {
+      createCollection: vi.fn(() => Promise.resolve(ROW)),
+      deleteCollection: vi.fn(() => Promise.resolve(ROW)),
+    };
+    const accessService = {
+      createRole: vi.fn(() => Promise.resolve(ROW)),
+      deleteRole: vi.fn(() => Promise.resolve(ROW)),
+    };
+    const harness = new AISecureHarness({
+      db: {} as Database,
+      siteId: 'site_1',
+      schemaService: schemaService as never,
+      accessService: accessService as never,
+      enableAgentHarnessAudit: false,
+    });
+
+    // Quy ước A — bọc envelope `{<verb>: true, <entity>: row }`
+    const created = await harness.runSkill('createCollection', { name: 'posts' });
+    expect(created.success).toBe(true);
+    expect((created as { data: unknown }).data).toEqual({ created: true, collection: ROW });
+
+    const createdRole = await harness.runSkill('createRole', { name: 'editor' });
+    expect((createdRole as { data: unknown }).data).toEqual({ created: true, role: ROW });
+
+    // Quy ước B — trả **thẳng** kết quả service, không envelope, không cờ
+    const deletedRole = await harness.runSkill('deleteRole', { id: 'r1' });
+    expect(deletedRole.success).toBe(true);
+    expect((deletedRole as { data: unknown }).data).toEqual(ROW);
+
+    // …trong khi cùng động từ `delete` ở nhánh schema lại bọc envelope:
+    const deletedCollection = await harness.runSkill('deleteCollection', { name: 'posts' });
+    expect((deletedCollection as { data: unknown }).data).toEqual({ deleted: true, result: ROW });
+
+    // CURRENT: `deleteRole` trả row trần còn `deleteCollection` trả envelope —
+    // hai quy ước khác nhau cho cùng một loại hành động, trong cùng registry.
+    // Cộng với `S10` (stdio tự dựng câu "đã xoá") thì có **ba** quy ước result
+    // cùng tồn tại: câu người đọc / row trần / envelope có cờ.
+    // EXPECTED: một quy ước result duy nhất ở nguồn contract chung, và adapter
+    // phải phân biệt được executed / pending_approval / denied.
+  });
+
   it('R9: the FULL HTTP MCP registry is camelCase and contains no snake_case name', async () => {
     const registry = new ToolRegistryService(registryDb(), 'site_1', CORE_SKILLS);
     const httpNames = (await registry.listTools()).map((t) => t.name);
