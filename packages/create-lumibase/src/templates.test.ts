@@ -46,7 +46,7 @@ function majorOf(range: string): number {
 }
 
 describe('template manifests', () => {
-  it.each(['default', 'cloudflare'])('%s parses as JSON and names the project', (template) => {
+  it.each(['default', 'cloudflare', 'nextjs'])('%s parses as JSON and names the project', (template) => {
     const manifest = readTemplateManifest(template) as { name?: string };
     expect(manifest.name).toBe('{{projectName}}');
   });

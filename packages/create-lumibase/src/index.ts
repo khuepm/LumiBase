@@ -11,7 +11,10 @@ import { installDependencies } from './install.js';
 import { initGit } from './git.js';
 import { printNextSteps } from './utils/print.js';
 
-export type Template = 'default' | 'cloudflare';
+export type Template = 'default' | 'cloudflare' | 'nextjs';
+
+/** Every template name `--template` accepts. Keep in step with `templates/`. */
+export const TEMPLATES = ['nextjs', 'default', 'cloudflare'] as const satisfies readonly Template[];
 export type PackageManager = 'pnpm' | 'npm' | 'yarn' | 'bun';
 
 export interface ProjectConfig {
@@ -77,6 +80,17 @@ async function main() {
   }
 
   // --- template ---
+  // A bad `--template` used to reach `scaffold()` unchecked and die on a
+  // missing directory — an ENOENT naming an internal path, several steps away
+  // from the typo that caused it. Catch it here while the name is still in hand.
+  if (argv.template !== undefined && !TEMPLATES.includes(argv.template as Template)) {
+    console.error(
+      pc.red(`✖ Unknown template: ${String(argv.template)}`) +
+        pc.dim(`  (expected one of: ${TEMPLATES.join(', ')})`),
+    );
+    process.exit(1);
+  }
+
   const template: Template =
     (argv.template as Template | undefined) ??
     ((
@@ -87,7 +101,11 @@ async function main() {
           message: 'Deployment target:',
           choices: [
             {
-              title: `${pc.bold('Docker')}  ${pc.dim('Node.js + PostgreSQL (recommended)')}`,
+              title: `${pc.bold('Next.js website')}  ${pc.dim('+ CMS, Studio and seed content (recommended)')}`,
+              value: 'nextjs',
+            },
+            {
+              title: `${pc.bold('Docker')}  ${pc.dim('Node.js + PostgreSQL')}`,
               value: 'default',
             },
             {
