@@ -103,6 +103,23 @@ async function runScript(
 
 const PUBLISHED_ITEM = { id: 'pub1', status: 'published', data: { slug: 'a', title: 'A' } };
 
+/** This package's own `.env`, which no test may write to. */
+const PACKAGE_ENV = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env');
+
+/**
+ * The current contents of that file, or `null` when it is absent.
+ *
+ * Both are legitimate states — a contributor may well have one — so the test
+ * compares this before and after rather than demanding the file not exist.
+ */
+async function readEnvSnapshot(): Promise<string | null> {
+  try {
+    return await readFile(PACKAGE_ENV, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Each test spawns a real Node process, which costs roughly a second before the
  * script under test runs at all. Several of those in parallel on a loaded
@@ -302,6 +319,7 @@ describe('cms:bootstrap — a token in .env is not proof it still works', { time
   it('writes .env into its own working directory, never the caller\'s', async () => {
     // The regression this file caused: the subprocess inherited vitest's cwd
     // and updateEnvFile() wrote fixture credentials into the repository.
+    const before = await readEnvSnapshot();
     const url = await stubCms(bootstrapStub({ liveToken: 'lbk_pub_live', onRotate: () => {} }));
 
     const result = await runScript('bootstrap.mjs', {
@@ -315,8 +333,13 @@ describe('cms:bootstrap — a token in .env is not proof it still works', { time
     const written = await readFile(join(result.cwd, '.env'), 'utf8');
     expect(written).toMatch(/NEXT_PUBLIC_LUMIBASE_PUBLISHABLE_KEY=/);
 
-    // And nothing landed next to the package being tested.
-    const strayEnv = join(dirname(fileURLToPath(import.meta.url)), '..', '.env');
-    await expect(readFile(strayEnv, 'utf8')).rejects.toThrow();
+    // And the package's own .env is untouched.
+    //
+    // "Untouched" is the claim, so that is what is compared. Asserting the file
+    // does not exist would test a property of the machine instead: a developer
+    // with a perfectly good .env would fail this, and the test would be wrong
+    // about them rather than about the code.
+    const after = await readEnvSnapshot();
+    expect(after, 'the bootstrap subprocess wrote to the package\'s own .env').toBe(before);
   });
 });
