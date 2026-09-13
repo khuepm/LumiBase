@@ -19,6 +19,7 @@ import { withControlPlaneAccessGuard } from './middleware/control-plane-access-g
 import { withFileUploadPolicy } from './middleware/file-upload-policy';
 import { withSecurityHeaders } from './middleware/security-headers';
 import { withTenant } from './middleware/tenant';
+import { withTenantExists } from './middleware/tenant-exists';
 import { withTracing } from './middleware/tracing';
 import { activityRouter } from './routes/activity';
 import { accessRouter } from './routes/access';
@@ -214,7 +215,7 @@ app.route('/api/v1/integrations/git', gitPublicRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
-api.use('*', withTenant(), withDb(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
+api.use('*', withTenant(), withDb(), withTenantExists(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
 // Sub-routers must be attached to their parent BEFORE the parent is mounted
 // on `api`: Hono's `route()` copies the child's routes at call time, so
 // anything registered on `authRouter`/`meRouter` afterwards is invisible to

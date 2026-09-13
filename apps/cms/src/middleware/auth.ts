@@ -91,7 +91,15 @@ async function auditApiKeyUseDenied(
   row: typeof apiKeys.$inferSelect,
   reason: 'site_mismatch' | 'revoked' | 'expired' | 'origin_not_allowed',
 ): Promise<void> {
-  await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
+  // Record the denial against the key's OWN site, not the requested one.
+  //
+  // For a `site_mismatch` the requested site id is attacker-controlled and may
+  // not exist at all; `audit_log.site_id` has an FK to `sites.id`, so writing
+  // it there would be rejected. The key's site is always a real tenant, and it
+  // is also the tenant that actually needs to see this event — someone is using
+  // their key against another site. The requested id is still preserved in
+  // `metadata.requestedSiteId` below, where no FK applies.
+  await new AuditLogger({ db: c.get('db'), siteId: row.siteId }).write({
     event: 'api_key_use_denied',
     actorEmail: null,
     ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,

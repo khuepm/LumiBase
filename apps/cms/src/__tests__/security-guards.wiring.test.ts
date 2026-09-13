@@ -36,8 +36,25 @@ describe('security guard wiring — /api/v1 middleware chain (index.ts)', () => 
 
   it('mounts the full guard chain on the authenticated api sub-app', () => {
     expect(source).toMatch(
-      /api\.use\('\*',\s*withTenant\(\),\s*withDb\(\),\s*withAuth\(\),\s*withSiteMembership\(\),\s*withRateLimit\(\),\s*requireSetupComplete\(\),\s*withStudioAccess\(\),\s*withControlPlaneAccessGuard\(\),/,
+      /api\.use\('\*',\s*withTenant\(\),\s*withDb\(\),\s*withTenantExists\(\),\s*withAuth\(\),\s*withSiteMembership\(\),\s*withRateLimit\(\),\s*requireSetupComplete\(\),\s*withStudioAccess\(\),\s*withControlPlaneAccessGuard\(\),/,
     );
+  });
+
+  it('keeps withTenantExists between withDb and withAuth', () => {
+    // `withTenant` only shape-checks `X-Lumi-Site`; it never verifies the site
+    // exists. `withTenantExists` needs a DB handle (so: after `withDb`) and must
+    // run before `withAuth`, the first middleware that writes an audit row
+    // carrying `siteId`. With it after `withAuth`, an unknown site id reaches
+    // `audit_log.site_id` and violates its FK to `sites.id` — which previously
+    // surfaced as an unhandled rejection and killed the process, remotely
+    // triggerable with one bad header.
+    const chain = source.match(/api\.use\('\*',[^\n]*\);/)?.[0] ?? '';
+    const dbIdx = chain.indexOf('withDb()');
+    const existsIdx = chain.indexOf('withTenantExists()');
+    const authIdx = chain.indexOf('withAuth()');
+    expect(dbIdx).toBeGreaterThan(-1);
+    expect(existsIdx).toBeGreaterThan(dbIdx);
+    expect(authIdx).toBeGreaterThan(existsIdx);
   });
 
   it('mounts a dedicated IP rate limiter on the public deliver surface', () => {

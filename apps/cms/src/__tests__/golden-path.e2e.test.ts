@@ -228,10 +228,18 @@ describe('Golden path (setup → collection → item → publish → read) + ten
     // ── 5. Tenant isolation ─────────────────────────────────────────────────
     // Two independent boundaries are asserted.
 
+    // The second tenant must exist before either assertion below. `withTenantExists`
+    // rejects an unresolvable `X-Lumi-Site` with 404 ahead of `withAuth`, so probing
+    // isolation against a site that was never created would short-circuit on
+    // nonexistence and never reach the boundary each step means to test.
+    await db.insert(sites).values({ id: OTHER_SITE, name: 'Golden Other' });
+
     // 5a. Token pinning: a session JWT carries its `siteId` claim, and
     //     `withAuth` rejects it outright when the `X-Lumi-Site` header names a
     //     different tenant — so site A's token can never even reach site B's
-    //     data. This is the auth-layer half of isolation.
+    //     data. This is the auth-layer half of isolation. Site B is a real
+    //     tenant here, so the 401 proves the token was pinned, not merely that
+    //     the target was missing.
     const crossSite = await request('/api/v1/collections', {
       method: 'POST',
       headers: authHeaders(OTHER_SITE), // site-A bearer + X-Lumi-Site: site B
@@ -239,12 +247,11 @@ describe('Golden path (setup → collection → item → publish → read) + ten
     });
     expect(crossSite.status).toBe(401);
 
-    // 5b. Data scoping: seed a second site with a same-named collection and its
+    // 5b. Data scoping: give that second site a same-named collection and its
     //     own item directly in the DB (the site-A token cannot write there).
     //     Listing under site A — the tenant the token IS authorized for — must
     //     never surface the other site's item. Isolation comes from `site_id`
     //     scoping alone, not from a missing collection.
-    await db.insert(sites).values({ id: OTHER_SITE, name: 'Golden Other' });
     const [collB] = await db
       .insert(collections)
       .values({ siteId: OTHER_SITE, name: COLLECTION })
