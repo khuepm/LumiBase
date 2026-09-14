@@ -1,22 +1,13 @@
 ---
 title: Next.js Quickstart — Display LumiBase Content
-version: 3
-lastUpdated: 2026-09-13T12:58:01.496Z
+version: 4
+lastUpdated: 2026-09-14T19:45:03.649Z
 sourceLang: en
-contentHash: 8517ebf6d2842ff5
-codeVerified: 2026-09-13T12:58:01.496Z
-codeVerifiedHash: 8517ebf6d2842ff5
+contentHash: 86cb52f005f6e7b5
+codeVerified: 2026-09-14T19:45:03.649Z
+codeVerifiedHash: 86cb52f005f6e7b5
 codeVerifiedClaims: 26
 ---
-
-<!--
-  check-parity: allow code-fences
-  Reason: the EN/VI code blocks are byte-identical; the only differences are
-  TRAILING comments (e.g. `# open http://localhost:3000` vs `# mở ...`), which
-  are prose and are meant to be translated. check-parity strips whole-line
-  comments but not trailing ones, so it reports these as drift. Verified by
-  diffing both sides with trailing comments removed — no code difference.
--->
 
 <!--
   ┌──────────────────────────────────────────────────────────────────────────┐
@@ -330,7 +321,8 @@ export type Post = ItemRow<PostFields>
 export const lumibase = createLumiClient<{ posts: PostFields }>({
   url: process.env.LUMIBASE_API_URL!,
   siteId: process.env.LUMIBASE_SITE_ID!,
-  token: process.env.LUMIBASE_TOKEN!, // static API key — skips the login flow
+  // static API key — skips the login flow
+  token: process.env.LUMIBASE_TOKEN!,
 }).with(legacyRest())
 ```
 
@@ -372,7 +364,8 @@ export default async function Home() {
 Run it:
 
 ```bash
-npm run dev   # open http://localhost:3000
+# open http://localhost:3000
+npm run dev
 ```
 
 You should see your published posts. Here's roughly what renders:
@@ -403,6 +396,10 @@ import { notFound } from 'next/navigation'
 import { LumiError } from 'lumibase'
 import { lumibase, type Post } from '@/lib/lumibase'
 
+// Required. Without it this route is cached indefinitely and edits made in
+// Studio never reach the page.
+export const revalidate = 60
+
 export default async function PostPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   let post: Post
@@ -426,6 +423,13 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
 
 A draft the credential cannot see answers `404` — the same path as an unknown
 id — so unpublished content can never surface.
+
+> [!IMPORTANT]
+> **Set `revalidate` on every cached route, not just the list.** A route with
+> `generateStaticParams` but no `revalidate` is rendered once at build time and
+> then cached forever, so edits made in Studio never appear on it. A post
+> published *after* the build is still served: `dynamicParams` defaults to
+> `true`, so Next renders it on demand the first time it is requested.
 
 > **Already depend on `@lumibase/sdk`?** It exports the identical client —
 > `lumibase` simply re-exports it so one name covers both the client and the
@@ -451,9 +455,12 @@ committed — it holds no secret):
 ```
 
 ```bash
-npx lumibase types          # write src/lumibase-types.d.ts — commit it
-npx lumibase types --check  # exits non-zero if the file is stale
-npx lumibase doctor         # show the resolved config and probe connectivity
+# write src/lumibase-types.d.ts — commit it
+npx lumibase types
+# exits non-zero if the file is stale
+npx lumibase types --check
+# show the resolved config and probe connectivity
+npx lumibase doctor
 ```
 
 > [!IMPORTANT]
@@ -501,7 +508,8 @@ async function getPosts(): Promise<Post[]> {
       Authorization: `Bearer ${process.env.LUMIBASE_TOKEN}`,
       'X-Lumi-Site': process.env.LUMIBASE_SITE_ID!,
     },
-    next: { revalidate: 60 }, // ISR-style cache; use 'no-store' for always-fresh
+    // ISR-style cache; use 'no-store' for always-fresh
+    next: { revalidate: 60 },
   })
 
   if (!res.ok) throw new Error(`LumiBase responded ${res.status}: ${await res.text()}`)

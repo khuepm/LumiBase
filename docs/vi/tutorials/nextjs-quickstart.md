@@ -1,25 +1,16 @@
 ---
 title: Next.js Quickstart — Hiển thị nội dung LumiBase
-version: 3
-lastUpdated: 2026-09-13T12:58:01.496Z
+version: 4
+lastUpdated: 2026-09-14T19:45:03.649Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8517ebf6d2842ff5
+sourceHash: 86cb52f005f6e7b5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-13T12:58:01.496Z
-codeVerifiedHash: 8517ebf6d2842ff5
+codeVerified: 2026-09-14T19:45:03.649Z
+codeVerifiedHash: 86cb52f005f6e7b5
 codeVerifiedClaims: 26
 ---
-
-<!--
-  check-parity: allow code-fences
-  Reason: the EN/VI code blocks are byte-identical; the only differences are
-  TRAILING comments (e.g. `# open http://localhost:3000` vs `# mở ...`), which
-  are prose and are meant to be translated. check-parity strips whole-line
-  comments but not trailing ones, so it reports these as drift. Verified by
-  diffing both sides with trailing comments removed — no code difference.
--->
 
 <!--
   ┌──────────────────────────────────────────────────────────────────────────┐
@@ -330,7 +321,8 @@ export type Post = ItemRow<PostFields>
 export const lumibase = createLumiClient<{ posts: PostFields }>({
   url: process.env.LUMIBASE_API_URL!,
   siteId: process.env.LUMIBASE_SITE_ID!,
-  token: process.env.LUMIBASE_TOKEN!, // API key tĩnh — bỏ qua luồng login
+  // API key tĩnh — bỏ qua luồng login
+  token: process.env.LUMIBASE_TOKEN!,
 }).with(legacyRest())
 ```
 
@@ -372,7 +364,8 @@ export default async function Home() {
 Chạy thử:
 
 ```bash
-npm run dev   # mở http://localhost:3000
+# mở http://localhost:3000
+npm run dev
 ```
 
 Bạn sẽ thấy các bài đã publish. Giao diện render đại khái như sau:
@@ -403,6 +396,10 @@ import { notFound } from 'next/navigation'
 import { LumiError } from 'lumibase'
 import { lumibase, type Post } from '@/lib/lumibase'
 
+// Bắt buộc. Thiếu dòng này thì route bị cache vĩnh viễn và nội dung sửa trong
+// Studio không bao giờ hiện ra.
+export const revalidate = 60
+
 export default async function PostPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   let post: Post
@@ -427,6 +424,13 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
 Một bản nháp mà credential không được phép thấy sẽ trả `404` — cùng đường đi với
 một id không tồn tại — nên nội dung chưa publish không thể lộ ra.
 
+> [!IMPORTANT]
+> **Khai báo `revalidate` cho mọi route được cache, không chỉ trang danh sách.**
+> Route có `generateStaticParams` nhưng thiếu `revalidate` chỉ được render một
+> lần lúc build rồi cache vĩnh viễn, nên nội dung sửa trong Studio không bao giờ
+> hiện ra. Bài publish *sau* khi build vẫn phục vụ được: `dynamicParams` mặc
+> định là `true` nên Next render on-demand ở lần truy cập đầu tiên.
+
 > **Đang phụ thuộc `@lumibase/sdk`?** Nó export đúng cùng một client —
 > `lumibase` chỉ re-export lại để một cái tên bao trọn cả client lẫn CLI. Đổi
 > `from 'lumibase'` thành `from '@lumibase/sdk'` là mọi thứ ở trên chạy nguyên vẹn.
@@ -450,9 +454,12 @@ chứa secret):
 ```
 
 ```bash
-npx lumibase types          # ghi src/lumibase-types.d.ts — hãy commit
-npx lumibase types --check  # thoát khác 0 nếu file đã cũ
-npx lumibase doctor         # xem cấu hình đã resolve và kiểm tra kết nối
+# ghi src/lumibase-types.d.ts — hãy commit
+npx lumibase types
+# thoát khác 0 nếu file đã cũ
+npx lumibase types --check
+# xem cấu hình đã resolve và kiểm tra kết nối
+npx lumibase doctor
 ```
 
 > [!IMPORTANT]
@@ -499,7 +506,8 @@ async function getPosts(): Promise<Post[]> {
       Authorization: `Bearer ${process.env.LUMIBASE_TOKEN}`,
       'X-Lumi-Site': process.env.LUMIBASE_SITE_ID!,
     },
-    next: { revalidate: 60 }, // cache kiểu ISR; dùng 'no-store' nếu cần luôn mới
+    // cache kiểu ISR; dùng 'no-store' nếu cần luôn mới
+    next: { revalidate: 60 },
   })
 
   if (!res.ok) throw new Error(`LumiBase responded ${res.status}: ${await res.text()}`)
