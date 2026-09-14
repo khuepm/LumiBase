@@ -7,6 +7,17 @@ interface PostPageProps {
   params: Promise<{ id: string }>;
 }
 
+// Revalidate on the same cadence as the list page. Without this the route
+// would be cached indefinitely: `generateStaticParams` alone pre-renders each
+// post once at build time and never refreshes it, so edits made in Studio
+// would never reach the detail page.
+export const revalidate = 60;
+
+// A post published after the build is not in `generateStaticParams`. Leaving
+// `dynamicParams` at its default (`true`) lets Next render it on demand the
+// first time it is requested, then cache it like the rest.
+export const dynamicParams = true;
+
 // Pre-render a page per published post. The reader credential cannot see
 // drafts, so this list is exactly the public set.
 export async function generateStaticParams() {

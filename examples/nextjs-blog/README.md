@@ -91,12 +91,18 @@ try {
 
 ## Caching
 
-The list page sets `export const revalidate = 60`, and the detail route
-pre-renders one page per published post via `generateStaticParams`. Publishing
-in Studio is therefore visible to the API immediately, but the rendered page
-keeps serving its cached copy until the revalidation window elapses. That is
-expected — lower `revalidate`, or use `cache: 'no-store'`, if a page must be
-always-fresh.
+**Both** routes set `export const revalidate = 60`. The list page needs it, and
+so does the detail page — `generateStaticParams` on its own renders each post
+once at build time and then caches it forever, so edits made in Studio would
+never appear. Declaring `revalidate` is what makes the detail page refresh too.
+
+Publishing or editing in Studio is visible to the API immediately, while the
+rendered pages keep serving their cached copy until the window elapses. Lower
+`revalidate`, or use `cache: 'no-store'`, if a page must be always-fresh.
+
+A post published *after* the build is not in `generateStaticParams`. The detail
+route leaves `dynamicParams` at its default (`true`), so Next renders that post
+on demand the first time it is requested and caches it like the rest.
 
 ## Type generation
 
