@@ -1,14 +1,14 @@
 ---
 title: Next.js Quickstart — Hiển thị nội dung LumiBase
-version: 4
-lastUpdated: 2026-09-14T19:45:03.649Z
+version: 5
+lastUpdated: 2026-09-14T19:53:53.530Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 86cb52f005f6e7b5
+sourceHash: ca523023eb37e81c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-14T19:45:03.649Z
-codeVerifiedHash: 86cb52f005f6e7b5
+codeVerified: 2026-09-14T19:53:53.530Z
+codeVerifiedHash: ca523023eb37e81c
 codeVerifiedClaims: 26
 ---
 
@@ -526,7 +526,7 @@ async function getPosts(): Promise<Post[]> {
 <tbody>
 <tr><td><code>401 Unauthorized</code></td><td>Token thiếu hoặc không hợp lệ</td><td>Kiểm tra lại <code>LUMIBASE_TOKEN</code>; tạo lại API key (Bước 4b)</td></tr>
 <tr><td><code>423 SETUP_REQUIRED</code></td><td>Chưa hoàn tất setup</td><td>Hoàn tất <code>http://localhost:1989/setup</code> (Bước 2)</td></tr>
-<tr><td><code>404 SITE_NOT_FOUND</code></td><td>Sai hoặc thiếu <code>X-Lumi-Site</code></td><td>Dùng <code>__default__</code> trừ khi bạn đã tạo site khác</td></tr>
+<tr><td><code>404 TENANT_NOT_FOUND</code></td><td>Sai <code>X-Lumi-Site</code> — header đúng định dạng nhưng site không tồn tại</td><td>Dùng <code>__default__</code> trừ khi bạn đã tạo site khác</td></tr>
 <tr><td>Mảng trống <code>data: []</code></td><td>Chưa có bài viết <strong>published</strong> nào</td><td>Đặt trạng thái item thành <code>published</code> trong Studio</td></tr>
 <tr><td><code>404</code> trên items</td><td>Sai tên collection</td><td>Collection phải đặt tên chính xác là <code>posts</code></td></tr>
 <tr><td>Lỗi CORS ở trình duyệt</td><td>Gọi API từ client code</td><td>Gọi từ một <strong>Server Component</strong> (như hướng dẫn trên)</td></tr>

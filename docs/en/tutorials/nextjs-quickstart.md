@@ -1,11 +1,11 @@
 ---
 title: Next.js Quickstart — Display LumiBase Content
-version: 4
-lastUpdated: 2026-09-14T19:45:03.649Z
+version: 5
+lastUpdated: 2026-09-14T19:53:53.530Z
 sourceLang: en
-contentHash: 86cb52f005f6e7b5
-codeVerified: 2026-09-14T19:45:03.649Z
-codeVerifiedHash: 86cb52f005f6e7b5
+contentHash: ca523023eb37e81c
+codeVerified: 2026-09-14T19:53:53.530Z
+codeVerifiedHash: ca523023eb37e81c
 codeVerifiedClaims: 26
 ---
 
@@ -528,7 +528,7 @@ async function getPosts(): Promise<Post[]> {
 <tbody>
 <tr><td><code>401 Unauthorized</code></td><td>Missing/invalid token</td><td>Re-check <code>LUMIBASE_TOKEN</code>; recreate the API key (Step 4b)</td></tr>
 <tr><td><code>423 SETUP_REQUIRED</code></td><td>Setup not finished</td><td>Complete <code>http://localhost:1989/setup</code> (Step 2)</td></tr>
-<tr><td><code>404 SITE_NOT_FOUND</code></td><td>Wrong/missing <code>X-Lumi-Site</code></td><td>Use <code>__default__</code> unless you created another site</td></tr>
+<tr><td><code>404 TENANT_NOT_FOUND</code></td><td>Wrong <code>X-Lumi-Site</code> — the header is well-formed but no such site exists</td><td>Use <code>__default__</code> unless you created another site</td></tr>
 <tr><td>Empty <code>data: []</code></td><td>No <strong>published</strong> posts</td><td>Set items to <code>published</code> in Studio</td></tr>
 <tr><td><code>404</code> on items</td><td>Collection name mismatch</td><td>Collection must be named exactly <code>posts</code></td></tr>
 <tr><td>CORS error in browser</td><td>Fetching from client code</td><td>Fetch from a <strong>Server Component</strong> (as above)</td></tr>
