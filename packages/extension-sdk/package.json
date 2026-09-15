@@ -20,7 +20,7 @@
     "build": "tsup src/index.ts --format cjs,esm --dts --clean"
   },
   "devDependencies": {
-    "typescript": "^5.6.2",
+    "typescript": "^7.0.2",
     "tsup": "^8.5.1"
   },
   "files": [
