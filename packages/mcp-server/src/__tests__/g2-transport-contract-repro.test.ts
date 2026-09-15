@@ -643,3 +643,226 @@ describe('G2 repro · result-shape probes: forwarding and wrapper behaviour', ()
     expect(props).not.toContain('occurredAfter');
   });
 });
+
+describe('G2 repro · soát ngữ nghĩa: compile_intent bị xếp sai nhóm', () => {
+  /**
+   * Phát hiện khi soát ngữ nghĩa 49 mutation chưa map (mảnh audit cuối).
+   *
+   * `compile_intent` dùng POST nên bộ đếm theo HTTP method xếp nó vào mutation.
+   * Nhưng `IntentService.compile` ghi rõ trong docstring: *"Returns the compiled
+   * draft for the user to confirm — **never persists**"*, và nó gọi
+   * `this.deps.llm.provider.chat(...)`. Vậy nó là **provider-cost preview**,
+   * cùng lớp với `translate_text`, không phải mutation.
+   *
+   * Hệ quả cho các con số: mutation **90 → 89**, mutation chưa map **49 → 48**,
+   * provider action **1 → 2**.
+   */
+  it('S12: khoá REST target của compile_intent — tách khỏi đường tạo intent', async () => {
+    const calls = await callToolIsolated('compile_intent', {
+      description: 'bài viết phải có ảnh bìa',
+      collection: 'posts',
+    });
+
+    // Nó POST tới endpoint compile — không tạo/sửa intent nào.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.method).toBe('POST');
+    expect(calls[0]!.path).toBe('/agent/intents/compile');
+
+    // Phân biệt với đường thật sự tạo intent (registerCrud trên /agent/intents).
+    const createCalls = await callToolIsolated('create_intent', {
+      name: 'i1',
+      collection: 'posts',
+      rules: [],
+      schedule: '* * * * *',
+    });
+    expect(createCalls[0]!.path).toBe('/agent/intents');
+    expect(createCalls[0]!.path).not.toBe(calls[0]!.path);
+
+    // ── PHẠM VI (siết theo yêu cầu R4 của review vòng 8) ────────────────────
+    // Test này CHỈ khoá REST target và cho thấy hai đường khác nhau.
+    //
+    // Kết luận "không persist" đến từ đọc phía CMS (`routes/intents.ts:182` +
+    // toàn bộ `IntentService.compile` tại `intent-service.ts:205`: provider.chat
+    // → parse/validate rules + schedule → trả draft; không có DB mutation, không
+    // create/update/activate intent), **không** từ test này.
+    //
+    // Và KHÔNG phát biểu "không có bất kỳ side effect nào": vẫn có request ra
+    // provider kèm chi phí, cộng middleware toàn cục không được test end-to-end ở
+    // đây. Ngoài ra route giữ nguyên guard `canWriteIntents`
+    // (`admin` | `intents:write` | `*`) — phân loại "preview" **không** hạ nó
+    // xuống quyền read.
+  });
+
+  it('S13: phân loại phải PHỦ ĐÚNG registry thật — membership, uniqueness, disjointness, union', async () => {
+    /**
+     * Viết lại theo yêu cầu **R3** của review vòng 8. Bản trước chỉ **cộng hằng
+     * số** nên vẫn xanh dù registry thêm/bớt/đổi tên tool — đúng là không khoá gì.
+     *
+     * Bản này gắn từng tập tên vào `listTools()` **thật**:
+     *   - membership: mọi tên trong tập phải TỒN TẠI trong registry;
+     *   - uniqueness: không trùng trong cùng tập;
+     *   - disjointness: **năm** tập không giao nhau;
+     *   - union **hai chiều**: registry ⊆ ∪tập và ∪tập ⊆ registry.
+     *
+     * SỬA THEO F2: bản trước chỉ khai báo 4 tập (98 tên) rồi lấy 63 tool còn lại
+     * TRỰC TIẾP từ registry và chỉ kiểm số lượng + prefix. Hệ quả: đổi tên một
+     * tool **trong nhóm 63** vẫn XANH — kiểm âm `get_release` → `get_release_v2`
+     * đi lọt. Tức nó khoá danh tính 98/161, không phải toàn registry.
+     *
+     * Giờ `READ_GET_63` là tập khai báo tường minh, nên cả **161/161** tên đều
+     * được khoá: đổi tên tool ở BẤT KỲ nhóm nào ⇒ membership/union đỏ; thêm/bớt
+     * tool ⇒ union đỏ; xếp một tên vào hai nhóm ⇒ disjointness đỏ.
+     */
+    const { client } = await liveClient();
+    const registry = (await client.listTools()).tools.map((t) => t.name);
+    const registrySet = new Set(registry);
+
+    /** 41 mutation candidate map được (40 theo tên + 1 alias). */
+    const MAPPED_41 = [
+      'create_item', 'update_item', 'delete_item',
+      'create_collection', 'delete_collection', 'delete_field',
+      'create_relation', 'delete_relation',
+      'create_role', 'delete_role', 'create_policy', 'delete_policy',
+      'create_flow', 'delete_flow', 'run_flow',
+      'create_intent', 'delete_intent',
+      'create_webhook', 'update_webhook', 'delete_webhook',
+      'create_translation', 'update_translation', 'delete_translation',
+      'upsert_setting', 'delete_setting',
+      'create_cdc_subscription', 'delete_cdc_subscription', 'cdc_subscription_replay',
+      'create_api_key', 'rotate_api_key', 'revoke_api_key',
+      'invite_user', 'update_user', 'remove_user',
+      'create_team', 'delete_team', 'add_team_member', 'remove_team_member',
+      'install_extension', 'update_extension', 'uninstall_extension',
+    ];
+    /** 48 mutation chưa map (xem §5d của PR). */
+    const UNMAPPED_48 = [
+      'assign_role_user', 'remove_role_user', 'attach_role_policy', 'detach_role_policy', 'update_role',
+      'add_policy_permission', 'update_policy_permission', 'delete_policy_permission',
+      'attach_policy_user', 'detach_policy_user', 'update_policy',
+      'attach_api_key_role', 'detach_api_key_role', 'attach_api_key_policy', 'detach_api_key_policy',
+      'create_share', 'revoke_share',
+      'apply_access_import', 'restore_backup',
+      'approve_content', 'reject_content', 'submit_review',
+      'apply_schema', 'update_collection', 'upsert_field',
+      'create_release', 'update_release', 'delete_release', 'publish_release',
+      'register_materialization', 'refresh_materialization', 'drop_materialization',
+      'delete_media',
+      'upsert_tm', 'update_tm', 'delete_tm',
+      'update_cdc_subscription', 'update_flow', 'update_team',
+      'pause_intent', 'resume_intent', 'scan_intent', 'update_intent',
+      'create_preset', 'update_preset', 'delete_preset',
+      'install_marketplace_extension', 'publish_extension',
+    ];
+    const PROVIDER_2 = ['translate_text', 'compile_intent'];
+    /** 7 tool dùng POST nhưng ngữ nghĩa đọc/preview — REST target khoá ở `S7`. */
+    const READ_VIA_POST_7 = [
+      'check_permission', 'check_access_conflicts', 'dry_run_access_import',
+      'diff_schema', 'lookup_tm', 'query_insights', 'run_panel',
+    ];
+
+    /**
+     * 63 tool đọc-qua-GET. Khai báo TƯỜNG MINH theo yêu cầu F2: bản trước lấy
+     * nhóm này trực tiếp từ registry rồi chỉ kiểm số lượng + prefix, nên đổi tên
+     * một tool trong nhóm vẫn XANH (kiểm âm: `get_release` → `get_release_v2`).
+     * Có tập tên rồi thì union so hai chiều và rename ở đây cũng đỏ.
+     */
+    const READ_GET_63 = [
+      'list_collections', 'get_collection', 'list_fields', 'list_items', 'get_item',
+      'list_relations', 'list_presets', 'get_preset', 'get_effective_preset',
+      'list_preset_bookmarks', 'list_translations', 'get_translation', 'list_settings',
+      'get_setting', 'search', 'list_media', 'list_transform_presets', 'list_tm',
+      'list_dashboards', 'get_dashboard', 'list_dashboard_panels', 'list_reviews',
+      'list_releases', 'get_release', 'get_my_permissions', 'list_roles', 'get_role',
+      'list_policies', 'get_policy', 'export_access', 'list_api_keys', 'get_api_key',
+      'list_users', 'get_user', 'list_teams', 'get_team', 'list_team_members',
+      'list_webhooks', 'list_cdc_subscriptions', 'get_cdc_subscription', 'cdc_events_read',
+      'list_intents', 'get_intent', 'list_intent_drifts', 'list_flows', 'get_flow',
+      'list_flow_runs', 'get_flow_run', 'list_activity', 'get_site', 'get_health',
+      'get_metrics', 'export_backup', 'list_materializations', 'query_materialization',
+      'list_extensions', 'list_marketplace_extensions', 'get_marketplace_extension',
+      'list_marketplace_updates', 'list_deployment_targets', 'list_deployments',
+      'get_deployment', 'get_deployment_logs',
+    ];
+
+    const sets: Array<[string, string[]]> = [
+      ['MAPPED_41', MAPPED_41],
+      ['UNMAPPED_48', UNMAPPED_48],
+      ['PROVIDER_2', PROVIDER_2],
+      ['READ_VIA_POST_7', READ_VIA_POST_7],
+      ['READ_GET_63', READ_GET_63],
+    ];
+
+    // 1) Kích thước khai báo
+    expect(MAPPED_41).toHaveLength(41);
+    expect(UNMAPPED_48).toHaveLength(48);
+    expect(PROVIDER_2).toHaveLength(2);
+    expect(READ_VIA_POST_7).toHaveLength(7);
+    expect(READ_GET_63).toHaveLength(63);
+
+    // 2) Uniqueness trong từng tập + membership trong registry THẬT
+    for (const [label, list] of sets) {
+      expect(new Set(list).size, `${label} không trùng nội bộ`).toBe(list.length);
+      const missing = list.filter((n) => !registrySet.has(n));
+      expect(missing, `${label}: mọi tên phải tồn tại trong registry`).toEqual([]);
+    }
+
+    // 3) Disjointness giữa bốn tập
+    const seen = new Map<string, string>();
+    const overlaps: string[] = [];
+    for (const [label, list] of sets) {
+      for (const n of list) {
+        const prev = seen.get(n);
+        if (prev) overlaps.push(`${n} ở cả ${prev} và ${label}`);
+        else seen.set(n, label);
+      }
+    }
+    expect(overlaps).toEqual([]);
+
+    // 4) Union so HAI CHIỀU với registry thật (sửa theo F2).
+    //    Trước đây nhóm 63 được lấy TỪ registry nên không khoá danh tính; giờ nó
+    //    là tập khai báo, nên cả 161 tên đều có tập sở hữu.
+    const classified = new Set(seen.keys());
+    expect(classified.size).toBe(41 + 48 + 2 + 7 + 63);
+
+    // 4a) registry ⊆ các tập: không tool nào của registry bị bỏ rơi.
+    const unclassified = registry.filter((n) => !classified.has(n));
+    expect(unclassified, 'mọi tool trong registry phải thuộc đúng một tập').toEqual([]);
+
+    // 4b) các tập ⊆ registry: không tên khai báo nào biến mất khỏi registry.
+    //     (membership ở bước 2 đã phủ, giữ lại để union là song ánh tường minh.)
+    const ghosts = [...classified].filter((n) => !registrySet.has(n));
+    expect(ghosts, 'không tên khai báo nào được vắng mặt trong registry').toEqual([]);
+
+    expect(classified.size).toBe(registry.length);
+    expect(registry).toHaveLength(161);
+
+    // 5) Nhóm read-GET không được chứa động từ ghi — chốt nó thật là nhóm read.
+    const writeVerb = /^(create|update|delete|upsert|remove|revoke|rotate|attach|detach|assign|install|uninstall|publish|apply|restore|approve|reject|submit|register|drop|refresh|pause|resume|scan|replay|run)_/;
+    expect(READ_GET_63.filter((n) => writeVerb.test(n))).toEqual([]);
+  });
+
+  it('S13b: tổng kiểm số học của bảng phân loại', () => {
+    /**
+     * Chốt các con số sau soát ngữ nghĩa, để chúng không trôi ở lượt sau.
+     * Đây là **bảng phân loại**, không phải bằng chứng hành vi từng tool —
+     * bằng chứng nằm ở S7 (REST target), R16 (không có alias), R17 (hai ca
+     * trông-như-map-được thực chất không tương đương).
+     */
+    const TOTAL = 161;
+    const READ_GET = 63;
+    const READ_VIA_POST_N = 7;
+    const PROVIDER_ACTION_N = 2; // translate_text + compile_intent
+    const MUTATIONS = 89;
+    const MUTATION_MAPPED = 41; // 40 theo tên + 1 alias
+    const MUTATION_UNMAPPED = 48;
+
+    // Tổng phải khớp: read(GET) + read(POST) + provider + mutation = 161
+    expect(READ_GET + READ_VIA_POST_N + PROVIDER_ACTION_N + MUTATIONS).toBe(TOTAL);
+    // Mutation phải chia hết thành mapped + unmapped
+    expect(MUTATION_MAPPED + MUTATION_UNMAPPED).toBe(MUTATIONS);
+    // Và 48 unmapped chia thành hai nhóm rủi ro (xem §5d của PR)
+    const PRIVILEGE_AFFECTING = 22;
+    const CONTENT_SCHEMA_OPS = 26;
+    expect(PRIVILEGE_AFFECTING + CONTENT_SCHEMA_OPS).toBe(MUTATION_UNMAPPED);
+  });
+});

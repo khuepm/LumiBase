@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { getTableName } from 'drizzle-orm';
 import { Hono } from 'hono';
-import type { Database } from '@lumibase/database';
+import { extensions, type Database } from '@lumibase/database';
 import type { AppEnv, AuthPrincipal } from '../../env';
 import { AISecureHarness, CORE_SKILLS, isControlPlaneSkill } from '../ai-harness';
+import { ExtensionsService } from '../extensions-service';
+import { ExtensionVerifierService } from '../extension-verifier';
 import { McpService, type McpHarnessPort } from '../mcp-service';
 import { ToolRegistryService } from '../tool-registry-service';
 
@@ -676,6 +678,303 @@ describe('G2 repro · the two transports are separate contracts', () => {
     // payload cũng không tự nó là lỗi — cái cần chuẩn hoá là **status/decision**
     // (executed / pending_approval / denied), không phải ép mọi payload domain
     // về một cấu trúc.
+  });
+
+  /**
+   * ── R16/R17 — soát ngữ nghĩa 48 mutation chưa map ──────────────────────────
+   *
+   * Đây là mảnh audit cuối mà review xác nhận làm được trong grant hiện tại:
+   * biến "49 candidate chưa khớp tên" thành phân loại có căn cứ, thay vì suy từ
+   * tên ra "không có skill" (đúng lỗi logic đã bị bắt ở vòng 6).
+   *
+   * Con số đổi từ **49 → 48** vì `compile_intent` bị phân loại sai: nó gọi LLM và
+   * `IntentService.compile` ghi rõ *"Returns the compiled draft for the user to
+   * confirm — never persists"*, nên nó là **provider-cost preview**, không phải
+   * mutation. Cùng lớp với `translate_text` ⇒ nhóm provider action: 1 → 2.
+   */
+  it('R16: không tool nào trong 48 mutation chưa map có skill tương đương theo token-set', () => {
+    const tokens = (s: string) =>
+      s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join('|');
+
+    /** 48 mutation chưa map, nhóm theo prefix REST thật (đo bằng listTools + gọi handler). */
+    const UNMAPPED_MUTATIONS = [
+      // privilege-affecting (22)
+      'assign_role_user', 'remove_role_user', 'attach_role_policy', 'detach_role_policy', 'update_role',
+      'add_policy_permission', 'update_policy_permission', 'delete_policy_permission',
+      'attach_policy_user', 'detach_policy_user', 'update_policy',
+      'attach_api_key_role', 'detach_api_key_role', 'attach_api_key_policy', 'detach_api_key_policy',
+      'create_share', 'revoke_share',
+      'apply_access_import', 'restore_backup',
+      'approve_content', 'reject_content', 'submit_review',
+      // content/schema/ops (26)
+      'apply_schema', 'update_collection', 'upsert_field',
+      'create_release', 'update_release', 'delete_release', 'publish_release',
+      'register_materialization', 'refresh_materialization', 'drop_materialization',
+      'delete_media',
+      'upsert_tm', 'update_tm', 'delete_tm',
+      'update_cdc_subscription', 'update_flow', 'update_team',
+      'pause_intent', 'resume_intent', 'scan_intent', 'update_intent',
+      'create_preset', 'update_preset', 'delete_preset',
+      'install_marketplace_extension', 'publish_extension',
+    ];
+    expect(UNMAPPED_MUTATIONS).toHaveLength(48);
+    expect(new Set(UNMAPPED_MUTATIONS).size).toBe(48);
+
+    // Không tên nào khớp token-set với một skill thật ⇒ không có alias thuần.
+    const skillTokens = new Map(Object.keys(CORE_SKILLS).map((s) => [tokens(s), s]));
+    const accidental: string[] = [];
+    for (const tool of UNMAPPED_MUTATIONS) {
+      const hit = skillTokens.get(tokens(tool));
+      if (hit) accidental.push(`${tool} → ${hit}`);
+    }
+    expect(accidental).toEqual([]);
+
+    // Kiểm âm: thuật toán VẪN tìm được alias khi có thật (ca đã biết).
+    expect(skillTokens.get(tokens('cdc_subscription_replay'))).toBe('replayCdcSubscription');
+
+    // ── PHẠM VI (rút kinh nghiệm vòng 6) ───────────────────────────────────
+    // Đây là bằng chứng "không có alias theo tên", KHÔNG phải "không thể có
+    // skill tương đương". Kết luận support/disabled của từng tool nằm ở §5d của
+    // PR, dựa trên đọc route + service, không dựa vào test này.
+  });
+
+  it('R17: upsert_field KHÔNG được phủ bởi createField — đo projection thật', async () => {
+    /**
+     * Hai tool duy nhất mà tên gợi ý đã có skill phủ. Đo thật cho thấy không.
+     */
+
+    // ── Ca 1: upsert_field vs skill createField ────────────────────────────
+    const captured: Array<[string, Record<string, unknown>]> = [];
+    const schemaService = {
+      createField: vi.fn((collection: string, input: Record<string, unknown>) => {
+        captured.push([collection, input]);
+        return Promise.resolve({ id: 'f1' });
+      }),
+    };
+    const harness = new AISecureHarness({
+      db: {} as Database,
+      siteId: 'site_1',
+      schemaService: schemaService as never,
+      enableAgentHarnessAudit: false,
+    });
+
+    /**
+     * LƯU Ý PHẠM VI (yêu cầu R3 của review vòng 8): đây là args **sau phép rename
+     * giả định** `field_name → name`. stdio quảng bá `field_name`, còn ở đây tôi
+     * đưa `name` vào skill — tức đã cho mapping một lợi thế. Ngay cả vậy,
+     * projection vẫn rụng field.
+     *
+     * Và kết luận về **nhánh upsert** đến từ source, không phải từ việc
+     * `updateField` không tồn tại: `PUT /collections/:c/fields/:f` dùng
+     * `SchemaService.upsertField` (`routes/collections.ts:236`,
+     * `schema-service.ts:538`) — update nếu có, create nếu chưa. Skill chỉ gọi
+     * `createField`.
+     */
+    await harness.runSkill('createField', {
+      collection: 'posts',
+      name: 'body',
+      type: 'text',
+      required: true,
+      interface: 'markdown',
+      note: 'nội dung bài',
+    });
+
+    expect(captured).toHaveLength(1);
+    const [, input] = captured[0]!;
+    // CURRENT: skill **hardcode** `interface: 'input'` và chỉ đọc 4 arg, nên
+    // `interface: 'markdown'` và `note` bị rơi âm thầm.
+    expect(input['interface']).toBe('input');
+    expect(input['note']).toBeUndefined();
+    expect(Object.keys(input).sort()).toEqual(['interface', 'name', 'required', 'type']);
+    // Ngữ cảnh (không phải bằng chứng cho nhánh upsert — xem ghi chú trên):
+    expect(CORE_SKILLS['updateField']).toBeUndefined();
+
+    // ── Ca 2 chuyển sang R18 ────────────────────────────────────────────────
+    // Ca marketplace cần probe cặp mới đo được, nên tách ra `R18` bên dưới.
+    // R17 giữ đúng phạm vi: chỉ ca `upsert_field`, đo bằng projection thật.
+  });
+
+  it('R19: bảng create/update/delete từng domain, đo từ CORE_SKILLS thật (sửa claim "11 tài nguyên")', () => {
+    /**
+     * Sửa theo yêu cầu **R2** của review vòng 8. Claim cũ — *"11 tài nguyên chỉ
+     * có create+delete"* — **sai**: thiếu 11 tên `update*` không chứng minh cả 11
+     * domain đều có cặp create/delete. Đo lại từng domain, ba thao tác.
+     */
+    const has = (n: string) => Boolean(CORE_SKILLS[n]);
+    /** [domain, createSkill|null, updateSkill|null, deleteSkill|null] */
+    const table: Array<[string, string | null, string | null, string | null]> = [
+      // A. có create + delete, KHÔNG có update  → 8 domain
+      ['collection', 'createCollection', null, 'deleteCollection'],
+      ['field', 'createField', null, 'deleteField'],
+      ['role', 'createRole', null, 'deleteRole'],
+      ['policy', 'createPolicy', null, 'deletePolicy'],
+      ['flow', 'createFlow', null, 'deleteFlow'],
+      ['intent', 'createIntent', null, 'deleteIntent'],
+      ['team', 'createTeam', null, 'deleteTeam'],
+      ['cdcSubscription', 'createCdcSubscription', null, 'deleteCdcSubscription'],
+      // B. thiếu CẢ BA thao tác → 3 domain
+      ['release', null, null, null],
+      ['preset', null, null, null],
+      ['translationMemory (tm)', null, null, null],
+    ];
+
+    for (const [domain, c, u, d] of table) {
+      if (c) expect(has(c), `${domain}: ${c} tồn tại`).toBe(true);
+      if (d) expect(has(d), `${domain}: ${d} tồn tại`).toBe(true);
+      // update luôn absent trong bảng này
+      expect(u).toBeNull();
+      for (const cand of [`update${domain[0]!.toUpperCase()}${domain.slice(1)}`]) {
+        expect(CORE_SKILLS[cand], `${cand} phải absent`).toBeUndefined();
+      }
+    }
+
+    // Nhóm A: 8 domain có cặp create/delete
+    expect(table.filter(([, c, , d]) => c !== null && d !== null)).toHaveLength(8);
+    // Nhóm B: 3 domain absent cả ba
+    expect(table.filter(([, c, u, d]) => c === null && u === null && d === null)).toHaveLength(3);
+    // release/preset/tm: absent cả ba, kiểm trực tiếp
+    for (const n of ['createRelease', 'updateRelease', 'deleteRelease',
+                     'createPreset', 'updatePreset', 'deletePreset']) {
+      expect(CORE_SKILLS[n], `${n} absent`).toBeUndefined();
+    }
+
+    // NGỮ CẢNH, không dùng để phủ domain khác: registry CÓ 7 skill update/upsert
+    // cho các domain khác.
+    const updateish = Object.keys(CORE_SKILLS).filter((n) => /^(update|upsert)/.test(n)).sort();
+    expect(updateish).toEqual([
+      'updateExtension', 'updateItem', 'updateTranslation', 'updateUser',
+      'updateVersion', 'updateWebhook', 'upsertSetting',
+    ]);
+
+    // Và sửa nốt một con số sai: trong 11 tool update-ish chưa map, **9** thuộc
+    // nhóm C còn **2** (`update_role`, `update_policy`) thuộc nhóm P — nên câu
+    // "11 trong 26 nhóm C" của bản trước là sai.
+    const UPDATEISH_UNMAPPED_P = ['update_role', 'update_policy'];
+    const UPDATEISH_UNMAPPED_C = [
+      'update_collection', 'update_flow', 'update_intent', 'update_team',
+      'update_cdc_subscription', 'update_release', 'update_preset', 'update_tm', 'upsert_field',
+    ];
+    expect(UPDATEISH_UNMAPPED_P).toHaveLength(2);
+    expect(UPDATEISH_UNMAPPED_C).toHaveLength(9);
+
+    // KHÔNG đề xuất delete+recreate làm workaround cho update (yêu cầu R2).
+  });
+
+  it('R18: thay marketplace install bằng generic registration làm MẤT gate/default/provenance (probe cặp)', async () => {
+    /**
+     * Sửa theo yêu cầu **R1** của review vòng 8.
+     *
+     * Bản trước gọi đây là "bỏ qua verify chữ ký" nhưng chỉ assert sự tồn tại +
+     * description của skill ⇒ **không phải bằng chứng đo được**. Reviewer đã đọc
+     * đủ hai đường và xác nhận rủi ro là **có căn cứ nhưng có điều kiện**:
+     *
+     *   `routes/marketplace.ts:543-622` — kiểm `extensions:install`, resolve slug
+     *   thành listing global đã publish, gọi `ExtensionVerifierService
+     *   .verifyByMetadata`, chặn khi `requireSignature && !verdict.ok`, chặn
+     *   reserved `lumibase-*` không có official signature, rồi mới insert; đồng
+     *   thời bảo toàn signature/provenance/marketplaceSlug, derive
+     *   `isOfficial`/`verifiedAt` **ở server**, dùng `enabledByDefault`, khởi tạo
+     *   `capabilities: []`.
+     *
+     *   `ai-harness.ts:1740` → `extensions-service.ts:42` — generic registration
+     *   nhận metadata **do caller cấp** và insert; **không** marketplace lookup,
+     *   **không** verifier, và cho caller cấp `capabilities`.
+     *
+     * PHÁT BIỂU ĐÚNG (không phải "bypass đã thành công"): *nếu* một adapter
+     * resolve đủ metadata rồi thay marketplace install bằng generic registration
+     * thì **mất** các check/default/provenance đó. Bản thân slug-only sẽ **fail**
+     * vì thiếu tham số bắt buộc, nên đây **không** phải bypass chạy được, và
+     * **không** suy ra "đã chạy được unsigned code" — kiểm crypto là việc riêng.
+     *
+     * Probe dưới đây đo **nửa generic registration**: metadata đầy đủ do caller
+     * cấp thì insert **không** đi qua verifier nào. Nửa marketplace (invalid
+     * verdict ⇒ reject + zero insert) thuộc route marketplace, ngoài hai file
+     * repro được cấp, nên ghi là source-backed thay vì tự mở scope.
+     */
+    /**
+     * SỬA THEO F1. Bản trước gắn `verifyByMetadata` vào một **object giả** rồi
+     * assert bộ đếm bằng 0 — nhưng verifier thật là `ExtensionVerifierService`,
+     * một class khác, và `ExtensionsService` thật KHÔNG hề có method đó. Nên
+     * assertion ấy là **tautology**: nó đúng bất kể production làm gì. Kiểm âm
+     * đã chứng minh — thêm verification + ép provenance vào
+     * `ExtensionsService.installExtension` thật, test vẫn XANH.
+     *
+     * Bản này đo đường thật:
+     *   - `ExtensionsService` **thật** (không mock), trên db recorder;
+     *   - spy vào `ExtensionVerifierService.prototype.verifyByMetadata` — verifier
+     *     **thật** — nên nếu service thật bắt đầu verify thì spy sẽ bắt được;
+     *   - đọc giá trị **thực sự đi vào `db.insert().values()`**, không phải args
+     *     mà caller truyền.
+     *
+     * Nhờ đó: thêm verifier vào đường generic ⇒ đỏ ở bộ đếm; ép
+     * `capabilities: []` ⇒ đỏ; derive `isOfficial`/`verifiedAt` server-side ⇒ đỏ.
+     */
+    const verifierSpy = vi.spyOn(ExtensionVerifierService.prototype, 'verifyByMetadata');
+
+    const inserts: Array<{ table: string; values: Record<string, unknown> }> = [];
+    const db = {
+      insert: (t: unknown) => {
+        const table = getTableName(t as Parameters<typeof getTableName>[0]);
+        return {
+          values: (values: Record<string, unknown>) => {
+            inserts.push({ table, values });
+            const result = [{ id: 'ext_1', ...values }];
+            return {
+              returning: () => Promise.resolve(result),
+              then: (resolve: (v: unknown[]) => unknown) => Promise.resolve(result).then(resolve),
+            };
+          },
+        };
+      },
+    } as unknown as Database;
+
+    // Service THẬT — đây là điểm khác cốt lõi so với bản trước.
+    const extensionsService = new ExtensionsService({ db, siteId: 'site_1', userId: 'user_1' });
+    const harness = new AISecureHarness({
+      db,
+      siteId: 'site_1',
+      extensionsService,
+      enableAgentHarnessAudit: false,
+    });
+
+    // Caller tự cấp TOÀN BỘ metadata, gồm cả `capabilities` — thứ mà đường
+    // marketplace luôn khởi tạo `[]` ở server.
+    const outcome = await harness.runSkill('installExtension', {
+      key: 'evil-panel',
+      name: 'evil-panel',
+      version: '1.0.0',
+      type: 'panel',
+      enabled: true,
+      bundleUrl: 'https://attacker.example/bundle.js',
+      manifest: { entry: 'index.js' },
+      capabilities: ['items:write', 'schema:write'],
+    });
+
+    expect(outcome.success).toBe(true);
+
+    // Hàng THẬT mà service thật ghi xuống `extensions`.
+    const extRows = inserts.filter((i) => i.table === getTableName(extensions));
+    expect(extRows, 'service thật phải insert đúng 1 hàng extensions').toHaveLength(1);
+    const row = extRows[0]!.values;
+
+    // ĐO ĐƯỢC 1: verifier THẬT không được gọi ở đâu trên đường generic.
+    expect(verifierSpy).not.toHaveBeenCalled();
+    expect(verifierSpy.mock.calls).toHaveLength(0);
+
+    // ĐO ĐƯỢC 2: capabilities do CALLER quyết định — server KHÔNG ép `[]`.
+    expect(row['capabilities']).toEqual(['items:write', 'schema:write']);
+
+    // ĐO ĐƯỢC 3: không trường provenance nào của marketplace được dựng, nên
+    // trust không thể derive ở server như đường marketplace làm.
+    for (const field of ['marketplaceSlug', 'verifiedAt', 'isOfficial', 'signature', 'publisherKeyId']) {
+      expect(row[field], `${field} không được dựng ở đường generic`).toBeUndefined();
+    }
+
+    verifierSpy.mockRestore();
+
+    // Điều kiện enable (ghi vào §5d): adapter phải bảo toàn signature policy,
+    // reserved namespace, server-derived trust, permission và provenance —
+    // không phải chỉ đổi tên tham số `slug` ↔ `bundleUrl`.
   });
 
   it('R9: the FULL HTTP MCP registry is camelCase and contains no snake_case name', async () => {
