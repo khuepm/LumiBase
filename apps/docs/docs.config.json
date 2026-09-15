@@ -16,8 +16,8 @@
     "logo": { "alt": "LumiBase logo", "src": "img/logo.svg" },
     "items": [
       { "label": "Docs", "to": "/docs/README", "position": "left" },
-      { "label": "Tutorials", "to": "/docs/tutorials/index", "position": "left" },
-      { "label": "API", "to": "/docs/api", "position": "left" },
+      { "label": "Tutorials", "to": "/docs/tutorials", "position": "left" },
+      { "label": "API", "to": "/docs/api/hono-api-spec", "position": "left" },
       { "label": "Roadmap", "to": "/docs/roadmap/tasks", "position": "left" },
       { "label": "GitHub", "href": "https://github.com/khuepm/lumibase", "position": "right" }
     ]
@@ -27,22 +27,28 @@
       {
         "type": "category",
         "label": "Getting Started",
-        "items": ["README", "vision-and-positioning", "data-model", "ai-skills"]
+        "items": [
+          "README",
+          "getting-started",
+          "vision-and-positioning",
+          "data-model",
+          "ai-skills"
+        ]
       },
       {
         "type": "category",
         "label": "Tutorials",
-        "items": ["tutorials/index", "tutorials/nextjs-quickstart"]
+        "items": ["tutorials", "tutorials/nextjs-quickstart"]
+      },
+      {
+        "type": "category",
+        "label": "CLI & SDK",
+        "items": ["cli", "sdk", "sdk/javascript", "sdk/typegen"]
       },
       {
         "type": "category",
         "label": "Architecture",
-        "items": [
-          "architecture/overview",
-          "architecture/runtime-abstraction",
-          "architecture/multi-tenancy",
-          "architecture/permission-engine"
-        ]
+        "items": ["architecture/overview"]
       },
       {
         "type": "category",
@@ -60,7 +66,7 @@
       {
         "type": "category",
         "label": "API Reference",
-        "items": ["api/hono-api-spec", "api/openapi"]
+        "items": ["api/hono-api-spec"]
       },
       {
         "type": "category",
@@ -93,11 +99,6 @@
           "cdc/deployment-docker-compose",
           "cdc/deployment-cloudflare-workers"
         ]
-      },
-      {
-        "type": "category",
-        "label": "Guides",
-        "items": ["guides/backup-recovery", "guides/tooling-recommendations"]
       },
       {
         "type": "category",
@@ -148,7 +149,7 @@
       {
         "title": "Docs",
         "items": [
-          { "label": "Getting Started", "to": "/docs/README" },
+          { "label": "Getting Started", "to": "/docs/getting-started" },
           { "label": "API Reference", "to": "/docs/api/hono-api-spec" }
         ]
       },

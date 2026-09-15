@@ -87,15 +87,19 @@ lumibase/
 
 Three different things get called "installing LumiBase". Pick the one you actually want.
 
-### 1. A starter app to build on
-
-Scaffolds a minimal **Hono + Drizzle** project with a demo `posts` resource — LumiBase conventions, not the platform. No Studio, no Collections API.
+### 1. A new project of your own
 
 ```bash
 npm create lumibase@latest my-project
 ```
 
-Guide: [`docs/en/getting-started.md`](./docs/en/getting-started.md) · package: [`create-lumibase`](https://www.npmjs.com/package/create-lumibase)
+The first prompt picks the template, and the preselected one — `nextjs` — is the fastest path to something real: a **Next.js website plus the actual CMS and Studio** in Docker, a `posts` collection, seeded content, and a publishable key the browser can safely hold. `npm run cms:verify` then proves that key cannot read drafts or write.
+
+The other two templates, `--template default` and `--template cloudflare`, scaffold a minimal **Hono + Drizzle** app with a demo `posts` resource — LumiBase conventions, no Studio, no Collections API. (The template *named* `default` is not the default choice.)
+
+Already have a CMS and only need to read from it? Skip the scaffold and install the client as a runtime dependency: `npm install lumibase`.
+
+Guide: [`docs/en/getting-started.md`](./docs/en/getting-started.md) · packages: [`create-lumibase`](https://www.npmjs.com/package/create-lumibase) · [`lumibase`](https://www.npmjs.com/package/lumibase)
 
 ### 2. The full Content OS platform
 

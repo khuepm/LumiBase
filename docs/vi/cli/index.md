@@ -1,14 +1,15 @@
 ---
-version: 3
-lastUpdated: 2026-09-03T03:08:24.413Z
+title: LumiBase CLI
+version: 4
+lastUpdated: 2026-09-14T21:26:08.525Z
 sourceLang: en
 translatedFrom: en
-sourceHash: d282d0c44f29ea3c
+sourceHash: 1efeb2d4feffe788
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-03T03:08:24.413Z
-codeVerifiedHash: d282d0c44f29ea3c
-codeVerifiedClaims: 18
+codeVerified: 2026-09-14T21:33:46.476Z
+codeVerifiedHash: 1efeb2d4feffe788
+codeVerifiedClaims: 20
 ---
 
 # LumiBase CLI
@@ -79,6 +80,8 @@ Uỷ quyền cho `create-lumibase`, nơi giữ bản cài đặt duy nhất củ
 ```bash
 lumibase init my-site --template cloudflare --pm pnpm
 ```
+
+Có ba template được chấp nhận — `nextjs`, `default`, và `cloudflare` (`TEMPLATES` trong `packages/create-lumibase/src/index.ts`). Không truyền `--template` thì lựa chọn thuộc về prompt, nơi **`nextjs`** được chọn sẵn: một website Next.js kèm CMS và Studio chạy trong Docker, nội dung đã seed, và một publishable key. Template *tên* `default` là starter Hono + Drizzle, không phải lựa chọn mặc định. [Bắt đầu](../getting-started.md) hướng dẫn từng loại.
 
 Scaffolder **không** phải dependency của `lumibase` — nó chạy một lần cho mỗi project, và các thư viện prompt/template của nó không có chỗ trong mọi lần cài một package runtime. `resolveScaffoldCommand` trong `packages/cli/src/commands/init.ts` lấy nó qua trình chạy một-lần của package manager đã gọi CLI (`npx --yes` / `pnpm dlx` / `yarn dlx` / `bunx`, đọc từ `npm_config_user_agent`; yarn classic rơi về `npx`), ghim vào đúng phiên bản của CLI (`create-lumibase@<version>`) để hai binary luôn đến từ cùng một release.
 

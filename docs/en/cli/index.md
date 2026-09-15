@@ -1,11 +1,12 @@
 ---
-version: 3
-lastUpdated: 2026-09-03T03:08:24.413Z
+title: LumiBase CLI
+version: 4
+lastUpdated: 2026-09-14T21:26:08.525Z
 sourceLang: en
-contentHash: d282d0c44f29ea3c
-codeVerified: 2026-09-03T03:08:24.413Z
-codeVerifiedHash: d282d0c44f29ea3c
-codeVerifiedClaims: 18
+contentHash: 1efeb2d4feffe788
+codeVerified: 2026-09-14T21:33:46.476Z
+codeVerifiedHash: 1efeb2d4feffe788
+codeVerifiedClaims: 20
 ---
 
 # LumiBase CLI
@@ -76,6 +77,8 @@ Delegates to `create-lumibase`, which stays the single implementation of the sca
 ```bash
 lumibase init my-site --template cloudflare --pm pnpm
 ```
+
+Three templates are accepted — `nextjs`, `default`, and `cloudflare` (`TEMPLATES` in `packages/create-lumibase/src/index.ts`). Passing no `--template` leaves the choice to the prompt, where **`nextjs`** is preselected: a Next.js website plus the CMS and Studio in Docker, seeded content, and a publishable key. The template *named* `default` is the Hono + Drizzle starter, not the default choice. [Getting started](../getting-started.md) walks through each one.
 
 The scaffolder is **not** a dependency of `lumibase` — it runs once per project, and its prompt/template libraries have no place in every install of a runtime package. `resolveScaffoldCommand` in `packages/cli/src/commands/init.ts` fetches it through the one-off runner of the package manager that invoked the CLI (`npx --yes` / `pnpm dlx` / `yarn dlx` / `bunx`, from `npm_config_user_agent`; yarn classic falls back to `npx`), pinned to the CLI's own version (`create-lumibase@<version>`) so both binaries always come from the same release.
 

@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-09-01T19:24:37.025Z
+version: 5
+lastUpdated: 2026-09-14T21:26:08.918Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 35c9bb80abddd0e4
+sourceHash: f2050885621cde26
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-01T19:24:37.025Z
-codeVerifiedHash: 35c9bb80abddd0e4
+codeVerified: 2026-09-14T21:26:08.918Z
+codeVerifiedHash: f2050885621cde26
 codeVerifiedClaims: 4
 ---
 
@@ -21,12 +21,13 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
 
 ## Quick start
 
-- [getting-started.md](./getting-started.md) — Bootstrap a new LumiBase project with `npm create lumibase@latest` (the `create-lumibase` CLI), from an empty folder to a running server (Docker or Cloudflare Workers).
+- [getting-started.md](./getting-started.md) — Bootstrap a new LumiBase project with `npm create lumibase@latest` (the `create-lumibase` CLI): the preselected `nextjs` template builds a Next.js website with the CMS + Studio and seeded content behind it, while `default`/`cloudflare` build a Hono + Drizzle starter. The page also says when you need **no** scaffold at all — just `npm install lumibase`.
+- [cli/index.md](./cli/index.md) — The `lumibase` CLI: `init` (scaffold a project), `types` (generate types from a running CMS), `doctor` (check configuration and connectivity).
 
 ## Tutorials
 
 - [tutorials/index.md](./tutorials/index.md) — Catalog of end-to-end tutorials for newcomers.
-- [tutorials/nextjs-quickstart.md](./tutorials/nextjs-quickstart.md) — **Render LumiBase content in a Next.js app**: run the CMS locally, create a `posts` collection, then fetch & render with plain `fetch` or `@lumibase/sdk`.
+- [tutorials/nextjs-quickstart.md](./tutorials/nextjs-quickstart.md) — **Render LumiBase content in a Next.js app**: run the CMS locally, create a `posts` collection, then fetch & render with the official `lumibase` package (plain `fetch` is shown afterwards as an alternative). This is the by-hand version of what the `nextjs` template scaffolds for you.
 
 ## Agent Setup (for AI agents)
 
@@ -145,7 +146,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
 - **`packages/sdk`** — The JS SDK (REST + WS + typegen).
 - **`packages/ui`** — shadcn components + CVA tokens.
 - **`packages/extension-sdk`** — Types and helpers for developers writing extensions.
-- **`packages/create-lumibase`** — The bootstrap CLI (`npm create lumibase@latest`) that generates a new LumiBase project from a Docker or Cloudflare Workers template. See [getting-started.md](./getting-started.md).
+- **`packages/create-lumibase`** — The bootstrap CLI (`npm create lumibase@latest`) that generates a new LumiBase project from one of three templates: `nextjs` (a Next.js website plus the CMS and Studio in Docker — preselected), `default` (Docker), or `cloudflare` (Workers). See [getting-started.md](./getting-started.md).
 - **`packages/mcp-server`** — The MCP stdio server (`@lumibase/mcp-server`) exposing tools for AI assistants to create/manage collections, fields, and items.
 
 ## Principles for reading the documentation

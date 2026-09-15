@@ -64,7 +64,40 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   semver-frozen `@lumibase/sdk` types. Tracked as `B63` in the out-of-scope
   backlog, pending the stable API in 7.1.
 
+- **Onboarding docs now describe one story with three entry points, and the
+  commands in them are the ones that exist.** `docs/{en,vi}/getting-started.md`
+  opens with a decision table — a website with a CMS behind it, a starter app
+  you own, the platform on its own, or no scaffold at all when you only need to
+  read from a CMS that already runs — and says plainly that `lumibase` is a
+  **runtime** dependency (`npm install lumibase`), not a `-D` dev tool, because
+  the same package carries both the client you import and the CLI. The
+  `nextjs` template that shipped with the scaffolder is documented for the
+  first time: it was already the preselected choice in the prompt while every
+  doc still listed only `default` and `cloudflare`, described the starter as
+  having no Studio, and printed `--template <default|cloudflare>`. The real
+  first-run sequence (`cms:up` → `cms:bootstrap` → `cms:seed` → `dev`, then
+  `cms:verify`) replaces commands that never applied to it. The same
+  correction lands on the surfaces people actually read first — the npm page
+  for `create-lumibase`, the root `README.md` quick start, and both
+  `docs/{en,vi}/README.md` — and `getting-started` now cross-links the CLI, the
+  SDK and the Next.js quickstart in both locales.
+
 ### Fixed
+
+- **Docs navigation no longer points at pages that do not exist.** The sidebar
+  resolves each configured slug and drops the ones it cannot find *silently*,
+  so a typo or an unwritten page cost a nav entry with no error and a green
+  build: six entries were dead on `main` (three `architecture/*`, `api/openapi`
+  and both `guides/*`, which left the whole **Guides** category rendering
+  empty), and `tutorials/index` had been dead since the loader started
+  collapsing `index.md` onto its parent slug. The navbar was not even filtered,
+  because its targets are hrefs rather than slugs — `/docs/api` was a plain
+  **404** on `docs.lumibase.dev` and `/docs/tutorials/index` survived only via
+  a Cloudflare 308. Every target now resolves, and `pnpm docs:nav:check`
+  (`scripts/check-docs-nav.mjs`, wired into `check:all`, so it runs in CI and
+  in the pre-commit hook) fails the build when a sidebar item, a whole
+  category, or a navbar/footer `/docs/…` link no longer has a page behind it.
+  The pages that were declared but never written are tracked as `B68`.
 
 - **A DB integration suite pointed at a database that is not there no longer
   reports as passing.** All 20 `*.db.integration.test.ts` suites gated
