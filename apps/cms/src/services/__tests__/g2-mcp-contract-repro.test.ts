@@ -678,6 +678,116 @@ describe('G2 repro · the two transports are separate contracts', () => {
     // về một cấu trúc.
   });
 
+  /**
+   * ── R16/R17 — soát ngữ nghĩa 48 mutation chưa map ──────────────────────────
+   *
+   * Đây là mảnh audit cuối mà review xác nhận làm được trong grant hiện tại:
+   * biến "49 candidate chưa khớp tên" thành phân loại có căn cứ, thay vì suy từ
+   * tên ra "không có skill" (đúng lỗi logic đã bị bắt ở vòng 6).
+   *
+   * Con số đổi từ **49 → 48** vì `compile_intent` bị phân loại sai: nó gọi LLM và
+   * `IntentService.compile` ghi rõ *"Returns the compiled draft for the user to
+   * confirm — never persists"*, nên nó là **provider-cost preview**, không phải
+   * mutation. Cùng lớp với `translate_text` ⇒ nhóm provider action: 1 → 2.
+   */
+  it('R16: không tool nào trong 48 mutation chưa map có skill tương đương theo token-set', () => {
+    const tokens = (s: string) =>
+      s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join('|');
+
+    /** 48 mutation chưa map, nhóm theo prefix REST thật (đo bằng listTools + gọi handler). */
+    const UNMAPPED_MUTATIONS = [
+      // privilege-affecting (22)
+      'assign_role_user', 'remove_role_user', 'attach_role_policy', 'detach_role_policy', 'update_role',
+      'add_policy_permission', 'update_policy_permission', 'delete_policy_permission',
+      'attach_policy_user', 'detach_policy_user', 'update_policy',
+      'attach_api_key_role', 'detach_api_key_role', 'attach_api_key_policy', 'detach_api_key_policy',
+      'create_share', 'revoke_share',
+      'apply_access_import', 'restore_backup',
+      'approve_content', 'reject_content', 'submit_review',
+      // content/schema/ops (26)
+      'apply_schema', 'update_collection', 'upsert_field',
+      'create_release', 'update_release', 'delete_release', 'publish_release',
+      'register_materialization', 'refresh_materialization', 'drop_materialization',
+      'delete_media',
+      'upsert_tm', 'update_tm', 'delete_tm',
+      'update_cdc_subscription', 'update_flow', 'update_team',
+      'pause_intent', 'resume_intent', 'scan_intent', 'update_intent',
+      'create_preset', 'update_preset', 'delete_preset',
+      'install_marketplace_extension', 'publish_extension',
+    ];
+    expect(UNMAPPED_MUTATIONS).toHaveLength(48);
+    expect(new Set(UNMAPPED_MUTATIONS).size).toBe(48);
+
+    // Không tên nào khớp token-set với một skill thật ⇒ không có alias thuần.
+    const skillTokens = new Map(Object.keys(CORE_SKILLS).map((s) => [tokens(s), s]));
+    const accidental: string[] = [];
+    for (const tool of UNMAPPED_MUTATIONS) {
+      const hit = skillTokens.get(tokens(tool));
+      if (hit) accidental.push(`${tool} → ${hit}`);
+    }
+    expect(accidental).toEqual([]);
+
+    // Kiểm âm: thuật toán VẪN tìm được alias khi có thật (ca đã biết).
+    expect(skillTokens.get(tokens('cdc_subscription_replay'))).toBe('replayCdcSubscription');
+
+    // ── PHẠM VI (rút kinh nghiệm vòng 6) ───────────────────────────────────
+    // Đây là bằng chứng "không có alias theo tên", KHÔNG phải "không thể có
+    // skill tương đương". Kết luận support/disabled của từng tool nằm ở §5d của
+    // PR, dựa trên đọc route + service, không dựa vào test này.
+  });
+
+  it('R17: hai ca "trông như map được" thực chất KHÔNG tương đương — map thẳng sẽ mất chức năng/bảo mật', async () => {
+    /**
+     * Hai tool duy nhất mà tên gợi ý đã có skill phủ. Đo thật cho thấy không.
+     */
+
+    // ── Ca 1: upsert_field vs skill createField ────────────────────────────
+    const captured: Array<[string, Record<string, unknown>]> = [];
+    const schemaService = {
+      createField: vi.fn((collection: string, input: Record<string, unknown>) => {
+        captured.push([collection, input]);
+        return Promise.resolve({ id: 'f1' });
+      }),
+    };
+    const harness = new AISecureHarness({
+      db: {} as Database,
+      siteId: 'site_1',
+      schemaService: schemaService as never,
+      enableAgentHarnessAudit: false,
+    });
+
+    // Gửi payload đầy đủ như `upsert_field` quảng bá (có `interface`, `note`…).
+    await harness.runSkill('createField', {
+      collection: 'posts',
+      name: 'body',
+      type: 'text',
+      required: true,
+      interface: 'markdown',
+      note: 'nội dung bài',
+    });
+
+    expect(captured).toHaveLength(1);
+    const [, input] = captured[0]!;
+    // CURRENT: skill **hardcode** `interface: 'input'` và chỉ đọc 4 arg, nên
+    // `interface: 'markdown'` và `note` bị rơi âm thầm.
+    expect(input['interface']).toBe('input');
+    expect(input['note']).toBeUndefined();
+    expect(Object.keys(input).sort()).toEqual(['interface', 'name', 'required', 'type']);
+    // Và skill chỉ CREATE — không có đường update, nên nửa "upsert" không phủ được.
+    expect(CORE_SKILLS['updateField']).toBeUndefined();
+
+    // ── Ca 2: install_marketplace_extension vs skill installExtension ──────
+    // `install_marketplace_extension` chỉ nhận `slug`; server resolve bundle từ
+    // marketplace **kèm verify chữ ký** (`routes/marketplace.ts`: `verifiedAt`
+    // chỉ set sau một crypto check thật ở publish/install).
+    // Skill `installExtension` đòi caller **tự cấp `bundleUrl`**:
+    expect(CORE_SKILLS['installExtension']).toBeDefined();
+    expect(CORE_SKILLS['installExtension']!.description).toMatch(/install/i);
+    // ⇒ Map thẳng slug → installExtension sẽ **bỏ qua bước verify chữ ký** của
+    // marketplace. Đây là lý do nó phải là skill riêng hoặc `disabled`, không
+    // phải alias. Ghi lại như một cái bẫy của phương án B.
+  });
+
   it('R9: the FULL HTTP MCP registry is camelCase and contains no snake_case name', async () => {
     const registry = new ToolRegistryService(registryDb(), 'site_1', CORE_SKILLS);
     const httpNames = (await registry.listTools()).map((t) => t.name);

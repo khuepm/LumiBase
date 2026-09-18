@@ -643,3 +643,68 @@ describe('G2 repro · result-shape probes: forwarding and wrapper behaviour', ()
     expect(props).not.toContain('occurredAfter');
   });
 });
+
+describe('G2 repro · soát ngữ nghĩa: compile_intent bị xếp sai nhóm', () => {
+  /**
+   * Phát hiện khi soát ngữ nghĩa 49 mutation chưa map (mảnh audit cuối).
+   *
+   * `compile_intent` dùng POST nên bộ đếm theo HTTP method xếp nó vào mutation.
+   * Nhưng `IntentService.compile` ghi rõ trong docstring: *"Returns the compiled
+   * draft for the user to confirm — **never persists**"*, và nó gọi
+   * `this.deps.llm.provider.chat(...)`. Vậy nó là **provider-cost preview**,
+   * cùng lớp với `translate_text`, không phải mutation.
+   *
+   * Hệ quả cho các con số: mutation **90 → 89**, mutation chưa map **49 → 48**,
+   * provider action **1 → 2**.
+   */
+  it('S12: compile_intent là preview tốn phí provider, không phải mutation', async () => {
+    const calls = await callToolIsolated('compile_intent', {
+      description: 'bài viết phải có ảnh bìa',
+      collection: 'posts',
+    });
+
+    // Nó POST tới endpoint compile — không tạo/sửa intent nào.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.method).toBe('POST');
+    expect(calls[0]!.path).toBe('/agent/intents/compile');
+
+    // Phân biệt với đường thật sự tạo intent (registerCrud trên /agent/intents).
+    const createCalls = await callToolIsolated('create_intent', {
+      name: 'i1',
+      collection: 'posts',
+      rules: [],
+      schedule: '* * * * *',
+    });
+    expect(createCalls[0]!.path).toBe('/agent/intents');
+    expect(createCalls[0]!.path).not.toBe(calls[0]!.path);
+
+    // PHẠM VI: test này khoá REST target và cho thấy hai đường khác nhau. Kết
+    // luận "không persist" đến từ đọc `IntentService.compile` phía CMS (docstring
+    // + không có lệnh ghi nào), không phải từ test này.
+  });
+
+  it('S13: khoá phân loại toàn registry sau khi soát ngữ nghĩa', () => {
+    /**
+     * Chốt các con số sau soát ngữ nghĩa, để chúng không trôi ở lượt sau.
+     * Đây là **bảng phân loại**, không phải bằng chứng hành vi từng tool —
+     * bằng chứng nằm ở S7 (REST target), R16 (không có alias), R17 (hai ca
+     * trông-như-map-được thực chất không tương đương).
+     */
+    const TOTAL = 161;
+    const READ_GET = 63;
+    const READ_VIA_POST_N = 7;
+    const PROVIDER_ACTION_N = 2; // translate_text + compile_intent
+    const MUTATIONS = 89;
+    const MUTATION_MAPPED = 41; // 40 theo tên + 1 alias
+    const MUTATION_UNMAPPED = 48;
+
+    // Tổng phải khớp: read(GET) + read(POST) + provider + mutation = 161
+    expect(READ_GET + READ_VIA_POST_N + PROVIDER_ACTION_N + MUTATIONS).toBe(TOTAL);
+    // Mutation phải chia hết thành mapped + unmapped
+    expect(MUTATION_MAPPED + MUTATION_UNMAPPED).toBe(MUTATIONS);
+    // Và 48 unmapped chia thành hai nhóm rủi ro (xem §5d của PR)
+    const PRIVILEGE_AFFECTING = 22;
+    const CONTENT_SCHEMA_OPS = 26;
+    expect(PRIVILEGE_AFFECTING + CONTENT_SCHEMA_OPS).toBe(MUTATION_UNMAPPED);
+  });
+});
