@@ -3,6 +3,7 @@ import * as fc from 'fast-check';
 import { AISecureHarness, CORE_SKILLS } from '../ai-harness';
 import type { SkillDefinition } from '../ai-harness';
 import type { Database } from '@lumibase/database';
+import { validArgsFor } from '../../test-utils/agent-tool-args';
 import { vi } from 'vitest';
 
 /**
@@ -236,11 +237,14 @@ describe('Feature: ai-first-cms-engine, Property 7: Execution failure preserves 
             throw new Error(errorMsg);
           };
 
+          // Stored arguments must satisfy the canonical schema (#454); `{}` would
+          // now be refused by `runSkill` before the throwing handler runs, and
+          // this property is about the *handler's* error reaching the caller.
           const { db, updateFn } = createMockDbWithPendingApproval(
             approvalId,
             siteId,
             skillName,
-            {},
+            validArgsFor(skillName),
           );
 
           const harness = new AISecureHarness({ db, siteId });

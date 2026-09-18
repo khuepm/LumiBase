@@ -39,6 +39,52 @@ function normalizeRiskPolicy(value: unknown): AgentToolDefinition['riskPolicy'] 
   return { level: 'safe' };
 }
 
+/** Đọc `properties` của một JSON Schema dạng object, hoặc `{}`. */
+function schemaProperties(schema: unknown): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') return {};
+  const props = (schema as Record<string, unknown>)['properties'];
+  return props && typeof props === 'object' ? (props as Record<string, unknown>) : {};
+}
+
+/** Đọc `required` của một JSON Schema dạng object, hoặc `[]`. */
+function schemaRequired(schema: unknown): string[] {
+  if (!schema || typeof schema !== 'object') return [];
+  const req = (schema as Record<string, unknown>)['required'];
+  return Array.isArray(req) ? req.filter((r): r is string => typeof r === 'string') : [];
+}
+
+/**
+ * Override từ `agent_tools` chỉ được **thu hẹp** contract mà core skill đã khai,
+ * không được mở rộng.
+ *
+ * Vì sao cần: `inputSchema` là thứ `tools/list` quảng bá và (sau task #4) là thứ
+ * harness validate trước khi chạy. Nếu một hàng DB được phép **bỏ** field bắt
+ * buộc hoặc **thêm** property mà handler không đọc, thì override thành đường
+ * vòng qua chính validation đó — đổi contract công khai bằng một lệnh UPDATE.
+ *
+ * Thu hẹp hợp lệ = giữ nguyên hoặc siết thêm:
+ *   - không được bỏ bất kỳ `required` nào của core;
+ *   - không được thêm property mới ngoài `properties` của core.
+ * (Thêm `required` mới hoặc bỏ property là siết — cho phép.)
+ *
+ * Core chưa khai schema (`{}`) thì không có gì để thu hẹp, override đi qua.
+ */
+export function overrideNarrowsSchema(core: unknown, override: unknown): boolean {
+  const coreProps = schemaProperties(core);
+  const coreRequired = schemaRequired(core);
+  if (Object.keys(coreProps).length === 0 && coreRequired.length === 0) return true;
+
+  const overrideRequired = new Set(schemaRequired(override));
+  for (const req of coreRequired) {
+    if (!overrideRequired.has(req)) return false;
+  }
+  const allowed = new Set(Object.keys(coreProps));
+  for (const prop of Object.keys(schemaProperties(override))) {
+    if (!allowed.has(prop)) return false;
+  }
+  return true;
+}
+
 function normalizeRateLimit(value: unknown): AgentToolDefinition['rateLimit'] {
   if (!value || typeof value !== 'object') {
     return {};
@@ -68,8 +114,11 @@ export class ToolRegistryService {
 
     return {
       ...skill,
-      inputSchema: {},
-      outputSchema: {},
+      // Trước đây hai dòng này hardcode `{}` **sau** `...skill`, nên schema mà
+      // skill đã khai bị xoá sạch và `tools/list` chỉ quảng bá `{type:'object'}`.
+      // Giữ đúng thứ gì skill khai; skill chưa khai thì vẫn là `{}`.
+      inputSchema: skill.inputSchema ?? {},
+      outputSchema: skill.outputSchema ?? {},
       riskPolicy: { level, approvalPolicy: level === 'safe' ? 'none' : 'before_execute' },
       rateLimit: {},
       enabled: true,
@@ -77,6 +126,28 @@ export class ToolRegistryService {
       extensionId: null,
     };
   }
+
+  /**
+   * Áp override schema từ `agent_tools`, nhưng **chỉ khi nó thu hẹp** contract
+   * của core skill. Override mở rộng (bỏ `required`, thêm property lạ) bị **từ
+   * chối** và giữ nguyên schema của core — fail-closed, vì override rộng hơn
+   * nghĩa là một hàng DB có thể nới contract công khai và đi vòng qua validation.
+   */
+  private resolveOverrideSchema(
+    coreSchema: Record<string, unknown>,
+    overrideSchema: unknown,
+    toolName: string,
+  ): Record<string, unknown> {
+    if (!overrideSchema || typeof overrideSchema !== 'object') return coreSchema;
+    if (overrideNarrowsSchema(coreSchema, overrideSchema)) {
+      return overrideSchema as Record<string, unknown>;
+    }
+    this.rejectedOverrides.push(toolName);
+    return coreSchema;
+  }
+
+  /** Tên các tool có override bị từ chối vì mở rộng contract (để observability). */
+  readonly rejectedOverrides: string[] = [];
 
   async getTool(name: string): Promise<AgentToolDefinition | undefined> {
     const [override] = await this.db
@@ -113,7 +184,7 @@ export class ToolRegistryService {
     return {
       ...base,
       description: override.description,
-      inputSchema: (override.inputSchema as Record<string, unknown>) ?? {},
+      inputSchema: this.resolveOverrideSchema(base.inputSchema, override.inputSchema, override.name),
       outputSchema: (override.outputSchema as Record<string, unknown>) ?? {},
       requiredCapabilities: normalizeCapabilities(override.requiredCapabilities),
       riskPolicy: normalizeRiskPolicy(override.riskPolicy),
@@ -143,7 +214,7 @@ export class ToolRegistryService {
       byName.set(override.name, {
         ...base,
         description: override.description,
-        inputSchema: (override.inputSchema as Record<string, unknown>) ?? {},
+        inputSchema: this.resolveOverrideSchema(base.inputSchema, override.inputSchema, override.name),
         outputSchema: (override.outputSchema as Record<string, unknown>) ?? {},
         requiredCapabilities: normalizeCapabilities(override.requiredCapabilities),
         riskPolicy: normalizeRiskPolicy(override.riskPolicy),

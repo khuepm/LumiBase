@@ -1,5 +1,6 @@
 import { agentApprovals, aiApprovals, flowRuns, flows } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
+import { agentToolNamesWithSchema, jsonSchemaFor, validateAgentToolInput } from '@lumibase/contracts';
 import { and, eq } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
@@ -52,6 +53,12 @@ export interface SkillDefinition {
  */
 export interface HarnessExecutionResult {
   status: 'executed' | 'pending_approval' | 'denied';
+  /**
+   * Machine-readable reason for a denial. Present so a client can distinguish
+   * "your input was malformed" (`VALIDATION`) from an authorization or
+   * governance outcome, instead of pattern-matching prose. Absent on success.
+   */
+  code?: string;
   data?: unknown;
   approvalId?: string;
   agentApprovalId?: string;
@@ -527,7 +534,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     );
   };
 
-  return {
+  const skills: Record<string, SkillDefinition> = {
     listCollections: {
       name: 'listCollections',
       description: 'List all collections in the current site',
@@ -586,7 +593,19 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         const name = args['name'] as string;
         const type = args['type'] as string;
         const required = (args['required'] as boolean) ?? false;
-        const result = await schemaServiceRef.createField(collection, { name, type, interface: 'input', required });
+        // `interface` and `note` used to be dropped on the floor: the handler
+        // hardcoded `interface: 'input'` and never read `note`, so a caller that
+        // asked for a markdown editor silently got a single-line input (#454,
+        // repro R17). They are part of the advertised contract now, so they must
+        // be forwarded. Anything NOT declared in the schema is rejected upstream
+        // rather than dropped here.
+        const result = await schemaServiceRef.createField(collection, {
+          name,
+          type,
+          interface: (args['interface'] as string) ?? 'input',
+          required,
+          ...(args['note'] === undefined ? {} : { note: args['note'] as string | null }),
+        });
         return { created: true, field: result };
       },
     },
@@ -1926,6 +1945,24 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       },
     },
   };
+
+  // One schema source, two consumers (#454). The canonical Zod contracts in
+  // `@lumibase/contracts` are what the harness validates against; deriving the
+  // advertised JSON Schema from the same definitions is what makes `tools/list`
+  // honest. Previously a skill without a hand-written `inputSchema` advertised
+  // `{type:'object'}`, so a well-behaved client could send `{}` and still be
+  // dispatched into a service (repro RT2).
+  //
+  // A hand-written `inputSchema` on the skill wins: those were authored against
+  // the handler and some describe shapes the canonical set does not cover yet.
+  for (const name of agentToolNamesWithSchema()) {
+    const skill = skills[name];
+    if (skill === undefined || skill.inputSchema !== undefined) continue;
+    const derived = jsonSchemaFor(name);
+    if (derived !== undefined) skill.inputSchema = derived;
+  }
+
+  return skills;
 }
 
 /**
@@ -2127,6 +2164,35 @@ export class AISecureHarness {
     return isControlPlaneSkill(skill, skillName);
   }
 
+  // ---------- Input validation ----------
+
+  /**
+   * Validates `args` against the canonical agent-tool schema (`@lumibase/contracts`)
+   * BEFORE anything observable happens.
+   *
+   * Why this exists (#454): the harness previously executed on whatever it was
+   * handed. `createItem {}` reached `ItemService.create(undefined, { data: {} })`
+   * and failed deep inside the engine, so the MCP client received a raw
+   * `TypeError: Cannot read properties of undefined (reading 'length')` as the
+   * tool-result message. `deleteItem {}` parked an approval row that could never
+   * execute. Both are input defects that must be refused at the boundary.
+   *
+   * Fail-open for unlisted skills is deliberate: only write-capable skills have
+   * schemas today (see `AgentToolSchemas`), so reads keep their current
+   * behaviour instead of breaking on a contract that has not been written yet.
+   *
+   * @returns `null` when the input is acceptable, otherwise a human-readable
+   * message naming the offending field(s).
+   */
+  private validateToolInput(skillName: string, args: Record<string, unknown>): string | null {
+    const verdict = validateAgentToolInput(skillName, args);
+    if (verdict.ok) return null;
+    const detail = verdict.issues
+      .map((issue) => `${issue.path === '' ? '(root)' : issue.path}: ${issue.message}`)
+      .join('; ');
+    return `Input validation error for "${skillName}": ${detail}`;
+  }
+
   // ---------- Execution ----------
 
   /**
@@ -2155,6 +2221,22 @@ export class AISecureHarness {
       return {
         status: 'denied',
         message: `frozen: agent runtime is frozen for this ${frozenScope}`,
+        ...(envelope.goalId ? { goalId: envelope.goalId } : {}),
+        ...(envelope.runId ? { runId: envelope.runId } : {}),
+      };
+    }
+
+    // Input contract (#454): refused BEFORE `ensureRun`, deliberately. Placing
+    // it after would leave a `running` run and a `running` tool call behind for
+    // input that can never execute — the ordering defect GP5 pinned. Nothing is
+    // persisted for a malformed call; the caller gets a structured `VALIDATION`
+    // denial instead of an engine error surfacing from inside a service.
+    const inputError = this.validateToolInput(skillName, args);
+    if (inputError) {
+      return {
+        status: 'denied',
+        code: 'VALIDATION',
+        message: inputError,
         ...(envelope.goalId ? { goalId: envelope.goalId } : {}),
         ...(envelope.runId ? { runId: envelope.runId } : {}),
       };
@@ -2494,6 +2576,13 @@ export class AISecureHarness {
       return { status: 'denied', message: 'Insufficient capabilities' };
     }
 
+    // Same input contract as the governed branch, and for the same reason: the
+    // approval insert below must never park arguments that cannot execute.
+    const inputError = this.validateToolInput(skillName, args);
+    if (inputError) {
+      return { status: 'denied', code: 'VALIDATION', message: inputError };
+    }
+
     const isDangerous = this.evaluateRisk(skill, skillName);
     if (isDangerous) {
       const [record] = await this.db
@@ -2527,10 +2616,21 @@ export class AISecureHarness {
     skillName: string,
     args: Record<string, unknown>,
     runContext?: { runId?: string; model?: string },
-  ): Promise<{ success: true; data: unknown } | { success: false; error: string }> {
+  ): Promise<{ success: true; data: unknown } | { success: false; error: string; code?: string }> {
     if (!Object.hasOwn(this.skills, skillName)) {
       return { success: false, error: `Skill not found: ${skillName}` };
     }
+
+    // Backstop, not a duplicate: `runSkill` is the shared execution entry for
+    // the direct path AND for `executeApproved` → post-approval execution, and
+    // it is also called directly (tests, flow steps). Validating here means a
+    // stored approval whose arguments were mutated between request and decision
+    // still cannot reach a handler.
+    const inputError = this.validateToolInput(skillName, args);
+    if (inputError) {
+      return { success: false, error: inputError, code: 'VALIDATION' };
+    }
+
     const skill = this.skills[skillName]!;
 
     // Item writes performed by skills are agent-authored: stamp revision

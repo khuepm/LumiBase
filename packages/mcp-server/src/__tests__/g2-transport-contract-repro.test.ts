@@ -371,7 +371,7 @@ describe('G2 repro · body envelope: stdio gửi field ra top level, không bọ
    * head trước so "schema quảng bá" với "args skill đọc" nên **không thể** thấy
    * lớp lỗi này — phải so cả **body thật sự gửi đi**.
    */
-  it('S6: create_item spread field ra top level; update_item gửi bare — cả hai thiếu envelope data', async () => {
+  it('S6 [REGRESSION]: create_item và update_item bọc đúng envelope data', async () => {
     const { tools, calls } = registryOnly();
 
     await tools.get('create_item')!.handler({
@@ -387,19 +387,20 @@ describe('G2 repro · body envelope: stdio gửi field ra top level, không bọ
 
     expect(calls).toHaveLength(2);
 
-    // CURRENT: `client.post(path, { ...itemData, status })` — `title` nằm ở TOP
-    // LEVEL, không có key `data`. REST `createSchema` đòi `data: record` ⇒ 400.
+    // FIXED: body bọc trong `data` đúng như REST `createSchema` đòi.
     expect(calls[0]!.path).toBe('/items/posts');
-    expect(calls[0]!.body).toEqual({ title: 'x', status: 'draft' });
-    expect(Object.keys(calls[0]!.body as object)).not.toContain('data');
+    expect(calls[0]!.body).toEqual({ data: { title: 'x' }, status: 'draft' });
+    expect(Object.keys(calls[0]!.body as object)).toContain('data');
 
-    // CURRENT: `client.patch(path, itemData)` — gửi bare. REST `patchSchema`
-    // strip key lạ ⇒ service nhận `{}`, nhưng response vẫn 200.
+    // FIXED: `patch` cũng bọc `data`, nên `patchSchema` không strip nội dung nữa.
     expect(calls[1]!.path).toBe('/items/posts/item_1');
-    expect(calls[1]!.body).toEqual({ title: 'new title' });
-    expect(Object.keys(calls[1]!.body as object)).not.toContain('data');
+    expect(calls[1]!.body).toEqual({ data: { title: 'new title' } });
+    expect(Object.keys(calls[1]!.body as object)).toContain('data');
 
-    // EXPECTED cho cả hai: `{ data: { title: … }, status? }`.
+    // Chống tái diễn cả lớp: field của item KHÔNG được nằm ở top level.
+    for (const call of calls) {
+      expect(Object.keys(call.body as object)).not.toContain('title');
+    }
   });
 });
 

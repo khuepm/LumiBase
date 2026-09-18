@@ -71,6 +71,11 @@ export interface McpHarnessPort {
  */
 export interface McpToolDecision {
   status: HarnessExecutionResult['status'];
+  /**
+   * Machine-readable denial reason, e.g. `VALIDATION`. Lets a client branch on
+   * "fix your arguments" vs "you are not allowed" without parsing prose.
+   */
+  code?: string;
   data?: unknown;
   /** Present when status is `pending_approval` — resolve via the approvals API. */
   approvalId?: string;
@@ -80,6 +85,7 @@ export interface McpToolDecision {
 
 export function toToolDecision(result: HarnessExecutionResult): McpToolDecision {
   const decision: McpToolDecision = { status: result.status };
+  if (result.code) decision.code = result.code;
   if (result.data !== undefined) decision.data = result.data;
   const approvalId = result.agentApprovalId ?? result.approvalId;
   if (approvalId) decision.approvalId = approvalId;

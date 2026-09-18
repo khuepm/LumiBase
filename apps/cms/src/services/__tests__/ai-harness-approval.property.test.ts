@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import * as fc from 'fast-check';
 import { AISecureHarness, CORE_SKILLS } from '../ai-harness';
 import type { Database } from '@lumibase/database';
+import { argsForProperty } from '../../test-utils/agent-tool-args';
 
 /**
  * Feature: ai-first-cms-engine, Property 5: Approval execution flow — phê duyệt thực thi đúng
@@ -153,12 +154,15 @@ describe('Feature: ai-first-cms-engine, Property 5: Approval execution flow — 
         argsArb,
         siteIdArb,
         async (approvalId, userId, skillName, args, siteId) => {
-          // Arrange: create a pending approval record
+          // Arrange: create a pending approval record. Stored arguments go
+          // through `runSkill`, which since #454 enforces the canonical input
+          // schema — so the record has to hold arguments that could actually
+          // execute. The subject of this property is the approval bookkeeping.
           const pendingRecord = {
             id: approvalId,
             siteId,
             skillName,
-            arguments: args,
+            arguments: argsForProperty(skillName, args),
             status: 'pending',
             agentName: 'lumibase-copilot',
             context: null,
@@ -206,12 +210,15 @@ describe('Feature: ai-first-cms-engine, Property 5: Approval execution flow — 
         argsArb,
         siteIdArb,
         async (approvalId, userId, skillName, args, siteId) => {
-          // Arrange
+          // Arrange. Same reason as above: the stored arguments must satisfy the
+          // canonical schema, otherwise `runSkill` refuses them and this property
+          // would measure validation instead of the handler's output.
+          const storedArgs = argsForProperty(skillName, args);
           const pendingRecord = {
             id: approvalId,
             siteId,
             skillName,
-            arguments: args,
+            arguments: storedArgs,
             status: 'pending',
             agentName: 'lumibase-copilot',
             context: null,
@@ -234,7 +241,7 @@ describe('Feature: ai-first-cms-engine, Property 5: Approval execution flow — 
           // Each CORE_SKILLS handler returns a specific object shape
           const skill = CORE_SKILLS[skillName];
           if (skill) {
-            const expectedData = await skill.handler(args);
+            const expectedData = await skill.handler(storedArgs);
             expect(result.data).toEqual(expectedData);
           }
         },
