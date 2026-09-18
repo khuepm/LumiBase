@@ -701,12 +701,17 @@ describe('G2 repro · soát ngữ nghĩa: compile_intent bị xếp sai nhóm', 
      * Bản này gắn từng tập tên vào `listTools()` **thật**:
      *   - membership: mọi tên trong tập phải TỒN TẠI trong registry;
      *   - uniqueness: không trùng trong cùng tập;
-     *   - disjointness: bốn tập không giao nhau;
-     *   - union: phần bù đúng bằng 63 tool read-qua-GET ⇒ bốn tập + phần bù
-     *     **phủ đúng** registry.
+     *   - disjointness: **năm** tập không giao nhau;
+     *   - union **hai chiều**: registry ⊆ ∪tập và ∪tập ⊆ registry.
      *
-     * Nhờ đó: đổi tên tool ⇒ membership đỏ; thêm/bớt tool ⇒ union đỏ; xếp một
-     * tên vào hai nhóm ⇒ disjointness đỏ.
+     * SỬA THEO F2: bản trước chỉ khai báo 4 tập (98 tên) rồi lấy 63 tool còn lại
+     * TRỰC TIẾP từ registry và chỉ kiểm số lượng + prefix. Hệ quả: đổi tên một
+     * tool **trong nhóm 63** vẫn XANH — kiểm âm `get_release` → `get_release_v2`
+     * đi lọt. Tức nó khoá danh tính 98/161, không phải toàn registry.
+     *
+     * Giờ `READ_GET_63` là tập khai báo tường minh, nên cả **161/161** tên đều
+     * được khoá: đổi tên tool ở BẤT KỲ nhóm nào ⇒ membership/union đỏ; thêm/bớt
+     * tool ⇒ union đỏ; xếp một tên vào hai nhóm ⇒ disjointness đỏ.
      */
     const { client } = await liveClient();
     const registry = (await client.listTools()).tools.map((t) => t.name);
@@ -755,11 +760,36 @@ describe('G2 repro · soát ngữ nghĩa: compile_intent bị xếp sai nhóm', 
       'diff_schema', 'lookup_tm', 'query_insights', 'run_panel',
     ];
 
+    /**
+     * 63 tool đọc-qua-GET. Khai báo TƯỜNG MINH theo yêu cầu F2: bản trước lấy
+     * nhóm này trực tiếp từ registry rồi chỉ kiểm số lượng + prefix, nên đổi tên
+     * một tool trong nhóm vẫn XANH (kiểm âm: `get_release` → `get_release_v2`).
+     * Có tập tên rồi thì union so hai chiều và rename ở đây cũng đỏ.
+     */
+    const READ_GET_63 = [
+      'list_collections', 'get_collection', 'list_fields', 'list_items', 'get_item',
+      'list_relations', 'list_presets', 'get_preset', 'get_effective_preset',
+      'list_preset_bookmarks', 'list_translations', 'get_translation', 'list_settings',
+      'get_setting', 'search', 'list_media', 'list_transform_presets', 'list_tm',
+      'list_dashboards', 'get_dashboard', 'list_dashboard_panels', 'list_reviews',
+      'list_releases', 'get_release', 'get_my_permissions', 'list_roles', 'get_role',
+      'list_policies', 'get_policy', 'export_access', 'list_api_keys', 'get_api_key',
+      'list_users', 'get_user', 'list_teams', 'get_team', 'list_team_members',
+      'list_webhooks', 'list_cdc_subscriptions', 'get_cdc_subscription', 'cdc_events_read',
+      'list_intents', 'get_intent', 'list_intent_drifts', 'list_flows', 'get_flow',
+      'list_flow_runs', 'get_flow_run', 'list_activity', 'get_site', 'get_health',
+      'get_metrics', 'export_backup', 'list_materializations', 'query_materialization',
+      'list_extensions', 'list_marketplace_extensions', 'get_marketplace_extension',
+      'list_marketplace_updates', 'list_deployment_targets', 'list_deployments',
+      'get_deployment', 'get_deployment_logs',
+    ];
+
     const sets: Array<[string, string[]]> = [
       ['MAPPED_41', MAPPED_41],
       ['UNMAPPED_48', UNMAPPED_48],
       ['PROVIDER_2', PROVIDER_2],
       ['READ_VIA_POST_7', READ_VIA_POST_7],
+      ['READ_GET_63', READ_GET_63],
     ];
 
     // 1) Kích thước khai báo
@@ -767,6 +797,7 @@ describe('G2 repro · soát ngữ nghĩa: compile_intent bị xếp sai nhóm', 
     expect(UNMAPPED_48).toHaveLength(48);
     expect(PROVIDER_2).toHaveLength(2);
     expect(READ_VIA_POST_7).toHaveLength(7);
+    expect(READ_GET_63).toHaveLength(63);
 
     // 2) Uniqueness trong từng tập + membership trong registry THẬT
     for (const [label, list] of sets) {
@@ -787,17 +818,27 @@ describe('G2 repro · soát ngữ nghĩa: compile_intent bị xếp sai nhóm', 
     }
     expect(overlaps).toEqual([]);
 
-    // 4) Union: phần bù đúng bằng 63 read-qua-GET ⇒ phủ đúng registry
+    // 4) Union so HAI CHIỀU với registry thật (sửa theo F2).
+    //    Trước đây nhóm 63 được lấy TỪ registry nên không khoá danh tính; giờ nó
+    //    là tập khai báo, nên cả 161 tên đều có tập sở hữu.
     const classified = new Set(seen.keys());
-    expect(classified.size).toBe(41 + 48 + 2 + 7);
-    const complement = registry.filter((n) => !classified.has(n));
-    expect(complement).toHaveLength(63);
-    expect(classified.size + complement.length).toBe(registry.length);
+    expect(classified.size).toBe(41 + 48 + 2 + 7 + 63);
+
+    // 4a) registry ⊆ các tập: không tool nào của registry bị bỏ rơi.
+    const unclassified = registry.filter((n) => !classified.has(n));
+    expect(unclassified, 'mọi tool trong registry phải thuộc đúng một tập').toEqual([]);
+
+    // 4b) các tập ⊆ registry: không tên khai báo nào biến mất khỏi registry.
+    //     (membership ở bước 2 đã phủ, giữ lại để union là song ánh tường minh.)
+    const ghosts = [...classified].filter((n) => !registrySet.has(n));
+    expect(ghosts, 'không tên khai báo nào được vắng mặt trong registry').toEqual([]);
+
+    expect(classified.size).toBe(registry.length);
     expect(registry).toHaveLength(161);
 
-    // 5) Phần bù không được chứa động từ ghi — chốt rằng nó thật là nhóm read.
+    // 5) Nhóm read-GET không được chứa động từ ghi — chốt nó thật là nhóm read.
     const writeVerb = /^(create|update|delete|upsert|remove|revoke|rotate|attach|detach|assign|install|uninstall|publish|apply|restore|approve|reject|submit|register|drop|refresh|pause|resume|scan|replay|run)_/;
-    expect(complement.filter((n) => writeVerb.test(n))).toEqual([]);
+    expect(READ_GET_63.filter((n) => writeVerb.test(n))).toEqual([]);
   });
 
   it('S13b: tổng kiểm số học của bảng phân loại', () => {

@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { getTableName } from 'drizzle-orm';
 import { Hono } from 'hono';
-import type { Database } from '@lumibase/database';
+import { extensions, type Database } from '@lumibase/database';
 import type { AppEnv, AuthPrincipal } from '../../env';
 import { AISecureHarness, CORE_SKILLS, isControlPlaneSkill } from '../ai-harness';
+import { ExtensionsService } from '../extensions-service';
+import { ExtensionVerifierService } from '../extension-verifier';
 import { McpService, type McpHarnessPort } from '../mcp-service';
 import { ToolRegistryService } from '../tool-registry-service';
 
@@ -889,23 +891,49 @@ describe('G2 repro · the two transports are separate contracts', () => {
      * verdict ⇒ reject + zero insert) thuộc route marketplace, ngoài hai file
      * repro được cấp, nên ghi là source-backed thay vì tự mở scope.
      */
-    const inserted: Array<Record<string, unknown>> = [];
-    let verifierCalls = 0;
-    const extensionsService = {
-      installExtension: vi.fn((input: Record<string, unknown>) => {
-        inserted.push(input);
-        return Promise.resolve({ id: 'ext_1', ...input });
-      }),
-      // Nếu generic registration có gọi verifier thì bộ đếm này phải tăng.
-      verifyByMetadata: vi.fn(() => {
-        verifierCalls += 1;
-        return Promise.resolve({ ok: true });
-      }),
-    };
+    /**
+     * SỬA THEO F1. Bản trước gắn `verifyByMetadata` vào một **object giả** rồi
+     * assert bộ đếm bằng 0 — nhưng verifier thật là `ExtensionVerifierService`,
+     * một class khác, và `ExtensionsService` thật KHÔNG hề có method đó. Nên
+     * assertion ấy là **tautology**: nó đúng bất kể production làm gì. Kiểm âm
+     * đã chứng minh — thêm verification + ép provenance vào
+     * `ExtensionsService.installExtension` thật, test vẫn XANH.
+     *
+     * Bản này đo đường thật:
+     *   - `ExtensionsService` **thật** (không mock), trên db recorder;
+     *   - spy vào `ExtensionVerifierService.prototype.verifyByMetadata` — verifier
+     *     **thật** — nên nếu service thật bắt đầu verify thì spy sẽ bắt được;
+     *   - đọc giá trị **thực sự đi vào `db.insert().values()`**, không phải args
+     *     mà caller truyền.
+     *
+     * Nhờ đó: thêm verifier vào đường generic ⇒ đỏ ở bộ đếm; ép
+     * `capabilities: []` ⇒ đỏ; derive `isOfficial`/`verifiedAt` server-side ⇒ đỏ.
+     */
+    const verifierSpy = vi.spyOn(ExtensionVerifierService.prototype, 'verifyByMetadata');
+
+    const inserts: Array<{ table: string; values: Record<string, unknown> }> = [];
+    const db = {
+      insert: (t: unknown) => {
+        const table = getTableName(t as Parameters<typeof getTableName>[0]);
+        return {
+          values: (values: Record<string, unknown>) => {
+            inserts.push({ table, values });
+            const result = [{ id: 'ext_1', ...values }];
+            return {
+              returning: () => Promise.resolve(result),
+              then: (resolve: (v: unknown[]) => unknown) => Promise.resolve(result).then(resolve),
+            };
+          },
+        };
+      },
+    } as unknown as Database;
+
+    // Service THẬT — đây là điểm khác cốt lõi so với bản trước.
+    const extensionsService = new ExtensionsService({ db, siteId: 'site_1', userId: 'user_1' });
     const harness = new AISecureHarness({
-      db: {} as Database,
+      db,
       siteId: 'site_1',
-      extensionsService: extensionsService as never,
+      extensionsService,
       enableAgentHarnessAudit: false,
     });
 
@@ -923,21 +951,26 @@ describe('G2 repro · the two transports are separate contracts', () => {
     });
 
     expect(outcome.success).toBe(true);
-    expect(inserted).toHaveLength(1);
 
-    // ĐO ĐƯỢC 1: không verifier nào được gọi trên đường generic.
-    expect(verifierCalls).toBe(0);
-    expect(extensionsService.verifyByMetadata).not.toHaveBeenCalled();
+    // Hàng THẬT mà service thật ghi xuống `extensions`.
+    const extRows = inserts.filter((i) => i.table === getTableName(extensions));
+    expect(extRows, 'service thật phải insert đúng 1 hàng extensions').toHaveLength(1);
+    const row = extRows[0]!.values;
 
-    // ĐO ĐƯỢC 2: capabilities do CALLER quyết định, không bị server ép `[]`.
-    expect(inserted[0]!['capabilities']).toEqual(['items:write', 'schema:write']);
+    // ĐO ĐƯỢC 1: verifier THẬT không được gọi ở đâu trên đường generic.
+    expect(verifierSpy).not.toHaveBeenCalled();
+    expect(verifierSpy.mock.calls).toHaveLength(0);
 
-    // ĐO ĐƯỢC 3: không có trường provenance nào của marketplace được dựng —
-    // `marketplaceSlug` / `verifiedAt` / `isOfficial` đều vắng, nên trust không
-    // thể được derive ở server như đường marketplace làm.
+    // ĐO ĐƯỢC 2: capabilities do CALLER quyết định — server KHÔNG ép `[]`.
+    expect(row['capabilities']).toEqual(['items:write', 'schema:write']);
+
+    // ĐO ĐƯỢC 3: không trường provenance nào của marketplace được dựng, nên
+    // trust không thể derive ở server như đường marketplace làm.
     for (const field of ['marketplaceSlug', 'verifiedAt', 'isOfficial', 'signature', 'publisherKeyId']) {
-      expect(inserted[0]![field], `${field} không được dựng ở đường generic`).toBeUndefined();
+      expect(row[field], `${field} không được dựng ở đường generic`).toBeUndefined();
     }
+
+    verifierSpy.mockRestore();
 
     // Điều kiện enable (ghi vào §5d): adapter phải bảo toàn signature policy,
     // reserved namespace, server-derived trust, permission và provenance —
