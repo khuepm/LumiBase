@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { type LumiBaseClient, LumiBaseApiError } from '../client.js';
 import { collectionNameSchema, encodePathSegment, idPathSegmentSchema } from './path.js';
+import { okAfter } from './_shared.js';
 
 function formatError(err: unknown): string {
   if (err instanceof LumiBaseApiError) {
@@ -142,8 +143,10 @@ export function registerItemTools(server: McpServer, client: LumiBaseClient) {
     },
     async ({ collection, id }) => {
       try {
-        await client.delete(`/items/${encodePathSegment(collection)}/${encodePathSegment(id)}`);
-        return { content: [{ type: 'text', text: `Item "${id}" deleted from "${collection}".` }] };
+        const response = await client.delete(
+          `/items/${encodePathSegment(collection)}/${encodePathSegment(id)}`,
+        );
+        return okAfter(response, `Item "${id}" deleted from "${collection}".`);
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${formatError(err)}` }], isError: true };
       }

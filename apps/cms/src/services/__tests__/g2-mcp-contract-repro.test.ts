@@ -1352,7 +1352,13 @@ describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools �
 
     expect(called.status).toBe(200);
     const result = called.body.result as {
-      structuredContent: { status: string; approvalId?: string };
+      structuredContent: {
+        status: string;
+        approvalId?: string;
+        approvalSpace?: string;
+        agentApprovalId?: string;
+        legacyApprovalId?: string;
+      };
       isError?: boolean;
     };
 
@@ -1368,16 +1374,23 @@ describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools �
     // from a database. It shows the id is PROPAGATED to the client; it does not
     // show the id resolves at the decision endpoint. That remains a DB gate.
     //
-    // CONTRACT FINDING (new, for §4 of the PR): the id handed to the client is
-    // the **`agent_approvals`** id, not the `ai_approvals` id. `execute()`
-    // inserts into BOTH tables, and `toToolDecision()` prefers
-    // `agentApprovalId ?? approvalId`. Two id spaces therefore exist, decided by
-    // two different endpoints (`routes/agent.ts` for agent approvals,
-    // `routes/ai.ts` for the legacy ai approvals). "Approval ID dùng được" must
-    // state WHICH space the MCP client receives and WHICH endpoint accepts it;
-    // otherwise a client can hold a valid-looking id and call the wrong route.
-    // Verified here by the id prefix produced by the table-aware fake.
+    // CONTRACT (was a finding, now pinned): the id handed to the client is the
+    // **`agent_approvals`** id, not the `ai_approvals` id. `execute()` inserts
+    // into BOTH tables and they are decided at two different endpoints
+    // (`routes/agent.ts` vs `routes/ai.ts`), so a client holding one id has to
+    // know which space it belongs to or it will call the wrong route.
+    //
+    // The decision now says so instead of leaving it to be inferred from the
+    // value: `approvalSpace` names the space, and both ids are exposed
+    // separately. Verified here by the id prefix produced by the table-aware
+    // fake.
     expect(result.structuredContent.approvalId).toMatch(/^lumibase_agent_approvals_/);
+    expect(result.structuredContent.approvalSpace).toBe('agent');
+    expect(result.structuredContent.agentApprovalId).toMatch(/^lumibase_agent_approvals_/);
+    expect(result.structuredContent.legacyApprovalId).toMatch(/^lumibase_ai_approvals_/);
+    expect(result.structuredContent.agentApprovalId).not.toBe(
+      result.structuredContent.legacyApprovalId,
+    );
   });
 
   it('RT4: with contentOs.mcp off (the default) the whole surface 404s — compatibility gate', async () => {

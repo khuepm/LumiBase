@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
-import { buildQs, confirmDescription, okText, run } from './_shared.js';
+import { buildQs, confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 /**
@@ -102,8 +102,8 @@ export function registerReleaseTools(server: McpServer, client: LumiBaseClient) 
     },
     async ({ id }) =>
       run(async () => {
-        await client.delete(`/releases/${encodePathSegment(id)}`);
-        return okText(`Release "${id}" deleted.`);
+        const response = await client.delete(`/releases/${encodePathSegment(id)}`);
+        return okAfter(response, `Release "${id}" deleted.`);
       }),
   );
 }

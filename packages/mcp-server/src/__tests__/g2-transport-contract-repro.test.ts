@@ -557,7 +557,7 @@ describe('G2 repro · result-shape probes: forwarding and wrapper behaviour', ()
    * sang toàn bộ candidate mapping.
    */
 
-  it('S10: fault injection — delete tool ignores a fulfilled decision-shaped value', async () => {
+  it('S10 [REGRESSION]: delete tool reports a decision-shaped value instead of claiming success', async () => {
     const tools = new Map<string, (a: Record<string, unknown>) => Promise<unknown>>();
     const server = {
       registerTool: (n: string, _c: unknown, h: (a: Record<string, unknown>) => Promise<unknown>) => tools.set(n, h),
@@ -574,11 +574,13 @@ describe('G2 repro · result-shape probes: forwarding and wrapper behaviour', ()
      *   - `DELETE /collections/:name` hiện trả **204** sau khi đã thực thi.
      *
      * Vì vậy test này **KHÔNG** tái hiện "CMS live park → stdio báo deleted".
-     * Nó chứng minh một điều hẹp hơn nhưng vẫn đáng giá: handler **bỏ qua hoàn
-     * toàn** giá trị fulfilled của client và tự dựng câu khẳng định — nên NẾU
-     * một adapter tương lai đưa decision (kể cả pending) vào đúng đường này thì
-     * người dùng sẽ bị báo sai. Đó là rủi ro của bước migration, không phải lỗi
-     * production đang xảy ra.
+     * Nó chứng minh một điều hẹp hơn nhưng vẫn đáng giá: handler có đọc giá trị
+     * fulfilled của client hay không — vì bước migration (task 8) sẽ đưa đúng
+     * decision đó vào đúng đường này.
+     *
+     * TRƯỚC: handler `await client.delete(...)` rồi **tự** dựng câu khẳng định,
+     * không đọc response, nên trả "deleted" kể cả khi decision nói chưa thực thi.
+     * NAY: `okAfter` nhận diện decision và trình bày đúng trạng thái.
      */
     const injectedDecision = { status: 'pending_approval', approvalId: 'apr_1' } as const;
     const cms = {
@@ -599,27 +601,108 @@ describe('G2 repro · result-shape probes: forwarding and wrapper behaviour', ()
     };
     const text = result.content[0]!.text;
 
-    // CURRENT: handler làm `await client.delete(...)` rồi **tự** dựng câu khẳng
-    // định, không hề đọc giá trị fulfilled. Nên bất kể client trả gì — kể cả một
-    // decision nói rõ chưa thực thi — MCP client vẫn nhận
-    // "Collection "posts" deleted." với `isError` falsy.
-    // EXPECTED: result phải phản ánh executed / pending_approval / denied, và
-    // pending KHÔNG được trình bày như mutation đã hoàn tất.
-    expect(text).toContain('deleted');
-    expect(text).not.toContain('pending');
-    expect(text).not.toContain('apr_1');
+    // Kết quả nêu rõ chưa thực thi, kèm id approval và endpoint để quyết định.
+    expect(text).toContain('pending approval');
+    expect(text).toContain('apr_1');
+    expect(text).not.toMatch(/"posts" deleted/);
+    // Pending KHÔNG phải lỗi — nó là kết quả hợp lệ đang chờ người. Nhưng nó
+    // cũng không được trình bày như mutation đã hoàn tất.
     expect(result.isError ?? false).toBe(false);
 
-    // Cùng lớp lỗi với các delete tool khác — không phải ca lẻ.
+    // Cùng lớp lỗi ⇒ cùng cách sửa, không vá một ca lẻ.
     for (const [name, args] of [
       ['delete_item', { collection: 'posts', id: 'i1', confirm: true }],
       ['delete_role', { id: 'r1', confirm: true }],
       ['delete_field', { collection: 'posts', field_name: 'title', confirm: true }],
     ] as Array<[string, Record<string, unknown>]>) {
       const r = (await tools.get(name)!(args)) as { content: Array<{ text: string }> };
-      expect(r.content[0]!.text, `${name} tự khẳng định đã xoá`).toMatch(/deleted/i);
-      expect(r.content[0]!.text, `${name} không nêu pending`).not.toMatch(/pending/i);
+      expect(r.content[0]!.text, `${name} không tự khẳng định đã xoá`).not.toMatch(/deleted/i);
+      expect(r.content[0]!.text, `${name} nêu pending`).toMatch(/pending approval/i);
+      expect(r.content[0]!.text, `${name} nêu id approval`).toContain('apr_1');
     }
+  });
+
+  it('S12: một REST 204 vẫn cho câu khẳng định, và denial thành isError', async () => {
+    /**
+     * Nửa tương thích của S10. Hai điều phải đúng cùng lúc, nếu không thì cách
+     * sửa S10 đổi hành vi của mọi endpoint REST bình thường:
+     *   (a) `DELETE` trả 204 ⇒ `client.delete` resolve `undefined` ⇒ vẫn dùng câu
+     *       "deleted" như trước;
+     *   (b) decision `denied` phải thành `isError` kèm `code`, không phải một câu
+     *       thành công.
+     * Cũng kiểm âm phần nhận diện: một row REST có `status: 'published'` KHÔNG
+     * được coi là decision.
+     */
+    const tools = new Map<string, (a: Record<string, unknown>) => Promise<unknown>>();
+    const server = {
+      registerTool: (n: string, _c: unknown, h: (a: Record<string, unknown>) => Promise<unknown>) => tools.set(n, h),
+    };
+    const responses: unknown[] = [];
+    const cms = {
+      get: vi.fn(() => Promise.resolve(responses.shift())),
+      post: vi.fn(() => Promise.resolve(responses.shift())),
+      patch: vi.fn(() => Promise.resolve(responses.shift())),
+      put: vi.fn(() => Promise.resolve(responses.shift())),
+      delete: vi.fn(() => Promise.resolve(responses.shift())),
+      getText: vi.fn(() => Promise.resolve('x')),
+      getRootText: vi.fn(() => Promise.resolve('x')),
+      postRaw: vi.fn(() => Promise.resolve(responses.shift())),
+    };
+    registerAllTools(server as never, cms as unknown as LumiBaseClient);
+
+    // (a) 204 → undefined
+    responses.push(undefined);
+    const executed = (await tools.get('delete_collection')!({ name: 'posts', confirm: true })) as {
+      content: Array<{ text: string }>;
+      isError?: boolean;
+    };
+    expect(executed.content[0]!.text).toBe('Collection "posts" deleted.');
+    expect(executed.isError ?? false).toBe(false);
+
+    // (b) denied → isError + code
+    responses.push({ status: 'denied', code: 'AUTONOMY_SHADOW', message: 'L0 cannot write' });
+    const denied = (await tools.get('delete_collection')!({ name: 'posts', confirm: true })) as {
+      content: Array<{ text: string }>;
+      isError?: boolean;
+    };
+    expect(denied.isError).toBe(true);
+    expect(denied.content[0]!.text).toContain('AUTONOMY_SHADOW');
+    expect(denied.content[0]!.text).not.toMatch(/deleted/i);
+
+    // Kiểm âm nhận diện: row REST mang `status: 'published'` không phải decision,
+    // nên `create_item` vẫn serialize row như trước.
+    responses.push({ id: 'i1', status: 'published', title: 'x' });
+    const row = (await tools.get('create_item')!({
+      collection: 'posts',
+      data: { title: 'x' },
+    })) as { content: Array<{ text: string }> };
+    expect(JSON.parse(row.content[0]!.text)).toEqual({ id: 'i1', status: 'published', title: 'x' });
+
+    // `approvalSpace` quyết định endpoint được nêu. Đây là điểm của cả mục
+    // "nói rõ không gian approval ID": hai id khác bảng, hai route khác nhau, nên
+    // client không được phải đoán từ hình dạng giá trị.
+    responses.push({
+      status: 'pending_approval',
+      approvalId: 'apr_agent',
+      approvalSpace: 'agent',
+      agentApprovalId: 'apr_agent',
+      legacyApprovalId: 'apr_legacy',
+      runId: 'run_1',
+    });
+    const agentSpace = (await tools.get('delete_collection')!({ name: 'posts', confirm: true })) as {
+      content: Array<{ text: string }>;
+    };
+    expect(agentSpace.content[0]!.text).toContain('apr_agent');
+    expect(agentSpace.content[0]!.text).toContain('/api/v1/agent/approvals/');
+    expect(agentSpace.content[0]!.text).not.toContain('/api/v1/ai/approvals/');
+    expect(agentSpace.content[0]!.text).toContain('run_1');
+
+    responses.push({ status: 'pending_approval', approvalId: 'apr_legacy', approvalSpace: 'legacy_ai' });
+    const legacySpace = (await tools.get('delete_collection')!({ name: 'posts', confirm: true })) as {
+      content: Array<{ text: string }>;
+    };
+    expect(legacySpace.content[0]!.text).toContain('/api/v1/ai/approvals/');
+    expect(legacySpace.content[0]!.text).not.toContain('/api/v1/agent/approvals/');
   });
 
   it('S11: alias cdc_subscription_replay lệch tên key và có `cursor` không đối ứng', async () => {

@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { type LumiBaseClient, LumiBaseApiError } from '../client.js';
 import { collectionNameSchema, encodePathSegment, fieldNameSchema } from './path.js';
+import { okAfter } from './_shared.js';
 
 const fieldInputSchema = z.object({
   type: z.string().min(1).describe(
@@ -114,12 +115,10 @@ export function registerFieldTools(server: McpServer, client: LumiBaseClient) {
     async ({ collection, field_name, force }) => {
       try {
         const qs = force ? '?force=true' : '';
-        await client.delete(
+        const response = await client.delete(
           `/collections/${encodePathSegment(collection)}/fields/${encodePathSegment(field_name)}${qs}`,
         );
-        return {
-          content: [{ type: 'text', text: `Field "${field_name}" deleted from "${collection}".` }],
-        };
+        return okAfter(response, `Field "${field_name}" deleted from "${collection}".`);
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${formatError(err)}` }], isError: true };
       }
