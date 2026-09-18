@@ -8,6 +8,7 @@ import { ExtensionsService } from '../extensions-service';
 import { ExtensionVerifierService } from '../extension-verifier';
 import { McpService, type McpHarnessPort } from '../mcp-service';
 import { ToolRegistryService, overrideNarrowsSchema } from '../tool-registry-service';
+import { validArgsFor } from '../../test-utils/agent-tool-args';
 
 /**
  * G2 (#454) — reproduction only. NO implementation change accompanies this file.
@@ -252,13 +253,24 @@ describe('G2 regression · input is validated before any side effect', () => {
  * behaviour. Anything requiring a real row, a real approval id or a real
  * roundtrip is explicitly out of scope here and left to the G1/G2 DB gate.
  */
-function governedDb() {
+function governedDb(options: { grants?: Array<{ agentRole: string; capability: string; level: number }> } = {}) {
   const inserts: Array<{ table: string; values: Record<string, unknown> }> = [];
   const updates: Array<{ table: string; set: Record<string, unknown> }> = [];
   let seq = 0;
 
   const rowsFor = (table: string): Record<string, unknown>[] => {
     switch (table) {
+      // Autonomy grants. Empty by default, which is the real default posture:
+      // `resolveAutonomy` then falls back to L2 for a safe capability. Tests that
+      // need an explicit grant pass one in — `getGrantLevel` filters by role and
+      // capability in SQL, which this fake cannot do, so a caller passing grants
+      // must pass only the one relevant to the probe.
+      case 'lumibase_agent_autonomy_grants':
+        return (options.grants ?? []).map((grant, index) => ({
+          id: `grant_${index}`,
+          ...grant,
+          expiresAt: null,
+        }));
       // No active freeze.
       case 'lumibase_agent_freezes':
         return [];
@@ -399,12 +411,12 @@ describe('G2 repro · governed path: an L0 content write executes with no autono
     expect(insertedInto('lumibase_agent_tool_calls')).toHaveLength(1);
   });
 
-  it('GP2: L0 (autonomyCap 0) still performs the content write — zero approvals created', async () => {
+  it('GP2 [REGRESSION]: L0 (autonomyCap 0) cannot write — the write is refused, not parked', async () => {
     const { db, insertedInto } = governedDb();
     const { created, service } = recordingItemService();
 
-    // `autonomyCap: 0` is the strictest cap an intent can express (L0). It is
-    // read ONLY inside the dangerous branch, so a safe skill never sees it.
+    // `autonomyCap: 0` is the strictest cap an intent can express (L0). It used
+    // to be read ONLY inside the dangerous branch, so a safe skill never saw it.
     const result = await harnessWith(service, db).execute(
       'createItem',
       { collection: 'posts', data: { title: 'valid input' } },
@@ -413,11 +425,13 @@ describe('G2 repro · governed path: an L0 content write executes with no autono
       { autonomyCap: 0, agentName: 'lumibase-copilot', agentRole: undefined },
     );
 
-    // CURRENT: the write executes. No approval is parked at L0.
-    // EXPECTED (acceptance): L0 cannot write.
-    expect(result.status).toBe('executed');
-    expect(created).toHaveLength(1);
-    expect(created[0]!.collection).toBe('posts');
+    // BEFORE: `status: 'executed'`, one row written, zero approvals.
+    // NOW: L0 means "no side effects" (AutonomyService's own definition), so the
+    // write is refused. It is NOT turned into an approval either — L0 is not L1.
+    expect(result.status).toBe('denied');
+    expect(result.code).toBe('AUTONOMY_SHADOW');
+    expect(result.message).toContain('L0');
+    expect(created).toHaveLength(0);
     expect(insertedInto('lumibase_ai_approvals')).toHaveLength(0);
     expect(insertedInto('lumibase_agent_approvals')).toHaveLength(0);
     // Self-contained proof this ran on the governed branch (legacy records
@@ -426,7 +440,7 @@ describe('G2 repro · governed path: an L0 content write executes with no autono
     expect(result.toolCallId).toBeDefined();
   });
 
-  it('GP3: L1 (autonomyCap 1) also writes without an approval — same fall-through', async () => {
+  it('GP3 [REGRESSION]: L1 (autonomyCap 1) turns the content write into an approval', async () => {
     const { db, insertedInto } = governedDb();
     const { created, service } = recordingItemService();
 
@@ -438,14 +452,135 @@ describe('G2 repro · governed path: an L0 content write executes with no autono
       { autonomyCap: 1, agentName: 'lumibase-copilot' },
     );
 
-    // CURRENT: identical to L0 — the cap has no effect on a safe skill.
-    // EXPECTED (acceptance): L1 requires the specified approval.
-    expect(result.status).toBe('executed');
-    expect(created).toHaveLength(1);
-    expect(insertedInto('lumibase_ai_approvals')).toHaveLength(0);
-    expect(insertedInto('lumibase_agent_approvals')).toHaveLength(0);
+    // BEFORE: identical to L0 — the cap had no effect on a safe skill.
+    // NOW: L1 is "every action creates an approval", and it goes through the
+    // SAME records as a dangerous skill (one approval contract, not two).
+    expect(result.status).toBe('pending_approval');
+    expect(created).toHaveLength(0);
+    expect(insertedInto('lumibase_ai_approvals')).toHaveLength(1);
+    expect(insertedInto('lumibase_agent_approvals')).toHaveLength(1);
+    expect(result.approvalId).toBeDefined();
+    expect(result.agentApprovalId).toBeDefined();
     expect(insertedInto('lumibase_agent_runs')).toHaveLength(1);
     expect(result.toolCallId).toBeDefined();
+  });
+
+  it('GP6: L2 and above still write directly — the default posture is unchanged', async () => {
+    // This is the compatibility half of GP2/GP3 and the reason the gate is safe
+    // to ship: `resolveAutonomy` defaults a SAFE capability to L2 when no grant
+    // exists, so an installation that never configured autonomy behaves exactly
+    // as before. Only an explicit cap (or an explicit L0/L1 grant) engages the
+    // gate.
+    for (const cap of [2, 3, 4, undefined]) {
+      const { db, insertedInto } = governedDb();
+      const { created, service } = recordingItemService();
+
+      const result = await harnessWith(service, db).execute(
+        'createItem',
+        { collection: 'posts', data: { title: 'valid input' } },
+        ['items:write'],
+        `L${cap ?? 'default'} content write probe`,
+        { ...(cap === undefined ? {} : { autonomyCap: cap }), agentName: 'lumibase-copilot' },
+      );
+
+      expect(result.status, `cap=${cap}`).toBe('executed');
+      expect(created, `cap=${cap}`).toHaveLength(1);
+      expect(insertedInto('lumibase_ai_approvals'), `cap=${cap}`).toHaveLength(0);
+    }
+  });
+
+  it('GP8: the gate also engages through a GRANT, not only through an intent cap', async () => {
+    // GP2/GP3 drive the gate via `autonomyCap` (the intent ceiling). Production
+    // more often lowers a level by writing a grant row, so prove that path too:
+    // an `items:write` grant at L1 must produce an approval even with no cap set.
+    const grants = [{ agentRole: 'lumibase-copilot', capability: 'items:write', level: 1 }];
+    const { db, insertedInto } = governedDb({ grants });
+    const { created, service } = recordingItemService();
+
+    const result = await harnessWith(service, db).execute(
+      'createItem',
+      { collection: 'posts', data: { title: 'valid input' } },
+      ['items:write'],
+      'grant-driven L1 probe',
+      { agentName: 'lumibase-copilot' },
+    );
+
+    expect(result.status).toBe('pending_approval');
+    expect(created).toHaveLength(0);
+    expect(insertedInto('lumibase_ai_approvals')).toHaveLength(1);
+
+    // And the same grant at L0 refuses outright.
+    const shadow = governedDb({
+      grants: [{ agentRole: 'lumibase-copilot', capability: 'items:write', level: 0 }],
+    });
+    const second = recordingItemService();
+    const denied = await harnessWith(second.service, shadow.db).execute(
+      'createItem',
+      { collection: 'posts', data: { title: 'valid input' } },
+      ['items:write'],
+      'grant-driven L0 probe',
+      { agentName: 'lumibase-copilot' },
+    );
+    expect(denied.status).toBe('denied');
+    expect(denied.code).toBe('AUTONOMY_SHADOW');
+    expect(second.created).toHaveLength(0);
+    expect(shadow.insertedInto('lumibase_ai_approvals')).toHaveLength(0);
+  });
+
+  it('GP9 [TRIPWIRE]: no write-capable skill executes at L0 — swept across CORE_SKILLS', async () => {
+    /**
+     * The defect GP2/GP3 pinned was not "createItem is missing a gate", it was
+     * "the gate hangs off the dangerous classification". Fixing only `createItem`
+     * would leave every other safe write in the same hole, and a skill added
+     * later would land in it silently. So this sweeps the whole registry.
+     *
+     * The assertion is deliberately coarse — status is never `executed` — because
+     * that holds regardless of how a skill is classified: a safe write is refused
+     * (AUTONOMY_SHADOW) and a dangerous one is parked (pending_approval). Either
+     * way nothing mutates at L0.
+     */
+    const writeSkills = Object.entries(CORE_SKILLS).filter(([, skill]) =>
+      skill.requiredCapabilities.some((capability) => /:(write|update|create|delete)$/.test(capability)),
+    );
+    expect(writeSkills.length).toBeGreaterThan(40);
+
+    const executed: string[] = [];
+    for (const [name] of writeSkills) {
+      const { db } = governedDb();
+      const { service } = recordingItemService();
+      const result = await harnessWith(service, db).execute(
+        name,
+        // Canonical-valid arguments where a schema exists, so the probe is
+        // stopped by the autonomy gate and not by input validation.
+        validArgsFor(name),
+        ['*'],
+        `L0 sweep ${name}`,
+        { autonomyCap: 0, agentName: 'lumibase-copilot' },
+      );
+      if (result.status === 'executed') executed.push(name);
+    }
+
+    expect(executed).toEqual([]);
+  });
+
+  it('GP7: reads are untouched by the write gate, even at L0', async () => {
+    // The gate keys off mutating capabilities, so a read skill must not acquire
+    // an autonomy requirement it never had. `listCollections` needs only
+    // `schema:read`.
+    const { db, insertedInto } = governedDb();
+    const { service } = recordingItemService();
+
+    const result = await harnessWith(service, db).execute(
+      'listCollections',
+      {},
+      ['schema:read'],
+      'L0 read probe',
+      { autonomyCap: 0, agentName: 'lumibase-copilot' },
+    );
+
+    expect(result.status).toBe('executed');
+    expect(insertedInto('lumibase_ai_approvals')).toHaveLength(0);
+    expect(insertedInto('lumibase_agent_approvals')).toHaveLength(0);
   });
 
   it('GP4: control — a DANGEROUS skill at the same cap DOES park, proving the cap is only read there', async () => {

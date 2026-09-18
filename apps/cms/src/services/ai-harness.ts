@@ -2364,6 +2364,7 @@ export class AISecureHarness {
 
     // Step 3: Evaluate risk
     const isDangerous = this.evaluateRisk(tool, skillName) || policy.risk === 'dangerous' || policy.risk === 'review_required';
+    const isWrite = isWriteSkill(tool);
 
     if (isDangerous) {
       // Trust gradient (L0-L4): the effective level decides whether the
@@ -2482,62 +2483,72 @@ export class AISecureHarness {
       }
 
       // ≤L2 (or L3 without a stageable patch): classic pre-execute HITL.
-      // Create approval record and return pending_approval
-      const [record] = await this.db
-        .insert(aiApprovals)
-        .values({
-          siteId: this.siteId,
-          skillName,
-          arguments: args,
-          status: 'pending',
-          context: contextMessage ?? null,
-        })
-        .returning();
-
-      const [agentApproval] = await this.db
-        .insert(agentApprovals)
-        .values({
-          runId: run.runId,
-          siteId: this.siteId,
-          legacyApprovalId: record!.id,
-          subjectType: 'tool_call',
-          subjectId: toolCallId,
-          status: 'pending',
-          approvalPolicy: policy.approvalPolicy,
-          requestedByAgent: run.agentName,
-        })
-        .returning();
-
-      this.notify?.({
-        kind: 'approval',
-        severity: 'info',
-        title: 'Approval requested',
-        body: `${run.agentName} requests approval to run "${skillName}"`,
-        deepLink: `/mission-control/inbox?entry=approval:${agentApproval!.id}`,
-        entityId: agentApproval!.id,
-      });
-
-      await this.runService.finishToolCall(toolCallId, {
-        status: 'pending_approval',
-        output: { approvalId: record!.id, agentApprovalId: agentApproval!.id },
-        approvalId: agentApproval!.id,
-        latencyMs: Date.now() - startedAt,
-      });
-
-      // Park the run while the approval is pending; the approval decision
-      // resumes it without re-running completed tool calls (Req 3.1/3.4).
-      await this.runService.awaitApproval(run.runId);
-
-      return {
-        status: 'pending_approval',
-        approvalId: record!.id,
-        agentApprovalId: agentApproval!.id,
-        ...run,
+      return this.parkForApproval({
+        skillName,
+        args,
+        contextMessage,
+        run,
         toolCallId,
-      };
+        approvalPolicy: policy.approvalPolicy,
+        startedAt,
+      });
     }
 
-    // Step 4: Safe skill — execute directly
+    // Step 3b: Write/autonomy gate for skills that are NOT control-plane.
+    //
+    // The trust gradient used to be reachable only through `isDangerous`, so a
+    // plain content write (`createItem`, `items:write`) skipped it entirely: an
+    // intent capped at L0 still wrote, and L1 never asked for approval (repro
+    // GP2/GP3). `AutonomyService` documents L0 as "no side effects" and L1 as
+    // "every action creates an approval", so a write has to consult the level
+    // regardless of how it is classified.
+    //
+    // Reads are untouched: the gate only applies to skills whose capabilities
+    // mutate (`:write|update|create|delete`). And because the resolver's default
+    // for a safe capability is L2, an installation with no grant and no intent
+    // cap behaves exactly as before — the gate bites only when someone has
+    // explicitly lowered the level.
+    if (isWrite) {
+      const autonomy = new AutonomyService({ db: this.db, siteId: this.siteId, notify: this.notify });
+      const level = await autonomy.resolve(
+        envelope.agentName ?? run.agentName,
+        primaryDangerousCapability(tool, skillName),
+        {
+          dangerous: false,
+          intentCap: envelope.autonomyCap ?? null,
+          irreversible: IRREVERSIBLE_SKILLS.has(skillName),
+        },
+      );
+
+      // L0 shadow: the run is allowed to exist, the write is not.
+      if (level === AUTONOMY_LEVELS.SHADOW) {
+        const message = `autonomy_shadow: L0 cannot write; "${skillName}" was not executed`;
+        await this.runService.finishToolCall(toolCallId, {
+          status: 'denied',
+          error: message,
+          latencyMs: Date.now() - startedAt,
+        });
+        await this.runService.failRun(run.runId, message, { stopReason: 'autonomy_shadow' });
+        return { status: 'denied', code: 'AUTONOMY_SHADOW', message, ...run, toolCallId };
+      }
+
+      // L1 propose: the write becomes a proposal a human decides on. Same
+      // approval records, same ids, same decision endpoint as a dangerous skill
+      // — one contract, not a second one for writes.
+      if (level === AUTONOMY_LEVELS.PROPOSE) {
+        return this.parkForApproval({
+          skillName,
+          args,
+          contextMessage,
+          run,
+          toolCallId,
+          approvalPolicy: policy.approvalPolicy,
+          startedAt,
+        });
+      }
+    }
+
+    // Step 4: safe skill (or a write at L2+) — execute directly
     const result = await this.runSkill(skillName, args, { runId: run.runId });
     if (result.success) {
       await this.runService.finishToolCall(toolCallId, {
@@ -2559,6 +2570,85 @@ export class AISecureHarness {
     });
     await this.runService.failRun(run.runId, result.error, { toolCalls: 1 });
     return { status: 'denied', message: result.error, ...run, toolCallId };
+  }
+
+  /**
+   * Parks a tool call as a pending approval and returns the decision payload.
+   *
+   * Extracted so there is exactly ONE place that creates approval records on the
+   * governed path. It is reached from two directions — a control-plane skill at
+   * ≤L2, and (since #454) a plain write at L1 — and both must produce the same
+   * rows, the same ids and therefore the same decision endpoint. Two copies of
+   * this block would be two contracts.
+   *
+   * Note which id is which, because they live in different tables: `approvalId`
+   * is the legacy `ai_approvals` row, `agentApprovalId` is the `agent_approvals`
+   * row that the Mission Control inbox and `/api/v1/agent/approvals/:id/decide`
+   * operate on.
+   */
+  private async parkForApproval(input: {
+    skillName: string;
+    args: Record<string, unknown>;
+    contextMessage?: string | undefined;
+    run: { goalId: string; runId: string; agentName: string };
+    toolCallId: string;
+    approvalPolicy?: string | undefined;
+    startedAt: number;
+  }): Promise<HarnessExecutionResult> {
+    const { skillName, args, contextMessage, run, toolCallId, startedAt } = input;
+
+    const [record] = await this.db
+      .insert(aiApprovals)
+      .values({
+        siteId: this.siteId,
+        skillName,
+        arguments: args,
+        status: 'pending',
+        context: contextMessage ?? null,
+      })
+      .returning();
+
+    const [agentApproval] = await this.db
+      .insert(agentApprovals)
+      .values({
+        runId: run.runId,
+        siteId: this.siteId,
+        legacyApprovalId: record!.id,
+        subjectType: 'tool_call',
+        subjectId: toolCallId,
+        status: 'pending',
+        approvalPolicy: input.approvalPolicy,
+        requestedByAgent: run.agentName,
+      })
+      .returning();
+
+    this.notify?.({
+      kind: 'approval',
+      severity: 'info',
+      title: 'Approval requested',
+      body: `${run.agentName} requests approval to run "${skillName}"`,
+      deepLink: `/mission-control/inbox?entry=approval:${agentApproval!.id}`,
+      entityId: agentApproval!.id,
+    });
+
+    await this.runService.finishToolCall(toolCallId, {
+      status: 'pending_approval',
+      output: { approvalId: record!.id, agentApprovalId: agentApproval!.id },
+      approvalId: agentApproval!.id,
+      latencyMs: Date.now() - startedAt,
+    });
+
+    // Park the run while the approval is pending; the approval decision
+    // resumes it without re-running completed tool calls (Req 3.1/3.4).
+    await this.runService.awaitApproval(run.runId);
+
+    return {
+      status: 'pending_approval',
+      approvalId: record!.id,
+      agentApprovalId: agentApproval!.id,
+      ...run,
+      toolCallId,
+    };
   }
 
   private async executeLegacy(
