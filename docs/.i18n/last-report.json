@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-19T13:44:58.508Z",
+  "generatedAt": "2026-09-19T23:41:00.569Z",
   "mode": "plan",
   "effectiveMode": "plan",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 149,
+    "upToDate": 150,
     "planned": 0
   },
   "actions": [
@@ -1268,6 +1268,18 @@
       "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/reconciler-repair-loop.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
       "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0

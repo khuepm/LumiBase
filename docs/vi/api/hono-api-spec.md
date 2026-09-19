@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 3
-lastUpdated: 2026-09-01T19:24:38.846Z
+version: 4
+lastUpdated: 2026-09-19T23:36:27.839Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f0c3698b7ea88443
+sourceHash: 6e74b595c7f17b5f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-01T19:24:38.846Z
-codeVerifiedHash: f0c3698b7ea88443
-codeVerifiedClaims: 374
+codeVerified: 2026-09-19T23:36:27.839Z
+codeVerifiedHash: 6e74b595c7f17b5f
+codeVerifiedClaims: 376
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -689,6 +689,7 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Các phiên bản, bản nháp, `/compile` (NL→đánh giá), `:id/dry-run`, `:id/activate` |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Dừng ở 4 phạm vi (`run/intent/role/site`); việc đóng đóng băng cần `agents:freeze` |
 | `*` | `/api/v1/agent/intents[...]` | CRUD ý định nội dung, `:id/pause|resume|scan|drifts`, `/compile` |
+| `POST` | `/api/v1/intents/:id/scan` | Một chu kỳ reconcile: `{ scan, reconcile, dispatch }`. `dispatch` đẩy mỗi reconciler goal tiến một bước (draft → promote → verify) và báo `dispatched/completed/skipped/blocked` cùng `queueUnavailable` trên runtime không có queue adapter. Xem [vòng sửa của reconciler](../features/reconciler-repair-loop.md) |
 | `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp` |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Ghim Law Zero: liệt kê / giải phóng |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Chỉ mục llms.txt công khai mỗi site |

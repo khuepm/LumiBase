@@ -140,6 +140,7 @@ async function main() {
   let retentionTask: ScheduledTask | undefined;
   let deploymentPollTask: ScheduledTask | undefined;
   let flowScheduleTask: ScheduledTask | undefined;
+  let goalDispatchTask: ScheduledTask | undefined;
   let loadGuardTimer: ReturnType<typeof setInterval> | undefined;
 
   if (runWorkers) {
@@ -442,6 +443,41 @@ async function main() {
     ),
   );
 
+  // ── Reconciler goal dispatch (#455) ─────────────────────────────────────
+  //
+  // The reconciler creates goals; this tick is what turns them into runs. Before
+  // it existed, a reconciler goal was terminal: it was created, the drift flipped
+  // to `assigned` with the goal id, and nothing anywhere executed it — and
+  // because `planReconciliation` skips drifts that already carry a goal, the
+  // unexecutable goal locked that drift out of every later cycle.
+  //
+  // One minute is deliberate: each pass advances a goal by at most one step
+  // (draft → promote → verify), and the promote step waits on a human approval,
+  // so a faster tick would only re-observe the same waiting state. The pass is
+  // leader-locked because two processes dispatching the same goal would create
+  // two runs for one drift.
+  const { runGoalDispatchTick } = await import('./services/goal-dispatch-service');
+  const goalDispatchDeps = { db: rotatorDb, queue: runtime.queue };
+  goalDispatchTask = cron.schedule(
+    '* * * * *',
+    leaderLockedCallback(
+      'goal-dispatch',
+      50_000,
+      () => {
+        void runGoalDispatchTick(goalDispatchDeps)
+          .then((summary) => {
+            if (summary.dispatched > 0 || summary.blocked > 0 || summary.completed > 0) {
+              console.log('[goal-dispatch] pass', JSON.stringify(summary));
+            }
+          })
+          .catch((err) => {
+            console.error('[goal-dispatch] tick failed', formatSafeError(err));
+          });
+      },
+      lockOpts,
+    ),
+  );
+
   // ── Deployment status poller (deployment-integrations task 9; Req 3.4) ──
   //
   // A 30-second sweep syncs every non-terminal deployment from its Provider.
@@ -529,6 +565,7 @@ async function main() {
     retentionTask?.stop();
     deploymentPollTask?.stop();
     flowScheduleTask?.stop();
+    goalDispatchTask?.stop();
     if (runHttp) {
       pressureLimiter.stop();
     }

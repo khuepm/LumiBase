@@ -136,6 +136,12 @@ export interface AgentGoalRow {
   agentRole: string | null;
   assigneeAgent: string;
   createdAt: string;
+  /**
+   * Goal metadata. Reconciler goals (#455) carry `blockedReason` here when the
+   * repair loop needs a human — without surfacing it, `blocked` in the UI would
+   * give an operator no way to find out why.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 export interface PromotionProposal {

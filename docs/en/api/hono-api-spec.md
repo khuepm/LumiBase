@@ -1,11 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-09-01T19:24:38.846Z
+version: 5
+lastUpdated: 2026-09-19T23:36:27.839Z
 sourceLang: en
-contentHash: f0c3698b7ea88443
-codeVerified: 2026-09-01T19:24:38.846Z
-codeVerifiedHash: f0c3698b7ea88443
-codeVerifiedClaims: 374
+contentHash: 6e74b595c7f17b5f
+codeVerified: 2026-09-19T23:36:27.839Z
+codeVerifiedHash: 6e74b595c7f17b5f
+codeVerifiedClaims: 376
 ---
 
 # Hono API Specification — LumiBase
@@ -798,6 +798,7 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Versions, draft, `/compile` (NL→evaluators), `:id/dry-run`, `:id/activate` |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze` |
 | `*` | `/api/v1/agent/intents[...]` | Content intents CRUD, `:id/pause|resume|scan|drifts`, `/compile` |
+| `POST` | `/api/v1/intents/:id/scan` | One reconciliation cycle: `{ scan, reconcile, dispatch }`. `dispatch` advances each reconciler goal one step (draft → promote → verify) and reports `dispatched/completed/skipped/blocked` plus `queueUnavailable` on runtimes without a queue adapter. See [reconciler repair loop](../features/reconciler-repair-loop.md) |
 | `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Law Zero pins: list / release |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Public llms.txt index per site |

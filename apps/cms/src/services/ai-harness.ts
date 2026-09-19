@@ -853,6 +853,126 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       },
     },
 
+    /**
+     * Drafts one missing locale translation into a named version branch (#455).
+     *
+     * This is the first half of the reconciler repair loop: it proposes content
+     * without touching anything a reader can see. Publishing is a separate,
+     * HITL-gated `promoteVersion` run, which is why this skill is not marked
+     * dangerous — it still passes the write/autonomy gate, so an L0 role gets a
+     * shadow denial and an L1 role gets an approval.
+     *
+     * Every "cannot do the work" path throws with a code instead of returning a
+     * success shape. The sibling version skills above return `{ created: true }`
+     * when their service is missing (offline registry support); doing that here
+     * would report a draft that does not exist, and the dispatcher would then
+     * block the goal with `DRAFT_MISSING` one pass later instead of surfacing the
+     * real cause.
+     */
+    repairTranslation: {
+      name: 'repairTranslation',
+      description:
+        'Translate one item field into a missing locale and store the result in a named version branch (no live content change).',
+      requiredCapabilities: ['items:read', 'items:write', 'translations:write'],
+      service: 'items',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string' },
+          itemId: { type: 'string' },
+          field: { type: 'string', description: 'Item field holding a locale-keyed object.' },
+          locale: { type: 'string', description: 'Locale to fill in.' },
+          versionKey: { type: 'string', description: 'Deterministic draft branch key for this drift.' },
+          sourceLocale: { type: 'string', description: 'Locale to translate from; inferred when omitted.' },
+        },
+        required: ['collection', 'itemId', 'field', 'locale', 'versionKey'],
+      },
+      handler: async (args) => {
+        const svc = contentVersionService();
+        if (!svc) {
+          throw new Error(
+            'CONTENT_VERSIONS_NOT_CONFIGURED: drafting a translation requires item access and a tenant db context',
+          );
+        }
+        const itemServiceRef = requireService(itemService, 'ITEM_SERVICE');
+        const collection = args['collection'] as string;
+        const itemId = args['itemId'] as string;
+        const field = args['field'] as string;
+        const locale = args['locale'] as string;
+        const versionKey = args['versionKey'] as string;
+
+        // Idempotent under duplicate queue delivery: a second delivery of the
+        // same job finds the branch and returns without calling the provider
+        // again. Checked before the LLM call on purpose — re-translating would
+        // spend tokens and produce a second, different draft for one drift.
+        const existing = await svc.get(collection, itemId, versionKey);
+        if (existing) {
+          return {
+            drafted: true,
+            alreadyExisted: true,
+            versionKey,
+            field,
+            locale,
+          };
+        }
+
+        const detail = (await itemServiceRef.detail(collection, itemId)) as Record<string, unknown>;
+        const data = (detail['data'] ?? {}) as Record<string, unknown>;
+        const raw = data[field];
+        const translations =
+          raw && typeof raw === 'object' && !Array.isArray(raw)
+            ? { ...(raw as Record<string, unknown>) }
+            : {};
+
+        const requestedSource = args['sourceLocale'] as string | undefined;
+        const sourceLocale =
+          requestedSource ??
+          Object.keys(translations).find(
+            (key) => key !== locale && typeof translations[key] === 'string' && (translations[key] as string).trim() !== '',
+          );
+        const sourceText = sourceLocale ? translations[sourceLocale] : undefined;
+        if (typeof sourceText !== 'string' || sourceText.trim() === '') {
+          // Nothing to translate from. Inventing content would be worse than
+          // failing: the drift would close on text no source ever contained.
+          throw new Error(
+            `NO_SOURCE_TEXT: "${collection}/${itemId}.${field}" has no non-empty locale to translate from`,
+          );
+        }
+
+        const completion = await completeJson<{ translation?: unknown }>(
+          services.llm,
+          'You are a professional translator for a CMS. Reply with JSON only: {"translation": "..."}. Preserve meaning, tone, markup and placeholders exactly. Do not add commentary.',
+          `Translate the following text from locale "${sourceLocale}" into locale "${locale}".\n\n${sourceText}`,
+        );
+        const translated = completion.value?.translation;
+        if (typeof translated !== 'string' || translated.trim() === '') {
+          throw new Error(
+            `EMPTY_TRANSLATION: provider "${completion.meta.provider}" returned no usable translation`,
+          );
+        }
+
+        translations[locale] = translated;
+        // `create` snapshots live main (so `promote` can detect divergence via
+        // the stored hash), then `update` replaces the draft payload.
+        await svc.create(collection, itemId, versionKey, `Translation repair: ${field}.${locale}`);
+        const version = await svc.update(collection, itemId, versionKey, {
+          data: { ...data, [field]: translations },
+        });
+
+        return {
+          drafted: true,
+          alreadyExisted: false,
+          versionKey,
+          field,
+          locale,
+          sourceLocale,
+          provider: completion.meta.provider,
+          model: completion.meta.model,
+          versionId: version.id,
+        };
+      },
+    },
+
     // ── POST-GA Task #3 — RAG Skills ─────────────────────────────────────
 
     aiSuggestField: {

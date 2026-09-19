@@ -21,6 +21,10 @@ const GOAL_TONES: Record<string, string> = {
   done: 'bg-emerald-100 text-emerald-800',
   succeeded: 'bg-emerald-100 text-emerald-800',
   in_progress: 'bg-sky-100 text-sky-800',
+  // A reconciler repair that needs a human decision (#455): rejected approval,
+  // no wired repair skill for the rule type, a publish that did not resolve the
+  // drift. Amber rather than destructive — it is waiting, not broken.
+  blocked: 'bg-amber-100 text-amber-800',
   open: 'bg-muted text-muted-foreground',
   failed: 'bg-destructive/10 text-destructive',
   cancelled: 'bg-muted text-muted-foreground',
@@ -159,6 +163,10 @@ function GoalNodeRow({
   const OriginIcon = ORIGIN_ICONS[goal.origin as keyof typeof ORIGIN_ICONS] ?? User;
   const role = goal.agentRole ?? goal.assigneeAgent;
   const run = runs.get(goal.id);
+  const metadata = (goal.metadata ?? {}) as Record<string, unknown>;
+  const rawBlockedReason = metadata['blockedReason'];
+  const blockedReason =
+    goal.status === 'blocked' && typeof rawBlockedReason === 'string' ? rawBlockedReason : null;
 
   const settleMutation = useMutation({
     mutationFn: () => missionControlApi.settleGoal(goal.id),
@@ -186,6 +194,13 @@ function GoalNodeRow({
           >
             {goal.status}
           </span>
+          {blockedReason && (
+            // Without this the operator sees `blocked` and has no way to learn
+            // why from the UI — the reason would only exist in the goal metadata.
+            <span className="text-[10px] text-amber-800" title="Reason this goal is blocked">
+              {blockedReason}
+            </span>
+          )}
           {run && (
             <span className="text-[10px] text-muted-foreground">
               last run: {run.status} · {run.model}

@@ -9,6 +9,51 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Fixed
+
+- **Reconciler goals now execute (#455).** A content intent's drift became an
+  `agent_goals` row and stopped there. Nothing turned that goal into a run: no cron
+  task, no queue consumer, no route. Measured on Postgres before the fix — one
+  reconcile plus three further cycles left `agent_runs` empty, the drift `assigned`
+  with its `goalId` set, and the content unchanged. That was worse than inaction,
+  because goal assignment deliberately skips drift that already carries a `goalId`,
+  so the unexecutable goal **locked** its drift out of every later cycle: a site
+  accumulated assigned drift that no longer looked actionable and was never repaired.
+  - **New `GoalDispatchService`** advances each reconciler goal by one step per pass:
+    draft → promote → verify. The next step is derived from observable state (goal
+    phase, latest run, whether the draft branch exists, drift status), so a pass is
+    safe to repeat, safe to resume after a crash, and unaffected by duplicate queue
+    delivery. Driven by a leader-locked `goal-dispatch` cron tick on Node/Docker, and
+    by `POST /api/v1/intents/:id/scan`, whose response gains a `dispatch` section.
+  - **New `repairTranslation` skill** fills one missing locale into a **version
+    branch**, never live content. Publishing is a separate `promoteVersion` run, which
+    is classified dangerous and therefore always parks for human approval (#453), so
+    published content changes exactly once in the sequence, after a human approves.
+  - **The goal completes only when a fresh scan can no longer find the violation.** A
+    promote that publishes content which does not actually resolve the drift blocks the
+    goal with `VERIFY_FAILED` instead of reporting success.
+  - **Every dead end is named.** `metadata.blockedReason` records `RUN_FAILED`,
+    `RUN_CANCELLED`, `NO_REPAIR_SKILL`, `DRAFT_MISSING`, `PROMOTE_INCOMPLETE`,
+    `VERIFY_FAILED`, `ENQUEUE_FAILED` or `DRIFT_MISSING`, and Studio → Mission Control
+    shows it. The loop never retries on its own: the most common cause of a failed
+    phase is a human rejecting the approval, and re-dispatching would re-ask them.
+  - **Governance survives the queue hop.** `AgentRunJobPayload` gains optional
+    `origin`, `intentId`, `driftFingerprint`, `autonomyCap` and `agentRole`, and the
+    worker forwards them into the harness envelope. Without that, the intent's autonomy
+    ceiling was recorded on the payload and enforced nowhere at execution time.
+    Capabilities are **not** snapshotted: the worker resolves them from the agent role
+    at pickup, so disabling a role stops work already sitting in the queue.
+  - **Also fixed: the agent role library seeded only when someone opened the Studio
+    Roles page.** `agent_roles` is seeded lazily and nothing on the background path
+    triggered it, so on a site where nobody had visited that page every reconciler run
+    resolved to zero capabilities and failed `capabilities_denied`. The worker now
+    seeds before resolving; the seed is idempotent and adds no new definitions.
+  - **Runtime limits, stated rather than implied.** Dispatch runs on Node/Docker. On
+    Cloudflare Workers the `agent-runs` queue still has no consumer export, so
+    asynchronous runs — including this loop — do not execute there; a tripwire asserts
+    that rather than leaving readers to infer it. Documented in
+    `docs/{en,vi}/features/reconciler-repair-loop.md`.
+
 ### Changed
 
 - **MCP: one governed tool contract across both transports (#454, #472).** LumiBase
