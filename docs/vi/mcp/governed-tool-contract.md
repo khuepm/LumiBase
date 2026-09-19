@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-09-19T06:33:27.697Z
+version: 2
+lastUpdated: 2026-09-19T13:44:33.469Z
 sourceLang: vi
-contentHash: e18a53cdc84b9d12
-codeVerified: 2026-09-19T06:33:27.697Z
-codeVerifiedHash: e18a53cdc84b9d12
+contentHash: 533443703534ed06
+codeVerified: 2026-09-19T13:44:33.469Z
+codeVerifiedHash: 533443703534ed06
 codeVerifiedClaims: 22
 ---
 
@@ -133,11 +133,13 @@ Trước đây hợp đồng gộp `agentApprovalId ?? approvalId` vào một fi
 
 | Tool | Skill | Rename |
 |---|---|---|
-| `delete_field` | `deleteField` | `field_name` → `name` |
+| `delete_field` | `deleteField` | `field_name` → `name` (kèm `force`, xem dưới) |
 | `add_team_member` | `addTeamMember` | `id` → `teamId` |
 | `remove_team_member` | `removeTeamMember` | `id` → `teamId` |
 
 `confirm` là prompt cho người vận hành, không phải argument của skill, nên bị **bỏ** chứ không forward.
+
+Ngược lại, `force` của `delete_field` **được** forward: `SchemaService.deleteField` nhận `FieldDeleteOptions.force` và REST truyền `?force=true`, nên nếu đường governed không diễn đạt được nó thì governed sẽ là chỗ duy nhất từ chối một arg mà REST nhận. Nguyên tắc chung: arg nào handler tôn trọng thì khai vào contract; arg nào chỉ dành cho người vận hành thì bỏ. Ranh giới này được `governed-binding-contract.test.ts` tính lại từ registry ở mỗi lần chạy test — trước đó nó chỉ được đo một lần bằng script rồi sửa tay, và đúng `force` bị bỏ sót.
 
 **`UNGOVERNED_MUTATIONS`** — vẫn gọi REST, kèm lý do từng tool:
 

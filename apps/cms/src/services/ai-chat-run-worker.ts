@@ -5,6 +5,7 @@ import { asc, eq } from 'drizzle-orm';
 import { AISecureHarness } from './ai-harness';
 import { EffectiveCapabilityService } from './effective-capability-service';
 import { resolvePrincipalCapabilities } from './governed-capabilities';
+import { itemServiceForPrincipal, itemServiceForSystem } from './item-service-factory';
 import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from './llm-provider';
 import { SchemaService } from './schema-service';
 import { markRunRunning, persistAiChatOutcome, type AiChatRunJob } from './flow-run-service';
@@ -66,12 +67,39 @@ export async function executeAiChatRun(
 
     const toolCall = llmResponse.toolCalls[0]!;
     const schemaService = new SchemaService({ db, siteId: job.siteId });
-    const itemService = new (await import('./item-service')).ItemService({
-      db,
-      siteId: job.siteId,
-      userId: job.userId,
-      keyProvider: keys ?? undefined,
-    });
+
+    // Capabilities are re-resolved at pickup, not taken from the enqueued
+    // snapshot (#472), so a grant revoked while the job queued is honoured.
+    // Jobs enqueued before `principal` existed fall back to their snapshot.
+    const capabilities = job.principal
+      ? await resolvePrincipalCapabilities(
+          new EffectiveCapabilityService({ db, siteId: job.siteId }),
+          job.principal,
+        )
+      : { allowed: true as const, capabilities: job.userCapabilities ?? [], controlPlaneAdmin: false };
+
+    // ItemService must be PRINCIPAL-BOUND here, and this is the reason it has to
+    // be built after resolution rather than before.
+    //
+    // Capabilities are the coarse gate; row rules and field masks live in
+    // `ItemService` and apply only when it receives a `permissionCtx`. Without
+    // one, a user whose policy grants `create` on `articles` alone resolves to
+    // `items:write` — which is true, they may write *something* — and then
+    // writes to any collection, because nothing narrower is left to stop them.
+    // The coarse check passing is exactly what makes the gap easy to miss.
+    //
+    // It also made the two halves of one endpoint disagree: the synchronous
+    // `POST /ai/chat` builds its harness with `itemServiceForRequest(c)`, so the
+    // same message enforced row/field RBAC when answered inline and skipped it
+    // when answered through the queue. Same request, same user, different
+    // authorization — decided by a `Prefer` header.
+    const itemDeps = { db, siteId: job.siteId, userId: job.userId, keyProvider: keys ?? undefined };
+    const itemService = capabilities.permissionContext
+      ? itemServiceForPrincipal(itemDeps, capabilities.permissionContext)
+      : // Legacy jobs (enqueued before `principal`) have no principal to bind, so
+        // there is nothing to derive a context from. Named rather than implicit,
+        // and it disappears once the queue has drained past the deploy.
+        itemServiceForSystem(itemDeps, 'background-worker');
 
     const harness = new AISecureHarness({
       db,
@@ -81,16 +109,6 @@ export async function executeAiChatRun(
       llm: createConfiguredLLMProvider(envRecord),
       keys,
     });
-
-    // Re-resolved at pickup, not taken from the enqueued snapshot (#472), so a
-    // grant revoked while the job queued is honoured. Jobs enqueued before
-    // `principal` existed fall back to their snapshot.
-    const capabilities = job.principal
-      ? await resolvePrincipalCapabilities(
-          new EffectiveCapabilityService({ db, siteId: job.siteId }),
-          job.principal,
-        )
-      : { allowed: true as const, capabilities: job.userCapabilities ?? [], controlPlaneAdmin: false };
 
     const result = capabilities.allowed
       ? await harness.execute(

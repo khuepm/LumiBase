@@ -73,7 +73,19 @@ export const AgentToolSchemas = {
       note: z.string().nullable().optional(),
     })
     .strict(),
-  deleteField: z.object({ collection: slug, name: slug }).strict(),
+  deleteField: z
+    .object({
+      collection: slug,
+      name: slug,
+      /**
+       * Forwarded to `SchemaService.deleteField`'s `FieldDeleteOptions.force`,
+       * which is what `DELETE …/fields/:field?force=true` uses. Declared because
+       * the handler honours it — omitting it would have made the governed path
+       * reject an argument REST accepts.
+       */
+      force: z.boolean().optional(),
+    })
+    .strict(),
   deleteRelation: z.object({ id }).strict(),
 
   // ── access ───────────────────────────────────────────────────────────────

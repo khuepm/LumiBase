@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-09-19T06:33:27.697Z
+version: 2
+lastUpdated: 2026-09-19T13:44:33.469Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: e18a53cdc84b9d12
+sourceHash: 533443703534ed06
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-19T06:33:27.697Z
-codeVerifiedHash: e18a53cdc84b9d12
+codeVerified: 2026-09-19T13:44:33.469Z
+codeVerifiedHash: 533443703534ed06
 codeVerifiedClaims: 22
 ---
 
@@ -136,11 +136,13 @@ The contract used to collapse `agentApprovalId ?? approvalId` into one field, so
 
 | Tool | Skill | Rename |
 |---|---|---|
-| `delete_field` | `deleteField` | `field_name` → `name` |
+| `delete_field` | `deleteField` | `field_name` → `name` (plus `force`, see below) |
 | `add_team_member` | `addTeamMember` | `id` → `teamId` |
 | `remove_team_member` | `removeTeamMember` | `id` → `teamId` |
 
 `confirm` is a prompt for the operator, not a skill argument, so it is **dropped** rather than forwarded.
+
+`force` on `delete_field` is the opposite case and **is** forwarded: `SchemaService.deleteField` accepts `FieldDeleteOptions.force` and REST passes `?force=true`, so a governed path unable to express it would be the one place that rejects an argument REST accepts. The rule: declare what the handler honours, drop what only the operator needs. That boundary is now recomputed from the registry on every test run by `governed-binding-contract.test.ts` — it had been measured once by a script and then hand-edited, which is how `force` was missed.
 
 **`UNGOVERNED_MUTATIONS`** — still REST, each with its reason:
 

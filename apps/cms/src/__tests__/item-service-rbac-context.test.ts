@@ -40,6 +40,29 @@ const ALLOWED_DIRECT_CONSTRUCTION: Record<string, string> = {
   'services/item-service.ts': 'internal self-construction (relation expansion)',
 };
 
+/**
+ * Shapes that construct the service directly.
+ *
+ * The second pattern is not hypothetical. `services/ai-chat-run-worker.ts` built
+ * its service as `new (await import('./item-service')).ItemService({…})` — no
+ * `permissionCtx`, so the async half of `POST /ai/chat` skipped row/field RBAC
+ * while the synchronous half enforced it. This guard existed the whole time and
+ * stayed green, because `new ItemService(` never appears in that form: the
+ * inline dynamic import sits between `new` and the class name.
+ *
+ * So the one file that bypassed RBAC was also the one file shaped to slip past
+ * the guard built to catch it. Both halves are fixed; this pattern is what keeps
+ * the evasion from working again.
+ */
+const DIRECT_CONSTRUCTION_PATTERNS: RegExp[] = [
+  /\bnew\s+ItemService\s*\(/,
+  // The inner group must tolerate nested parens — `await import('…')` contains a
+  // closing one, so a `[^)]*` inner class stops at the wrong place and the
+  // pattern silently never matches. Bounded, and it refuses `;{}` so it cannot
+  // wander across statements looking for a `.ItemService(` somewhere below.
+  /\bnew\s*\([^;{}]{0,200}?\)\s*\.\s*ItemService\s*\(/,
+];
+
 function listSourceFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
@@ -66,10 +89,29 @@ describe('ItemService RBAC construction guard (source scan)', () => {
     const rel = relative(srcRoot, file).split(sep).join('/');
     if (rel in ALLOWED_DIRECT_CONSTRUCTION) continue;
     const source = readFileSync(file, 'utf8');
-    if (/\bnew\s+ItemService\s*\(/.test(source)) {
+    if (DIRECT_CONSTRUCTION_PATTERNS.some((pattern) => pattern.test(source))) {
       offenders.push(rel);
     }
   }
+
+  it('catches the dynamic-import construction shape that used to slip through', () => {
+    // Negative check on the guard itself: the pattern list must reject the exact
+    // form `ai-chat-run-worker.ts` used, not just the plain one.
+    const evasion = `const s = new (await import('./item-service')).ItemService({ db, siteId });`;
+    expect(DIRECT_CONSTRUCTION_PATTERNS.some((p) => p.test(evasion))).toBe(true);
+
+    const plain = `const s = new ItemService({ db, siteId });`;
+    expect(DIRECT_CONSTRUCTION_PATTERNS.some((p) => p.test(plain))).toBe(true);
+
+    // And it must not fire on the factory helpers, or every call site is an offence.
+    for (const allowed of [
+      `const s = itemServiceForRequest(c);`,
+      `const s = itemServiceForSystem(deps, 'background-worker');`,
+      `const s = itemServiceForPrincipal(deps, permissionCtx);`,
+    ]) {
+      expect(DIRECT_CONSTRUCTION_PATTERNS.some((p) => p.test(allowed)), allowed).toBe(false);
+    }
+  });
 
   it('no production file constructs ItemService outside the factory', () => {
     expect(

@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 import type { AppEnv } from '../env';
+import type { MagicContext } from './permission-dsl';
 import {
   EffectiveCapabilityService,
   principalRefFromAuth,
@@ -38,6 +39,17 @@ export interface GovernedCapabilityResolution {
   capabilities: string[];
   /** Whether this principal may pass a control-plane admin backstop. */
   controlPlaneAdmin: boolean;
+  /**
+   * Principal-bound context for building a request-equivalent `ItemService` off
+   * the request path.
+   *
+   * Capabilities are the coarse gate; row rules and field masks live in
+   * `ItemService` and only apply when it is given a `permissionCtx`. A worker
+   * that resolved capabilities but built `ItemService` without this would pass
+   * the coarse check and then write with system privileges — the gap is silent,
+   * because the capability set looks correct. Present only when `allowed`.
+   */
+  permissionContext?: MagicContext;
   /** Present when `allowed` is false. */
   code?: GovernedCapabilityCode;
   message?: string;
@@ -149,6 +161,7 @@ export async function resolvePrincipalCapabilities(
     allowed: true,
     capabilities: resolution.capabilities,
     controlPlaneAdmin: resolution.controlPlaneAdmin,
+    permissionContext: resolution.permissionContext,
   };
 }
 

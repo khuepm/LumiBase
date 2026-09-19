@@ -616,11 +616,15 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       requiredCapabilities: ['schema:delete'],
       service: 'schema',
       handler: async (args) => {
-        // Connects to: SchemaService.deleteField(collectionName, fieldName)
+        // Connects to: SchemaService.deleteField(collectionName, fieldName, options)
         const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
         const collection = args['collection'] as string;
         const name = args['name'] as string;
-        const result = await schemaServiceRef.deleteField(collection, name);
+        // `force` reaches `FieldDeleteOptions` here for the same reason the REST
+        // route passes `?force=true` through: the service supports it, so the
+        // governed path must not be the one place that cannot express it.
+        const force = args['force'] === true;
+        const result = await schemaServiceRef.deleteField(collection, name, force ? { force } : {});
         return { deleted: true, result };
       },
     },
@@ -2233,6 +2237,17 @@ export class AISecureHarness {
     // denial instead of an engine error surfacing from inside a service.
     const inputError = this.validateToolInput(skillName, args);
     if (inputError) {
+      // "Create no run" is not the same as "leave an existing run alone". On the
+      // async path the run already exists and the worker has already moved it to
+      // `running` before calling in, so returning `denied` without settling it
+      // parks the run in `running` forever — a queued `createItem` with empty
+      // arguments would sit there indefinitely. The kill-switch branch above
+      // faces the same situation and settles it via `cancelRun`; this one has to
+      // as well. `ensureRun` is still not called, so a synchronous caller with no
+      // run keeps the property GP5 pins: zero rows written.
+      if (envelope.runId) {
+        await this.runService.failRun(envelope.runId, inputError, { stopReason: 'invalid_input' });
+      }
       return {
         status: 'denied',
         code: 'VALIDATION',

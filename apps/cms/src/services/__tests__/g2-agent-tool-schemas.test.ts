@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   AgentToolSchemas,
@@ -98,6 +100,40 @@ describe('AgentToolSchemas', () => {
       const verdict = validateAgentToolInput(name, args);
       expect(verdict.ok, `${name}: ${JSON.stringify(args)}`).toBe(true);
     }
+  });
+
+  it('fixture canonical mà packages/mcp-server dùng vẫn khớp Zod sống', () => {
+    /**
+     * Nửa còn lại của gate ở
+     * `packages/mcp-server/src/__tests__/governed-binding-contract.test.ts`.
+     *
+     * Package đó KHÔNG phụ thuộc `@lumibase/contracts` (nó publish với đúng MCP
+     * SDK + zod), nên nó so binding governed với một **fixture đã commit**. Fixture
+     * chỉ đáng tin nếu có ai đó chứng minh nó chưa trôi lệch so với schema thật —
+     * đó là việc của test này, vì đây là chỗ import được cả hai. Thiếu một trong
+     * hai nửa thì vòng kiểm không đóng: nửa kia sẽ vui vẻ so với một bản chụp cũ.
+     *
+     * Sinh lại bằng cách in `jsonSchemaFor` cho `agentToolNamesWithSchema()` —
+     * đúng hai field `properties` + `required`, đã sort.
+     */
+    const fixturePath = fileURLToPath(
+      new URL('../../../../../packages/mcp-server/src/__tests__/canonical-agent-tool-schemas.json', import.meta.url),
+    );
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as Record<
+      string,
+      { properties: string[]; required: string[] }
+    >;
+
+    const live: Record<string, { properties: string[]; required: string[] }> = {};
+    for (const name of agentToolNamesWithSchema().sort()) {
+      const json = jsonSchemaFor(name)!;
+      live[name] = {
+        properties: Object.keys((json['properties'] ?? {}) as object).sort(),
+        required: ((json['required'] ?? []) as string[]).slice().sort(),
+      };
+    }
+
+    expect(fixture).toEqual(live);
   });
 
   it('skill không có schema thì validArgsFor trả {} và argsForProperty giữ args sinh ngẫu nhiên', () => {
