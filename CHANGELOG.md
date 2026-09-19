@@ -11,6 +11,19 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Changed
 
+- **Onboarding docs: `lumibase init` is the same scaffold, and the version pin has
+  a consequence.** Two gaps on the pages a newcomer actually reads. Getting started
+  showed `npm create lumibase@latest` and never mentioned `lumibase init` outside a
+  link at the very bottom, so nothing said the two entry points are one scaffold
+  (`init` runs `create-lumibase` and forwards argv verbatim — they cannot offer
+  different templates). And the CLI reference explained the version pin without
+  stating what it costs: `init` resolves the scaffolder from the **registry**, so a
+  template that exists in the source tree is unreachable through `lumibase init`
+  until `create-lumibase` is published, failing *inside* the scaffolder with a
+  missing-template-directory error rather than an unknown-template one. That trap
+  was known — it was recorded in a test comment and in the Setup Impact Registry —
+  but had never been told to users. Docs only; no runtime change.
+
 - **Dependency batch: 27 minor/patch bumps, Vitest 5, Framer Motion 13.** The
   group bump carries `zod` 4.4→4.6, `next` 16.3.3→16.3.4, `hono` 4.13.5→4.13.7,
   `wrangler` 4.127→4.129, `bullmq` 6.3.1→6.3.4, `lucide-react` 1.34→1.41 and

@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-09-14T21:26:07.815Z
+version: 5
+lastUpdated: 2026-09-19T15:27:57.260Z
 sourceLang: en
-contentHash: 99526fe6886264cb
-codeVerified: 2026-09-14T21:26:07.815Z
-codeVerifiedHash: 99526fe6886264cb
+contentHash: 72d3a82d31669306
+codeVerified: 2026-09-19T15:27:57.260Z
+codeVerifiedHash: 72d3a82d31669306
 codeVerifiedClaims: 8
 ---
 
@@ -54,6 +54,13 @@ pnpm create lumibase my-project
 With no arguments, the CLI runs interactively and asks for everything it needs.
 The first prompt is the one that matters most — it chooses your template, and
 the Next.js option is preselected.
+
+If a project already has the `lumibase` CLI, `lumibase init` is the same
+scaffold, not a second one: it runs `create-lumibase` and forwards your
+arguments verbatim, so the two entry points cannot offer different templates or
+drift apart. Use whichever is at hand — `npm create lumibase@latest` needs
+nothing installed. See [`lumibase init`](./cli/index.md#lumibase-init) for how
+the delegation works and why the scaffolder is not a dependency of `lumibase`.
 
 ## What happens, step by step
 
