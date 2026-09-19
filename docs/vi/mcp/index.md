@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-09-19T06:33:36.352Z
+version: 3
+lastUpdated: 2026-09-19T06:45:16.890Z
 sourceLang: vi
-contentHash: fc65a5428141bce0
-codeVerified: 2026-09-19T06:33:36.352Z
-codeVerifiedHash: fc65a5428141bce0
+contentHash: ae814fddb61ee754
+codeVerified: 2026-09-19T06:45:16.890Z
+codeVerifiedHash: ae814fddb61ee754
 codeVerifiedClaims: 26
 ---
 
@@ -54,7 +54,7 @@ Nguồn: [`apps/cms/src/services/tool-registry-service.ts`](../../../apps/cms/sr
 
 ## 2. Standalone MCP server — `@lumibase/mcp-server`
 
-Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (v0.6.0, `@modelcontextprotocol/sdk`).
+Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (dựng trên `@modelcontextprotocol/sdk`; version lấy ở `package.json` của chính package — không pin lại ở đây để tránh thêm một chỗ trôi lệch).
 
 - **Transport:** Stdio (`StdioServerTransport`). Dành cho tích hợp editor cục bộ.
 - **Entry:** `packages/mcp-server/src/index.ts` — `new McpServer({ name: 'lumibase', ... })`, đăng ký collection/field/item tools, `connect(StdioServerTransport)`.

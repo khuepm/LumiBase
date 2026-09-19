@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-09-19T06:33:36.352Z
+version: 3
+lastUpdated: 2026-09-19T06:45:16.890Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: fc65a5428141bce0
+sourceHash: ae814fddb61ee754
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-19T06:33:36.352Z
-codeVerifiedHash: fc65a5428141bce0
+codeVerified: 2026-09-19T06:45:16.890Z
+codeVerifiedHash: ae814fddb61ee754
 codeVerifiedClaims: 26
 ---
 
@@ -57,7 +57,7 @@ Source: [`apps/cms/src/services/tool-registry-service.ts`](../../../apps/cms/src
 
 ## 2. The standalone MCP server — `@lumibase/mcp-server`
 
-Source: [`packages/mcp-server/`](../../../packages/mcp-server/) (v0.6.0, `@modelcontextprotocol/sdk`).
+Source: [`packages/mcp-server/`](../../../packages/mcp-server/) (built on `@modelcontextprotocol/sdk`; the version lives in that package's own `package.json` and is deliberately not pinned here, to avoid adding another place that can drift).
 
 - **Transport:** Stdio (`StdioServerTransport`). Intended for local editor integration.
 - **Entry:** `packages/mcp-server/src/index.ts` — `new McpServer({ name: 'lumibase', ... })`, registers the collection/field/item tools, then `connect(StdioServerTransport)`.
