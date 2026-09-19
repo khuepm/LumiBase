@@ -2,6 +2,14 @@ import type { Database } from '@lumibase/database';
 import type { CacheProvider, KeyProvider, QueueProvider, SearchProvider } from '@lumibase/runtime';
 import { AISecureHarness } from './ai-harness';
 import { AgentRunService } from './agent-run-service';
+import {
+  EffectiveCapabilityService,
+  type AuthenticatedPrincipalRef,
+} from './effective-capability-service';
+import {
+  resolvePrincipalCapabilities,
+  type GovernedCapabilityResolution,
+} from './governed-capabilities';
 import { itemServiceForSystem } from './item-service-factory';
 import { createConfiguredLLMProvider, type LLMProviderEnv } from './llm-provider';
 import { SchemaService } from './schema-service';
@@ -24,8 +32,19 @@ export interface AgentRunJobPayload {
   runId: string;
   skillName: string;
   arguments: Record<string, unknown>;
-  /** Capabilities captured from the enqueuing session — never widened. */
-  capabilities: string[];
+  /**
+   * @deprecated Since #472 this is a compatibility field for jobs enqueued
+   * before `principal` existed. A capability snapshot stays valid for as long as
+   * the job sits in the queue, so a role change or a revoked key would not take
+   * effect until the run finally executed. New enqueues send `principal` and the
+   * worker re-resolves at pickup.
+   */
+  capabilities?: string[];
+  /**
+   * Server-issued principal reference. Carries no capabilities on purpose — the
+   * worker resolves them from current database state when the job is picked up.
+   */
+  principal?: AuthenticatedPrincipalRef | null;
   userId?: string | null;
   contextMessage?: string;
 }
@@ -43,6 +62,34 @@ export interface AgentRunWorkerDeps {
    */
   keys?: KeyProvider;
   env: LLMProviderEnv & Record<string, string | undefined>;
+}
+
+/**
+ * Resolves the capabilities a queued run executes with.
+ *
+ * Prefers the persisted principal reference and re-reads the grant from the
+ * database. Falls back to the deprecated `capabilities` snapshot only for jobs
+ * that predate `principal`; a job carrying neither resolves to no capabilities,
+ * which the harness then denies.
+ */
+async function resolveWorkerCapabilities(
+  deps: AgentRunWorkerDeps,
+  payload: AgentRunJobPayload,
+): Promise<GovernedCapabilityResolution> {
+  if (payload.principal) {
+    const service = new EffectiveCapabilityService({
+      db: deps.db,
+      siteId: payload.siteId,
+      ...(deps.cache ? { cache: deps.cache } : {}),
+      ...(deps.env.LUMIBASE_ENV ? { environment: deps.env.LUMIBASE_ENV } : {}),
+    });
+    return resolvePrincipalCapabilities(service, payload.principal);
+  }
+  return {
+    allowed: true,
+    capabilities: payload.capabilities ?? [],
+    controlPlaneAdmin: false,
+  };
 }
 
 /**
@@ -95,11 +142,24 @@ export async function processAgentRunJob(
     keys: deps.keys,
   });
 
+  // Capabilities are resolved HERE, not at enqueue (#472). A queued job can sit
+  // for minutes; re-reading the grant at pickup is what makes a revoked API key
+  // or a demoted user take effect on work that was already accepted.
+  const capabilities = await resolveWorkerCapabilities(deps, payload);
+  if (!capabilities.allowed) {
+    await runService.failRun(
+      payload.runId,
+      capabilities.message ?? 'Capability resolution denied',
+      { stopReason: 'capabilities_denied', code: capabilities.code },
+    );
+    return;
+  }
+
   try {
     await harness.execute(
       payload.skillName,
       payload.arguments,
-      payload.capabilities,
+      capabilities.capabilities,
       payload.contextMessage,
       { goalId: payload.goalId, runId: payload.runId },
     );

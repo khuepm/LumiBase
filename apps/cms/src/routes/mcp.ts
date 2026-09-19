@@ -8,6 +8,7 @@ import { AISecureHarness, CORE_SKILLS, isControlPlaneSkill } from '../services/a
 import { ConfigService } from '../services/config-service';
 import { ExtensionsService } from '../services/extensions-service';
 import { getContentOsFlags } from '../services/feature-flags';
+import { resolveRequestCapabilities } from '../services/governed-capabilities';
 import { IntentService } from '../services/intent-service';
 import { itemServiceForRequest } from '../services/item-service-factory';
 import { createConfiguredLLMProvider } from '../services/llm-provider';
@@ -17,9 +18,10 @@ import { ToolRegistryService } from '../services/tool-registry-service';
 
 /**
  * MCP server endpoint — Streamable HTTP transport (content-os task 4.1;
- * Req 4.1-4.3). Mounted on the authenticated `api` chain, so the bearer
- * token's roles become the capability set passed to the harness: an MCP
- * client can never do more than the same token could via the Agent API.
+ * Req 4.1-4.3). Mounted on the authenticated `api` chain. The capability set
+ * passed to the harness is resolved from the bearer token's live RBAC bundle
+ * (#472), so an MCP client can never do more than the same token could through
+ * REST — and no less either, which is what `auth.roles` used to get wrong.
  *
  * Gated by the per-site `contentOs.mcp` flag (default off).
  */
@@ -86,13 +88,27 @@ mcpRouter.post('/', async (c) => {
   // requires an admin principal before the harness ever runs. Discovery
   // (`tools/list`, `initialize`, `ping`) and safe read skills are unaffected,
   // preserving Agent-API parity for everything else.
+  // Capabilities come from the live RBAC bundle, not from `auth.roles` (#472).
+  // `auth.roles` holds a role *id* for a normal user and `[]` for an API key, so
+  // comparing it against `items:write` could only ever match the literal
+  // `'admin'` string a bootstrap/dev principal gets — the harness was
+  // admin-or-nothing regardless of what the token was actually allowed to do.
+  const grant = await resolveRequestCapabilities(c);
+
   const controlPlaneSkill = controlPlaneSkillFromCall(body);
-  if (controlPlaneSkill && !isAdminPrincipal(auth)) {
+  // The backstop now accepts either signal. `isAdminPrincipal` is kept because
+  // it is the same predicate `withControlPlaneAccessGuard` uses elsewhere, and
+  // `controlPlaneAdmin` is added because it is DB-derived: a real `adminAccess`
+  // role passes, while an admin-policy API KEY still does not
+  // (`EffectiveCapabilityService.resolveApiKey` returns `controlPlaneAdmin:
+  // false` deliberately).
+  if (controlPlaneSkill && !isAdminPrincipal(auth) && !grant.controlPlaneAdmin) {
     await auditSecurityGuardDenied(c, 'mcp_control_plane_skill_denied', {
       skill: controlPlaneSkill,
       reason: 'non_admin_control_plane_skill',
       roles: auth?.roles ?? [],
       principalType: auth?.type ?? 'user',
+      capabilityCode: grant.code ?? null,
     });
     return c.json(
       {
@@ -107,7 +123,7 @@ mcpRouter.post('/', async (c) => {
     );
   }
 
-  const response = await new McpService(port).handle(body, auth.roles ?? []);
+  const response = await new McpService(port).handle(body, grant.capabilities);
   if (response === null) {
     // Notification — Streamable HTTP answers 202 Accepted with no body.
     return c.body(null, 202);

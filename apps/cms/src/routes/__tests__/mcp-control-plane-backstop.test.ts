@@ -2,6 +2,12 @@ import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppEnv, AuthPrincipal } from '../../env';
 import { CORE_SKILLS, isControlPlaneSkill } from '../../services/ai-harness';
+import {
+  adminRbac,
+  memberRbac,
+  selectForRbac,
+  type FakePrincipalRbac,
+} from '../../test-utils/rbac-principal-db';
 
 /**
  * Defense-in-depth admin backstop on the MCP endpoint.
@@ -51,18 +57,24 @@ function rpc(method: string, params?: Record<string, unknown>): string {
   return JSON.stringify({ jsonrpc: '2.0', id: 1, method, ...(params ? { params } : {}) });
 }
 
-function buildApp(auth: AuthPrincipal): Hono<AppEnv> {
+function buildApp(auth: AuthPrincipal, rbac: FakePrincipalRbac = {}): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const insertValues = vi.fn().mockResolvedValue(undefined);
   app.use('*', async (c, next) => {
     c.set('auth', auth);
     c.set('siteId', 'site_1');
     c.set('requestId', 'req_1');
-    // DB is only touched by the audit logger on a denial; a fluent insert stub
-    // is enough. The backstop never queries on the allow paths.
-    c.set('db', { insert: () => ({ values: insertValues }) } as never);
+    // `insert` is for the audit logger on a denial. `select` answers capability
+    // resolution (#472): since the harness capability set comes from the RBAC
+    // bundle, a test that means "this caller is an admin" must declare the role
+    // that makes them one, the same way production does.
+    c.set('db', { insert: () => ({ values: insertValues }), select: selectForRbac(rbac) } as never);
     c.set('runtime', {
-      cache: {} as never,
+      // Deliberately absent rather than `{}`: capability resolution passes the
+      // cache to `PermissionService`, and an object that is truthy but has no
+      // `get` made resolution throw (caught, then fail-closed). A fake cache has
+      // to be either a real one or none.
+      cache: undefined,
       search: {} as never,
       queue: undefined,
     } as never);
@@ -77,8 +89,13 @@ const MEMBER: AuthPrincipal = { userId: 'u1', email: 'member@example.com', roles
 const ADMIN: AuthPrincipal = { userId: 'u2', email: 'admin@example.com', roles: ['admin'], raw: {} };
 const API_KEY: AuthPrincipal = { type: 'api_key', apiKeyId: 'k1', roles: [], raw: {} } as AuthPrincipal;
 
-async function call(auth: AuthPrincipal, method: string, params?: Record<string, unknown>) {
-  const res = await buildApp(auth).request('/api/v1/mcp', {
+async function call(
+  auth: AuthPrincipal,
+  method: string,
+  params?: Record<string, unknown>,
+  rbac: FakePrincipalRbac = {},
+) {
+  const res = await buildApp(auth, rbac).request('/api/v1/mcp', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: rpc(method, params),
@@ -107,15 +124,43 @@ describe('MCP control-plane admin backstop', () => {
   });
 
   it('lets an admin tools/call for a control-plane skill through to the harness', async () => {
-    const { status } = await call(ADMIN, 'tools/call', { name: 'deleteCollection', arguments: { name: 'posts' } });
+    const { status } = await call(
+      ADMIN,
+      'tools/call',
+      { name: 'deleteCollection', arguments: { name: 'posts' } },
+      adminRbac('u2'),
+    );
     expect(status).toBe(200);
+    // The capability set is `['admin']` because the RBAC bundle says admin
+    // (`capabilitiesFromPermissionBundle`), NOT because `auth.roles` happened to
+    // contain the string. That distinction is the whole of #472.
     expect(harnessExecute).toHaveBeenCalledWith('deleteCollection', { name: 'posts' }, ['admin'], undefined);
   });
 
   it('lets a non-admin tools/call for a SAFE read skill through (parity preserved)', async () => {
-    const { status } = await call(MEMBER, 'tools/call', { name: 'listCollections', arguments: {} });
+    const { status } = await call(
+      MEMBER,
+      'tools/call',
+      { name: 'listCollections', arguments: {} },
+      memberRbac('u1', [{ collection: 'schema', action: 'schema:read' }]),
+    );
     expect(status).toBe(200);
-    expect(harnessExecute).toHaveBeenCalledWith('listCollections', {}, ['member'], undefined);
+    // BEFORE: `['member']` — a role id, which could never satisfy `schema:read`,
+    // so the read only "worked" in this test because the harness was mocked.
+    // NOW: the granted permission is translated into the capability the skill
+    // actually requires.
+    expect(harnessExecute).toHaveBeenCalledWith('listCollections', {}, ['schema:read'], undefined);
+  });
+
+  it('a member with NO permissions resolves to no capabilities', async () => {
+    const { status } = await call(
+      MEMBER,
+      'tools/call',
+      { name: 'listCollections', arguments: {} },
+      memberRbac('u1'),
+    );
+    expect(status).toBe(200);
+    expect(harnessExecute).toHaveBeenCalledWith('listCollections', {}, [], undefined);
   });
 
   it('lets non-admin discovery methods through unguarded (tools/list, initialize, ping)', async () => {
@@ -135,7 +180,7 @@ describe('MCP control-plane admin backstop', () => {
       c.set('siteId', 'site_1');
       c.set('requestId', 'req_1');
       c.set('db', { insert: () => ({ values }) } as never);
-      c.set('runtime', { cache: {}, search: {}, queue: undefined } as never);
+      c.set('runtime', { cache: undefined, search: {}, queue: undefined } as never);
       c.env = {} as never;
       await next();
     });

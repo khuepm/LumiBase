@@ -18,6 +18,10 @@ import { AgentMemoryService } from '../services/agent-memory-service';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
 import { AgentRunService } from '../services/agent-run-service';
 import { CORE_SKILLS } from '../services/ai-harness';
+import {
+  principalRefFromAuth,
+  resolveRequestCapabilities,
+} from '../services/governed-capabilities';
 import { ToolRegistryService } from '../services/tool-registry-service';
 
 export const agentRouter = new Hono<AppEnv>();
@@ -150,7 +154,10 @@ agentRouter.post('/goals', async (c) => {
       runId: run.runId,
       skillName: parsed.data.task!.skillName,
       arguments: parsed.data.task!.arguments,
-      capabilities: auth.roles ?? [],
+      // A principal reference, NOT a capability snapshot (#472). The worker
+      // re-resolves the grant when it picks the job up, so a role change or a
+      // revoked key between enqueue and execution takes effect.
+      principal: principalRefFromAuth(auth, siteId),
       userId: auth.userId ?? null,
       contextMessage: parsed.data.description,
     };
@@ -163,9 +170,26 @@ agentRouter.post('/goals', async (c) => {
 
 // ── Agent roles + planner delegation (content-os task 10; Req 10.1-10.5) ───
 
-function canManageRoles(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('*');
+/**
+ * Shared governance gate, resolved from RBAC (#472).
+ *
+ * Every gate on this router used to read `auth.roles` and look for the literal
+ * strings `'admin'` / `'*'` / a capability name. Only a bootstrap or dev
+ * principal ever carries `'admin'`, and a normal user carries a role *id*, so in
+ * practice these were bootstrap-only gates that silently rejected real site
+ * admins. They now ask the same resolver the harness uses, so there is one
+ * authorization model on this surface rather than two.
+ *
+ * `controlPlaneAdmin` is the admin bypass; a named capability is still honoured
+ * for principals whose bundle grants it.
+ */
+async function hasGovernanceCapability(c: Context<AppEnv>, capability: string): Promise<boolean> {
+  const grant = await resolveRequestCapabilities(c);
+  return grant.controlPlaneAdmin || grant.capabilities.includes(capability);
+}
+
+async function canManageRoles(c: Context<AppEnv>): Promise<boolean> {
+  return (await resolveRequestCapabilities(c)).controlPlaneAdmin;
 }
 
 const roleBodySchema = z.object({
@@ -184,7 +208,7 @@ agentRouter.get('/roles', async (c) => {
 });
 
 agentRouter.post('/roles', async (c) => {
-  if (!canManageRoles(c)) {
+  if (!(await canManageRoles(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Managing agent roles requires an admin.' }] }, 403);
   }
   const parsed = roleBodySchema.safeParse(await c.req.json().catch(() => null));
@@ -204,7 +228,7 @@ agentRouter.post('/roles', async (c) => {
 });
 
 agentRouter.patch('/roles/:name', async (c) => {
-  if (!canManageRoles(c)) {
+  if (!(await canManageRoles(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Managing agent roles requires an admin.' }] }, 403);
   }
   const parsed = roleBodySchema.partial().omit({ name: true }).safeParse(await c.req.json().catch(() => null));
@@ -224,7 +248,7 @@ agentRouter.patch('/roles/:name', async (c) => {
 });
 
 agentRouter.delete('/roles/:name', async (c) => {
-  if (!canManageRoles(c)) {
+  if (!(await canManageRoles(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Managing agent roles requires an admin.' }] }, 403);
   }
   const { AgentRoleService, AgentRoleError } = await import('../services/agent-role-service');
@@ -256,8 +280,7 @@ const decomposeSchema = z.object({
 
 /** Planner: decompose a goal into role-scoped sub-goals (Req 10.1/10.3). */
 agentRouter.post('/goals/:id/decompose', async (c) => {
-  const roles = c.get('auth').roles ?? [];
-  if (!(roles.includes('admin') || roles.includes('goals:write') || roles.includes('*'))) {
+  if (!(await hasGovernanceCapability(c, 'goals:write'))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Capability "goals:write" is required.' }] }, 403);
   }
   const parsed = decomposeSchema.safeParse(await c.req.json().catch(() => null));
@@ -334,8 +357,7 @@ const promotionDecideSchema = z.object({
 
 /** Human decision on a promotion proposal — the only path to a higher level. */
 agentRouter.post('/autonomy/promotions/:id/decide', async (c) => {
-  const roles = c.get('auth').roles ?? [];
-  if (!(roles.includes('admin') || roles.includes('agents:freeze') || roles.includes('*'))) {
+  if (!(await hasGovernanceCapability(c, 'agents:freeze'))) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Promotion decisions require an admin.' }] },
       403,
@@ -365,9 +387,8 @@ agentRouter.post('/autonomy/promotions/:id/decide', async (c) => {
 
 // ── Constitution (content-os task 16; Req 15.1-15.6) ────────────────────────
 
-function canEditConstitution(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('constitution:write') || roles.includes('*');
+function canEditConstitution(c: Context<AppEnv>): Promise<boolean> {
+  return hasGovernanceCapability(c, 'constitution:write');
 }
 
 /** All versions plus the active one — the editor's version list. */
@@ -378,7 +399,7 @@ agentRouter.get('/constitution', async (c) => {
 });
 
 agentRouter.post('/constitution', async (c) => {
-  if (!canEditConstitution(c)) {
+  if (!(await canEditConstitution(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Editing the constitution requires an admin.' }] }, 403);
   }
   const body = (await c.req.json().catch(() => null)) as { evaluators?: unknown } | null;
@@ -448,7 +469,7 @@ agentRouter.post('/constitution/:id/dry-run', async (c) => {
 });
 
 agentRouter.post('/constitution/:id/activate', async (c) => {
-  if (!canEditConstitution(c)) {
+  if (!(await canEditConstitution(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Activating a constitution requires an admin.' }] }, 403);
   }
   const { ConstitutionService, ConstitutionError } = await import('../services/constitution-service');
@@ -471,14 +492,12 @@ const killSwitchSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 
-function canFreeze(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('agents:freeze') || roles.includes('*');
+function canFreeze(c: Context<AppEnv>): Promise<boolean> {
+  return hasGovernanceCapability(c, 'agents:freeze');
 }
 
-function canOperateAgents(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('agents:freeze') || roles.includes('*');
+function canOperateAgents(c: Context<AppEnv>): Promise<boolean> {
+  return hasGovernanceCapability(c, 'agents:freeze');
 }
 
 /** Active freezes + recent freeze/lift history. */
@@ -495,7 +514,9 @@ agentRouter.post('/kill-switch', async (c) => {
   }
   // Freezing a role/site requires the dedicated capability (Req 14.3);
   // run/intent scopes accept the same operators.
-  const allowed = parsed.data.scope === 'role' || parsed.data.scope === 'site' ? canFreeze(c) : canOperateAgents(c);
+  const allowed = parsed.data.scope === 'role' || parsed.data.scope === 'site'
+    ? await canFreeze(c)
+    : await canOperateAgents(c);
   if (!allowed) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Capability "agents:freeze" is required.' }] },
@@ -522,7 +543,7 @@ agentRouter.post('/kill-switch/lift', async (c) => {
   if (!parsed.success) {
     return validationError(c, parsed.error);
   }
-  if (!canFreeze(c)) {
+  if (!(await canFreeze(c))) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Capability "agents:freeze" is required.' }] },
       403,
@@ -546,9 +567,8 @@ agentRouter.post('/kill-switch/lift', async (c) => {
 
 // ── Veto window (content-os task 14; Req 13.2/13.4/13.6) ────────────────────
 
-function canVeto(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('veto') || roles.includes('*');
+function canVeto(c: Context<AppEnv>): Promise<boolean> {
+  return hasGovernanceCapability(c, 'veto');
 }
 
 /** Stagings inside their veto window, soonest deadline first. */
@@ -559,7 +579,7 @@ agentRouter.get('/staged', async (c) => {
 });
 
 agentRouter.post('/staged/:id/veto', async (c) => {
-  if (!canVeto(c)) {
+  if (!(await canVeto(c))) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Veto requires the admin or veto role.' }] },
       403,
@@ -645,6 +665,10 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
   const { ReviewerService, ReviewerError } = await import('../services/reviewer-service');
   const { buildAuthorizedHarness } = await import('./ai');
   const auth = c.get('auth');
+  // Resolved once, from RBAC (#472), and used for BOTH the reviewer's own gate
+  // and the capability check inside `executeApproved`. Two different sources here
+  // would mean a reviewer could pass one check and fail the other.
+  const deciderCapabilities = (await resolveRequestCapabilities(c)).capabilities;
   const service = new ReviewerService({
     db: c.get('db'),
     siteId: c.get('siteId'),
@@ -658,7 +682,7 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
       const result = await buildAuthorizedHarness(c).executeApproved(
         legacyApprovalId,
         auth.userId ?? auth.externalId ?? 'agent-reviewer',
-        auth.roles ?? [],
+        deciderCapabilities,
       );
       return { executed: result.status === 'executed', message: result.message };
     },
@@ -670,7 +694,7 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
       decision: parsed.data.decision,
       confidence: parsed.data.confidence,
       reason: parsed.data.reason,
-      capabilities: c.get('auth').roles ?? [],
+      capabilities: deciderCapabilities,
     });
     return c.json({ data });
   } catch (err) {
@@ -686,9 +710,9 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
  * risk-classified action. It requires the same capability as freezing/operating
  * agents rather than mere tenant membership.
  */
-function canDecideApprovals(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('approvals:decide') || roles.includes('*');
+async function canDecideApprovals(c: Context<AppEnv>): Promise<boolean> {
+  const grant = await resolveRequestCapabilities(c);
+  return grant.controlPlaneAdmin || grant.capabilities.includes('approvals:decide');
 }
 
 /**
@@ -734,7 +758,7 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
   // Capability is checked after existence so a caller without it cannot use
   // the response code to probe which approval ids exist in another tenant —
   // a cross-tenant id already returned 404 above.
-  if (!canDecideApprovals(c)) {
+  if (!(await canDecideApprovals(c))) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Capability "approvals:decide" is required.' }] },
       403,
@@ -777,10 +801,14 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
     // is exactly what made the first version of this fix respond 409 to every
     // approve.
     const { buildAuthorizedHarness } = await import('./ai');
+    // The decider's own live capabilities (#472). Note the deliberate semantic:
+    // an approved action executes with the DECIDER's grant, not the requester's —
+    // the requester's grant was checked when the action was parked, and a human
+    // approving it is taking responsibility under their own authority.
     const result = await buildAuthorizedHarness(c).executeApproved(
       existing.legacyApprovalId,
       auth.userId ?? auth.externalId ?? 'unknown',
-      auth.roles ?? [],
+      (await resolveRequestCapabilities(c)).capabilities,
     );
 
     if (result.status !== 'executed') {
@@ -910,7 +938,7 @@ agentRouter.post('/approvals/:id/reopen', async (c) => {
   if (!existing) {
     return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Approval not found' }] }, 404);
   }
-  if (!canDecideApprovals(c)) {
+  if (!(await canDecideApprovals(c))) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Capability "approvals:decide" is required.' }] },
       403,

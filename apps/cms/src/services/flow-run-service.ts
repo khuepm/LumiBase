@@ -2,6 +2,7 @@ import { flows, flowRuns, type Database } from '@lumibase/database';
 import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { and, eq } from 'drizzle-orm';
+import type { AuthenticatedPrincipalRef } from './effective-capability-service';
 import { runFlow, type FlowGraph, type FlowRunResult } from './flow-service';
 
 /**
@@ -31,7 +32,13 @@ export interface AiChatRunJob {
   runId: string;
   conversationId: string;
   message: string;
-  userCapabilities: string[];
+  /**
+   * @deprecated Compatibility field for jobs enqueued before `principal` (#472).
+   * A snapshot cannot notice a revoked grant while the job waits in the queue.
+   */
+  userCapabilities?: string[];
+  /** Principal reference; capabilities are re-resolved when the job is picked up. */
+  principal?: AuthenticatedPrincipalRef | null;
   userId: string | null;
 }
 

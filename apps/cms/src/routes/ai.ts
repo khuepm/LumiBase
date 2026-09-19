@@ -8,6 +8,7 @@ import { AISecureHarness } from '../services/ai-harness';
 import { AccessService } from '../services/access-service';
 import { ConfigService } from '../services/config-service';
 import { ExtensionsService } from '../services/extensions-service';
+import { principalRefFromAuth, resolveRequestCapabilities } from '../services/governed-capabilities';
 import { IntentService } from '../services/intent-service';
 import { SchemaService } from '../services/schema-service';
 import { itemServiceForRequest } from '../services/item-service-factory';
@@ -45,9 +46,17 @@ const MAX_CONTEXT_MESSAGES = 20;
 
 export const aiRouter = new Hono<AppEnv>();
 
-function getUserCapabilities(c: Context<AppEnv>): string[] {
-  const auth = c.get('auth');
-  return Array.isArray(auth.roles) ? auth.roles : [];
+/**
+ * Capabilities for the current principal, resolved from the live RBAC bundle
+ * (#472).
+ *
+ * This used to return `auth.roles` — a role *id* for a normal user, `[]` for an
+ * API key, and the literal `'admin'` only for bootstrap/dev. Compared by exact
+ * string against `items:write` and friends, that made the harness
+ * admin-or-nothing on every transport. Now the same model REST uses decides.
+ */
+async function getUserCapabilities(c: Context<AppEnv>): Promise<string[]> {
+  return (await resolveRequestCapabilities(c)).capabilities;
 }
 
 /**
@@ -89,10 +98,17 @@ export function buildAuthorizedHarness(c: Context<AppEnv>): AISecureHarness {
   });
 }
 
-function requireAdmin(c: Context<AppEnv>) {
-  const roles = getUserCapabilities(c);
+/**
+ * Admin gate for the legacy approval surface.
+ *
+ * Now asks the resolver rather than looking for the literal role string
+ * `'admin'`, which only a bootstrap or dev principal ever carried — a site admin
+ * holding a real `adminAccess` role was rejected here.
+ */
+async function requireAdmin(c: Context<AppEnv>) {
+  const grant = await resolveRequestCapabilities(c);
 
-  if (!roles.includes('admin')) {
+  if (!grant.controlPlaneAdmin) {
     return c.json(
       {
         errors: [
@@ -190,7 +206,7 @@ aiRouter.post('/chat', async (c) => {
       content: message,
     });
 
-    const userCapabilities = getUserCapabilities(c);
+    const userCapabilities = await getUserCapabilities(c);
 
     // Async path: enqueue LLM + harness on worker; HITL still surfaces via poll.
     if (prefersAsyncResponse(c) && runtime.queue) {
@@ -205,7 +221,9 @@ aiRouter.post('/chat', async (c) => {
         runId: run.id,
         conversationId,
         message,
-        userCapabilities,
+        // Principal reference, not a capability snapshot (#472) — the worker
+        // re-resolves the grant when it picks the job up.
+        principal: principalRefFromAuth(auth, siteId),
         userId,
       });
       return c.json(
@@ -442,12 +460,12 @@ aiRouter.delete('/conversations/:id', async (c) => {
  * Returns pending approval records for the current site, sorted by createdAt DESC, max 100.
  */
 aiRouter.get('/approvals', async (c) => {
-  const forbidden = requireAdmin(c);
+  const forbidden = await requireAdmin(c);
   if (forbidden) return forbidden;
 
   const db = c.get('db');
   const siteId = c.get('siteId');
-  const userCapabilities = getUserCapabilities(c);
+  const userCapabilities = await getUserCapabilities(c);
   const harness = new AISecureHarness({ db, siteId });
 
   const pendingApprovals = await db
@@ -475,7 +493,7 @@ aiRouter.get('/approvals', async (c) => {
  * Approves or rejects a pending approval record.
  */
 aiRouter.post('/approvals/:id/decide', async (c) => {
-  const forbidden = requireAdmin(c);
+  const forbidden = await requireAdmin(c);
   if (forbidden) return forbidden;
 
   // Step 1: Parse and validate input
@@ -502,7 +520,7 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
   const auth = c.get('auth');
   const runtime = c.get('runtime');
   const userId = auth.userId ?? auth.externalId ?? 'unknown';
-  const userCapabilities = getUserCapabilities(c);
+  const userCapabilities = await getUserCapabilities(c);
   const harness = new AISecureHarness({ db, siteId });
 
   const [approval] = await db

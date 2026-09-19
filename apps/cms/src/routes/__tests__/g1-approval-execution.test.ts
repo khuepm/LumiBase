@@ -14,6 +14,12 @@ import {
 } from '@lumibase/database';
 import type { AppEnv, AuthPrincipal } from '../../env';
 import { createFakeDb, type FakeDb, type Row } from '../../services/__tests__/g1-approval-fake-db';
+import {
+  adminRbac,
+  memberRbac,
+  withRbacSelect,
+  type FakePrincipalRbac,
+} from '../../test-utils/rbac-principal-db';
 
 /**
  * G1 (#453) — a human decision on an agent approval must execute/resume the
@@ -64,6 +70,11 @@ const memberPrincipal: AuthPrincipal = {
   roles: ['member'],
   raw: {},
 };
+
+/** RBAC state matching the principal driving a request. */
+function rbacFor(auth: AuthPrincipal): FakePrincipalRbac {
+  return auth.userId === adminPrincipal.userId ? adminRbac(auth.userId) : memberRbac(auth.userId ?? 'u');
+}
 
 function seedFakeDb(agentOverrides: Row = {}, legacyOverrides: Row = {}): FakeDb {
   const fake = createFakeDb({
@@ -137,7 +148,11 @@ function buildApp(fake: FakeDb, auth: AuthPrincipal): Hono<AppEnv> {
     // correct for a schema skill.
     (c as never as { env: Record<string, unknown> }).env = {};
     c.set('auth', auth);
-    c.set('db', fake.db);
+    // Since #472 the decide gate resolves capabilities from RBAC instead of
+    // reading `auth.roles`, so the principal's admin-ness has to exist in the
+    // data. `withRbacSelect` answers only those reads; the approval tables are
+    // still answered by this file's own fake.
+    c.set('db', withRbacSelect(fake.db, rbacFor(auth)));
     c.set('siteId', 'site_a');
     c.set('runtime', { cache: undefined, queue: undefined, keys: undefined } as never);
     c.set('requestId', 'req_1');

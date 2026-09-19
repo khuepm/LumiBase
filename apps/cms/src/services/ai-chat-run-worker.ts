@@ -3,6 +3,8 @@ import { aiMessages } from '@lumibase/database';
 import type { KeyProvider } from '@lumibase/runtime';
 import { asc, eq } from 'drizzle-orm';
 import { AISecureHarness } from './ai-harness';
+import { EffectiveCapabilityService } from './effective-capability-service';
+import { resolvePrincipalCapabilities } from './governed-capabilities';
 import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from './llm-provider';
 import { SchemaService } from './schema-service';
 import { markRunRunning, persistAiChatOutcome, type AiChatRunJob } from './flow-run-service';
@@ -80,12 +82,28 @@ export async function executeAiChatRun(
       keys,
     });
 
-    const result = await harness.execute(
-      toolCall.name,
-      toolCall.arguments,
-      job.userCapabilities,
-      job.message,
-    );
+    // Re-resolved at pickup, not taken from the enqueued snapshot (#472), so a
+    // grant revoked while the job queued is honoured. Jobs enqueued before
+    // `principal` existed fall back to their snapshot.
+    const capabilities = job.principal
+      ? await resolvePrincipalCapabilities(
+          new EffectiveCapabilityService({ db, siteId: job.siteId }),
+          job.principal,
+        )
+      : { allowed: true as const, capabilities: job.userCapabilities ?? [], controlPlaneAdmin: false };
+
+    const result = capabilities.allowed
+      ? await harness.execute(
+          toolCall.name,
+          toolCall.arguments,
+          capabilities.capabilities,
+          job.message,
+        )
+      : {
+          status: 'denied' as const,
+          code: capabilities.code,
+          message: capabilities.message ?? 'Capability resolution denied',
+        };
 
     const responseMessage =
       result.message ??

@@ -9,6 +9,22 @@ import { ExtensionVerifierService } from '../extension-verifier';
 import { McpService, type McpHarnessPort } from '../mcp-service';
 import { ToolRegistryService, overrideNarrowsSchema } from '../tool-registry-service';
 import { validArgsFor } from '../../test-utils/agent-tool-args';
+import { adminRbac, memberRbac, withRbacSelect } from '../../test-utils/rbac-principal-db';
+import { capabilitiesFromPermissionBundle } from '../effective-capability-service';
+import type { CompiledPermission, PermissionAction } from '../permission-service';
+
+/** Minimal compiled permission row for bundle-translation assertions. */
+function compiled(collection: string, action: string): CompiledPermission {
+  return {
+    collection,
+    action: action as PermissionAction,
+    rule: null,
+    fields: ['*'],
+    presets: {},
+    validation: {},
+    sources: [{ policyId: 'pol_1', policyName: 'Policy' }],
+  };
+}
 
 /**
  * G2 (#454) — reproduction only. NO implementation change accompanies this file.
@@ -631,28 +647,30 @@ describe('G2 repro · governed path: an L0 content write executes with no autono
   });
 });
 
-describe('G2 repro · the harness capability model is not the REST RBAC model', () => {
+describe('G2 regression · the harness reads the same RBAC model REST does', () => {
   /**
-   * `withAuth` sets `roles` to `[membership.roleId]` (a nanoid FK into the roles
-   * table) for a normal user, `['admin']` only for a bootstrap user, and `[]`
-   * for an API-key principal (apps/cms/src/middleware/auth.ts:263, :380).
-   * Both `/api/v1/mcp` and `/api/v1/agent` pass that array straight into
-   * `harness.execute(..., auth.roles ?? [])` as the capability set, where
-   * `checkCapabilities` does plain string membership against
-   * `requiredCapabilities` like `items:write`.
+   * The defect (#472). `withAuth` sets `roles` to `[membership.roleId]` — a
+   * nanoid FK into the roles table — for a normal user, `['admin']` only for a
+   * bootstrap user, and `[]` for an API-key principal
+   * (`middleware/auth.ts:267`, `:384`, `:509`). Every transport passed that array
+   * straight into `harness.execute(..., auth.roles ?? [])`, where
+   * `checkCapabilities` does exact string membership against requirements like
+   * `items:write`. A role id can never match one, so the gate was
+   * admin-or-nothing — and a site admin holding a real `adminAccess` role, rather
+   * than being the bootstrap user, was denied outright.
    *
-   * REST, by contrast, resolves `PermissionService.canAccess(resource, action)`
-   * against the policy DSL. The two transports therefore authorize through two
-   * unrelated models — the drift #454 asks to collapse.
+   * The fix does NOT loosen `checkCapabilities`: a role id still is not a
+   * capability, and these tests keep pinning that. What changed is upstream —
+   * `resolveRequestCapabilities` translates the compiled RBAC bundle into the
+   * capability vocabulary before the harness ever sees it.
    */
   const harness = new AISecureHarness({ db: {} as Database, siteId: 'site_1' });
 
-  it('R6: a real (non-bootstrap) role id satisfies no skill capability — reads included', async () => {
+  it('R6 [REGRESSION]: a role id is still not a capability, and RBAC is what supplies one', async () => {
     const roleIdAsRole = ['role_v1StGXR8Z5jdHi6BmyT'];
 
-    // CURRENT: capabilities never expand from role → policy, so the check can
-    // only ever pass on the literal strings 'admin' / '*' / 'items:read'…
-    // EXPECTED: one authorization model shared with REST.
+    // Unchanged and intended: the harness vocabulary is capabilities, not role
+    // ids. Feeding it a role id must not authorize anything.
     expect(harness.checkCapabilities(CORE_SKILLS['listItems']!, roleIdAsRole)).toBe(false);
     expect(harness.checkCapabilities(CORE_SKILLS['createItem']!, roleIdAsRole)).toBe(false);
     expect(harness.checkCapabilities(CORE_SKILLS['deleteCollection']!, roleIdAsRole)).toBe(false);
@@ -660,14 +678,33 @@ describe('G2 repro · the harness capability model is not the REST RBAC model', 
     const denied = await harness.execute('listItems', { collection: 'posts' }, roleIdAsRole);
     expect(denied.status).toBe('denied');
     expect(denied.message).toBe('Insufficient capabilities');
+
+    // What changed: the same RBAC state that produced that role id now produces
+    // capabilities the harness accepts. `read` + `update` permissions on a
+    // collection become `items:read`, `items:update`, `items:write`.
+    const capabilities = capabilitiesFromPermissionBundle({
+      admin: false,
+      appAccess: true,
+      tfaRequired: false,
+      roles: [{ id: 'role_v1StGXR8Z5jdHi6BmyT', name: 'Editor', adminAccess: false, appAccess: true }],
+      policies: [{ id: 'pol_1', name: 'Editor policy', key: 'editor' }],
+      byKey: {
+        'posts::read': compiled('posts', 'read'),
+        'posts::update': compiled('posts', 'update'),
+      },
+    });
+    expect(capabilities).toEqual(['items:read', 'items:update', 'items:write']);
+    expect(harness.checkCapabilities(CORE_SKILLS['listItems']!, capabilities)).toBe(true);
+    expect(harness.checkCapabilities(CORE_SKILLS['createItem']!, capabilities)).toBe(true);
+    // Still denied, and correctly so: nothing in that bundle grants schema writes.
+    expect(harness.checkCapabilities(CORE_SKILLS['deleteCollection']!, capabilities)).toBe(false);
   });
 
-  it('R7: an API-key-shaped capability set (roles: []) is denied every probed HTTP MCP skill', async () => {
-    // `withAuth` gives API-key principals `roles: []` (middleware/auth.ts:380).
-    // This test feeds that SHAPE into the harness; it does not authenticate a
-    // real key.
+  it('R7 [REGRESSION]: an API key is authorized by its own policies, not by an empty role array', async () => {
+    // BEFORE: `withAuth` gives API-key principals `roles: []`
+    // (`middleware/auth.ts:384`), so every skill with a non-empty requirement was
+    // denied — the harness was closed to API keys entirely.
     const apiKeyCapabilities: string[] = [];
-
     for (const skill of ['listCollections', 'listItems', 'createItem', 'deleteItem']) {
       expect(
         harness.checkCapabilities(CORE_SKILLS[skill]!, apiKeyCapabilities),
@@ -675,22 +712,28 @@ describe('G2 repro · the harness capability model is not the REST RBAC model', 
       ).toBe(false);
     }
 
-    const denied = await harness.execute('listCollections', {}, apiKeyCapabilities);
-    expect(denied.status).toBe('denied');
-    expect(denied.message).toBe('Insufficient capabilities');
+    // NOW: the key's compiled bundle decides. A key granted `read` on a
+    // collection can list items, and still cannot write.
+    const readOnly = capabilitiesFromPermissionBundle({
+      admin: false,
+      appAccess: false,
+      tfaRequired: false,
+      roles: [],
+      policies: [{ id: 'pol_key', name: 'Key policy', key: null }],
+      byKey: { 'posts::read': compiled('posts', 'read') },
+    });
+    expect(readOnly).toEqual(['items:read']);
+    expect(harness.checkCapabilities(CORE_SKILLS['listItems']!, readOnly)).toBe(true);
+    expect(harness.checkCapabilities(CORE_SKILLS['createItem']!, readOnly)).toBe(false);
 
-    // ── SCOPE OF THIS EVIDENCE (reviewer P2) ──────────────────────────────
-    // Proven here: with an empty capability array, the harness denies these
-    // four skills, on the legacy branch, via `checkCapabilities`.
-    // NOT proven here: that one real API key simultaneously enjoys full reach
-    // over the stdio surface. That claim needs a live token against both
-    // transports and belongs to the DB/live gate. What IS established by
-    // source is only the structural difference: REST authorizes through
-    // `PermissionService.canAccess` (see `routes/schema-permissions.ts`) while
-    // the harness does string membership on `auth.roles` — two unrelated
-    // models. The practical consequence for the migration plan is that moving
-    // stdio onto `POST /api/v1/mcp` cannot be assumed transparent for
-    // API-key callers, not that stdio is currently over-privileged.
+    // ── SCOPE OF THIS EVIDENCE ────────────────────────────────────────────
+    // Proven here: the translation from bundle → capabilities, and that the
+    // harness gate accepts the result. NOT proven here: a live API key
+    // authenticating end to end. That needs a real database and belongs to
+    // `effective-capability-service.db.integration.test.ts`, which covers
+    // revoked/expired keys and site mismatch against Postgres. Also deliberate:
+    // an API-key principal never receives `controlPlaneAdmin`, so the MCP
+    // control-plane backstop still refuses it even with an admin policy.
   });
 
   it('R8: only the literal admin/wildcard role clears the gate — the check is effectively binary', () => {
@@ -1235,7 +1278,10 @@ describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools �
       c.set('auth', auth);
       c.set('siteId', 'site_1');
       c.set('requestId', 'req_1');
-      c.set('db', db as never);
+      // Capability resolution (#472) reads RBAC, so the route's admin principal
+      // has to be an admin in the data. Layered on top of `governedDb`, which
+      // keeps answering the run/tool-call/approval tables.
+      c.set('db', withRbacSelect(db as object, adminRbac('u_admin')) as never);
       c.set('runtime', {
         cache: { get: async () => null, set: async () => undefined, invalidateByTag: async () => undefined },
         search: undefined,
