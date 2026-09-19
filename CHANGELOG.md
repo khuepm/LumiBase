@@ -11,6 +11,76 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Changed
 
+- **MCP: one governed tool contract across both transports (#454, #472).** LumiBase
+  exposes MCP twice — `POST /api/v1/mcp` and the `@lumibase/mcp-server` stdio
+  package — and the two did not agree. The same logical operation was governed on one
+  surface and ungoverned on the other, and the schema advertised to clients did not
+  describe what the server accepted. Six changes, each closing a case that was
+  reproduced first:
+  - **One schema source.** `packages/contracts/src/agent-tools/` holds canonical Zod
+    contracts; the harness validates against them and `tools/list` advertises the
+    JSON Schema derived from the same definitions. Previously every skill without a
+    hand-written schema advertised `{type:'object'}`, so a well-behaved client could
+    send `{}` and be dispatched into a service. `.strict()` means unknown fields are
+    rejected rather than dropped silently.
+  - **Input is validated before any side effect,** and before `ensureRun` — placing
+    the check later would leave a `running` run and tool call behind for input that
+    can never execute. `createItem {}` used to reach
+    `ItemService.create(undefined, …)` and surface a raw
+    `TypeError: Cannot read properties of undefined` as the tool-result message;
+    `deleteItem {}` used to park an approval a human could approve and which could
+    then never succeed. Both now return `denied` with `code: 'VALIDATION'` naming the
+    offending field.
+  - **Writes are gated on the autonomy level, not on the `dangerous` flag.** The trust
+    gradient was reachable only through the dangerous branch, so a plain content write
+    executed at L0 and never asked for approval at L1 — contradicting
+    `AutonomyService`'s own definitions of those levels. L0 now refuses
+    (`code: 'AUTONOMY_SHADOW'`), L1 parks an approval through the same rows and ids a
+    control-plane skill uses, L2+ executes. **No behaviour change without
+    configuration:** the resolver defaults a safe capability to L2, so an install that
+    never configured autonomy is unaffected.
+  - **Capabilities are resolved from RBAC.** `auth.roles` holds a role *id* for a
+    normal user, `[]` for an API key, and the literal `'admin'` only for
+    bootstrap/dev — compared by exact string against `items:write`, the gate was
+    admin-or-nothing, and a site admin holding a real `adminAccess` role was refused
+    outright. Every transport and both queue workers now call one resolver backed by
+    the compiled permission bundle. Queue payloads carry a principal *reference*
+    instead of a capability snapshot, so a revoked key or a demoted user takes effect
+    on work that was already accepted.
+  - **The decision contract states which approval id you hold.** `approvalId` used to
+    collapse two id spaces — `agent_approvals` and the legacy `ai_approvals`, decided
+    at two different endpoints — so a client could hold a valid-looking id and call the
+    wrong route. `approvalSpace`, `agentApprovalId` and `legacyApprovalId` are
+    additive; `approvalId` keeps its meaning.
+  - **stdio routes 27 mutation tools through the harness.** Destructive tools also stop
+    asserting success: 22 call sites used to `await client.delete(...)` and then return
+    a hardcoded "deleted" without reading the response, which reports a deletion that
+    has not happened the moment a call can come back pending. The set of 27 was
+    measured by comparing each tool's advertised properties against the canonical
+    contract, not chosen by name; the remaining mutation tools stay on REST and are
+    **enumerated** with their reason in `UNGOVERNED_MUTATIONS`, with a tripwire that
+    fails when a mutation tool appears in neither table.
+
+  Upgrade notes:
+
+  - **No migration, no backfill, no new CMS environment variable.**
+  - `@lumibase/mcp-server` gains `LUMIBASE_MCP_GOVERNED`: `auto` (default) uses
+    governance when the site has `contentOs.mcp` enabled and otherwise falls back to
+    REST with one stderr warning; `on` refuses instead of falling back — the correct
+    setting for a deployment that requires governance, because a fallback that triggers
+    exactly when governance is unavailable is a bypass of governance; `off` keeps the
+    previous behaviour. The default is `auto` because `contentOs.mcp` also defaults
+    off, and defaulting to `on` would break every existing install on upgrade.
+  - Because only `items:*` and `schema:*` capabilities are derived for non-admins,
+    control-plane skills are admin-only in practice. That is fail-closed by design;
+    granting one to a non-admin means adding a pseudo-resource to the `permissions`
+    table, not loosening the capability check.
+  - Known limitation, stated rather than hidden: an approved action executes with the
+    **decider's** capabilities. The approval tables do not persist a principal
+    reference, so the requester's grant cannot be re-resolved at decision time.
+
+  Full contract: `docs/{en,vi}/mcp/governed-tool-contract.md`.
+
 - **Dependency batch: 27 minor/patch bumps, Vitest 5, Framer Motion 13.** The
   group bump carries `zod` 4.4→4.6, `next` 16.3.3→16.3.4, `hono` 4.13.5→4.13.7,
   `wrangler` 4.127→4.129, `bullmq` 6.3.1→6.3.4, `lucide-react` 1.34→1.41 and

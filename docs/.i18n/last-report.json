@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-09-15T15:09:56.541Z",
-  "mode": "preserve-only",
-  "effectiveMode": "preserve-only",
+  "generatedAt": "2026-09-19T06:33:46.635Z",
+  "mode": "plan",
+  "effectiveMode": "plan",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 148,
+    "upToDate": 149,
     "planned": 0
   },
   "actions": [
@@ -1424,6 +1424,18 @@
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "mcp/governed-tool-contract.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "vi",
+      "targetLocale": "en",
       "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0

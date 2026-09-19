@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T00:16:10.051Z
+version: 2
+lastUpdated: 2026-09-19T06:33:36.352Z
 sourceLang: vi
-contentHash: b89a96b116de6e4f
-codeVerified: 2026-07-28T00:16:10.051Z
-codeVerifiedHash: b89a96b116de6e4f
+contentHash: fc65a5428141bce0
+codeVerified: 2026-09-19T06:33:36.352Z
+codeVerifiedHash: fc65a5428141bce0
 codeVerifiedClaims: 26
 ---
 
@@ -27,12 +27,12 @@ Nguồn: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`
 
 - **Transport:** Streamable HTTP — JSON-RPC 2.0 một request/một response. `GET /api/v1/mcp` trả `405 METHOD_NOT_ALLOWED` (không có server-initiated stream/SSE); client fallback plain request/response theo spec MCP.
 - **Protocol versions:** `2025-06-18` (default) và `2025-03-26`. `serverInfo = { name: 'lumibase-mcp', version: '1.0.0' }`.
-- **Auth → capability:** Bearer token; **roles của token trở thành capability set** truyền vào harness. ⇒ một MCP client **không bao giờ làm được nhiều hơn** cùng token đó qua Agent API. (`McpService(port).handle(body, auth.roles ?? [])`).
+- **Auth → capability:** Bearer token; capability set được **resolve từ RBAC bundle sống** của token (#472), không phải từ `auth.roles`. ⇒ một MCP client **không bao giờ làm được nhiều hơn** cùng token đó qua REST — và cũng không ít hơn, điều mà cách đọc `auth.roles` cũ làm sai (role id không bao giờ khớp `items:write`). Xem [`governed-tool-contract.md`](governed-tool-contract.md) mục 4.
 - **Feature gate:** cờ per-site `contentOs.mcp` (mặc định **off**). Tắt → `404 MCP_DISABLED`. (`feature-flags.ts`).
 - **Methods (JSON-RPC):**
   - `initialize` — thương lượng protocol version, trả `capabilities: { tools: { listChanged: false } }`.
   - `ping`.
-  - `tools/list` — liệt kê tool **đang enabled** từ `ToolRegistryService`; inputSchema rỗng mặc định `{ type: 'object' }`.
+  - `tools/list` — liệt kê tool **đang enabled** từ `ToolRegistryService`; inputSchema suy ra từ schema canonical trong `@lumibase/contracts` (chỉ skill chưa có schema mới rơi về `{ type: 'object' }`).
   - `tools/call` — chạy qua `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. Kết quả bọc `{ content, structuredContent, isError }`.
   - `notifications/initialized`, `notifications/cancelled` → trả `null` ⇒ HTTP `202 Accepted` không body.
 - **Mapping quyết định → kết quả tool** (bất biến quan trọng):
@@ -113,10 +113,12 @@ Versioning **không** nằm ở stdio server. Nó được phơi bày dưới d�
 - **MCP parity (Property 14):** quyết định `tools/call` khớp **byte-for-byte** với quyết định harness trực tiếp. Test: [`apps/cms/src/services/__tests__/mcp-parity.property.test.ts`](../../../apps/cms/src/services/__tests__/mcp-parity.property.test.ts).
 - **Không có bảng `mcp_servers`/`mcp_sessions` riêng** — MCP tái dùng hạ tầng agent (approvals, tool calls, permissions). Đây là quyết định kiến trúc cố ý (zero MCP-specific state).
 - **SDK không có MCP client** — MCP không phải mối quan tâm client của SDK REST.
-- **Permission floor:** capability = roles của token. Mọi mở rộng MCP phải tôn trọng sàn này.
+- **Permission floor:** capability = RBAC bundle của token (một mô hình dùng chung với REST). Mọi mở rộng MCP phải tôn trọng sàn này.
+- **Governed tool contract:** schema, validate, gate write, decision shape và tập tool stdio được governance kiểm soát — tất cả nằm ở [`governed-tool-contract.md`](governed-tool-contract.md).
 
 ## 4. Trang liên quan
 
+- [`governed-tool-contract.md`](governed-tool-contract.md) — hợp đồng dùng chung cho hai transport: nguồn schema, thứ tự validate, gate autonomy, decision shape, và tập tool stdio được governance kiểm soát.
 - [`mcp-application-analysis.md`](mcp-application-analysis.md) — phân tích ứng dụng MCP cho 7 spec Directus-inspired.
 - [`docs/en/agent-setup/claude-code.md`](../agent-setup/claude-code.md) — hướng dẫn nối MCP server vào Claude Code.
 - [`docs/en/features/agent-harness-layer.md`](../features/agent-harness-layer.md) — guard của harness mà MCP kế thừa.
