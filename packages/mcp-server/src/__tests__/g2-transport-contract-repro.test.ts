@@ -3,7 +3,8 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { z } from 'zod';
-import type { LumiBaseClient } from '../client.js';
+import { McpUnavailableError, type LumiBaseClient } from '../client.js';
+import { GOVERNED_TOOLS, GovernedDispatcher, UNGOVERNED_MUTATIONS } from '../governed.js';
 import { registerAllTools } from '../tools/index.js';
 
 /**
@@ -70,7 +71,11 @@ function registryOnly() {
     },
   };
   const { client, calls } = fakeClient();
-  registerAllTools(server as never, client);
+  // `dispatcher: null` keeps these probes on the REST handlers on purpose. They
+  // measure what each handler sends to which endpoint; the governed routing is
+  // asserted in its own describe block below, with a client that can answer
+  // JSON-RPC.
+  registerAllTools(server as never, client, { dispatcher: null });
   return { tools, calls };
 }
 
@@ -111,10 +116,10 @@ const openConnections: Array<() => Promise<void>> = [];
  * linked in memory. Returns the client plus the recorder of REST calls the
  * handlers issue, so a call that never reaches the recorder never ran.
  */
-async function liveClient() {
+async function liveClient(options: { dispatcher?: GovernedDispatcher | null } = { dispatcher: null }) {
   const server = new McpServer({ name: 'lumibase', version: 'test' });
   const { client: cmsClient, calls } = fakeClient();
-  registerAllTools(server, cmsClient);
+  registerAllTools(server, cmsClient, options);
 
   const client = new Client({ name: 'g2-repro-client', version: 'test' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -134,63 +139,210 @@ afterEach(async () => {
   }
 });
 
-describe('G2 repro · stdio transport never reaches the governed harness', () => {
-  it('S1: every probed stdio tool call is a plain REST call — no /mcp, no /agent/skills [REAL MCP client]', async () => {
-    const { client, calls } = await liveClient();
+describe('G2 regression · governed tools route through the harness', () => {
+  /**
+   * Fake CMS client that CAN answer JSON-RPC, so the governed path is exercised
+   * instead of the fallback.
+   */
+  function governedFake(decision: Record<string, unknown> = { status: 'executed', data: { ok: true } }) {
+    const { client, calls } = fakeClient();
+    const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
+      calls.push({ method: 'JSONRPC', path: `/mcp:${method}`, body: params });
+      if (method === 'tools/list') return Promise.resolve({ tools: [] });
+      return Promise.resolve({
+        content: [{ type: 'text', text: JSON.stringify(decision) }],
+        structuredContent: decision,
+        isError: decision['status'] === 'denied',
+      });
+    });
+    (client as unknown as { jsonRpc: unknown }).jsonRpc = rpc;
+    return { client, calls, rpc };
+  }
 
-    // One content write, one schema write, one schema delete, one read — the
-    // four probes the handoff asked for, issued through a real MCP client.
+  it('S1 [REGRESSION]: a governed tool goes to /mcp tools/call and issues no REST mutation', async () => {
+    const { client: cms, calls, rpc } = governedFake();
+    const server = new McpServer({ name: 'lumibase', version: 'test' });
+    registerAllTools(server, cms, { dispatcher: new GovernedDispatcher(cms, { mode: 'on' }) });
+
+    const client = new Client({ name: 'g2-governed-client', version: 'test' });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(st), client.connect(ct)]);
+    openConnections.push(async () => {
+      await client.close();
+      await server.close();
+    });
+
     await client.callTool({
       name: 'create_item',
       arguments: { collection: 'posts', data: { title: 'x' }, status: 'draft' },
     });
-    await client.callTool({ name: 'create_collection', arguments: { name: 'posts' } });
     await client.callTool({ name: 'delete_collection', arguments: { name: 'posts', confirm: true } });
-    await client.callTool({ name: 'list_items', arguments: { collection: 'posts' } });
 
-    const paths = calls.map((c) => `${c.method} ${c.path}`);
+    // BEFORE: both landed on `POST /items/posts` and `DELETE /collections/posts`,
+    // so the harness — kill switch, capability gate, autonomy resolution, HITL
+    // approval, veto window, `agent_runs`/`agent_tool_calls` audit — was never
+    // entered on this transport.
+    const rpcCalls = rpc.mock.calls.filter(([method]) => method === 'tools/call');
+    expect(rpcCalls.map(([, params]) => (params as { name: string }).name)).toEqual([
+      'createItem',
+      'deleteCollection',
+    ]);
 
-    // CURRENT: these four land on the ordinary REST surface. The harness —
-    // kill switch, capability gate, autonomy resolution, HITL approval, veto
-    // window, agent_runs / agent_tool_calls audit — is never entered.
-    // EXPECTED: a governed tool call is governed on BOTH transports.
-    // SCOPE: four probes, not the whole registry. The registry-wide statement
-    // is S4's naming invariant, not this test.
-    expect(paths).toContain('POST /items/posts');
-    expect(paths).toContain('POST /collections');
-    expect(paths).toContain('DELETE /collections/posts');
-    // The read carries the schema's applied defaults as a query string
-    // (`?limit=25&offset=0`), so match on the route rather than the full path.
-    expect(paths.some((p) => p.startsWith('GET /items/posts'))).toBe(true);
-    expect(paths.some((p) => p.includes('/mcp'))).toBe(false);
-    expect(paths.some((p) => p.includes('/agent/skills'))).toBe(false);
+    // And no REST mutation was issued for them.
+    const restMutations = calls.filter((c) => ['POST', 'PATCH', 'PUT', 'DELETE'].includes(c.method));
+    expect(restMutations).toEqual([]);
+
+    // `confirm` is a prompt for the operator, not a skill argument, so it is
+    // dropped rather than forwarded.
+    const deleteArgs = (rpcCalls[1]![1] as { arguments: Record<string, unknown> }).arguments;
+    expect(deleteArgs).toEqual({ name: 'posts' });
   });
 
-  it('S2: a dangerous probed tool returns no approval id — confirm is a prompt, not a gate', async () => {
-    const { tools, calls } = registryOnly();
+  it('S2 [REGRESSION]: a dangerous governed tool surfaces the parked approval', async () => {
+    const { client: cms, calls } = governedFake({
+      status: 'pending_approval',
+      approvalId: 'apr_9',
+      approvalSpace: 'agent',
+      agentApprovalId: 'apr_9',
+      runId: 'run_9',
+    });
+    const dispatcher = new GovernedDispatcher(cms, { mode: 'on' });
+    const tools = new Map<string, CapturedTool>();
+    registerAllTools(
+      {
+        registerTool: (name: string, config: CapturedTool['config'], handler: CapturedTool['handler']) =>
+          tools.set(name, { config, handler }),
+      } as never,
+      cms,
+      { dispatcher },
+    );
 
-    // `delete_collection` is the stdio counterpart of the HTTP MCP
-    // `deleteCollection` skill. On HTTP MCP that skill is control-plane +
-    // dangerous: it parks a pending approval and additionally requires an
-    // admin principal via the `mcp.ts` backstop.
     const result = (await tools.get('delete_collection')!.handler({
       name: 'posts',
       confirm: true,
-    })) as unknown;
+    })) as { content: Array<{ text: string }>; isError?: boolean };
 
-    // CURRENT: the DELETE is issued straight away and the result carries no
-    // approvalId / pending status.
-    // EXPECTED: the same governed skill parks identically on both transports.
-    //
-    // IMPORTANT — what this does NOT say: it does not say this REST route is
-    // unauthorized. `DELETE /collections/:name` enforces
-    // `requireSchemaPermission('schema:delete')`. The missing gate is AGENT
-    // governance (autonomy/HITL/kill switch), not RBAC. See S5 for the
-    // per-prefix guard split.
-    expect(calls.map((c) => c.method)).toContain('DELETE');
-    expect(JSON.stringify(result)).not.toMatch(/approvalId|pending_approval/);
+    // BEFORE: the DELETE went out immediately and the result carried no
+    // approvalId / pending status — `confirm` was a prompt, not a gate.
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+    expect(result.content[0]!.text).toContain('pending approval');
+    expect(result.content[0]!.text).toContain('apr_9');
+    expect(result.content[0]!.text).toContain('/api/v1/agent/approvals/');
+    expect(result.content[0]!.text).not.toMatch(/deleted/i);
   });
 
+  it('S13: an UNGOVERNED mutation stays on REST, and the gap is declared', async () => {
+    // `update_collection` has no skill to route to. It keeps working over REST —
+    // removing it would be a functional regression — but it is listed with its
+    // reason so the gap is enumerated rather than silent.
+    const { client: cms, calls } = governedFake();
+    const tools = new Map<string, CapturedTool>();
+    registerAllTools(
+      {
+        registerTool: (n: string, c: CapturedTool['config'], h: CapturedTool['handler']) =>
+          tools.set(n, { config: c, handler: h }),
+      } as never,
+      cms,
+      { dispatcher: new GovernedDispatcher(cms, { mode: 'on' }) },
+    );
+
+    await tools.get('update_collection')!.handler({ name: 'posts', label: 'Posts' });
+
+    expect(calls.some((c) => c.method === 'JSONRPC' && c.path === '/mcp:tools/call')).toBe(false);
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(true);
+    expect(UNGOVERNED_MUTATIONS['update_collection']).toBe('no-skill');
+  });
+
+  it('S14: mode `on` refuses when governance is unavailable — no REST fallback', async () => {
+    // A fallback that triggers exactly when governance is unavailable is a bypass
+    // of governance (the point RT4 makes on the CMS side). `on` must refuse.
+    const { client: cms, calls } = fakeClient();
+    (cms as unknown as { jsonRpc: unknown }).jsonRpc = vi.fn(() =>
+      Promise.reject(new McpUnavailableError('Enable the contentOs.mcp flag')),
+    );
+    const tools = new Map<string, CapturedTool>();
+    registerAllTools(
+      {
+        registerTool: (n: string, c: CapturedTool['config'], h: CapturedTool['handler']) =>
+          tools.set(n, { config: c, handler: h }),
+      } as never,
+      cms,
+      { dispatcher: new GovernedDispatcher(cms, { mode: 'on' }) },
+    );
+
+    const result = (await tools.get('delete_item')!.handler({
+      collection: 'posts',
+      id: 'i1',
+      confirm: true,
+    })) as { content: Array<{ text: string }>; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain('contentOs.mcp');
+    expect(calls.filter((c) => c.method === 'DELETE')).toEqual([]);
+  });
+
+  it('S15: mode `auto` falls back to REST but says so once, on stderr', async () => {
+    const { client: cms, calls } = fakeClient();
+    (cms as unknown as { jsonRpc: unknown }).jsonRpc = vi.fn(() =>
+      Promise.reject(new McpUnavailableError('Enable the contentOs.mcp flag')),
+    );
+    const warnings: string[] = [];
+    const dispatcher = new GovernedDispatcher(cms, {
+      mode: 'auto',
+      warn: (m) => warnings.push(m),
+    });
+    const tools = new Map<string, CapturedTool>();
+    registerAllTools(
+      {
+        registerTool: (n: string, c: CapturedTool['config'], h: CapturedTool['handler']) =>
+          tools.set(n, { config: c, handler: h }),
+      } as never,
+      cms,
+      { dispatcher },
+    );
+
+    await tools.get('delete_item')!.handler({ collection: 'posts', id: 'i1', confirm: true });
+    await tools.get('delete_item')!.handler({ collection: 'posts', id: 'i2', confirm: true });
+
+    expect(calls.filter((c) => c.method === 'DELETE')).toHaveLength(2);
+    // Probed once, warned once — the result is cached for the process.
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('contentOs.mcp');
+    expect(warnings[0]).toContain('skip agent governance');
+  });
+
+  it('S16 [TRIPWIRE]: every mutation tool is either governed or declared ungoverned', () => {
+    /**
+     * The gap must not be able to grow silently. A newly added mutation tool that
+     * is neither routed nor declared fails here, which forces whoever adds it to
+     * make the choice explicitly.
+     */
+    const MUTATION =
+      /^(create|update|delete|remove|upsert|set|add|attach|detach|revoke|rotate|invite|install|uninstall|enable|disable|publish|unpublish|promote|apply|run|trigger|restore|replay|drop|materialize|reset|assign|unassign|approve|reject|submit|claim|decide|import|veto|freeze|lift|seed|sync|purge|bump|stage|commit|schedule|cancel|retry|archive|clone|duplicate|move|rename|reorder|translate|compile|generate|refresh|configure)/;
+
+    const mutations = [...shared.tools.keys()].filter((n) => MUTATION.test(n));
+    // `cdc_subscription_replay` does not start with a mutation verb but is one.
+    mutations.push('cdc_subscription_replay');
+
+    const unclassified = mutations.filter(
+      (n) => GOVERNED_TOOLS[n] === undefined && UNGOVERNED_MUTATIONS[n] === undefined,
+    );
+    expect(unclassified).toEqual([]);
+
+    // Neither table may claim a tool that does not exist, or the inventory drifts
+    // in the other direction.
+    const unknown = [...Object.keys(GOVERNED_TOOLS), ...Object.keys(UNGOVERNED_MUTATIONS)].filter(
+      (n) => !shared.tools.has(n),
+    );
+    expect(unknown).toEqual([]);
+
+    // Measured counts, so a change in either direction is visible in review.
+    expect(Object.keys(GOVERNED_TOOLS)).toHaveLength(27);
+    expect(mutations.length).toBeGreaterThan(70);
+  });
+});
+
+describe('G2 · stdio input validation and naming (unchanged by #454)', () => {
   it('S3: the SDK rejects missing and wrong-typed input before the handler runs [REAL MCP client]', async () => {
     const { client, calls } = await liveClient();
 
