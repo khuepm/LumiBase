@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 4
-lastUpdated: 2026-09-19T23:36:27.839Z
+version: 5
+lastUpdated: 2026-09-20T16:00:45.733Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6e74b595c7f17b5f
+sourceHash: 056914fa69d9dd50
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-19T23:36:27.839Z
-codeVerifiedHash: 6e74b595c7f17b5f
-codeVerifiedClaims: 376
+codeVerified: 2026-09-20T16:00:45.733Z
+codeVerifiedHash: 056914fa69d9dd50
+codeVerifiedClaims: 382
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -685,6 +685,9 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `GET` | `/api/v1/agent/autonomy` | Sổ bộ tin cậy: quyền hạn + sự cố đang mở |
 | `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Đề xuất thăng cấp; `POST :id/decide` là con đường duy nhất lên cấp cao hơn (admin) |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Cửa sổ veto: các bản staging đang chờ bổ sung `approvalId/collection/itemId/patch/agentRole` từ bản sửa đổi staging (trường null khi staging không còn); `POST :id/veto` loại bỏ một staging |
+| `GET` | `/api/v1/agent/approvals` | Hộp thư approval (bộ lọc `status`; mặc định `pending`) |
+| `POST` | `/api/v1/agent/approvals/:id/decide` | Quyết định của con người cho một hành động đang bị giữ. Body `{ decision: 'approved' \| 'rejected', reason? }`; cần `approvals:decide` (nếu không thì 403), `404` cho id không tồn tại hoặc thuộc tenant khác, `409` khi approval đã rời `pending`. Với `approved`, harness là nơi duy nhất đổi trạng thái, nên việc thực thi và việc ghi status xảy ra đúng một lần. Lúc thực thi, quyền của **người yêu cầu** được resolve lại và hành động chạy với `requester ∩ decider`: approval mà người yêu cầu đã bị thu hồi, hạ quyền hay rời site sẽ bị từ chối, và approval không có thông tin người yêu cầu (bị giữ từ trước khi có cột provenance) bị từ chối với `APPROVAL_PROVENANCE_MISSING` |
+| `POST` | `/api/v1/agent/approvals/:id/reopen` | Đưa một approval đang ở `failed` về `pending` để quyết định lại. Body `{ reason }` là **bắt buộc** và được ghi audit; cần `approvals:decide`. Một skill đã chạm tới service rồi mới lỗi thì bị giữ lại chứ không tự mời lại, vì thử lại có thể lặp một phép ghi không idempotent — đây là đường về có chủ ý |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Quyết định của Agent với tư cách người đánh giá (cần `review:<domain>`; cấm tự đánh giá) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Các phiên bản, bản nháp, `/compile` (NL→đánh giá), `:id/dry-run`, `:id/activate` |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Dừng ở 4 phạm vi (`run/intent/role/site`); việc đóng đóng băng cần `agents:freeze` |

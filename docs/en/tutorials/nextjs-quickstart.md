@@ -1,11 +1,11 @@
 ---
 title: Next.js Quickstart — Display LumiBase Content
-version: 6
-lastUpdated: 2026-09-20T13:04:29.109Z
+version: 7
+lastUpdated: 2026-09-20T15:59:27.936Z
 sourceLang: en
-contentHash: 650223b28d48a21b
-codeVerified: 2026-09-20T13:04:29.109Z
-codeVerifiedHash: 650223b28d48a21b
+contentHash: a3d0907a00110560
+codeVerified: 2026-09-20T15:59:27.936Z
+codeVerifiedHash: a3d0907a00110560
 codeVerifiedClaims: 26
 ---
 
@@ -432,22 +432,31 @@ id — so a draft that was never published has no route into these pages at all.
 > `true`, so Next renders it on demand the first time it is requested.
 
 > [!WARNING]
-> **Unpublishing is not the same as never having published.** A draft that never
-> went live cannot appear — the API answers `404` and no page was ever generated.
-> But a post that *was* live and is then unpublished stays readable from the
-> cache for up to the `revalidate` window, because the cached HTML is served
-> while the revalidation happens in the background.
-> Measured against a live CMS with `revalidate = 60`, unpublishing a post whose
-> page had just been regenerated: the API stopped serving it to the reader
-> credential **immediately**, while the detail page and the list page both kept
-> serving it for **64 s**. Editing a post that was already past its window showed
-> up in **3–4 s**, and a post published after the build was reachable at its URL
-> **immediately** (the list took the same ~60 s to include it).
-> So the withdrawal window is finite and bounded by `revalidate`, but it is not
-> zero. If your content has a hard takedown requirement, lower `revalidate`, use
-> `cache: 'no-store'` on the routes that must never serve withdrawn content, or
-> trigger [on-demand revalidation](https://nextjs.org/docs/app/guides/incremental-static-regeneration#on-demand-revalidation-with-revalidatepath)
-> from a LumiBase webhook when an item leaves `published`.
+> **Unpublishing is not the same as never having published, and this setup has no
+> hard takedown guarantee.** A draft that never went live cannot appear — the API
+> answers `404` and no page was ever generated. But a post that *was* live and is
+> then unpublished stays readable from the cache, because
+> [ISR](https://nextjs.org/docs/app/guides/incremental-static-regeneration) serves
+> the stale HTML and revalidates in the background.
+> One measurement, against a live CMS with `revalidate = 60`: unpublishing a post
+> whose page had just been regenerated, the API stopped serving it to the reader
+> credential **immediately**, while the detail and list pages both kept serving it
+> for **64 s**. Editing a post already past its window showed in **3–4 s**, and a
+> post published after the build was reachable at its URL **immediately** (the
+> list took ~60 s to include it).
+> Read `revalidate` as *how often a page may go looking for fresh data*, not as an
+> upper bound on how long stale content can be served. Three things stretch the
+> window past it, and none of them are errors: the first request after expiry is
+> answered from the stale cache by design, a page nobody requests is never
+> revalidated at all, and a failed regeneration keeps the previous HTML in place.
+> The 64 s above is one path — traffic present, regeneration successful — not a
+> ceiling.
+> So if your content has a takedown requirement, do not rely on this default.
+> Lower `revalidate`, use `cache: 'no-store'` on the routes that must never serve
+> withdrawn content, or trigger
+> [on-demand revalidation](https://nextjs.org/docs/app/guides/incremental-static-regeneration#on-demand-revalidation-with-revalidatepath)
+> from a LumiBase webhook when an item leaves `published` — that last one is the
+> only option here that acts on the change rather than waiting for a clock.
 
 > **Already depend on `@lumibase/sdk`?** It exports the identical client —
 > `lumibase` simply re-exports it so one name covers both the client and the

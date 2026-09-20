@@ -1,14 +1,14 @@
 ---
 title: Next.js Quickstart — Hiển thị nội dung LumiBase
-version: 6
-lastUpdated: 2026-09-20T13:04:29.109Z
+version: 7
+lastUpdated: 2026-09-20T15:59:27.936Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 650223b28d48a21b
+sourceHash: a3d0907a00110560
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-20T13:04:29.109Z
-codeVerifiedHash: 650223b28d48a21b
+codeVerified: 2026-09-20T15:59:27.936Z
+codeVerifiedHash: a3d0907a00110560
 codeVerifiedClaims: 26
 ---
 
@@ -433,23 +433,31 @@ các trang này.
 > định là `true` nên Next render on-demand ở lần truy cập đầu tiên.
 
 > [!WARNING]
-> **Unpublish không giống với chưa từng publish.** Một bản nháp chưa từng lên
-> sóng thì không thể xuất hiện — API trả `404` và chưa có trang nào được sinh ra.
-> Nhưng một bài *đã* lên sóng rồi bị unpublish vẫn đọc được từ cache cho tới hết
-> cửa sổ `revalidate`, vì HTML đã cache được phục vụ trong lúc việc revalidate
-> diễn ra ở nền.
-> Đo trên CMS thật với `revalidate = 60`, unpublish một bài mà trang của nó vừa
-> được sinh lại: API **ngừng ngay lập tức** việc trả bài đó cho credential đọc,
-> trong khi trang chi tiết và trang danh sách đều còn phục vụ nó thêm **64 giây**.
-> Sửa một bài đã quá cửa sổ thì hiện ra sau **3–4 giây**, và một bài publish sau
-> khi build thì truy cập được ở URL của nó **ngay lập tức** (trang danh sách mất
-> cùng khoảng ~60 giây để có nó).
-> Vậy cửa sổ thu hồi là hữu hạn và bị chặn trên bởi `revalidate`, nhưng không
-> phải bằng không. Nếu nội dung của bạn có yêu cầu takedown cứng, hãy hạ
+> **Unpublish không giống với chưa từng publish, và cấu hình này KHÔNG bảo đảm
+> thu hồi cứng.** Một bản nháp chưa từng lên sóng thì không thể xuất hiện — API
+> trả `404` và chưa có trang nào được sinh ra. Nhưng một bài *đã* lên sóng rồi bị
+> unpublish vẫn đọc được từ cache, vì
+> [ISR](https://nextjs.org/docs/app/guides/incremental-static-regeneration) phục
+> vụ HTML cũ rồi mới revalidate ở nền.
+> Một phép đo, trên CMS thật với `revalidate = 60`: unpublish một bài mà trang của
+> nó vừa được sinh lại — API **ngừng ngay lập tức** việc trả bài đó cho credential
+> đọc, trong khi trang chi tiết và trang danh sách đều còn phục vụ nó thêm **64
+> giây**. Sửa một bài đã quá cửa sổ thì hiện ra sau **3–4 giây**, và một bài
+> publish sau khi build thì truy cập được ở URL của nó **ngay lập tức** (trang
+> danh sách mất ~60 giây để có nó).
+> Hãy đọc `revalidate` là *khoảng thời gian tối thiểu giữa hai lần một trang đi
+> tìm dữ liệu mới*, KHÔNG phải giới hạn trên cho việc phục vụ nội dung cũ. Ba điều
+> làm cửa sổ dài hơn con số đó, và không cái nào là lỗi: request đầu tiên sau khi
+> hết hạn **theo thiết kế** vẫn được trả từ cache cũ, một trang không ai truy cập
+> thì không bao giờ được revalidate, và một lần sinh lại thất bại sẽ giữ nguyên
+> HTML trước đó. Con số 64 giây ở trên là **một** đường đi — có traffic, sinh lại
+> thành công — không phải mức trần.
+> Vậy nếu nội dung của bạn có yêu cầu takedown, đừng dựa vào mặc định này. Hãy hạ
 > `revalidate`, dùng `cache: 'no-store'` cho những route không được phép phục vụ
 > nội dung đã thu hồi, hoặc kích
 > [on-demand revalidation](https://nextjs.org/docs/app/guides/incremental-static-regeneration#on-demand-revalidation-with-revalidatepath)
-> từ một webhook của LumiBase khi item rời trạng thái `published`.
+> từ một webhook của LumiBase khi item rời trạng thái `published` — đó là lựa chọn
+> duy nhất ở đây hành động theo **thay đổi** thay vì chờ đồng hồ.
 
 > **Đang phụ thuộc `@lumibase/sdk`?** Nó export đúng cùng một client —
 > `lumibase` chỉ re-export lại để một cái tên bao trọn cả client lẫn CLI. Đổi

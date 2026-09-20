@@ -135,6 +135,22 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Changed
 
+- **Corrected: `revalidate` is not an upper bound on stale content (#334).** The
+  Next.js quickstart and the `nextjs-blog` example said the withdrawal window was
+  "finite and bounded by `revalidate`". It is not. `revalidate` is the minimum age
+  at which a page may look for fresh data; the first request after expiry is still
+  answered from the stale cache while regeneration runs behind it, a page nobody
+  requests is never regenerated, and a failed regeneration keeps the previous HTML.
+  The measured 64 s is one path — traffic present, regeneration successful — not a
+  ceiling. Both documents now state plainly that this setup has **no hard takedown
+  guarantee** and that on-demand revalidation from a webhook is the only listed
+  option that reacts to the change rather than to a clock.
+- **API spec: the human approval endpoints were missing.** `POST
+  /api/v1/agent/approvals/:id/decide` and `/reopen` existed in code and in tests
+  but not in `hono-api-spec.md`, which is the document the v1 surface freeze points
+  at. Both are now specified with their capability (`approvals:decide`), status
+  codes, and — for `decide` — the requester ∩ decider rule and the
+  `APPROVAL_PROVENANCE_MISSING` refusal.
 - **MCP: one governed tool contract across both transports (#454, #472).** LumiBase
   exposes MCP twice — `POST /api/v1/mcp` and the `@lumibase/mcp-server` stdio
   package — and the two did not agree. The same logical operation was governed on one
