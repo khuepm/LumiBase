@@ -162,6 +162,25 @@ export const agentGoals = pgTable(
     driftFingerprint: text('drift_fingerprint'),
     /** Role from the `agent_roles` library executing this goal. */
     agentRole: text('agent_role'),
+    /**
+     * Dispatch lease: until when, and by whom (#455, reviewer R3/R4).
+     *
+     * Advancing a reconciler goal is a read-then-write — read the latest run,
+     * then insert a new one — and it has more than one entry point (the cron tick
+     * and `POST /intents/:id/scan`). Two callers that both read "no active run"
+     * both created a run and a queue job for the same drift. The cron's leader
+     * lock cannot help: it does not cover the HTTP path, and it was being released
+     * early anyway.
+     *
+     * The lease is the serialization point. A conditional UPDATE takes it
+     * (`WHERE lease IS NULL OR lease < now()`), so exactly one caller proceeds and
+     * the database decides which. It is time-bounded rather than a boolean
+     * because the holder can die: an expired lease is reclaimable without an
+     * operator, which is also what lets a goal recover from a crash between
+     * inserting the run and enqueueing its job.
+     */
+    dispatchLeaseUntil: timestamp('dispatch_lease_until'),
+    dispatchLeaseBy: text('dispatch_lease_by'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

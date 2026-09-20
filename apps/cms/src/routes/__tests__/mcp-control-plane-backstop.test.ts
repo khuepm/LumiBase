@@ -134,7 +134,18 @@ describe('MCP control-plane admin backstop', () => {
     // The capability set is `['admin']` because the RBAC bundle says admin
     // (`capabilitiesFromPermissionBundle`), NOT because `auth.roles` happened to
     // contain the string. That distinction is the whole of #472.
-    expect(harnessExecute).toHaveBeenCalledWith('deleteCollection', { name: 'posts' }, ['admin'], undefined);
+    // The 5th argument is approval provenance (R2/#472): a dangerous skill parked
+    // here must record WHO asked, so execution can re-resolve their rights at
+    // decision time instead of borrowing the approver's.
+    expect(harnessExecute).toHaveBeenCalledWith(
+      'deleteCollection',
+      { name: 'posts' },
+      ['admin'],
+      undefined,
+      expect.objectContaining({
+        requestedByPrincipal: expect.objectContaining({ kind: 'principal' }),
+      }),
+    );
   });
 
   it('lets a non-admin tools/call for a SAFE read skill through (parity preserved)', async () => {
@@ -149,7 +160,15 @@ describe('MCP control-plane admin backstop', () => {
     // so the read only "worked" in this test because the harness was mocked.
     // NOW: the granted permission is translated into the capability the skill
     // actually requires.
-    expect(harnessExecute).toHaveBeenCalledWith('listCollections', {}, ['schema:read'], undefined);
+    expect(harnessExecute).toHaveBeenCalledWith(
+      'listCollections',
+      {},
+      ['schema:read'],
+      undefined,
+      expect.objectContaining({
+        requestedByPrincipal: expect.objectContaining({ kind: 'principal' }),
+      }),
+    );
   });
 
   it('a member with NO permissions resolves to no capabilities', async () => {
@@ -160,7 +179,15 @@ describe('MCP control-plane admin backstop', () => {
       memberRbac('u1'),
     );
     expect(status).toBe(200);
-    expect(harnessExecute).toHaveBeenCalledWith('listCollections', {}, [], undefined);
+    expect(harnessExecute).toHaveBeenCalledWith(
+      'listCollections',
+      {},
+      [],
+      undefined,
+      expect.objectContaining({
+        requestedByPrincipal: expect.objectContaining({ kind: 'principal' }),
+      }),
+    );
   });
 
   it('lets non-admin discovery methods through unguarded (tools/list, initialize, ping)', async () => {

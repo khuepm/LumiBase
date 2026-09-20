@@ -11,6 +11,65 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **`LUMIBASE_MCP_GOVERNED=on` no longer falls back to ungoverned REST (#454).**
+  The mode that exists to guarantee governance quietly bypassed it: a mutation
+  tool with no governed mapping fell through to a direct REST call, so autonomy
+  level, HITL parking, the kill switch and run audit were all skipped — for the
+  write, after the tool had already been declared governed. `on` now **refuses**
+  such a tool before any REST call is made, naming the tool and the reason.
+  `auto` (the default) and `off` are unchanged: `auto` still falls back with a
+  one-time stderr warning, which is the documented "governance not available
+  here" path. The classifier that decides what counts as a mutation moved into
+  the source so the gate and the tripwire share one definition rather than two
+  regexes that can drift — the drifting copy would have been the one deciding
+  whether a write is allowed. 47 tools are currently ungoverned and enumerated in
+  `UNGOVERNED_MUTATIONS` with a reason each; deployments pinned to `on` will see
+  those refused instead of executed.
+- **An approval no longer executes with only the decider's authority (#472).**
+  `executeApproved` resolved capabilities for whoever pressed approve and never
+  re-read the requester's, so an action parked by user A still executed after A
+  was demoted, deactivated, or had their key revoked — the approval outlived the
+  authority it was requested under. `agent_approvals` now records the requesting
+  principal (`requested_by_principal`), and execution resolves **both** sides at
+  decision time and uses the intersection: the requester must still be allowed to
+  ask, and the decider must be allowed to approve. Pre-existing `pending`
+  approvals carry no provenance and are refused with
+  `APPROVAL_PROVENANCE_MISSING` rather than falling back to the decider — that
+  fallback is the defect. They need re-requesting; the migration header carries
+  the query that lists them. Deliberately not backfilled: nothing records who
+  asked, and inventing an identity is the error being fixed.
+- **Leader-locked cron jobs released the lock before their work finished
+  (#455).** All nine registrations in `serve.ts` were shaped
+  `() => { void work() }`. `void` discards the promise, so the callback returned
+  immediately, `leaderLockedCallback` awaited `undefined`, and the lock was
+  released while the work was still running — it guaranteed nothing for **any**
+  of them: `audit-rotation`, `pageview-flush`, `veto-sweep`,
+  `approval-claim-sweep`, `content-scheduler`, `retention-sweep`,
+  `goal-dispatch`, `deployment-poll`, `flow-schedule`. Two replicas could run the
+  same sweep concurrently. All nine now await, and both halves are locked down: a
+  source scan rejects the old shape, and a behavioural test shows
+  `withLeaderLock` releasing only after an awaited function settles.
+- **Goal dispatch is now serialized, self-healing and fair (#455).** Three
+  distinct defects in the dispatch loop added above:
+  - **Two entry points could dispatch the same goal.** The cron tick and
+    `POST /intents/:id/scan` both read-then-write, so both could see "no active
+    run" and create one. A goal now carries a dispatch lease
+    (`dispatch_lease_until` / `dispatch_lease_by`) taken with a single
+    conditional `UPDATE`, so Postgres picks the winner and the loser reports
+    `LEASE_HELD`. The lease is a timestamp, not a flag, so a process killed
+    mid-dispatch costs one skipped tick instead of stranding the goal.
+  - **A lost job stalled a goal forever.** The run row is inserted before the job
+    is enqueued; a process dying in between left a `queued` run that nothing
+    consumed, and every later pass skipped the goal on `RUN_ACTIVE`. A run
+    `queued` longer than five minutes is now treated as lost: the goal is
+    re-dispatched and the orphan is settled as `cancelled` with
+    `stopReason: 'dispatch_lost'` — cancelled rather than failed, because a lost
+    job is not a decision anyone made.
+  - **An older goal could starve.** The query took the newest `limit * 4`
+    reconciler goals and filtered for `open`/`in_progress` in memory, so enough
+    newer terminal goals pushed an older pending one out of every pass, silently.
+    Status is now filtered in SQL and goals are served oldest-first; site
+    discovery likewise only visits sites that actually have a dispatchable goal.
 - **One rejected audit row no longer discards the whole batch (#469, defence in
   depth).** A multi-row `INSERT` is atomic, so a row rejected by the
   `audit_log.site_id` foreign key discarded **every** row batched with it — up to

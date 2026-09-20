@@ -1,6 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AISecureHarness, CORE_SKILLS } from '../services/ai-harness';
 import { aiApprovals } from '@lumibase/database';
+import { requesterProvenance } from '../test-utils/approval-provenance';
+
+// Executing an approval re-resolves the requester's rights from RBAC (#472).
+// This suite models the database with an in-memory store, so the resolution is
+// stubbed to "still allowed"; the resolver has its own DB-backed suite.
+vi.mock('../services/approval-requester', async (importOriginal) => {
+  const { approvalRequesterModuleMock } = await import('../test-utils/approval-provenance');
+  return approvalRequesterModuleMock(importOriginal);
+});
 
 export function analyzeIntent(message: string): { skillName: string; args: Record<string, any> } | null {
   const lower = message.toLowerCase();
@@ -124,7 +133,15 @@ function createFullFlowMockDb(siteId: string) {
           const pending = store.filter(
             (r) => r.siteId === siteId && r.status === 'pending',
           );
-          return Promise.resolve(pending.length > 0 ? [pending[pending.length - 1]] : []);
+          const result = pending.length > 0 ? [pending[pending.length - 1]] : [];
+          // A chain ending in `.limit(1)` is the `agent_approvals` read added by
+          // #472: the approval's recorded requester. This flow does not exercise
+          // the first-class inbox, so it answers with provenance only.
+          return Object.assign(Promise.resolve(result), {
+            limit: vi
+              .fn()
+              .mockResolvedValue([{ requestedByPrincipal: requesterProvenance(siteId) }]),
+          });
         }),
       })),
     })),

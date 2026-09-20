@@ -3,6 +3,16 @@ import * as fc from 'fast-check';
 import { AISecureHarness, CORE_SKILLS } from '../ai-harness';
 import type { Database } from '@lumibase/database';
 import { argsForProperty } from '../../test-utils/agent-tool-args';
+import { requesterProvenance } from '../../test-utils/approval-provenance';
+
+// The requester's rights are re-resolved from RBAC at decision time (#472). This
+// suite models the database with a shallow mock, so that resolution is stubbed to
+// "still allowed" and the intersection rule itself stays real — the property under
+// test here is the decision flow, not the resolver.
+vi.mock('../approval-requester', async (importOriginal) => {
+  const { approvalRequesterModuleMock } = await import('../../test-utils/approval-provenance');
+  return approvalRequesterModuleMock(importOriginal);
+});
 
 /**
  * Feature: ai-first-cms-engine, Property 5: Approval execution flow — phê duyệt thực thi đúng
@@ -112,8 +122,16 @@ function createMockDbForApproval(record: {
   // Track update calls
   const updateSetArgs: Record<string, unknown>[] = [];
 
-  // Mock: db.select().from().where() → returns [record]
-  const mockWhere = vi.fn().mockResolvedValue([record]);
+  // Mock: db.select().from().where() → returns [record]. Since #472 there is a
+  // second read for the approval's recorded requester, distinguished here by its
+  // trailing `.limit(1)`.
+  const mockWhere = vi.fn().mockImplementation(() =>
+    Object.assign(Promise.resolve([record]), {
+      limit: vi
+        .fn()
+        .mockResolvedValue([{ requestedByPrincipal: requesterProvenance(record.siteId) }]),
+    }),
+  );
   const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
   const mockSelect = vi.fn().mockReturnValue({ from: mockFrom });
 
@@ -273,9 +291,13 @@ describe('Feature: ai-first-cms-engine, Property 5: Approval execution flow — 
       ['items:read'],
     );
 
+    // The message names both sides since #472: the check is against
+    // requester ∩ decider, so "the approver lacks it" is only half the reason a
+    // denial can happen, and an operator reading the message needs to know which
+    // set was consulted.
     expect(result).toEqual({
       status: 'denied',
-      message: 'Insufficient capabilities',
+      message: 'Insufficient capabilities for requester ∩ decider',
     });
     expect(updateSetArgs).toHaveLength(0);
   });

@@ -187,8 +187,8 @@ async function main() {
     leaderLockedCallback(
       'audit-rotation',
       3_300_000,
-      () => {
-        void runScheduledRotation(rotatorDb);
+      async () => {
+        await runScheduledRotation(rotatorDb);
         void runScheduledRefreshTokenPrune(rotatorDb);
       },
       lockOpts,
@@ -203,8 +203,8 @@ async function main() {
     leaderLockedCallback(
       'pageview-flush',
       240_000,
-      () => {
-        void runScheduledPageviewFlush(rotatorDb, runtime);
+      async () => {
+        await runScheduledPageviewFlush(rotatorDb, runtime);
       },
       lockOpts,
     ),
@@ -358,8 +358,8 @@ async function main() {
     leaderLockedCallback(
       'veto-sweep',
       240_000,
-      () => {
-        void sweepDueVetoCommits(vetoWorkerDeps).catch((err) => {
+      async () => {
+        await sweepDueVetoCommits(vetoWorkerDeps).catch((err) => {
           console.error('[veto-sweep] failed', formatSafeError(err));
         });
       },
@@ -383,8 +383,8 @@ async function main() {
     leaderLockedCallback(
       'approval-claim-sweep',
       240_000,
-      () => {
-        void sweepStaleApprovalClaims({ db: rotatorDb })
+      async () => {
+        await sweepStaleApprovalClaims({ db: rotatorDb })
           .then((released) => {
             for (const claim of released) {
               console.warn(
@@ -420,8 +420,8 @@ async function main() {
     leaderLockedCallback(
       'content-scheduler',
       50_000,
-      () => {
-        void runSchedulerTick(schedulerDeps).catch((err) => {
+      async () => {
+        await runSchedulerTick(schedulerDeps).catch((err) => {
           console.error('[content-scheduler] tick failed', formatSafeError(err));
         });
       },
@@ -434,8 +434,8 @@ async function main() {
     leaderLockedCallback(
       'retention-sweep',
       3_300_000,
-      () => {
-        void sweepRetention(schedulerDeps).catch((err) => {
+      async () => {
+        await sweepRetention(schedulerDeps).catch((err) => {
           console.error('[retention-sweep] failed', formatSafeError(err));
         });
       },
@@ -456,6 +456,15 @@ async function main() {
   // so a faster tick would only re-observe the same waiting state. The pass is
   // leader-locked because two processes dispatching the same goal would create
   // two runs for one drift.
+  //
+  // The callback is `async` and AWAITS the tick. Every cron callback in this file
+  // used to be `() => { void work(); }`, which returns `undefined` immediately —
+  // so `leaderLockedCallback`'s `await fn()` completed at once and released the
+  // lock while the work was still running. Measured with the real helper and a
+  // fake Redis: `lockReleased=true` while `workDone=false`. The lock therefore
+  // guaranteed nothing, for any of these jobs; `goal-dispatch` is simply the one
+  // where the consequence is two runs for one drift. `serve-cron-await.test.ts`
+  // keeps the shape from coming back.
   const { runGoalDispatchTick } = await import('./services/goal-dispatch-service');
   const goalDispatchDeps = { db: rotatorDb, queue: runtime.queue };
   goalDispatchTask = cron.schedule(
@@ -463,8 +472,8 @@ async function main() {
     leaderLockedCallback(
       'goal-dispatch',
       50_000,
-      () => {
-        void runGoalDispatchTick(goalDispatchDeps)
+      async () => {
+        await runGoalDispatchTick(goalDispatchDeps)
           .then((summary) => {
             if (summary.dispatched > 0 || summary.blocked > 0 || summary.completed > 0) {
               console.log('[goal-dispatch] pass', JSON.stringify(summary));
@@ -492,8 +501,8 @@ async function main() {
     leaderLockedCallback(
       'deployment-poll',
       25_000,
-      () => {
-        void sweepAllSites(deployPollerDeps).catch((err) => {
+      async () => {
+        await sweepAllSites(deployPollerDeps).catch((err) => {
           console.error('[deployment-poll] sweep failed', formatSafeError(err));
         });
       },
@@ -513,8 +522,8 @@ async function main() {
     leaderLockedCallback(
       'flow-schedule',
       50_000,
-      () => {
-        void runDueScheduledFlows({ db: rotatorDb, queue: runtime.queue }).catch((err) => {
+      async () => {
+        await runDueScheduledFlows({ db: rotatorDb, queue: runtime.queue }).catch((err) => {
           console.error('[flow-schedule] tick failed', formatSafeError(err));
         });
       },

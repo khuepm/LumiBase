@@ -2943,7 +2943,28 @@ export class AISecureHarness {
       return { status: 'denied', message: `Unknown skill: ${record.skillName}` };
     }
 
-    // Re-resolve the ORIGINAL requester before checking anything (#472).
+    // The first-class approval row, read once. It carries both the decision
+    // state and the provenance, and the ORDER of the two checks below matters:
+    // an approval that was already rejected, or that expired, must say so. If
+    // provenance were checked first, a rejected approval from before the
+    // provenance column existed would be refused as "no recorded requester" —
+    // true, but not the reason, and an operator would go looking for the wrong
+    // problem.
+    const agentApproval = await this.loadAgentApprovalFor(record.id);
+
+    if (this.agentHarnessEnabled && agentApproval) {
+      if (agentApproval.expiresAt && agentApproval.expiresAt <= new Date()) {
+        return { status: 'denied', message: 'Approval expired' };
+      }
+      if (agentApproval.status !== 'pending') {
+        // Not the race guard — that is the conditional claim further down, which
+        // stays. This is the plain "already decided" case, reported with its own
+        // reason rather than as a provenance failure.
+        return { status: 'denied', message: 'Approval not found or already processed' };
+      }
+    }
+
+    // Re-resolve the ORIGINAL requester before executing (#472).
     //
     // The decider's capabilities were the only ones consulted here. An approval
     // can sit pending for days, so a requester who was demoted, whose API key was
@@ -2951,7 +2972,7 @@ export class AISecureHarness {
     // executed — under the decider's rights, by an admin acting in good faith.
     // Effective capabilities are now the intersection: both parties must still
     // allow it, so neither can be used to launder the other's limits.
-    const requesterGrant = await this.resolveApprovalRequesterFor(record.id);
+    const requesterGrant = await this.resolveRequesterGrant(agentApproval);
     if (!requesterGrant.allowed) {
       return { status: 'denied', code: requesterGrant.code, message: requesterGrant.message };
     }
@@ -3015,19 +3036,17 @@ export class AISecureHarness {
   }
 
   /**
-   * Current rights of whoever REQUESTED the approval behind `legacyApprovalId`.
+   * The first-class approval row behind a legacy approval id, or undefined.
    *
-   * Fail-closed on missing provenance. A row parked before the
-   * `requested_by_principal` column existed cannot be resolved, and treating
-   * unknown provenance as "use the decider's rights" is exactly the behaviour
-   * #472 removes. Those approvals have to be re-requested after deploy; the
-   * migration header names the query that lists them.
+   * Read as a whole row and threaded through the decision, so state and
+   * provenance come from one snapshot rather than from two reads that could
+   * disagree.
    */
-  private async resolveApprovalRequesterFor(
+  private async loadAgentApprovalFor(
     legacyApprovalId: string,
-  ): Promise<ApprovalRequesterResolution> {
+  ): Promise<typeof agentApprovals.$inferSelect | undefined> {
     const [row] = await this.db
-      .select({ requestedByPrincipal: agentApprovals.requestedByPrincipal })
+      .select()
       .from(agentApprovals)
       .where(
         and(
@@ -3036,7 +3055,21 @@ export class AISecureHarness {
         ),
       )
       .limit(1);
+    return row;
+  }
 
+  /**
+   * Current rights of whoever REQUESTED this approval.
+   *
+   * Fail-closed on missing provenance. A row parked before the
+   * `requested_by_principal` column existed cannot be resolved, and treating
+   * unknown provenance as "use the decider's rights" is exactly the behaviour
+   * #472 removes. Those approvals have to be re-requested after deploy; the
+   * migration header names the query that lists them.
+   */
+  private async resolveRequesterGrant(
+    row: typeof agentApprovals.$inferSelect | undefined,
+  ): Promise<ApprovalRequesterResolution> {
     if (!row) {
       // No `agent_approvals` row at all: this is a legacy-only approval, created
       // before the first-class inbox existed. There is no provenance to check and
