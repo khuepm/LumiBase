@@ -11,6 +11,60 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **An approved action now runs under the requester's row and field rules, not
+  only their capability tokens (#472).** The capability intersection shipped first
+  and was not enough: `items:write` says nothing about which collection, which
+  rows or which fields, so a restriction written in the policy DSL passed straight
+  through it. Measured on Postgres with a real `ItemService` — an API key parked an
+  update to `title`, its update permission was narrowed to `body` while the
+  approval waited, a direct call was refused with
+  `Permission does not allow writing field(s): title`, and the admin approving the
+  parked action **wrote `title` anyway**, because the skill executed against the
+  approver's ItemService. The executing service is now rebound to the requester's
+  permission context for the duration of the decision. Two limits are stated
+  explicitly in the governed-tool contract rather than left to be discovered: the
+  decider's own mask is not applied (approving is not performing, and intersecting
+  two policy contexts is not a defined operation), and an `agentRole` requester has
+  no row/field context by construction.
+- **An approval parked by the async chat path could not be approved by anyone
+  (#472).** `POST /ai/chat` with `Prefer: respond-async` never passed the
+  requesting principal into the harness, so the approval it created carried no
+  provenance — indistinguishable from a row written before the column existed, and
+  refused with `APPROVAL_PROVENANCE_MISSING` and an instruction to re-request.
+  Re-requesting down the same path produced the same dead end. The worker now
+  carries `job.principal` through, and a source-scan tripwire requires every
+  production `harness.execute` call to pass provenance, since the argument is
+  optional by necessity (a legacy queued job has no principal) and the type system
+  therefore cannot catch the next omission.
+- **Duplicate queue delivery no longer executes twice (#455).** `markRunning` read
+  the run status and then wrote, and it accepted `running` as a startable state —
+  so under at-least-once delivery it was not a guard at all. Measured: one job
+  delivered twice concurrently created **two items**; delivered again while its run
+  sat in `awaiting_approval` it created a **second pending approval** for the same
+  run. It is replaced by two conditional UPDATEs with distinct owners:
+  `claimQueuedRun` (the queue's, `queued → running`, with takeover of a `running`
+  row older than 15 minutes so a crashed worker still recovers) and
+  `resumeApprovedRun` (the approval's, `awaiting_approval → running`). A queue
+  redelivery can no longer resume a parked run, which is how the duplicate approval
+  appeared.
+- **A dispatch lease could be released by the caller it replaced (#455).** The
+  holder was recorded as `${HOSTNAME}:${pid}`, which is the same string for every
+  acquisition in a process — so two overlapping ticks were indistinguishable: A's
+  lease expired, B reclaimed it, A's `finally` released "its" lease by owner match
+  and deleted B's, and a third caller walked in while B was still working. Each
+  acquisition now carries its own token, release and the pre-write fence both check
+  it, and a pass that outlived its lease stops with `LEASE_LOST` instead of
+  enqueueing alongside the new holder.
+- **Goals waiting on a human no longer starve the ones behind them (#455).**
+  Filtering terminal goals in SQL fixed one starvation and left another:
+  `in_progress` is exactly the status of a goal whose run is parked at
+  `awaiting_approval`. With `limit = 1`, two consecutive passes each took the
+  oldest such goal, skipped it with `RUN_ACTIVE`, enqueued nothing, and never
+  looked at the actionable goal behind it — oldest-first had moved the starvation to
+  the front of the queue. Goals with a run in flight are now excluded in SQL, so
+  the limit counts goals that can actually move, and the same rule applies to
+  multi-tenant site discovery. A goal returns the moment its run leaves the
+  in-flight set, so nothing has to remember it.
 - **`LUMIBASE_MCP_GOVERNED=on` no longer falls back to ungoverned REST (#454).**
   The mode that exists to guarantee governance quietly bypassed it: a mutation
   tool with no governed mapping fell through to a direct REST call, so autonomy

@@ -2,6 +2,42 @@
 
 Append-only history of automated EN ⇄ VI documentation syncs. Each run records language detection, preserved content and translation actions so no source content is silently lost.
 
+## 2026-09-20T17:38:36.232Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 150
+
+Summary — up-to-date: 150, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-09-20T17:37:31.255Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 150
+
+Summary — up-to-date: 149, translated: 0, preserved: 0, conflicts: 0, planned: 1
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `mcp/governed-tool-contract.md` | vi → en | source changed since last sync |
+
+---
+
+## 2026-09-20T17:36:36.926Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 150
+
+Summary — up-to-date: 149, translated: 0, preserved: 0, conflicts: 0, planned: 1
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `mcp/governed-tool-contract.md` | vi → en | source changed since last sync |
+
+---
+
 ## 2026-09-20T16:03:01.244Z — mode `plan` (effective `plan`)
 
 Engine: `claude` · API key: absent · files scanned: 150

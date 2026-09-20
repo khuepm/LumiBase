@@ -1,11 +1,15 @@
 ---
-version: 3
-lastUpdated: 2026-09-20T15:17:02.147Z
+version: 5
+lastUpdated: 2026-09-20T17:38:26.729Z
 sourceLang: vi
-contentHash: 063a0e0360646e91
-codeVerified: 2026-09-20T15:17:02.147Z
-codeVerifiedHash: 063a0e0360646e91
+contentHash: c961ed3eaf0c4293
+codeVerified: 2026-09-20T17:38:26.729Z
+codeVerifiedHash: c961ed3eaf0c4293
 codeVerifiedClaims: 24
+translatedFrom: en
+sourceHash: b9ca7b4d798de9be
+mtEngine: manual
+syncStatus: human-translated
 ---
 
 # Governed tool contract — một hợp đồng cho hai transport MCP
@@ -106,7 +110,14 @@ Công việc gốc reconciler không có principal là người: thẩm quyền 
 
 **Fail-closed khi thiếu provenance.** Một approval được park trước khi có cột này thì không resolve được, và bị từ chối với `APPROVAL_PROVENANCE_MISSING` thay vì rơi về quyền của người quyết định — chính cái fallback đó là hành vi đang được thay thế. Những approval như vậy phải được yêu cầu lại sau khi nâng cấp; header của migration có sẵn câu truy vấn liệt kê chúng. Các mã từ chối: `APPROVAL_PROVENANCE_MISSING`, `APPROVAL_PROVENANCE_INVALID`, `REQUESTER_REVOKED`, `REQUESTER_ROLE_UNAVAILABLE`, `REQUESTER_RESOLUTION_FAILED`.
 
-Phạm vi row và field không thuộc tập này: chúng vẫn nằm ở `ItemService`, dựng từ permission context của người yêu cầu chứ không phải context hệ thống.
+**Phạm vi row và field không thuộc tập capability — và nó CŨNG được áp.** Token capability không diễn đạt được "chỉ field `body` của `posts`", nên phép giao ở trên chỉ là nửa thô. Trong suốt quá trình quyết định, `ItemService` đang thực thi được rebind sang permission context của **người yêu cầu**, nên phép ghi đi qua đúng row rule và field mask của họ như thể chính họ thực hiện.
+
+Khoảng trống đó từng có thật: một API key park một phép update `title`, quyền của nó bị thu hẹp còn `body` trong lúc approval chờ, gọi trực tiếp thì bị từ chối `Permission does not allow writing field(s): title` — nhưng approval **vẫn ghi được `title`**, vì skill chạy trên ItemService của admin đã duyệt.
+
+Hai giới hạn, nói ra thay vì để ngầm hiểu:
+
+- **Phạm vi row/field của người quyết định KHÔNG được áp.** Duyệt không phải là thực hiện: người quyết định cho phép một hành động mà người yêu cầu đã xin, và nó chạy với tầm với của người yêu cầu. Giao hai permission context không phải một phép toán có định nghĩa trong policy DSL, nên một người duyệt có mask **hẹp hơn** người yêu cầu sẽ không làm hẹp phần thực thi. Trên thực tế người duyệt nắm `approvals:decide` hoặc admin, nơi không có mask nào để áp.
+- **Người yêu cầu dạng `agentRole` không có row/field context nào**, theo đúng bản chất — một role là tập capability, không phải principal có policy. Với việc của reconciler thì kiểm capability cộng autonomy cap của intent là toàn bộ cửa gác.
 
 ## 5. Hợp đồng decision và hai không gian approval ID
 

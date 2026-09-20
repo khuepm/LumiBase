@@ -1,14 +1,15 @@
 ---
-version: 3
-lastUpdated: 2026-09-20T15:17:02.147Z
+version: 5
+lastUpdated: 2026-09-20T17:38:26.729Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 063a0e0360646e91
+sourceHash: c961ed3eaf0c4293
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-20T15:17:02.147Z
-codeVerifiedHash: 063a0e0360646e91
+codeVerified: 2026-09-20T17:38:26.729Z
+codeVerifiedHash: c961ed3eaf0c4293
 codeVerifiedClaims: 24
+contentHash: b9ca7b4d798de9be
 ---
 
 # Governed tool contract — one contract for both MCP transports
@@ -109,7 +110,14 @@ Reconciler-origin work has no human principal: the intent that declared the rule
 
 **Fail-closed on missing provenance.** An approval parked before this column existed cannot be resolved, and is refused with `APPROVAL_PROVENANCE_MISSING` rather than falling back to the decider's rights — that fallback is the behaviour this replaces. Those approvals must be re-requested after upgrading; the migration header names the query that lists them. Denial codes: `APPROVAL_PROVENANCE_MISSING`, `APPROVAL_PROVENANCE_INVALID`, `REQUESTER_REVOKED`, `REQUESTER_ROLE_UNAVAILABLE`, `REQUESTER_RESOLUTION_FAILED`.
 
-Row and field scoping is not part of this set: it stays in `ItemService`, built from the requester's permission context rather than a system one.
+**Row and field scoping is not part of the capability set — and it is applied too.** Capability tokens cannot express "only the `body` field of `posts`", so the intersection above is the coarse half. For the duration of the decision, the executing `ItemService` is rebound to the **requester's** permission context, so the write goes through their row rules and field masks as if they had made it themselves.
+
+That gap was real before this: an API key parked an update to `title`, its permission was narrowed to `body` while the approval waited, a direct call was refused with `Permission does not allow writing field(s): title` — and the approval wrote `title` anyway, because the skill ran against the ItemService of the admin who approved it.
+
+Two limits, stated rather than implied:
+
+- **The decider's row/field scope is not applied.** Approving is not performing: the decider authorises an action the requester asked for, and it runs with the requester's reach. Intersecting two permission contexts is not a defined operation in the policy DSL, so a decider with a *narrower* mask than the requester does not narrow the execution. In practice deciders hold `approvals:decide` or admin, where there is no mask to apply.
+- **An `agentRole` requester has no row/field context at all**, by construction — a role is a capability set, not a principal with policies. For reconciler work the capability check plus the intent's autonomy cap are the whole gate.
 
 ## 5. The decision contract and the two approval id spaces
 

@@ -8,7 +8,8 @@ import {
   type Database,
 } from '@lumibase/database';
 import type { QueueProvider } from '@lumibase/runtime';
-import { and, asc, desc, eq, inArray, isNull, lt, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { nanoid } from 'nanoid';
 import { AgentRunService } from './agent-run-service';
 import { AGENT_RUNS_QUEUE, type AgentRunJobPayload } from './agent-run-worker';
 import { KillSwitchService } from './kill-switch-service';
@@ -91,6 +92,51 @@ export const DISPATCH_LEASE_MS = 30_000;
  */
 export const STALE_QUEUED_RUN_MS = 5 * 60_000;
 
+/**
+ * "This goal has a run in flight", expressed in SQL (#455 F5).
+ *
+ * ## Why the status filter was not enough
+ *
+ * Filtering `status IN ('open','in_progress')` fixed the case where terminal goals
+ * ate the limit, but `in_progress` is exactly the status of a goal whose run is
+ * parked at `awaiting_approval` — waiting on a human, for as long as the human
+ * takes. Each pass took the N oldest such goals, skipped every one of them with
+ * `RUN_ACTIVE`, and finished. Measured with `limit = 1`: two passes in a row
+ * reported one skip and enqueued nothing, while an `open` goal sat behind the
+ * waiting one and was never looked at. Oldest-first had moved the starvation from
+ * the back of the queue to the front, not removed it.
+ *
+ * Excluding these in SQL means the limit counts goals that can actually move. A
+ * goal reappears the moment its run leaves the in-flight set — approved, rejected,
+ * failed or aged out — so nothing needs to remember it.
+ *
+ * `queued` is in-flight only while it is young: past {@link STALE_QUEUED_RUN_MS}
+ * its job is presumed lost and the goal must be reconsidered, which is the R4
+ * recovery. Those two rules have to agree, or the recovery would be filtered out
+ * before it could happen.
+ */
+export function noRunInFlight(now: Date): SQL {
+  const staleBefore = new Date(now.getTime() - STALE_QUEUED_RUN_MS);
+  // Written as `sql` rather than through the builder because a correlated
+  // subquery needs the outer `agent_goals.id`, and spelling it out keeps the
+  // generated SQL legible in a query plan.
+  return sql`not exists (
+    select 1 from ${agentRuns}
+    where ${agentRuns.goalId} = ${agentGoals.id}
+      and ${agentRuns.siteId} = ${agentGoals.siteId}
+      and (
+        ${agentRuns.status} in ('running', 'awaiting_approval')
+        or (
+          ${agentRuns.status} = 'queued'
+          -- ISO string with an explicit cast, not a Date: inside a raw fragment
+          -- drizzle has no column type to infer from, and postgres.js then
+          -- rejects the Date outright ("must be of type string or Buffer").
+          and ${agentRuns.createdAt} >= ${staleBefore.toISOString()}::timestamp
+        )
+      )
+  )`;
+}
+
 /** Phase recorded on the goal so a dispatch decision is auditable. */
 export type RepairPhase = 'drafting' | 'promoting';
 
@@ -146,9 +192,10 @@ export function decideGoalAction(state: GoalDispatchState): GoalDispatchAction {
   // run with no job. Treating that as `RUN_ACTIVE` forever is what made the goal
   // unrecoverable — the state this whole service exists to eliminate.
   //
-  // Re-dispatching is safe rather than clever: `markRunning` refuses a run that
-  // already left `queued`, so a duplicate job is a no-op, and the draft branch
-  // key is deterministic, so a duplicated draft cannot be created either. The
+  // Re-dispatching is safe rather than clever: `claimQueuedRun` is a conditional
+  // UPDATE, so only one delivery of a job can start it and a duplicate is a no-op
+  // (this was NOT true of the `markRunning` it replaced — see #455 F3), and the
+  // draft branch key is deterministic, so a duplicated draft cannot exist. The
   // worst case of re-enqueueing too early is one wasted pickup; the worst case of
   // not re-enqueueing is a goal that never moves again.
   if (state.latestRunStatus === 'queued' && state.queuedRunAgeMs !== undefined) {
@@ -241,13 +288,27 @@ export interface GoalLeaseRef {
 export async function claimGoalLease(
   db: Database,
   ref: GoalLeaseRef & { now?: Date },
-): Promise<boolean> {
+): Promise<string | null> {
   const now = ref.now ?? new Date();
+  // Identity of THIS acquisition, not of the process (#455 F4).
+  //
+  // `dispatchLeaseBy` used to hold `${HOSTNAME}:${pid}`, which is the same string
+  // for every acquisition inside one process — so it identified the holder about
+  // as precisely as "someone here". Measured consequence: caller A's lease
+  // expires, B reclaims it, then A's `finally` runs and releases "its" lease by
+  // owner match — deleting B's. A third caller then walks in while B is still
+  // working, which is the one thing the lease exists to prevent. Two replicas were
+  // not needed to reproduce it; two overlapping ticks in one process were enough.
+  //
+  // The token makes release and fencing answer "is this still *my* lease" instead
+  // of "does this look like one of ours". The instance id stays in the string
+  // because a stuck lease has to be attributable to a machine in support.
+  const token = `${ref.instanceId}#${nanoid(10)}`;
   const claimed = await db
     .update(agentGoals)
     .set({
       dispatchLeaseUntil: new Date(now.getTime() + DISPATCH_LEASE_MS),
-      dispatchLeaseBy: ref.instanceId,
+      dispatchLeaseBy: token,
     })
     .where(
       and(
@@ -257,18 +318,21 @@ export async function claimGoalLease(
       ),
     )
     .returning({ id: agentGoals.id });
-  return claimed.length > 0;
+  return claimed.length > 0 ? token : null;
 }
 
 /**
  * Releases a lease we hold, so the next pass is not blocked by our own hold.
  *
- * Best-effort, and scoped to `dispatchLeaseBy = instanceId` so a process can
- * never release someone else's hold. A failure here costs one skipped tick
- * rather than a stuck goal — that is the reason the lease is a timestamp and not
- * a boolean.
+ * Scoped to the exact token, so a caller whose lease already expired and was
+ * reclaimed by someone else releases nothing. Best-effort otherwise: a failure
+ * here costs one skipped tick rather than a stuck goal, which is why the lease is
+ * a timestamp and not a flag.
  */
-export async function releaseGoalLease(db: Database, ref: GoalLeaseRef): Promise<void> {
+export async function releaseGoalLease(
+  db: Database,
+  ref: { siteId: string; goalId: string; token: string },
+): Promise<void> {
   await db
     .update(agentGoals)
     .set({ dispatchLeaseUntil: null, dispatchLeaseBy: null })
@@ -276,10 +340,34 @@ export async function releaseGoalLease(db: Database, ref: GoalLeaseRef): Promise
       and(
         eq(agentGoals.siteId, ref.siteId),
         eq(agentGoals.id, ref.goalId),
-        eq(agentGoals.dispatchLeaseBy, ref.instanceId),
+        eq(agentGoals.dispatchLeaseBy, ref.token),
       ),
     )
     .catch(() => undefined);
+}
+
+/**
+ * Whether we still hold the lease — the fence checked before any side effect.
+ *
+ * A lease is a time-boxed promise, and a slow pass can outlive it: the row has
+ * already been handed to someone else while this code is still walking through its
+ * decision. Releasing correctly (above) stops us from *taking away* the new
+ * holder's lease, but it does not stop us from enqueueing a job the new holder is
+ * also about to enqueue. Re-reading the token immediately before the write is what
+ * closes that, and it is cheap because it only happens on the dispatch path.
+ */
+export async function holdsGoalLease(
+  db: Database,
+  ref: { siteId: string; goalId: string; token: string; now?: Date },
+): Promise<boolean> {
+  const now = ref.now ?? new Date();
+  const [row] = await db
+    .select({ by: agentGoals.dispatchLeaseBy, until: agentGoals.dispatchLeaseUntil })
+    .from(agentGoals)
+    .where(and(eq(agentGoals.siteId, ref.siteId), eq(agentGoals.id, ref.goalId)))
+    .limit(1);
+  if (!row || row.by !== ref.token || !row.until) return false;
+  return row.until.getTime() > now.getTime();
 }
 
 export interface RepairArguments {
@@ -412,6 +500,11 @@ export class GoalDispatchService {
           eq(agentGoals.siteId, this.deps.siteId),
           eq(agentGoals.origin, 'reconciler'),
           inArray(agentGoals.status, DISPATCHABLE_GOAL_STATUSES),
+          // Goals waiting on a human do not consume a slot (F5) — see
+          // `noRunInFlight`. Without this, N goals parked for approval were
+          // fetched, skipped and refetched on every tick while an actionable goal
+          // behind them was never reached.
+          noRunInFlight(this.deps.now?.() ?? new Date()),
         ),
       )
       .orderBy(asc(agentGoals.createdAt))
@@ -442,7 +535,8 @@ export class GoalDispatchService {
     return this.advanceGoal(goal, result);
   }
 
-  private claimGoal(goalId: string): Promise<boolean> {
+  /** Claims the lease, returning this acquisition's token or null. */
+  private claimGoal(goalId: string): Promise<string | null> {
     return claimGoalLease(this.deps.db, {
       siteId: this.deps.siteId,
       goalId,
@@ -451,11 +545,17 @@ export class GoalDispatchService {
     });
   }
 
-  private releaseGoalLease(goalId: string): Promise<void> {
-    return releaseGoalLease(this.deps.db, {
+  private releaseGoalLease(goalId: string, token: string): Promise<void> {
+    return releaseGoalLease(this.deps.db, { siteId: this.deps.siteId, goalId, token });
+  }
+
+  /** The fence: still ours, still unexpired? Checked before any side effect. */
+  private holdsLease(goalId: string, token: string): Promise<boolean> {
+    return holdsGoalLease(this.deps.db, {
       siteId: this.deps.siteId,
       goalId,
-      instanceId: this.instanceId,
+      token,
+      now: this.deps.now?.() ?? new Date(),
     });
   }
 
@@ -470,20 +570,24 @@ export class GoalDispatchService {
     goal: typeof agentGoals.$inferSelect,
     result: GoalDispatchResult,
   ): Promise<GoalDispatchOutcome> {
-    if (!(await this.claimGoal(goal.id))) {
+    const token = await this.claimGoal(goal.id);
+    if (!token) {
       result.skipped += 1;
       return { goalId: goal.id, action: 'skip', reason: 'LEASE_HELD' };
     }
     try {
-      return await this.advanceClaimedGoal(goal, result);
+      return await this.advanceClaimedGoal(goal, result, token);
     } finally {
-      await this.releaseGoalLease(goal.id);
+      // Releases only if this token is still the holder, so a pass that ran past
+      // its lease cannot take the next holder's away.
+      await this.releaseGoalLease(goal.id, token);
     }
   }
 
   private async advanceClaimedGoal(
     goal: typeof agentGoals.$inferSelect,
     result: GoalDispatchResult,
+    leaseToken: string,
   ): Promise<GoalDispatchOutcome> {
     const metadata = (goal.metadata ?? {}) as Record<string, unknown>;
     const fingerprint = goal.driftFingerprint;
@@ -591,6 +695,7 @@ export class GoalDispatchService {
           repair,
           decision.action === 'dispatch_draft' ? 'drafting' : 'promoting',
           result,
+          leaseToken,
         );
       }
     }
@@ -629,6 +734,7 @@ export class GoalDispatchService {
     repair: RepairArguments,
     phase: RepairPhase,
     result: GoalDispatchResult,
+    leaseToken: string,
   ): Promise<GoalDispatchOutcome> {
     const [intent] = await this.deps.db
       .select({
@@ -652,6 +758,18 @@ export class GoalDispatchService {
       // creation.
       result.skipped += 1;
       return { goalId: goal.id, action: 'skip', reason: 'INTENT_NOT_ACTIVE' };
+    }
+
+    // FENCE (#455 F4). Everything above was reads; everything below writes.
+    //
+    // The lease is time-boxed, and the reads between taking it and reaching here
+    // are not free: a slow pass can outlive its own lease, at which point the goal
+    // legitimately belongs to someone else who is about to dispatch it. Releasing
+    // by token stops us from stealing their lease, but only this re-check stops us
+    // from enqueueing alongside them.
+    if (!(await this.holdsLease(goal.id, leaseToken))) {
+      result.skipped += 1;
+      return { goalId: goal.id, action: 'skip', reason: 'LEASE_LOST' };
     }
 
     const runService = new AgentRunService(this.deps.db, this.deps.siteId, this.deps.queue);
@@ -904,6 +1022,10 @@ export async function runGoalDispatchTick(deps: {
       and(
         eq(agentGoals.origin, 'reconciler'),
         inArray(agentGoals.status, DISPATCHABLE_GOAL_STATUSES),
+        // Same rule as the per-site query: a tenant whose only reconciler goals
+        // are waiting on a human is not "work waiting", and counting it against
+        // `sitesLimit` is how tenants past the cap were starved (F5).
+        noRunInFlight(new Date()),
       ),
     )
     .orderBy(asc(agentGoals.siteId))

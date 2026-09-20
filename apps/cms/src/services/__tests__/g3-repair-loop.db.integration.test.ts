@@ -348,10 +348,13 @@ describe.skipIf(!hasDbIntegrationUrl)('G3 reconciler repair loop — DB integrat
       .where(and(eq(agentApprovals.siteId, SITE), eq(agentApprovals.status, 'pending')));
     expect(approvalRow!.runId).toBe(promoteRunId);
 
-    // A goal awaiting a human is skipped, not re-dispatched.
+    // A goal awaiting a human is not re-dispatched. Since F5 it is excluded by the
+    // candidate query itself rather than fetched and then skipped, so the pass
+    // reports no outcome for it at all — the point being that it no longer occupies
+    // one of the pass's slots while a human takes their time.
     const whileWaiting = await dispatcher.dispatchReconcilerGoals();
     expect(whileWaiting.dispatched).toBe(0);
-    expect(whileWaiting.skipped).toBe(1);
+    expect(whileWaiting.outcomes).toEqual([]);
     expect(queue.jobs).toHaveLength(2);
 
     // ── Phase 3: human approves → publish through the content API ───────────

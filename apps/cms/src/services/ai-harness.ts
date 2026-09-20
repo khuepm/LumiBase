@@ -4,6 +4,7 @@ import { agentToolNamesWithSchema, jsonSchemaFor, validateAgentToolInput } from 
 import { and, eq } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
+import type { MagicContext } from './permission-dsl';
 import type { AccessService } from './access-service';
 import type { ConfigService } from './config-service';
 import type { ExtensionsService } from './extensions-service';
@@ -2148,6 +2149,48 @@ export const CORE_SKILLS: Record<string, SkillDefinition> = buildCoreSkills({});
  * read-only call marks the execution as touched, so an ambiguous failure is
  * treated as unsafe. Erring toward "a human should look" is the point.
  */
+/**
+ * A service reference whose target can be swapped after the skills are built.
+ *
+ * `buildCoreSkills` closes over the service objects once, in the constructor, so
+ * by the time an approval executes there is no way to hand the handlers a
+ * different `ItemService` — and that is exactly what executing under the
+ * **requester's** row/field rules requires (#472). The alternative would be to
+ * construct a second harness per approval, which would also reset the
+ * service-touch tracker that decides whether a failed approval is safe to retry
+ * (#453); losing that is a worse trade than one level of indirection.
+ *
+ * Reads go through `box.current`, and methods are bound to it, so a swap takes
+ * effect for every later call without the handlers knowing.
+ */
+interface Rebindable<T extends object> {
+  /** Handed to the skills; never replaced. */
+  readonly proxy: T;
+  /** Swaps the target and returns a function that puts the previous one back. */
+  rebind(next: T): () => void;
+}
+
+function rebindable<T extends object>(initial: T): Rebindable<T> {
+  const box = { current: initial };
+  const proxy = new Proxy(initial, {
+    get: (_target, prop) => {
+      const value = Reflect.get(box.current, prop) as unknown;
+      return typeof value === 'function' ? value.bind(box.current) : value;
+    },
+    set: (_target, prop, value) => Reflect.set(box.current, prop, value),
+  }) as T;
+  return {
+    proxy,
+    rebind(next: T) {
+      const previous = box.current;
+      box.current = next;
+      return () => {
+        box.current = previous;
+      };
+    },
+  };
+}
+
 class ServiceTouchTracker {
   private touched = false;
 
@@ -2192,6 +2235,8 @@ export class AISecureHarness {
   private readonly runService: AgentRunService;
   private readonly toolRegistry: ToolRegistryService;
   private readonly itemService?: ItemService;
+  /** Present when an ItemService was supplied; lets approvals rebind it (#472). */
+  private readonly itemServiceRef?: Rebindable<ItemService>;
   private readonly queue?: QueueProvider;
   private readonly notify?: AgentNotifier;
   /** Set when a skill handler reaches a service; drives retry safety (#453). */
@@ -2200,7 +2245,11 @@ export class AISecureHarness {
   constructor(config: AISecureHarnessConfig) {
     this.db = config.db;
     this.siteId = config.siteId;
-    this.itemService = config.itemService;
+    this.itemServiceRef = config.itemService ? rebindable(config.itemService) : undefined;
+    // The indirection is what the skills and this class both hold, so an
+    // approval rebinding it reaches every write path rather than only the ones
+    // this class calls directly.
+    this.itemService = this.itemServiceRef?.proxy;
     this.queue = config.queue;
     this.notify = config.notify;
     const hasService = Boolean(
@@ -2222,7 +2271,7 @@ export class AISecureHarness {
       // reached one (safe to retry) from a failure that did (ambiguous).
       this.skills = buildCoreSkills({
         schemaService: this.serviceTouch.wrap(config.schemaService),
-        itemService: this.serviceTouch.wrap(config.itemService),
+        itemService: this.serviceTouch.wrap(this.itemService),
         accessService: this.serviceTouch.wrap(config.accessService),
         intentService: this.serviceTouch.wrap(config.intentService),
         configService: this.serviceTouch.wrap(config.configService),
@@ -2989,11 +3038,97 @@ export class AISecureHarness {
       };
     }
 
-    // Execute the stored skill
+    // Run the whole decision under the REQUESTER's row/field rules (#472, F1).
+    //
+    // Capability intersection is not enough, and the gap was measurable: coarse
+    // tokens like `items:write` say nothing about which collection, which rows or
+    // which fields. A requester whose update permission was narrowed to `body`
+    // after parking still had `title` written, because the skill executed against
+    // the ItemService built from the *approver's* request. Direct calls with the
+    // requester's own context were correctly refused at the same moment — so the
+    // approval was a way around a restriction that was already in force.
+    //
+    // Scoped for the duration of the decision and restored afterwards, because a
+    // harness built per request is reused for anything else on that request.
+    const restoreScope = this.scopeToRequester(requesterGrant);
+    try {
+      return await this.executeApprovedUnderScope(record, userId);
+    } finally {
+      restoreScope();
+    }
+  }
+
+  /**
+   * Row/field scope for an approval execution, or a no-op when there is none.
+   *
+   * Two cases deliberately produce no rebinding:
+   *
+   * - **An agent-role requester.** A role is a capability set, not a principal
+   *   with policies, so there is no row/field context to apply; the capability
+   *   check is the whole gate by design (this is the reconciler path, #455).
+   * - **A harness with no ItemService** (offline registry mode in tests).
+   *
+   * What is NOT applied is the *decider's* row/field scope. Approving is not
+   * performing: the decider authorises an action the requester asked for, and the
+   * action runs with the requester's reach. Intersecting two `MagicContext`s is
+   * not a defined operation here, so pretending to do it would be worse than
+   * saying plainly that it is not done — noted in the governed-tool contract docs
+   * and in the backlog.
+   */
+  private scopeToRequester(grant: ApprovalRequesterResolution): () => void {
+    if (!grant.allowed || !grant.permissionContext || !this.itemServiceRef) {
+      return () => {};
+    }
+    const requesterContext = grant.permissionContext;
+    if (requesterContext.siteId !== this.siteId) {
+      // Resolution already refuses a cross-tenant requester; this is the second
+      // door on the same lock, because rebinding to another tenant's context
+      // would move `siteId` on the executing service.
+      return () => {};
+    }
+    const rebound = this.reboundItemService(requesterContext);
+    if (!rebound) return () => {};
+    return this.itemServiceRef.rebind(rebound);
+  }
+
+  /**
+   * The requester-scoped ItemService, or null when this harness's item service
+   * cannot produce one.
+   *
+   * The null case is a test double, not a production shape: several suites pass a
+   * catch-all proxy whose every property is an async function, so
+   * `withPermissionContext()` there returns a promise rather than a service, and
+   * binding that would break the very execution this is meant to protect. A real
+   * `ItemService` always has the method, and the requester-scope behaviour is
+   * measured against a real one in
+   * `g2-approval-requester-scope.db.integration.test.ts`.
+   *
+   * Deliberately NOT silent about it: a shape that cannot be scoped is logged, so
+   * "we skipped the scoping" can never be inferred from nothing.
+   */
+  private reboundItemService(requesterContext: MagicContext): ItemService | null {
+    const current = this.itemServiceRef?.proxy;
+    if (!current || typeof current.withPermissionContext !== 'function') return null;
+    const scoped = current.withPermissionContext(requesterContext) as unknown;
+    if (!scoped || typeof (scoped as ItemService).patch !== 'function') {
+      console.warn(
+        '[ai-harness] item service cannot be scoped to the requester; executing unscoped',
+      );
+      return null;
+    }
+    return scoped as ItemService;
+  }
+
+  /** The stored skill, executed with whatever scope is currently bound. */
+  private async executeApprovedUnderScope(
+    record: typeof aiApprovals.$inferSelect,
+    userId: string,
+  ): Promise<HarnessExecutionResult> {
     if (this.agentHarnessEnabled) {
       return this.executeApprovedWithAudit(record, userId);
     }
 
+    const approvalId = record.id;
     const result = await this.runSkill(
       record.skillName,
       record.arguments as Record<string, unknown>,
@@ -3213,8 +3348,11 @@ export class AISecureHarness {
         return { status: 'denied', message: 'Run was cancelled', runId: run.runId };
       }
       // Resume the parked run; only the approved tool call executes —
-      // previously completed tool calls are never re-run (Req 3.4).
-      await this.runService.markRunning(run.runId);
+      // previously completed tool calls are never re-run (Req 3.4). This is the
+      // approval-owned transition (`awaiting_approval → running`), kept separate
+      // from the worker's queue claim so a redelivered job cannot perform it
+      // (#455 F3).
+      await this.runService.resumeApprovedRun(run.runId);
     }
 
     // Kill switch wins over approvals: a frozen site/role denies the

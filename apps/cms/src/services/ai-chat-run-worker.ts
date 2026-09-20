@@ -116,6 +116,22 @@ export async function executeAiChatRun(
           toolCall.arguments,
           capabilities.capabilities,
           job.message,
+          // Provenance travels with the execution, or the approval it parks is
+          // unapprovable (#472 F2).
+          //
+          // `executeApproved` refuses an approval with no recorded requester,
+          // which is correct for rows written before the column existed — but a
+          // park that forgets to pass this produces a BRAND NEW row that is
+          // indistinguishable from those, and then refuses it with "re-request
+          // the action". Re-requesting through the same async path hits the same
+          // wall, so the work becomes impossible rather than merely blocked.
+          //
+          // The synchronous half of `POST /ai/chat` already passed it. This is
+          // the same class as the RBAC split above: one endpoint, two paths,
+          // chosen by a `Prefer` header, and only one of them correct.
+          job.principal
+            ? { requestedByPrincipal: { kind: 'principal', ref: job.principal } }
+            : undefined,
         )
       : {
           status: 'denied' as const,

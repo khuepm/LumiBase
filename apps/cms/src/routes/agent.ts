@@ -801,10 +801,12 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
     // is exactly what made the first version of this fix respond 409 to every
     // approve.
     const { buildAuthorizedHarness } = await import('./ai');
-    // The decider's own live capabilities (#472). Note the deliberate semantic:
-    // an approved action executes with the DECIDER's grant, not the requester's —
-    // the requester's grant was checked when the action was parked, and a human
-    // approving it is taking responsibility under their own authority.
+    // The decider's own live capabilities (#472). They are one half of the check:
+    // the harness re-resolves the REQUESTER's grant too and executes with the
+    // intersection, under the requester's row/field rules. An earlier version of
+    // this comment claimed execution used the decider's grant alone — it did, and
+    // that was the defect: an action parked by a user who was since demoted still
+    // ran, with the approver's reach.
     const result = await buildAuthorizedHarness(c).executeApproved(
       existing.legacyApprovalId,
       auth.userId ?? auth.externalId ?? 'unknown',

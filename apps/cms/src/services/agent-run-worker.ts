@@ -156,7 +156,7 @@ async function resolveWorkerCapabilities(
  * The write-rate budget and the load guard deliberately do not fail a run: the
  * design is that the caller retries when quota or headroom returns. On the
  * synchronous path the caller is a human who can retry. On the queue path there is
- * no caller, and the run had already been moved to `running` by `markRunning` — so
+ * no caller, and the run had already been moved to `running` by the claim — so
  * it stayed `running` forever, and a dispatcher that treats a live run as
  * "in flight" would skip its goal on every later pass. A deferral silently became
  * a permanently stuck goal, which is the exact failure mode #455 exists to remove.
@@ -192,8 +192,13 @@ export async function processAgentRunJob(
 ): Promise<void> {
   const runService = new AgentRunService(deps.db, payload.siteId, deps.queue);
 
-  // Skip runs cancelled while queued; markRunning refuses terminal states.
-  const started = await runService.markRunning(payload.runId);
+  // Exclusive claim, not a status check (#455 F3). At-least-once delivery means
+  // this function can run twice for one job, concurrently; the conditional UPDATE
+  // inside `claimQueuedRun` is what makes the second one a no-op instead of a
+  // second execution. It also skips a run cancelled while queued, and a run parked
+  // at `awaiting_approval` — resuming that belongs to the approval flow, and a
+  // redelivery doing it is how a duplicate pending approval appeared.
+  const started = await runService.claimQueuedRun(payload.runId);
   if (!started) {
     return;
   }

@@ -5,7 +5,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import type { QueueProvider } from '@lumibase/runtime';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, lt, or } from 'drizzle-orm';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import type { ApprovalRequester } from './approval-requester';
 import {
@@ -14,6 +14,18 @@ import {
   agentToolLatency,
   observeAgentCost,
 } from './agent-metrics';
+
+/**
+ * How long a `running` run may go without finishing before another worker may
+ * take it over.
+ *
+ * The number is a trade between two failures, and both are real: too short and a
+ * long legitimate run is executed twice; too long and a run orphaned by a crashed
+ * process is stuck until someone notices. Fifteen minutes is far beyond any
+ * observed run (the harness caps tool calls and the LLM has its own timeouts) and
+ * far below "forever".
+ */
+export const RUN_STALE_MS = 15 * 60_000;
 
 export interface AgentRunEnvelope {
   goalId?: string;
@@ -277,22 +289,85 @@ export class AgentRunService {
   }
 
   /**
-   * Transitions a `queued` or `awaiting_approval` run to `running`.
-   * Returns false when the run is missing or in a terminal/cancelled state,
-   * so workers can skip work that was cancelled while waiting (Req 3.5).
+   * Claims a queued run for execution. Exactly one caller can succeed.
+   *
+   * ## Why this replaced `markRunning` on the worker path (#455 F3)
+   *
+   * The old helper read the status, then wrote — and it accepted `running` as a
+   * valid starting point, returning `true`. Under at-least-once delivery that is
+   * not a guard at all: two deliveries of the same job both saw a startable run
+   * and both executed. Measured on Postgres, one job delivered twice
+   * concurrently created **two items**; delivered again while the run sat in
+   * `awaiting_approval` it created a **second pending approval** for the same
+   * run. Comments elsewhere (including the dispatcher's) claimed the opposite,
+   * so the R4 re-dispatch was resting on a property this method never had.
+   *
+   * One conditional UPDATE is the whole mechanism: the row lock serializes the
+   * two deliveries and the loser's `WHERE` no longer matches.
+   *
+   * ## Crash recovery, without reopening the hole
+   *
+   * A worker killed mid-run would otherwise leave the run `running` forever with
+   * nobody able to claim it. Reclaiming is therefore allowed, but only for a run
+   * whose `startedAt` is older than {@link RUN_STALE_MS} — long enough that a
+   * live run is never stolen, short enough that a crash is not permanent. A
+   * duplicate arriving seconds later is refused, because the claim it would need
+   * to steal was stamped just now.
+   *
+   * `awaiting_approval` is deliberately NOT claimable here: resuming a parked run
+   * is the approval flow's job ({@link resumeApprovedRun}), and letting a queue
+   * redelivery do it is exactly how the duplicate approval appeared.
    */
-  async markRunning(runId: string): Promise<boolean> {
-    const run = await this.getRun(runId);
-    if (!run || !['queued', 'awaiting_approval', 'running'].includes(run.status)) {
-      return false;
-    }
-    if (run.status !== 'running') {
-      await this.db
-        .update(agentRuns)
-        .set({ status: 'running', startedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
-    }
-    return true;
+  async claimQueuedRun(runId: string): Promise<boolean> {
+    const now = new Date();
+    const staleBefore = new Date(now.getTime() - RUN_STALE_MS);
+    const claimed = await this.db
+      .update(agentRuns)
+      .set({ status: 'running', startedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(agentRuns.id, runId),
+          eq(agentRuns.siteId, this.siteId),
+          or(
+            eq(agentRuns.status, 'queued'),
+            and(
+              eq(agentRuns.status, 'running'),
+              // A `running` row with no `startedAt` cannot be aged, so it is left
+              // alone rather than treated as stale — fail-closed on a shape that
+              // should not occur.
+              isNotNull(agentRuns.startedAt),
+              lt(agentRuns.startedAt, staleBefore),
+            ),
+          ),
+        ),
+      )
+      .returning({ id: agentRuns.id });
+    return claimed.length > 0;
+  }
+
+  /**
+   * Resumes a run that was parked for approval.
+   *
+   * Separate from {@link claimQueuedRun} because the legitimate transition is
+   * `awaiting_approval → running` and the caller is the approval decision, not a
+   * queue delivery. Also a conditional UPDATE, so two concurrent approve clicks
+   * cannot both resume the same run (the approval claim in `agent_approvals`
+   * already serializes the decision; this is the second door on the same lock).
+   */
+  async resumeApprovedRun(runId: string): Promise<boolean> {
+    const now = new Date();
+    const resumed = await this.db
+      .update(agentRuns)
+      .set({ status: 'running', updatedAt: now })
+      .where(
+        and(
+          eq(agentRuns.id, runId),
+          eq(agentRuns.siteId, this.siteId),
+          or(eq(agentRuns.status, 'awaiting_approval'), eq(agentRuns.status, 'running')),
+        ),
+      )
+      .returning({ id: agentRuns.id });
+    return resumed.length > 0;
   }
 
   /** Parks a run while a dangerous action waits for an approval (Req 3.1). */
