@@ -11,6 +11,26 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **A forged site id can no longer erase other tenants' audit rows (#469).** The
+  crash half of this issue was already fixed: the fire-and-forget audit flush
+  contains its rejection, and a cross-tenant key denial is recorded against the
+  key's own site. What remained was quieter and, for a security log, worse. A
+  multi-row `INSERT` is atomic, so one row rejected by the `audit_log.site_id`
+  foreign key discarded **every** row batched with it — up to 99 records
+  belonging to real tenants, and precisely the ones worth keeping: denied
+  control-plane access, rejected uploads, failed authentication. `withTenant`
+  only shape-checks `X-Lumi-Site`, so an unauthenticated request could trigger
+  this by naming a site that does not exist, and it failed silently.
+  The batcher now retries row by row **only** when the batched statement fails,
+  so the poisoned row is dropped (logged with its site and event, never its
+  metadata) while the rest are written. The error is still rethrown, so a caller
+  that awaits `flush()` observes it. Verified against Postgres in
+  `audit-batch-isolation.db.integration.test.ts`.
+  Deliberately not changed: `withTenant` still does not check that the site
+  exists. The consequences are now contained on both sides — queries scoped by
+  `site_id` return nothing, and a forged audit row is dropped with a log line —
+  and adding a lookup to the hot path of every request buys little.
+
 - **Reconciler goals now execute (#455).** A content intent's drift became an
   `agent_goals` row and stopped there. Nothing turned that goal into a run: no cron
   task, no queue consumer, no route. Measured on Postgres before the fix — one
