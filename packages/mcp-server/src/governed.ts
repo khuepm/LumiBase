@@ -169,6 +169,30 @@ export const UNGOVERNED_MUTATIONS: Readonly<Record<string, string>> = {
   upsert_tm: 'no-skill',
 };
 
+/**
+ * Tool names that change state.
+ *
+ * Lives here rather than in the test that used to own it, because two places now
+ * depend on the answer: the inventory tripwire, and the fail-closed refusal in
+ * mode `on`. Two copies of this regex would drift, and the copy that drifted
+ * would be the one deciding whether a write is allowed.
+ *
+ * Deliberately matched on the verb rather than looked up in
+ * {@link UNGOVERNED_MUTATIONS}: a mutation tool added tomorrow and forgotten in
+ * both tables must be refused by mode `on`, not waved through. The tripwire
+ * catches it in CI; this catches it at runtime if CI did not.
+ */
+const MUTATION_VERB =
+  /^(create|update|delete|remove|upsert|set|add|attach|detach|revoke|rotate|invite|install|uninstall|enable|disable|publish|unpublish|promote|apply|run|trigger|restore|replay|drop|materialize|reset|assign|unassign|approve|reject|submit|claim|decide|import|veto|freeze|lift|seed|sync|purge|bump|stage|commit|schedule|cancel|retry|archive|clone|duplicate|move|rename|reorder|translate|compile|generate|refresh|configure)/;
+
+/** Mutations whose name does not start with a mutation verb. */
+const MUTATION_EXCEPTIONS = new Set(['cdc_subscription_replay']);
+
+/** True when calling `name` can change state. */
+export function isMutationTool(name: string): boolean {
+  return MUTATION_EXCEPTIONS.has(name) || MUTATION_VERB.test(name);
+}
+
 /** stdio arguments that exist for the operator, not for the skill. */
 const PROMPT_ONLY_ARGS = new Set(['confirm']);
 
@@ -242,6 +266,46 @@ export class GovernedDispatcher {
 
   get enabled(): boolean {
     return this.mode !== 'off';
+  }
+
+  /**
+   * True when this deployment requires every mutation to go through governance.
+   *
+   * Read by the registration wrapper to refuse mutations that have no governed
+   * mapping. Without it, mode `on` only governed the 27 mapped tools and left the
+   * rest on REST — so the setting that exists to guarantee governance did not,
+   * and the guarantee failed silently for exactly the calls nobody had mapped
+   * yet.
+   */
+  get requiresGovernance(): boolean {
+    return this.mode === 'on';
+  }
+
+  /**
+   * The refusal returned for a mutation that cannot be governed.
+   *
+   * Names the reason from {@link UNGOVERNED_MUTATIONS} when there is one, so the
+   * operator can tell "we know about this gap" from "nobody classified this tool".
+   */
+  refuseUngoverned(tool: string): CallToolResult {
+    const reason = UNGOVERNED_MUTATIONS[tool];
+    return {
+      content: [
+        {
+          type: 'text',
+          text:
+            `Refused: "${tool}" changes state but has no governed mapping, and ` +
+            'LUMIBASE_MCP_GOVERNED=on requires every mutation to run through the agent ' +
+            'harness (autonomy levels, HITL approval, kill switch, run audit).\n' +
+            (reason
+              ? `Known gap: ${reason}.\n`
+              : 'This tool is in neither the governed nor the declared-ungoverned table, ' +
+                'which means it was added without a governance decision.\n') +
+            'Set LUMIBASE_MCP_GOVERNED=auto or off to accept ungoverned REST calls for it.',
+        },
+      ],
+      isError: true,
+    };
   }
 
   /** True when the governed endpoint answered a probe. */

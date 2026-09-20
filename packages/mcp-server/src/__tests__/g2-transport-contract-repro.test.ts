@@ -4,7 +4,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { z } from 'zod';
 import { McpUnavailableError, type LumiBaseClient } from '../client.js';
-import { GOVERNED_TOOLS, GovernedDispatcher, UNGOVERNED_MUTATIONS } from '../governed.js';
+import {
+  GOVERNED_TOOLS,
+  GovernedDispatcher,
+  UNGOVERNED_MUTATIONS,
+  isMutationTool,
+} from '../governed.js';
 import { registerAllTools } from '../tools/index.js';
 
 /**
@@ -231,10 +236,23 @@ describe('G2 regression · governed tools route through the harness', () => {
     expect(result.content[0]!.text).not.toMatch(/deleted/i);
   });
 
-  it('S13: an UNGOVERNED mutation stays on REST, and the gap is declared', async () => {
-    // `update_collection` has no skill to route to. It keeps working over REST —
-    // removing it would be a functional regression — but it is listed with its
-    // reason so the gap is enumerated rather than silent.
+  it('S13 [FLIPPED]: mode `on` refuses an UNGOVERNED mutation instead of letting it reach REST', async () => {
+    /**
+     * This assertion is inverted from its original form, deliberately.
+     *
+     * The earlier version pinned "an ungoverned mutation stays on REST" as correct
+     * even in mode `on`, reasoning that removing the tool would be a functional
+     * regression. Reviewer R1 showed why that reasoning does not hold for `on`:
+     * the setting exists to guarantee that no write executes outside governance,
+     * and `update_collection` reaching `PATCH /collections/posts` with zero
+     * JSON-RPC calls means the guarantee was not kept. A documented gap
+     * (`UNGOVERNED_MUTATIONS`) describes the hole; it does not close it.
+     *
+     * The functional-regression concern is answered by mode, not by exceptions:
+     * `auto` (the default) and `off` still route this tool to REST, so no existing
+     * install changes behaviour. Only an operator who asked for `on` gets the
+     * refusal — which is what they asked for.
+     */
     const { client: cms, calls } = governedFake();
     const tools = new Map<string, CapturedTool>();
     registerAllTools(
@@ -246,11 +264,19 @@ describe('G2 regression · governed tools route through the harness', () => {
       { dispatcher: new GovernedDispatcher(cms, { mode: 'on' }) },
     );
 
-    await tools.get('update_collection')!.handler({ name: 'posts', label: 'Posts' });
+    const result = (await tools.get('update_collection')!.handler({
+      name: 'posts',
+      label: 'Posts',
+    })) as { isError?: boolean; content: Array<{ text: string }> };
 
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain('has no governed mapping');
+    // The point of the fix: no REST call happened, so there is nothing to undo.
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
     expect(calls.some((c) => c.method === 'JSONRPC' && c.path === '/mcp:tools/call')).toBe(false);
-    expect(calls.some((c) => c.method === 'PATCH')).toBe(true);
+    // The gap is still enumerated, and the refusal quotes its reason.
     expect(UNGOVERNED_MUTATIONS['update_collection']).toBe('no-skill');
+    expect(result.content[0]!.text).toContain('no-skill');
   });
 
   it('S14: mode `on` refuses when governance is unavailable — no REST fallback', async () => {
@@ -317,12 +343,11 @@ describe('G2 regression · governed tools route through the harness', () => {
      * is neither routed nor declared fails here, which forces whoever adds it to
      * make the choice explicitly.
      */
-    const MUTATION =
-      /^(create|update|delete|remove|upsert|set|add|attach|detach|revoke|rotate|invite|install|uninstall|enable|disable|publish|unpublish|promote|apply|run|trigger|restore|replay|drop|materialize|reset|assign|unassign|approve|reject|submit|claim|decide|import|veto|freeze|lift|seed|sync|purge|bump|stage|commit|schedule|cancel|retry|archive|clone|duplicate|move|rename|reorder|translate|compile|generate|refresh|configure)/;
-
-    const mutations = [...shared.tools.keys()].filter((n) => MUTATION.test(n));
-    // `cdc_subscription_replay` does not start with a mutation verb but is one.
-    mutations.push('cdc_subscription_replay');
+    // `isMutationTool` now lives in `governed.ts` because mode `on` decides
+    // refusals with it at runtime. Importing it here rather than keeping a second
+    // copy means the tripwire and the gate can never disagree about what counts
+    // as a mutation.
+    const mutations = [...shared.tools.keys()].filter((n) => isMutationTool(n));
 
     const unclassified = mutations.filter(
       (n) => GOVERNED_TOOLS[n] === undefined && UNGOVERNED_MUTATIONS[n] === undefined,

@@ -8,7 +8,7 @@ import { AISecureHarness, CORE_SKILLS, isControlPlaneSkill } from '../services/a
 import { ConfigService } from '../services/config-service';
 import { ExtensionsService } from '../services/extensions-service';
 import { getContentOsFlags } from '../services/feature-flags';
-import { resolveRequestCapabilities } from '../services/governed-capabilities';
+import { approvalRequesterFromAuth, resolveRequestCapabilities } from '../services/governed-capabilities';
 import { IntentService } from '../services/intent-service';
 import { itemServiceForRequest } from '../services/item-service-factory';
 import { createConfiguredLLMProvider } from '../services/llm-provider';
@@ -73,7 +73,11 @@ mcpRouter.post('/', async (c) => {
         enabled,
       })),
     execute: (skillName, args, capabilities, contextMessage) =>
-      harness.execute(skillName, args, capabilities, contextMessage),
+      harness.execute(skillName, args, capabilities, contextMessage, {
+        // Provenance for anything this call parks (#472), so approving it later
+        // re-reads the caller's grant instead of trusting the decider's.
+        requestedByPrincipal: approvalRequesterFromAuth(c.get('auth'), siteId),
+      }),
   };
 
   const body: unknown = await c.req.json().catch(() => undefined);

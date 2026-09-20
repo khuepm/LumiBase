@@ -8,7 +8,7 @@ import { AISecureHarness } from '../services/ai-harness';
 import { AccessService } from '../services/access-service';
 import { ConfigService } from '../services/config-service';
 import { ExtensionsService } from '../services/extensions-service';
-import { principalRefFromAuth, resolveRequestCapabilities } from '../services/governed-capabilities';
+import { approvalRequesterFromAuth, principalRefFromAuth, resolveRequestCapabilities } from '../services/governed-capabilities';
 import { IntentService } from '../services/intent-service';
 import { SchemaService } from '../services/schema-service';
 import { itemServiceForRequest } from '../services/item-service-factory';
@@ -315,6 +315,12 @@ aiRouter.post('/chat', async (c) => {
       toolCall.arguments,
       userCapabilities,
       message,
+      {
+        // Provenance for anything this call parks (#472). A capability snapshot
+        // would go stale while the approval waits; a reference is re-resolved at
+        // the moment a human approves.
+        requestedByPrincipal: approvalRequesterFromAuth(c.get('auth'), siteId),
+      },
     );
 
     const responseMessage =

@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { LumiBaseClient } from '../client.js';
-import { GOVERNED_TOOLS, GovernedDispatcher } from '../governed.js';
+import { GOVERNED_TOOLS, GovernedDispatcher, isMutationTool } from '../governed.js';
 import { registerAccessTools } from './access.js';
 import { registerAdminTools } from './admin.js';
 import { registerAgentTools } from './agent.js';
@@ -54,6 +54,23 @@ export function registerAllTools(
  *
  * The original REST handler is kept and used as the fallback, which is what makes
  * mode `auto` possible without duplicating any endpoint knowledge.
+ *
+ * ## Why unmapped mutations are refused in mode `on`
+ *
+ * This wrapper used to leave any tool without a `GOVERNED_TOOLS` entry on its
+ * original REST handler, whatever the mode. So `LUMIBASE_MCP_GOVERNED=on` — the
+ * setting whose entire purpose is "never execute an ungoverned write" — governed
+ * the 27 mapped tools and silently let every other mutation through to REST.
+ * `update_collection` reached `PATCH /collections/:name` and reported success
+ * without a single JSON-RPC call. REST still applies RBAC and tenant scoping, so
+ * this was not an authorization bypass; it bypassed the *governance* layer
+ * (autonomy gradient, HITL approval, kill switch, `agent_runs` audit), which is
+ * the contract `on` is supposed to guarantee.
+ *
+ * `UNGOVERNED_MUTATIONS` documented the gap but could not close it: it is a
+ * description, not a gate. Mode `on` now refuses at the handler, before the REST
+ * call exists, so there is no side effect to undo. Read-only tools are untouched
+ * — refusing those would break the transport for no safety gain.
  */
 function withGovernedHandlers(server: McpServer, dispatcher: GovernedDispatcher): McpServer {
   return new Proxy(server, {
@@ -61,10 +78,16 @@ function withGovernedHandlers(server: McpServer, dispatcher: GovernedDispatcher)
       if (prop !== 'registerTool') return Reflect.get(t, prop, receiver);
       return (name: string, config: unknown, handler: (args: Record<string, unknown>) => Promise<unknown>) => {
         const binding = GOVERNED_TOOLS[name];
-        const wrapped = binding
-          ? async (args: Record<string, unknown>) =>
-              (await dispatcher.dispatch(name, args, binding)) ?? (await handler(args))
-          : handler;
+        let wrapped = handler;
+        if (binding) {
+          wrapped = async (args: Record<string, unknown>) =>
+            (await dispatcher.dispatch(name, args, binding)) ?? (await handler(args));
+        } else if (dispatcher.requiresGovernance && isMutationTool(name)) {
+          // No `await handler(...)` anywhere in this branch, deliberately: the
+          // refusal has to be the whole behaviour, not a message printed after
+          // the write already happened.
+          wrapped = async () => dispatcher.refuseUngoverned(name);
+        }
         return (t as unknown as { registerTool: (...a: unknown[]) => unknown }).registerTool(
           name,
           config,

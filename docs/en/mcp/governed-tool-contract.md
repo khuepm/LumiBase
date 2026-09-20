@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-09-19T13:44:33.469Z
+version: 3
+lastUpdated: 2026-09-20T15:17:02.147Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 533443703534ed06
+sourceHash: 063a0e0360646e91
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-19T13:44:33.469Z
-codeVerifiedHash: 533443703534ed06
-codeVerifiedClaims: 22
+codeVerified: 2026-09-20T15:17:02.147Z
+codeVerifiedHash: 063a0e0360646e91
+codeVerifiedClaims: 24
 ---
 
 # Governed tool contract — one contract for both MCP transports
@@ -95,7 +95,21 @@ A consequence worth stating: because only `items:*` and `schema:*` are derived f
 
 **Queued work and approvals** carry an `AuthenticatedPrincipalRef` — an identity reference, **not** a capability snapshot — and the worker re-resolves when it picks the job up. A revoked key or a demoted user therefore takes effect on work that was already accepted.
 
-**Known limitation:** an approved action executes with the **decider's** capabilities, not the requester's. The requester's grant was checked when the action was parked, and a human approving it is taking responsibility under their own authority. `ai_approvals` / `agent_approvals` do not currently persist a principal ref, so there is no way to re-resolve the requester; adding a column is a migration and is outside the scope of this change.
+**An approved action executes with `requester ∩ decider`.** Both sides are re-read at the moment of approval, and both must still allow it. `agent_approvals.requested_by_principal` stores who asked — as a reference, never a capability snapshot — so a requester who was demoted, whose API key was revoked or who lost site membership while the approval waited cannot have their action executed. Using the decider alone would let a revoked requester act; using the requester alone would let an approval widen what the decider may do.
+
+The recorded requester is one of two shapes, because not every requester is a person:
+
+```jsonc
+{ "kind": "principal", "ref": { "type": "user",    "siteId": "…", "userId": "…" } }
+{ "kind": "principal", "ref": { "type": "api_key", "siteId": "…", "apiKeyId": "…" } }
+{ "kind": "agentRole", "role": "translator", "intentId": "…", "autonomyCap": 2 }
+```
+
+Reconciler-origin work has no human principal: the intent that declared the rule is the authority and the agent role is the capability boundary, so disabling that role also stops anything it had parked.
+
+**Fail-closed on missing provenance.** An approval parked before this column existed cannot be resolved, and is refused with `APPROVAL_PROVENANCE_MISSING` rather than falling back to the decider's rights — that fallback is the behaviour this replaces. Those approvals must be re-requested after upgrading; the migration header names the query that lists them. Denial codes: `APPROVAL_PROVENANCE_MISSING`, `APPROVAL_PROVENANCE_INVALID`, `REQUESTER_REVOKED`, `REQUESTER_ROLE_UNAVAILABLE`, `REQUESTER_RESOLUTION_FAILED`.
+
+Row and field scoping is not part of this set: it stays in `ItemService`, built from the requester's permission context rather than a system one.
 
 ## 5. The decision contract and the two approval id spaces
 
@@ -160,13 +174,17 @@ This is a **declared** gap, not a hidden one. Tripwire `S16` fails when a mutati
 
 | Value | Behaviour |
 |---|---|
-| `auto` (default) | Probe once. Use governance when the site has it; otherwise fall back to REST with **one** stderr warning |
-| `on` / `true` / `1` | **Refuse** instead of falling back. The right value for a deployment that requires governance |
+| `auto` (default) | Probe once. Use governance when the site has it; otherwise fall back to REST with **one** stderr warning. Unmapped mutations stay on REST |
+| `on` / `true` / `1` | **Refuse** instead of falling back — and also refuse any mutation that has no governed mapping at all. The right value for a deployment that requires governance |
 | `off` / `false` / `0` | Keep the pre-#454 behaviour |
 
 The default is `auto` because `contentOs.mcp` also defaults **off** — defaulting to `on` would break every existing install on upgrade.
 
 `auto` is a convenience, **not** a security property: the fallback it performs is announced, but a deployment that must not execute ungoverned writes has to set `on`. The reason is simple: a fallback that triggers exactly when governance is unavailable is a bypass of governance.
+
+**Mode `on` refuses unmapped mutations too.** Declaring a gap in `UNGOVERNED_MUTATIONS` documents it; it does not close it. The registration wrapper previously replaced a handler only when a governed mapping existed, so in `on` — the setting whose entire purpose is "never execute an ungoverned write" — the 27 mapped tools were governed and the other mutations still went straight to REST. `update_collection` reached `PATCH /collections/:name` and reported success with zero JSON-RPC calls.
+
+In `on`, a mutation without a mapping now returns an error naming its reason, and **no REST call is issued** — the refusal replaces the call rather than following it. A mutation in neither table is refused as well, so a tool added without a governance decision fails safe at runtime even if CI missed it. Read-only tools are unaffected: refusing those would break the transport for no safety gain. Classification uses `isMutationTool` in `governed.ts`, which is the same function the inventory tripwire uses — one definition, so the gate and the tripwire cannot disagree.
 
 Note: the warning goes to **stderr**. stdout is the MCP transport, and writing there corrupts the protocol stream.
 

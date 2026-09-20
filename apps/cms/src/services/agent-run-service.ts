@@ -7,6 +7,7 @@ import {
 import type { QueueProvider } from '@lumibase/runtime';
 import { and, desc, eq } from 'drizzle-orm';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
+import type { ApprovalRequester } from './approval-requester';
 import {
   agentDeadLettersTotal,
   agentRunsTotal,
@@ -45,6 +46,15 @@ export interface AgentRunEnvelope {
    * set, the Harness narrows capabilities to role ∩ grant (Req 10.4).
    */
   agentRole?: string;
+  /**
+   * Who asked for this work, as a re-resolvable reference (#472).
+   *
+   * Recorded on any approval this run parks, so the requester's CURRENT rights
+   * are re-read when a human finally approves — a revoked key or a demoted user
+   * must not still get their parked action executed under the decider's rights.
+   * Carries no capabilities on purpose; see `services/approval-requester.ts`.
+   */
+  requestedByPrincipal?: ApprovalRequester | null;
 }
 
 export interface AgentRunContext {

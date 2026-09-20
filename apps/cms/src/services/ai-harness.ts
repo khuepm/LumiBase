@@ -15,6 +15,13 @@ import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentAutonomousOpsTotal } from './agent-metrics';
 import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
+import {
+  effectiveApprovalCapabilities,
+  parseApprovalRequester,
+  resolveApprovalRequester,
+  type ApprovalRequester,
+  type ApprovalRequesterResolution,
+} from './approval-requester';
 import { AUTONOMY_LEVELS, AutonomyService } from './autonomy-service';
 import { KillSwitchService } from './kill-switch-service';
 import { getLoadGuard } from './load-guard-service';
@@ -2626,6 +2633,7 @@ export class AISecureHarness {
         toolCallId,
         approvalPolicy: policy.approvalPolicy,
         startedAt,
+        requestedByPrincipal: envelope.requestedByPrincipal ?? null,
       });
     }
 
@@ -2679,6 +2687,7 @@ export class AISecureHarness {
           toolCallId,
           approvalPolicy: policy.approvalPolicy,
           startedAt,
+          requestedByPrincipal: envelope.requestedByPrincipal ?? null,
         });
       }
     }
@@ -2729,6 +2738,7 @@ export class AISecureHarness {
     toolCallId: string;
     approvalPolicy?: string | undefined;
     startedAt: number;
+    requestedByPrincipal?: ApprovalRequester | null | undefined;
   }): Promise<HarnessExecutionResult> {
     const { skillName, args, contextMessage, run, toolCallId, startedAt } = input;
 
@@ -2754,6 +2764,10 @@ export class AISecureHarness {
         status: 'pending',
         approvalPolicy: input.approvalPolicy,
         requestedByAgent: run.agentName,
+        // Provenance for the resume path (#472). Without it, the only identity
+        // available when a human approves is the decider's, so a requester who
+        // was revoked or demoted in the meantime still gets their action run.
+        requestedByPrincipal: input.requestedByPrincipal ?? null,
       })
       .returning();
 
@@ -2929,8 +2943,29 @@ export class AISecureHarness {
       return { status: 'denied', message: `Unknown skill: ${record.skillName}` };
     }
 
-    if (!this.checkCapabilities(skill, userCapabilities)) {
-      return { status: 'denied', message: 'Insufficient capabilities' };
+    // Re-resolve the ORIGINAL requester before checking anything (#472).
+    //
+    // The decider's capabilities were the only ones consulted here. An approval
+    // can sit pending for days, so a requester who was demoted, whose API key was
+    // revoked, or who was removed from the site still had their parked action
+    // executed — under the decider's rights, by an admin acting in good faith.
+    // Effective capabilities are now the intersection: both parties must still
+    // allow it, so neither can be used to launder the other's limits.
+    const requesterGrant = await this.resolveApprovalRequesterFor(record.id);
+    if (!requesterGrant.allowed) {
+      return { status: 'denied', code: requesterGrant.code, message: requesterGrant.message };
+    }
+
+    const effectiveCapabilities = effectiveApprovalCapabilities(
+      requesterGrant.capabilities,
+      userCapabilities,
+    );
+
+    if (!this.checkCapabilities(skill, effectiveCapabilities)) {
+      return {
+        status: 'denied',
+        message: 'Insufficient capabilities for requester ∩ decider',
+      };
     }
 
     // Execute the stored skill
@@ -2977,6 +3012,62 @@ export class AISecureHarness {
 
     // Skill failed — keep record as 'pending' so admin can retry
     return { status: 'denied', message: result.error };
+  }
+
+  /**
+   * Current rights of whoever REQUESTED the approval behind `legacyApprovalId`.
+   *
+   * Fail-closed on missing provenance. A row parked before the
+   * `requested_by_principal` column existed cannot be resolved, and treating
+   * unknown provenance as "use the decider's rights" is exactly the behaviour
+   * #472 removes. Those approvals have to be re-requested after deploy; the
+   * migration header names the query that lists them.
+   */
+  private async resolveApprovalRequesterFor(
+    legacyApprovalId: string,
+  ): Promise<ApprovalRequesterResolution> {
+    const [row] = await this.db
+      .select({ requestedByPrincipal: agentApprovals.requestedByPrincipal })
+      .from(agentApprovals)
+      .where(
+        and(
+          eq(agentApprovals.legacyApprovalId, legacyApprovalId),
+          eq(agentApprovals.siteId, this.siteId),
+        ),
+      )
+      .limit(1);
+
+    if (!row) {
+      // No `agent_approvals` row at all: this is a legacy-only approval, created
+      // before the first-class inbox existed. There is no provenance to check and
+      // no run to resume, so it is refused for the same reason as a null column.
+      return {
+        allowed: false,
+        code: 'APPROVAL_PROVENANCE_MISSING',
+        message:
+          'This approval has no recorded requester, so the requester’s current rights cannot be verified. Re-request the action.',
+      };
+    }
+
+    const requester = parseApprovalRequester(row.requestedByPrincipal);
+    if (!requester) {
+      return {
+        allowed: false,
+        code:
+          row.requestedByPrincipal == null
+            ? 'APPROVAL_PROVENANCE_MISSING'
+            : 'APPROVAL_PROVENANCE_INVALID',
+        message:
+          row.requestedByPrincipal == null
+            ? 'This approval predates requester provenance, so the requester’s current rights cannot be verified. Re-request the action.'
+            : 'The recorded requester could not be parsed; the approved action was not executed.',
+      };
+    }
+
+    // No cache passed on purpose: an approval decision is rare and the whole
+    // point is to read the CURRENT grant, so a cached bundle would reintroduce
+    // the staleness this fix removes.
+    return resolveApprovalRequester({ db: this.db, siteId: this.siteId }, requester);
   }
 
   private async executeApprovedWithAudit(

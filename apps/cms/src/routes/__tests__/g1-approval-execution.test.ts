@@ -89,6 +89,14 @@ function seedFakeDb(agentOverrides: Row = {}, legacyOverrides: Row = {}): FakeDb
       status: 'pending',
       approvalPolicy: 'human',
       requestedByAgent: 'lumibase-copilot',
+      // #472: execution re-resolves the REQUESTER's current rights, so a row
+      // without provenance is refused. The fixture therefore names one — here the
+      // admin principal the suite already models, which keeps these cases about
+      // claim/execute semantics rather than about authorization.
+      requestedByPrincipal: {
+        kind: 'principal',
+        ref: { type: 'user', siteId: 'site_a', userId: 'usr_admin' },
+      },
       expiresAt: null,
       decidedAt: null,
       decidedBy: null,

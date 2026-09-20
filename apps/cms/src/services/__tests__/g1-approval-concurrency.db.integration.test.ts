@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import {
+  agentRoles,
   agentApprovals,
   agentGoals,
   agentRuns,
@@ -31,6 +32,15 @@ import { AISecureHarness } from '../ai-harness';
 
 const SITE = 'site_g1_conc';
 const ADMIN = 'usr_g1_conc_admin';
+/**
+ * Agent role recorded as the approval's REQUESTER (#472).
+ *
+ * Execution re-resolves this role's CURRENT capabilities and intersects them with
+ * the decider's, so the fixture needs a role that can actually perform the stored
+ * skill. Capabilities are enumerated rather than '*' because
+ * `intersectCapabilities` strips wildcards from the role side.
+ */
+const REQUESTER_ROLE = 'g1-fixture-requester';
 
 describe.skipIf(!hasDbIntegrationUrl)('G1 approval concurrency — DB integration', () => {
   let db: Database;
@@ -41,6 +51,15 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 approval concurrency — DB integratio
     await db.insert(sites).values({ id: SITE, name: 'G1 concurrency' })
       .onConflictDoNothing();
     await db.insert(users).values({ id: ADMIN, email: 'g1-conc@example.dev' })
+      .onConflictDoNothing();
+    await db
+      .insert(agentRoles)
+      .values({
+        siteId: SITE,
+        name: REQUESTER_ROLE,
+        description: 'Fixture requester for approval provenance',
+        capabilities: ['schema:read', 'schema:write', 'schema:delete', 'items:read', 'items:write'],
+      })
       .onConflictDoNothing();
   });
 
@@ -76,6 +95,7 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 approval concurrency — DB integratio
       siteId: SITE, runId: run!.id, legacyApprovalId: legacy!.id,
       subjectType: 'tool_call', subjectId: toolCall!.id, status: 'pending',
       requestedByAgent: 'lumibase-copilot',
+      requestedByPrincipal: { kind: 'agentRole', role: REQUESTER_ROLE },
     }).returning();
 
     return { legacyId: legacy!.id, approvalId: approval!.id };

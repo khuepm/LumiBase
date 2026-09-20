@@ -265,6 +265,20 @@ export async function processAgentRunJob(
           : {}),
         ...(payload.agentRole ? { agentRole: payload.agentRole } : {}),
         ...(payload.budget ? { budget: payload.budget } : {}),
+        // Provenance for anything this run parks (#472). A queued run has no
+        // human principal, so the authority is the agent role the intent routed
+        // to — re-resolved when a human approves, which is what makes disabling
+        // the role stop a parked action too.
+        requestedByPrincipal: payload.principal
+          ? { kind: 'principal', ref: payload.principal }
+          : payload.agentRole
+            ? {
+                kind: 'agentRole',
+                role: payload.agentRole,
+                intentId: payload.intentId ?? null,
+                autonomyCap: payload.autonomyCap ?? null,
+              }
+            : null,
       },
     );
     await settleDeferralIfAny(runService, payload.runId, result);

@@ -326,6 +326,24 @@ export const agentApprovals = pgTable(
     /** Veto window deadline: staged work auto-commits here unless vetoed. */
     autoCommitAt: timestamp('auto_commit_at'),
     requestedByAgent: text('requested_by_agent').default('lumibase-copilot').notNull(),
+    /**
+     * Who asked for this action, as a reference that can be re-resolved (#472).
+     *
+     * Deliberately a reference and not a capability snapshot. An approval can sit
+     * pending for days; without this column the only identity available at
+     * execution time was the decider's, so a requester who was demoted, had their
+     * key revoked or was removed from the site between parking and approval still
+     * had their action executed under the decider's rights. Storing the reference
+     * means the grant is re-read when the action finally runs.
+     *
+     * Two shapes, because not every requester is a person:
+     *   { kind: 'principal', ref: { type: 'user' | 'api_key' | 'dev', … } }
+     *   { kind: 'agentRole', role: 'translator', intentId?, autonomyCap? }
+     *
+     * Null on rows created before this column existed. Those cannot be resolved,
+     * so execution refuses them rather than guessing — see `executeApproved`.
+     */
+    requestedByPrincipal: jsonb('requested_by_principal'),
     decidedBy: text('decided_by').references(() => users.id, { onDelete: 'set null' }),
     decisionReason: text('decision_reason'),
     /**

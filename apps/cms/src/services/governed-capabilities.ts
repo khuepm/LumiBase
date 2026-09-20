@@ -168,3 +168,19 @@ export async function resolvePrincipalCapabilities(
 /** Re-exported so call sites need one import to persist a principal. */
 export { principalRefFromAuth };
 export type { AuthenticatedPrincipalRef };
+
+/**
+ * Wraps the request's principal as approval provenance (#472).
+ *
+ * Returns null for a request with no identifiable principal, which makes the
+ * approval unresolvable and therefore unexecutable — the fail-closed direction.
+ * A caller that cannot be identified must not be able to park work that later
+ * runs under an admin's rights.
+ */
+export function approvalRequesterFromAuth(
+  auth: Parameters<typeof principalRefFromAuth>[0],
+  siteId: string,
+): { kind: 'principal'; ref: AuthenticatedPrincipalRef } | null {
+  const ref = principalRefFromAuth(auth, siteId);
+  return ref ? { kind: 'principal', ref } : null;
+}

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import {
+  agentRoles,
   activity,
   agentApprovals,
   agentGoals,
@@ -34,6 +35,15 @@ import { CLAIM_STALE_AFTER_MS, sweepStaleApprovalClaims } from '../approval-clai
 
 const SITE = 'site_g1_sweep';
 const ADMIN = 'usr_g1_sweep_admin';
+/**
+ * Agent role recorded as the approval's REQUESTER (#472).
+ *
+ * Execution re-resolves this role's CURRENT capabilities and intersects them with
+ * the decider's, so the fixture needs a role that can actually perform the stored
+ * skill. Capabilities are enumerated rather than '*' because
+ * `intersectCapabilities` strips wildcards from the role side.
+ */
+const REQUESTER_ROLE = 'g1-fixture-requester';
 
 describe.skipIf(!hasDbIntegrationUrl)('G1 stale approval-claim sweeper — DB integration', () => {
   let db: Database;
@@ -41,7 +51,17 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 stale approval-claim sweeper — DB in
   beforeAll(async () => {
     db = await connectDbIntegration('g1-claim-sweeper');
     await db.insert(sites).values({ id: SITE, name: 'G1 sweeper' }).onConflictDoNothing();
-    await db.insert(users).values({ id: ADMIN, email: 'g1-sweep@example.dev' }).onConflictDoNothing();
+    await db.insert(users).values({ id: ADMIN, email: 'g1-sweep@example.dev' })
+      .onConflictDoNothing();
+    await db
+      .insert(agentRoles)
+      .values({
+        siteId: SITE,
+        name: REQUESTER_ROLE,
+        description: 'Fixture requester for approval provenance',
+        capabilities: ['schema:read', 'schema:write', 'schema:delete', 'items:read', 'items:write'],
+      })
+      .onConflictDoNothing();
   });
 
   afterAll(async () => {
@@ -76,6 +96,7 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 stale approval-claim sweeper — DB in
       decidedBy: claimAgeMs === null ? null : ADMIN,
       decidedAt: claimAgeMs === null ? null : new Date(Date.now() - claimAgeMs),
       requestedByAgent: 'lumibase-copilot',
+      requestedByPrincipal: { kind: 'agentRole', role: REQUESTER_ROLE },
     }).returning();
 
     return { approvalId: approval!.id, legacyId: legacy!.id };
@@ -298,6 +319,7 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 stale approval-claim sweeper — DB in
         subjectType: 'tool_call', subjectId: call!.id, status: row.status,
         decidedBy: ADMIN, decidedAt: new Date(Date.now() - row.ageMs),
         requestedByAgent: 'lumibase-copilot',
+      requestedByPrincipal: { kind: 'agentRole', role: REQUESTER_ROLE },
       }).returning();
       ids[row.label] = approval!.id;
     }
