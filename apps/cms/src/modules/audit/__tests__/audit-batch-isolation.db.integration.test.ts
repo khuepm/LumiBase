@@ -5,33 +5,40 @@ import { connectDbIntegration, hasDbIntegrationUrl } from '../../../__tests__/he
 import { AuditLogBatcher } from '../worker';
 
 /**
- * #469, remaining half — one poisoned row must not erase everyone else's audit
- * trail.
+ * One rejected audit row must not erase everyone else's audit trail (#469,
+ * defence in depth).
  *
- * ## What was already fixed, and what was not
+ * ## Where the HTTP path already stops this
  *
- * The crash is gone: `fe2f3c75` made the fire-and-forget flush swallow its
- * rejection, and `85ed2925` stopped the cross-tenant key denial from writing
- * audit under an attacker-supplied site id. A forged `X-Lumi-Site` no longer
- * takes the process down.
+ * Do not read this suite as "an unauthenticated request can delete other
+ * tenants' audit rows". It cannot, and saying so would overstate the finding.
+ * Three fixes landed earlier: `ca870dbf` added `withTenantExists`, which rejects
+ * an unknown site with `404` **before `withAuth`** — the first middleware that
+ * writes audit carrying `siteId` — using a cached existence check; `85ed2925`
+ * made a cross-tenant key denial record against the key's own site; `fe2f3c75`
+ * stopped a failed flush from becoming an unhandled rejection.
  *
- * What survived is quieter and, for a security log, worse. `withTenant` still
- * only shape-checks the header, so a well-formed id for a site that does not
- * exist still becomes `c.get('siteId')`, and two audit paths still write under
- * it (`external_auth_denied` in `middleware/auth.ts`, and the security-guard
- * denials in `middleware/security-audit.ts`). `audit_log.site_id` has an FK to
- * `sites.id`, so that row is rejected — and because the batcher flushes the
- * whole buffer in ONE multi-row INSERT, the rejection takes every other row in
- * that batch with it. Those rows belong to real tenants and are exactly the
- * events worth keeping: denied control-plane access, rejected uploads, failed
- * auth.
+ * Measured against a live CMS on a disposable database: four probes with a
+ * forged `X-Lumi-Site` (three unauthenticated, one carrying a valid key from
+ * another site) all answered `404 TENANT_NOT_FOUND`, `/utils/health` stayed
+ * `200`, and `audit_log` gained no rows at all.
  *
- * So an unauthenticated request can still delete up to 99 other tenants' audit
- * records per batch, just by naming a site that does not exist. It fails
- * silently, because the flush logs and moves on.
+ * ## What this suite is actually about
  *
- * **Validates: #469 — a forged site id must not crash the process (already
- * true) and must not destroy other tenants' audit rows (this suite)**
+ * A multi-row `INSERT` is atomic: one rejected row means **nothing** is written.
+ * The HTTP path can no longer produce such a row, but the paths *outside* a
+ * request still can — an audit job sitting in the queue when its site is
+ * deleted, or a cron/CDC/worker job carrying a site id that has since gone.
+ * Those batches mix tenants, so one late row used to discard up to 99 records
+ * belonging to sites that are perfectly real, and they are the records most
+ * worth keeping: denied control-plane access, rejected uploads, failed auth. It
+ * failed quietly, because the flush logs and moves on.
+ *
+ * The suite drives the batcher directly for that reason: it is the layer where
+ * the loss happened, and it is reachable without a request.
+ *
+ * **Validates: #469 — a row the database rejects must not take other tenants'
+ * audit rows with it**
  */
 
 const REAL_SITE = 'site_audit_iso_real';

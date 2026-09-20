@@ -11,25 +11,25 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
-- **A forged site id can no longer erase other tenants' audit rows (#469).** The
-  crash half of this issue was already fixed: the fire-and-forget audit flush
-  contains its rejection, and a cross-tenant key denial is recorded against the
-  key's own site. What remained was quieter and, for a security log, worse. A
-  multi-row `INSERT` is atomic, so one row rejected by the `audit_log.site_id`
-  foreign key discarded **every** row batched with it — up to 99 records
-  belonging to real tenants, and precisely the ones worth keeping: denied
-  control-plane access, rejected uploads, failed authentication. `withTenant`
-  only shape-checks `X-Lumi-Site`, so an unauthenticated request could trigger
-  this by naming a site that does not exist, and it failed silently.
-  The batcher now retries row by row **only** when the batched statement fails,
-  so the poisoned row is dropped (logged with its site and event, never its
-  metadata) while the rest are written. The error is still rethrown, so a caller
-  that awaits `flush()` observes it. Verified against Postgres in
-  `audit-batch-isolation.db.integration.test.ts`.
-  Deliberately not changed: `withTenant` still does not check that the site
-  exists. The consequences are now contained on both sides — queries scoped by
-  `site_id` return nothing, and a forged audit row is dropped with a log line —
-  and adding a lookup to the hot path of every request buys little.
+- **One rejected audit row no longer discards the whole batch (#469, defence in
+  depth).** A multi-row `INSERT` is atomic, so a row rejected by the
+  `audit_log.site_id` foreign key discarded **every** row batched with it — up to
+  99 records belonging to real tenants, and precisely the ones worth keeping:
+  denied control-plane access, rejected uploads, failed authentication. The
+  batcher now retries row by row **only** when the batched statement fails, so
+  the offending row is dropped (logged with its site and event, never its
+  metadata) while the rest are written. Each table is attempted independently so
+  a failure in one cannot cause the other's rows to be written twice, and the
+  error is still rethrown so a caller that awaits `flush()` observes it.
+  To be precise about what this does and does not fix: the HTTP path can no
+  longer produce such a row. `withTenantExists` rejects an unknown site with
+  `404` before `withAuth` — the first middleware that writes audit — and that
+  landed earlier. Measured against a live CMS: four probes with a forged
+  `X-Lumi-Site` (three unauthenticated, one with a valid key from another site)
+  all answered `404`, the process stayed up, and `audit_log` gained no rows. What
+  remains reachable is the path *outside* a request: an audit job sitting in the
+  queue when its site is deleted, or a cron/CDC/worker passing a site id that has
+  since gone. Verified in `audit-batch-isolation.db.integration.test.ts`.
 
 - **Reconciler goals now execute (#455).** A content intent's drift became an
   `agent_goals` row and stopped there. Nothing turned that goal into a run: no cron

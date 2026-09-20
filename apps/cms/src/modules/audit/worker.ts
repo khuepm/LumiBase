@@ -171,17 +171,20 @@ export class AuditLogBatcher {
    * Insert a batch, and if the multi-row statement is rejected, retry row by
    * row so that one bad row cannot take the others with it.
    *
-   * ## Why this exists (#469)
+   * ## Why this exists (#469, defence in depth)
    *
    * A multi-row INSERT is atomic: one rejected row means **nothing** is written.
-   * `withTenant` only shape-checks `X-Lumi-Site`, so a well-formed id for a site
-   * that does not exist still becomes the request's `siteId`, and two audit
-   * paths write under it (`external_auth_denied`, and the security-guard
-   * denials). `audit_log.site_id` has an FK to `sites.id`, so that row is
-   * rejected — and it used to erase up to 99 other rows batched alongside it.
-   * Those rows are real tenants' denied-access, rejected-upload and failed-auth
-   * events: the records most worth keeping. An unauthenticated request could
-   * delete them by naming a site that does not exist, and it failed silently.
+   * `audit_log.site_id` has an FK to `sites.id`, so a row naming a site that is
+   * gone used to erase up to 99 rows batched alongside it — real tenants'
+   * denied-access, rejected-upload and failed-auth events, the records most
+   * worth keeping — and it failed quietly, because the flush logs and moves on.
+   *
+   * The request path no longer produces such a row: `withTenantExists` rejects
+   * an unknown site with 404 before `withAuth`, the first middleware that writes
+   * audit. What stays reachable is everything off the request path — an audit job
+   * still in the queue when its site is deleted, or a cron/CDC/worker job
+   * carrying a site id that has since gone. Those batches mix tenants, so the
+   * blast radius was other people's audit trail.
    *
    * The retry is deliberately only on the failure path. Doing it always would
    * turn the batching this worker exists for into one round trip per row.
