@@ -368,8 +368,24 @@ describe.skipIf(!hasDbIntegrationUrl)('G3 dispatch reliability — DB integratio
     const runs = await db.select().from(agentRuns).where(eq(agentRuns.siteId, SITE));
     expect(runs).toHaveLength(1);
 
+    // The loser has three legitimate shapes, and which one it takes is a timing
+    // detail rather than a contract — CI hit the third while local runs hit the
+    // first two:
+    //
+    //   - `LEASE_HELD`: it reached the claim while the winner held the lease;
+    //   - `RUN_ACTIVE`: it read the goal before the winner's run existed, then saw it;
+    //   - no outcome at all: since F5 the candidate query itself excludes a goal
+    //     whose run is in flight, so by the time the loser queried, the goal was
+    //     not a candidate.
+    //
+    // Pinning one of them would be pinning the schedule. What must hold is that the
+    // loser did not dispatch, and that it did not fail.
     const loser = a.dispatched === 0 ? a : b;
-    expect(loser.outcomes.some((o) => o.reason === 'LEASE_HELD' || o.reason === 'RUN_ACTIVE')).toBe(true);
+    expect(loser.dispatched).toBe(0);
+    expect(loser.blocked, 'losing a race is not an error').toBe(0);
+    for (const outcome of loser.outcomes) {
+      expect(['LEASE_HELD', 'RUN_ACTIVE', 'LEASE_LOST']).toContain(outcome.reason);
+    }
   });
 
   it('R3: the lease is released, so the next pass can advance the same goal', async () => {
