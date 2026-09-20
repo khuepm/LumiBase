@@ -1,14 +1,14 @@
 ---
 title: Next.js Quickstart — Hiển thị nội dung LumiBase
-version: 5
-lastUpdated: 2026-09-14T19:53:53.530Z
+version: 6
+lastUpdated: 2026-09-20T13:04:29.109Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ca523023eb37e81c
+sourceHash: 650223b28d48a21b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-14T19:53:53.530Z
-codeVerifiedHash: ca523023eb37e81c
+codeVerified: 2026-09-20T13:04:29.109Z
+codeVerifiedHash: 650223b28d48a21b
 codeVerifiedClaims: 26
 ---
 
@@ -422,7 +422,8 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
 ```
 
 Một bản nháp mà credential không được phép thấy sẽ trả `404` — cùng đường đi với
-một id không tồn tại — nên nội dung chưa publish không thể lộ ra.
+một id không tồn tại — nên một bản nháp chưa từng publish không có đường nào vào
+các trang này.
 
 > [!IMPORTANT]
 > **Khai báo `revalidate` cho mọi route được cache, không chỉ trang danh sách.**
@@ -430,6 +431,25 @@ một id không tồn tại — nên nội dung chưa publish không thể lộ 
 > lần lúc build rồi cache vĩnh viễn, nên nội dung sửa trong Studio không bao giờ
 > hiện ra. Bài publish *sau* khi build vẫn phục vụ được: `dynamicParams` mặc
 > định là `true` nên Next render on-demand ở lần truy cập đầu tiên.
+
+> [!WARNING]
+> **Unpublish không giống với chưa từng publish.** Một bản nháp chưa từng lên
+> sóng thì không thể xuất hiện — API trả `404` và chưa có trang nào được sinh ra.
+> Nhưng một bài *đã* lên sóng rồi bị unpublish vẫn đọc được từ cache cho tới hết
+> cửa sổ `revalidate`, vì HTML đã cache được phục vụ trong lúc việc revalidate
+> diễn ra ở nền.
+> Đo trên CMS thật với `revalidate = 60`, unpublish một bài mà trang của nó vừa
+> được sinh lại: API **ngừng ngay lập tức** việc trả bài đó cho credential đọc,
+> trong khi trang chi tiết và trang danh sách đều còn phục vụ nó thêm **64 giây**.
+> Sửa một bài đã quá cửa sổ thì hiện ra sau **3–4 giây**, và một bài publish sau
+> khi build thì truy cập được ở URL của nó **ngay lập tức** (trang danh sách mất
+> cùng khoảng ~60 giây để có nó).
+> Vậy cửa sổ thu hồi là hữu hạn và bị chặn trên bởi `revalidate`, nhưng không
+> phải bằng không. Nếu nội dung của bạn có yêu cầu takedown cứng, hãy hạ
+> `revalidate`, dùng `cache: 'no-store'` cho những route không được phép phục vụ
+> nội dung đã thu hồi, hoặc kích
+> [on-demand revalidation](https://nextjs.org/docs/app/guides/incremental-static-regeneration#on-demand-revalidation-with-revalidatepath)
+> từ một webhook của LumiBase khi item rời trạng thái `published`.
 
 > **Đang phụ thuộc `@lumibase/sdk`?** Nó export đúng cùng một client —
 > `lumibase` chỉ re-export lại để một cái tên bao trọn cả client lẫn CLI. Đổi

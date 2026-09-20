@@ -1,11 +1,11 @@
 ---
 title: Next.js Quickstart — Display LumiBase Content
-version: 5
-lastUpdated: 2026-09-14T19:53:53.530Z
+version: 6
+lastUpdated: 2026-09-20T13:04:29.109Z
 sourceLang: en
-contentHash: ca523023eb37e81c
-codeVerified: 2026-09-14T19:53:53.530Z
-codeVerifiedHash: ca523023eb37e81c
+contentHash: 650223b28d48a21b
+codeVerified: 2026-09-20T13:04:29.109Z
+codeVerifiedHash: 650223b28d48a21b
 codeVerifiedClaims: 26
 ---
 
@@ -422,7 +422,7 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
 ```
 
 A draft the credential cannot see answers `404` — the same path as an unknown
-id — so unpublished content can never surface.
+id — so a draft that was never published has no route into these pages at all.
 
 > [!IMPORTANT]
 > **Set `revalidate` on every cached route, not just the list.** A route with
@@ -430,6 +430,24 @@ id — so unpublished content can never surface.
 > then cached forever, so edits made in Studio never appear on it. A post
 > published *after* the build is still served: `dynamicParams` defaults to
 > `true`, so Next renders it on demand the first time it is requested.
+
+> [!WARNING]
+> **Unpublishing is not the same as never having published.** A draft that never
+> went live cannot appear — the API answers `404` and no page was ever generated.
+> But a post that *was* live and is then unpublished stays readable from the
+> cache for up to the `revalidate` window, because the cached HTML is served
+> while the revalidation happens in the background.
+> Measured against a live CMS with `revalidate = 60`, unpublishing a post whose
+> page had just been regenerated: the API stopped serving it to the reader
+> credential **immediately**, while the detail page and the list page both kept
+> serving it for **64 s**. Editing a post that was already past its window showed
+> up in **3–4 s**, and a post published after the build was reachable at its URL
+> **immediately** (the list took the same ~60 s to include it).
+> So the withdrawal window is finite and bounded by `revalidate`, but it is not
+> zero. If your content has a hard takedown requirement, lower `revalidate`, use
+> `cache: 'no-store'` on the routes that must never serve withdrawn content, or
+> trigger [on-demand revalidation](https://nextjs.org/docs/app/guides/incremental-static-regeneration#on-demand-revalidation-with-revalidatepath)
+> from a LumiBase webhook when an item leaves `published`.
 
 > **Already depend on `@lumibase/sdk`?** It exports the identical client —
 > `lumibase` simply re-exports it so one name covers both the client and the

@@ -104,6 +104,28 @@ A post published *after* the build is not in `generateStaticParams`. The detail
 route leaves `dynamicParams` at its default (`true`), so Next renders that post
 on demand the first time it is requested and caches it like the rest.
 
+### The withdrawal window, measured
+
+A draft that was **never** published cannot appear here: the reader credential
+gets `404` and no page is ever generated for it. A post that *was* live and is
+then unpublished is a different case — the cached HTML keeps being served while
+revalidation happens in the background.
+
+Against a live CMS with `revalidate = 60`, unpublishing a post whose page had
+just been regenerated:
+
+| Change | API / reader key | List page | Detail page |
+|---|---|---|---|
+| Edit a post already past its window | immediate | 4 s | 3 s |
+| Unpublish (page freshly generated) | immediate (`404`) | 64 s | 64 s |
+| Publish a post that did not exist at build time | immediate | ~60 s | immediate at its URL |
+
+So the window is finite and bounded by `revalidate`, but not zero. If your
+content has a hard takedown requirement, lower `revalidate`, use
+`cache: 'no-store'` on routes that must never serve withdrawn content, or trigger
+[on-demand revalidation](https://nextjs.org/docs/app/guides/incremental-static-regeneration#on-demand-revalidation-with-revalidatepath)
+from a LumiBase webhook when an item leaves `published`.
+
 ## Type generation
 
 `lumibase types` generates TypeScript definitions from the live schema into
