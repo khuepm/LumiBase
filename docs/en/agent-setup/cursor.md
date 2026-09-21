@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-09-01T19:24:38.485Z
+version: 4
+lastUpdated: 2026-09-21T05:44:47.423Z
 sourceLang: en
-contentHash: 22827c104ec16b9e
-codeVerified: 2026-09-01T19:24:38.485Z
-codeVerifiedHash: 22827c104ec16b9e
+contentHash: 4584e1d00c149b84
+codeVerified: 2026-09-21T05:44:47.423Z
+codeVerifiedHash: 4584e1d00c149b84
 codeVerifiedClaims: 4
 ---
 
@@ -119,7 +119,7 @@ Cursor background agents work well for longer LumiBase tasks like:
 
 ```bash
 # Generate types (run in terminal or via background agent)
-pnpm -F @lumibase/database db:generate
+pnpm db:generate
 pnpm -F @lumibase/sdk typegen
 ```
 
@@ -142,7 +142,7 @@ Configure in Cursor Settings → Features → Codebase Index.
 
 **MCP server not connecting**: Start the CMS API first (`pnpm -F @lumibase/cms dev`), then reload the MCP connection in Cursor.
 
-**Drizzle types out of date**: Run `pnpm -F @lumibase/database db:generate` after any schema change.
+**Drizzle types out of date**: Run `pnpm db:generate` after any schema change.
 
 ---
 

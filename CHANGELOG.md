@@ -99,6 +99,29 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   category, or a navbar/footer `/docs/…` link no longer has a page behind it.
   The pages that were declared but never written are tracked as `B68`.
 
+- **The database commands printed all over the docs did not exist.**
+  `packages/database` defines `migrate` / `generate` / `studio`; the `db:`
+  prefix belongs to the **root** scripts only, so every
+  `pnpm -F @lumibase/database db:migrate` in the docs failed with *"None of the
+  selected packages has a db:migrate script"* — and `db:reset` was never a
+  script anywhere. It appeared 22 times across twelve doc files and
+  `AGENTS.md`, including **step 5 of Local Development** and **step 1 of the
+  Next.js quickstart**, which is the first command a new user runs. `CLAUDE.md`
+  had carried a warning that the form is invalid the whole time. All of them now
+  call the root scripts (`pnpm db:migrate`, `pnpm db:generate`,
+  `pnpm db:studio`); tracked as `B69`, whose remaining half is that nothing
+  verifies the commands inside a docs code fence.
+
+- **Local Development described services the compose file does not run.** Step 4
+  and the service table listed **Logto** on `:3001`; `docker/docker-compose.yml`
+  has no Logto service — `:3001` is Bull Board, and MinIO and imgproxy were
+  missing from the table entirely. The port-conflict section told readers to
+  override `STUDIO_PORT`, which nothing reads: Studio's dev port is hardcoded as
+  `server.port: 2026` in `apps/studio/vite.config.ts`, so the fix is to pass
+  `--port` to Vite. `pnpm -F @lumibase/cms wrangler:dev`, also gone — the `dev`
+  script already runs under Wrangler. This closes part (b) of `B47`; the
+  production-override SSL trap in part (c) is still open.
+
 - **A DB integration suite pointed at a database that is not there no longer
   reports as passing.** All 20 `*.db.integration.test.ts` suites gated
   themselves with `if (!canConnect) return;` — and an early return is a

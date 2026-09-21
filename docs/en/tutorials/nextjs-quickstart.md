@@ -1,11 +1,11 @@
 ---
 title: Next.js Quickstart — Display LumiBase Content
-version: 5
-lastUpdated: 2026-09-14T19:53:53.530Z
+version: 6
+lastUpdated: 2026-09-21T05:44:47.671Z
 sourceLang: en
-contentHash: ca523023eb37e81c
-codeVerified: 2026-09-14T19:53:53.530Z
-codeVerifiedHash: ca523023eb37e81c
+contentHash: 7dc2c5c6bf808107
+codeVerified: 2026-09-21T05:44:47.671Z
+codeVerifiedHash: 7dc2c5c6bf808107
 codeVerifiedClaims: 26
 ---
 
@@ -108,7 +108,7 @@ pnpm install
 docker compose -f docker/docker-compose.yml up -d
 
 # Database migrations
-pnpm -F @lumibase/database db:migrate
+pnpm db:migrate
 
 # Start CMS API (:1989) + Studio (:2026)
 pnpm dev

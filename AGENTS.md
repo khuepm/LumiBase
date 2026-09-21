@@ -93,7 +93,7 @@ All tests use **Vitest**. Property-based tests use **fast-check**. Integration t
 cp .env.example .env
 docker compose -f docker/docker-compose.yml up -d
 pnpm install
-pnpm -F @lumibase/database db:migrate
+pnpm db:migrate
 pnpm dev
 ```
 

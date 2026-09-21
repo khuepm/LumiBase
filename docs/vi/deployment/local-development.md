@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:22:18.301Z
+version: 3
+lastUpdated: 2026-09-21T05:44:46.672Z
 sourceLang: en
 translatedFrom: en
-sourceHash: af86294c13f54058
+sourceHash: 530a0dc7e3480800
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:22:18.301Z
-codeVerifiedHash: af86294c13f54058
-codeVerifiedClaims: 4
+codeVerified: 2026-09-21T05:44:46.672Z
+codeVerifiedHash: 530a0dc7e3480800
+codeVerifiedClaims: 6
 ---
 
 # Local Development
@@ -29,11 +29,11 @@ pnpm install
 cp .env.example .env
 # Edit .env — see docs/en/deployment/environment-variables.md
 
-# 4. Start infrastructure (PostgreSQL, Redis, MeiliSearch, Logto)
+# 4. Start infrastructure (PostgreSQL, Redis, MinIO, MeiliSearch, imgproxy)
 docker compose -f docker/docker-compose.yml up -d
 
 # 5. Run database migrations
-pnpm -F @lumibase/database db:migrate
+pnpm db:migrate
 
 # 6. Start all dev servers
 pnpm dev
@@ -49,7 +49,9 @@ pnpm dev
 | PostgreSQL | localhost:5432 | Database |
 | Redis | localhost:6379 | Cache + queues |
 | MeiliSearch | http://localhost:7700 | Search |
-| Logto | http://localhost:3001 | Auth server |
+| Bull Board | http://localhost:3001 | Dashboard hàng đợi |
+| MinIO | http://localhost:9000 (console :9001) | Object storage tương thích S3 |
+| imgproxy | http://localhost:8080 | Biến đổi ảnh |
 
 ---
 
@@ -116,7 +118,7 @@ LLM_PROVIDER=echo              # Use echo mock — no API key needed
 
 ```bash
 # Generate a new migration after schema changes
-pnpm -F @lumibase/database db:generate
+pnpm db:generate
 
 # Check connectivity, current version, and pending migrations without applying DDL
 pnpm db:migrate:preflight
@@ -127,11 +129,11 @@ pnpm db:migrate
 # Print the current migration version
 pnpm db:migrate:version
 
-# Reset database (drops all tables and re-runs migrations)
-pnpm -F @lumibase/database db:reset
-
 # Open Drizzle Studio (database GUI)
-pnpm -F @lumibase/database db:studio
+pnpm db:studio
+
+# Seed development data
+pnpm db:seed-dev
 ```
 
 ---
@@ -160,8 +162,8 @@ pnpm lint
 ## Mô phỏng Cloudflare Workers ở local
 
 ```bash
-# Use Wrangler dev to simulate CF Workers environment
-pnpm -F @lumibase/cms wrangler:dev
+# The CMS dev server already runs under Wrangler
+pnpm -F @lumibase/cms dev
 
 # This uses wrangler.toml and miniflare for:
 # - KV (CONFIG_CACHE) → in-memory
@@ -178,11 +180,18 @@ pnpm -F @lumibase/cms wrangler:dev
 
 ### Xung đột port
 
-Nếu port đã bị chiếm, ghi đè trong `.env`:
+Nếu port đã bị chiếm, ghi đè port publish của container trong `docker/.env`:
 
 ```env
 CMS_PORT=1990
-STUDIO_PORT=2027
+```
+
+Port dev của Studio được đặt trong `apps/studio/vite.config.ts`
+(`server.port: 2026`) và không có biến môi trường nào ghi đè được. Hãy truyền port
+trực tiếp cho Vite:
+
+```bash
+pnpm -F @lumibase/studio dev -- --port 2027
 ```
 
 ### Docker không khởi động
@@ -200,7 +209,7 @@ docker compose -f docker/docker-compose.yml up -d --force-recreate
 Thay đổi schema hoặc package có thể cần regenerate types:
 
 ```bash
-pnpm -F @lumibase/database db:generate
+pnpm db:generate
 pnpm install  # Update pnpm-lock if packages changed
 pnpm typecheck
 ```
