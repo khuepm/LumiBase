@@ -1,0 +1,46 @@
+-- 0017_one_active_run_per_goal — the database refuses a second in-flight run for
+-- one goal (#481 reviewer R3.2).
+--
+-- Why an index and not only application code. Dispatch now takes the goal row with
+-- `SELECT … FOR UPDATE` and writes inside that transaction, which closes the race
+-- a reviewer measured (A checked the lease, B took it over and dispatched, A
+-- resumed and inserted anyway → two runs and two queue jobs for one goal/phase).
+-- That fix is correct but it is a *convention*: any future path that inserts an
+-- agent run without taking the lease would reopen it silently. A unique index is
+-- the same rule expressed where it cannot be forgotten.
+--
+-- Scope, deliberately narrow: `('queued','running')` only. `awaiting_approval` is
+-- excluded because a parked run legitimately coexists with human decision flows
+-- that touch the same goal, and duplicate parking is already prevented by the
+-- run-claim CAS. Terminal rows are excluded so a goal keeps its full history and a
+-- retry after completion stays possible.
+--
+-- FAIL CONDITION — read before upgrading. Unlike 0015/0016 this statement CAN
+-- fail: if a goal in your data already has two or more runs in `queued`/`running`,
+-- index creation aborts and the migration stops. That is the defect above having
+-- already happened, not a migration bug. Find them with:
+--
+--   SELECT site_id, goal_id, count(*), array_agg(id) AS run_ids
+--   FROM lumibase_agent_runs
+--   WHERE status IN ('queued', 'running')
+--   GROUP BY site_id, goal_id
+--   HAVING count(*) > 1;
+--
+-- De-dup before re-running: for each group keep the newest run and settle the
+-- others explicitly, so the history says what happened rather than losing rows:
+--
+--   UPDATE lumibase_agent_runs SET status = 'cancelled',
+--          error = 'duplicate in-flight run settled before migration 0017',
+--          metrics = coalesce(metrics, '{}'::jsonb)
+--                    || '{"stopReason":"duplicate_dispatch"}'::jsonb,
+--          finished_at = now(), updated_at = now()
+--   WHERE id = '<older run id>';
+--
+-- Do NOT delete the rows: a run that was `running` may have changed content, and
+-- its tool calls are the only record of what it did.
+--
+-- Idempotent: IF NOT EXISTS, so re-running after a de-dup is safe.
+
+CREATE UNIQUE INDEX IF NOT EXISTS "agent_runs_one_active_per_goal_idx"
+  ON "lumibase_agent_runs" ("site_id", "goal_id")
+  WHERE "status" IN ('queued', 'running');

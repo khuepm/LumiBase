@@ -68,6 +68,43 @@ export interface EffectiveCapabilityServiceDeps {
   environment?: string;
 }
 
+/**
+ * Capability tokens that mean "no enumerated limit".
+ *
+ * `admin` is what {@link capabilitiesFromPermissionBundle} emits for an admin
+ * bundle; `*` is the older wildcard still present in agent roles and dev
+ * principals. Both are *markers*, not capabilities anyone can grant themselves:
+ * they only appear because the resolver put them there.
+ */
+export const UNLIMITED_CAPABILITY_TOKENS: readonly string[] = ['*', 'admin'];
+
+/**
+ * Whether a resolved capability set satisfies a required capability.
+ *
+ * ## Why this is shared rather than inlined
+ *
+ * Every consumer of the resolver has to agree on what an admin grant looks
+ * like, and one of them did not (#481 R3.4). `AISecureHarness.checkCapabilities`
+ * accepted `admin` and `*`; `ReviewerService` accepted only `*` and
+ * `review:<domain>`. Since the resolver emits `admin` and never mints `*`, a real
+ * site administrator was refused at the agent-reviewer route with
+ * `Capability "review:items" is required` — the route had no reachable positive
+ * path at all. The existing reviewer tests passed `review:items` directly, so they
+ * proved the service worked without proving anything could produce that input.
+ *
+ * Three copies of "what counts as admin" is how that happens. This is the one
+ * copy; a new consumer that spells it out again is the bug returning.
+ */
+export function satisfiesCapability(
+  capabilities: readonly string[],
+  required: string,
+): boolean {
+  if (capabilities.some((capability) => UNLIMITED_CAPABILITY_TOKENS.includes(capability))) {
+    return true;
+  }
+  return capabilities.includes(required);
+}
+
 const ITEM_CAPABILITIES_BY_ACTION: Readonly<Record<string, readonly string[]>> = {
   read: ['items:read'],
   create: ['items:create', 'items:write'],

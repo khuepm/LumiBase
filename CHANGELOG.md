@@ -11,6 +11,54 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **An abandoned agent run is no longer replayed automatically (#455).** A run left
+  `running` by a dead worker could be taken over after fifteen minutes and executed
+  again. Age cannot support that: a process can die *after* the content write and
+  *before* the terminal status is saved, at which point the row is
+  indistinguishable from one that did nothing. Measured on Postgres with a fault
+  injected in exactly that window — one item written, run stuck `running`, age
+  pushed past the threshold, job redelivered: **two items**. The queue claim now
+  accepts only `queued` runs (nothing has executed under one yet, so redelivering it
+  cannot repeat a side effect), and abandoned runs are quarantined instead: a new
+  `agent-run-stale-sweep` cron moves them to `failed` with
+  `stopReason: 'stale_unverified'` and a message telling the operator it was
+  deliberately not retried. Ambiguity becomes a visible state rather than a silent
+  second execution.
+- **Dispatch now fences at the storage boundary, not with a preceding check
+  (#455).** The lease was verified by a `SELECT` and the run was inserted after it —
+  check-then-write, one level below the race it was meant to fix. Measured: A passed
+  the check, A's lease expired, B claimed the goal and dispatched, A resumed and
+  inserted anyway → **two runs and two queue jobs for one goal and phase**. Every
+  write a dispatch authorises now happens inside one transaction that holds the goal
+  row (`SELECT … FOR UPDATE SKIP LOCKED`), with the lease token checked inside that
+  lock; the enqueue stays outside, because a queue call cannot be rolled back. A
+  contending caller skips instead of waiting, and every statement touching the goal
+  row has a two-second `lock_timeout`, so one stuck dispatcher cannot stall later
+  ticks. Underneath it, a partial unique index makes "one in-flight run per goal" a
+  database rule rather than a convention any future call site could forget.
+- **Goals and tenants waiting on something no longer starve the ones behind them
+  (#455).** Filtering settled goals fixed one prefix; a goal whose intent is
+  `paused` or `error` was another, and it came back on every tick with
+  `INTENT_NOT_ACTIVE`. Measured with `limit = 1`: two consecutive passes reported
+  that skip, enqueued nothing, and never reached the runnable goal behind it — and
+  the same shape with `sitesLimit = 1` meant one tenant was visited twice while the
+  other never ran. Unrunnable goals are now excluded in SQL, and selection rotates:
+  `dispatch_attempted_at` records when a goal was last *considered*, so being looked
+  at costs it its place in the queue. `sitesLimit` is a per-tick budget rather than a
+  cutoff — tenants are visited least-recently-considered first, so a deployment with
+  more sites than the limit reaches the rest on later ticks.
+- **A site administrator can decide an agent-reviewer approval again (#453).** The
+  capability resolver emits `admin` and deliberately never mints `*`, while
+  `ReviewerService` accepted only `review:<domain>` or `*` — so a real administrator
+  was refused with `Capability "review:items" is required`, and the agent-reviewer
+  route had no reachable positive path. The existing tests passed `review:items`
+  straight into the service, which proved it honoured a capability without proving
+  anything could produce one. Both the harness and the reviewer now share a single
+  `satisfiesCapability` predicate, so "what counts as admin" cannot drift apart
+  again, and a new suite drives the decision with capabilities from the real
+  resolver. Deciding remains admin-only on all three entry points, with regressions
+  that refuse a non-admin — including a member holding exactly the write permission
+  the parked action needs.
 - **An approved action now runs under the requester's row and field rules, not
   only their capability tokens (#472).** The capability intersection shipped first
   and was not enough: `items:write` says nothing about which collection, which

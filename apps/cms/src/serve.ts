@@ -136,6 +136,7 @@ async function main() {
   let pageviewFlushTask: ScheduledTask | undefined;
   let vetoSweepTask: ScheduledTask | undefined;
   let claimSweepTask: ScheduledTask | undefined;
+  let staleRunSweepTask: ScheduledTask | undefined;
   let schedulerTask: ScheduledTask | undefined;
   let retentionTask: ScheduledTask | undefined;
   let deploymentPollTask: ScheduledTask | undefined;
@@ -405,6 +406,41 @@ async function main() {
     ),
   );
 
+  // ── Abandoned agent run sweep (#481 R3.1) ──────────────────────────────────
+  //
+  // A worker that dies mid-run leaves `agent_runs` on `running`. The queue claim
+  // deliberately refuses to take such a run over — age cannot prove the first
+  // attempt had no side effect, and taking it over wrote the same item twice in a
+  // measured probe — so without this sweep the row would stay `running` forever:
+  // read as in-flight by the dispatcher, absent from the approvals inbox.
+  //
+  // Quarantining moves it to `failed` with `stopReason: 'stale_unverified'`, which
+  // is a state an operator can act on. Guarded conditional updates, so a run that
+  // finishes normally in the meantime is never overwritten.
+  const { sweepStaleRuns } = await import('./services/agent-run-service');
+  staleRunSweepTask = cron.schedule(
+    '*/5 * * * *',
+    leaderLockedCallback(
+      'agent-run-stale-sweep',
+      240_000,
+      async () => {
+        await sweepStaleRuns({ db: rotatorDb })
+          .then((swept) => {
+            for (const run of swept) {
+              console.warn(
+                '[agent-run-stale-sweep] quarantined abandoned run',
+                JSON.stringify({ runId: run.runId, siteId: run.siteId, goalId: run.goalId }),
+              );
+            }
+          })
+          .catch((err) => {
+            console.error('[agent-run-stale-sweep] failed', formatSafeError(err));
+          });
+      },
+      lockOpts,
+    ),
+  );
+
   // ── Content scheduler (regulated-content-readiness task 7; Req 7.3/7.4) ──
   //
   // A 1-minute tick applies due publish/unpublish transitions. Each flip is a
@@ -570,6 +606,7 @@ async function main() {
     pageviewFlushTask?.stop();
     vetoSweepTask?.stop();
     claimSweepTask?.stop();
+    staleRunSweepTask?.stop();
     schedulerTask?.stop();
     retentionTask?.stop();
     deploymentPollTask?.stop();

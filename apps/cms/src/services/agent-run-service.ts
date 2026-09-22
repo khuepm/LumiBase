@@ -5,7 +5,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import type { QueueProvider } from '@lumibase/runtime';
-import { and, desc, eq, isNotNull, lt, or } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, lt, or, sql } from 'drizzle-orm';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import type { ApprovalRequester } from './approval-requester';
 import {
@@ -16,16 +16,32 @@ import {
 } from './agent-metrics';
 
 /**
- * How long a `running` run may go without finishing before another worker may
- * take it over.
+ * How long a `running` run may go without finishing before it is treated as
+ * abandoned and quarantined for a human.
  *
- * The number is a trade between two failures, and both are real: too short and a
- * long legitimate run is executed twice; too long and a run orphaned by a crashed
- * process is stuck until someone notices. Fifteen minutes is far beyond any
- * observed run (the harness caps tool calls and the LLM has its own timeouts) and
- * far below "forever".
+ * ## What this threshold does NOT authorise (#481 R3.1)
+ *
+ * It used to let another delivery **take over** such a run and execute the skill
+ * again. Time cannot support that conclusion: a process can die *after* the
+ * content write and *before* the terminal run row is saved, and the run then looks
+ * identical to one that never did anything. Measured on Postgres with a fault
+ * injected in exactly that window — one item written, run left `running`, age
+ * pushed past this threshold, same job redelivered: **two items**. The CAS claim
+ * stopped duplicate execution within seconds of each other and then this branch
+ * reintroduced it fifteen minutes later.
+ *
+ * So the threshold now only decides when a run stops being believed to be alive.
+ * An abandoned run is moved to `failed` with a reason an operator can act on
+ * ({@link quarantineStaleRuns}); it is never replayed automatically, because
+ * nothing here can prove the first attempt had no side effect.
+ *
+ * Fifteen minutes is far beyond any observed run (the harness caps tool calls and
+ * the LLM has its own timeouts) and far below "forever".
  */
 export const RUN_STALE_MS = 15 * 60_000;
+
+/** `metrics.stopReason` for a run abandoned mid-flight; needs a human. */
+export const STALE_RUN_STOP_REASON = 'stale_unverified';
 
 export interface AgentRunEnvelope {
   goalId?: string;
@@ -305,14 +321,19 @@ export class AgentRunService {
    * One conditional UPDATE is the whole mechanism: the row lock serializes the
    * two deliveries and the loser's `WHERE` no longer matches.
    *
-   * ## Crash recovery, without reopening the hole
+   * ## `queued` only, and why a stale `running` is not claimable (#481 R3.1)
    *
-   * A worker killed mid-run would otherwise leave the run `running` forever with
-   * nobody able to claim it. Reclaiming is therefore allowed, but only for a run
-   * whose `startedAt` is older than {@link RUN_STALE_MS} — long enough that a
-   * live run is never stolen, short enough that a crash is not permanent. A
-   * duplicate arriving seconds later is refused, because the claim it would need
-   * to steal was stamped just now.
+   * An earlier version also accepted a `running` row older than
+   * {@link RUN_STALE_MS}, to recover from a crashed worker. That reopened the hole
+   * it had just closed: a process can die after the content write and before the
+   * terminal status is saved, so age says nothing about whether the skill already
+   * had an effect. Measured: fault injected in that window, age pushed past the
+   * threshold, job redelivered — the item was written **twice**.
+   *
+   * A `queued` run is different in kind, not degree: nothing has executed under
+   * it yet (the worker's first action is this claim), so re-delivering it cannot
+   * repeat a side effect. Abandoned `running` rows are handled by
+   * {@link quarantineStaleRuns}, which asks a human instead of guessing.
    *
    * `awaiting_approval` is deliberately NOT claimable here: resuming a parked run
    * is the approval flow's job ({@link resumeApprovedRun}), and letting a queue
@@ -320,7 +341,6 @@ export class AgentRunService {
    */
   async claimQueuedRun(runId: string): Promise<boolean> {
     const now = new Date();
-    const staleBefore = new Date(now.getTime() - RUN_STALE_MS);
     const claimed = await this.db
       .update(agentRuns)
       .set({ status: 'running', startedAt: now, updatedAt: now })
@@ -328,21 +348,92 @@ export class AgentRunService {
         and(
           eq(agentRuns.id, runId),
           eq(agentRuns.siteId, this.siteId),
-          or(
-            eq(agentRuns.status, 'queued'),
-            and(
-              eq(agentRuns.status, 'running'),
-              // A `running` row with no `startedAt` cannot be aged, so it is left
-              // alone rather than treated as stale — fail-closed on a shape that
-              // should not occur.
-              isNotNull(agentRuns.startedAt),
-              lt(agentRuns.startedAt, staleBefore),
-            ),
-          ),
+          eq(agentRuns.status, 'queued'),
         ),
       )
       .returning({ id: agentRuns.id });
     return claimed.length > 0;
+  }
+
+  /**
+   * Moves abandoned `running` runs to `failed` so a human can decide about them.
+   *
+   * This is the other half of refusing to replay (#481 R3.1). Without it, a run
+   * whose worker died would stay `running` forever: invisible to the dispatcher
+   * (which reads it as in-flight) and invisible in the inbox (which shows
+   * pending decisions). Quarantining makes the ambiguity a visible state with a
+   * name — `stopReason: 'stale_unverified'` — rather than an automatic retry.
+   *
+   * `failed` and not `cancelled`: a lost *job* is nobody's decision and is
+   * cancelled (see the dispatcher's `dispatch_lost`), but a run that started and
+   * vanished may well have changed data. That needs looking at, which is what
+   * `failed` means everywhere else in this service.
+   *
+   * One conditional UPDATE per row set, so two sweepers cannot both claim the
+   * same run, and a run that finishes between the read and the write is left
+   * alone.
+   *
+   * @param limit maximum rows quarantined per pass
+   * @returns the runs that were quarantined
+   */
+  async quarantineStaleRuns(
+    limit = 50,
+    now: Date = new Date(),
+  ): Promise<{ runId: string; goalId: string | null; agentName: string }[]> {
+    const staleBefore = new Date(now.getTime() - RUN_STALE_MS);
+    const candidates = await this.db
+      .select({ id: agentRuns.id, goalId: agentRuns.goalId, agentName: agentRuns.agentName })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.siteId, this.siteId),
+          eq(agentRuns.status, 'running'),
+          // A `running` row with no `startedAt` cannot be aged, so it is left
+          // alone rather than assumed stale — fail-closed on a shape that should
+          // not occur.
+          isNotNull(agentRuns.startedAt),
+          lt(agentRuns.startedAt, staleBefore),
+        ),
+      )
+      .limit(Math.max(1, Math.trunc(limit)));
+
+    const quarantined: { runId: string; goalId: string | null; agentName: string }[] = [];
+    for (const candidate of candidates) {
+      const [row] = await this.db
+        .update(agentRuns)
+        .set({
+          status: 'failed',
+          finishedAt: now,
+          updatedAt: now,
+          error:
+            'Run was abandoned while executing: it exceeded the stale window without ' +
+            'reaching a terminal state. It is NOT retried automatically because its ' +
+            'side effects cannot be verified — inspect the tool calls, then retry or cancel.',
+          metrics: sql`coalesce(${agentRuns.metrics}, '{}'::jsonb) || ${JSON.stringify({
+            stopReason: STALE_RUN_STOP_REASON,
+            quarantinedAt: now.toISOString(),
+          })}::jsonb`,
+        })
+        .where(
+          and(
+            eq(agentRuns.id, candidate.id),
+            eq(agentRuns.siteId, this.siteId),
+            // Re-checked in the write: the run may have finished normally in the
+            // meantime, and overwriting a real outcome would be worse than
+            // leaving it.
+            eq(agentRuns.status, 'running'),
+          ),
+        )
+        .returning({ id: agentRuns.id });
+      if (row) {
+        quarantined.push({
+          runId: candidate.id,
+          goalId: candidate.goalId,
+          agentName: candidate.agentName,
+        });
+      }
+    }
+    return quarantined;
   }
 
   /**
@@ -491,4 +582,66 @@ export class AgentRunService {
     });
     agentDeadLettersTotal.inc({ agent: run.agentName, reason: stopReason });
   }
+}
+
+export interface StaleRunSweepResult {
+  siteId: string;
+  runId: string;
+  goalId: string | null;
+  agentName: string;
+}
+
+/**
+ * Quarantines abandoned `running` runs across every tenant that has one.
+ *
+ * Driven by the `agent-run-stale-sweep` cron on the Node/Docker runtime. It is the
+ * companion to `claimQueuedRun` refusing to replay a stale run (#481 R3.1): the
+ * claim no longer takes such a run over, so something has to stop it from sitting
+ * `running` forever — invisible to the dispatcher, which reads it as in-flight,
+ * and invisible in the approvals inbox, which only lists pending decisions.
+ *
+ * Site discovery comes from the runs themselves, so a deployment with thousands of
+ * tenants touches only the ones that actually have a stuck run.
+ *
+ * Never throws: one tenant's failure must not stop the others, and a cron callback
+ * that rejects takes the tick down with it.
+ */
+export async function sweepStaleRuns(deps: {
+  db: Database;
+  limitPerSite?: number;
+  sitesLimit?: number;
+  now?: () => Date;
+}): Promise<StaleRunSweepResult[]> {
+  const now = deps.now?.() ?? new Date();
+  const staleBefore = new Date(now.getTime() - RUN_STALE_MS);
+  const sites = await deps.db
+    .selectDistinct({ siteId: agentRuns.siteId })
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.status, 'running'),
+        isNotNull(agentRuns.startedAt),
+        lt(agentRuns.startedAt, staleBefore),
+      ),
+    )
+    .orderBy(asc(agentRuns.siteId))
+    .limit(Math.max(1, Math.trunc(deps.sitesLimit ?? 500)));
+
+  const swept: StaleRunSweepResult[] = [];
+  for (const site of sites) {
+    try {
+      const service = new AgentRunService(deps.db, site.siteId);
+      const quarantined = await service.quarantineStaleRuns(deps.limitPerSite ?? 50, now);
+      for (const run of quarantined) swept.push({ siteId: site.siteId, ...run });
+    } catch (error) {
+      console.error(
+        '[agent-run-stale-sweep] site pass failed',
+        JSON.stringify({
+          siteId: site.siteId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  }
+  return swept;
 }

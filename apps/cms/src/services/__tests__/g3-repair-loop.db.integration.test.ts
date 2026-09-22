@@ -829,8 +829,39 @@ describe.skipIf(!hasDbIntegrationUrl)('G3 reconciler repair loop — DB integrat
 
     const dispatcher = await dispatcherFor(SITE, queue.provider);
     const result = await dispatcher.dispatchReconcilerGoals();
-    expect(result).toMatchObject({ dispatched: 0, skipped: 1 });
+    // Since #481 R3.3 the goal is excluded by the candidate query instead of being
+    // fetched and then skipped, so the pass reports no outcome for it at all. The
+    // two properties that matter are unchanged: nothing is dispatched, and the goal
+    // is NOT blocked — a paused intent is a pause, not a defect to unblock later.
+    // Being filtered is what stops it from occupying a slot a runnable goal needs.
+    expect(result).toMatchObject({ dispatched: 0 });
+    expect(result.outcomes).toEqual([]);
     expect(queue.jobs).toHaveLength(0);
     expect((await goalRow(SITE)).status).toBe('open');
+  });
+
+  it('resuming the intent puts its goal back in the queue', async () => {
+    // The other half of the filter: exclusion must be a live state, not a one-way
+    // door. Without this, R3.3 would trade "paused goals starve others" for "paused
+    // goals never come back".
+    const queue = memoryQueue();
+    const { intentId } = await seedMissingTranslation(SITE, collectionId);
+    await scanAndReconcile(SITE, intentId);
+    await db
+      .update(contentIntents)
+      .set({ status: 'paused' })
+      .where(eq(contentIntents.id, intentId));
+
+    const dispatcher = await dispatcherFor(SITE, queue.provider);
+    expect((await dispatcher.dispatchReconcilerGoals()).outcomes).toEqual([]);
+
+    await db
+      .update(contentIntents)
+      .set({ status: 'active' })
+      .where(eq(contentIntents.id, intentId));
+
+    const resumed = await dispatcher.dispatchReconcilerGoals();
+    expect(resumed.dispatched).toBe(1);
+    expect(queue.jobs).toHaveLength(1);
   });
 });

@@ -10,7 +10,7 @@ import {
 import type { QueueProvider } from '@lumibase/runtime';
 import { and, asc, desc, eq, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import { AgentRunService } from './agent-run-service';
+import { AgentRunService, type AgentRunContext } from './agent-run-service';
 import { AGENT_RUNS_QUEUE, type AgentRunJobPayload } from './agent-run-worker';
 import { KillSwitchService } from './kill-switch-service';
 
@@ -79,6 +79,24 @@ export const DISPATCHABLE_GOAL_STATUSES = ['open', 'in_progress'] as const;
 export const DISPATCH_LEASE_MS = 30_000;
 
 /**
+ * How long any dispatch statement may wait for the goal row lock.
+ *
+ * Long enough to absorb a normal dispatch transaction (a few statements, no
+ * network calls — the enqueue happens after commit), short enough that a caller
+ * stuck inside one cannot stall later ticks on the same goal. Reaching it is not
+ * an error: it means someone else is mid-dispatch, which is the `LEASE_HELD` /
+ * `LEASE_LOST` case every caller already handles.
+ */
+export const DISPATCH_LOCK_TIMEOUT = '2s';
+
+// The value is inlined into `SET LOCAL` (which takes no bind parameters), so its
+// shape is asserted at module load rather than assumed. A future edit to something
+// like `2s'; DROP …` fails here, at import time, instead of reaching Postgres.
+if (!/^\d+(ms|s)$/.test(DISPATCH_LOCK_TIMEOUT)) {
+  throw new Error('DISPATCH_LOCK_TIMEOUT must be a plain duration literal');
+}
+
+/**
  * How long a `queued` run may sit before dispatch assumes its job was lost.
  *
  * The window that R4 is about: the run row is inserted before the job is
@@ -115,6 +133,31 @@ export const STALE_QUEUED_RUN_MS = 5 * 60_000;
  * recovery. Those two rules have to agree, or the recovery would be filtered out
  * before it could happen.
  */
+/**
+ * "This goal's intent can actually spawn work right now" (#481 R3.3).
+ *
+ * `noRunInFlight` removed goals waiting on a human, but a goal whose intent is
+ * `paused` or `error` is equally unable to move — and it stayed in the candidate
+ * set, took a slot, and came back with `INTENT_NOT_ACTIVE` on every tick.
+ * Measured with `limit = 1`: two consecutive passes reported that skip, enqueued
+ * nothing, and never looked at the runnable goal behind it.
+ *
+ * A goal with no `intent_id` is kept: it is not reconciler-shaped work and the
+ * dispatcher blocks it with `MISSING_LINEAGE`, which is a decision rather than the
+ * silent skip this filter exists to stop.
+ */
+export function intentDispatchable(): SQL {
+  return sql`(
+    ${agentGoals.intentId} is null
+    or exists (
+      select 1 from ${contentIntents}
+      where ${contentIntents.id} = ${agentGoals.intentId}
+        and ${contentIntents.siteId} = ${agentGoals.siteId}
+        and ${contentIntents.status} = 'active'
+    )
+  )`;
+}
+
 export function noRunInFlight(now: Date): SQL {
   const staleBefore = new Date(now.getTime() - STALE_QUEUED_RUN_MS);
   // Written as `sql` rather than through the builder because a correlated
@@ -286,6 +329,53 @@ export interface GoalLeaseRef {
  * the suite and fail that one.
  */
 export async function claimGoalLease(
+  db: Database,
+  ref: GoalLeaseRef & { now?: Date },
+): Promise<string | null> {
+  // Bounded wait (#481 R3.2). Dispatch writes inside a transaction that holds the
+  // goal row, so a claim for the same goal can legitimately have to wait — but
+  // "wait" must never mean "forever". Without a bound, one dispatcher stuck inside
+  // its transaction stalls every later tick on that goal; with it, the claim gives
+  // up and the caller simply reports the goal as held, which is already a state it
+  // knows how to handle.
+  return withLockTimeout(db, async (tx) => claimGoalLeaseWithin(tx, ref), null);
+}
+
+/**
+ * Runs `fn` with a short `lock_timeout`, answering `fallback` if it waits too long.
+ *
+ * `SET LOCAL` scopes the timeout to this transaction, so it cannot leak into the
+ * pool and change unrelated queries. A lock timeout here is not an error worth
+ * propagating: it means somebody else is mid-dispatch on this row, which every
+ * caller already treats as "not mine this pass".
+ */
+async function withLockTimeout<T>(
+  db: Database,
+  fn: (tx: Database) => Promise<T>,
+  fallback: T,
+): Promise<T> {
+  try {
+    return await db.transaction(async (tx) => {
+      // `SET LOCAL` does not accept bind parameters, so the value is inlined.
+      // Safe because it is a module constant, never caller input — a literal
+      // checked by the assertion below rather than trusted by convention.
+      await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${DISPATCH_LOCK_TIMEOUT}'`));
+      return fn(tx as unknown as Database);
+    });
+  } catch (error) {
+    if (isLockTimeout(error)) return fallback;
+    throw error;
+  }
+}
+
+/** Postgres `lock_not_available` (55P03) — the wait bound was reached. */
+function isLockTimeout(error: unknown): boolean {
+  const code = (error as { code?: unknown })?.code;
+  const causeCode = (error as { cause?: { code?: unknown } })?.cause?.code;
+  return code === '55P03' || causeCode === '55P03';
+}
+
+async function claimGoalLeaseWithin(
   db: Database,
   ref: GoalLeaseRef & { now?: Date },
 ): Promise<string | null> {
@@ -505,9 +595,20 @@ export class GoalDispatchService {
           // fetched, skipped and refetched on every tick while an actionable goal
           // behind them was never reached.
           noRunInFlight(this.deps.now?.() ?? new Date()),
+          // A goal whose intent is paused or errored cannot move either, and it
+          // used to take a slot and return `INTENT_NOT_ACTIVE` every tick (R3.3).
+          intentDispatchable(),
         ),
       )
-      .orderBy(asc(agentGoals.createdAt))
+      // ROTATION, not just age (R3.3). Ordering purely by `createdAt` means the
+      // front of the queue is re-read on every pass, so a prefix that keeps being
+      // selected can keep the goals behind it from ever being considered — with
+      // `limit = 1` that was measurable as "the same goal, twice, zero enqueues".
+      // `dispatchAttemptedAt` is stamped whenever a goal is considered, so being
+      // looked at costs it its place. Nulls first: a new goal outranks anything
+      // already seen. `createdAt` remains the tie-break, which keeps the
+      // oldest-first property within one rotation cycle.
+      .orderBy(sql`${agentGoals.dispatchAttemptedAt} asc nulls first`, asc(agentGoals.createdAt))
       .limit(Math.max(1, Math.trunc(limit)));
 
     for (const goal of pending) {
@@ -515,6 +616,28 @@ export class GoalDispatchService {
       result.outcomes.push(outcome);
     }
     return result;
+  }
+
+  /**
+   * Stamps a goal as considered, so the next pass prefers something else.
+   *
+   * Best-effort and bounded: if a dispatcher is inside its transaction for this
+   * goal, waiting for the row lock would stall the pass, and the stamp is only a
+   * fairness hint — losing one costs a place in the rotation, not correctness.
+   */
+  private async markConsidered(goalId: string): Promise<void> {
+    const now = this.deps.now?.() ?? new Date();
+    await withLockTimeout(
+      this.deps.db,
+      async (tx) => {
+        await tx
+          .update(agentGoals)
+          .set({ dispatchAttemptedAt: now })
+          .where(and(eq(agentGoals.siteId, this.deps.siteId), eq(agentGoals.id, goalId)));
+        return undefined;
+      },
+      undefined,
+    ).catch(() => undefined);
   }
 
   /** Advances a single goal. Exposed for the route that reconciles one intent. */
@@ -570,6 +693,12 @@ export class GoalDispatchService {
     goal: typeof agentGoals.$inferSelect,
     result: GoalDispatchResult,
   ): Promise<GoalDispatchOutcome> {
+    // Stamped BEFORE the claim, and for every outcome including `LEASE_HELD`
+    // (R3.3). The rotation has to record "this pass looked here", not "this pass
+    // succeeded here" — otherwise a goal that always skips keeps its place at the
+    // front and the goals behind it are never reached.
+    await this.markConsidered(goal.id);
+
     const token = await this.claimGoal(goal.id);
     if (!token) {
       result.skipped += 1;
@@ -760,55 +889,121 @@ export class GoalDispatchService {
       return { goalId: goal.id, action: 'skip', reason: 'INTENT_NOT_ACTIVE' };
     }
 
-    // FENCE (#455 F4). Everything above was reads; everything below writes.
-    //
-    // The lease is time-boxed, and the reads between taking it and reaching here
-    // are not free: a slow pass can outlive its own lease, at which point the goal
-    // legitimately belongs to someone else who is about to dispatch it. Releasing
-    // by token stops us from stealing their lease, but only this re-check stops us
-    // from enqueueing alongside them.
-    if (!(await this.holdsLease(goal.id, leaseToken))) {
-      result.skipped += 1;
-      return { goalId: goal.id, action: 'skip', reason: 'LEASE_LOST' };
-    }
-
-    const runService = new AgentRunService(this.deps.db, this.deps.siteId, this.deps.queue);
-
-    // Settle a run whose job was lost before creating its replacement (R4).
-    // Leaving it `queued` would keep an unexecutable row in the goal's history and
-    // make "is anything in flight" ambiguous for every later pass. `cancelled` with
-    // an explicit reason says what happened; it is not a failure the operator has
-    // to act on, so it must not be `failed`.
-    const [orphan] = await this.deps.db
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.siteId, this.deps.siteId),
-          eq(agentRuns.goalId, goal.id),
-          eq(agentRuns.status, 'queued'),
-        ),
-      )
-      .limit(1);
-    if (orphan) {
-      await runService.cancelRun(orphan.id, 'dispatch_lost');
-    }
-
     const agentRole = goal.agentRole ?? goal.assigneeAgent;
     // The intent's budget travels with the run. `maxWritesPerMinute` is read from
     // `envelope.budget` inside the harness, so leaving it behind would store the
     // limit on the intent and enforce it nowhere.
     const budget = (intent.budget ?? {}) as Record<string, unknown>;
-    const run = await runService.ensureRun({
-      goalId: goal.id,
-      agentName: agentRole,
-      status: 'queued',
-      origin: 'reconciler',
-      intentId: intent.id,
-      autonomyCap: intent.autonomyCap,
-      agentRole,
-      budget,
-    });
+
+    // FENCE, INSIDE the transaction that writes (#481 R3.2).
+    //
+    // The previous version checked `holdsGoalLease` with a SELECT and then wrote
+    // outside it — check-then-write, with the same race one level down. Measured:
+    // A passed the check, B's clock advanced past A's lease, B claimed and
+    // dispatched, A resumed and inserted anyway → **two runs, two jobs for one
+    // goal/phase**. A second SELECT before the enqueue would not have helped; the
+    // gap is structural, not a matter of checking more often.
+    //
+    // So the lease check and every write it authorises happen while this
+    // transaction holds the goal row: `SELECT … FOR UPDATE` blocks the other
+    // dispatcher at the row lock, and whichever gets it second reads the lease the
+    // winner installed and leaves. The enqueue stays outside the transaction on
+    // purpose — a queue call cannot be rolled back, so it must not run before the
+    // rows it refers to are committed.
+    const prepared = await withLockTimeout<AgentRunContext | null>(this.deps.db, async (tx) => {
+      const now = this.deps.now?.() ?? new Date();
+      const [locked] = await tx
+        .select({
+          leaseBy: agentGoals.dispatchLeaseBy,
+          leaseUntil: agentGoals.dispatchLeaseUntil,
+        })
+        .from(agentGoals)
+        .where(and(eq(agentGoals.siteId, this.deps.siteId), eq(agentGoals.id, goal.id)))
+        // SKIP LOCKED, not a plain FOR UPDATE: if another dispatcher is inside this
+        // section for the same goal, the right answer is "not now", not "wait".
+        // Measured with a plain lock, the reviewer's interleaving probe stopped
+        // making progress at all — the second caller blocked until the first
+        // finished, which for a cron tick means the whole pass stalls behind one
+        // goal. Skipping returns no row, which lands in the same `LEASE_LOST` exit
+        // the lease check uses.
+        .for('update', { skipLocked: true });
+
+      if (
+        !locked ||
+        locked.leaseBy !== leaseToken ||
+        !locked.leaseUntil ||
+        locked.leaseUntil.getTime() <= now.getTime()
+      ) {
+        return null;
+      }
+
+      const txRunService = new AgentRunService(
+        tx as unknown as Database,
+        this.deps.siteId,
+        this.deps.queue,
+      );
+
+      // Settle a run whose job was lost before creating its replacement (R4).
+      // Leaving it `queued` would keep an unexecutable row in the goal's history and
+      // make "is anything in flight" ambiguous for every later pass. `cancelled` with
+      // an explicit reason says what happened; it is not a failure the operator has
+      // to act on, so it must not be `failed`.
+      const [orphan] = await tx
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.siteId, this.deps.siteId),
+            eq(agentRuns.goalId, goal.id),
+            eq(agentRuns.status, 'queued'),
+          ),
+        )
+        .limit(1);
+      if (orphan) {
+        await txRunService.cancelRun(orphan.id, 'dispatch_lost');
+      }
+
+      const created = await txRunService.ensureRun({
+        goalId: goal.id,
+        agentName: agentRole,
+        status: 'queued',
+        origin: 'reconciler',
+        intentId: intent.id,
+        autonomyCap: intent.autonomyCap,
+        agentRole,
+        budget,
+      });
+
+      // Phase is recorded in the SAME transaction as the run. If this commits, the
+      // next pass sees a phase with a matching run; if it rolls back, it sees
+      // neither. Previously these were separate statements, so a crash between
+      // them left a phase with no run — or a run with no phase, which the next
+      // pass would answer by dispatching a second draft for the same drift.
+      await this.setGoalMetadata(
+        goal.id,
+        {
+          repairPhase: phase,
+          draftVersionKey: repair.versionKey,
+          dispatchedAt: now.toISOString(),
+          blockedReason: null,
+        },
+        tx as unknown as Database,
+      );
+      await tx
+        .update(agentGoals)
+        .set({ status: 'in_progress', updatedAt: now })
+        .where(and(eq(agentGoals.siteId, this.deps.siteId), eq(agentGoals.id, goal.id)));
+
+      return created;
+    }, null);
+
+    if (!prepared) {
+      result.skipped += 1;
+      return { goalId: goal.id, action: 'skip', reason: 'LEASE_LOST' };
+    }
+
+    const runService = new AgentRunService(this.deps.db, this.deps.siteId, this.deps.queue);
+    const run = prepared;
 
     const payload: AgentRunJobPayload =
       phase === 'drafting'
@@ -850,21 +1045,6 @@ export class GoalDispatchService {
             budget,
             contextMessage: goal.description ?? undefined,
           };
-
-    // Phase is recorded BEFORE the enqueue. If the process dies between the two,
-    // the next pass sees `drafting` with no active run and blocks with a reason
-    // a human can act on. Recording it after would leave phase null, and the
-    // next pass would dispatch a second draft for the same drift.
-    await this.setGoalMetadata(goal.id, {
-      repairPhase: phase,
-      draftVersionKey: repair.versionKey,
-      dispatchedAt: new Date().toISOString(),
-      blockedReason: null,
-    });
-    await this.deps.db
-      .update(agentGoals)
-      .set({ status: 'in_progress', updatedAt: new Date() })
-      .where(and(eq(agentGoals.siteId, this.deps.siteId), eq(agentGoals.id, goal.id)));
 
     try {
       await this.deps.queue!.enqueue(AGENT_RUNS_QUEUE, 'execute', payload);
@@ -951,9 +1131,18 @@ export class GoalDispatchService {
       .where(and(eq(agentGoals.siteId, this.deps.siteId), eq(agentGoals.id, goalId)));
   }
 
-  /** Merges keys into `metadata`; a null value removes the key. */
-  private async setGoalMetadata(goalId: string, patch: Record<string, unknown>): Promise<void> {
-    const [goal] = await this.deps.db
+  /**
+   * Merges keys into `metadata`; a null value removes the key.
+   *
+   * @param db optional transaction handle, so a dispatch can record the phase in
+   *   the same atomic unit as the run it describes (#481 R3.2)
+   */
+  private async setGoalMetadata(
+    goalId: string,
+    patch: Record<string, unknown>,
+    db: Database = this.deps.db,
+  ): Promise<void> {
+    const [goal] = await db
       .select({ metadata: agentGoals.metadata })
       .from(agentGoals)
       .where(and(eq(agentGoals.siteId, this.deps.siteId), eq(agentGoals.id, goalId)))
@@ -963,7 +1152,7 @@ export class GoalDispatchService {
       if (value === null) delete merged[key];
       else merged[key] = value;
     }
-    await this.deps.db
+    await db
       .update(agentGoals)
       .set({ metadata: merged, updatedAt: new Date() })
       .where(and(eq(agentGoals.siteId, this.deps.siteId), eq(agentGoals.id, goalId)));
@@ -993,8 +1182,17 @@ export async function runGoalDispatchTick(deps: {
   db: Database;
   queue?: QueueProvider;
   limitPerSite?: number;
-  /** Max tenants inspected per tick. Raise knowingly on very large deployments. */
+  /**
+   * Max tenants inspected per tick.
+   *
+   * A per-tick budget, not a cutoff: tenants are visited least-recently-considered
+   * first, so a deployment with more sites than this reaches the rest on later
+   * ticks. Raising it makes each tick do more work; it is not required for
+   * correctness (R3.3).
+   */
   sitesLimit?: number;
+  /** Clock seam, so rotation can be exercised without waiting. */
+  now?: () => Date;
 }): Promise<GoalDispatchTickResult> {
   const summary: GoalDispatchTickResult = {
     sites: 0,
@@ -1003,6 +1201,7 @@ export async function runGoalDispatchTick(deps: {
     skipped: 0,
     blocked: 0,
   };
+  const now = deps.now?.() ?? new Date();
 
   // Only sites with DISPATCHABLE goals, and ordered so the walk is stable
   // (reviewer R5). The previous query listed every site that had ever had a
@@ -1016,26 +1215,40 @@ export async function runGoalDispatchTick(deps: {
   // makes the remainder deterministic instead of planner-dependent. `sitesLimit`
   // is exposed so an operator who does exceed it can raise it knowingly.
   const rows = await deps.db
-    .selectDistinct({ siteId: agentGoals.siteId })
+    .select({
+      siteId: agentGoals.siteId,
+      // The tenant's rotation key: how long its least recently considered goal has
+      // been waiting. A site that was just served sorts last.
+      oldestAttempt: sql<Date | null>`min(${agentGoals.dispatchAttemptedAt})`,
+    })
     .from(agentGoals)
     .where(
       and(
         eq(agentGoals.origin, 'reconciler'),
         inArray(agentGoals.status, DISPATCHABLE_GOAL_STATUSES),
-        // Same rule as the per-site query: a tenant whose only reconciler goals
-        // are waiting on a human is not "work waiting", and counting it against
-        // `sitesLimit` is how tenants past the cap were starved (F5).
-        noRunInFlight(new Date()),
+        // Same rules as the per-site query: a tenant whose only reconciler goals
+        // are waiting on a human, or belong to a paused intent, is not "work
+        // waiting", and counting it against `sitesLimit` is how tenants past the
+        // cap were starved (F5 / R3.3).
+        noRunInFlight(now),
+        intentDispatchable(),
       ),
     )
-    .orderBy(asc(agentGoals.siteId))
-    .limit(deps.sitesLimit ?? 500);
+    .groupBy(agentGoals.siteId)
+    // ROTATION across tenants (R3.3). Ordering by siteId meant the first
+    // `sitesLimit` tenants alphabetically were the only ones ever served: with
+    // `sitesLimit = 1` two consecutive ticks both visited the same site and the
+    // other never ran. Least-recently-considered first, nulls (never considered)
+    // ahead of everything, `siteId` only as a deterministic tie-break.
+    .orderBy(sql`min(${agentGoals.dispatchAttemptedAt}) asc nulls first`, asc(agentGoals.siteId))
+    .limit(Math.max(1, Math.trunc(deps.sitesLimit ?? 500)));
 
   for (const row of rows) {
     const service = new GoalDispatchService({
       db: deps.db,
       siteId: row.siteId,
       ...(deps.queue ? { queue: deps.queue } : {}),
+      ...(deps.now ? { now: deps.now } : {}),
     });
     try {
       const result = await service.dispatchReconcilerGoals(deps.limitPerSite ?? 25);

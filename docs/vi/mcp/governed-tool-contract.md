@@ -1,11 +1,11 @@
 ---
-version: 5
-lastUpdated: 2026-09-20T17:38:26.729Z
+version: 6
+lastUpdated: 2026-09-22T05:20:12.532Z
 sourceLang: vi
-contentHash: c961ed3eaf0c4293
-codeVerified: 2026-09-20T17:38:26.729Z
-codeVerifiedHash: c961ed3eaf0c4293
-codeVerifiedClaims: 24
+contentHash: b44ccf017c86b180
+codeVerified: 2026-09-22T05:20:12.532Z
+codeVerifiedHash: b44ccf017c86b180
+codeVerifiedClaims: 28
 translatedFrom: en
 sourceHash: b9ca7b4d798de9be
 mtEngine: manual
@@ -116,7 +116,7 @@ Khoảng trống đó từng có thật: một API key park một phép update `
 
 Hai giới hạn, nói ra thay vì để ngầm hiểu:
 
-- **Phạm vi row/field của người quyết định KHÔNG được áp.** Duyệt không phải là thực hiện: người quyết định cho phép một hành động mà người yêu cầu đã xin, và nó chạy với tầm với của người yêu cầu. Giao hai permission context không phải một phép toán có định nghĩa trong policy DSL, nên một người duyệt có mask **hẹp hơn** người yêu cầu sẽ không làm hẹp phần thực thi. Trên thực tế người duyệt nắm `approvals:decide` hoặc admin, nơi không có mask nào để áp.
+- **Duyệt là việc CHỈ admin làm được, và đó là điều làm cho luật này đủ.** Phạm vi row/field của người quyết định không được giao với của người yêu cầu — giao hai permission context không phải một phép toán có định nghĩa trong policy DSL. Điều đó đúng **vì** mọi cửa vào quyết định đều đòi admin của site: `POST /agent/approvals/:id/decide`, đường agent-reviewer, và `POST /ai/approvals/:id/decide` cũ đều nằm sau cửa gác control-plane admin, mà admin thì không có mask nào để giao. Test hồi quy từ chối non-admin ở cả ba cửa, kể cả một member nắm đúng quyền ghi mà hành động đang bị giữ cần — làm được một hành động không có nghĩa là được phép duyệt nó. Nắm một capability như `approvals:decide` **không** đủ: nó không nói gì về việc người nắm nó có field mask hay không, nên muốn mở cửa cho non-admin thì phải quyết định và thực thi phạm vi của họ trước, không phải ghi một ngoại lệ vào tài liệu.
 - **Người yêu cầu dạng `agentRole` không có row/field context nào**, theo đúng bản chất — một role là tập capability, không phải principal có policy. Với việc của reconciler thì kiểm capability cộng autonomy cap của intent là toàn bộ cửa gác.
 
 ## 5. Hợp đồng decision và hai không gian approval ID

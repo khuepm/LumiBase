@@ -13,6 +13,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
+import { AgentRunService } from '../agent-run-service';
 import { CONTENT_OS_SETTINGS_KEY } from '../feature-flags';
 import {
   DISPATCH_LEASE_MS,
@@ -285,30 +286,206 @@ describe.skipIf(!hasDbIntegrationUrl)('G3 dispatch reliability — DB integratio
    * slower than its own lease looks like from the outside.
    */
   it('R3/F4: a pass that outlived its lease enqueues nothing', async () => {
-    await seedGoal();
+    const { goalId } = await seedGoal();
     const q = memoryQueue();
-    const t0 = new Date();
-    let calls = 0;
-    const dispatcher = new GoalDispatchService({
-      db,
+
+    // The lease is taken from under the pass between its claim and its write, by
+    // overwriting the holder just before the dispatch transaction opens. Expressed
+    // as an event on the code path rather than as a count of clock reads: an
+    // earlier version of this case keyed off "the third `now()` call", which made
+    // it a hostage of how often the implementation happens to read the clock — and
+    // it broke the moment R3.2 changed that.
+    let stolen = false;
+    const raidedDb = new Proxy(db, {
+      get(target, prop) {
+        if (prop !== 'transaction') {
+          const value = Reflect.get(target, prop) as unknown;
+          return typeof value === 'function' ? (value as () => unknown).bind(target) : value;
+        }
+        return async (...args: unknown[]) => {
+          // Keyed off STATE, not off a call count: steal only once the pass
+          // actually holds the lease, which is precisely the window under test.
+          if (!stolen) {
+            const [row] = await db
+              .select({ by: agentGoals.dispatchLeaseBy })
+              .from(agentGoals)
+              .where(eq(agentGoals.id, goalId));
+            if (row?.by?.startsWith('slow-pass#')) {
+              stolen = true;
+              await db
+                .update(agentGoals)
+                .set({
+                  dispatchLeaseBy: 'thief#stole-it',
+                  dispatchLeaseUntil: new Date(Date.now() + DISPATCH_LEASE_MS),
+                })
+                .where(eq(agentGoals.id, goalId));
+            }
+          }
+          return (target.transaction as (...a: unknown[]) => Promise<unknown>)(...args);
+        };
+      },
+    }) as typeof db;
+
+    const pass = await new GoalDispatchService({
+      db: raidedDb,
       siteId: SITE,
       queue: q.provider,
       instanceId: 'slow-pass',
-      // Readings 1–2 are the candidate query and the claim; from the third on, the
-      // pass has taken longer than its own lease. Counting rather than using a
-      // wall-clock delay keeps this deterministic — and the count is asserted
-      // below, so a change in how often the clock is read fails loudly instead of
-      // quietly turning this case into a no-op.
-      now: () => (calls++ < 2 ? t0 : new Date(t0.getTime() + DISPATCH_LEASE_MS + 1)),
-    });
+    }).dispatchReconcilerGoals();
 
-    const pass = await dispatcher.dispatchReconcilerGoals();
     expect(pass.dispatched, 'no job may be enqueued without the lease').toBe(0);
     expect(q.jobs, 'and nothing reached the queue').toHaveLength(0);
     expect(pass.outcomes.some((o) => o.reason === 'LEASE_LOST')).toBe(true);
+    expect(stolen, 'the dispatch transaction was actually reached').toBe(true);
     const runs = await db.select().from(agentRuns).where(eq(agentRuns.siteId, SITE));
     expect(runs, 'no run row either').toHaveLength(0);
-    expect(calls, 'the clock was read past the claim, so the fence was reachable').toBeGreaterThan(2);
+  });
+
+  /**
+   * The check and the writes it authorises are one atomic unit (#481 R3.2).
+   *
+   * ## The window this closes
+   *
+   * The fence used to be a SELECT, with the INSERT/UPDATE/enqueue outside it —
+   * check-then-write, one level down from the race it was meant to fix. A reviewer
+   * measured it: A passed the fence, A's lease expired, B claimed and dispatched,
+   * A resumed and inserted anyway → **two runs and two queue jobs for one
+   * goal/phase**. Re-checking more often would not have helped; the gap is
+   * structural.
+   *
+   * Dispatch now takes the goal row with `SELECT … FOR UPDATE SKIP LOCKED` and does
+   * every write inside that transaction, so the two callers serialize on the row
+   * lock and the loser reads the winner's lease.
+   *
+   * ## How this case suspends A
+   *
+   * It intercepts `transaction`, not `insert`. That is the point: the reviewer's
+   * original probe delayed `db.insert(agent_runs)` and, after this fix, it hangs
+   * instead of reporting — the insert it hooked no longer happens on the connection
+   * it watched, because it happens on the transaction handle. Reproducing the window
+   * therefore means suspending A *inside* its transaction, which is what this does.
+   *
+   * B does not wait forever either: `DISPATCH_LOCK_TIMEOUT` bounds the wait, so it
+   * reports the goal as held instead of stalling the whole pass — that half matters
+   * as much as the exclusion, because a cron tick blocked behind one goal is its own
+   * outage.
+   */
+  it('R3.2: a suspended dispatcher cannot write after another one commits', async () => {
+    const { goalId } = await seedGoal();
+    const queue = memoryQueue();
+
+    let released: (() => void) | undefined;
+    const suspended = new Promise<void>((resolve) => {
+      released = resolve;
+    });
+    let insideTransaction: (() => void) | undefined;
+    const reachedTransaction = new Promise<void>((resolve) => {
+      insideTransaction = resolve;
+    });
+
+    // A's db: pauses inside the dispatch transaction, after the row is locked and
+    // the lease verified, before the run is inserted.
+    let hooked = false;
+    const slowDb = new Proxy(db, {
+      get(target, prop) {
+        if (prop !== 'transaction') {
+          const value = Reflect.get(target, prop) as unknown;
+          return typeof value === 'function' ? (value as () => unknown).bind(target) : value;
+        }
+        return async (callback: (tx: unknown) => Promise<unknown>, ...rest: unknown[]) =>
+          (target.transaction as (cb: (tx: unknown) => Promise<unknown>, ...r: unknown[]) => Promise<unknown>)(
+            async (tx: unknown) => {
+              const txProxy = new Proxy(tx as object, {
+                get(innerTarget, innerProp) {
+                  if (innerProp === 'insert' && !hooked) {
+                    hooked = true;
+                    // `insert()` is synchronous and returns a builder, so the pause
+                    // has to sit on the awaited end of the chain rather than on the
+                    // call itself.
+                    return (table: unknown) => ({
+                      values: (values: unknown) => ({
+                        returning: async (...args: unknown[]) => {
+                          insideTransaction?.();
+                          await suspended;
+                          const realInsert = (
+                            innerTarget as Record<string, (t: unknown) => Record<string, unknown>>
+                          )['insert']!;
+                          // Bound to the transaction: drizzle's builder reads
+                          // `this.session`, so an unbound call fails.
+                          const builder = realInsert.call(innerTarget, table) as {
+                            values: (v: unknown) => { returning: (...a: unknown[]) => unknown };
+                          };
+                          return builder.values(values).returning(...args);
+                        },
+                      }),
+                    });
+                  }
+                  const value = Reflect.get(innerTarget, innerProp) as unknown;
+                  return typeof value === 'function'
+                    ? (value as () => unknown).bind(innerTarget)
+                    : value;
+                },
+              });
+              return callback(txProxy);
+            },
+            ...rest,
+          );
+      },
+    }) as typeof db;
+
+    const t0 = new Date();
+    const slow = new GoalDispatchService({
+      db: slowDb,
+      siteId: SITE,
+      queue: queue.provider,
+      instanceId: 'A',
+      now: () => t0,
+    });
+    // B's clock is past A's lease, so B is entitled to reclaim it — the exact
+    // premise of the measured failure.
+    const fast = new GoalDispatchService({
+      db,
+      siteId: SITE,
+      queue: queue.provider,
+      instanceId: 'B',
+      now: () => new Date(t0.getTime() + DISPATCH_LEASE_MS + 1_000),
+    });
+
+    const slowPass = slow.advanceGoalById(goalId);
+    await reachedTransaction;
+
+    // B runs while A is suspended mid-transaction. It must not proceed silently;
+    // either it waits out the bound and reports the goal as held, or it sees A's
+    // lease. Both are "no dispatch".
+    const fastOutcome = await fast.advanceGoalById(goalId);
+    released!();
+    const slowOutcome = await slowPass;
+
+    const dispatchActions = [slowOutcome, fastOutcome].filter(
+      (outcome) => outcome?.action === 'dispatch_draft' || outcome?.action === 'dispatch_promote',
+    );
+    expect(dispatchActions, 'exactly one dispatcher may dispatch').toHaveLength(1);
+
+    const runs = await db.select().from(agentRuns).where(eq(agentRuns.siteId, SITE));
+    expect(runs, 'one run for one goal/phase').toHaveLength(1);
+    expect(queue.jobs, 'one job').toHaveLength(1);
+  });
+
+  it('R3.2: the database refuses a second in-flight run for one goal', async () => {
+    // The backstop under the transaction. Any future call site that inserts a run
+    // without taking the lease would reopen the race silently; the partial unique
+    // index makes that a constraint violation instead of a duplicate execution.
+    const { goalId } = await seedGoal();
+    const runs = new AgentRunService(db, SITE);
+    await runs.ensureRun({ goalId, status: 'queued' });
+
+    await expect(runs.ensureRun({ goalId, status: 'queued' })).rejects.toMatchObject({
+      cause: { code: '23505' },
+    });
+
+    // Terminal runs are out of scope, so history and retries still work.
+    await db.update(agentRuns).set({ status: 'succeeded' }).where(eq(agentRuns.goalId, goalId));
+    await expect(runs.ensureRun({ goalId, status: 'queued' })).resolves.toBeTruthy();
   });
 
   it('R3/F4: the fence reports a lease that expired underneath us', async () => {
@@ -598,6 +775,148 @@ describe.skipIf(!hasDbIntegrationUrl)('G3 dispatch reliability — DB integratio
     await db.update(agentRuns).set({ status: 'cancelled' }).where(eq(agentRuns.id, run!.id));
     const after = await dispatcher.dispatchReconcilerGoals();
     expect(after.outcomes.map((o) => o.goalId)).toContain(goalId);
+  });
+
+  it('R3.3: a goal whose intent is paused does not consume the pass limit', async () => {
+    const { older: paused, newer: runnable, intentId } = await seedTwoGoals();
+    // Both goals belong to one intent in this fixture, so give the paused one an
+    // intent of its own — that is the shape in production, and it is what makes the
+    // filter observable rather than accidental.
+    const [otherIntent] = await db
+      .insert(contentIntents)
+      .values({
+        siteId: SITE,
+        name: `paused-${Math.random().toString(36).slice(2, 8)}`,
+        collection: COLLECTION,
+        rules: [{ type: 'translations', fields: ['translations'], locales: ['en', 'vi'] }],
+        schedule: '0 * * * *',
+        autonomyCap: 2,
+        status: 'paused',
+      })
+      .returning({ id: contentIntents.id });
+    await db
+      .update(agentGoals)
+      .set({ intentId: otherIntent!.id })
+      .where(eq(agentGoals.id, paused));
+    expect(intentId, 'the runnable goal keeps the active intent').toBeTruthy();
+
+    const q = memoryQueue();
+    const pass = await new GoalDispatchService({
+      db,
+      siteId: SITE,
+      queue: q.provider,
+      instanceId: 'solo',
+    }).dispatchReconcilerGoals(1);
+
+    expect(pass.dispatched, 'the runnable goal behind it must be served').toBe(1);
+    expect(q.jobs).toHaveLength(1);
+    expect(q.jobs[0]!.payload['goalId']).toBe(runnable);
+  });
+
+  /**
+   * Fairness past the limit, at the acceptance threshold the owner set: `limit + 1`
+   * (#481 R3.3).
+   *
+   * Filtering unrunnable goals is not enough on its own. If two goals are both
+   * runnable and the limit is one, ordering purely by age serves the same goal on
+   * every tick. The dispatcher here has no queue, so each pass skips with
+   * `ASYNC_UNAVAILABLE` and neither goal becomes in-flight — which isolates the
+   * ordering question from every other filter.
+   */
+  it('R3.3: consecutive passes rotate, so a goal behind the limit is reached', async () => {
+    const { older, newer } = await seedTwoGoals();
+
+    const dispatcher = new GoalDispatchService({ db, siteId: SITE, instanceId: 'solo' });
+    const first = await dispatcher.dispatchReconcilerGoals(1);
+    const second = await dispatcher.dispatchReconcilerGoals(1);
+
+    expect(first.outcomes.map((o) => o.goalId), 'oldest first').toEqual([older]);
+    expect(
+      second.outcomes.map((o) => o.goalId),
+      'the second pass must move on rather than repeat the first',
+    ).toEqual([newer]);
+
+    // And it comes back around: rotation, not a one-way queue.
+    const third = await dispatcher.dispatchReconcilerGoals(1);
+    expect(third.outcomes.map((o) => o.goalId)).toEqual([older]);
+  });
+
+  it('R3.3: consecutive ticks rotate tenants, so a site behind sitesLimit is reached', async () => {
+    // Same threshold for the multi-tenant loop: two fixtures and `sitesLimit = 1`,
+    // which is the production `500` failure without building 501 tenants.
+    const other = `${SITE}_second`;
+    await db.insert(sites).values({ id: other, name: 'Second tenant' });
+    const [otherCollection] = await db
+      .insert(collections)
+      .values({ siteId: other, name: COLLECTION, label: 'Articles' })
+      .returning({ id: collections.id });
+    await db.insert(fields).values([
+      { siteId: other, collectionId: otherCollection!.id, name: 'title', type: 'string', interface: 'input' },
+      { siteId: other, collectionId: otherCollection!.id, name: 'translations', type: 'json', interface: 'input' },
+    ]);
+    await db.insert(settings).values({
+      siteId: other,
+      key: CONTENT_OS_SETTINGS_KEY,
+      value: { reconciler: true },
+      scope: 'site',
+    });
+    await db.insert(items).values({
+      siteId: other,
+      collectionId: otherCollection!.id,
+      status: 'published',
+      data: { title: 'Hello', translations: { en: 'Hello world' } },
+    });
+    const [otherIntent] = await db
+      .insert(contentIntents)
+      .values({
+        siteId: other,
+        name: 'second-tenant-intent',
+        collection: COLLECTION,
+        rules: [{ type: 'translations', fields: ['translations'], locales: ['en', 'vi'] }],
+        schedule: '0 * * * *',
+        autonomyCap: 2,
+        status: 'active',
+      })
+      .returning({ id: contentIntents.id });
+    const { DriftService } = await import('../drift-service');
+    const { ReconcilerService } = await import('../reconciler-service');
+    await new DriftService({ db, siteId: other }).scanIntent(otherIntent!.id);
+    await new ReconcilerService({ db, siteId: other }).reconcileIntent(otherIntent!.id);
+    await seedGoal();
+
+    try {
+      // The tick is global by design, and this suite shares a database with the
+      // others, so unrelated tenants are pushed to the back of the rotation rather
+      // than assumed absent. Without this the assertion would depend on what else
+      // happens to be in the database.
+      await db
+        .update(agentGoals)
+        .set({ dispatchAttemptedAt: new Date() })
+        .where(sql`${agentGoals.siteId} NOT IN (${SITE}, ${other})`);
+      await db
+        .update(agentGoals)
+        .set({ dispatchAttemptedAt: null })
+        .where(sql`${agentGoals.siteId} IN (${SITE}, ${other})`);
+
+      // No queue, so neither tenant's goal becomes in-flight and the only thing
+      // that can vary between ticks is the tenant ordering.
+      const tick1 = await runGoalDispatchTick({ db, sitesLimit: 1 });
+      const tick2 = await runGoalDispatchTick({ db, sitesLimit: 1 });
+
+      expect(tick1.sites).toBe(1);
+      expect(tick2.sites, 'the second tick must visit a tenant too').toBe(1);
+
+      const visited = await db
+        .select({ siteId: agentGoals.siteId, attempted: agentGoals.dispatchAttemptedAt })
+        .from(agentGoals)
+        .where(sql`${agentGoals.siteId} IN (${SITE}, ${other})`);
+      expect(
+        visited.filter((row) => row.attempted !== null).map((row) => row.siteId).sort(),
+        'both tenants were reached across two ticks, not the same one twice',
+      ).toEqual([SITE, other].sort());
+    } finally {
+      await db.delete(sites).where(eq(sites.id, other));
+    }
   });
 
   it('R5: the multi-tenant tick only visits sites with dispatchable goals', async () => {

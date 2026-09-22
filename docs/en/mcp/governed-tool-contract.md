@@ -1,14 +1,14 @@
 ---
-version: 5
-lastUpdated: 2026-09-20T17:38:26.729Z
+version: 6
+lastUpdated: 2026-09-22T05:20:12.532Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: c961ed3eaf0c4293
+sourceHash: b44ccf017c86b180
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-20T17:38:26.729Z
-codeVerifiedHash: c961ed3eaf0c4293
-codeVerifiedClaims: 24
+codeVerified: 2026-09-22T05:20:12.532Z
+codeVerifiedHash: b44ccf017c86b180
+codeVerifiedClaims: 28
 contentHash: b9ca7b4d798de9be
 ---
 
@@ -116,7 +116,7 @@ That gap was real before this: an API key parked an update to `title`, its permi
 
 Two limits, stated rather than implied:
 
-- **The decider's row/field scope is not applied.** Approving is not performing: the decider authorises an action the requester asked for, and it runs with the requester's reach. Intersecting two permission contexts is not a defined operation in the policy DSL, so a decider with a *narrower* mask than the requester does not narrow the execution. In practice deciders hold `approvals:decide` or admin, where there is no mask to apply.
+- **Deciding is admin-only, and that is what makes the rule complete.** The decider's row/field scope is not intersected with the requester's — intersecting two permission contexts is not a defined operation in the policy DSL. That is sound *because* every decision entry point requires a site administrator: `POST /agent/approvals/:id/decide`, the agent-reviewer route, and the legacy `POST /ai/approvals/:id/decide` all sit behind the control-plane admin gate, and an administrator has no mask to intersect. Regression tests refuse a non-admin at each of the three, including a member who holds exactly the write permission the parked action needs — being able to perform an action is not being allowed to approve it. Holding a capability such as `approvals:decide` would **not** be enough on its own: it says nothing about whether its holder has a field mask, so widening the gate to non-admins requires deciding and enforcing their scope first, not documenting an exception.
 - **An `agentRole` requester has no row/field context at all**, by construction — a role is a capability set, not a principal with policies. For reconciler work the capability check plus the intent's autonomy cap are the whole gate.
 
 ## 5. The decision contract and the two approval id spaces

@@ -5,6 +5,7 @@ import { and, eq } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
 import type { MagicContext } from './permission-dsl';
+import { satisfiesCapability } from './effective-capability-service';
 import type { AccessService } from './access-service';
 import type { ConfigService } from './config-service';
 import type { ExtensionsService } from './extensions-service';
@@ -2319,14 +2320,11 @@ export class AISecureHarness {
     skill: SkillDefinition,
     userCapabilities: string[],
   ): boolean {
-    // Wildcard and admin roles grant all capabilities.
-    if (userCapabilities.includes('*') || userCapabilities.includes('admin')) {
-      return true;
-    }
-
-    // Every required capability must be present in the user's set
+    // Shared predicate, not a local copy: three different spellings of "what
+    // counts as admin" are what let the agent-reviewer route refuse real
+    // administrators (#481 R3.4).
     return skill.requiredCapabilities.every((required) =>
-      userCapabilities.includes(required),
+      satisfiesCapability(userCapabilities, required),
     );
   }
 

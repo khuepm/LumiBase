@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
 import { sites, users } from './core';
@@ -181,6 +190,16 @@ export const agentGoals = pgTable(
      */
     dispatchLeaseUntil: timestamp('dispatch_lease_until'),
     dispatchLeaseBy: text('dispatch_lease_by'),
+    /**
+     * When dispatch last CONSIDERED this goal — not when it last succeeded
+     * (#481 R3.3).
+     *
+     * The rotation key. A pass takes the N goals least recently considered, so a
+     * goal that keeps being skipped moves to the back of the queue instead of
+     * occupying the same slot on every tick. Null means "never considered", which
+     * sorts first: a new goal is served before anything already looked at.
+     */
+    dispatchAttemptedAt: timestamp('dispatch_attempted_at'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -189,6 +208,11 @@ export const agentGoals = pgTable(
     siteCreatedIdx: index('agent_goals_site_created_idx').on(t.siteId, t.createdAt),
     siteParentIdx: index('agent_goals_site_parent_idx').on(t.siteId, t.parentGoalId),
     siteOriginIdx: index('agent_goals_site_origin_idx').on(t.siteId, t.origin),
+    /** Serves the rotation order of the dispatch queue (#481 R3.3). */
+    dispatchRotationIdx: index('agent_goals_dispatch_rotation_idx').on(
+      t.siteId,
+      t.dispatchAttemptedAt,
+    ),
   }),
 );
 
@@ -220,6 +244,18 @@ export const agentRuns = pgTable(
   (t) => ({
     siteStatusIdx: index('agent_runs_site_status_idx').on(t.siteId, t.status),
     goalCreatedIdx: index('agent_runs_goal_created_idx').on(t.goalId, t.createdAt),
+    /**
+     * At most ONE in-flight run per goal (#481 R3.2).
+     *
+     * Dispatch already serializes on the goal's lease inside a transaction; this
+     * is the same rule stated where it cannot be forgotten by a future call site
+     * that inserts a run without taking that lease. `awaiting_approval` is out of
+     * scope on purpose — a parked run coexists with the human decision flow, and
+     * duplicate parking is prevented by the run-claim CAS instead.
+     */
+    oneActivePerGoalIdx: uniqueIndex('agent_runs_one_active_per_goal_idx')
+      .on(t.siteId, t.goalId)
+      .where(sql`${t.status} IN ('queued', 'running')`),
   }),
 );
 
