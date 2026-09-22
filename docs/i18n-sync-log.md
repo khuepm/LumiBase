@@ -2,7 +2,7 @@
 
 Append-only history of automated EN ⇄ VI documentation syncs. Each run records language detection, preserved content and translation actions so no source content is silently lost.
 
-## 2026-09-22T05:22:14.737Z — mode `plan` (effective `plan`)
+## 2026-09-22T06:53:27.142Z — mode `plan` (effective `plan`)
 
 Engine: `claude` · API key: absent · files scanned: 150
 
@@ -10,95 +10,19 @@ Summary — up-to-date: 150, translated: 0, preserved: 0, conflicts: 0, planned:
 
 ---
 
-## 2026-09-20T17:38:36.232Z — mode `plan` (effective `plan`)
+## 2026-09-21T05:51:24.567Z — mode `preserve-only` (effective `preserve-only`)
 
-Engine: `claude` · API key: absent · files scanned: 150
+Engine: `claude` · API key: absent · files scanned: 148
 
-Summary — up-to-date: 150, translated: 0, preserved: 0, conflicts: 0, planned: 0
-
----
-
-## 2026-09-20T17:37:31.255Z — mode `plan` (effective `plan`)
-
-Engine: `claude` · API key: absent · files scanned: 150
-
-Summary — up-to-date: 149, translated: 0, preserved: 0, conflicts: 0, planned: 1
-
-### Pending / performed translations
-
-| File | Direction | Reason |
-|------|-----------|--------|
-| `mcp/governed-tool-contract.md` | vi → en | source changed since last sync |
+Summary — up-to-date: 148, translated: 0, preserved: 0, conflicts: 0, planned: 0
 
 ---
 
-## 2026-09-20T17:36:36.926Z — mode `plan` (effective `plan`)
+## 2026-09-21T05:45:15.591Z — mode `plan` (effective `plan`)
 
-Engine: `claude` · API key: absent · files scanned: 150
+Engine: `claude` · API key: absent · files scanned: 148
 
-Summary — up-to-date: 149, translated: 0, preserved: 0, conflicts: 0, planned: 1
-
-### Pending / performed translations
-
-| File | Direction | Reason |
-|------|-----------|--------|
-| `mcp/governed-tool-contract.md` | vi → en | source changed since last sync |
-
----
-
-## 2026-09-20T16:03:01.244Z — mode `plan` (effective `plan`)
-
-Engine: `claude` · API key: absent · files scanned: 150
-
-Summary — up-to-date: 150, translated: 0, preserved: 0, conflicts: 0, planned: 0
-
----
-
-## 2026-09-20T16:02:54.011Z — mode `plan` (effective `plan`)
-
-Engine: `claude` · API key: absent · files scanned: 150
-
-Summary — up-to-date: 150, translated: 0, preserved: 0, conflicts: 0, planned: 0
-
----
-
-## 2026-09-20T13:04:33.077Z — mode `plan` (effective `plan`)
-
-Engine: `claude` · API key: absent · files scanned: 150
-
-Summary — up-to-date: 150, translated: 0, preserved: 0, conflicts: 0, planned: 0
-
----
-
-## 2026-09-19T23:41:00.569Z — mode `plan` (effective `plan`)
-
-Engine: `claude` · API key: absent · files scanned: 150
-
-Summary — up-to-date: 150, translated: 0, preserved: 0, conflicts: 0, planned: 0
-
----
-
-## 2026-09-19T13:44:58.508Z — mode `plan` (effective `plan`)
-
-Engine: `claude` · API key: absent · files scanned: 149
-
-Summary — up-to-date: 149, translated: 0, preserved: 0, conflicts: 0, planned: 0
-
----
-
-## 2026-09-19T06:46:31.761Z — mode `plan` (effective `plan`)
-
-Engine: `claude` · API key: absent · files scanned: 149
-
-Summary — up-to-date: 149, translated: 0, preserved: 0, conflicts: 0, planned: 0
-
----
-
-## 2026-09-19T06:33:46.635Z — mode `plan` (effective `plan`)
-
-Engine: `claude` · API key: absent · files scanned: 149
-
-Summary — up-to-date: 149, translated: 0, preserved: 0, conflicts: 0, planned: 0
+Summary — up-to-date: 148, translated: 0, preserved: 0, conflicts: 0, planned: 0
 
 ---
 

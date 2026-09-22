@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-09-01T19:24:38.485Z
+version: 4
+lastUpdated: 2026-09-21T05:44:47.423Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 22827c104ec16b9e
+sourceHash: 4584e1d00c149b84
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-01T19:24:38.485Z
-codeVerifiedHash: 22827c104ec16b9e
+codeVerified: 2026-09-21T05:44:47.423Z
+codeVerifiedHash: 4584e1d00c149b84
 codeVerifiedClaims: 4
 ---
 
@@ -122,7 +122,7 @@ Background agent của Cursor hoạt động tốt cho các task LumiBase dài h
 
 ```bash
 # Generate types (run in terminal or via background agent)
-pnpm -F @lumibase/database db:generate
+pnpm db:generate
 pnpm -F @lumibase/sdk typegen
 ```
 
@@ -145,7 +145,7 @@ Cấu hình trong Cursor Settings → Features → Codebase Index.
 
 **MCP server không kết nối được**: Khởi động CMS API trước (`pnpm -F @lumibase/cms dev`), rồi reload kết nối MCP trong Cursor.
 
-**Type Drizzle đã lỗi thời**: Chạy `pnpm -F @lumibase/database db:generate` sau bất kỳ thay đổi schema nào.
+**Type Drizzle đã lỗi thời**: Chạy `pnpm db:generate` sau bất kỳ thay đổi schema nào.
 
 ---
 

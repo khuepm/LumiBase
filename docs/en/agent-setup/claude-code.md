@@ -1,8 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:13:16.483Z
+version: 3
+lastUpdated: 2026-09-21T05:44:47.343Z
 sourceLang: en
-contentHash: 58eee638b9682bbc
+contentHash: 043f68875437c868
+codeVerified: 2026-09-21T05:44:47.343Z
+codeVerifiedHash: 043f68875437c868
+codeVerifiedClaims: 2
 ---
 
 # Claude Code — LumiBase Agent Setup
@@ -127,7 +130,7 @@ to the items table, following the site_id multi-tenancy pattern.
 
 **Claude can't find the docs**: Make sure you're running `claude` from the project root, or provide the absolute path.
 
-**Type errors after schema changes**: Run `pnpm -F @lumibase/database db:generate` to regenerate Drizzle types.
+**Type errors after schema changes**: Run `pnpm db:generate` to regenerate Drizzle types.
 
 **CMS API not starting**: Check `apps/cms/.dev.vars` and ensure all required env vars are set (see `docs/en/deployment/environment-variables.md`).
 
