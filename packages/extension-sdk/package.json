@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/extension-sdk",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "description": "Types + helpers for building LumiBase extensions (hooks, endpoints, UI).",
   "license": "Apache-2.0",
   "type": "module",

@@ -9,6 +9,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+## [1.0.0-rc.2] - 2026-09-23
+
 ### Fixed
 
 - **Translation repair preserves a human translation entered during generation
