@@ -77,6 +77,8 @@ const llmStub = vi.hoisted(() => {
     calls,
     /** Flipped off to reproduce "no provider configured" without module surgery. */
     available: true,
+    /** Runs while the provider call is pending, to model a concurrent editor. */
+    duringCall: null as null | (() => Promise<void>),
     configured: {
       name: 'stub',
       model: 'stub-translator',
@@ -86,6 +88,7 @@ const llmStub = vi.hoisted(() => {
             system: messages[0]?.content ?? '',
             user: messages[1]?.content ?? '',
           });
+          if (llmStub.duringCall) await llmStub.duringCall();
           return { content: JSON.stringify({ translation: 'Xin chào thế giới' }) };
         },
       },
@@ -148,6 +151,7 @@ describe.skipIf(!hasDbIntegrationUrl)('G3 reconciler repair loop — DB integrat
 
   beforeEach(async () => {
     llmStub.calls.length = 0;
+    llmStub.duringCall = null;
     await db.delete(sites).where(sql`${sites.id} IN (${SITE}, ${OTHER_SITE})`);
     await db.insert(sites).values([
       { id: SITE, name: 'G3 loop' },
@@ -734,6 +738,148 @@ describe.skipIf(!hasDbIntegrationUrl)('G3 reconciler repair loop — DB integrat
     expect(
       await db.select().from(agentRuns).where(eq(agentRuns.siteId, OTHER_SITE)),
     ).toHaveLength(0);
+  });
+
+  it('a frozen translator role stops a queued draft before the provider is called', async () => {
+    // The worker has to hand the harness the run's agent identity. Without it
+    // the kill switch was consulted for `lumibase-copilot`, so a role freeze on
+    // `translator` let a queued draft through and spent a provider call.
+    const queue = memoryQueue();
+    const { intentId, itemId } = await seedMissingTranslation(SITE, collectionId);
+    await scanAndReconcile(SITE, intentId);
+    const dispatcher = await dispatcherFor(SITE, queue.provider);
+    await dispatcher.dispatchReconcilerGoals();
+
+    const { KillSwitchService } = await import('../kill-switch-service');
+    await new KillSwitchService({ db, siteId: SITE }).freeze('role', {
+      targetRole: 'translator',
+      reason: 'translator drill',
+      actor: ADMIN,
+    });
+
+    await runJob(queue.jobs[0]!);
+    const [run] = await db
+      .select()
+      .from(agentRuns)
+      .where(eq(agentRuns.id, queue.jobs[0]!.payload['runId'] as string));
+    expect(run!.status).toBe('cancelled');
+    expect(llmStub.calls).toHaveLength(0);
+    expect(
+      await db
+        .select()
+        .from(contentVersions)
+        .where(and(eq(contentVersions.siteId, SITE), eq(contentVersions.itemId, itemId))),
+    ).toHaveLength(0);
+  });
+
+  it("an L0 grant on the translator role applies to a queued draft", async () => {
+    // Same root cause as the freeze: the grant lookup used `lumibase-copilot`,
+    // so lowering the translator's own `items:write` grant changed nothing.
+    const queue = memoryQueue();
+    const { intentId, itemId } = await seedMissingTranslation(SITE, collectionId);
+    await scanAndReconcile(SITE, intentId);
+    const dispatcher = await dispatcherFor(SITE, queue.provider);
+    await dispatcher.dispatchReconcilerGoals();
+
+    const { AutonomyService } = await import('../autonomy-service');
+    await new AutonomyService({ db, siteId: SITE }).setGrant('translator', 'items:write', 0, {
+      grantedBy: ADMIN,
+    });
+
+    await runJob(queue.jobs[0]!);
+    const [run] = await db
+      .select()
+      .from(agentRuns)
+      .where(eq(agentRuns.id, queue.jobs[0]!.payload['runId'] as string));
+    expect(run!.status).toBe('failed');
+    expect((run!.metrics as Record<string, unknown>)['stopReason']).toBe('autonomy_shadow');
+    expect(llmStub.calls).toHaveLength(0);
+    expect(
+      await db
+        .select()
+        .from(contentVersions)
+        .where(and(eq(contentVersions.siteId, SITE), eq(contentVersions.itemId, itemId))),
+    ).toHaveLength(0);
+  });
+
+  it('an editor change made while the provider is pending survives the publish', async () => {
+    // The draft used to be built from the item read BEFORE the provider call,
+    // while `create` hashed main as it was AFTER. Promote then saw matching
+    // hashes, reported `mainDiverged: false`, and wrote the stale payload over
+    // the editor's change.
+    const queue = memoryQueue();
+    const { intentId, itemId } = await seedMissingTranslation(SITE, collectionId);
+    await scanAndReconcile(SITE, intentId);
+    const dispatcher = await dispatcherFor(SITE, queue.provider);
+    await dispatcher.dispatchReconcilerGoals();
+
+    llmStub.duringCall = async () => {
+      await db
+        .update(items)
+        .set({ data: { title: 'Editor changed this', translations: { en: 'Hello world' } } })
+        .where(eq(items.id, itemId));
+    };
+    await runJob(queue.jobs[0]!);
+    llmStub.duringCall = null;
+
+    const [version] = await db
+      .select()
+      .from(contentVersions)
+      .where(and(eq(contentVersions.siteId, SITE), eq(contentVersions.itemId, itemId)));
+    expect((version!.data as Record<string, unknown>)['title']).toBe('Editor changed this');
+
+    await dispatcher.dispatchReconcilerGoals();
+    await runJob(queue.jobs[1]!);
+    const [pending] = await db
+      .select()
+      .from(aiApprovals)
+      .where(and(eq(aiApprovals.siteId, SITE), eq(aiApprovals.status, 'pending')));
+    const harness = await harnessForApproval(SITE);
+    const decision = await harness.executeApproved(pending!.id, ADMIN, [
+      'items:read',
+      'items:write',
+      'translations:write',
+    ]);
+    expect(decision.status).toBe('executed');
+
+    const [live] = await db.select().from(items).where(eq(items.id, itemId));
+    expect(live!.data).toEqual({
+      title: 'Editor changed this',
+      translations: { en: 'Hello world', vi: TRANSLATED },
+    });
+  });
+
+  it('a source text change during the provider call drops the draft instead of saving it', async () => {
+    // The translation would describe text main no longer holds. No branch is
+    // left behind, so the drift stays open for the next pass to re-translate.
+    const queue = memoryQueue();
+    const { intentId, itemId } = await seedMissingTranslation(SITE, collectionId);
+    await scanAndReconcile(SITE, intentId);
+    const dispatcher = await dispatcherFor(SITE, queue.provider);
+    await dispatcher.dispatchReconcilerGoals();
+
+    llmStub.duringCall = async () => {
+      await db
+        .update(items)
+        .set({ data: { title: 'Hello', translations: { en: 'Goodbye world' } } })
+        .where(eq(items.id, itemId));
+    };
+    await runJob(queue.jobs[0]!);
+    llmStub.duringCall = null;
+
+    const [run] = await db
+      .select()
+      .from(agentRuns)
+      .where(eq(agentRuns.id, queue.jobs[0]!.payload['runId'] as string));
+    expect(run!.status).toBe('failed');
+    expect(String(run!.error ?? '')).toContain('SOURCE_CHANGED');
+    expect(
+      await db
+        .select()
+        .from(contentVersions)
+        .where(and(eq(contentVersions.siteId, SITE), eq(contentVersions.itemId, itemId))),
+    ).toHaveLength(0);
+    expect(await liveTranslations(itemId)).toEqual({ en: 'Goodbye world' });
   });
 
   it('a frozen site advances nothing and leaves goals untouched', async () => {
