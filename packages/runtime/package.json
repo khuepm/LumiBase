@@ -17,17 +17,17 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1127.0",
+    "@aws-sdk/client-s3": "^3.1136.0",
     "@hono/node-server": "^2.1.0",
-    "bullmq": "^6.3.4",
+    "bullmq": "^6.3.8",
     "ioredis": "^6.0.0",
-    "meilisearch": "^0.60.0",
+    "meilisearch": "^0.62.0",
     "postgres": "^3.4.5",
     "prom-client": "^15.1.0"
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.6.2",
     "typescript": "^5.6.2",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.1"
   }
 }
