@@ -2387,6 +2387,13 @@ export class AISecureHarness {
       return this.executeLegacy(skillName, args, userCapabilities, contextMessage);
     }
 
+    // A role-scoped run is that role's run. Kill switch, autonomy grant and the
+    // run's `agentName` all key on `agentName`; a caller that sets only
+    // `agentRole` must not be governed as `lumibase-copilot` instead.
+    if (!envelope.agentName && envelope.agentRole) {
+      envelope = { ...envelope, agentName: envelope.agentRole };
+    }
+
     // Kill switch (Req 14.2/14.4): a frozen site/role blocks before any
     // goal/run is created; an in-flight run hitting this boundary is
     // cancelled with stopReason 'frozen'. Reads are untouched.

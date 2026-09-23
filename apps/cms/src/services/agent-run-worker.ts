@@ -203,6 +203,15 @@ export async function processAgentRunJob(
     return;
   }
 
+  // The agent identity is read from the persisted run, not the payload. The
+  // harness keys the kill switch and the autonomy grant on `agentName`; without
+  // it both fell back to `lumibase-copilot`, so a frozen or L0-capped translator
+  // still drafted from the queue. The row is authoritative for jobs enqueued
+  // before this field was threaded through, and for the async `/agent` route,
+  // whose payload never carried `assigneeAgent`.
+  const persistedRun = await runService.getRun(payload.runId);
+  const agentName = persistedRun?.agentName ?? payload.agentRole ?? undefined;
+
   const schemaService = new SchemaService({
     db: deps.db,
     siteId: payload.siteId,
@@ -268,6 +277,7 @@ export async function processAgentRunJob(
         ...(payload.autonomyCap !== undefined && payload.autonomyCap !== null
           ? { autonomyCap: payload.autonomyCap }
           : {}),
+        ...(agentName ? { agentName } : {}),
         ...(payload.agentRole ? { agentRole: payload.agentRole } : {}),
         ...(payload.budget ? { budget: payload.budget } : {}),
         // Provenance for anything this run parks (#472). A queued run has no
