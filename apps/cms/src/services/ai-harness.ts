@@ -981,14 +981,20 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         if (baseTranslations[sourceLocale as string] !== sourceText) {
           // The source text moved under the provider call, so the translation
           // describes text main no longer holds. Drop the branch rather than
-          // draft it; the drift is still open and the next pass re-translates.
+          // draft it. The failed run remains visible for operator recovery.
           await svc.remove(collection, itemId, versionKey);
           throw new Error(
-            `SOURCE_CHANGED: "${collection}/${itemId}.${field}.${sourceLocale}" changed while translating; retry on the next pass`,
+            `SOURCE_CHANGED: "${collection}/${itemId}.${field}.${sourceLocale}" changed while translating; review and retry the repair`,
           );
         }
+        // A human may have filled this missing locale while generation was in
+        // flight. Keep their text just like any other edit in the snapshot.
+        const currentTarget = baseTranslations[locale];
+        const target = typeof currentTarget === 'string' && currentTarget.trim() !== ''
+          ? currentTarget
+          : translated;
         const version = await svc.update(collection, itemId, versionKey, {
-          data: { ...base, [field]: { ...baseTranslations, [locale]: translated } },
+          data: { ...base, [field]: { ...baseTranslations, [locale]: target } },
         });
 
         return {
@@ -2823,6 +2829,7 @@ export class AISecureHarness {
       .insert(aiApprovals)
       .values({
         siteId: this.siteId,
+        agentName: run.agentName,
         skillName,
         arguments: args,
         status: 'pending',
@@ -3281,8 +3288,17 @@ export class AISecureHarness {
       )
       .limit(1);
 
+    // Both approval name columns could contain the copilot default before the
+    // worker identity fix. The persisted run is the authority, as at pickup.
+    const persistedRun = existingAgentApproval
+      ? await this.runService.getRun(existingAgentApproval.runId)
+      : null;
     const run = existingAgentApproval
-      ? { goalId: '', runId: existingAgentApproval.runId, agentName: existingAgentApproval.requestedByAgent }
+      ? {
+          goalId: persistedRun?.goalId ?? '',
+          runId: existingAgentApproval.runId,
+          agentName: persistedRun?.agentName ?? existingAgentApproval.requestedByAgent,
+        }
       : await this.runService.ensureRun({
         agentName: record.agentName,
         title: `Approved ${record.skillName}`,
@@ -3375,18 +3391,14 @@ export class AISecureHarness {
         await this.releaseClaim(existingAgentApproval.id);
         return { status: 'denied', message: 'Run was cancelled', runId: run.runId };
       }
-      // Resume the parked run; only the approved tool call executes —
-      // previously completed tool calls are never re-run (Req 3.4). This is the
-      // approval-owned transition (`awaiting_approval → running`), kept separate
-      // from the worker's queue claim so a redelivered job cannot perform it
-      // (#455 F3).
-      await this.runService.resumeApprovedRun(run.runId);
     }
 
     // Kill switch wins over approvals: a frozen site/role denies the
     // approved execution at this boundary (Req 14.2).
     const approvalKillSwitch = new KillSwitchService({ db: this.db, siteId: this.siteId });
-    const approvalFrozenScope = await approvalKillSwitch.frozenScopeFor(record.agentName);
+    // First-class approvals retain the requesting agent even when an older
+    // legacy row still carries the historical copilot default.
+    const approvalFrozenScope = await approvalKillSwitch.frozenScopeFor(run.agentName);
     if (approvalFrozenScope) {
       if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
       return {
@@ -3394,6 +3406,11 @@ export class AISecureHarness {
         message: `frozen: agent runtime is frozen for this ${approvalFrozenScope}`,
         runId: run.runId,
       };
+    }
+    if (existingAgentApproval) {
+      // Resume only after the freeze gate: a rejected attempt must leave the
+      // run parked so lifting the freeze can safely resume the same approval.
+      await this.runService.resumeApprovedRun(run.runId);
     }
     const startedAt = Date.now();
     const toolCallId = await this.runService.appendToolCall({

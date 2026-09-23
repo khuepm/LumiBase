@@ -849,6 +849,78 @@ describe.skipIf(!hasDbIntegrationUrl)('G3 reconciler repair loop — DB integrat
     });
   });
 
+  it('preserves a target translation entered by an editor while the provider is pending', async () => {
+    const queue = memoryQueue();
+    const { intentId, itemId } = await seedMissingTranslation(SITE, collectionId);
+    await scanAndReconcile(SITE, intentId);
+    const dispatcher = await dispatcherFor(SITE, queue.provider);
+    await dispatcher.dispatchReconcilerGoals();
+    llmStub.duringCall = async () => {
+      await db.update(items).set({
+        data: { title: 'Hello', translations: { en: 'Hello world', vi: 'Human translation' } },
+      }).where(and(eq(items.siteId, SITE), eq(items.id, itemId)));
+    };
+    await runJob(queue.jobs[0]!);
+    llmStub.duringCall = null;
+
+    const [version] = await db.select().from(contentVersions).where(
+      and(eq(contentVersions.siteId, SITE), eq(contentVersions.itemId, itemId)),
+    );
+    expect((version!.data as { translations: { vi: string } }).translations.vi).toBe('Human translation');
+    await dispatcher.dispatchReconcilerGoals();
+    await runJob(queue.jobs[1]!);
+    const [pending] = await db.select().from(aiApprovals).where(
+      and(eq(aiApprovals.siteId, SITE), eq(aiApprovals.status, 'pending')),
+    );
+    const decision = await (await harnessForApproval(SITE)).executeApproved(
+      pending!.id, ADMIN, ['items:read', 'items:write', 'translations:write'],
+    );
+    expect(decision.status).toBe('executed');
+    expect(await liveTranslations(itemId)).toEqual({ en: 'Hello world', vi: 'Human translation' });
+  });
+
+  it.each([false, true])('a translator frozen after parking cannot publish (legacy name: %s)', async (legacyName) => {
+    const queue = memoryQueue();
+    const { intentId, itemId } = await seedMissingTranslation(SITE, collectionId);
+    await scanAndReconcile(SITE, intentId);
+    const dispatcher = await dispatcherFor(SITE, queue.provider);
+    await dispatcher.dispatchReconcilerGoals();
+    await runJob(queue.jobs[0]!);
+    await dispatcher.dispatchReconcilerGoals();
+    await runJob(queue.jobs[1]!);
+    const [pending] = await db.select().from(aiApprovals).where(
+      and(eq(aiApprovals.siteId, SITE), eq(aiApprovals.status, 'pending')),
+    );
+    if (legacyName) {
+      // Pending rows created before the fix retain the old default name.
+      await db.update(aiApprovals).set({ agentName: 'lumibase-copilot' }).where(
+        and(eq(aiApprovals.siteId, SITE), eq(aiApprovals.id, pending!.id)),
+      );
+      await db.update(agentApprovals).set({ requestedByAgent: 'lumibase-copilot' }).where(
+        and(eq(agentApprovals.siteId, SITE), eq(agentApprovals.legacyApprovalId, pending!.id)),
+      );
+    } else {
+      expect(pending!.agentName).toBe('translator');
+    }
+    const { KillSwitchService } = await import('../kill-switch-service');
+    const killSwitch = new KillSwitchService({ db, siteId: SITE });
+    await killSwitch.freeze('role', { targetRole: 'translator', actor: ADMIN });
+    const harness = await harnessForApproval(SITE);
+    const caps = ['items:read', 'items:write', 'translations:write'];
+    const denied = await harness.executeApproved(pending!.id, ADMIN, caps);
+    expect(denied.status).toBe('denied');
+    expect(denied.message).toContain('frozen');
+    expect(await liveTranslations(itemId)).toEqual({ en: 'Hello world' });
+    const [run] = await db.select().from(agentRuns).where(
+      and(eq(agentRuns.siteId, SITE), eq(agentRuns.id, queue.jobs[1]!.payload['runId'] as string)),
+    );
+    expect(run!.status).toBe('awaiting_approval');
+
+    await killSwitch.lift('role', { targetRole: 'translator', actor: ADMIN });
+    expect((await harness.executeApproved(pending!.id, ADMIN, caps)).status).toBe('executed');
+    expect(await liveTranslations(itemId)).toEqual({ en: 'Hello world', vi: TRANSLATED });
+  });
+
   it('a source text change during the provider call drops the draft instead of saving it', async () => {
     // The translation would describe text main no longer holds. No branch is
     // left behind, so the drift stays open for the next pass to re-translate.
