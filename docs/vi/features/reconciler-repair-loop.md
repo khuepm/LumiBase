@@ -1,13 +1,13 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-09-19T23:35:27.418Z
+lastUpdated: 2026-09-23T12:16:23.556Z
 translatedFrom: en
-sourceHash: 0a89d566d425a897
+sourceHash: 028b26a85a1c849b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-19T23:35:27.418Z
-codeVerifiedHash: 0a89d566d425a897
+codeVerified: 2026-09-23T12:16:23.556Z
+codeVerifiedHash: 028b26a85a1c849b
 codeVerifiedClaims: 2
 ---
 
@@ -34,6 +34,8 @@ Mỗi lượt dispatch đẩy một goal tiến đúng tối đa một bước. 
 | verify | — | Quét lại intent | Chỉ hoàn tất nếu vi phạm đã biến mất |
 
 Nội dung đã xuất bản thay đổi đúng một lần trong chuỗi này, ở bước promote, sau khi một người phê duyệt.
+
+Bản nháp dùng bản chụp item sau khi sinh bản dịch, giữ lại chỉnh sửa trong lúc provider chạy, kể cả bản dịch ngôn ngữ đích do người dùng nhập. Nếu văn bản nguồn thay đổi trong lúc sinh bản dịch, bản nháp bị bỏ và run thất bại với `SOURCE_CHANGED`; cần người vận hành xem xét để phục hồi, không tự động thử lại.
 
 Khoá của nhánh bản nháp là tiền định (`drift-repair:<drift fingerprint>`), và đó là điều làm vòng lặp idempotent: một job draft bị giao trùng sẽ thấy nhánh đã có rồi trả về mà không gọi lại model, và không thể tạo nhánh trùng.
 
@@ -75,6 +77,8 @@ Một reconciler run không có principal là người: intent khai báo quy t�
 | `origin: 'reconciler'` | Cho phép backpressure chỉ pause công việc của reconciler |
 
 Capability **không** được chụp vào payload. Chúng được resolve khi job được nhận, từ agent role ghi trên goal (drift `translations` route tới `translator`). Vô hiệu hoá role đó sẽ dừng cả công việc đã nằm trong queue; run thất bại với `capabilities_denied` và không ghi gì.
+
+Freeze theo role và autonomy grant dùng định danh agent đã lưu trên run. Khi thực thi approval, hệ thống kiểm tra lại định danh đó: freeze `translator` sau khi promotion chờ duyệt sẽ chặn xuất bản và giữ run ở trạng thái chờ duyệt. Sau khi gỡ freeze, có thể quyết định lại cùng approval. Quy tắc này cũng áp dụng cho approval cũ có dòng legacy vẫn mang tên agent mặc định.
 
 ## Đa tenant
 

@@ -11,6 +11,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **Translation repair preserves a human translation entered during generation
+  (#455).** Drafts retain the latest target-locale text instead of replacing it
+  with the provider response. Approval resume also checks the requesting agent's
+  freeze, including pending approvals with the old legacy agent name, and keeps
+  frozen runs parked until the freeze is lifted.
+
 - **An abandoned agent run is no longer replayed automatically (#455).** A run left
   `running` by a dead worker could be taken over after fifteen minutes and executed
   again. Age cannot support that: a process can die *after* the content write and

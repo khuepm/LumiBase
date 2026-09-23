@@ -1,10 +1,10 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-09-19T23:35:27.418Z
-contentHash: 0a89d566d425a897
-codeVerified: 2026-09-19T23:35:27.418Z
-codeVerifiedHash: 0a89d566d425a897
+lastUpdated: 2026-09-23T12:16:23.556Z
+contentHash: 028b26a85a1c849b
+codeVerified: 2026-09-23T12:16:23.556Z
+codeVerifiedHash: 028b26a85a1c849b
 codeVerifiedClaims: 2
 ---
 
@@ -31,6 +31,8 @@ Each dispatch pass advances a goal by at most one step. The next step is derived
 | verify | — | Re-scans the intent | Completes only if the violation is gone |
 
 Published content changes exactly once in this sequence, at the promote step, after a human approves.
+
+Drafts use the item snapshot taken after translation generation, preserving edits made while the provider was running, including a target translation entered by a human. If the source text changed during generation, the draft is discarded and the run fails with `SOURCE_CHANGED`; recovery requires operator review rather than an automatic retry.
 
 The draft branch key is deterministic (`drift-repair:<drift fingerprint>`), which is what makes the loop idempotent: a duplicate draft job finds the existing branch and returns without calling the model again, and a duplicate branch can never be created.
 
@@ -72,6 +74,8 @@ A reconciler run has no human principal: the intent that declared the rule is th
 | `origin: 'reconciler'` | Lets backpressure pause reconciler work only |
 
 Capabilities are **not** snapshotted into the payload. They are resolved when the job is picked up, from the agent role recorded on the goal (`translations` drift routes to `translator`). Disabling that role stops work that is already queued; the run fails `capabilities_denied` and nothing is written.
+
+Role freezes and autonomy grants use the persisted run's agent identity. Approval execution checks that identity again: freezing `translator` after a promotion is parked prevents publication and leaves the run awaiting approval. After lifting the freeze, the same approval can be decided again. This also covers existing approvals whose legacy row still has the default agent name.
 
 ## Multi-tenancy
 
