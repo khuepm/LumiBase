@@ -960,12 +960,35 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           );
         }
 
-        translations[locale] = translated;
-        // `create` snapshots live main (so `promote` can detect divergence via
-        // the stored hash), then `update` replaces the draft payload.
-        await svc.create(collection, itemId, versionKey, `Translation repair: ${field}.${locale}`);
+        // `create` snapshots live main and stores its hash, which is what lets
+        // `promote` detect divergence. The draft MUST be built on that snapshot,
+        // not on `data` read before the LLM call: an editor can change the item
+        // while the provider is pending, and a draft of the old payload under
+        // the new payload's hash would promote as "not diverged" and silently
+        // revert their edit. Only the one locale this repair owns is applied.
+        const created = await svc.create(
+          collection,
+          itemId,
+          versionKey,
+          `Translation repair: ${field}.${locale}`,
+        );
+        const base = (created.data ?? {}) as Record<string, unknown>;
+        const baseRaw = base[field];
+        const baseTranslations =
+          baseRaw && typeof baseRaw === 'object' && !Array.isArray(baseRaw)
+            ? (baseRaw as Record<string, unknown>)
+            : {};
+        if (baseTranslations[sourceLocale as string] !== sourceText) {
+          // The source text moved under the provider call, so the translation
+          // describes text main no longer holds. Drop the branch rather than
+          // draft it; the drift is still open and the next pass re-translates.
+          await svc.remove(collection, itemId, versionKey);
+          throw new Error(
+            `SOURCE_CHANGED: "${collection}/${itemId}.${field}.${sourceLocale}" changed while translating; retry on the next pass`,
+          );
+        }
         const version = await svc.update(collection, itemId, versionKey, {
-          data: { ...data, [field]: translations },
+          data: { ...base, [field]: { ...baseTranslations, [locale]: translated } },
         });
 
         return {
