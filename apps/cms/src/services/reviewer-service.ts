@@ -2,6 +2,7 @@ import { activity, agentApprovals, agentGoals, agentRuns, agentToolCalls, settin
 import type { Database } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { maskSecrets } from './agent-run-service';
+import { satisfiesCapability } from './effective-capability-service';
 import { getContentOsFlags } from './feature-flags';
 
 /**
@@ -150,7 +151,12 @@ export class ReviewerService {
         : undefined;
     const domain = reviewDomainFor(approval.subjectType, toolName);
     const required = `review:${domain}`;
-    if (!(input.capabilities.includes(required) || input.capabilities.includes('*'))) {
+    // `satisfiesCapability` rather than a local `includes` pair (#481 R3.4). This
+    // check used to accept `*` and nothing else, while the resolver emits `admin`
+    // and never mints `*` — so a real administrator was refused here and the route
+    // had no reachable positive path. Sharing the predicate with the harness is
+    // what keeps "what counts as admin" from drifting apart again.
+    if (!satisfiesCapability(input.capabilities, required)) {
       throw new ReviewerError('FORBIDDEN', `Capability "${required}" is required.`, 403);
     }
 

@@ -1,11 +1,30 @@
 import { describe, expect, it, vi } from 'vitest';
 import { getTableName } from 'drizzle-orm';
 import { Hono } from 'hono';
-import type { Database } from '@lumibase/database';
+import { extensions, type Database } from '@lumibase/database';
 import type { AppEnv, AuthPrincipal } from '../../env';
 import { AISecureHarness, CORE_SKILLS, isControlPlaneSkill } from '../ai-harness';
+import { ExtensionsService } from '../extensions-service';
+import { ExtensionVerifierService } from '../extension-verifier';
 import { McpService, type McpHarnessPort } from '../mcp-service';
-import { ToolRegistryService } from '../tool-registry-service';
+import { ToolRegistryService, overrideNarrowsSchema } from '../tool-registry-service';
+import { validArgsFor } from '../../test-utils/agent-tool-args';
+import { adminRbac, memberRbac, withRbacSelect } from '../../test-utils/rbac-principal-db';
+import { capabilitiesFromPermissionBundle } from '../effective-capability-service';
+import type { CompiledPermission, PermissionAction } from '../permission-service';
+
+/** Minimal compiled permission row for bundle-translation assertions. */
+function compiled(collection: string, action: string): CompiledPermission {
+  return {
+    collection,
+    action: action as PermissionAction,
+    rule: null,
+    fields: ['*'],
+    presets: {},
+    validation: {},
+    sources: [{ policyId: 'pol_1', policyName: 'Policy' }],
+  };
+}
 
 /**
  * G2 (#454) — reproduction only. NO implementation change accompanies this file.
@@ -70,23 +89,32 @@ function toolsListVia(registry: ToolRegistryService) {
 }
 
 describe('G2 repro · HTTP MCP advertises unusable tool schemas', () => {
-  it('R1: every core tool advertises a bare {type:"object"} — no properties, no required', async () => {
+  it('R1 [REGRESSION]: skill nào khai inputSchema thì tools/list PHẢI quảng bá đúng schema đó', async () => {
     const registry = new ToolRegistryService(registryDb(), 'site_1', CORE_SKILLS);
     const response = await toolsListVia(registry);
     const tools = (response!.result as { tools: Array<{ name: string; inputSchema: Record<string, unknown> }> }).tools;
 
     expect(tools.length).toBeGreaterThan(50);
 
-    // CURRENT: not one advertised schema declares properties or required.
-    // EXPECTED: an MCP client can construct a valid call from tools/list alone.
-    const withProperties = tools.filter((t) => t.inputSchema['properties'] !== undefined);
-    const withRequired = tools.filter((t) => t.inputSchema['required'] !== undefined);
-    expect(withProperties).toEqual([]);
-    expect(withRequired).toEqual([]);
-    expect(tools.every((t) => JSON.stringify(t.inputSchema) === '{"type":"object"}')).toBe(true);
+    // Mọi skill khai `inputSchema` phải thấy đúng schema đó trên wire.
+    const declaring = Object.entries(CORE_SKILLS).filter(([, s]) => s.inputSchema !== undefined);
+    expect(declaring.length).toBeGreaterThan(0);
+    for (const [name, skill] of declaring) {
+      const advertised = tools.find((t) => t.name === name);
+      expect(advertised, `${name} có trong tools/list`).toBeDefined();
+      expect(advertised!.inputSchema, `${name} quảng bá đúng schema đã khai`).toEqual(skill.inputSchema);
+      expect(advertised!.inputSchema['properties'], `${name} có properties`).toBeDefined();
+    }
+
+    // Skill chưa khai schema vẫn rơi về `{type:'object'}` của adapter — đó là
+    // khoảng trống còn lại, không phải regression.
+    const notDeclaring = tools.filter(
+      (t) => CORE_SKILLS[t.name] !== undefined && CORE_SKILLS[t.name]!.inputSchema === undefined,
+    );
+    expect(notDeclaring.every((t) => JSON.stringify(t.inputSchema) === '{"type":"object"}')).toBe(true);
   });
 
-  it('R2: ToolRegistryService.coreTool() discards the inputSchema skills DO declare', async () => {
+  it('R2 [REGRESSION]: coreTool() giữ inputSchema đã khai; override chỉ được thu hẹp', async () => {
     // Seven core skills declare a real JSON Schema (listVersions, compareVersion,
     // createVersion, updateVersion, deleteVersion, promoteVersion, generateAppSpec).
     const declaring = Object.entries(CORE_SKILLS).filter(([, s]) => s.inputSchema !== undefined);
@@ -98,17 +126,34 @@ describe('G2 repro · HTTP MCP advertises unusable tool schemas', () => {
 
     const registry = new ToolRegistryService(registryDb(), 'site_1', CORE_SKILLS);
 
-    // CURRENT: `coreTool` spreads `...skill` then overwrites `inputSchema: {}`,
-    // so the declared contract never reaches the wire.
-    // EXPECTED: the declared schema is what tools/list advertises.
-    for (const [name] of declaring) {
+    // FIXED: `coreTool` giữ `skill.inputSchema` thay vì hardcode `{}` sau spread.
+    for (const [name, skill] of declaring) {
       const tool = await registry.getTool(name);
-      expect(tool!.inputSchema, `${name} kept its declared schema`).toEqual({});
+      expect(tool!.inputSchema, `${name} giữ schema đã khai`).toEqual(skill.inputSchema);
     }
+
+    // Và override chỉ được THU HẸP: bỏ `required` của core thì bị từ chối,
+    // giữ nguyên schema core (fail-closed).
+    const coreVersions = CORE_SKILLS['listVersions']!.inputSchema!;
+    const widened = { type: 'object', properties: { collection: { type: 'string' } }, required: [] };
+    expect(overrideNarrowsSchema(coreVersions, widened)).toBe(false);
+    const narrowed = {
+      type: 'object',
+      properties: { collection: { type: 'string' }, itemId: { type: 'string' } },
+      required: ['collection', 'itemId'],
+    };
+    expect(overrideNarrowsSchema(coreVersions, narrowed)).toBe(true);
+    // Thêm property lạ cũng là mở rộng ⇒ từ chối.
+    expect(
+      overrideNarrowsSchema(coreVersions, {
+        ...narrowed,
+        properties: { ...narrowed.properties, sneaky: { type: 'string' } },
+      }),
+    ).toBe(false);
   });
 });
 
-describe('G2 repro · no input validation before side effects', () => {
+describe('G2 regression · input is validated before any side effect', () => {
   /** Records every call so we can assert a service was reached with junk. */
   function recordingServices() {
     const calls: Array<{ service: string; method: string; args: unknown[] }> = [];
@@ -126,7 +171,7 @@ describe('G2 repro · no input validation before side effects', () => {
     return { calls, itemService, schemaService };
   }
 
-  it('R3: content write — createItem with NO collection and NO data still reaches ItemService', async () => {
+  it('R3 [REGRESSION]: createItem with NO collection and NO data never reaches ItemService', async () => {
     const { calls, itemService } = recordingServices();
     const harness = new AISecureHarness({
       db: {} as Database,
@@ -137,21 +182,23 @@ describe('G2 repro · no input validation before side effects', () => {
     });
 
     // `createItem` is classified SAFE (items:write is not a mutating schema cap
-    // and the name is not delete*), so there is no HITL gate in front of it.
+    // and the name is not delete*), so there is no HITL gate in front of it —
+    // which is exactly why the input contract has to carry the refusal.
     const result = await harness.execute('createItem', {}, ['items:write']);
 
-    // CURRENT: the handler runs and ItemService.create is reached with an
-    // undefined collection name — the side-effect attempt happens before any
-    // validation of the advertised (empty) input contract.
-    // EXPECTED: a schema violation is rejected before the service is touched.
-    expect(calls.map((c) => `${c.service}.${c.method}`)).toContain('itemService.create');
-    const [collection, payload] = calls[0]!.args as [unknown, { data: unknown }];
-    expect(collection).toBeUndefined();
-    expect(payload.data).toEqual({});
-    expect(result.status).toBe('executed');
+    // BEFORE: the handler ran and `ItemService.create(undefined, { data: {} })`
+    // was reached, failing deep inside the engine.
+    // NOW: refused at the boundary, service untouched, and the denial names the
+    // offending field instead of leaking an engine error.
+    expect(calls).toHaveLength(0);
+    expect(itemService.create).not.toHaveBeenCalled();
+    expect(result.status).toBe('denied');
+    expect(result.code).toBe('VALIDATION');
+    expect(result.message).toContain('collection');
+    expect(result.message).toContain('data');
   });
 
-  it('R4: schema write — createCollection with NO name reaches SchemaService via runSkill', async () => {
+  it('R4 [REGRESSION]: createCollection with NO name is refused by runSkill, service untouched', async () => {
     const { calls, schemaService } = recordingServices();
     const harness = new AISecureHarness({
       db: {} as Database,
@@ -162,17 +209,19 @@ describe('G2 repro · no input validation before side effects', () => {
 
     // runSkill is the shared execution entry for BOTH the direct path and the
     // post-approval path (`executeApproved` → `runSkill`), so validating here
-    // covers what an approved dangerous action would do.
+    // covers what an approved dangerous action would do — including one whose
+    // stored arguments were mutated between request and decision.
     const outcome = await harness.runSkill('createCollection', {});
 
-    // CURRENT: `args['name'] as string` casts undefined and calls the service.
-    // EXPECTED: rejected as a schema violation, service untouched.
-    expect(calls.map((c) => `${c.service}.${c.method}`)).toContain('schemaService.createCollection');
-    expect((calls[0]!.args[0] as { name: unknown }).name).toBeUndefined();
-    expect(outcome.success).toBe(true);
+    // BEFORE: `args['name'] as string` cast undefined and called the service.
+    expect(calls).toHaveLength(0);
+    expect(schemaService.createCollection).not.toHaveBeenCalled();
+    expect(outcome.success).toBe(false);
+    expect(outcome.success === false && outcome.code).toBe('VALIDATION');
+    expect(outcome.success === false && outcome.error).toContain('name');
   });
 
-  it('R5: delete — deleteItem with NO arguments still ATTEMPTS an approval insert (legacy path, fake db)', async () => {
+  it('R5 [REGRESSION]: deleteItem with NO arguments writes no approval at all (legacy path, fake db)', async () => {
     const inserted: unknown[] = [];
     const FAKE_ID = 'fake_not_a_db_id';
     const db = {
@@ -188,26 +237,24 @@ describe('G2 repro · no input validation before side effects', () => {
     const harness = new AISecureHarness({ db, siteId: 'site_1', enableAgentHarnessAudit: false });
     const result = await harness.execute('deleteItem', {}, ['*']);
 
-    // CURRENT: un-executable input still reaches the approval insert, carrying
-    // empty `arguments` that can never succeed on approval.
-    // EXPECTED: invalid input is rejected before any approval is written.
+    // BEFORE: un-executable input reached the approval insert, parking an
+    // `arguments: {}` row a human could approve and which could then never
+    // succeed.
+    // NOW: refused before the insert — no approval is created for input that
+    // cannot execute.
     //
     // ── SCOPE OF THIS EVIDENCE (reviewer P2) ────────────────────────────────
     // This is the LEGACY branch (`enableAgentHarnessAudit: false`) against a
-    // FAKE db. It demonstrates an *insert attempt* with empty arguments and
-    // nothing more. It specifically does NOT show:
-    //   - a real `ai_approvals` row (nothing is persisted),
-    //   - a usable approval id (`FAKE_ID` is hard-coded above, not returned by
-    //     any database),
-    //   - that the id resolves at the approvals decision endpoint (no route is
-    //     called),
-    //   - any after-approval execution (`executeApproved` is never invoked).
-    // The real approval roundtrip remains a G1/#453 + DB gate. GP4/GP5 above
-    // cover the same ordering question on the governed branch.
-    expect(result.status).toBe('pending_approval');
-    expect(result.approvalId).toBe(FAKE_ID);
-    expect(inserted).toHaveLength(1);
-    expect((inserted[0] as { arguments: unknown }).arguments).toEqual({});
+    // FAKE db, so it proves *ordering*: the insert path is not entered. It does
+    // NOT speak to real `ai_approvals` rows or the decision endpoint; the real
+    // approval roundtrip remains a G1/#453 + DB gate. `FAKE_ID` stays declared
+    // to show what the old assertion consumed — nothing returns it now.
+    expect(result.status).toBe('denied');
+    expect(result.code).toBe('VALIDATION');
+    expect(result.message).toContain('collection');
+    expect(result.approvalId).toBeUndefined();
+    expect(result.message).not.toContain(FAKE_ID);
+    expect(inserted).toHaveLength(0);
   });
 });
 
@@ -222,13 +269,24 @@ describe('G2 repro · no input validation before side effects', () => {
  * behaviour. Anything requiring a real row, a real approval id or a real
  * roundtrip is explicitly out of scope here and left to the G1/G2 DB gate.
  */
-function governedDb() {
+function governedDb(options: { grants?: Array<{ agentRole: string; capability: string; level: number }> } = {}) {
   const inserts: Array<{ table: string; values: Record<string, unknown> }> = [];
   const updates: Array<{ table: string; set: Record<string, unknown> }> = [];
   let seq = 0;
 
   const rowsFor = (table: string): Record<string, unknown>[] => {
     switch (table) {
+      // Autonomy grants. Empty by default, which is the real default posture:
+      // `resolveAutonomy` then falls back to L2 for a safe capability. Tests that
+      // need an explicit grant pass one in — `getGrantLevel` filters by role and
+      // capability in SQL, which this fake cannot do, so a caller passing grants
+      // must pass only the one relevant to the probe.
+      case 'lumibase_agent_autonomy_grants':
+        return (options.grants ?? []).map((grant, index) => ({
+          id: `grant_${index}`,
+          ...grant,
+          expiresAt: null,
+        }));
       // No active freeze.
       case 'lumibase_agent_freezes':
         return [];
@@ -369,12 +427,12 @@ describe('G2 repro · governed path: an L0 content write executes with no autono
     expect(insertedInto('lumibase_agent_tool_calls')).toHaveLength(1);
   });
 
-  it('GP2: L0 (autonomyCap 0) still performs the content write — zero approvals created', async () => {
+  it('GP2 [REGRESSION]: L0 (autonomyCap 0) cannot write — the write is refused, not parked', async () => {
     const { db, insertedInto } = governedDb();
     const { created, service } = recordingItemService();
 
-    // `autonomyCap: 0` is the strictest cap an intent can express (L0). It is
-    // read ONLY inside the dangerous branch, so a safe skill never sees it.
+    // `autonomyCap: 0` is the strictest cap an intent can express (L0). It used
+    // to be read ONLY inside the dangerous branch, so a safe skill never saw it.
     const result = await harnessWith(service, db).execute(
       'createItem',
       { collection: 'posts', data: { title: 'valid input' } },
@@ -383,11 +441,13 @@ describe('G2 repro · governed path: an L0 content write executes with no autono
       { autonomyCap: 0, agentName: 'lumibase-copilot', agentRole: undefined },
     );
 
-    // CURRENT: the write executes. No approval is parked at L0.
-    // EXPECTED (acceptance): L0 cannot write.
-    expect(result.status).toBe('executed');
-    expect(created).toHaveLength(1);
-    expect(created[0]!.collection).toBe('posts');
+    // BEFORE: `status: 'executed'`, one row written, zero approvals.
+    // NOW: L0 means "no side effects" (AutonomyService's own definition), so the
+    // write is refused. It is NOT turned into an approval either — L0 is not L1.
+    expect(result.status).toBe('denied');
+    expect(result.code).toBe('AUTONOMY_SHADOW');
+    expect(result.message).toContain('L0');
+    expect(created).toHaveLength(0);
     expect(insertedInto('lumibase_ai_approvals')).toHaveLength(0);
     expect(insertedInto('lumibase_agent_approvals')).toHaveLength(0);
     // Self-contained proof this ran on the governed branch (legacy records
@@ -396,7 +456,7 @@ describe('G2 repro · governed path: an L0 content write executes with no autono
     expect(result.toolCallId).toBeDefined();
   });
 
-  it('GP3: L1 (autonomyCap 1) also writes without an approval — same fall-through', async () => {
+  it('GP3 [REGRESSION]: L1 (autonomyCap 1) turns the content write into an approval', async () => {
     const { db, insertedInto } = governedDb();
     const { created, service } = recordingItemService();
 
@@ -408,14 +468,135 @@ describe('G2 repro · governed path: an L0 content write executes with no autono
       { autonomyCap: 1, agentName: 'lumibase-copilot' },
     );
 
-    // CURRENT: identical to L0 — the cap has no effect on a safe skill.
-    // EXPECTED (acceptance): L1 requires the specified approval.
-    expect(result.status).toBe('executed');
-    expect(created).toHaveLength(1);
-    expect(insertedInto('lumibase_ai_approvals')).toHaveLength(0);
-    expect(insertedInto('lumibase_agent_approvals')).toHaveLength(0);
+    // BEFORE: identical to L0 — the cap had no effect on a safe skill.
+    // NOW: L1 is "every action creates an approval", and it goes through the
+    // SAME records as a dangerous skill (one approval contract, not two).
+    expect(result.status).toBe('pending_approval');
+    expect(created).toHaveLength(0);
+    expect(insertedInto('lumibase_ai_approvals')).toHaveLength(1);
+    expect(insertedInto('lumibase_agent_approvals')).toHaveLength(1);
+    expect(result.approvalId).toBeDefined();
+    expect(result.agentApprovalId).toBeDefined();
     expect(insertedInto('lumibase_agent_runs')).toHaveLength(1);
     expect(result.toolCallId).toBeDefined();
+  });
+
+  it('GP6: L2 and above still write directly — the default posture is unchanged', async () => {
+    // This is the compatibility half of GP2/GP3 and the reason the gate is safe
+    // to ship: `resolveAutonomy` defaults a SAFE capability to L2 when no grant
+    // exists, so an installation that never configured autonomy behaves exactly
+    // as before. Only an explicit cap (or an explicit L0/L1 grant) engages the
+    // gate.
+    for (const cap of [2, 3, 4, undefined]) {
+      const { db, insertedInto } = governedDb();
+      const { created, service } = recordingItemService();
+
+      const result = await harnessWith(service, db).execute(
+        'createItem',
+        { collection: 'posts', data: { title: 'valid input' } },
+        ['items:write'],
+        `L${cap ?? 'default'} content write probe`,
+        { ...(cap === undefined ? {} : { autonomyCap: cap }), agentName: 'lumibase-copilot' },
+      );
+
+      expect(result.status, `cap=${cap}`).toBe('executed');
+      expect(created, `cap=${cap}`).toHaveLength(1);
+      expect(insertedInto('lumibase_ai_approvals'), `cap=${cap}`).toHaveLength(0);
+    }
+  });
+
+  it('GP8: the gate also engages through a GRANT, not only through an intent cap', async () => {
+    // GP2/GP3 drive the gate via `autonomyCap` (the intent ceiling). Production
+    // more often lowers a level by writing a grant row, so prove that path too:
+    // an `items:write` grant at L1 must produce an approval even with no cap set.
+    const grants = [{ agentRole: 'lumibase-copilot', capability: 'items:write', level: 1 }];
+    const { db, insertedInto } = governedDb({ grants });
+    const { created, service } = recordingItemService();
+
+    const result = await harnessWith(service, db).execute(
+      'createItem',
+      { collection: 'posts', data: { title: 'valid input' } },
+      ['items:write'],
+      'grant-driven L1 probe',
+      { agentName: 'lumibase-copilot' },
+    );
+
+    expect(result.status).toBe('pending_approval');
+    expect(created).toHaveLength(0);
+    expect(insertedInto('lumibase_ai_approvals')).toHaveLength(1);
+
+    // And the same grant at L0 refuses outright.
+    const shadow = governedDb({
+      grants: [{ agentRole: 'lumibase-copilot', capability: 'items:write', level: 0 }],
+    });
+    const second = recordingItemService();
+    const denied = await harnessWith(second.service, shadow.db).execute(
+      'createItem',
+      { collection: 'posts', data: { title: 'valid input' } },
+      ['items:write'],
+      'grant-driven L0 probe',
+      { agentName: 'lumibase-copilot' },
+    );
+    expect(denied.status).toBe('denied');
+    expect(denied.code).toBe('AUTONOMY_SHADOW');
+    expect(second.created).toHaveLength(0);
+    expect(shadow.insertedInto('lumibase_ai_approvals')).toHaveLength(0);
+  });
+
+  it('GP9 [TRIPWIRE]: no write-capable skill executes at L0 — swept across CORE_SKILLS', async () => {
+    /**
+     * The defect GP2/GP3 pinned was not "createItem is missing a gate", it was
+     * "the gate hangs off the dangerous classification". Fixing only `createItem`
+     * would leave every other safe write in the same hole, and a skill added
+     * later would land in it silently. So this sweeps the whole registry.
+     *
+     * The assertion is deliberately coarse — status is never `executed` — because
+     * that holds regardless of how a skill is classified: a safe write is refused
+     * (AUTONOMY_SHADOW) and a dangerous one is parked (pending_approval). Either
+     * way nothing mutates at L0.
+     */
+    const writeSkills = Object.entries(CORE_SKILLS).filter(([, skill]) =>
+      skill.requiredCapabilities.some((capability) => /:(write|update|create|delete)$/.test(capability)),
+    );
+    expect(writeSkills.length).toBeGreaterThan(40);
+
+    const executed: string[] = [];
+    for (const [name] of writeSkills) {
+      const { db } = governedDb();
+      const { service } = recordingItemService();
+      const result = await harnessWith(service, db).execute(
+        name,
+        // Canonical-valid arguments where a schema exists, so the probe is
+        // stopped by the autonomy gate and not by input validation.
+        validArgsFor(name),
+        ['*'],
+        `L0 sweep ${name}`,
+        { autonomyCap: 0, agentName: 'lumibase-copilot' },
+      );
+      if (result.status === 'executed') executed.push(name);
+    }
+
+    expect(executed).toEqual([]);
+  });
+
+  it('GP7: reads are untouched by the write gate, even at L0', async () => {
+    // The gate keys off mutating capabilities, so a read skill must not acquire
+    // an autonomy requirement it never had. `listCollections` needs only
+    // `schema:read`.
+    const { db, insertedInto } = governedDb();
+    const { service } = recordingItemService();
+
+    const result = await harnessWith(service, db).execute(
+      'listCollections',
+      {},
+      ['schema:read'],
+      'L0 read probe',
+      { autonomyCap: 0, agentName: 'lumibase-copilot' },
+    );
+
+    expect(result.status).toBe('executed');
+    expect(insertedInto('lumibase_ai_approvals')).toHaveLength(0);
+    expect(insertedInto('lumibase_agent_approvals')).toHaveLength(0);
   });
 
   it('GP4: control — a DANGEROUS skill at the same cap DOES park, proving the cap is only read there', async () => {
@@ -439,54 +620,57 @@ describe('G2 repro · governed path: an L0 content write executes with no autono
     expect(insertedInto('lumibase_agent_approvals')).toHaveLength(1);
   });
 
-  it('GP5: validation ordering — the audit tool call is written BEFORE any input check', async () => {
+  it('GP5 [REGRESSION]: invalid input is checked before the run exists — nothing is persisted', async () => {
     const { db, inserts } = governedDb();
     const { created, service } = recordingItemService();
 
     // Invalid input on the governed branch: no `collection`, no `data`.
     const result = await harnessWith(service, db).execute('createItem', {}, ['items:write']);
 
-    // CURRENT: `ensureRun` and `appendToolCall` both persist first, then the
-    // handler runs and reaches the service with an undefined collection.
-    // EXPECTED: rejected before the service, and before a run is left behind.
+    // BEFORE: `ensureRun` then `appendToolCall` both persisted, then the handler
+    // ran and reached the service with an undefined collection.
     //
-    // Reviewer note incorporated: `ensureRun` already ran by this point, so
-    // "validate before appendToolCall" is necessary but not sufficient — the
-    // fix must also avoid orphaning a `running` run, and must keep any denial
-    // audit clearly distinct from a business mutation.
+    // The reviewer's point is what drives this assertion: "validate before
+    // appendToolCall" would have been necessary but not sufficient, because
+    // `ensureRun` had already written a `running` run that nothing would ever
+    // close. So the check sits ahead of BOTH writes and this test pins the
+    // stronger property — zero rows, not merely a different ordering.
     const order = inserts.map((i) => i.table);
-    expect(order.indexOf('lumibase_agent_runs')).toBeGreaterThanOrEqual(0);
-    expect(order.indexOf('lumibase_agent_tool_calls')).toBeGreaterThan(
-      order.indexOf('lumibase_agent_runs'),
-    );
-    expect(result.status).toBe('executed');
-    expect(created).toHaveLength(1);
-    expect(created[0]!.collection).toBeUndefined();
+    expect(order).not.toContain('lumibase_agent_runs');
+    expect(order).not.toContain('lumibase_agent_tool_calls');
+    expect(inserts).toHaveLength(0);
+
+    expect(result.status).toBe('denied');
+    expect(result.code).toBe('VALIDATION');
+    expect(result.message).toContain('collection');
+    expect(created).toHaveLength(0);
   });
 });
 
-describe('G2 repro · the harness capability model is not the REST RBAC model', () => {
+describe('G2 regression · the harness reads the same RBAC model REST does', () => {
   /**
-   * `withAuth` sets `roles` to `[membership.roleId]` (a nanoid FK into the roles
-   * table) for a normal user, `['admin']` only for a bootstrap user, and `[]`
-   * for an API-key principal (apps/cms/src/middleware/auth.ts:263, :380).
-   * Both `/api/v1/mcp` and `/api/v1/agent` pass that array straight into
-   * `harness.execute(..., auth.roles ?? [])` as the capability set, where
-   * `checkCapabilities` does plain string membership against
-   * `requiredCapabilities` like `items:write`.
+   * The defect (#472). `withAuth` sets `roles` to `[membership.roleId]` — a
+   * nanoid FK into the roles table — for a normal user, `['admin']` only for a
+   * bootstrap user, and `[]` for an API-key principal
+   * (`middleware/auth.ts:267`, `:384`, `:509`). Every transport passed that array
+   * straight into `harness.execute(..., auth.roles ?? [])`, where
+   * `checkCapabilities` does exact string membership against requirements like
+   * `items:write`. A role id can never match one, so the gate was
+   * admin-or-nothing — and a site admin holding a real `adminAccess` role, rather
+   * than being the bootstrap user, was denied outright.
    *
-   * REST, by contrast, resolves `PermissionService.canAccess(resource, action)`
-   * against the policy DSL. The two transports therefore authorize through two
-   * unrelated models — the drift #454 asks to collapse.
+   * The fix does NOT loosen `checkCapabilities`: a role id still is not a
+   * capability, and these tests keep pinning that. What changed is upstream —
+   * `resolveRequestCapabilities` translates the compiled RBAC bundle into the
+   * capability vocabulary before the harness ever sees it.
    */
   const harness = new AISecureHarness({ db: {} as Database, siteId: 'site_1' });
 
-  it('R6: a real (non-bootstrap) role id satisfies no skill capability — reads included', async () => {
+  it('R6 [REGRESSION]: a role id is still not a capability, and RBAC is what supplies one', async () => {
     const roleIdAsRole = ['role_v1StGXR8Z5jdHi6BmyT'];
 
-    // CURRENT: capabilities never expand from role → policy, so the check can
-    // only ever pass on the literal strings 'admin' / '*' / 'items:read'…
-    // EXPECTED: one authorization model shared with REST.
+    // Unchanged and intended: the harness vocabulary is capabilities, not role
+    // ids. Feeding it a role id must not authorize anything.
     expect(harness.checkCapabilities(CORE_SKILLS['listItems']!, roleIdAsRole)).toBe(false);
     expect(harness.checkCapabilities(CORE_SKILLS['createItem']!, roleIdAsRole)).toBe(false);
     expect(harness.checkCapabilities(CORE_SKILLS['deleteCollection']!, roleIdAsRole)).toBe(false);
@@ -494,14 +678,33 @@ describe('G2 repro · the harness capability model is not the REST RBAC model', 
     const denied = await harness.execute('listItems', { collection: 'posts' }, roleIdAsRole);
     expect(denied.status).toBe('denied');
     expect(denied.message).toBe('Insufficient capabilities');
+
+    // What changed: the same RBAC state that produced that role id now produces
+    // capabilities the harness accepts. `read` + `update` permissions on a
+    // collection become `items:read`, `items:update`, `items:write`.
+    const capabilities = capabilitiesFromPermissionBundle({
+      admin: false,
+      appAccess: true,
+      tfaRequired: false,
+      roles: [{ id: 'role_v1StGXR8Z5jdHi6BmyT', name: 'Editor', adminAccess: false, appAccess: true }],
+      policies: [{ id: 'pol_1', name: 'Editor policy', key: 'editor' }],
+      byKey: {
+        'posts::read': compiled('posts', 'read'),
+        'posts::update': compiled('posts', 'update'),
+      },
+    });
+    expect(capabilities).toEqual(['items:read', 'items:update', 'items:write']);
+    expect(harness.checkCapabilities(CORE_SKILLS['listItems']!, capabilities)).toBe(true);
+    expect(harness.checkCapabilities(CORE_SKILLS['createItem']!, capabilities)).toBe(true);
+    // Still denied, and correctly so: nothing in that bundle grants schema writes.
+    expect(harness.checkCapabilities(CORE_SKILLS['deleteCollection']!, capabilities)).toBe(false);
   });
 
-  it('R7: an API-key-shaped capability set (roles: []) is denied every probed HTTP MCP skill', async () => {
-    // `withAuth` gives API-key principals `roles: []` (middleware/auth.ts:380).
-    // This test feeds that SHAPE into the harness; it does not authenticate a
-    // real key.
+  it('R7 [REGRESSION]: an API key is authorized by its own policies, not by an empty role array', async () => {
+    // BEFORE: `withAuth` gives API-key principals `roles: []`
+    // (`middleware/auth.ts:384`), so every skill with a non-empty requirement was
+    // denied — the harness was closed to API keys entirely.
     const apiKeyCapabilities: string[] = [];
-
     for (const skill of ['listCollections', 'listItems', 'createItem', 'deleteItem']) {
       expect(
         harness.checkCapabilities(CORE_SKILLS[skill]!, apiKeyCapabilities),
@@ -509,22 +712,28 @@ describe('G2 repro · the harness capability model is not the REST RBAC model', 
       ).toBe(false);
     }
 
-    const denied = await harness.execute('listCollections', {}, apiKeyCapabilities);
-    expect(denied.status).toBe('denied');
-    expect(denied.message).toBe('Insufficient capabilities');
+    // NOW: the key's compiled bundle decides. A key granted `read` on a
+    // collection can list items, and still cannot write.
+    const readOnly = capabilitiesFromPermissionBundle({
+      admin: false,
+      appAccess: false,
+      tfaRequired: false,
+      roles: [],
+      policies: [{ id: 'pol_key', name: 'Key policy', key: null }],
+      byKey: { 'posts::read': compiled('posts', 'read') },
+    });
+    expect(readOnly).toEqual(['items:read']);
+    expect(harness.checkCapabilities(CORE_SKILLS['listItems']!, readOnly)).toBe(true);
+    expect(harness.checkCapabilities(CORE_SKILLS['createItem']!, readOnly)).toBe(false);
 
-    // ── SCOPE OF THIS EVIDENCE (reviewer P2) ──────────────────────────────
-    // Proven here: with an empty capability array, the harness denies these
-    // four skills, on the legacy branch, via `checkCapabilities`.
-    // NOT proven here: that one real API key simultaneously enjoys full reach
-    // over the stdio surface. That claim needs a live token against both
-    // transports and belongs to the DB/live gate. What IS established by
-    // source is only the structural difference: REST authorizes through
-    // `PermissionService.canAccess` (see `routes/schema-permissions.ts`) while
-    // the harness does string membership on `auth.roles` — two unrelated
-    // models. The practical consequence for the migration plan is that moving
-    // stdio onto `POST /api/v1/mcp` cannot be assumed transparent for
-    // API-key callers, not that stdio is currently over-privileged.
+    // ── SCOPE OF THIS EVIDENCE ────────────────────────────────────────────
+    // Proven here: the translation from bundle → capabilities, and that the
+    // harness gate accepts the result. NOT proven here: a live API key
+    // authenticating end to end. That needs a real database and belongs to
+    // `effective-capability-service.db.integration.test.ts`, which covers
+    // revoked/expired keys and site mismatch against Postgres. Also deliberate:
+    // an API-key principal never receives `controlPlaneAdmin`, so the MCP
+    // control-plane backstop still refuses it even with an admin policy.
   });
 
   it('R8: only the literal admin/wildcard role clears the gate — the check is effectively binary', () => {
@@ -678,6 +887,322 @@ describe('G2 repro · the two transports are separate contracts', () => {
     // về một cấu trúc.
   });
 
+  /**
+   * ── R16/R17 — soát ngữ nghĩa 48 mutation chưa map ──────────────────────────
+   *
+   * Đây là mảnh audit cuối mà review xác nhận làm được trong grant hiện tại:
+   * biến "49 candidate chưa khớp tên" thành phân loại có căn cứ, thay vì suy từ
+   * tên ra "không có skill" (đúng lỗi logic đã bị bắt ở vòng 6).
+   *
+   * Con số đổi từ **49 → 48** vì `compile_intent` bị phân loại sai: nó gọi LLM và
+   * `IntentService.compile` ghi rõ *"Returns the compiled draft for the user to
+   * confirm — never persists"*, nên nó là **provider-cost preview**, không phải
+   * mutation. Cùng lớp với `translate_text` ⇒ nhóm provider action: 1 → 2.
+   */
+  it('R16: không tool nào trong 48 mutation chưa map có skill tương đương theo token-set', () => {
+    const tokens = (s: string) =>
+      s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join('|');
+
+    /** 48 mutation chưa map, nhóm theo prefix REST thật (đo bằng listTools + gọi handler). */
+    const UNMAPPED_MUTATIONS = [
+      // privilege-affecting (22)
+      'assign_role_user', 'remove_role_user', 'attach_role_policy', 'detach_role_policy', 'update_role',
+      'add_policy_permission', 'update_policy_permission', 'delete_policy_permission',
+      'attach_policy_user', 'detach_policy_user', 'update_policy',
+      'attach_api_key_role', 'detach_api_key_role', 'attach_api_key_policy', 'detach_api_key_policy',
+      'create_share', 'revoke_share',
+      'apply_access_import', 'restore_backup',
+      'approve_content', 'reject_content', 'submit_review',
+      // content/schema/ops (26)
+      'apply_schema', 'update_collection', 'upsert_field',
+      'create_release', 'update_release', 'delete_release', 'publish_release',
+      'register_materialization', 'refresh_materialization', 'drop_materialization',
+      'delete_media',
+      'upsert_tm', 'update_tm', 'delete_tm',
+      'update_cdc_subscription', 'update_flow', 'update_team',
+      'pause_intent', 'resume_intent', 'scan_intent', 'update_intent',
+      'create_preset', 'update_preset', 'delete_preset',
+      'install_marketplace_extension', 'publish_extension',
+    ];
+    expect(UNMAPPED_MUTATIONS).toHaveLength(48);
+    expect(new Set(UNMAPPED_MUTATIONS).size).toBe(48);
+
+    // Không tên nào khớp token-set với một skill thật ⇒ không có alias thuần.
+    const skillTokens = new Map(Object.keys(CORE_SKILLS).map((s) => [tokens(s), s]));
+    const accidental: string[] = [];
+    for (const tool of UNMAPPED_MUTATIONS) {
+      const hit = skillTokens.get(tokens(tool));
+      if (hit) accidental.push(`${tool} → ${hit}`);
+    }
+    expect(accidental).toEqual([]);
+
+    // Kiểm âm: thuật toán VẪN tìm được alias khi có thật (ca đã biết).
+    expect(skillTokens.get(tokens('cdc_subscription_replay'))).toBe('replayCdcSubscription');
+
+    // ── PHẠM VI (rút kinh nghiệm vòng 6) ───────────────────────────────────
+    // Đây là bằng chứng "không có alias theo tên", KHÔNG phải "không thể có
+    // skill tương đương". Kết luận support/disabled của từng tool nằm ở §5d của
+    // PR, dựa trên đọc route + service, không dựa vào test này.
+  });
+
+  it('R17 [REGRESSION]: createField không còn rụng field âm thầm; field lạ bị từ chối', async () => {
+    /**
+     * Hai tool duy nhất mà tên gợi ý đã có skill phủ. Đo thật cho thấy không.
+     */
+
+    // ── Ca 1: upsert_field vs skill createField ────────────────────────────
+    const captured: Array<[string, Record<string, unknown>]> = [];
+    const schemaService = {
+      createField: vi.fn((collection: string, input: Record<string, unknown>) => {
+        captured.push([collection, input]);
+        return Promise.resolve({ id: 'f1' });
+      }),
+    };
+    const harness = new AISecureHarness({
+      db: {} as Database,
+      siteId: 'site_1',
+      schemaService: schemaService as never,
+      enableAgentHarnessAudit: false,
+    });
+
+    /**
+     * LƯU Ý PHẠM VI (yêu cầu R3 của review vòng 8): đây là args **sau phép rename
+     * giả định** `field_name → name`. stdio quảng bá `field_name`, còn ở đây tôi
+     * đưa `name` vào skill — tức đã cho mapping một lợi thế. Ngay cả vậy,
+     * projection vẫn rụng field.
+     *
+     * Và kết luận về **nhánh upsert** đến từ source, không phải từ việc
+     * `updateField` không tồn tại: `PUT /collections/:c/fields/:f` dùng
+     * `SchemaService.upsertField` (`routes/collections.ts:236`,
+     * `schema-service.ts:538`) — update nếu có, create nếu chưa. Skill chỉ gọi
+     * `createField`.
+     */
+    await harness.runSkill('createField', {
+      collection: 'posts',
+      name: 'body',
+      type: 'text',
+      required: true,
+      interface: 'markdown',
+      note: 'nội dung bài',
+    });
+
+    expect(captured).toHaveLength(1);
+    const [, input] = captured[0]!;
+    // TRƯỚC: handler hardcode `interface: 'input'` và chỉ đọc 4 arg, nên
+    // `interface: 'markdown'` và `note` **rụng âm thầm** — caller xin editor
+    // markdown mà nhận input một dòng, không có lỗi nào.
+    // NAY: hai field đó thuộc contract đã quảng bá và được forward.
+    expect(input['interface']).toBe('markdown');
+    expect(input['note']).toBe('nội dung bài');
+    expect(Object.keys(input).sort()).toEqual(['interface', 'name', 'note', 'required', 'type']);
+
+    // Mặt còn lại của cùng một lớp lỗi: field **ngoài** contract không được
+    // rụng im lặng, nó phải bị từ chối. `.strict()` ở
+    // `packages/contracts/src/agent-tools/schemas.ts` là chỗ ép điều đó.
+    const rejected = await harness.runSkill('createField', {
+      collection: 'posts',
+      name: 'body2',
+      type: 'text',
+      madeUpKnob: true,
+    });
+    expect(rejected.success).toBe(false);
+    expect(rejected.success === false && rejected.code).toBe('VALIDATION');
+    expect(rejected.success === false && rejected.error).toContain('madeUpKnob');
+    // Không có lần gọi service thứ hai.
+    expect(captured).toHaveLength(1);
+
+    // ── PHẠM VI GIỮ NGUYÊN ──────────────────────────────────────────────────
+    // Việc `upsert_field` của stdio **không** được phủ bởi `createField` vẫn
+    // đúng và vẫn chưa đóng: `PUT /collections/:c/fields/:f` đi qua
+    // `SchemaService.upsertField` (`routes/collections.ts:236`,
+    // `schema-service.ts:538`) — update nếu có, create nếu chưa — còn skill chỉ
+    // gọi `createField`. Không có `updateField`:
+    expect(CORE_SKILLS['updateField']).toBeUndefined();
+  });
+
+  it('R19: bảng create/update/delete từng domain, đo từ CORE_SKILLS thật (sửa claim "11 tài nguyên")', () => {
+    /**
+     * Sửa theo yêu cầu **R2** của review vòng 8. Claim cũ — *"11 tài nguyên chỉ
+     * có create+delete"* — **sai**: thiếu 11 tên `update*` không chứng minh cả 11
+     * domain đều có cặp create/delete. Đo lại từng domain, ba thao tác.
+     */
+    const has = (n: string) => Boolean(CORE_SKILLS[n]);
+    /** [domain, createSkill|null, updateSkill|null, deleteSkill|null] */
+    const table: Array<[string, string | null, string | null, string | null]> = [
+      // A. có create + delete, KHÔNG có update  → 8 domain
+      ['collection', 'createCollection', null, 'deleteCollection'],
+      ['field', 'createField', null, 'deleteField'],
+      ['role', 'createRole', null, 'deleteRole'],
+      ['policy', 'createPolicy', null, 'deletePolicy'],
+      ['flow', 'createFlow', null, 'deleteFlow'],
+      ['intent', 'createIntent', null, 'deleteIntent'],
+      ['team', 'createTeam', null, 'deleteTeam'],
+      ['cdcSubscription', 'createCdcSubscription', null, 'deleteCdcSubscription'],
+      // B. thiếu CẢ BA thao tác → 3 domain
+      ['release', null, null, null],
+      ['preset', null, null, null],
+      ['translationMemory (tm)', null, null, null],
+    ];
+
+    for (const [domain, c, u, d] of table) {
+      if (c) expect(has(c), `${domain}: ${c} tồn tại`).toBe(true);
+      if (d) expect(has(d), `${domain}: ${d} tồn tại`).toBe(true);
+      // update luôn absent trong bảng này
+      expect(u).toBeNull();
+      for (const cand of [`update${domain[0]!.toUpperCase()}${domain.slice(1)}`]) {
+        expect(CORE_SKILLS[cand], `${cand} phải absent`).toBeUndefined();
+      }
+    }
+
+    // Nhóm A: 8 domain có cặp create/delete
+    expect(table.filter(([, c, , d]) => c !== null && d !== null)).toHaveLength(8);
+    // Nhóm B: 3 domain absent cả ba
+    expect(table.filter(([, c, u, d]) => c === null && u === null && d === null)).toHaveLength(3);
+    // release/preset/tm: absent cả ba, kiểm trực tiếp
+    for (const n of ['createRelease', 'updateRelease', 'deleteRelease',
+                     'createPreset', 'updatePreset', 'deletePreset']) {
+      expect(CORE_SKILLS[n], `${n} absent`).toBeUndefined();
+    }
+
+    // NGỮ CẢNH, không dùng để phủ domain khác: registry CÓ 7 skill update/upsert
+    // cho các domain khác.
+    const updateish = Object.keys(CORE_SKILLS).filter((n) => /^(update|upsert)/.test(n)).sort();
+    expect(updateish).toEqual([
+      'updateExtension', 'updateItem', 'updateTranslation', 'updateUser',
+      'updateVersion', 'updateWebhook', 'upsertSetting',
+    ]);
+
+    // Và sửa nốt một con số sai: trong 11 tool update-ish chưa map, **9** thuộc
+    // nhóm C còn **2** (`update_role`, `update_policy`) thuộc nhóm P — nên câu
+    // "11 trong 26 nhóm C" của bản trước là sai.
+    const UPDATEISH_UNMAPPED_P = ['update_role', 'update_policy'];
+    const UPDATEISH_UNMAPPED_C = [
+      'update_collection', 'update_flow', 'update_intent', 'update_team',
+      'update_cdc_subscription', 'update_release', 'update_preset', 'update_tm', 'upsert_field',
+    ];
+    expect(UPDATEISH_UNMAPPED_P).toHaveLength(2);
+    expect(UPDATEISH_UNMAPPED_C).toHaveLength(9);
+
+    // KHÔNG đề xuất delete+recreate làm workaround cho update (yêu cầu R2).
+  });
+
+  it('R18: thay marketplace install bằng generic registration làm MẤT gate/default/provenance (probe cặp)', async () => {
+    /**
+     * Sửa theo yêu cầu **R1** của review vòng 8.
+     *
+     * Bản trước gọi đây là "bỏ qua verify chữ ký" nhưng chỉ assert sự tồn tại +
+     * description của skill ⇒ **không phải bằng chứng đo được**. Reviewer đã đọc
+     * đủ hai đường và xác nhận rủi ro là **có căn cứ nhưng có điều kiện**:
+     *
+     *   `routes/marketplace.ts:543-622` — kiểm `extensions:install`, resolve slug
+     *   thành listing global đã publish, gọi `ExtensionVerifierService
+     *   .verifyByMetadata`, chặn khi `requireSignature && !verdict.ok`, chặn
+     *   reserved `lumibase-*` không có official signature, rồi mới insert; đồng
+     *   thời bảo toàn signature/provenance/marketplaceSlug, derive
+     *   `isOfficial`/`verifiedAt` **ở server**, dùng `enabledByDefault`, khởi tạo
+     *   `capabilities: []`.
+     *
+     *   `ai-harness.ts:1740` → `extensions-service.ts:42` — generic registration
+     *   nhận metadata **do caller cấp** và insert; **không** marketplace lookup,
+     *   **không** verifier, và cho caller cấp `capabilities`.
+     *
+     * PHÁT BIỂU ĐÚNG (không phải "bypass đã thành công"): *nếu* một adapter
+     * resolve đủ metadata rồi thay marketplace install bằng generic registration
+     * thì **mất** các check/default/provenance đó. Bản thân slug-only sẽ **fail**
+     * vì thiếu tham số bắt buộc, nên đây **không** phải bypass chạy được, và
+     * **không** suy ra "đã chạy được unsigned code" — kiểm crypto là việc riêng.
+     *
+     * Probe dưới đây đo **nửa generic registration**: metadata đầy đủ do caller
+     * cấp thì insert **không** đi qua verifier nào. Nửa marketplace (invalid
+     * verdict ⇒ reject + zero insert) thuộc route marketplace, ngoài hai file
+     * repro được cấp, nên ghi là source-backed thay vì tự mở scope.
+     */
+    /**
+     * SỬA THEO F1. Bản trước gắn `verifyByMetadata` vào một **object giả** rồi
+     * assert bộ đếm bằng 0 — nhưng verifier thật là `ExtensionVerifierService`,
+     * một class khác, và `ExtensionsService` thật KHÔNG hề có method đó. Nên
+     * assertion ấy là **tautology**: nó đúng bất kể production làm gì. Kiểm âm
+     * đã chứng minh — thêm verification + ép provenance vào
+     * `ExtensionsService.installExtension` thật, test vẫn XANH.
+     *
+     * Bản này đo đường thật:
+     *   - `ExtensionsService` **thật** (không mock), trên db recorder;
+     *   - spy vào `ExtensionVerifierService.prototype.verifyByMetadata` — verifier
+     *     **thật** — nên nếu service thật bắt đầu verify thì spy sẽ bắt được;
+     *   - đọc giá trị **thực sự đi vào `db.insert().values()`**, không phải args
+     *     mà caller truyền.
+     *
+     * Nhờ đó: thêm verifier vào đường generic ⇒ đỏ ở bộ đếm; ép
+     * `capabilities: []` ⇒ đỏ; derive `isOfficial`/`verifiedAt` server-side ⇒ đỏ.
+     */
+    const verifierSpy = vi.spyOn(ExtensionVerifierService.prototype, 'verifyByMetadata');
+
+    const inserts: Array<{ table: string; values: Record<string, unknown> }> = [];
+    const db = {
+      insert: (t: unknown) => {
+        const table = getTableName(t as Parameters<typeof getTableName>[0]);
+        return {
+          values: (values: Record<string, unknown>) => {
+            inserts.push({ table, values });
+            const result = [{ id: 'ext_1', ...values }];
+            return {
+              returning: () => Promise.resolve(result),
+              then: (resolve: (v: unknown[]) => unknown) => Promise.resolve(result).then(resolve),
+            };
+          },
+        };
+      },
+    } as unknown as Database;
+
+    // Service THẬT — đây là điểm khác cốt lõi so với bản trước.
+    const extensionsService = new ExtensionsService({ db, siteId: 'site_1', userId: 'user_1' });
+    const harness = new AISecureHarness({
+      db,
+      siteId: 'site_1',
+      extensionsService,
+      enableAgentHarnessAudit: false,
+    });
+
+    // Caller tự cấp TOÀN BỘ metadata, gồm cả `capabilities` — thứ mà đường
+    // marketplace luôn khởi tạo `[]` ở server.
+    const outcome = await harness.runSkill('installExtension', {
+      key: 'evil-panel',
+      name: 'evil-panel',
+      version: '1.0.0',
+      type: 'panel',
+      enabled: true,
+      bundleUrl: 'https://attacker.example/bundle.js',
+      manifest: { entry: 'index.js' },
+      capabilities: ['items:write', 'schema:write'],
+    });
+
+    expect(outcome.success).toBe(true);
+
+    // Hàng THẬT mà service thật ghi xuống `extensions`.
+    const extRows = inserts.filter((i) => i.table === getTableName(extensions));
+    expect(extRows, 'service thật phải insert đúng 1 hàng extensions').toHaveLength(1);
+    const row = extRows[0]!.values;
+
+    // ĐO ĐƯỢC 1: verifier THẬT không được gọi ở đâu trên đường generic.
+    expect(verifierSpy).not.toHaveBeenCalled();
+    expect(verifierSpy.mock.calls).toHaveLength(0);
+
+    // ĐO ĐƯỢC 2: capabilities do CALLER quyết định — server KHÔNG ép `[]`.
+    expect(row['capabilities']).toEqual(['items:write', 'schema:write']);
+
+    // ĐO ĐƯỢC 3: không trường provenance nào của marketplace được dựng, nên
+    // trust không thể derive ở server như đường marketplace làm.
+    for (const field of ['marketplaceSlug', 'verifiedAt', 'isOfficial', 'signature', 'publisherKeyId']) {
+      expect(row[field], `${field} không được dựng ở đường generic`).toBeUndefined();
+    }
+
+    verifierSpy.mockRestore();
+
+    // Điều kiện enable (ghi vào §5d): adapter phải bảo toàn signature policy,
+    // reserved namespace, server-derived trust, permission và provenance —
+    // không phải chỉ đổi tên tham số `slug` ↔ `bundleUrl`.
+  });
+
   it('R9: the FULL HTTP MCP registry is camelCase and contains no snake_case name', async () => {
     const registry = new ToolRegistryService(registryDb(), 'site_1', CORE_SKILLS);
     const httpNames = (await registry.listTools()).map((t) => t.name);
@@ -753,7 +1278,10 @@ describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools �
       c.set('auth', auth);
       c.set('siteId', 'site_1');
       c.set('requestId', 'req_1');
-      c.set('db', db as never);
+      // Capability resolution (#472) reads RBAC, so the route's admin principal
+      // has to be an admin in the data. Layered on top of `governedDb`, which
+      // keeps answering the run/tool-call/approval tables.
+      c.set('db', withRbacSelect(db as object, adminRbac('u_admin')) as never);
       c.set('runtime', {
         cache: { get: async () => null, set: async () => undefined, invalidateByTag: async () => undefined },
         search: undefined,
@@ -784,22 +1312,28 @@ describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools �
 
   const ADMIN: AuthPrincipal = { userId: 'u_admin', email: 'admin@example.com', roles: ['admin'], raw: {} };
 
-  it('RT1: tools/list over HTTP advertises {type:"object"} for every tool [end-to-end]', async () => {
+  it('RT1 [REGRESSION]: tools/list qua route thật quảng bá schema đã khai [end-to-end]', async () => {
     const { db } = governedDb();
     const { body, status } = await rpc(buildApp(ADMIN, db), 'tools/list');
 
     expect(status).toBe(200);
     const tools = (body.result as { tools: Array<{ name: string; inputSchema: Record<string, unknown> }> }).tools;
-
-    // Same claim as R1, but now proven through the real route rather than the
-    // service in isolation — this is what an MCP client actually receives.
     expect(tools.length).toBeGreaterThan(50);
-    expect(tools.every((t) => JSON.stringify(t.inputSchema) === '{"type":"object"}')).toBe(true);
-    expect(tools.filter((t) => t.inputSchema['properties'] !== undefined)).toEqual([]);
+
+    // Cùng claim với `R1` nhưng qua route thật — đây là thứ MCP client nhận
+    // được. Mọi skill đã khai schema phải thấy đúng schema đó, kèm `properties`.
+    const declaring = Object.entries(CORE_SKILLS).filter(([, s]) => s.inputSchema !== undefined);
+    expect(declaring.length).toBeGreaterThan(0);
+    for (const [name, skill] of declaring) {
+      const advertised = tools.find((t) => t.name === name);
+      expect(advertised, `${name} có trong tools/list`).toBeDefined();
+      expect(advertised!.inputSchema, `${name} quảng bá schema đã khai`).toEqual(skill.inputSchema);
+    }
+    expect(tools.some((t) => t.inputSchema['properties'] !== undefined)).toBe(true);
   });
 
-  it('RT2: a client obeying tools/list still cannot form a valid call — {} passes the advertised schema', async () => {
-    const { db } = governedDb();
+  it('RT2 [REGRESSION]: tools/list is usable and `{}` is refused with a structured VALIDATION denial', async () => {
+    const { db, inserts } = governedDb();
     const app = buildApp(ADMIN, db);
 
     // Step 1: discover, exactly as a client would.
@@ -808,37 +1342,49 @@ describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools �
     const createItem = tools.find((t) => t.name === 'createItem');
     expect(createItem).toBeDefined();
 
-    // Step 2: `{}` fully satisfies the advertised contract `{type:'object'}`,
-    // so a well-behaved client has no way to know `collection` is required.
-    expect(createItem!.inputSchema).toEqual({ type: 'object' });
+    // Step 2: BEFORE, the advertised contract was `{type:'object'}` — `{}`
+    // satisfied it, so a well-behaved client had no way to learn that
+    // `collection` is required. NOW the schema is derived from the canonical Zod
+    // contract, so the requirement is discoverable.
+    expect(createItem!.inputSchema['required']).toEqual(['collection', 'data']);
+    expect(Object.keys(createItem!.inputSchema['properties'] as object).sort()).toEqual([
+      'collection',
+      'data',
+      'status',
+    ]);
+    expect(createItem!.inputSchema['additionalProperties']).toBe(false);
 
-    // Step 3: send it. CURRENT: accepted at the boundary, dispatched to the
-    // harness, and it fails deep inside the real ItemService — surfacing to the
-    // MCP client as a raw JavaScript TypeError:
+    // Step 3: send `{}` anyway. BEFORE it was dispatched and failed deep inside
+    // the real ItemService, surfacing to the client as a raw engine error:
     //
     //   {"status":"denied","runId":"…",
     //    "message":"Cannot read properties of undefined (reading 'length')"}
     //
-    // Two separate defects in one response:
-    //   (a) no input validation at the boundary — the JSON-RPC code is NOT
-    //       -32602 and no VALIDATION error is produced;
-    //   (b) the internal failure is leaked verbatim as the tool-result message,
-    //       so a client sees an engine stack-trace string instead of "field
-    //       `collection` is required".
-    // EXPECTED: -32602 / a structured VALIDATION denial naming the field,
-    // raised before any dispatch.
+    // NOW it is refused at the boundary with a message that names the fields.
     const called = await rpc(app, 'tools/call', { name: 'createItem', arguments: {} });
     expect(called.status).toBe(200);
-    expect(JSON.stringify(called.body)).not.toMatch(/-32602/);
-    expect(JSON.stringify(called.body)).not.toMatch(/[Ii]nput validation error/);
 
-    const decision = (called.body.result as { structuredContent: { status: string; message?: string } })
-      .structuredContent;
+    const result = called.body.result as {
+      structuredContent: { status: string; code?: string; message?: string; runId?: string };
+      isError?: boolean;
+    };
+    const decision = result.structuredContent;
     expect(decision.status).toBe('denied');
-    // Pin the leak so a fix cannot quietly keep it: this must become a
-    // structured validation message, not stay an internal TypeError string.
-    expect(decision.message).toMatch(/Cannot read properties of undefined/);
-    expect(decision.message).not.toMatch(/collection/);
+    expect(decision.code).toBe('VALIDATION');
+    expect(decision.message).toContain('collection');
+    expect(decision.message).toContain('data');
+    // The engine error must not come back.
+    expect(JSON.stringify(called.body)).not.toMatch(/Cannot read properties of undefined/);
+    // A refused input is an error tool result, not a JSON-RPC protocol error:
+    // `mcp-service.ts` already maps `status === 'denied'` to `isError`, and
+    // keeping business outcomes inside the result is the existing contract
+    // (Req 4.4). That is why -32602 is deliberately NOT used here.
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(called.body)).not.toMatch(/-32602/);
+
+    // And nothing was persisted for it — no run, no tool call.
+    expect(inserts).toHaveLength(0);
+    expect(decision.runId).toBeUndefined();
   });
 
   it('RT3: a dangerous call over HTTP surfaces a governed decision in the tool result', async () => {
@@ -852,7 +1398,13 @@ describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools �
 
     expect(called.status).toBe(200);
     const result = called.body.result as {
-      structuredContent: { status: string; approvalId?: string };
+      structuredContent: {
+        status: string;
+        approvalId?: string;
+        approvalSpace?: string;
+        agentApprovalId?: string;
+        legacyApprovalId?: string;
+      };
       isError?: boolean;
     };
 
@@ -868,16 +1420,23 @@ describe('G2 repro · route level: POST /api/v1/mcp, real harness, list-tools �
     // from a database. It shows the id is PROPAGATED to the client; it does not
     // show the id resolves at the decision endpoint. That remains a DB gate.
     //
-    // CONTRACT FINDING (new, for §4 of the PR): the id handed to the client is
-    // the **`agent_approvals`** id, not the `ai_approvals` id. `execute()`
-    // inserts into BOTH tables, and `toToolDecision()` prefers
-    // `agentApprovalId ?? approvalId`. Two id spaces therefore exist, decided by
-    // two different endpoints (`routes/agent.ts` for agent approvals,
-    // `routes/ai.ts` for the legacy ai approvals). "Approval ID dùng được" must
-    // state WHICH space the MCP client receives and WHICH endpoint accepts it;
-    // otherwise a client can hold a valid-looking id and call the wrong route.
-    // Verified here by the id prefix produced by the table-aware fake.
+    // CONTRACT (was a finding, now pinned): the id handed to the client is the
+    // **`agent_approvals`** id, not the `ai_approvals` id. `execute()` inserts
+    // into BOTH tables and they are decided at two different endpoints
+    // (`routes/agent.ts` vs `routes/ai.ts`), so a client holding one id has to
+    // know which space it belongs to or it will call the wrong route.
+    //
+    // The decision now says so instead of leaving it to be inferred from the
+    // value: `approvalSpace` names the space, and both ids are exposed
+    // separately. Verified here by the id prefix produced by the table-aware
+    // fake.
     expect(result.structuredContent.approvalId).toMatch(/^lumibase_agent_approvals_/);
+    expect(result.structuredContent.approvalSpace).toBe('agent');
+    expect(result.structuredContent.agentApprovalId).toMatch(/^lumibase_agent_approvals_/);
+    expect(result.structuredContent.legacyApprovalId).toMatch(/^lumibase_ai_approvals_/);
+    expect(result.structuredContent.agentApprovalId).not.toBe(
+      result.structuredContent.legacyApprovalId,
+    );
   });
 
   it('RT4: with contentOs.mcp off (the default) the whole surface 404s — compatibility gate', async () => {
@@ -957,12 +1516,14 @@ describe('G2 repro · body envelope: REST từ chối / âm thầm bỏ nội du
     return { app, created, patched };
   }
 
-  it('R12: body create_item thật ({title,status} — KHÔNG có envelope data) bị REST trả 400', async () => {
+  it('R12 [REGRESSION]: REST chỉ nhận body có envelope data; body top-level bị 400', async () => {
     const { app, created } = await buildItemsApp();
 
-    // Đây đúng là body `packages/mcp-server/src/tools/items.ts` phát ra:
+    // Body mà `packages/mcp-server/src/tools/items.ts` phát ra TRƯỚC khi sửa:
     //   client.post(`/items/${collection}`, { ...itemData, status })
     // tức field của item bị spread ra TOP LEVEL, không bọc trong `data`.
+    // Giữ lại làm hàng rào: nó phải TIẾP TỤC bị REST từ chối, để không ai quay
+    // về dạng body cũ. Body đúng (đã sửa ở stdio) là control ở cuối test.
     const res = await app.request('/api/v1/items/posts', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -994,7 +1555,7 @@ describe('G2 repro · body envelope: REST từ chối / âm thầm bỏ nội du
     expect(created[0]![1]).toMatchObject({ data: { title: 'x' }, status: 'draft' });
   });
 
-  it('R13: body update_item thật ({title} bare) trả 200 nhưng ItemService nhận patch RỖNG', async () => {
+  it('R13 [REGRESSION]: patch có envelope data tới được service; bare body là no-op', async () => {
     const { app, patched } = await buildItemsApp();
 
     // Body thật: `client.patch(path, itemData)` — gửi thẳng field, không envelope.
@@ -1004,8 +1565,9 @@ describe('G2 repro · body envelope: REST từ chối / âm thầm bỏ nội du
       body: JSON.stringify({ title: 'new title' }),
     });
 
-    // CURRENT: `patchSchema` có mọi field optional và Zod **strip** key lạ, nên
-    // `title` bị loại âm thầm. Kết quả: **200 OK** với patch rỗng.
+    // Body TRƯỚC khi sửa. Giữ lại làm hàng rào: `patchSchema` có mọi field
+    // optional và Zod **strip** key lạ, nên `title` bị loại âm thầm và kết quả là
+    // **200 OK với patch rỗng**. Body đúng (đã sửa ở stdio) là control ở cuối.
     // EXPECTED: body phải là `{ data: { title } }`.
     //
     // PHẠM VI CLAIM (siết theo review vòng 4): test chứng minh nội dung update

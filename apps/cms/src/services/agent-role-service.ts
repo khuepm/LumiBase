@@ -86,7 +86,17 @@ export function intersectCapabilities(
   roleCapabilities: readonly string[],
   grant: readonly string[],
 ): string[] {
-  if (grant.includes('*')) return [...new Set(roleCapabilities.filter((c) => c !== '*'))];
+  // `admin` is a wildcard here for the same reason it is one in
+  // `AISecureHarness.checkCapabilities`: an admin bundle resolves to exactly
+  // `['admin']` (`capabilitiesFromPermissionBundle`), never to an enumerated
+  // list. Without this, a role-attributed run by an admin intersected
+  // `['admin']` with e.g. `['items:read','items:write']` and produced `[]` — so
+  // every role-attributed admin run was denied, which is the opposite of what
+  // the intersection is for. Narrowing still happens: the result is the role's
+  // own capabilities, not `admin`.
+  if (grant.includes('*') || grant.includes('admin')) {
+    return [...new Set(roleCapabilities.filter((c) => c !== '*' && c !== 'admin'))];
+  }
   if (roleCapabilities.includes('*')) return [...new Set(grant)];
   const granted = new Set(grant);
   return [...new Set(roleCapabilities.filter((c) => granted.has(c)))];

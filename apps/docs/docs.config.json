@@ -60,7 +60,8 @@
           "features/raw-data-editing",
           "features/typegen",
           "features/extensions-system",
-          "features/websockets-realtime"
+          "features/websockets-realtime",
+          "features/reconciler-repair-loop"
         ]
       },
       {

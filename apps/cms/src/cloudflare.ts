@@ -24,6 +24,7 @@ import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
 import { runScheduledPageviewFlush } from './modules/pageviews/scheduled';
 import { resolveSentryOptions } from './observability/sentry';
+import { withWorkerRuntimeDefault } from './worker-runtime-default';
 
 // ── Default export: ExportedHandler (fetch + scheduled) ─────────────────────
 //
@@ -53,8 +54,8 @@ import { resolveSentryOptions } from './observability/sentry';
 export default Sentry.withSentry(
   (env: Bindings) => resolveSentryOptions(env),
   {
-  // Bind so `this` inside Hono's fetch stays the app instance.
-  fetch: app.fetch.bind(app),
+  fetch: (request: Request, env: Bindings, ctx: ExecutionContext) =>
+    app.fetch(request, withWorkerRuntimeDefault(env), ctx),
 
   /**
    * Cloudflare Cron Trigger handler (design §10.2). Fires on the

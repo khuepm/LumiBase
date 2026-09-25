@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
-import { confirmDescription, okText, run } from './_shared.js';
+import { confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 const materializeSchema = z.object({
@@ -82,8 +82,8 @@ export function registerAdminTools(server: McpServer, client: LumiBaseClient) {
     },
     async ({ id }) =>
       run(async () => {
-        await client.delete(`/materialize/${encodePathSegment(id)}`);
-        return okText(`Materialization "${id}" dropped.`);
+        const response = await client.delete(`/materialize/${encodePathSegment(id)}`);
+        return okAfter(response, `Materialization "${id}" dropped.`);
       }),
   );
 }

@@ -283,6 +283,36 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     requiredCapabilities: ['items:write'],
   },
 
+  /**
+   * Reconciler repair loop, drafting half (#455). Writes the proposed
+   * translation into a version branch only — publishing is a separate,
+   * HITL-gated `promoteVersion` run, so this skill never changes live content.
+   */
+  repairTranslation: {
+    name: 'repairTranslation',
+    description:
+      'Translate one item field into a missing locale and store the result in a named version branch (no live content change).',
+    parameters: {
+      type: 'object',
+      properties: {
+        collection: { type: 'string' },
+        itemId: { type: 'string' },
+        field: { type: 'string', description: 'Item field holding a locale-keyed object.' },
+        locale: { type: 'string', description: 'Locale to fill in.' },
+        versionKey: {
+          type: 'string',
+          description: 'Deterministic draft branch key for this drift.',
+        },
+        sourceLocale: {
+          type: 'string',
+          description: 'Locale to translate from; inferred from the field when omitted.',
+        },
+      },
+      required: ['collection', 'itemId', 'field', 'locale', 'versionKey'],
+    },
+    requiredCapabilities: ['items:read', 'items:write', 'translations:write'],
+  },
+
   // ── POST-GA Task #3 — RAG Skills ─────────────────────────────────────────
 
   aiSuggestField: {

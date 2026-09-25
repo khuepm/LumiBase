@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-09-19T15:28:07.597Z",
-  "mode": "plan",
-  "effectiveMode": "plan",
+  "generatedAt": "2026-09-23T15:04:31.519Z",
+  "mode": "preserve-only",
+  "effectiveMode": "preserve-only",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 148,
+    "upToDate": 150,
     "planned": 0
   },
   "actions": [
@@ -1273,6 +1273,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/reconciler-repair-loop.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/role-policy-flag-migration.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1424,6 +1436,18 @@
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "mcp/governed-tool-contract.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "vi",
+      "targetLocale": "en",
       "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0

@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
 import { registerCrud } from './_crud.js';
-import { confirmDescription, okText, run } from './_shared.js';
+import { confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 const presetSchema = z.object({
@@ -119,8 +119,8 @@ export function registerContentConfigTools(server: McpServer, client: LumiBaseCl
     },
     async ({ key }) =>
       run(async () => {
-        await client.delete(`/settings/${encodePathSegment(key)}`);
-        return okText(`Setting "${key}" deleted.`);
+        const response = await client.delete(`/settings/${encodePathSegment(key)}`);
+        return okAfter(response, `Setting "${key}" deleted.`);
       }),
   );
 }

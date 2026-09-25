@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T00:16:10.051Z
+version: 3
+lastUpdated: 2026-09-19T06:45:16.890Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: b89a96b116de6e4f
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T00:16:10.051Z
-codeVerifiedHash: b89a96b116de6e4f
+sourceHash: ae814fddb61ee754
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-09-19T06:45:16.890Z
+codeVerifiedHash: ae814fddb61ee754
 codeVerifiedClaims: 26
 ---
 
@@ -30,12 +30,12 @@ Source: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`a
 
 - **Transport:** Streamable HTTP — JSON-RPC 2.0, one request/one response. `GET /api/v1/mcp` returns `405 METHOD_NOT_ALLOWED` (there is no server-initiated stream/SSE); clients fall back to plain request/response per the MCP spec.
 - **Protocol versions:** `2025-06-18` (default) and `2025-03-26`. `serverInfo = { name: 'lumibase-mcp', version: '1.0.0' }`.
-- **Auth → capability:** Bearer token; **the token's roles become the capability set** passed into the harness. ⇒ an MCP client can **never do more** than that same token can through the Agent API. (`McpService(port).handle(body, auth.roles ?? [])`).
+- **Auth → capability:** Bearer token; the capability set is **resolved from the token's live RBAC bundle** (#472), not from `auth.roles`. ⇒ an MCP client can **never do more** than that same token can through REST — and never less either, which is what reading `auth.roles` got wrong (a role id can never match `items:write`). See [`governed-tool-contract.md`](governed-tool-contract.md) section 4.
 - **Feature gate:** the per-site `contentOs.mcp` flag (default **off**). Off → `404 MCP_DISABLED`. (`feature-flags.ts`).
 - **Methods (JSON-RPC):**
   - `initialize` — negotiates the protocol version, returns `capabilities: { tools: { listChanged: false } }`.
   - `ping`.
-  - `tools/list` — lists the **currently enabled** tools from `ToolRegistryService`; an empty inputSchema defaults to `{ type: 'object' }`.
+  - `tools/list` — lists the **currently enabled** tools from `ToolRegistryService`; the inputSchema is derived from the canonical schemas in `@lumibase/contracts` (only a skill with no schema still falls back to `{ type: 'object' }`).
   - `tools/call` — runs through `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. The result is wrapped as `{ content, structuredContent, isError }`.
   - `notifications/initialized`, `notifications/cancelled` → return `null` ⇒ HTTP `202 Accepted` with no body.
 - **Mapping decision → tool result** (an important invariant):
@@ -57,7 +57,7 @@ Source: [`apps/cms/src/services/tool-registry-service.ts`](../../../apps/cms/src
 
 ## 2. The standalone MCP server — `@lumibase/mcp-server`
 
-Source: [`packages/mcp-server/`](../../../packages/mcp-server/) (v0.6.0, `@modelcontextprotocol/sdk`).
+Source: [`packages/mcp-server/`](../../../packages/mcp-server/) (built on `@modelcontextprotocol/sdk`; the version lives in that package's own `package.json` and is deliberately not pinned here, to avoid adding another place that can drift).
 
 - **Transport:** Stdio (`StdioServerTransport`). Intended for local editor integration.
 - **Entry:** `packages/mcp-server/src/index.ts` — `new McpServer({ name: 'lumibase', ... })`, registers the collection/field/item tools, then `connect(StdioServerTransport)`.
@@ -116,10 +116,12 @@ Versioning is **not** in the stdio server. It is exposed as **governed skills** 
 - **MCP parity (Property 14):** a `tools/call` decision matches a direct harness decision **byte for byte**. Test: [`apps/cms/src/services/__tests__/mcp-parity.property.test.ts`](../../../apps/cms/src/services/__tests__/mcp-parity.property.test.ts).
 - **No separate `mcp_servers`/`mcp_sessions` tables** — MCP reuses the agent infrastructure (approvals, tool calls, permissions). This is a deliberate architectural decision (zero MCP-specific state).
 - **The SDK has no MCP client** — MCP is not a concern of the REST SDK's clients.
-- **Permission floor:** capability = the token's roles. Every MCP extension must respect this floor.
+- **Permission floor:** capability = the token's RBAC bundle (one model shared with REST). Every MCP extension must respect this floor.
+- **Governed tool contract:** schemas, validation, the write gate, the decision shape, and which stdio tools are governed all live in [`governed-tool-contract.md`](governed-tool-contract.md).
 
 ## 4. Related pages
 
+- [`governed-tool-contract.md`](governed-tool-contract.md) — the contract shared by both transports: schema source, validation order, autonomy gate, decision shape, and which stdio tools are governed.
 - [`mcp-application-analysis.md`](mcp-application-analysis.md) — analysis of how MCP applies to the 7 Directus-inspired specs.
 - [`docs/en/agent-setup/claude-code.md`](../agent-setup/claude-code.md) — how to wire the MCP server into Claude Code.
 - [`docs/en/features/agent-harness-layer.md`](../features/agent-harness-layer.md) — the harness guards MCP inherits.

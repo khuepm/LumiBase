@@ -104,6 +104,38 @@ A post published *after* the build is not in `generateStaticParams`. The detail
 route leaves `dynamicParams` at its default (`true`), so Next renders that post
 on demand the first time it is requested and caches it like the rest.
 
+### The withdrawal window, measured
+
+A draft that was **never** published cannot appear here: the reader credential
+gets `404` and no page is ever generated for it. A post that *was* live and is
+then unpublished is a different case — the cached HTML keeps being served while
+revalidation happens in the background.
+
+One measurement, against a live CMS with `revalidate = 60`, unpublishing a post
+whose page had just been regenerated:
+
+| Change | API / reader key | List page | Detail page |
+|---|---|---|---|
+| Edit a post already past its window | immediate | 4 s | 3 s |
+| Unpublish (page freshly generated) | immediate (`404`) | 64 s | 64 s |
+| Publish a post that did not exist at build time | immediate | ~60 s | immediate at its URL |
+
+**This example has no hard withdrawal SLA, and `revalidate` is not an upper
+bound.** It is the minimum age at which a page may go looking for fresh data.
+Per [the ISR
+docs](https://nextjs.org/docs/app/guides/incremental-static-regeneration), the
+first request after expiry is still answered from the stale cache while
+regeneration runs behind it; a page nobody requests is never regenerated at all;
+and a regeneration that fails leaves the previous HTML in place. The 64 s above is
+one path — traffic present, regeneration successful — not a ceiling.
+
+If your content has a takedown requirement, do not rely on this default. Lower
+`revalidate`, use `cache: 'no-store'` on routes that must never serve withdrawn
+content, or trigger
+[on-demand revalidation](https://nextjs.org/docs/app/guides/incremental-static-regeneration#on-demand-revalidation-with-revalidatepath)
+from a LumiBase webhook when an item leaves `published` — the only option here
+that reacts to the change instead of waiting for a clock.
+
 ## Type generation
 
 `lumibase types` generates TypeScript definitions from the live schema into

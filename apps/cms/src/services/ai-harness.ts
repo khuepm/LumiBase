@@ -1,8 +1,11 @@
 import { agentApprovals, aiApprovals, flowRuns, flows } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
+import { agentToolNamesWithSchema, jsonSchemaFor, validateAgentToolInput } from '@lumibase/contracts';
 import { and, eq } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
+import type { MagicContext } from './permission-dsl';
+import { satisfiesCapability } from './effective-capability-service';
 import type { AccessService } from './access-service';
 import type { ConfigService } from './config-service';
 import type { ExtensionsService } from './extensions-service';
@@ -14,6 +17,13 @@ import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentAutonomousOpsTotal } from './agent-metrics';
 import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
+import {
+  effectiveApprovalCapabilities,
+  parseApprovalRequester,
+  resolveApprovalRequester,
+  type ApprovalRequester,
+  type ApprovalRequesterResolution,
+} from './approval-requester';
 import { AUTONOMY_LEVELS, AutonomyService } from './autonomy-service';
 import { KillSwitchService } from './kill-switch-service';
 import { getLoadGuard } from './load-guard-service';
@@ -52,6 +62,12 @@ export interface SkillDefinition {
  */
 export interface HarnessExecutionResult {
   status: 'executed' | 'pending_approval' | 'denied';
+  /**
+   * Machine-readable reason for a denial. Present so a client can distinguish
+   * "your input was malformed" (`VALIDATION`) from an authorization or
+   * governance outcome, instead of pattern-matching prose. Absent on success.
+   */
+  code?: string;
   data?: unknown;
   approvalId?: string;
   agentApprovalId?: string;
@@ -527,7 +543,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
     );
   };
 
-  return {
+  const skills: Record<string, SkillDefinition> = {
     listCollections: {
       name: 'listCollections',
       description: 'List all collections in the current site',
@@ -586,7 +602,19 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         const name = args['name'] as string;
         const type = args['type'] as string;
         const required = (args['required'] as boolean) ?? false;
-        const result = await schemaServiceRef.createField(collection, { name, type, interface: 'input', required });
+        // `interface` and `note` used to be dropped on the floor: the handler
+        // hardcoded `interface: 'input'` and never read `note`, so a caller that
+        // asked for a markdown editor silently got a single-line input (#454,
+        // repro R17). They are part of the advertised contract now, so they must
+        // be forwarded. Anything NOT declared in the schema is rejected upstream
+        // rather than dropped here.
+        const result = await schemaServiceRef.createField(collection, {
+          name,
+          type,
+          interface: (args['interface'] as string) ?? 'input',
+          required,
+          ...(args['note'] === undefined ? {} : { note: args['note'] as string | null }),
+        });
         return { created: true, field: result };
       },
     },
@@ -597,11 +625,15 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       requiredCapabilities: ['schema:delete'],
       service: 'schema',
       handler: async (args) => {
-        // Connects to: SchemaService.deleteField(collectionName, fieldName)
+        // Connects to: SchemaService.deleteField(collectionName, fieldName, options)
         const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
         const collection = args['collection'] as string;
         const name = args['name'] as string;
-        const result = await schemaServiceRef.deleteField(collection, name);
+        // `force` reaches `FieldDeleteOptions` here for the same reason the REST
+        // route passes `?force=true` through: the service supports it, so the
+        // governed path must not be the one place that cannot express it.
+        const force = args['force'] === true;
+        const result = await schemaServiceRef.deleteField(collection, name, force ? { force } : {});
         return { deleted: true, result };
       },
     },
@@ -827,6 +859,155 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           args['key'] as string,
         );
         return { promoted: true, ...result };
+      },
+    },
+
+    /**
+     * Drafts one missing locale translation into a named version branch (#455).
+     *
+     * This is the first half of the reconciler repair loop: it proposes content
+     * without touching anything a reader can see. Publishing is a separate,
+     * HITL-gated `promoteVersion` run, which is why this skill is not marked
+     * dangerous — it still passes the write/autonomy gate, so an L0 role gets a
+     * shadow denial and an L1 role gets an approval.
+     *
+     * Every "cannot do the work" path throws with a code instead of returning a
+     * success shape. The sibling version skills above return `{ created: true }`
+     * when their service is missing (offline registry support); doing that here
+     * would report a draft that does not exist, and the dispatcher would then
+     * block the goal with `DRAFT_MISSING` one pass later instead of surfacing the
+     * real cause.
+     */
+    repairTranslation: {
+      name: 'repairTranslation',
+      description:
+        'Translate one item field into a missing locale and store the result in a named version branch (no live content change).',
+      requiredCapabilities: ['items:read', 'items:write', 'translations:write'],
+      service: 'items',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string' },
+          itemId: { type: 'string' },
+          field: { type: 'string', description: 'Item field holding a locale-keyed object.' },
+          locale: { type: 'string', description: 'Locale to fill in.' },
+          versionKey: { type: 'string', description: 'Deterministic draft branch key for this drift.' },
+          sourceLocale: { type: 'string', description: 'Locale to translate from; inferred when omitted.' },
+        },
+        required: ['collection', 'itemId', 'field', 'locale', 'versionKey'],
+      },
+      handler: async (args) => {
+        const svc = contentVersionService();
+        if (!svc) {
+          throw new Error(
+            'CONTENT_VERSIONS_NOT_CONFIGURED: drafting a translation requires item access and a tenant db context',
+          );
+        }
+        const itemServiceRef = requireService(itemService, 'ITEM_SERVICE');
+        const collection = args['collection'] as string;
+        const itemId = args['itemId'] as string;
+        const field = args['field'] as string;
+        const locale = args['locale'] as string;
+        const versionKey = args['versionKey'] as string;
+
+        // Idempotent under duplicate queue delivery: a second delivery of the
+        // same job finds the branch and returns without calling the provider
+        // again. Checked before the LLM call on purpose — re-translating would
+        // spend tokens and produce a second, different draft for one drift.
+        const existing = await svc.get(collection, itemId, versionKey);
+        if (existing) {
+          return {
+            drafted: true,
+            alreadyExisted: true,
+            versionKey,
+            field,
+            locale,
+          };
+        }
+
+        const detail = (await itemServiceRef.detail(collection, itemId)) as Record<string, unknown>;
+        const data = (detail['data'] ?? {}) as Record<string, unknown>;
+        const raw = data[field];
+        const translations =
+          raw && typeof raw === 'object' && !Array.isArray(raw)
+            ? { ...(raw as Record<string, unknown>) }
+            : {};
+
+        const requestedSource = args['sourceLocale'] as string | undefined;
+        const sourceLocale =
+          requestedSource ??
+          Object.keys(translations).find(
+            (key) => key !== locale && typeof translations[key] === 'string' && (translations[key] as string).trim() !== '',
+          );
+        const sourceText = sourceLocale ? translations[sourceLocale] : undefined;
+        if (typeof sourceText !== 'string' || sourceText.trim() === '') {
+          // Nothing to translate from. Inventing content would be worse than
+          // failing: the drift would close on text no source ever contained.
+          throw new Error(
+            `NO_SOURCE_TEXT: "${collection}/${itemId}.${field}" has no non-empty locale to translate from`,
+          );
+        }
+
+        const completion = await completeJson<{ translation?: unknown }>(
+          services.llm,
+          'You are a professional translator for a CMS. Reply with JSON only: {"translation": "..."}. Preserve meaning, tone, markup and placeholders exactly. Do not add commentary.',
+          `Translate the following text from locale "${sourceLocale}" into locale "${locale}".\n\n${sourceText}`,
+        );
+        const translated = completion.value?.translation;
+        if (typeof translated !== 'string' || translated.trim() === '') {
+          throw new Error(
+            `EMPTY_TRANSLATION: provider "${completion.meta.provider}" returned no usable translation`,
+          );
+        }
+
+        // `create` snapshots live main and stores its hash, which is what lets
+        // `promote` detect divergence. The draft MUST be built on that snapshot,
+        // not on `data` read before the LLM call: an editor can change the item
+        // while the provider is pending, and a draft of the old payload under
+        // the new payload's hash would promote as "not diverged" and silently
+        // revert their edit. Only the one locale this repair owns is applied.
+        const created = await svc.create(
+          collection,
+          itemId,
+          versionKey,
+          `Translation repair: ${field}.${locale}`,
+        );
+        const base = (created.data ?? {}) as Record<string, unknown>;
+        const baseRaw = base[field];
+        const baseTranslations =
+          baseRaw && typeof baseRaw === 'object' && !Array.isArray(baseRaw)
+            ? (baseRaw as Record<string, unknown>)
+            : {};
+        if (baseTranslations[sourceLocale as string] !== sourceText) {
+          // The source text moved under the provider call, so the translation
+          // describes text main no longer holds. Drop the branch rather than
+          // draft it. The failed run remains visible for operator recovery.
+          await svc.remove(collection, itemId, versionKey);
+          throw new Error(
+            `SOURCE_CHANGED: "${collection}/${itemId}.${field}.${sourceLocale}" changed while translating; review and retry the repair`,
+          );
+        }
+        // A human may have filled this missing locale while generation was in
+        // flight. Keep their text just like any other edit in the snapshot.
+        const currentTarget = baseTranslations[locale];
+        const target = typeof currentTarget === 'string' && currentTarget.trim() !== ''
+          ? currentTarget
+          : translated;
+        const version = await svc.update(collection, itemId, versionKey, {
+          data: { ...base, [field]: { ...baseTranslations, [locale]: target } },
+        });
+
+        return {
+          drafted: true,
+          alreadyExisted: false,
+          versionKey,
+          field,
+          locale,
+          sourceLocale,
+          provider: completion.meta.provider,
+          model: completion.meta.model,
+          versionId: version.id,
+        };
       },
     },
 
@@ -1926,6 +2107,24 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       },
     },
   };
+
+  // One schema source, two consumers (#454). The canonical Zod contracts in
+  // `@lumibase/contracts` are what the harness validates against; deriving the
+  // advertised JSON Schema from the same definitions is what makes `tools/list`
+  // honest. Previously a skill without a hand-written `inputSchema` advertised
+  // `{type:'object'}`, so a well-behaved client could send `{}` and still be
+  // dispatched into a service (repro RT2).
+  //
+  // A hand-written `inputSchema` on the skill wins: those were authored against
+  // the handler and some describe shapes the canonical set does not cover yet.
+  for (const name of agentToolNamesWithSchema()) {
+    const skill = skills[name];
+    if (skill === undefined || skill.inputSchema !== undefined) continue;
+    const derived = jsonSchemaFor(name);
+    if (derived !== undefined) skill.inputSchema = derived;
+  }
+
+  return skills;
 }
 
 /**
@@ -1980,6 +2179,48 @@ export const CORE_SKILLS: Record<string, SkillDefinition> = buildCoreSkills({});
  * read-only call marks the execution as touched, so an ambiguous failure is
  * treated as unsafe. Erring toward "a human should look" is the point.
  */
+/**
+ * A service reference whose target can be swapped after the skills are built.
+ *
+ * `buildCoreSkills` closes over the service objects once, in the constructor, so
+ * by the time an approval executes there is no way to hand the handlers a
+ * different `ItemService` — and that is exactly what executing under the
+ * **requester's** row/field rules requires (#472). The alternative would be to
+ * construct a second harness per approval, which would also reset the
+ * service-touch tracker that decides whether a failed approval is safe to retry
+ * (#453); losing that is a worse trade than one level of indirection.
+ *
+ * Reads go through `box.current`, and methods are bound to it, so a swap takes
+ * effect for every later call without the handlers knowing.
+ */
+interface Rebindable<T extends object> {
+  /** Handed to the skills; never replaced. */
+  readonly proxy: T;
+  /** Swaps the target and returns a function that puts the previous one back. */
+  rebind(next: T): () => void;
+}
+
+function rebindable<T extends object>(initial: T): Rebindable<T> {
+  const box = { current: initial };
+  const proxy = new Proxy(initial, {
+    get: (_target, prop) => {
+      const value = Reflect.get(box.current, prop) as unknown;
+      return typeof value === 'function' ? value.bind(box.current) : value;
+    },
+    set: (_target, prop, value) => Reflect.set(box.current, prop, value),
+  }) as T;
+  return {
+    proxy,
+    rebind(next: T) {
+      const previous = box.current;
+      box.current = next;
+      return () => {
+        box.current = previous;
+      };
+    },
+  };
+}
+
 class ServiceTouchTracker {
   private touched = false;
 
@@ -2024,6 +2265,8 @@ export class AISecureHarness {
   private readonly runService: AgentRunService;
   private readonly toolRegistry: ToolRegistryService;
   private readonly itemService?: ItemService;
+  /** Present when an ItemService was supplied; lets approvals rebind it (#472). */
+  private readonly itemServiceRef?: Rebindable<ItemService>;
   private readonly queue?: QueueProvider;
   private readonly notify?: AgentNotifier;
   /** Set when a skill handler reaches a service; drives retry safety (#453). */
@@ -2032,7 +2275,11 @@ export class AISecureHarness {
   constructor(config: AISecureHarnessConfig) {
     this.db = config.db;
     this.siteId = config.siteId;
-    this.itemService = config.itemService;
+    this.itemServiceRef = config.itemService ? rebindable(config.itemService) : undefined;
+    // The indirection is what the skills and this class both hold, so an
+    // approval rebinding it reaches every write path rather than only the ones
+    // this class calls directly.
+    this.itemService = this.itemServiceRef?.proxy;
     this.queue = config.queue;
     this.notify = config.notify;
     const hasService = Boolean(
@@ -2054,7 +2301,7 @@ export class AISecureHarness {
       // reached one (safe to retry) from a failure that did (ambiguous).
       this.skills = buildCoreSkills({
         schemaService: this.serviceTouch.wrap(config.schemaService),
-        itemService: this.serviceTouch.wrap(config.itemService),
+        itemService: this.serviceTouch.wrap(this.itemService),
         accessService: this.serviceTouch.wrap(config.accessService),
         intentService: this.serviceTouch.wrap(config.intentService),
         configService: this.serviceTouch.wrap(config.configService),
@@ -2102,14 +2349,11 @@ export class AISecureHarness {
     skill: SkillDefinition,
     userCapabilities: string[],
   ): boolean {
-    // Wildcard and admin roles grant all capabilities.
-    if (userCapabilities.includes('*') || userCapabilities.includes('admin')) {
-      return true;
-    }
-
-    // Every required capability must be present in the user's set
+    // Shared predicate, not a local copy: three different spellings of "what
+    // counts as admin" are what let the agent-reviewer route refuse real
+    // administrators (#481 R3.4).
     return skill.requiredCapabilities.every((required) =>
-      userCapabilities.includes(required),
+      satisfiesCapability(userCapabilities, required),
     );
   }
 
@@ -2125,6 +2369,35 @@ export class AISecureHarness {
    */
   evaluateRisk(skill: SkillDefinition, skillName: string): boolean {
     return isControlPlaneSkill(skill, skillName);
+  }
+
+  // ---------- Input validation ----------
+
+  /**
+   * Validates `args` against the canonical agent-tool schema (`@lumibase/contracts`)
+   * BEFORE anything observable happens.
+   *
+   * Why this exists (#454): the harness previously executed on whatever it was
+   * handed. `createItem {}` reached `ItemService.create(undefined, { data: {} })`
+   * and failed deep inside the engine, so the MCP client received a raw
+   * `TypeError: Cannot read properties of undefined (reading 'length')` as the
+   * tool-result message. `deleteItem {}` parked an approval row that could never
+   * execute. Both are input defects that must be refused at the boundary.
+   *
+   * Fail-open for unlisted skills is deliberate: only write-capable skills have
+   * schemas today (see `AgentToolSchemas`), so reads keep their current
+   * behaviour instead of breaking on a contract that has not been written yet.
+   *
+   * @returns `null` when the input is acceptable, otherwise a human-readable
+   * message naming the offending field(s).
+   */
+  private validateToolInput(skillName: string, args: Record<string, unknown>): string | null {
+    const verdict = validateAgentToolInput(skillName, args);
+    if (verdict.ok) return null;
+    const detail = verdict.issues
+      .map((issue) => `${issue.path === '' ? '(root)' : issue.path}: ${issue.message}`)
+      .join('; ');
+    return `Input validation error for "${skillName}": ${detail}`;
   }
 
   // ---------- Execution ----------
@@ -2143,6 +2416,13 @@ export class AISecureHarness {
       return this.executeLegacy(skillName, args, userCapabilities, contextMessage);
     }
 
+    // A role-scoped run is that role's run. Kill switch, autonomy grant and the
+    // run's `agentName` all key on `agentName`; a caller that sets only
+    // `agentRole` must not be governed as `lumibase-copilot` instead.
+    if (!envelope.agentName && envelope.agentRole) {
+      envelope = { ...envelope, agentName: envelope.agentRole };
+    }
+
     // Kill switch (Req 14.2/14.4): a frozen site/role blocks before any
     // goal/run is created; an in-flight run hitting this boundary is
     // cancelled with stopReason 'frozen'. Reads are untouched.
@@ -2155,6 +2435,33 @@ export class AISecureHarness {
       return {
         status: 'denied',
         message: `frozen: agent runtime is frozen for this ${frozenScope}`,
+        ...(envelope.goalId ? { goalId: envelope.goalId } : {}),
+        ...(envelope.runId ? { runId: envelope.runId } : {}),
+      };
+    }
+
+    // Input contract (#454): refused BEFORE `ensureRun`, deliberately. Placing
+    // it after would leave a `running` run and a `running` tool call behind for
+    // input that can never execute — the ordering defect GP5 pinned. Nothing is
+    // persisted for a malformed call; the caller gets a structured `VALIDATION`
+    // denial instead of an engine error surfacing from inside a service.
+    const inputError = this.validateToolInput(skillName, args);
+    if (inputError) {
+      // "Create no run" is not the same as "leave an existing run alone". On the
+      // async path the run already exists and the worker has already moved it to
+      // `running` before calling in, so returning `denied` without settling it
+      // parks the run in `running` forever — a queued `createItem` with empty
+      // arguments would sit there indefinitely. The kill-switch branch above
+      // faces the same situation and settles it via `cancelRun`; this one has to
+      // as well. `ensureRun` is still not called, so a synchronous caller with no
+      // run keeps the property GP5 pins: zero rows written.
+      if (envelope.runId) {
+        await this.runService.failRun(envelope.runId, inputError, { stopReason: 'invalid_input' });
+      }
+      return {
+        status: 'denied',
+        code: 'VALIDATION',
+        message: inputError,
         ...(envelope.goalId ? { goalId: envelope.goalId } : {}),
         ...(envelope.runId ? { runId: envelope.runId } : {}),
       };
@@ -2282,6 +2589,7 @@ export class AISecureHarness {
 
     // Step 3: Evaluate risk
     const isDangerous = this.evaluateRisk(tool, skillName) || policy.risk === 'dangerous' || policy.risk === 'review_required';
+    const isWrite = isWriteSkill(tool);
 
     if (isDangerous) {
       // Trust gradient (L0-L4): the effective level decides whether the
@@ -2400,62 +2708,74 @@ export class AISecureHarness {
       }
 
       // ≤L2 (or L3 without a stageable patch): classic pre-execute HITL.
-      // Create approval record and return pending_approval
-      const [record] = await this.db
-        .insert(aiApprovals)
-        .values({
-          siteId: this.siteId,
-          skillName,
-          arguments: args,
-          status: 'pending',
-          context: contextMessage ?? null,
-        })
-        .returning();
-
-      const [agentApproval] = await this.db
-        .insert(agentApprovals)
-        .values({
-          runId: run.runId,
-          siteId: this.siteId,
-          legacyApprovalId: record!.id,
-          subjectType: 'tool_call',
-          subjectId: toolCallId,
-          status: 'pending',
-          approvalPolicy: policy.approvalPolicy,
-          requestedByAgent: run.agentName,
-        })
-        .returning();
-
-      this.notify?.({
-        kind: 'approval',
-        severity: 'info',
-        title: 'Approval requested',
-        body: `${run.agentName} requests approval to run "${skillName}"`,
-        deepLink: `/mission-control/inbox?entry=approval:${agentApproval!.id}`,
-        entityId: agentApproval!.id,
-      });
-
-      await this.runService.finishToolCall(toolCallId, {
-        status: 'pending_approval',
-        output: { approvalId: record!.id, agentApprovalId: agentApproval!.id },
-        approvalId: agentApproval!.id,
-        latencyMs: Date.now() - startedAt,
-      });
-
-      // Park the run while the approval is pending; the approval decision
-      // resumes it without re-running completed tool calls (Req 3.1/3.4).
-      await this.runService.awaitApproval(run.runId);
-
-      return {
-        status: 'pending_approval',
-        approvalId: record!.id,
-        agentApprovalId: agentApproval!.id,
-        ...run,
+      return this.parkForApproval({
+        skillName,
+        args,
+        contextMessage,
+        run,
         toolCallId,
-      };
+        approvalPolicy: policy.approvalPolicy,
+        startedAt,
+        requestedByPrincipal: envelope.requestedByPrincipal ?? null,
+      });
     }
 
-    // Step 4: Safe skill — execute directly
+    // Step 3b: Write/autonomy gate for skills that are NOT control-plane.
+    //
+    // The trust gradient used to be reachable only through `isDangerous`, so a
+    // plain content write (`createItem`, `items:write`) skipped it entirely: an
+    // intent capped at L0 still wrote, and L1 never asked for approval (repro
+    // GP2/GP3). `AutonomyService` documents L0 as "no side effects" and L1 as
+    // "every action creates an approval", so a write has to consult the level
+    // regardless of how it is classified.
+    //
+    // Reads are untouched: the gate only applies to skills whose capabilities
+    // mutate (`:write|update|create|delete`). And because the resolver's default
+    // for a safe capability is L2, an installation with no grant and no intent
+    // cap behaves exactly as before — the gate bites only when someone has
+    // explicitly lowered the level.
+    if (isWrite) {
+      const autonomy = new AutonomyService({ db: this.db, siteId: this.siteId, notify: this.notify });
+      const level = await autonomy.resolve(
+        envelope.agentName ?? run.agentName,
+        primaryDangerousCapability(tool, skillName),
+        {
+          dangerous: false,
+          intentCap: envelope.autonomyCap ?? null,
+          irreversible: IRREVERSIBLE_SKILLS.has(skillName),
+        },
+      );
+
+      // L0 shadow: the run is allowed to exist, the write is not.
+      if (level === AUTONOMY_LEVELS.SHADOW) {
+        const message = `autonomy_shadow: L0 cannot write; "${skillName}" was not executed`;
+        await this.runService.finishToolCall(toolCallId, {
+          status: 'denied',
+          error: message,
+          latencyMs: Date.now() - startedAt,
+        });
+        await this.runService.failRun(run.runId, message, { stopReason: 'autonomy_shadow' });
+        return { status: 'denied', code: 'AUTONOMY_SHADOW', message, ...run, toolCallId };
+      }
+
+      // L1 propose: the write becomes a proposal a human decides on. Same
+      // approval records, same ids, same decision endpoint as a dangerous skill
+      // — one contract, not a second one for writes.
+      if (level === AUTONOMY_LEVELS.PROPOSE) {
+        return this.parkForApproval({
+          skillName,
+          args,
+          contextMessage,
+          run,
+          toolCallId,
+          approvalPolicy: policy.approvalPolicy,
+          startedAt,
+          requestedByPrincipal: envelope.requestedByPrincipal ?? null,
+        });
+      }
+    }
+
+    // Step 4: safe skill (or a write at L2+) — execute directly
     const result = await this.runSkill(skillName, args, { runId: run.runId });
     if (result.success) {
       await this.runService.finishToolCall(toolCallId, {
@@ -2479,6 +2799,91 @@ export class AISecureHarness {
     return { status: 'denied', message: result.error, ...run, toolCallId };
   }
 
+  /**
+   * Parks a tool call as a pending approval and returns the decision payload.
+   *
+   * Extracted so there is exactly ONE place that creates approval records on the
+   * governed path. It is reached from two directions — a control-plane skill at
+   * ≤L2, and (since #454) a plain write at L1 — and both must produce the same
+   * rows, the same ids and therefore the same decision endpoint. Two copies of
+   * this block would be two contracts.
+   *
+   * Note which id is which, because they live in different tables: `approvalId`
+   * is the legacy `ai_approvals` row, `agentApprovalId` is the `agent_approvals`
+   * row that the Mission Control inbox and `/api/v1/agent/approvals/:id/decide`
+   * operate on.
+   */
+  private async parkForApproval(input: {
+    skillName: string;
+    args: Record<string, unknown>;
+    contextMessage?: string | undefined;
+    run: { goalId: string; runId: string; agentName: string };
+    toolCallId: string;
+    approvalPolicy?: string | undefined;
+    startedAt: number;
+    requestedByPrincipal?: ApprovalRequester | null | undefined;
+  }): Promise<HarnessExecutionResult> {
+    const { skillName, args, contextMessage, run, toolCallId, startedAt } = input;
+
+    const [record] = await this.db
+      .insert(aiApprovals)
+      .values({
+        siteId: this.siteId,
+        agentName: run.agentName,
+        skillName,
+        arguments: args,
+        status: 'pending',
+        context: contextMessage ?? null,
+      })
+      .returning();
+
+    const [agentApproval] = await this.db
+      .insert(agentApprovals)
+      .values({
+        runId: run.runId,
+        siteId: this.siteId,
+        legacyApprovalId: record!.id,
+        subjectType: 'tool_call',
+        subjectId: toolCallId,
+        status: 'pending',
+        approvalPolicy: input.approvalPolicy,
+        requestedByAgent: run.agentName,
+        // Provenance for the resume path (#472). Without it, the only identity
+        // available when a human approves is the decider's, so a requester who
+        // was revoked or demoted in the meantime still gets their action run.
+        requestedByPrincipal: input.requestedByPrincipal ?? null,
+      })
+      .returning();
+
+    this.notify?.({
+      kind: 'approval',
+      severity: 'info',
+      title: 'Approval requested',
+      body: `${run.agentName} requests approval to run "${skillName}"`,
+      deepLink: `/mission-control/inbox?entry=approval:${agentApproval!.id}`,
+      entityId: agentApproval!.id,
+    });
+
+    await this.runService.finishToolCall(toolCallId, {
+      status: 'pending_approval',
+      output: { approvalId: record!.id, agentApprovalId: agentApproval!.id },
+      approvalId: agentApproval!.id,
+      latencyMs: Date.now() - startedAt,
+    });
+
+    // Park the run while the approval is pending; the approval decision
+    // resumes it without re-running completed tool calls (Req 3.1/3.4).
+    await this.runService.awaitApproval(run.runId);
+
+    return {
+      status: 'pending_approval',
+      approvalId: record!.id,
+      agentApprovalId: agentApproval!.id,
+      ...run,
+      toolCallId,
+    };
+  }
+
   private async executeLegacy(
     skillName: string,
     args: Record<string, unknown>,
@@ -2492,6 +2897,13 @@ export class AISecureHarness {
 
     if (!this.checkCapabilities(skill, userCapabilities)) {
       return { status: 'denied', message: 'Insufficient capabilities' };
+    }
+
+    // Same input contract as the governed branch, and for the same reason: the
+    // approval insert below must never park arguments that cannot execute.
+    const inputError = this.validateToolInput(skillName, args);
+    if (inputError) {
+      return { status: 'denied', code: 'VALIDATION', message: inputError };
     }
 
     const isDangerous = this.evaluateRisk(skill, skillName);
@@ -2527,10 +2939,21 @@ export class AISecureHarness {
     skillName: string,
     args: Record<string, unknown>,
     runContext?: { runId?: string; model?: string },
-  ): Promise<{ success: true; data: unknown } | { success: false; error: string }> {
+  ): Promise<{ success: true; data: unknown } | { success: false; error: string; code?: string }> {
     if (!Object.hasOwn(this.skills, skillName)) {
       return { success: false, error: `Skill not found: ${skillName}` };
     }
+
+    // Backstop, not a duplicate: `runSkill` is the shared execution entry for
+    // the direct path AND for `executeApproved` → post-approval execution, and
+    // it is also called directly (tests, flow steps). Validating here means a
+    // stored approval whose arguments were mutated between request and decision
+    // still cannot reach a handler.
+    const inputError = this.validateToolInput(skillName, args);
+    if (inputError) {
+      return { success: false, error: inputError, code: 'VALIDATION' };
+    }
+
     const skill = this.skills[skillName]!;
 
     // Item writes performed by skills are agent-authored: stamp revision
@@ -2604,15 +3027,143 @@ export class AISecureHarness {
       return { status: 'denied', message: `Unknown skill: ${record.skillName}` };
     }
 
-    if (!this.checkCapabilities(skill, userCapabilities)) {
-      return { status: 'denied', message: 'Insufficient capabilities' };
+    // The first-class approval row, read once. It carries both the decision
+    // state and the provenance, and the ORDER of the two checks below matters:
+    // an approval that was already rejected, or that expired, must say so. If
+    // provenance were checked first, a rejected approval from before the
+    // provenance column existed would be refused as "no recorded requester" —
+    // true, but not the reason, and an operator would go looking for the wrong
+    // problem.
+    const agentApproval = await this.loadAgentApprovalFor(record.id);
+
+    if (this.agentHarnessEnabled && agentApproval) {
+      if (agentApproval.expiresAt && agentApproval.expiresAt <= new Date()) {
+        return { status: 'denied', message: 'Approval expired' };
+      }
+      if (agentApproval.status !== 'pending') {
+        // Not the race guard — that is the conditional claim further down, which
+        // stays. This is the plain "already decided" case, reported with its own
+        // reason rather than as a provenance failure.
+        return { status: 'denied', message: 'Approval not found or already processed' };
+      }
     }
 
-    // Execute the stored skill
+    // Re-resolve the ORIGINAL requester before executing (#472).
+    //
+    // The decider's capabilities were the only ones consulted here. An approval
+    // can sit pending for days, so a requester who was demoted, whose API key was
+    // revoked, or who was removed from the site still had their parked action
+    // executed — under the decider's rights, by an admin acting in good faith.
+    // Effective capabilities are now the intersection: both parties must still
+    // allow it, so neither can be used to launder the other's limits.
+    const requesterGrant = await this.resolveRequesterGrant(agentApproval);
+    if (!requesterGrant.allowed) {
+      return { status: 'denied', code: requesterGrant.code, message: requesterGrant.message };
+    }
+
+    const effectiveCapabilities = effectiveApprovalCapabilities(
+      requesterGrant.capabilities,
+      userCapabilities,
+    );
+
+    if (!this.checkCapabilities(skill, effectiveCapabilities)) {
+      return {
+        status: 'denied',
+        message: 'Insufficient capabilities for requester ∩ decider',
+      };
+    }
+
+    // Run the whole decision under the REQUESTER's row/field rules (#472, F1).
+    //
+    // Capability intersection is not enough, and the gap was measurable: coarse
+    // tokens like `items:write` say nothing about which collection, which rows or
+    // which fields. A requester whose update permission was narrowed to `body`
+    // after parking still had `title` written, because the skill executed against
+    // the ItemService built from the *approver's* request. Direct calls with the
+    // requester's own context were correctly refused at the same moment — so the
+    // approval was a way around a restriction that was already in force.
+    //
+    // Scoped for the duration of the decision and restored afterwards, because a
+    // harness built per request is reused for anything else on that request.
+    const restoreScope = this.scopeToRequester(requesterGrant);
+    try {
+      return await this.executeApprovedUnderScope(record, userId);
+    } finally {
+      restoreScope();
+    }
+  }
+
+  /**
+   * Row/field scope for an approval execution, or a no-op when there is none.
+   *
+   * Two cases deliberately produce no rebinding:
+   *
+   * - **An agent-role requester.** A role is a capability set, not a principal
+   *   with policies, so there is no row/field context to apply; the capability
+   *   check is the whole gate by design (this is the reconciler path, #455).
+   * - **A harness with no ItemService** (offline registry mode in tests).
+   *
+   * What is NOT applied is the *decider's* row/field scope. Approving is not
+   * performing: the decider authorises an action the requester asked for, and the
+   * action runs with the requester's reach. Intersecting two `MagicContext`s is
+   * not a defined operation here, so pretending to do it would be worse than
+   * saying plainly that it is not done — noted in the governed-tool contract docs
+   * and in the backlog.
+   */
+  private scopeToRequester(grant: ApprovalRequesterResolution): () => void {
+    if (!grant.allowed || !grant.permissionContext || !this.itemServiceRef) {
+      return () => {};
+    }
+    const requesterContext = grant.permissionContext;
+    if (requesterContext.siteId !== this.siteId) {
+      // Resolution already refuses a cross-tenant requester; this is the second
+      // door on the same lock, because rebinding to another tenant's context
+      // would move `siteId` on the executing service.
+      return () => {};
+    }
+    const rebound = this.reboundItemService(requesterContext);
+    if (!rebound) return () => {};
+    return this.itemServiceRef.rebind(rebound);
+  }
+
+  /**
+   * The requester-scoped ItemService, or null when this harness's item service
+   * cannot produce one.
+   *
+   * The null case is a test double, not a production shape: several suites pass a
+   * catch-all proxy whose every property is an async function, so
+   * `withPermissionContext()` there returns a promise rather than a service, and
+   * binding that would break the very execution this is meant to protect. A real
+   * `ItemService` always has the method, and the requester-scope behaviour is
+   * measured against a real one in
+   * `g2-approval-requester-scope.db.integration.test.ts`.
+   *
+   * Deliberately NOT silent about it: a shape that cannot be scoped is logged, so
+   * "we skipped the scoping" can never be inferred from nothing.
+   */
+  private reboundItemService(requesterContext: MagicContext): ItemService | null {
+    const current = this.itemServiceRef?.proxy;
+    if (!current || typeof current.withPermissionContext !== 'function') return null;
+    const scoped = current.withPermissionContext(requesterContext) as unknown;
+    if (!scoped || typeof (scoped as ItemService).patch !== 'function') {
+      console.warn(
+        '[ai-harness] item service cannot be scoped to the requester; executing unscoped',
+      );
+      return null;
+    }
+    return scoped as ItemService;
+  }
+
+  /** The stored skill, executed with whatever scope is currently bound. */
+  private async executeApprovedUnderScope(
+    record: typeof aiApprovals.$inferSelect,
+    userId: string,
+  ): Promise<HarnessExecutionResult> {
     if (this.agentHarnessEnabled) {
       return this.executeApprovedWithAudit(record, userId);
     }
 
+    const approvalId = record.id;
     const result = await this.runSkill(
       record.skillName,
       record.arguments as Record<string, unknown>,
@@ -2654,6 +3205,74 @@ export class AISecureHarness {
     return { status: 'denied', message: result.error };
   }
 
+  /**
+   * The first-class approval row behind a legacy approval id, or undefined.
+   *
+   * Read as a whole row and threaded through the decision, so state and
+   * provenance come from one snapshot rather than from two reads that could
+   * disagree.
+   */
+  private async loadAgentApprovalFor(
+    legacyApprovalId: string,
+  ): Promise<typeof agentApprovals.$inferSelect | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(agentApprovals)
+      .where(
+        and(
+          eq(agentApprovals.legacyApprovalId, legacyApprovalId),
+          eq(agentApprovals.siteId, this.siteId),
+        ),
+      )
+      .limit(1);
+    return row;
+  }
+
+  /**
+   * Current rights of whoever REQUESTED this approval.
+   *
+   * Fail-closed on missing provenance. A row parked before the
+   * `requested_by_principal` column existed cannot be resolved, and treating
+   * unknown provenance as "use the decider's rights" is exactly the behaviour
+   * #472 removes. Those approvals have to be re-requested after deploy; the
+   * migration header names the query that lists them.
+   */
+  private async resolveRequesterGrant(
+    row: typeof agentApprovals.$inferSelect | undefined,
+  ): Promise<ApprovalRequesterResolution> {
+    if (!row) {
+      // No `agent_approvals` row at all: this is a legacy-only approval, created
+      // before the first-class inbox existed. There is no provenance to check and
+      // no run to resume, so it is refused for the same reason as a null column.
+      return {
+        allowed: false,
+        code: 'APPROVAL_PROVENANCE_MISSING',
+        message:
+          'This approval has no recorded requester, so the requester’s current rights cannot be verified. Re-request the action.',
+      };
+    }
+
+    const requester = parseApprovalRequester(row.requestedByPrincipal);
+    if (!requester) {
+      return {
+        allowed: false,
+        code:
+          row.requestedByPrincipal == null
+            ? 'APPROVAL_PROVENANCE_MISSING'
+            : 'APPROVAL_PROVENANCE_INVALID',
+        message:
+          row.requestedByPrincipal == null
+            ? 'This approval predates requester provenance, so the requester’s current rights cannot be verified. Re-request the action.'
+            : 'The recorded requester could not be parsed; the approved action was not executed.',
+      };
+    }
+
+    // No cache passed on purpose: an approval decision is rare and the whole
+    // point is to read the CURRENT grant, so a cached bundle would reintroduce
+    // the staleness this fix removes.
+    return resolveApprovalRequester({ db: this.db, siteId: this.siteId }, requester);
+  }
+
   private async executeApprovedWithAudit(
     record: typeof aiApprovals.$inferSelect,
     userId: string,
@@ -2669,8 +3288,17 @@ export class AISecureHarness {
       )
       .limit(1);
 
+    // Both approval name columns could contain the copilot default before the
+    // worker identity fix. The persisted run is the authority, as at pickup.
+    const persistedRun = existingAgentApproval
+      ? await this.runService.getRun(existingAgentApproval.runId)
+      : null;
     const run = existingAgentApproval
-      ? { goalId: '', runId: existingAgentApproval.runId, agentName: existingAgentApproval.requestedByAgent }
+      ? {
+          goalId: persistedRun?.goalId ?? '',
+          runId: existingAgentApproval.runId,
+          agentName: persistedRun?.agentName ?? existingAgentApproval.requestedByAgent,
+        }
       : await this.runService.ensureRun({
         agentName: record.agentName,
         title: `Approved ${record.skillName}`,
@@ -2763,15 +3391,14 @@ export class AISecureHarness {
         await this.releaseClaim(existingAgentApproval.id);
         return { status: 'denied', message: 'Run was cancelled', runId: run.runId };
       }
-      // Resume the parked run; only the approved tool call executes —
-      // previously completed tool calls are never re-run (Req 3.4).
-      await this.runService.markRunning(run.runId);
     }
 
     // Kill switch wins over approvals: a frozen site/role denies the
     // approved execution at this boundary (Req 14.2).
     const approvalKillSwitch = new KillSwitchService({ db: this.db, siteId: this.siteId });
-    const approvalFrozenScope = await approvalKillSwitch.frozenScopeFor(record.agentName);
+    // First-class approvals retain the requesting agent even when an older
+    // legacy row still carries the historical copilot default.
+    const approvalFrozenScope = await approvalKillSwitch.frozenScopeFor(run.agentName);
     if (approvalFrozenScope) {
       if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
       return {
@@ -2779,6 +3406,11 @@ export class AISecureHarness {
         message: `frozen: agent runtime is frozen for this ${approvalFrozenScope}`,
         runId: run.runId,
       };
+    }
+    if (existingAgentApproval) {
+      // Resume only after the freeze gate: a rejected attempt must leave the
+      // run parked so lifting the freeze can safely resume the same approval.
+      await this.runService.resumeApprovedRun(run.runId);
     }
     const startedAt = Date.now();
     const toolCallId = await this.runService.appendToolCall({

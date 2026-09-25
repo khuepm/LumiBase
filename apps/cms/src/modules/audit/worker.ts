@@ -154,16 +154,84 @@ export class AuditLogBatcher {
         requestId: j.entry.requestId ?? null,
       }));
 
+    // Each table is attempted independently so a failure in one cannot cause
+    // the other's rows to be retried — and therefore written twice.
+    const auditErr = await this.insertWithSalvage(auditLog, auditRows, 'audit_log');
+    const fieldErr = await this.insertWithSalvage(fieldAccessLog, fieldRows, 'field_access_log');
+
+    const firstErr = auditErr ?? fieldErr;
+    if (firstErr) {
+      // Still rethrow: a caller that awaits `flush()` asked to know, and
+      // `flushDetached` already contains this for the fire-and-forget path.
+      throw firstErr;
+    }
+  }
+
+  /**
+   * Insert a batch, and if the multi-row statement is rejected, retry row by
+   * row so that one bad row cannot take the others with it.
+   *
+   * ## Why this exists (#469, defence in depth)
+   *
+   * A multi-row INSERT is atomic: one rejected row means **nothing** is written.
+   * `audit_log.site_id` has an FK to `sites.id`, so a row naming a site that is
+   * gone used to erase up to 99 rows batched alongside it — real tenants'
+   * denied-access, rejected-upload and failed-auth events, the records most
+   * worth keeping — and it failed quietly, because the flush logs and moves on.
+   *
+   * The request path no longer produces such a row: `withTenantExists` rejects
+   * an unknown site with 404 before `withAuth`, the first middleware that writes
+   * audit. What stays reachable is everything off the request path — an audit job
+   * still in the queue when its site is deleted, or a cron/CDC/worker job
+   * carrying a site id that has since gone. Those batches mix tenants, so the
+   * blast radius was other people's audit trail.
+   *
+   * The retry is deliberately only on the failure path. Doing it always would
+   * turn the batching this worker exists for into one round trip per row.
+   *
+   * @returns the first error seen, or undefined when everything was written
+   */
+  private async insertWithSalvage<T extends Record<string, unknown>>(
+    table: typeof auditLog | typeof fieldAccessLog,
+    rows: T[],
+    label: string,
+  ): Promise<unknown> {
+    if (rows.length === 0) return undefined;
+
     try {
-      if (auditRows.length > 0) {
-        await this.db.insert(auditLog).values(auditRows);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await this.db.insert(table as any).values(rows as any);
+      return undefined;
+    } catch (batchErr) {
+      console.error(
+        `[audit-log-worker] batch insert failed for ${label}; retrying rows individually`,
+        formatSafeError(batchErr),
+      );
+      if (rows.length === 1) {
+        // Nothing to salvage — the single row is the failure.
+        return batchErr;
       }
-      if (fieldRows.length > 0) {
-        await this.db.insert(fieldAccessLog).values(fieldRows);
+
+      let firstRowErr: unknown;
+      let written = 0;
+      const dropped: Array<{ siteId: unknown; event: unknown }> = [];
+      for (const row of rows) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await this.db.insert(table as any).values(row as any);
+          written += 1;
+        } catch (rowErr) {
+          firstRowErr ??= rowErr;
+          // Identify the dropped row without echoing its metadata: an audit
+          // entry can carry request detail, and this line goes to plain logs.
+          dropped.push({ siteId: row['siteId'], event: row['event'] ?? row['collection'] });
+        }
       }
-    } catch (err) {
-      console.error('[audit-log-worker] batch insert failed', formatSafeError(err));
-      throw err;
+      console.error(
+        `[audit-log-worker] ${label}: salvaged ${written}/${rows.length} rows`,
+        JSON.stringify({ dropped }),
+      );
+      return firstRowErr ?? batchErr;
     }
   }
 }

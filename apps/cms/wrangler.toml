@@ -130,6 +130,7 @@ crons = ["0 * * * *", "*/5 * * * *"]
 name = "lumibase-cms-staging"
 
 [env.staging.vars]
+LUMIBASE_RUNTIME = "cloudflare"
 LUMIBASE_ENV = "staging"
 LUMIBASE_VERSION = "unknown"
 LUMIBASE_GIT_SHA = "unknown"
@@ -285,6 +286,7 @@ crons = ["0 * * * *", "*/5 * * * *"]
 name = "lumibase-cms-dev"
 
 [env.dev.vars]
+LUMIBASE_RUNTIME = "cloudflare"
 LUMIBASE_ENV = "staging"
 LUMIBASE_VERSION = "unknown"
 LUMIBASE_GIT_SHA = "unknown"
@@ -336,6 +338,7 @@ crons = ["0 * * * *", "*/5 * * * *"]
 name = "lumibase-cms-demo"
 
 [env.demo.vars]
+LUMIBASE_RUNTIME = "cloudflare"
 LUMIBASE_ENV = "staging"
 LUMIBASE_VERSION = "unknown"
 LUMIBASE_GIT_SHA = "unknown"

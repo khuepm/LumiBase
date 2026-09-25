@@ -1,11 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-09-01T19:24:38.846Z
+version: 6
+lastUpdated: 2026-09-20T16:00:45.733Z
 sourceLang: en
-contentHash: f0c3698b7ea88443
-codeVerified: 2026-09-01T19:24:38.846Z
-codeVerifiedHash: f0c3698b7ea88443
-codeVerifiedClaims: 374
+contentHash: 056914fa69d9dd50
+codeVerified: 2026-09-20T16:00:45.733Z
+codeVerifiedHash: 056914fa69d9dd50
+codeVerifiedClaims: 382
 ---
 
 # Hono API Specification — LumiBase
@@ -794,10 +794,14 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `GET` | `/api/v1/agent/autonomy` | Trust ledger: grants + open incidents |
 | `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Promotion proposals; `POST :id/decide` is the only path to a higher level (admin) |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Veto window: pending stagings enriched with `approvalId/collection/itemId/patch/agentRole` from the staging revision (null fields when the staging is gone); `POST :id/veto` discards a staging |
+| `GET` | `/api/v1/agent/approvals` | Approval inbox (`status` filter; defaults to `pending`) |
+| `POST` | `/api/v1/agent/approvals/:id/decide` | Human decision on a parked action. Body `{ decision: 'approved' \| 'rejected', reason? }`; needs `approvals:decide` (403 otherwise), `404` for an unknown or other-tenant id, `409` when the approval already left `pending`. On `approved` the harness owns the state transition, so execution and the status write happen once. Execution re-resolves **the requester's** current rights and runs with `requester ∩ decider`: an approval whose requester was since revoked, demoted or removed is denied, and one with no recorded requester (parked before provenance existed) is denied with `APPROVAL_PROVENANCE_MISSING` |
+| `POST` | `/api/v1/agent/approvals/:id/reopen` | Return a `failed` approval to `pending` so it can be decided again. Body `{ reason }` is **required** and audited; needs `approvals:decide`. A skill that reached a service and then failed is parked rather than re-offered, because retrying could repeat a non-idempotent write — this is the deliberate way back |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Agent-as-reviewer decision (needs `review:<domain>`; self-review forbidden) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Versions, draft, `/compile` (NL→evaluators), `:id/dry-run`, `:id/activate` |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze` |
 | `*` | `/api/v1/agent/intents[...]` | Content intents CRUD, `:id/pause|resume|scan|drifts`, `/compile` |
+| `POST` | `/api/v1/intents/:id/scan` | One reconciliation cycle: `{ scan, reconcile, dispatch }`. `dispatch` advances each reconciler goal one step (draft → promote → verify) and reports `dispatched/completed/skipped/blocked` plus `queueUnavailable` on runtimes without a queue adapter. See [reconciler repair loop](../features/reconciler-repair-loop.md) |
 | `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Law Zero pins: list / release |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Public llms.txt index per site |

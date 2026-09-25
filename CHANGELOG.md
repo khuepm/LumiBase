@@ -9,6 +9,240 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+## [1.0.0-rc.2] - 2026-09-23
+
+### Fixed
+
+- **Translation repair preserves a human translation entered during generation
+  (#455).** Drafts retain the latest target-locale text instead of replacing it
+  with the provider response. Approval resume also checks the requesting agent's
+  freeze, including pending approvals with the old legacy agent name, and keeps
+  frozen runs parked until the freeze is lifted.
+
+- **An abandoned agent run is no longer replayed automatically (#455).** A run left
+  `running` by a dead worker could be taken over after fifteen minutes and executed
+  again. Age cannot support that: a process can die *after* the content write and
+  *before* the terminal status is saved, at which point the row is
+  indistinguishable from one that did nothing. Measured on Postgres with a fault
+  injected in exactly that window — one item written, run stuck `running`, age
+  pushed past the threshold, job redelivered: **two items**. The queue claim now
+  accepts only `queued` runs (nothing has executed under one yet, so redelivering it
+  cannot repeat a side effect), and abandoned runs are quarantined instead: a new
+  `agent-run-stale-sweep` cron moves them to `failed` with
+  `stopReason: 'stale_unverified'` and a message telling the operator it was
+  deliberately not retried. Ambiguity becomes a visible state rather than a silent
+  second execution.
+- **Dispatch now fences at the storage boundary, not with a preceding check
+  (#455).** The lease was verified by a `SELECT` and the run was inserted after it —
+  check-then-write, one level below the race it was meant to fix. Measured: A passed
+  the check, A's lease expired, B claimed the goal and dispatched, A resumed and
+  inserted anyway → **two runs and two queue jobs for one goal and phase**. Every
+  write a dispatch authorises now happens inside one transaction that holds the goal
+  row (`SELECT … FOR UPDATE SKIP LOCKED`), with the lease token checked inside that
+  lock; the enqueue stays outside, because a queue call cannot be rolled back. A
+  contending caller skips instead of waiting, and every statement touching the goal
+  row has a two-second `lock_timeout`, so one stuck dispatcher cannot stall later
+  ticks. Underneath it, a partial unique index makes "one in-flight run per goal" a
+  database rule rather than a convention any future call site could forget.
+- **Goals and tenants waiting on something no longer starve the ones behind them
+  (#455).** Filtering settled goals fixed one prefix; a goal whose intent is
+  `paused` or `error` was another, and it came back on every tick with
+  `INTENT_NOT_ACTIVE`. Measured with `limit = 1`: two consecutive passes reported
+  that skip, enqueued nothing, and never reached the runnable goal behind it — and
+  the same shape with `sitesLimit = 1` meant one tenant was visited twice while the
+  other never ran. Unrunnable goals are now excluded in SQL, and selection rotates:
+  `dispatch_attempted_at` records when a goal was last *considered*, so being looked
+  at costs it its place in the queue. `sitesLimit` is a per-tick budget rather than a
+  cutoff — tenants are visited least-recently-considered first, so a deployment with
+  more sites than the limit reaches the rest on later ticks.
+- **A site administrator can decide an agent-reviewer approval again (#453).** The
+  capability resolver emits `admin` and deliberately never mints `*`, while
+  `ReviewerService` accepted only `review:<domain>` or `*` — so a real administrator
+  was refused with `Capability "review:items" is required`, and the agent-reviewer
+  route had no reachable positive path. The existing tests passed `review:items`
+  straight into the service, which proved it honoured a capability without proving
+  anything could produce one. Both the harness and the reviewer now share a single
+  `satisfiesCapability` predicate, so "what counts as admin" cannot drift apart
+  again, and a new suite drives the decision with capabilities from the real
+  resolver. Deciding remains admin-only on all three entry points, with regressions
+  that refuse a non-admin — including a member holding exactly the write permission
+  the parked action needs.
+- **An approved action now runs under the requester's row and field rules, not
+  only their capability tokens (#472).** The capability intersection shipped first
+  and was not enough: `items:write` says nothing about which collection, which
+  rows or which fields, so a restriction written in the policy DSL passed straight
+  through it. Measured on Postgres with a real `ItemService` — an API key parked an
+  update to `title`, its update permission was narrowed to `body` while the
+  approval waited, a direct call was refused with
+  `Permission does not allow writing field(s): title`, and the admin approving the
+  parked action **wrote `title` anyway**, because the skill executed against the
+  approver's ItemService. The executing service is now rebound to the requester's
+  permission context for the duration of the decision. Two limits are stated
+  explicitly in the governed-tool contract rather than left to be discovered: the
+  decider's own mask is not applied (approving is not performing, and intersecting
+  two policy contexts is not a defined operation), and an `agentRole` requester has
+  no row/field context by construction.
+- **An approval parked by the async chat path could not be approved by anyone
+  (#472).** `POST /ai/chat` with `Prefer: respond-async` never passed the
+  requesting principal into the harness, so the approval it created carried no
+  provenance — indistinguishable from a row written before the column existed, and
+  refused with `APPROVAL_PROVENANCE_MISSING` and an instruction to re-request.
+  Re-requesting down the same path produced the same dead end. The worker now
+  carries `job.principal` through, and a source-scan tripwire requires every
+  production `harness.execute` call to pass provenance, since the argument is
+  optional by necessity (a legacy queued job has no principal) and the type system
+  therefore cannot catch the next omission.
+- **Duplicate queue delivery no longer executes twice (#455).** `markRunning` read
+  the run status and then wrote, and it accepted `running` as a startable state —
+  so under at-least-once delivery it was not a guard at all. Measured: one job
+  delivered twice concurrently created **two items**; delivered again while its run
+  sat in `awaiting_approval` it created a **second pending approval** for the same
+  run. It is replaced by two conditional UPDATEs with distinct owners:
+  `claimQueuedRun` (the queue's, `queued → running`, with takeover of a `running`
+  row older than 15 minutes so a crashed worker still recovers) and
+  `resumeApprovedRun` (the approval's, `awaiting_approval → running`). A queue
+  redelivery can no longer resume a parked run, which is how the duplicate approval
+  appeared.
+- **A dispatch lease could be released by the caller it replaced (#455).** The
+  holder was recorded as `${HOSTNAME}:${pid}`, which is the same string for every
+  acquisition in a process — so two overlapping ticks were indistinguishable: A's
+  lease expired, B reclaimed it, A's `finally` released "its" lease by owner match
+  and deleted B's, and a third caller walked in while B was still working. Each
+  acquisition now carries its own token, release and the pre-write fence both check
+  it, and a pass that outlived its lease stops with `LEASE_LOST` instead of
+  enqueueing alongside the new holder.
+- **Goals waiting on a human no longer starve the ones behind them (#455).**
+  Filtering terminal goals in SQL fixed one starvation and left another:
+  `in_progress` is exactly the status of a goal whose run is parked at
+  `awaiting_approval`. With `limit = 1`, two consecutive passes each took the
+  oldest such goal, skipped it with `RUN_ACTIVE`, enqueued nothing, and never
+  looked at the actionable goal behind it — oldest-first had moved the starvation to
+  the front of the queue. Goals with a run in flight are now excluded in SQL, so
+  the limit counts goals that can actually move, and the same rule applies to
+  multi-tenant site discovery. A goal returns the moment its run leaves the
+  in-flight set, so nothing has to remember it.
+- **`LUMIBASE_MCP_GOVERNED=on` no longer falls back to ungoverned REST (#454).**
+  The mode that exists to guarantee governance quietly bypassed it: a mutation
+  tool with no governed mapping fell through to a direct REST call, so autonomy
+  level, HITL parking, the kill switch and run audit were all skipped — for the
+  write, after the tool had already been declared governed. `on` now **refuses**
+  such a tool before any REST call is made, naming the tool and the reason.
+  `auto` (the default) and `off` are unchanged: `auto` still falls back with a
+  one-time stderr warning, which is the documented "governance not available
+  here" path. The classifier that decides what counts as a mutation moved into
+  the source so the gate and the tripwire share one definition rather than two
+  regexes that can drift — the drifting copy would have been the one deciding
+  whether a write is allowed. 47 tools are currently ungoverned and enumerated in
+  `UNGOVERNED_MUTATIONS` with a reason each; deployments pinned to `on` will see
+  those refused instead of executed.
+- **An approval no longer executes with only the decider's authority (#472).**
+  `executeApproved` resolved capabilities for whoever pressed approve and never
+  re-read the requester's, so an action parked by user A still executed after A
+  was demoted, deactivated, or had their key revoked — the approval outlived the
+  authority it was requested under. `agent_approvals` now records the requesting
+  principal (`requested_by_principal`), and execution resolves **both** sides at
+  decision time and uses the intersection: the requester must still be allowed to
+  ask, and the decider must be allowed to approve. Pre-existing `pending`
+  approvals carry no provenance and are refused with
+  `APPROVAL_PROVENANCE_MISSING` rather than falling back to the decider — that
+  fallback is the defect. They need re-requesting; the migration header carries
+  the query that lists them. Deliberately not backfilled: nothing records who
+  asked, and inventing an identity is the error being fixed.
+- **Leader-locked cron jobs released the lock before their work finished
+  (#455).** All nine registrations in `serve.ts` were shaped
+  `() => { void work() }`. `void` discards the promise, so the callback returned
+  immediately, `leaderLockedCallback` awaited `undefined`, and the lock was
+  released while the work was still running — it guaranteed nothing for **any**
+  of them: `audit-rotation`, `pageview-flush`, `veto-sweep`,
+  `approval-claim-sweep`, `content-scheduler`, `retention-sweep`,
+  `goal-dispatch`, `deployment-poll`, `flow-schedule`. Two replicas could run the
+  same sweep concurrently. All nine now await, and both halves are locked down: a
+  source scan rejects the old shape, and a behavioural test shows
+  `withLeaderLock` releasing only after an awaited function settles.
+- **Goal dispatch is now serialized, self-healing and fair (#455).** Three
+  distinct defects in the dispatch loop added above:
+  - **Two entry points could dispatch the same goal.** The cron tick and
+    `POST /intents/:id/scan` both read-then-write, so both could see "no active
+    run" and create one. A goal now carries a dispatch lease
+    (`dispatch_lease_until` / `dispatch_lease_by`) taken with a single
+    conditional `UPDATE`, so Postgres picks the winner and the loser reports
+    `LEASE_HELD`. The lease is a timestamp, not a flag, so a process killed
+    mid-dispatch costs one skipped tick instead of stranding the goal.
+  - **A lost job stalled a goal forever.** The run row is inserted before the job
+    is enqueued; a process dying in between left a `queued` run that nothing
+    consumed, and every later pass skipped the goal on `RUN_ACTIVE`. A run
+    `queued` longer than five minutes is now treated as lost: the goal is
+    re-dispatched and the orphan is settled as `cancelled` with
+    `stopReason: 'dispatch_lost'` — cancelled rather than failed, because a lost
+    job is not a decision anyone made.
+  - **An older goal could starve.** The query took the newest `limit * 4`
+    reconciler goals and filtered for `open`/`in_progress` in memory, so enough
+    newer terminal goals pushed an older pending one out of every pass, silently.
+    Status is now filtered in SQL and goals are served oldest-first; site
+    discovery likewise only visits sites that actually have a dispatchable goal.
+- **One rejected audit row no longer discards the whole batch (#469, defence in
+  depth).** A multi-row `INSERT` is atomic, so a row rejected by the
+  `audit_log.site_id` foreign key discarded **every** row batched with it — up to
+  99 records belonging to real tenants, and precisely the ones worth keeping:
+  denied control-plane access, rejected uploads, failed authentication. The
+  batcher now retries row by row **only** when the batched statement fails, so
+  the offending row is dropped (logged with its site and event, never its
+  metadata) while the rest are written. Each table is attempted independently so
+  a failure in one cannot cause the other's rows to be written twice, and the
+  error is still rethrown so a caller that awaits `flush()` observes it.
+  To be precise about what this does and does not fix: the HTTP path can no
+  longer produce such a row. `withTenantExists` rejects an unknown site with
+  `404` before `withAuth` — the first middleware that writes audit — and that
+  landed earlier. Measured against a live CMS: four probes with a forged
+  `X-Lumi-Site` (three unauthenticated, one with a valid key from another site)
+  all answered `404`, the process stayed up, and `audit_log` gained no rows. What
+  remains reachable is the path *outside* a request: an audit job sitting in the
+  queue when its site is deleted, or a cron/CDC/worker passing a site id that has
+  since gone. Verified in `audit-batch-isolation.db.integration.test.ts`.
+
+- **Reconciler goals now execute (#455).** A content intent's drift became an
+  `agent_goals` row and stopped there. Nothing turned that goal into a run: no cron
+  task, no queue consumer, no route. Measured on Postgres before the fix — one
+  reconcile plus three further cycles left `agent_runs` empty, the drift `assigned`
+  with its `goalId` set, and the content unchanged. That was worse than inaction,
+  because goal assignment deliberately skips drift that already carries a `goalId`,
+  so the unexecutable goal **locked** its drift out of every later cycle: a site
+  accumulated assigned drift that no longer looked actionable and was never repaired.
+  - **New `GoalDispatchService`** advances each reconciler goal by one step per pass:
+    draft → promote → verify. The next step is derived from observable state (goal
+    phase, latest run, whether the draft branch exists, drift status), so a pass is
+    safe to repeat, safe to resume after a crash, and unaffected by duplicate queue
+    delivery. Driven by a leader-locked `goal-dispatch` cron tick on Node/Docker, and
+    by `POST /api/v1/intents/:id/scan`, whose response gains a `dispatch` section.
+  - **New `repairTranslation` skill** fills one missing locale into a **version
+    branch**, never live content. Publishing is a separate `promoteVersion` run, which
+    is classified dangerous and therefore always parks for human approval (#453), so
+    published content changes exactly once in the sequence, after a human approves.
+  - **The goal completes only when a fresh scan can no longer find the violation.** A
+    promote that publishes content which does not actually resolve the drift blocks the
+    goal with `VERIFY_FAILED` instead of reporting success.
+  - **Every dead end is named.** `metadata.blockedReason` records `RUN_FAILED`,
+    `RUN_CANCELLED`, `NO_REPAIR_SKILL`, `DRAFT_MISSING`, `PROMOTE_INCOMPLETE`,
+    `VERIFY_FAILED`, `ENQUEUE_FAILED` or `DRIFT_MISSING`, and Studio → Mission Control
+    shows it. The loop never retries on its own: the most common cause of a failed
+    phase is a human rejecting the approval, and re-dispatching would re-ask them.
+  - **Governance survives the queue hop.** `AgentRunJobPayload` gains optional
+    `origin`, `intentId`, `driftFingerprint`, `autonomyCap` and `agentRole`, and the
+    worker forwards them into the harness envelope. Without that, the intent's autonomy
+    ceiling was recorded on the payload and enforced nowhere at execution time.
+    Capabilities are **not** snapshotted: the worker resolves them from the agent role
+    at pickup, so disabling a role stops work already sitting in the queue.
+  - **Also fixed: the agent role library seeded only when someone opened the Studio
+    Roles page.** `agent_roles` is seeded lazily and nothing on the background path
+    triggered it, so on a site where nobody had visited that page every reconciler run
+    resolved to zero capabilities and failed `capabilities_denied`. The worker now
+    seeds before resolving; the seed is idempotent and adds no new definitions.
+  - **Runtime limits, stated rather than implied.** Dispatch runs on Node/Docker. On
+    Cloudflare Workers the `agent-runs` queue still has no consumer export, so
+    asynchronous runs — including this loop — do not execute there; a tripwire asserts
+    that rather than leaving readers to infer it. Documented in
+    `docs/{en,vi}/features/reconciler-repair-loop.md`.
+
 ### Changed
 
 - **Onboarding docs: `lumibase init` is the same scaffold, and the version pin has
@@ -23,6 +257,91 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   missing-template-directory error rather than an unknown-template one. That trap
   was known — it was recorded in a test comment and in the Setup Impact Registry —
   but had never been told to users. Docs only; no runtime change.
+- **Corrected: `revalidate` is not an upper bound on stale content (#334).** The
+  Next.js quickstart and the `nextjs-blog` example said the withdrawal window was
+  "finite and bounded by `revalidate`". It is not. `revalidate` is the minimum age
+  at which a page may look for fresh data; the first request after expiry is still
+  answered from the stale cache while regeneration runs behind it, a page nobody
+  requests is never regenerated, and a failed regeneration keeps the previous HTML.
+  The measured 64 s is one path — traffic present, regeneration successful — not a
+  ceiling. Both documents now state plainly that this setup has **no hard takedown
+  guarantee** and that on-demand revalidation from a webhook is the only listed
+  option that reacts to the change rather than to a clock.
+- **API spec: the human approval endpoints were missing.** `POST
+  /api/v1/agent/approvals/:id/decide` and `/reopen` existed in code and in tests
+  but not in `hono-api-spec.md`, which is the document the v1 surface freeze points
+  at. Both are now specified with their capability (`approvals:decide`), status
+  codes, and — for `decide` — the requester ∩ decider rule and the
+  `APPROVAL_PROVENANCE_MISSING` refusal.
+- **MCP: one governed tool contract across both transports (#454, #472).** LumiBase
+  exposes MCP twice — `POST /api/v1/mcp` and the `@lumibase/mcp-server` stdio
+  package — and the two did not agree. The same logical operation was governed on one
+  surface and ungoverned on the other, and the schema advertised to clients did not
+  describe what the server accepted. Six changes, each closing a case that was
+  reproduced first:
+  - **One schema source.** `packages/contracts/src/agent-tools/` holds canonical Zod
+    contracts; the harness validates against them and `tools/list` advertises the
+    JSON Schema derived from the same definitions. Previously every skill without a
+    hand-written schema advertised `{type:'object'}`, so a well-behaved client could
+    send `{}` and be dispatched into a service. `.strict()` means unknown fields are
+    rejected rather than dropped silently.
+  - **Input is validated before any side effect,** and before `ensureRun` — placing
+    the check later would leave a `running` run and tool call behind for input that
+    can never execute. `createItem {}` used to reach
+    `ItemService.create(undefined, …)` and surface a raw
+    `TypeError: Cannot read properties of undefined` as the tool-result message;
+    `deleteItem {}` used to park an approval a human could approve and which could
+    then never succeed. Both now return `denied` with `code: 'VALIDATION'` naming the
+    offending field.
+  - **Writes are gated on the autonomy level, not on the `dangerous` flag.** The trust
+    gradient was reachable only through the dangerous branch, so a plain content write
+    executed at L0 and never asked for approval at L1 — contradicting
+    `AutonomyService`'s own definitions of those levels. L0 now refuses
+    (`code: 'AUTONOMY_SHADOW'`), L1 parks an approval through the same rows and ids a
+    control-plane skill uses, L2+ executes. **No behaviour change without
+    configuration:** the resolver defaults a safe capability to L2, so an install that
+    never configured autonomy is unaffected.
+  - **Capabilities are resolved from RBAC.** `auth.roles` holds a role *id* for a
+    normal user, `[]` for an API key, and the literal `'admin'` only for
+    bootstrap/dev — compared by exact string against `items:write`, the gate was
+    admin-or-nothing, and a site admin holding a real `adminAccess` role was refused
+    outright. Every transport and both queue workers now call one resolver backed by
+    the compiled permission bundle. Queue payloads carry a principal *reference*
+    instead of a capability snapshot, so a revoked key or a demoted user takes effect
+    on work that was already accepted.
+  - **The decision contract states which approval id you hold.** `approvalId` used to
+    collapse two id spaces — `agent_approvals` and the legacy `ai_approvals`, decided
+    at two different endpoints — so a client could hold a valid-looking id and call the
+    wrong route. `approvalSpace`, `agentApprovalId` and `legacyApprovalId` are
+    additive; `approvalId` keeps its meaning.
+  - **stdio routes 27 mutation tools through the harness.** Destructive tools also stop
+    asserting success: 22 call sites used to `await client.delete(...)` and then return
+    a hardcoded "deleted" without reading the response, which reports a deletion that
+    has not happened the moment a call can come back pending. The set of 27 was
+    measured by comparing each tool's advertised properties against the canonical
+    contract, not chosen by name; the remaining mutation tools stay on REST and are
+    **enumerated** with their reason in `UNGOVERNED_MUTATIONS`, with a tripwire that
+    fails when a mutation tool appears in neither table.
+
+  Upgrade notes:
+
+  - **No migration, no backfill, no new CMS environment variable.**
+  - `@lumibase/mcp-server` gains `LUMIBASE_MCP_GOVERNED`: `auto` (default) uses
+    governance when the site has `contentOs.mcp` enabled and otherwise falls back to
+    REST with one stderr warning; `on` refuses instead of falling back — the correct
+    setting for a deployment that requires governance, because a fallback that triggers
+    exactly when governance is unavailable is a bypass of governance; `off` keeps the
+    previous behaviour. The default is `auto` because `contentOs.mcp` also defaults
+    off, and defaulting to `on` would break every existing install on upgrade.
+  - Because only `items:*` and `schema:*` capabilities are derived for non-admins,
+    control-plane skills are admin-only in practice. That is fail-closed by design;
+    granting one to a non-admin means adding a pseudo-resource to the `permissions`
+    table, not loosening the capability check.
+  - Known limitation, stated rather than hidden: an approved action executes with the
+    **decider's** capabilities. The approval tables do not persist a principal
+    reference, so the requester's grant cannot be re-resolved at decision time.
+
+  Full contract: `docs/{en,vi}/mcp/governed-tool-contract.md`.
 
 - **Dependency batch: 27 minor/patch bumps, Vitest 5, Framer Motion 13.** The
   group bump carries `zod` 4.4→4.6, `next` 16.3.3→16.3.4, `hono` 4.13.5→4.13.7,
@@ -111,6 +430,29 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   in the pre-commit hook) fails the build when a sidebar item, a whole
   category, or a navbar/footer `/docs/…` link no longer has a page behind it.
   The pages that were declared but never written are tracked as `B68`.
+
+- **The database commands printed all over the docs did not exist.**
+  `packages/database` defines `migrate` / `generate` / `studio`; the `db:`
+  prefix belongs to the **root** scripts only, so every
+  `pnpm -F @lumibase/database db:migrate` in the docs failed with *"None of the
+  selected packages has a db:migrate script"* — and `db:reset` was never a
+  script anywhere. It appeared 22 times across twelve doc files and
+  `AGENTS.md`, including **step 5 of Local Development** and **step 1 of the
+  Next.js quickstart**, which is the first command a new user runs. `CLAUDE.md`
+  had carried a warning that the form is invalid the whole time. All of them now
+  call the root scripts (`pnpm db:migrate`, `pnpm db:generate`,
+  `pnpm db:studio`); tracked as `B69`, whose remaining half is that nothing
+  verifies the commands inside a docs code fence.
+
+- **Local Development described services the compose file does not run.** Step 4
+  and the service table listed **Logto** on `:3001`; `docker/docker-compose.yml`
+  has no Logto service — `:3001` is Bull Board, and MinIO and imgproxy were
+  missing from the table entirely. The port-conflict section told readers to
+  override `STUDIO_PORT`, which nothing reads: Studio's dev port is hardcoded as
+  `server.port: 2026` in `apps/studio/vite.config.ts`, so the fix is to pass
+  `--port` to Vite. `pnpm -F @lumibase/cms wrangler:dev`, also gone — the `dev`
+  script already runs under Wrangler. This closes part (b) of `B47`; the
+  production-override SSL trap in part (c) is still open.
 
 - **A DB integration suite pointed at a database that is not there no longer
   reports as passing.** All 20 `*.db.integration.test.ts` suites gated

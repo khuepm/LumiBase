@@ -1,8 +1,8 @@
 ---
-version: 2
-lastUpdated: 2026-07-31T19:47:45.247Z
+version: 3
+lastUpdated: 2026-09-21T05:45:15.059Z
 sourceLang: en
-contentHash: ffb40855e5e59508
+contentHash: 8239e8df5e0da2f5
 ---
 
 # Contributing to LumiBase
@@ -64,7 +64,7 @@ docker compose -f docker/docker-compose.yml up -d
 ### Run database migrations
 
 ```bash
-pnpm -F @lumibase/database db:migrate
+pnpm db:migrate
 ```
 
 ### Start development servers

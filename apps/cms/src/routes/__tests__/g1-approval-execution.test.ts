@@ -14,6 +14,12 @@ import {
 } from '@lumibase/database';
 import type { AppEnv, AuthPrincipal } from '../../env';
 import { createFakeDb, type FakeDb, type Row } from '../../services/__tests__/g1-approval-fake-db';
+import {
+  adminRbac,
+  memberRbac,
+  withRbacSelect,
+  type FakePrincipalRbac,
+} from '../../test-utils/rbac-principal-db';
 
 /**
  * G1 (#453) — a human decision on an agent approval must execute/resume the
@@ -65,6 +71,18 @@ const memberPrincipal: AuthPrincipal = {
   raw: {},
 };
 
+/**
+ * Set by a case that needs a specific RBAC shape (e.g. a member who holds write
+ * permissions), so the default mapping below stays readable.
+ */
+let rbacOverride: FakePrincipalRbac | undefined;
+
+/** RBAC state matching the principal driving a request. */
+function rbacFor(auth: AuthPrincipal): FakePrincipalRbac {
+  if (rbacOverride) return rbacOverride;
+  return auth.userId === adminPrincipal.userId ? adminRbac(auth.userId) : memberRbac(auth.userId ?? 'u');
+}
+
 function seedFakeDb(agentOverrides: Row = {}, legacyOverrides: Row = {}): FakeDb {
   const fake = createFakeDb({
     [AGENT_APPROVALS]: [{
@@ -78,6 +96,14 @@ function seedFakeDb(agentOverrides: Row = {}, legacyOverrides: Row = {}): FakeDb
       status: 'pending',
       approvalPolicy: 'human',
       requestedByAgent: 'lumibase-copilot',
+      // #472: execution re-resolves the REQUESTER's current rights, so a row
+      // without provenance is refused. The fixture therefore names one — here the
+      // admin principal the suite already models, which keeps these cases about
+      // claim/execute semantics rather than about authorization.
+      requestedByPrincipal: {
+        kind: 'principal',
+        ref: { type: 'user', siteId: 'site_a', userId: 'usr_admin' },
+      },
       expiresAt: null,
       decidedAt: null,
       decidedBy: null,
@@ -137,7 +163,11 @@ function buildApp(fake: FakeDb, auth: AuthPrincipal): Hono<AppEnv> {
     // correct for a schema skill.
     (c as never as { env: Record<string, unknown> }).env = {};
     c.set('auth', auth);
-    c.set('db', fake.db);
+    // Since #472 the decide gate resolves capabilities from RBAC instead of
+    // reading `auth.roles`, so the principal's admin-ness has to exist in the
+    // data. `withRbacSelect` answers only those reads; the approval tables are
+    // still answered by this file's own fake.
+    c.set('db', withRbacSelect(fake.db, rbacFor(auth)));
     c.set('siteId', 'site_a');
     c.set('runtime', { cache: undefined, queue: undefined, keys: undefined } as never);
     c.set('requestId', 'req_1');
@@ -284,6 +314,44 @@ describe('G1 — human approval executes the parked action', () => {
     expect(res.status).toBe(403);
     expect(deleteCollection).not.toHaveBeenCalled();
     expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('pending');
+  });
+
+  /**
+   * Being able to perform the action is not being allowed to approve it (#481 B80).
+   *
+   * Deciding stays admin-only, which is the scope the owner confirmed for this PR:
+   * with an admin decider there is no field mask to intersect, so executing under
+   * the requester's scope is the whole rule. That argument only holds while
+   * non-admins genuinely cannot decide — including the tempting near-miss of a
+   * member who holds the write permission the parked action needs. This case pins
+   * that, so a later change that widens the gate cannot quietly invalidate the
+   * reasoning behind F1.
+   */
+  it('refuses a member who holds the write permission the action needs', async () => {
+    const fake = seedFakeDb();
+    const writer: AuthPrincipal = {
+      userId: 'usr_writer',
+      email: 'writer@example.com',
+      roles: ['member'],
+      raw: {},
+    };
+    // Grant exactly what the stored skill would need, minus the right to approve.
+    rbacOverride = memberRbac('usr_writer', [
+      { collection: 'schema', action: 'schema:delete' },
+      { collection: 'posts', action: 'update' },
+    ]);
+    try {
+      const res = await decide(fake, { decision: 'approved' }, writer);
+
+      expect(res.status).toBe(403);
+      await expect(res.json()).resolves.toMatchObject({
+        errors: [{ code: 'FORBIDDEN' }],
+      });
+      expect(deleteCollection).not.toHaveBeenCalled();
+      expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('pending');
+    } finally {
+      rbacOverride = undefined;
+    }
   });
 
   it('runs the action once under concurrent approves', async () => {

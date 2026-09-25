@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
 import { sites, users } from './core';
@@ -162,6 +171,35 @@ export const agentGoals = pgTable(
     driftFingerprint: text('drift_fingerprint'),
     /** Role from the `agent_roles` library executing this goal. */
     agentRole: text('agent_role'),
+    /**
+     * Dispatch lease: until when, and by whom (#455, reviewer R3/R4).
+     *
+     * Advancing a reconciler goal is a read-then-write — read the latest run,
+     * then insert a new one — and it has more than one entry point (the cron tick
+     * and `POST /intents/:id/scan`). Two callers that both read "no active run"
+     * both created a run and a queue job for the same drift. The cron's leader
+     * lock cannot help: it does not cover the HTTP path, and it was being released
+     * early anyway.
+     *
+     * The lease is the serialization point. A conditional UPDATE takes it
+     * (`WHERE lease IS NULL OR lease < now()`), so exactly one caller proceeds and
+     * the database decides which. It is time-bounded rather than a boolean
+     * because the holder can die: an expired lease is reclaimable without an
+     * operator, which is also what lets a goal recover from a crash between
+     * inserting the run and enqueueing its job.
+     */
+    dispatchLeaseUntil: timestamp('dispatch_lease_until'),
+    dispatchLeaseBy: text('dispatch_lease_by'),
+    /**
+     * When dispatch last CONSIDERED this goal — not when it last succeeded
+     * (#481 R3.3).
+     *
+     * The rotation key. A pass takes the N goals least recently considered, so a
+     * goal that keeps being skipped moves to the back of the queue instead of
+     * occupying the same slot on every tick. Null means "never considered", which
+     * sorts first: a new goal is served before anything already looked at.
+     */
+    dispatchAttemptedAt: timestamp('dispatch_attempted_at'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -170,6 +208,11 @@ export const agentGoals = pgTable(
     siteCreatedIdx: index('agent_goals_site_created_idx').on(t.siteId, t.createdAt),
     siteParentIdx: index('agent_goals_site_parent_idx').on(t.siteId, t.parentGoalId),
     siteOriginIdx: index('agent_goals_site_origin_idx').on(t.siteId, t.origin),
+    /** Serves the rotation order of the dispatch queue (#481 R3.3). */
+    dispatchRotationIdx: index('agent_goals_dispatch_rotation_idx').on(
+      t.siteId,
+      t.dispatchAttemptedAt,
+    ),
   }),
 );
 
@@ -201,6 +244,18 @@ export const agentRuns = pgTable(
   (t) => ({
     siteStatusIdx: index('agent_runs_site_status_idx').on(t.siteId, t.status),
     goalCreatedIdx: index('agent_runs_goal_created_idx').on(t.goalId, t.createdAt),
+    /**
+     * At most ONE in-flight run per goal (#481 R3.2).
+     *
+     * Dispatch already serializes on the goal's lease inside a transaction; this
+     * is the same rule stated where it cannot be forgotten by a future call site
+     * that inserts a run without taking that lease. `awaiting_approval` is out of
+     * scope on purpose — a parked run coexists with the human decision flow, and
+     * duplicate parking is prevented by the run-claim CAS instead.
+     */
+    oneActivePerGoalIdx: uniqueIndex('agent_runs_one_active_per_goal_idx')
+      .on(t.siteId, t.goalId)
+      .where(sql`${t.status} IN ('queued', 'running')`),
   }),
 );
 
@@ -326,6 +381,24 @@ export const agentApprovals = pgTable(
     /** Veto window deadline: staged work auto-commits here unless vetoed. */
     autoCommitAt: timestamp('auto_commit_at'),
     requestedByAgent: text('requested_by_agent').default('lumibase-copilot').notNull(),
+    /**
+     * Who asked for this action, as a reference that can be re-resolved (#472).
+     *
+     * Deliberately a reference and not a capability snapshot. An approval can sit
+     * pending for days; without this column the only identity available at
+     * execution time was the decider's, so a requester who was demoted, had their
+     * key revoked or was removed from the site between parking and approval still
+     * had their action executed under the decider's rights. Storing the reference
+     * means the grant is re-read when the action finally runs.
+     *
+     * Two shapes, because not every requester is a person:
+     *   { kind: 'principal', ref: { type: 'user' | 'api_key' | 'dev', … } }
+     *   { kind: 'agentRole', role: 'translator', intentId?, autonomyCap? }
+     *
+     * Null on rows created before this column existed. Those cannot be resolved,
+     * so execution refuses them rather than guessing — see `executeApproved`.
+     */
+    requestedByPrincipal: jsonb('requested_by_principal'),
     decidedBy: text('decided_by').references(() => users.id, { onDelete: 'set null' }),
     decisionReason: text('decision_reason'),
     /**

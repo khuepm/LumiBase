@@ -3,7 +3,13 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { z } from 'zod';
-import type { LumiBaseClient } from '../client.js';
+import { McpUnavailableError, type LumiBaseClient } from '../client.js';
+import {
+  GOVERNED_TOOLS,
+  GovernedDispatcher,
+  UNGOVERNED_MUTATIONS,
+  isMutationTool,
+} from '../governed.js';
 import { registerAllTools } from '../tools/index.js';
 
 /**
@@ -70,7 +76,11 @@ function registryOnly() {
     },
   };
   const { client, calls } = fakeClient();
-  registerAllTools(server as never, client);
+  // `dispatcher: null` keeps these probes on the REST handlers on purpose. They
+  // measure what each handler sends to which endpoint; the governed routing is
+  // asserted in its own describe block below, with a client that can answer
+  // JSON-RPC.
+  registerAllTools(server as never, client, { dispatcher: null });
   return { tools, calls };
 }
 
@@ -111,10 +121,10 @@ const openConnections: Array<() => Promise<void>> = [];
  * linked in memory. Returns the client plus the recorder of REST calls the
  * handlers issue, so a call that never reaches the recorder never ran.
  */
-async function liveClient() {
+async function liveClient(options: { dispatcher?: GovernedDispatcher | null } = { dispatcher: null }) {
   const server = new McpServer({ name: 'lumibase', version: 'test' });
   const { client: cmsClient, calls } = fakeClient();
-  registerAllTools(server, cmsClient);
+  registerAllTools(server, cmsClient, options);
 
   const client = new Client({ name: 'g2-repro-client', version: 'test' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -134,63 +144,230 @@ afterEach(async () => {
   }
 });
 
-describe('G2 repro · stdio transport never reaches the governed harness', () => {
-  it('S1: every probed stdio tool call is a plain REST call — no /mcp, no /agent/skills [REAL MCP client]', async () => {
-    const { client, calls } = await liveClient();
+describe('G2 regression · governed tools route through the harness', () => {
+  /**
+   * Fake CMS client that CAN answer JSON-RPC, so the governed path is exercised
+   * instead of the fallback.
+   */
+  function governedFake(decision: Record<string, unknown> = { status: 'executed', data: { ok: true } }) {
+    const { client, calls } = fakeClient();
+    const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
+      calls.push({ method: 'JSONRPC', path: `/mcp:${method}`, body: params });
+      if (method === 'tools/list') return Promise.resolve({ tools: [] });
+      return Promise.resolve({
+        content: [{ type: 'text', text: JSON.stringify(decision) }],
+        structuredContent: decision,
+        isError: decision['status'] === 'denied',
+      });
+    });
+    (client as unknown as { jsonRpc: unknown }).jsonRpc = rpc;
+    return { client, calls, rpc };
+  }
 
-    // One content write, one schema write, one schema delete, one read — the
-    // four probes the handoff asked for, issued through a real MCP client.
+  it('S1 [REGRESSION]: a governed tool goes to /mcp tools/call and issues no REST mutation', async () => {
+    const { client: cms, calls, rpc } = governedFake();
+    const server = new McpServer({ name: 'lumibase', version: 'test' });
+    registerAllTools(server, cms, { dispatcher: new GovernedDispatcher(cms, { mode: 'on' }) });
+
+    const client = new Client({ name: 'g2-governed-client', version: 'test' });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(st), client.connect(ct)]);
+    openConnections.push(async () => {
+      await client.close();
+      await server.close();
+    });
+
     await client.callTool({
       name: 'create_item',
       arguments: { collection: 'posts', data: { title: 'x' }, status: 'draft' },
     });
-    await client.callTool({ name: 'create_collection', arguments: { name: 'posts' } });
     await client.callTool({ name: 'delete_collection', arguments: { name: 'posts', confirm: true } });
-    await client.callTool({ name: 'list_items', arguments: { collection: 'posts' } });
 
-    const paths = calls.map((c) => `${c.method} ${c.path}`);
+    // BEFORE: both landed on `POST /items/posts` and `DELETE /collections/posts`,
+    // so the harness — kill switch, capability gate, autonomy resolution, HITL
+    // approval, veto window, `agent_runs`/`agent_tool_calls` audit — was never
+    // entered on this transport.
+    const rpcCalls = rpc.mock.calls.filter(([method]) => method === 'tools/call');
+    expect(rpcCalls.map(([, params]) => (params as { name: string }).name)).toEqual([
+      'createItem',
+      'deleteCollection',
+    ]);
 
-    // CURRENT: these four land on the ordinary REST surface. The harness —
-    // kill switch, capability gate, autonomy resolution, HITL approval, veto
-    // window, agent_runs / agent_tool_calls audit — is never entered.
-    // EXPECTED: a governed tool call is governed on BOTH transports.
-    // SCOPE: four probes, not the whole registry. The registry-wide statement
-    // is S4's naming invariant, not this test.
-    expect(paths).toContain('POST /items/posts');
-    expect(paths).toContain('POST /collections');
-    expect(paths).toContain('DELETE /collections/posts');
-    // The read carries the schema's applied defaults as a query string
-    // (`?limit=25&offset=0`), so match on the route rather than the full path.
-    expect(paths.some((p) => p.startsWith('GET /items/posts'))).toBe(true);
-    expect(paths.some((p) => p.includes('/mcp'))).toBe(false);
-    expect(paths.some((p) => p.includes('/agent/skills'))).toBe(false);
+    // And no REST mutation was issued for them.
+    const restMutations = calls.filter((c) => ['POST', 'PATCH', 'PUT', 'DELETE'].includes(c.method));
+    expect(restMutations).toEqual([]);
+
+    // `confirm` is a prompt for the operator, not a skill argument, so it is
+    // dropped rather than forwarded.
+    const deleteArgs = (rpcCalls[1]![1] as { arguments: Record<string, unknown> }).arguments;
+    expect(deleteArgs).toEqual({ name: 'posts' });
   });
 
-  it('S2: a dangerous probed tool returns no approval id — confirm is a prompt, not a gate', async () => {
-    const { tools, calls } = registryOnly();
+  it('S2 [REGRESSION]: a dangerous governed tool surfaces the parked approval', async () => {
+    const { client: cms, calls } = governedFake({
+      status: 'pending_approval',
+      approvalId: 'apr_9',
+      approvalSpace: 'agent',
+      agentApprovalId: 'apr_9',
+      runId: 'run_9',
+    });
+    const dispatcher = new GovernedDispatcher(cms, { mode: 'on' });
+    const tools = new Map<string, CapturedTool>();
+    registerAllTools(
+      {
+        registerTool: (name: string, config: CapturedTool['config'], handler: CapturedTool['handler']) =>
+          tools.set(name, { config, handler }),
+      } as never,
+      cms,
+      { dispatcher },
+    );
 
-    // `delete_collection` is the stdio counterpart of the HTTP MCP
-    // `deleteCollection` skill. On HTTP MCP that skill is control-plane +
-    // dangerous: it parks a pending approval and additionally requires an
-    // admin principal via the `mcp.ts` backstop.
     const result = (await tools.get('delete_collection')!.handler({
       name: 'posts',
       confirm: true,
-    })) as unknown;
+    })) as { content: Array<{ text: string }>; isError?: boolean };
 
-    // CURRENT: the DELETE is issued straight away and the result carries no
-    // approvalId / pending status.
-    // EXPECTED: the same governed skill parks identically on both transports.
-    //
-    // IMPORTANT — what this does NOT say: it does not say this REST route is
-    // unauthorized. `DELETE /collections/:name` enforces
-    // `requireSchemaPermission('schema:delete')`. The missing gate is AGENT
-    // governance (autonomy/HITL/kill switch), not RBAC. See S5 for the
-    // per-prefix guard split.
-    expect(calls.map((c) => c.method)).toContain('DELETE');
-    expect(JSON.stringify(result)).not.toMatch(/approvalId|pending_approval/);
+    // BEFORE: the DELETE went out immediately and the result carried no
+    // approvalId / pending status — `confirm` was a prompt, not a gate.
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+    expect(result.content[0]!.text).toContain('pending approval');
+    expect(result.content[0]!.text).toContain('apr_9');
+    expect(result.content[0]!.text).toContain('/api/v1/agent/approvals/');
+    expect(result.content[0]!.text).not.toMatch(/deleted/i);
   });
 
+  it('S13 [FLIPPED]: mode `on` refuses an UNGOVERNED mutation instead of letting it reach REST', async () => {
+    /**
+     * This assertion is inverted from its original form, deliberately.
+     *
+     * The earlier version pinned "an ungoverned mutation stays on REST" as correct
+     * even in mode `on`, reasoning that removing the tool would be a functional
+     * regression. Reviewer R1 showed why that reasoning does not hold for `on`:
+     * the setting exists to guarantee that no write executes outside governance,
+     * and `update_collection` reaching `PATCH /collections/posts` with zero
+     * JSON-RPC calls means the guarantee was not kept. A documented gap
+     * (`UNGOVERNED_MUTATIONS`) describes the hole; it does not close it.
+     *
+     * The functional-regression concern is answered by mode, not by exceptions:
+     * `auto` (the default) and `off` still route this tool to REST, so no existing
+     * install changes behaviour. Only an operator who asked for `on` gets the
+     * refusal — which is what they asked for.
+     */
+    const { client: cms, calls } = governedFake();
+    const tools = new Map<string, CapturedTool>();
+    registerAllTools(
+      {
+        registerTool: (n: string, c: CapturedTool['config'], h: CapturedTool['handler']) =>
+          tools.set(n, { config: c, handler: h }),
+      } as never,
+      cms,
+      { dispatcher: new GovernedDispatcher(cms, { mode: 'on' }) },
+    );
+
+    const result = (await tools.get('update_collection')!.handler({
+      name: 'posts',
+      label: 'Posts',
+    })) as { isError?: boolean; content: Array<{ text: string }> };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain('has no governed mapping');
+    // The point of the fix: no REST call happened, so there is nothing to undo.
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
+    expect(calls.some((c) => c.method === 'JSONRPC' && c.path === '/mcp:tools/call')).toBe(false);
+    // The gap is still enumerated, and the refusal quotes its reason.
+    expect(UNGOVERNED_MUTATIONS['update_collection']).toBe('no-skill');
+    expect(result.content[0]!.text).toContain('no-skill');
+  });
+
+  it('S14: mode `on` refuses when governance is unavailable — no REST fallback', async () => {
+    // A fallback that triggers exactly when governance is unavailable is a bypass
+    // of governance (the point RT4 makes on the CMS side). `on` must refuse.
+    const { client: cms, calls } = fakeClient();
+    (cms as unknown as { jsonRpc: unknown }).jsonRpc = vi.fn(() =>
+      Promise.reject(new McpUnavailableError('Enable the contentOs.mcp flag')),
+    );
+    const tools = new Map<string, CapturedTool>();
+    registerAllTools(
+      {
+        registerTool: (n: string, c: CapturedTool['config'], h: CapturedTool['handler']) =>
+          tools.set(n, { config: c, handler: h }),
+      } as never,
+      cms,
+      { dispatcher: new GovernedDispatcher(cms, { mode: 'on' }) },
+    );
+
+    const result = (await tools.get('delete_item')!.handler({
+      collection: 'posts',
+      id: 'i1',
+      confirm: true,
+    })) as { content: Array<{ text: string }>; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain('contentOs.mcp');
+    expect(calls.filter((c) => c.method === 'DELETE')).toEqual([]);
+  });
+
+  it('S15: mode `auto` falls back to REST but says so once, on stderr', async () => {
+    const { client: cms, calls } = fakeClient();
+    (cms as unknown as { jsonRpc: unknown }).jsonRpc = vi.fn(() =>
+      Promise.reject(new McpUnavailableError('Enable the contentOs.mcp flag')),
+    );
+    const warnings: string[] = [];
+    const dispatcher = new GovernedDispatcher(cms, {
+      mode: 'auto',
+      warn: (m) => warnings.push(m),
+    });
+    const tools = new Map<string, CapturedTool>();
+    registerAllTools(
+      {
+        registerTool: (n: string, c: CapturedTool['config'], h: CapturedTool['handler']) =>
+          tools.set(n, { config: c, handler: h }),
+      } as never,
+      cms,
+      { dispatcher },
+    );
+
+    await tools.get('delete_item')!.handler({ collection: 'posts', id: 'i1', confirm: true });
+    await tools.get('delete_item')!.handler({ collection: 'posts', id: 'i2', confirm: true });
+
+    expect(calls.filter((c) => c.method === 'DELETE')).toHaveLength(2);
+    // Probed once, warned once — the result is cached for the process.
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('contentOs.mcp');
+    expect(warnings[0]).toContain('skip agent governance');
+  });
+
+  it('S16 [TRIPWIRE]: every mutation tool is either governed or declared ungoverned', () => {
+    /**
+     * The gap must not be able to grow silently. A newly added mutation tool that
+     * is neither routed nor declared fails here, which forces whoever adds it to
+     * make the choice explicitly.
+     */
+    // `isMutationTool` now lives in `governed.ts` because mode `on` decides
+    // refusals with it at runtime. Importing it here rather than keeping a second
+    // copy means the tripwire and the gate can never disagree about what counts
+    // as a mutation.
+    const mutations = [...shared.tools.keys()].filter((n) => isMutationTool(n));
+
+    const unclassified = mutations.filter(
+      (n) => GOVERNED_TOOLS[n] === undefined && UNGOVERNED_MUTATIONS[n] === undefined,
+    );
+    expect(unclassified).toEqual([]);
+
+    // Neither table may claim a tool that does not exist, or the inventory drifts
+    // in the other direction.
+    const unknown = [...Object.keys(GOVERNED_TOOLS), ...Object.keys(UNGOVERNED_MUTATIONS)].filter(
+      (n) => !shared.tools.has(n),
+    );
+    expect(unknown).toEqual([]);
+
+    // Measured counts, so a change in either direction is visible in review.
+    expect(Object.keys(GOVERNED_TOOLS)).toHaveLength(27);
+    expect(mutations.length).toBeGreaterThan(70);
+  });
+});
+
+describe('G2 · stdio input validation and naming (unchanged by #454)', () => {
   it('S3: the SDK rejects missing and wrong-typed input before the handler runs [REAL MCP client]', async () => {
     const { client, calls } = await liveClient();
 
@@ -371,7 +548,7 @@ describe('G2 repro · body envelope: stdio gửi field ra top level, không bọ
    * head trước so "schema quảng bá" với "args skill đọc" nên **không thể** thấy
    * lớp lỗi này — phải so cả **body thật sự gửi đi**.
    */
-  it('S6: create_item spread field ra top level; update_item gửi bare — cả hai thiếu envelope data', async () => {
+  it('S6 [REGRESSION]: create_item và update_item bọc đúng envelope data', async () => {
     const { tools, calls } = registryOnly();
 
     await tools.get('create_item')!.handler({
@@ -387,19 +564,20 @@ describe('G2 repro · body envelope: stdio gửi field ra top level, không bọ
 
     expect(calls).toHaveLength(2);
 
-    // CURRENT: `client.post(path, { ...itemData, status })` — `title` nằm ở TOP
-    // LEVEL, không có key `data`. REST `createSchema` đòi `data: record` ⇒ 400.
+    // FIXED: body bọc trong `data` đúng như REST `createSchema` đòi.
     expect(calls[0]!.path).toBe('/items/posts');
-    expect(calls[0]!.body).toEqual({ title: 'x', status: 'draft' });
-    expect(Object.keys(calls[0]!.body as object)).not.toContain('data');
+    expect(calls[0]!.body).toEqual({ data: { title: 'x' }, status: 'draft' });
+    expect(Object.keys(calls[0]!.body as object)).toContain('data');
 
-    // CURRENT: `client.patch(path, itemData)` — gửi bare. REST `patchSchema`
-    // strip key lạ ⇒ service nhận `{}`, nhưng response vẫn 200.
+    // FIXED: `patch` cũng bọc `data`, nên `patchSchema` không strip nội dung nữa.
     expect(calls[1]!.path).toBe('/items/posts/item_1');
-    expect(calls[1]!.body).toEqual({ title: 'new title' });
-    expect(Object.keys(calls[1]!.body as object)).not.toContain('data');
+    expect(calls[1]!.body).toEqual({ data: { title: 'new title' } });
+    expect(Object.keys(calls[1]!.body as object)).toContain('data');
 
-    // EXPECTED cho cả hai: `{ data: { title: … }, status? }`.
+    // Chống tái diễn cả lớp: field của item KHÔNG được nằm ở top level.
+    for (const call of calls) {
+      expect(Object.keys(call.body as object)).not.toContain('title');
+    }
   });
 });
 
@@ -556,7 +734,7 @@ describe('G2 repro · result-shape probes: forwarding and wrapper behaviour', ()
    * sang toàn bộ candidate mapping.
    */
 
-  it('S10: fault injection — delete tool ignores a fulfilled decision-shaped value', async () => {
+  it('S10 [REGRESSION]: delete tool reports a decision-shaped value instead of claiming success', async () => {
     const tools = new Map<string, (a: Record<string, unknown>) => Promise<unknown>>();
     const server = {
       registerTool: (n: string, _c: unknown, h: (a: Record<string, unknown>) => Promise<unknown>) => tools.set(n, h),
@@ -573,11 +751,13 @@ describe('G2 repro · result-shape probes: forwarding and wrapper behaviour', ()
      *   - `DELETE /collections/:name` hiện trả **204** sau khi đã thực thi.
      *
      * Vì vậy test này **KHÔNG** tái hiện "CMS live park → stdio báo deleted".
-     * Nó chứng minh một điều hẹp hơn nhưng vẫn đáng giá: handler **bỏ qua hoàn
-     * toàn** giá trị fulfilled của client và tự dựng câu khẳng định — nên NẾU
-     * một adapter tương lai đưa decision (kể cả pending) vào đúng đường này thì
-     * người dùng sẽ bị báo sai. Đó là rủi ro của bước migration, không phải lỗi
-     * production đang xảy ra.
+     * Nó chứng minh một điều hẹp hơn nhưng vẫn đáng giá: handler có đọc giá trị
+     * fulfilled của client hay không — vì bước migration (task 8) sẽ đưa đúng
+     * decision đó vào đúng đường này.
+     *
+     * TRƯỚC: handler `await client.delete(...)` rồi **tự** dựng câu khẳng định,
+     * không đọc response, nên trả "deleted" kể cả khi decision nói chưa thực thi.
+     * NAY: `okAfter` nhận diện decision và trình bày đúng trạng thái.
      */
     const injectedDecision = { status: 'pending_approval', approvalId: 'apr_1' } as const;
     const cms = {
@@ -598,27 +778,108 @@ describe('G2 repro · result-shape probes: forwarding and wrapper behaviour', ()
     };
     const text = result.content[0]!.text;
 
-    // CURRENT: handler làm `await client.delete(...)` rồi **tự** dựng câu khẳng
-    // định, không hề đọc giá trị fulfilled. Nên bất kể client trả gì — kể cả một
-    // decision nói rõ chưa thực thi — MCP client vẫn nhận
-    // "Collection "posts" deleted." với `isError` falsy.
-    // EXPECTED: result phải phản ánh executed / pending_approval / denied, và
-    // pending KHÔNG được trình bày như mutation đã hoàn tất.
-    expect(text).toContain('deleted');
-    expect(text).not.toContain('pending');
-    expect(text).not.toContain('apr_1');
+    // Kết quả nêu rõ chưa thực thi, kèm id approval và endpoint để quyết định.
+    expect(text).toContain('pending approval');
+    expect(text).toContain('apr_1');
+    expect(text).not.toMatch(/"posts" deleted/);
+    // Pending KHÔNG phải lỗi — nó là kết quả hợp lệ đang chờ người. Nhưng nó
+    // cũng không được trình bày như mutation đã hoàn tất.
     expect(result.isError ?? false).toBe(false);
 
-    // Cùng lớp lỗi với các delete tool khác — không phải ca lẻ.
+    // Cùng lớp lỗi ⇒ cùng cách sửa, không vá một ca lẻ.
     for (const [name, args] of [
       ['delete_item', { collection: 'posts', id: 'i1', confirm: true }],
       ['delete_role', { id: 'r1', confirm: true }],
       ['delete_field', { collection: 'posts', field_name: 'title', confirm: true }],
     ] as Array<[string, Record<string, unknown>]>) {
       const r = (await tools.get(name)!(args)) as { content: Array<{ text: string }> };
-      expect(r.content[0]!.text, `${name} tự khẳng định đã xoá`).toMatch(/deleted/i);
-      expect(r.content[0]!.text, `${name} không nêu pending`).not.toMatch(/pending/i);
+      expect(r.content[0]!.text, `${name} không tự khẳng định đã xoá`).not.toMatch(/deleted/i);
+      expect(r.content[0]!.text, `${name} nêu pending`).toMatch(/pending approval/i);
+      expect(r.content[0]!.text, `${name} nêu id approval`).toContain('apr_1');
     }
+  });
+
+  it('S12: một REST 204 vẫn cho câu khẳng định, và denial thành isError', async () => {
+    /**
+     * Nửa tương thích của S10. Hai điều phải đúng cùng lúc, nếu không thì cách
+     * sửa S10 đổi hành vi của mọi endpoint REST bình thường:
+     *   (a) `DELETE` trả 204 ⇒ `client.delete` resolve `undefined` ⇒ vẫn dùng câu
+     *       "deleted" như trước;
+     *   (b) decision `denied` phải thành `isError` kèm `code`, không phải một câu
+     *       thành công.
+     * Cũng kiểm âm phần nhận diện: một row REST có `status: 'published'` KHÔNG
+     * được coi là decision.
+     */
+    const tools = new Map<string, (a: Record<string, unknown>) => Promise<unknown>>();
+    const server = {
+      registerTool: (n: string, _c: unknown, h: (a: Record<string, unknown>) => Promise<unknown>) => tools.set(n, h),
+    };
+    const responses: unknown[] = [];
+    const cms = {
+      get: vi.fn(() => Promise.resolve(responses.shift())),
+      post: vi.fn(() => Promise.resolve(responses.shift())),
+      patch: vi.fn(() => Promise.resolve(responses.shift())),
+      put: vi.fn(() => Promise.resolve(responses.shift())),
+      delete: vi.fn(() => Promise.resolve(responses.shift())),
+      getText: vi.fn(() => Promise.resolve('x')),
+      getRootText: vi.fn(() => Promise.resolve('x')),
+      postRaw: vi.fn(() => Promise.resolve(responses.shift())),
+    };
+    registerAllTools(server as never, cms as unknown as LumiBaseClient);
+
+    // (a) 204 → undefined
+    responses.push(undefined);
+    const executed = (await tools.get('delete_collection')!({ name: 'posts', confirm: true })) as {
+      content: Array<{ text: string }>;
+      isError?: boolean;
+    };
+    expect(executed.content[0]!.text).toBe('Collection "posts" deleted.');
+    expect(executed.isError ?? false).toBe(false);
+
+    // (b) denied → isError + code
+    responses.push({ status: 'denied', code: 'AUTONOMY_SHADOW', message: 'L0 cannot write' });
+    const denied = (await tools.get('delete_collection')!({ name: 'posts', confirm: true })) as {
+      content: Array<{ text: string }>;
+      isError?: boolean;
+    };
+    expect(denied.isError).toBe(true);
+    expect(denied.content[0]!.text).toContain('AUTONOMY_SHADOW');
+    expect(denied.content[0]!.text).not.toMatch(/deleted/i);
+
+    // Kiểm âm nhận diện: row REST mang `status: 'published'` không phải decision,
+    // nên `create_item` vẫn serialize row như trước.
+    responses.push({ id: 'i1', status: 'published', title: 'x' });
+    const row = (await tools.get('create_item')!({
+      collection: 'posts',
+      data: { title: 'x' },
+    })) as { content: Array<{ text: string }> };
+    expect(JSON.parse(row.content[0]!.text)).toEqual({ id: 'i1', status: 'published', title: 'x' });
+
+    // `approvalSpace` quyết định endpoint được nêu. Đây là điểm của cả mục
+    // "nói rõ không gian approval ID": hai id khác bảng, hai route khác nhau, nên
+    // client không được phải đoán từ hình dạng giá trị.
+    responses.push({
+      status: 'pending_approval',
+      approvalId: 'apr_agent',
+      approvalSpace: 'agent',
+      agentApprovalId: 'apr_agent',
+      legacyApprovalId: 'apr_legacy',
+      runId: 'run_1',
+    });
+    const agentSpace = (await tools.get('delete_collection')!({ name: 'posts', confirm: true })) as {
+      content: Array<{ text: string }>;
+    };
+    expect(agentSpace.content[0]!.text).toContain('apr_agent');
+    expect(agentSpace.content[0]!.text).toContain('/api/v1/agent/approvals/');
+    expect(agentSpace.content[0]!.text).not.toContain('/api/v1/ai/approvals/');
+    expect(agentSpace.content[0]!.text).toContain('run_1');
+
+    responses.push({ status: 'pending_approval', approvalId: 'apr_legacy', approvalSpace: 'legacy_ai' });
+    const legacySpace = (await tools.get('delete_collection')!({ name: 'posts', confirm: true })) as {
+      content: Array<{ text: string }>;
+    };
+    expect(legacySpace.content[0]!.text).toContain('/api/v1/ai/approvals/');
+    expect(legacySpace.content[0]!.text).not.toContain('/api/v1/agent/approvals/');
   });
 
   it('S11: alias cdc_subscription_replay lệch tên key và có `cursor` không đối ứng', async () => {
@@ -641,5 +902,228 @@ describe('G2 repro · result-shape probes: forwarding and wrapper behaviour', ()
     expect(props).toContain('cursor');
     expect(props).not.toContain('subscriptionId');
     expect(props).not.toContain('occurredAfter');
+  });
+});
+
+describe('G2 repro · soát ngữ nghĩa: compile_intent bị xếp sai nhóm', () => {
+  /**
+   * Phát hiện khi soát ngữ nghĩa 49 mutation chưa map (mảnh audit cuối).
+   *
+   * `compile_intent` dùng POST nên bộ đếm theo HTTP method xếp nó vào mutation.
+   * Nhưng `IntentService.compile` ghi rõ trong docstring: *"Returns the compiled
+   * draft for the user to confirm — **never persists**"*, và nó gọi
+   * `this.deps.llm.provider.chat(...)`. Vậy nó là **provider-cost preview**,
+   * cùng lớp với `translate_text`, không phải mutation.
+   *
+   * Hệ quả cho các con số: mutation **90 → 89**, mutation chưa map **49 → 48**,
+   * provider action **1 → 2**.
+   */
+  it('S12: khoá REST target của compile_intent — tách khỏi đường tạo intent', async () => {
+    const calls = await callToolIsolated('compile_intent', {
+      description: 'bài viết phải có ảnh bìa',
+      collection: 'posts',
+    });
+
+    // Nó POST tới endpoint compile — không tạo/sửa intent nào.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.method).toBe('POST');
+    expect(calls[0]!.path).toBe('/agent/intents/compile');
+
+    // Phân biệt với đường thật sự tạo intent (registerCrud trên /agent/intents).
+    const createCalls = await callToolIsolated('create_intent', {
+      name: 'i1',
+      collection: 'posts',
+      rules: [],
+      schedule: '* * * * *',
+    });
+    expect(createCalls[0]!.path).toBe('/agent/intents');
+    expect(createCalls[0]!.path).not.toBe(calls[0]!.path);
+
+    // ── PHẠM VI (siết theo yêu cầu R4 của review vòng 8) ────────────────────
+    // Test này CHỈ khoá REST target và cho thấy hai đường khác nhau.
+    //
+    // Kết luận "không persist" đến từ đọc phía CMS (`routes/intents.ts:182` +
+    // toàn bộ `IntentService.compile` tại `intent-service.ts:205`: provider.chat
+    // → parse/validate rules + schedule → trả draft; không có DB mutation, không
+    // create/update/activate intent), **không** từ test này.
+    //
+    // Và KHÔNG phát biểu "không có bất kỳ side effect nào": vẫn có request ra
+    // provider kèm chi phí, cộng middleware toàn cục không được test end-to-end ở
+    // đây. Ngoài ra route giữ nguyên guard `canWriteIntents`
+    // (`admin` | `intents:write` | `*`) — phân loại "preview" **không** hạ nó
+    // xuống quyền read.
+  });
+
+  it('S13: phân loại phải PHỦ ĐÚNG registry thật — membership, uniqueness, disjointness, union', async () => {
+    /**
+     * Viết lại theo yêu cầu **R3** của review vòng 8. Bản trước chỉ **cộng hằng
+     * số** nên vẫn xanh dù registry thêm/bớt/đổi tên tool — đúng là không khoá gì.
+     *
+     * Bản này gắn từng tập tên vào `listTools()` **thật**:
+     *   - membership: mọi tên trong tập phải TỒN TẠI trong registry;
+     *   - uniqueness: không trùng trong cùng tập;
+     *   - disjointness: **năm** tập không giao nhau;
+     *   - union **hai chiều**: registry ⊆ ∪tập và ∪tập ⊆ registry.
+     *
+     * SỬA THEO F2: bản trước chỉ khai báo 4 tập (98 tên) rồi lấy 63 tool còn lại
+     * TRỰC TIẾP từ registry và chỉ kiểm số lượng + prefix. Hệ quả: đổi tên một
+     * tool **trong nhóm 63** vẫn XANH — kiểm âm `get_release` → `get_release_v2`
+     * đi lọt. Tức nó khoá danh tính 98/161, không phải toàn registry.
+     *
+     * Giờ `READ_GET_63` là tập khai báo tường minh, nên cả **161/161** tên đều
+     * được khoá: đổi tên tool ở BẤT KỲ nhóm nào ⇒ membership/union đỏ; thêm/bớt
+     * tool ⇒ union đỏ; xếp một tên vào hai nhóm ⇒ disjointness đỏ.
+     */
+    const { client } = await liveClient();
+    const registry = (await client.listTools()).tools.map((t) => t.name);
+    const registrySet = new Set(registry);
+
+    /** 41 mutation candidate map được (40 theo tên + 1 alias). */
+    const MAPPED_41 = [
+      'create_item', 'update_item', 'delete_item',
+      'create_collection', 'delete_collection', 'delete_field',
+      'create_relation', 'delete_relation',
+      'create_role', 'delete_role', 'create_policy', 'delete_policy',
+      'create_flow', 'delete_flow', 'run_flow',
+      'create_intent', 'delete_intent',
+      'create_webhook', 'update_webhook', 'delete_webhook',
+      'create_translation', 'update_translation', 'delete_translation',
+      'upsert_setting', 'delete_setting',
+      'create_cdc_subscription', 'delete_cdc_subscription', 'cdc_subscription_replay',
+      'create_api_key', 'rotate_api_key', 'revoke_api_key',
+      'invite_user', 'update_user', 'remove_user',
+      'create_team', 'delete_team', 'add_team_member', 'remove_team_member',
+      'install_extension', 'update_extension', 'uninstall_extension',
+    ];
+    /** 48 mutation chưa map (xem §5d của PR). */
+    const UNMAPPED_48 = [
+      'assign_role_user', 'remove_role_user', 'attach_role_policy', 'detach_role_policy', 'update_role',
+      'add_policy_permission', 'update_policy_permission', 'delete_policy_permission',
+      'attach_policy_user', 'detach_policy_user', 'update_policy',
+      'attach_api_key_role', 'detach_api_key_role', 'attach_api_key_policy', 'detach_api_key_policy',
+      'create_share', 'revoke_share',
+      'apply_access_import', 'restore_backup',
+      'approve_content', 'reject_content', 'submit_review',
+      'apply_schema', 'update_collection', 'upsert_field',
+      'create_release', 'update_release', 'delete_release', 'publish_release',
+      'register_materialization', 'refresh_materialization', 'drop_materialization',
+      'delete_media',
+      'upsert_tm', 'update_tm', 'delete_tm',
+      'update_cdc_subscription', 'update_flow', 'update_team',
+      'pause_intent', 'resume_intent', 'scan_intent', 'update_intent',
+      'create_preset', 'update_preset', 'delete_preset',
+      'install_marketplace_extension', 'publish_extension',
+    ];
+    const PROVIDER_2 = ['translate_text', 'compile_intent'];
+    /** 7 tool dùng POST nhưng ngữ nghĩa đọc/preview — REST target khoá ở `S7`. */
+    const READ_VIA_POST_7 = [
+      'check_permission', 'check_access_conflicts', 'dry_run_access_import',
+      'diff_schema', 'lookup_tm', 'query_insights', 'run_panel',
+    ];
+
+    /**
+     * 63 tool đọc-qua-GET. Khai báo TƯỜNG MINH theo yêu cầu F2: bản trước lấy
+     * nhóm này trực tiếp từ registry rồi chỉ kiểm số lượng + prefix, nên đổi tên
+     * một tool trong nhóm vẫn XANH (kiểm âm: `get_release` → `get_release_v2`).
+     * Có tập tên rồi thì union so hai chiều và rename ở đây cũng đỏ.
+     */
+    const READ_GET_63 = [
+      'list_collections', 'get_collection', 'list_fields', 'list_items', 'get_item',
+      'list_relations', 'list_presets', 'get_preset', 'get_effective_preset',
+      'list_preset_bookmarks', 'list_translations', 'get_translation', 'list_settings',
+      'get_setting', 'search', 'list_media', 'list_transform_presets', 'list_tm',
+      'list_dashboards', 'get_dashboard', 'list_dashboard_panels', 'list_reviews',
+      'list_releases', 'get_release', 'get_my_permissions', 'list_roles', 'get_role',
+      'list_policies', 'get_policy', 'export_access', 'list_api_keys', 'get_api_key',
+      'list_users', 'get_user', 'list_teams', 'get_team', 'list_team_members',
+      'list_webhooks', 'list_cdc_subscriptions', 'get_cdc_subscription', 'cdc_events_read',
+      'list_intents', 'get_intent', 'list_intent_drifts', 'list_flows', 'get_flow',
+      'list_flow_runs', 'get_flow_run', 'list_activity', 'get_site', 'get_health',
+      'get_metrics', 'export_backup', 'list_materializations', 'query_materialization',
+      'list_extensions', 'list_marketplace_extensions', 'get_marketplace_extension',
+      'list_marketplace_updates', 'list_deployment_targets', 'list_deployments',
+      'get_deployment', 'get_deployment_logs',
+    ];
+
+    const sets: Array<[string, string[]]> = [
+      ['MAPPED_41', MAPPED_41],
+      ['UNMAPPED_48', UNMAPPED_48],
+      ['PROVIDER_2', PROVIDER_2],
+      ['READ_VIA_POST_7', READ_VIA_POST_7],
+      ['READ_GET_63', READ_GET_63],
+    ];
+
+    // 1) Kích thước khai báo
+    expect(MAPPED_41).toHaveLength(41);
+    expect(UNMAPPED_48).toHaveLength(48);
+    expect(PROVIDER_2).toHaveLength(2);
+    expect(READ_VIA_POST_7).toHaveLength(7);
+    expect(READ_GET_63).toHaveLength(63);
+
+    // 2) Uniqueness trong từng tập + membership trong registry THẬT
+    for (const [label, list] of sets) {
+      expect(new Set(list).size, `${label} không trùng nội bộ`).toBe(list.length);
+      const missing = list.filter((n) => !registrySet.has(n));
+      expect(missing, `${label}: mọi tên phải tồn tại trong registry`).toEqual([]);
+    }
+
+    // 3) Disjointness giữa bốn tập
+    const seen = new Map<string, string>();
+    const overlaps: string[] = [];
+    for (const [label, list] of sets) {
+      for (const n of list) {
+        const prev = seen.get(n);
+        if (prev) overlaps.push(`${n} ở cả ${prev} và ${label}`);
+        else seen.set(n, label);
+      }
+    }
+    expect(overlaps).toEqual([]);
+
+    // 4) Union so HAI CHIỀU với registry thật (sửa theo F2).
+    //    Trước đây nhóm 63 được lấy TỪ registry nên không khoá danh tính; giờ nó
+    //    là tập khai báo, nên cả 161 tên đều có tập sở hữu.
+    const classified = new Set(seen.keys());
+    expect(classified.size).toBe(41 + 48 + 2 + 7 + 63);
+
+    // 4a) registry ⊆ các tập: không tool nào của registry bị bỏ rơi.
+    const unclassified = registry.filter((n) => !classified.has(n));
+    expect(unclassified, 'mọi tool trong registry phải thuộc đúng một tập').toEqual([]);
+
+    // 4b) các tập ⊆ registry: không tên khai báo nào biến mất khỏi registry.
+    //     (membership ở bước 2 đã phủ, giữ lại để union là song ánh tường minh.)
+    const ghosts = [...classified].filter((n) => !registrySet.has(n));
+    expect(ghosts, 'không tên khai báo nào được vắng mặt trong registry').toEqual([]);
+
+    expect(classified.size).toBe(registry.length);
+    expect(registry).toHaveLength(161);
+
+    // 5) Nhóm read-GET không được chứa động từ ghi — chốt nó thật là nhóm read.
+    const writeVerb = /^(create|update|delete|upsert|remove|revoke|rotate|attach|detach|assign|install|uninstall|publish|apply|restore|approve|reject|submit|register|drop|refresh|pause|resume|scan|replay|run)_/;
+    expect(READ_GET_63.filter((n) => writeVerb.test(n))).toEqual([]);
+  });
+
+  it('S13b: tổng kiểm số học của bảng phân loại', () => {
+    /**
+     * Chốt các con số sau soát ngữ nghĩa, để chúng không trôi ở lượt sau.
+     * Đây là **bảng phân loại**, không phải bằng chứng hành vi từng tool —
+     * bằng chứng nằm ở S7 (REST target), R16 (không có alias), R17 (hai ca
+     * trông-như-map-được thực chất không tương đương).
+     */
+    const TOTAL = 161;
+    const READ_GET = 63;
+    const READ_VIA_POST_N = 7;
+    const PROVIDER_ACTION_N = 2; // translate_text + compile_intent
+    const MUTATIONS = 89;
+    const MUTATION_MAPPED = 41; // 40 theo tên + 1 alias
+    const MUTATION_UNMAPPED = 48;
+
+    // Tổng phải khớp: read(GET) + read(POST) + provider + mutation = 161
+    expect(READ_GET + READ_VIA_POST_N + PROVIDER_ACTION_N + MUTATIONS).toBe(TOTAL);
+    // Mutation phải chia hết thành mapped + unmapped
+    expect(MUTATION_MAPPED + MUTATION_UNMAPPED).toBe(MUTATIONS);
+    // Và 48 unmapped chia thành hai nhóm rủi ro (xem §5d của PR)
+    const PRIVILEGE_AFFECTING = 22;
+    const CONTENT_SCHEMA_OPS = 26;
+    expect(PRIVILEGE_AFFECTING + CONTENT_SCHEMA_OPS).toBe(MUTATION_UNMAPPED);
   });
 });
