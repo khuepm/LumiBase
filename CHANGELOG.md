@@ -253,8 +253,10 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   different templates). And the CLI reference explained the version pin without
   stating what it costs: `init` resolves the scaffolder from the **registry**, so a
   template that exists in the source tree is unreachable through `lumibase init`
-  until `create-lumibase` is published, failing *inside* the scaffolder with a
-  missing-template-directory error rather than an unknown-template one. That trap
+  until `create-lumibase` is published at that version. On releases up to
+  `1.0.0-rc.1` it fails *inside* the scaffolder with a missing-template-directory
+  error (those releases do not validate `--template`); later ones reject it as
+  `Unknown template`. Either way the name is valid. That trap
   was known — it was recorded in a test comment and in the Setup Impact Registry —
   but had never been told to users. Docs only; no runtime change.
 - **Corrected: `revalidate` is not an upper bound on stale content (#334).** The
