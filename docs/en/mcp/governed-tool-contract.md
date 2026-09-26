@@ -1,14 +1,14 @@
 ---
-version: 6
-lastUpdated: 2026-09-22T05:20:12.532Z
+version: 7
+lastUpdated: 2026-09-26T03:52:30.139Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: b44ccf017c86b180
+sourceHash: 4f411aaa72bbc641
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-22T05:20:12.532Z
-codeVerifiedHash: b44ccf017c86b180
-codeVerifiedClaims: 28
+codeVerified: 2026-09-26T03:52:30.139Z
+codeVerifiedHash: 4f411aaa72bbc641
+codeVerifiedClaims: 36
 contentHash: b9ca7b4d798de9be
 ---
 
@@ -25,7 +25,7 @@ contentHash: b9ca7b4d798de9be
 | Write gate | Only for skills classified `dangerous` | Every skill with a write capability goes through autonomy resolution |
 | Caller capabilities | `auth.roles` (a role **id**, compared as a string) | Resolved from the RBAC bundle, like REST |
 | stdio mutation result | A self-authored claim ("deleted") | Reflects `executed` / `pending_approval` / `denied` |
-| stdio mutations | Direct REST calls, bypassing the harness | 27 tools go through the harness; the rest are **declared** ungoverned |
+| stdio mutations | Direct REST calls, bypassing the harness | 33 tools go through the harness; the rest are **declared** ungoverned |
 
 ## 1. One schema source
 
@@ -154,24 +154,50 @@ The contract used to collapse `agentApprovalId ?? approvalId` into one field, so
 
 `packages/mcp-server/src/governed.ts` holds two tables.
 
-**`GOVERNED_TOOLS` (27 tools)** — routed through `POST /api/v1/mcp` `tools/call`. The set was **measured**, not chosen by feel: for each candidate tool, the advertised properties (minus `confirm`) were compared against the canonical contract's properties, and a tool is accepted only when it has no extra property and no unreachable required one. Three tools need an explicit rename:
+**`GOVERNED_TOOLS` (33 tools)** — routed through `POST /api/v1/mcp` `tools/call`. The set was **measured**, not chosen by feel: for each candidate tool, the advertised properties (minus `confirm`) were compared against the canonical contract's properties, and a tool is accepted only when it has no extra property and no unreachable required one. Four tools need an explicit rename:
 
 | Tool | Skill | Rename |
 |---|---|---|
 | `delete_field` | `deleteField` | `field_name` → `name` (plus `force`, see below) |
 | `add_team_member` | `addTeamMember` | `id` → `teamId` |
 | `remove_team_member` | `removeTeamMember` | `id` → `teamId` |
+| `delete_cdc_subscription` | `deleteCdcSubscription` | `id` → `subscriptionId` |
 
 `confirm` is a prompt for the operator, not a skill argument, so it is **dropped** rather than forwarded.
 
 `force` on `delete_field` is the opposite case and **is** forwarded: `SchemaService.deleteField` accepts `FieldDeleteOptions.force` and REST passes `?force=true`, so a governed path unable to express it would be the one place that rejects an argument REST accepts. The rule: declare what the handler honours, drop what only the operator needs. That boundary is now recomputed from the registry on every test run by `governed-binding-contract.test.ts` — it had been measured once by a script and then hand-edited, which is how `force` was missed.
+
+**Accepting the arguments is necessary, not sufficient.** Routing replaces the REST handler with the skill's handler, so a skill that skips a check its REST route applies (signature verification, a graph or cron gate) turns "governed" into "governed but weaker". The round that added canonical schemas for the `no-canonical-contract` group applied this second measurement too. The outcome for the group's ten tools:
+
+| Tool | Skill | Outcome | Basis |
+|---|---|---|---|
+| `create_relation` | `createRelation` | governed | The handler passes its input straight to `SchemaService.createRelation` — the same service `POST /relations` uses |
+| `create_intent` | `createIntent` | governed | `IntentService.create` re-parses with `intentInputSchema`, as REST does |
+| `update_translation` | `updateTranslation` | governed | The same `site_id`-scoped update as `PATCH /translations/:id` |
+| `create_webhook` | `createWebhook` | governed | The same insert as `POST /webhooks`; the route's defaults match the column defaults |
+| `update_webhook` | `updateWebhook` | governed | The same `site_id`-scoped update as `PATCH /webhooks/:id` |
+| `delete_cdc_subscription` | `deleteCdcSubscription` | governed (rename `id` → `subscriptionId`) | The same `SubscriptionService.remove`; known differences listed below |
+| `create_cdc_subscription` | `createCdcSubscription` | `contract-narrower-than-tool` | The tool advertises `payload_mode`; the handler never forwards it |
+| `create_flow` | `createFlow` | `skill-weaker-than-rest` | The handler skips the graph gate for an `active` flow and the cron gate for a `schedule` trigger, and never sets `nextRunAt` |
+| `install_extension` | `installExtension` | `skill-weaker-than-rest` | The handler skips the bundle signature check, the `lumibase-*` namespace check and the per-action `extensions:*` permission probes |
+| `update_extension` | `updateExtension` | `skill-weaker-than-rest` | The handler skips the per-action permission probes, the refusal to enable an unverified official extension, sandbox cache eviction and CDC subscription sync |
+
+All ten skills now have a canonical schema, so on HTTP MCP they are validated immediately — including the four tools that stay on REST over stdio. The three update schemas (`updateWebhook`, `updateTranslation`, `updateExtension`) also close a specific hole: the handler hands the patch straight to `.set()`, so before `.strict()` a key such as `siteId` (and, for extensions, `isOfficial` and `verifiedAt`) was passed through into the update statement.
+
+All ten skills are also control-plane (a `dangerous` flag, a mutating `schema:*` capability, or the `delete` prefix), so routing does not weaken HITL: on `POST /api/v1/mcp` they require an admin principal, and below autopilot they park an approval instead of running.
+
+Two observable differences between the governed and REST paths of the routed tools:
+
+- `delete_cdc_subscription`: the harness builds `SubscriptionService` without `cache`/`audit`, so REST's `cdc_subscription_deleted` audit-log row and feed-flag cache eviction do not happen. The run, tool call and approval record the deletion; the flag cache expires on its TTL.
+- `update_webhook`: the harness writes only the fields the caller sent, while `PATCH /webhooks/:id` currently re-applies the route's defaults to absent fields (backlog B86).
 
 **`UNGOVERNED_MUTATIONS`** — still REST, each with its reason:
 
 | Reason | Meaning |
 |---|---|
 | `contract-narrower-than-tool` | A skill exists, but the canonical contract is narrower than the surface the tool advertises. Routing it would **reject** arguments callers legitimately send today, and dropping them silently is the very class of bug being fixed. Example: `create_collection` has 16 extra properties |
-| `no-canonical-contract` | A skill exists but has no canonical schema yet, so there is nothing to validate against |
+| `skill-weaker-than-rest` | The skill and its canonical contract accept every advertised argument, but the handler skips a check the REST route applies. Routing would add HITL and drop that check, so the tool stays on REST until the handler carries it |
+| `no-canonical-contract` | A skill exists but has no canonical schema yet, so there is nothing to validate against. Currently **empty** — the ten tools that were in it now have schemas (table above) |
 | `no-skill` | No corresponding skill — nothing to route to |
 
 This is a **declared** gap, not a hidden one. Tripwire `S16` fails when a mutation tool appears in neither table, so the set cannot grow quietly.
