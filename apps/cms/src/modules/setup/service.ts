@@ -175,6 +175,14 @@ export type SetupServiceError =
   | { readonly code: 'SETUP_IN_PROGRESS' }
   | { readonly code: 'SETUP_TOKEN_REQUIRED' }
   | { readonly code: 'SETUP_TOKEN_INVALID' }
+  /**
+   * The gate is on but `system_state.setup_token_hash` is empty, so no token
+   * can match. Happens where nothing minted one — Cloudflare Workers, which
+   * have no process startup — and is surfaced as an operator error rather
+   * than as `SETUP_TOKEN_REQUIRED`, which reads as "send the token you were
+   * given" when none was ever given (#470).
+   */
+  | { readonly code: 'SETUP_TOKEN_NOT_ISSUED' }
   | {
       readonly code: 'VALIDATION_ERROR';
       readonly issues: ReadonlyArray<{
@@ -491,6 +499,11 @@ export class SetupService {
 
         // ── 3. Setup token gate (Req 2.6).
         if (this.deps.requireSetupToken) {
+          // Checked before the caller's input: with no stored hash, no token
+          // can ever verify, and saying so is the only actionable answer.
+          if (!locked.setupTokenHash) {
+            throw new SetupAbort({ code: 'SETUP_TOKEN_NOT_ISSUED' });
+          }
           if (!input.setupToken) {
             throw new SetupAbort({ code: 'SETUP_TOKEN_REQUIRED' });
           }

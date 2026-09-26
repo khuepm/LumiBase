@@ -32,6 +32,7 @@ import {
 } from './service';
 import { STANDARD_LOCKOUT_POLICY, lockoutPolicySchema } from './policy-codec';
 import { OFFICIAL_KEY_ID } from './official-extensions';
+import { REQUIRE_SETUP_TOKEN_ENV, isSetupTokenRequired } from './setup-token';
 
 // ── input schema ────────────────────────────────────────────────────────
 
@@ -152,7 +153,11 @@ function buildService(c: {
   get: <K extends keyof AppEnv['Variables']>(k: K) => AppEnv['Variables'][K];
 }): SetupService {
   const db = c.get('db');
-  const requireSetupToken = readBoolEnv(c.env, 'LUMIBASE_REQUIRE_SETUP_TOKEN');
+  // Same parser the startup mint uses (`startup.ts`), so the side that checks
+  // a token and the side that prints one can never disagree about the flag.
+  const requireSetupToken = isSetupTokenRequired(
+    c.env as unknown as Readonly<Record<string, unknown>>,
+  );
   const smtpAvailable = !!readStringEnv(c.env, 'LUMIBASE_SMTP_URL');
   return new SetupService({
     db,
@@ -184,20 +189,15 @@ function resolveOfficialPublisherKey(
 }
 
 /**
- * Env lookups go through these tiny helpers so the unsafe index access
+ * Env lookups go through this tiny helper so the unsafe index access
  * is contained. `AppEnv['Bindings']` declares only the *known* fields;
- * the setup wizard reads operator-supplied keys (`LUMIBASE_REQUIRE_SETUP_TOKEN`,
- * `LUMIBASE_SMTP_URL`) that aren't in that interface yet, so we widen
- * to `Record<string, unknown>` in one place rather than scattering
- * casts at every call site. When those keys land in `env.ts`, this
- * cast can collapse to a typed property read.
+ * the setup wizard reads operator-supplied keys (`LUMIBASE_SMTP_URL`)
+ * that aren't in that interface yet, so we widen to
+ * `Record<string, unknown>` in one place rather than scattering casts
+ * at every call site. When those keys land in `env.ts`, this cast can
+ * collapse to a typed property read. `LUMIBASE_REQUIRE_SETUP_TOKEN` is
+ * parsed by `isSetupTokenRequired` instead, shared with the startup mint.
  */
-function readBoolEnv(env: AppEnv['Bindings'], key: string): boolean {
-  const v = (env as unknown as Record<string, unknown>)[key];
-  if (typeof v !== 'string') return false;
-  return v === 'true' || v === '1' || v === 'yes';
-}
-
 function readStringEnv(env: AppEnv['Bindings'], key: string): string | undefined {
   const v = (env as unknown as Record<string, unknown>)[key];
   return typeof v === 'string' && v.length > 0 ? v : undefined;
@@ -243,6 +243,26 @@ function errorToHttp(error: SetupServiceError): { status: number; body: { errors
       return {
         status: 401,
         body: { errors: [{ code: 'SETUP_TOKEN_INVALID' }] },
+      };
+    case 'SETUP_TOKEN_NOT_ISSUED':
+      // Not a client mistake: the gate is on and no token exists to match,
+      // so no request can succeed until the operator acts. The message is
+      // the actionable part — Studio's wizard shows `errors[0].message`.
+      return {
+        status: 503,
+        body: {
+          errors: [
+            {
+              code: 'SETUP_TOKEN_NOT_ISSUED',
+              message:
+                `${REQUIRE_SETUP_TOKEN_ENV} is on, but no setup token has been issued. ` +
+                'The Node/Docker CMS mints one when it starts and prints it as a ' +
+                '"[lumibase-cms] SETUP_TOKEN=" line: restart the CMS and read its startup ' +
+                'logs. Cloudflare Workers have no startup step, so the flag is not supported ' +
+                'there: unset it and complete setup right after deploying.',
+            },
+          ],
+        },
       };
     case 'VALIDATION_ERROR':
       return {
@@ -372,7 +392,7 @@ setupRouter.post('/complete', async (c) => {
     // override seam types it as `unknown`, so narrow at this one call site.
     const mapped = errorToHttp(outcome.error as SetupServiceError);
     // mapped.status is 4xx/5xx in our taxonomy.
-    return c.json(mapped.body, mapped.status as 400 | 401 | 404 | 409 | 422 | 500);
+    return c.json(mapped.body, mapped.status as 400 | 401 | 404 | 409 | 422 | 500 | 503);
   }
 
   return c.json(outcome.value, 201);
