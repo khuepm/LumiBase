@@ -23,8 +23,29 @@ import { hasAgentToolSchema, validateAgentToolInput } from '@lumibase/contracts'
  * Candidate values, most specific first. `'posts'` satisfies the snake_case slug
  * pattern and any plain non-empty string; `'a@b.co'` covers email; `{}` covers
  * free-form record fields.
+ *
+ * The tail covers fields no earlier candidate can satisfy: a URL (webhook `url`,
+ * extension `bundleUrl`), a 5-field cron (intent `schedule`), a non-empty list of
+ * records (intent `rules`), and one member of each required enum
+ * (`createFlow.triggerType`, `createCdcSubscription.kind`,
+ * `installExtension.type`). Appended rather than interleaved, so every field an
+ * earlier candidate already satisfied keeps the value it had.
  */
-const CANDIDATES: unknown[] = ['posts', 'a@b.co', {}, 'x', 1, true, []];
+const CANDIDATES: unknown[] = [
+  'posts',
+  'a@b.co',
+  {},
+  'x',
+  1,
+  true,
+  [],
+  'https://example.com/hook',
+  '0 * * * *',
+  [{}],
+  'manual',
+  'pull',
+  'interface',
+];
 
 /**
  * @returns arguments accepted by the skill's canonical schema, or `{}` when the

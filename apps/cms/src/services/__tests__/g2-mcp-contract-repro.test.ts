@@ -647,6 +647,112 @@ describe('G2 repro · governed path: an L0 content write executes with no autono
   });
 });
 
+describe('G2 regression · skills given a canonical contract in the no-canonical-contract round', () => {
+  /**
+   * The CMS half of the stdio routing change in `packages/mcp-server/src/governed.ts`.
+   * That side proves the arguments arrive under the right names and that unknown
+   * ones are forwarded; this side proves what the harness then does with them on
+   * the GOVERNED branch production uses:
+   *
+   *   - valid input for a control-plane skill parks an approval and does NOT reach
+   *     the service (HITL is not weakened by routing);
+   *   - an unknown key — including a real column name such as `siteId` — is refused
+   *     with `VALIDATION` before `ensureRun`, so nothing is persisted and no
+   *     approval is parked for input that should never execute.
+   *
+   * EVIDENCE CLASS: in-process fake db (`governedDb`) and recording services. Rows
+   * are counted, not persisted; no approval is decided.
+   */
+  const ROUTED = [
+    'createRelation',
+    'createIntent',
+    'updateTranslation',
+    'createWebhook',
+    'updateWebhook',
+    'deleteCdcSubscription',
+  ] as const;
+  const SCHEMA_ONLY = ['createFlow', 'installExtension', 'updateExtension', 'createCdcSubscription'] as const;
+
+  function recordingServices() {
+    const touched: string[] = [];
+    const spy = (label: string) =>
+      vi.fn((..._args: unknown[]) => {
+        touched.push(label);
+        return Promise.resolve({ id: 'row_1' });
+      });
+    return {
+      touched,
+      services: {
+        schemaService: { createRelation: spy('schema.createRelation') },
+        intentService: { create: spy('intent.create') },
+        configService: {
+          updateTranslation: spy('config.updateTranslation'),
+          createWebhook: spy('config.createWebhook'),
+          updateWebhook: spy('config.updateWebhook'),
+        },
+        extensionsService: {
+          installExtension: spy('extensions.installExtension'),
+          updateExtension: spy('extensions.updateExtension'),
+        },
+      },
+    };
+  }
+
+  function harnessFor(db: Database, services: ReturnType<typeof recordingServices>['services']) {
+    return new AISecureHarness({
+      db,
+      siteId: 'site_1',
+      schemaService: services.schemaService as never,
+      intentService: services.intentService as never,
+      configService: services.configService as never,
+      extensionsService: services.extensionsService as never,
+      enableAgentHarnessAudit: true,
+    });
+  }
+
+  it('every skill in this round is control-plane, so the admin backstop and HITL apply', () => {
+    // CLAUDE.md rule 4 plus the explicit `dangerous` flags. Routing a stdio tool
+    // onto one of these must never be a way around the approval step.
+    for (const name of [...ROUTED, ...SCHEMA_ONLY]) {
+      expect(isControlPlaneSkill(CORE_SKILLS[name]!, name), `${name} is control-plane`).toBe(true);
+    }
+  });
+
+  for (const name of [...ROUTED, ...SCHEMA_ONLY]) {
+    it(`${name}: valid input parks an approval and never reaches the service`, async () => {
+      const { db, insertedInto } = governedDb();
+      const { touched, services } = recordingServices();
+
+      const result = await harnessFor(db, services).execute(name, validArgsFor(name), ['*'], `${name} probe`, {
+        agentName: 'lumibase-copilot',
+      });
+
+      expect(result.status, JSON.stringify(result)).toBe('pending_approval');
+      expect(touched).toEqual([]);
+      expect(insertedInto('lumibase_agent_approvals')).toHaveLength(1);
+    });
+
+    it(`${name}: an unknown key is refused before anything is persisted`, async () => {
+      const { db, inserts } = governedDb();
+      const { touched, services } = recordingServices();
+
+      const result = await harnessFor(db, services).execute(
+        name,
+        { ...validArgsFor(name), siteId: 'site_other' },
+        ['*'],
+        `${name} probe`,
+        { agentName: 'lumibase-copilot' },
+      );
+
+      expect(result.status).toBe('denied');
+      expect(result.code).toBe('VALIDATION');
+      expect(result.message).toContain('siteId');
+      expect(inserts).toEqual([]);
+      expect(touched).toEqual([]);
+    });
+  }
+});
+
 describe('G2 regression · the harness reads the same RBAC model REST does', () => {
   /**
    * The defect (#472). `withAuth` sets `roles` to `[membership.roleId]` — a
