@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/shell",
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0-rc.3",
   "private": true,
   "description": "LumiBase Shell — unified Tauri 2 desktop + mobile app wrapping the Studio SPA.",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/landing",
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0-rc.3",
   "private": true,
   "description": "LumiBase Landing Page - official website for lumibase.dev",
   "scripts": {

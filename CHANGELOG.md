@@ -9,7 +9,46 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [1.0.0-rc.3] - 2026-09-26
+
+### Version
+- `v1.0.0-rc.3`
+
+### Date
+- `2026-09-26`
+
+### Highlights
+- The editorial journey runs end to end in Studio: create an item, submit it for
+  review, approve and publish it without touching the API.
+- Studio behind a private admin path survives reloads on every content screen.
+- Quick setup no longer fails at the last step on a fresh install.
+
+### Added
+
+- **Create items and drive the editorial workflow from Studio.** The collection
+  list gains **New item** and **Reviews**; the editor shows the item's editorial
+  state with **Submit for review**, **Approve**, **Reject**, **Publish** and
+  **Unpublish**, backed by the existing `/api/v1/editorial/*` endpoints and item
+  `PATCH`. Transitions are offered only with `update` permission and never while
+  edits are unsaved; the CMS still enforces the `editorialWorkflow` gate and the
+  separate-reviewer rule, and its error is shown inline. The previously broken
+  **Save & create new** action now lands on the create form.
+
 ### Fixed
+
+- **Studio keeps the private admin prefix while you navigate.** From
+  `/{adminPath}`, content links such as the item list and editor breadcrumbs went
+  to `/content/...`: client-side navigation worked, but a reload behind the CMS
+  answered 404. A router output rewrite now re-applies the prefix to every module
+  path in one place rather than per link, and the content screens read their
+  params from either route shape. `/setup`, `/insights` and `/teams` are no longer
+  mistaken for an admin prefix.
+- **Quick setup completes on a fresh install.** The Studio wizard has no control
+  for `loginStallMs` and omits it, while `POST /api/v1/setup/complete` required it,
+  so the last step failed with `400 VALIDATION_ERROR`. The route now applies the
+  codec default (500 ms).
 
 - **Retrying an agent run now actually runs it.** `POST /api/v1/agent/runs/:id/retry`
   inserted a new run with `status: 'running'`, answered `201`, and enqueued nothing
@@ -94,6 +133,9 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
     and now run governed. `off` is unchanged.
   - On `POST /api/v1/mcp`, calls to the ten skills with an unknown or misspelled
     argument now fail with `VALIDATION` instead of being executed.
+
+### Migrations
+- None
 
 ## [1.0.0-rc.2] - 2026-09-23
 
