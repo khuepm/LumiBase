@@ -127,6 +127,19 @@ jobs:
             { echo "$name<<$delim"; echo "$value"; echo "$delim"; } >> "$GITHUB_ENV"
           done
 
+      # WiX rejects a non-numeric pre-release identifier (`1.0.0-rc.3`) for the
+      # MSI, so pre-release Windows builds ship the NSIS installer only.
+      - name: Resolve bundle targets
+        id: bundles
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./apps/shell/src-tauri/tauri.conf.json').version")
+          if [ "${{ matrix.platform }}" = "windows-latest" ] && [[ "$version" == *-* ]]; then
+            echo "args=--bundles nsis" >> "$GITHUB_OUTPUT"
+            echo "::notice::Pre-release version $version — skipping MSI (WiX needs a numeric pre-release)."
+          fi
+
       - name: Build, sign & publish desktop bundles
         uses: tauri-apps/tauri-action@v1
         env:
@@ -142,7 +155,7 @@ jobs:
           prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-') }}
           # Emit + upload latest.json so tauri-plugin-updater can find updates.
           includeUpdaterJson: true
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} ${{ steps.bundles.outputs.args }}
 
   android:
     name: Mobile (Android)
