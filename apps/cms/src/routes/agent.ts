@@ -16,7 +16,7 @@ import { AgentArtifactService } from '../services/agent-artifact-service';
 import { AgentEvaluationService } from '../services/agent-evaluation-service';
 import { AgentMemoryService } from '../services/agent-memory-service';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
-import { AgentRunService } from '../services/agent-run-service';
+import { AgentRunService, type RetryRunRefusalCode } from '../services/agent-run-service';
 import { CORE_SKILLS } from '../services/ai-harness';
 import {
   principalRefFromAuth,
@@ -616,13 +616,60 @@ agentRouter.get('/runs', async (c) => {
   return c.json({ data: await service.listRuns() });
 });
 
+/**
+ * HTTP status per retry refusal. 409 is "the run or its goal is not in a state
+ * that can be retried"; the others mirror what `POST /goals` answers for the same
+ * condition (423 frozen, 400 no queue adapter).
+ */
+const RETRY_REFUSAL_STATUS: Record<RetryRunRefusalCode, 400 | 404 | 409 | 423 | 503> = {
+  NOT_FOUND: 404,
+  RUN_NOT_RETRYABLE: 409,
+  RUN_ACTIVE: 409,
+  RETRY_SUPERSEDED: 409,
+  GOAL_CLOSED: 409,
+  GOAL_BUSY: 409,
+  RETRY_UNRECOVERABLE: 409,
+  INTENT_NOT_ACTIVE: 409,
+  FROZEN: 423,
+  ASYNC_UNAVAILABLE: 400,
+  ENQUEUE_FAILED: 503,
+};
+
+/**
+ * Retries a failed or cancelled run as a new `queued` run and enqueues it.
+ *
+ * It used to insert a `running` row and enqueue nothing, so a 201 here meant
+ * nothing would ever execute. The retry now runs through the same queue worker,
+ * claim and harness as any async run, under the requester's re-resolved rights
+ * (#472); see `AgentRunService.retryRun` for the at-most-once guarantee.
+ */
 agentRouter.post('/runs/:id/retry', async (c) => {
-  const service = new AgentRunService(c.get('db'), c.get('siteId'), c.get('runtime').queue);
-  const retry = await service.retryRun(c.req.param('id'));
-  if (!retry) {
-    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Run not found' }] }, 404);
+  const siteId = c.get('siteId');
+  const auth = c.get('auth');
+  const principal = principalRefFromAuth(auth, siteId);
+  if (!principal) {
+    return c.json(
+      {
+        errors: [{
+          code: 'REQUESTER_UNRESOLVED',
+          message: 'A retry executes under the principal who requests it, and this request has none that can be re-resolved.',
+        }],
+      },
+      403,
+    );
   }
-  return c.json({ data: retry }, 201);
+  const service = new AgentRunService(c.get('db'), siteId, c.get('runtime').queue);
+  const result = await service.retryRun(c.req.param('id'), {
+    principal,
+    userId: auth.userId ?? null,
+  });
+  if (!result.ok) {
+    return c.json(
+      { errors: [{ code: result.code, message: result.message }] },
+      RETRY_REFUSAL_STATUS[result.code],
+    );
+  }
+  return c.json({ data: result.retry }, 201);
 });
 
 agentRouter.get('/tools', async (c) => {

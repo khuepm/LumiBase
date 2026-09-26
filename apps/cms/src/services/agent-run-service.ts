@@ -1,13 +1,17 @@
 import {
+  activity,
   agentGoals,
   agentRuns,
   agentToolCalls,
+  contentIntents,
   type Database,
 } from '@lumibase/database';
 import type { QueueProvider } from '@lumibase/runtime';
-import { and, asc, desc, eq, isNotNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import type { ApprovalRequester } from './approval-requester';
+import type { AgentRunJobPayload } from './agent-run-worker';
+import type { AuthenticatedPrincipalRef } from './effective-capability-service';
 import {
   agentDeadLettersTotal,
   agentRunsTotal,
@@ -102,6 +106,9 @@ export interface ToolCallInput {
 
 const SECRET_KEY_RE = /(secret|token|password|api[_-]?key|authorization|credential)/i;
 
+/** What {@link maskSecrets} writes in place of a secret-looking value. */
+const MASKED_VALUE = '[masked]';
+
 export function maskSecrets(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((entry) => maskSecrets(entry));
@@ -113,10 +120,116 @@ export function maskSecrets(value: unknown): unknown {
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
       key,
-      SECRET_KEY_RE.test(key) ? '[masked]' : maskSecrets(entry),
+      SECRET_KEY_RE.test(key) ? MASKED_VALUE : maskSecrets(entry),
     ]),
   );
 }
+
+/** True when {@link maskSecrets} replaced something inside `value`. */
+function containsMaskedValue(value: unknown): boolean {
+  if (value === MASKED_VALUE) return true;
+  if (Array.isArray(value)) return value.some((entry) => containsMaskedValue(entry));
+  if (value && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).some((entry) => containsMaskedValue(entry));
+  }
+  return false;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Postgres `unique_violation` (23505), possibly wrapped by drizzle. */
+function isUniqueViolation(error: unknown): boolean {
+  const code = (error as { code?: unknown })?.code;
+  const causeCode = (error as { cause?: { code?: unknown } })?.cause?.code;
+  return code === '23505' || causeCode === '23505';
+}
+
+/** Postgres `lock_not_available` (55P03), possibly wrapped by drizzle. */
+function isLockTimeout(error: unknown): boolean {
+  const code = (error as { code?: unknown })?.code;
+  const causeCode = (error as { cause?: { code?: unknown } })?.cause?.code;
+  return code === '55P03' || causeCode === '55P03';
+}
+
+/**
+ * Run states a human may retry: settled, and not successfully.
+ *
+ * `succeeded` is excluded on purpose. Retrying a success is "do it again", which
+ * repeats a side effect that is known to have happened; that is a new request, not
+ * a retry. Everything non-terminal is excluded because work may still be happening
+ * under it.
+ */
+const RETRYABLE_RUN_STATES: readonly string[] = ['failed', 'cancelled'];
+
+/** Run states in which work may still happen — the dispatcher's "in flight". */
+const IN_FLIGHT_RUN_STATES = ['queued', 'running', 'awaiting_approval'];
+
+/** Goal states after which nobody is waiting for another attempt. */
+const CLOSED_GOAL_STATES = ['done', 'completed', 'failed'];
+
+/**
+ * How long a retry waits for the goal row lock.
+ *
+ * Same bound, same reason as dispatch (`DISPATCH_LOCK_TIMEOUT`): the lock is held
+ * for a few statements, so reaching the bound means someone is mid-dispatch on this
+ * goal, and an HTTP request must not hang behind them. Inlined into `SET LOCAL`,
+ * which takes no bind parameters — a module constant, never caller input.
+ */
+const RETRY_LOCK_TIMEOUT = '2s';
+
+/** Upper bound on the `retryOfRunId` walk when looking for the recorded task. */
+const MAX_RETRY_CHAIN_DEPTH = 20;
+
+/** Who is asking for a retry. The retry executes with this principal's rights. */
+export interface RetryRequester {
+  principal: AuthenticatedPrincipalRef;
+  userId: string | null;
+}
+
+export type RetryRunRefusalCode =
+  | 'NOT_FOUND'
+  | 'RUN_NOT_RETRYABLE'
+  | 'RUN_ACTIVE'
+  | 'RETRY_SUPERSEDED'
+  | 'GOAL_CLOSED'
+  | 'GOAL_BUSY'
+  | 'RETRY_UNRECOVERABLE'
+  | 'INTENT_NOT_ACTIVE'
+  | 'FROZEN'
+  | 'ASYNC_UNAVAILABLE'
+  | 'ENQUEUE_FAILED';
+
+export interface RetryRunRefusal {
+  ok: false;
+  code: RetryRunRefusalCode;
+  message: string;
+}
+
+export interface RetriedRun extends AgentRunContext {
+  status: 'queued';
+  retryOfRunId: string;
+}
+
+export type RetryRunResult = { ok: true; retry: RetriedRun } | RetryRunRefusal;
+
+function refuse(code: RetryRunRefusalCode, message: string): RetryRunRefusal {
+  return { ok: false, code, message };
+}
+
+/** The part of a job payload that describes WHAT to run, recovered from history. */
+interface RecoveredTask {
+  ok: true;
+  skillName: string;
+  arguments: Record<string, unknown>;
+}
+
+/** The governance envelope of a job payload, recovered from the goal and intent. */
+type RecoveredGovernance = Pick<
+  AgentRunJobPayload,
+  'origin' | 'intentId' | 'driftFingerprint' | 'autonomyCap' | 'agentRole' | 'budget' | 'contextMessage'
+> & { ok: true };
 
 export class AgentRunService {
   constructor(
@@ -503,32 +616,396 @@ export class AgentRunService {
     return run?.status === 'cancelled';
   }
 
-  async retryRun(runId: string): Promise<AgentRunContext | null> {
-    const [existing] = await this.db
-      .select()
-      .from(agentRuns)
-      .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
-
-    if (!existing) {
-      return null;
+  /**
+   * Re-executes a failed or cancelled run as a NEW run, on the queue path.
+   *
+   * ## What was broken
+   *
+   * This used to insert a row with `status: 'running'` and return. Nothing was
+   * enqueued, so nothing executed; and because the row was `running`, not `queued`,
+   * the worker's claim ({@link claimQueuedRun}) could never have taken it even if a
+   * job had existed. The API answered 201 with a run id, the run sat `running`
+   * until the stale sweep quarantined it as `failed` fifteen minutes later, and a
+   * goal with a live run behind it could not be dispatched in the meantime.
+   *
+   * ## Why a retry is allowed to re-execute at all (#455 / #481 R3.1)
+   *
+   * An abandoned run is never replayed automatically, because nothing can prove the
+   * first attempt had no side effect. A human who has inspected the tool calls and
+   * asks for a retry is the sanctioned way past that — the quarantine message tells
+   * them exactly that. So this method does not guess about the old run's effects;
+   * it guarantees that ONE request produces AT MOST ONE new execution:
+   *
+   * - the retry row is inserted `queued`, so the worker's CAS claim owns the
+   *   transition to `running` and a redelivered job is a no-op;
+   * - the goal row is locked (`FOR UPDATE`) while deciding, so two concurrent
+   *   retries serialize and the second sees the first's row;
+   * - only the goal's LATEST attempt can be retried and only while nothing on the
+   *   goal is in flight, so a run is retried at most once and double-clicks refuse;
+   * - `agent_runs_one_active_per_goal_idx` backs all of that at the storage layer.
+   *
+   * ## Where the task comes from
+   *
+   * The job payload was never persisted. The harness records exactly what it
+   * executed as the run's first tool call (`toolName` = skill, `input` = arguments),
+   * so that is the source — walking `retryOfRunId` when an attempt was refused
+   * before reaching the harness. Inputs are stored through {@link maskSecrets};
+   * a masked value cannot be replayed faithfully, so that refuses rather than
+   * sending `'[masked]'` into a skill. The governance envelope is re-derived from
+   * the goal and its intent the same way dispatch builds it.
+   *
+   * ## Whose authority
+   *
+   * The requester's, re-resolved by the worker at pickup (#472). The original
+   * requester's grant is not stored and must not be borrowed. For role-scoped work
+   * the harness still narrows to role ∩ requester, and the intent's autonomy cap
+   * still applies, so a retry can never exceed either.
+   */
+  async retryRun(runId: string, requester: RetryRequester): Promise<RetryRunResult> {
+    const original = await this.getRun(runId);
+    if (!original) {
+      return refuse('NOT_FOUND', 'Run not found');
+    }
+    if (!RETRYABLE_RUN_STATES.includes(original.status)) {
+      return refuse(
+        'RUN_NOT_RETRYABLE',
+        `Run is ${original.status}; only failed or cancelled runs can be retried.`,
+      );
     }
 
-    const [retry] = await this.db
-      .insert(agentRuns)
-      .values({
-        goalId: existing.goalId,
-        siteId: this.siteId,
-        agentName: existing.agentName,
-        provider: existing.provider,
-        model: existing.model,
-        budget: existing.budget as Record<string, unknown>,
-        policySnapshotHash: existing.policySnapshotHash,
-        retryOfRunId: existing.id,
-        status: 'running',
-      })
-      .returning();
+    // No queue adapter: refuse before writing anything, as `POST /goals` does for
+    // async execution. A retry row with no job is exactly the defect being fixed.
+    const queue = this.queue;
+    if (!queue) {
+      return refuse(
+        'ASYNC_UNAVAILABLE',
+        'Retrying a run requires a queue adapter; this runtime has none.',
+      );
+    }
 
-    return { goalId: existing.goalId, runId: retry!.id, agentName: existing.agentName };
+    // Same gate the harness applies at execution, checked up front so a frozen
+    // agent does not get a row that is cancelled the moment it is picked up.
+    const { KillSwitchService } = await import('./kill-switch-service');
+    const frozenScope = await new KillSwitchService({ db: this.db, siteId: this.siteId })
+      .frozenScopeFor(original.agentName);
+    if (frozenScope) {
+      return refuse(
+        'FROZEN',
+        `Agent runtime is frozen for this ${frozenScope}; lift the kill switch to retry.`,
+      );
+    }
+
+    const [goal] = await this.db
+      .select()
+      .from(agentGoals)
+      .where(and(eq(agentGoals.siteId, this.siteId), eq(agentGoals.id, original.goalId)))
+      .limit(1);
+    if (!goal) {
+      return refuse('RETRY_UNRECOVERABLE', 'The run no longer has a goal to retry under.');
+    }
+    if (CLOSED_GOAL_STATES.includes(goal.status)) {
+      return refuse('GOAL_CLOSED', `Goal is ${goal.status}; there is nothing left to retry for.`);
+    }
+
+    const task = await this.recoverRetryTask(original);
+    if (!task.ok) return task;
+    const governance = await this.recoverRetryGovernance(goal, original);
+    if (!governance.ok) return governance;
+
+    let retryRunId: string;
+    try {
+      const prepared = await this.db.transaction(async (tx) => {
+        await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${RETRY_LOCK_TIMEOUT}'`));
+        const now = new Date();
+
+        // The serialization point: every retry of this goal, and every dispatch
+        // write, goes through this row lock. Whoever gets it second reads what the
+        // first one committed.
+        const [locked] = await tx
+          .select({
+            status: agentGoals.status,
+            leaseUntil: agentGoals.dispatchLeaseUntil,
+          })
+          .from(agentGoals)
+          .where(and(eq(agentGoals.siteId, this.siteId), eq(agentGoals.id, goal.id)))
+          .for('update');
+        if (!locked) {
+          return refuse('RETRY_UNRECOVERABLE', 'The run no longer has a goal to retry under.');
+        }
+        if (CLOSED_GOAL_STATES.includes(locked.status)) {
+          return refuse('GOAL_CLOSED', `Goal is ${locked.status}; there is nothing left to retry for.`);
+        }
+        // A dispatcher holding the lease has read this goal's state and may be
+        // about to act on it; a retry now would race that decision.
+        if (locked.leaseUntil && locked.leaseUntil.getTime() > now.getTime()) {
+          return refuse('GOAL_BUSY', 'The goal is being dispatched right now; try again shortly.');
+        }
+
+        const [current] = await tx
+          .select({ status: agentRuns.status })
+          .from(agentRuns)
+          .where(and(eq(agentRuns.siteId, this.siteId), eq(agentRuns.id, original.id)))
+          .limit(1);
+        if (!current || !RETRYABLE_RUN_STATES.includes(current.status)) {
+          return refuse(
+            'RUN_NOT_RETRYABLE',
+            `Run is ${current?.status ?? 'gone'}; only failed or cancelled runs can be retried.`,
+          );
+        }
+
+        const [inFlight] = await tx
+          .select({ id: agentRuns.id, status: agentRuns.status })
+          .from(agentRuns)
+          .where(
+            and(
+              eq(agentRuns.siteId, this.siteId),
+              eq(agentRuns.goalId, goal.id),
+              inArray(agentRuns.status, IN_FLIGHT_RUN_STATES),
+            ),
+          )
+          .limit(1);
+        if (inFlight) {
+          return refuse(
+            'RUN_ACTIVE',
+            `Goal already has an in-flight run (${inFlight.id}, ${inFlight.status}).`,
+          );
+        }
+
+        const [latest] = await tx
+          .select({ id: agentRuns.id, status: agentRuns.status })
+          .from(agentRuns)
+          .where(and(eq(agentRuns.siteId, this.siteId), eq(agentRuns.goalId, goal.id)))
+          .orderBy(desc(agentRuns.createdAt), desc(agentRuns.id))
+          .limit(1);
+        if (latest && latest.id !== original.id) {
+          return refuse(
+            'RETRY_SUPERSEDED',
+            `Run ${original.id} is not the goal's latest attempt; retry ${latest.id} (${latest.status}) instead.`,
+          );
+        }
+
+        const [retry] = await tx
+          .insert(agentRuns)
+          .values({
+            goalId: goal.id,
+            siteId: this.siteId,
+            agentName: original.agentName,
+            provider: original.provider,
+            model: original.model,
+            budget: original.budget as Record<string, unknown>,
+            policySnapshotHash: original.policySnapshotHash,
+            retryOfRunId: original.id,
+            // `queued`, never `running`: the worker's claim is the only thing
+            // allowed to start a run, which is what makes redelivery harmless.
+            status: 'queued',
+          })
+          .returning({ id: agentRuns.id });
+
+        // Dispatch blocks a reconciler goal when its run fails and never retries
+        // on its own. Once a human retries, the goal is live again — the same
+        // transition dispatch makes when it issues a run — so the next pass can
+        // carry the repair forward instead of leaving it blocked behind a stale
+        // reason. Dispatch re-derives everything from the runs, so this is safe.
+        if (goal.origin === 'reconciler' && locked.status === 'blocked') {
+          await tx
+            .update(agentGoals)
+            .set({
+              status: 'in_progress',
+              metadata: sql`coalesce(${agentGoals.metadata}, '{}'::jsonb) - 'blockedReason'`,
+              updatedAt: now,
+            })
+            .where(and(eq(agentGoals.siteId, this.siteId), eq(agentGoals.id, goal.id)));
+        }
+
+        // The retry is a human decision to possibly repeat a side effect; who
+        // made it is recorded with the row it created, atomically.
+        await tx.insert(activity).values({
+          siteId: this.siteId,
+          action: 'agent_run.retried',
+          userId: requester.userId,
+          payload: {
+            runId: retry!.id,
+            retryOfRunId: original.id,
+            goalId: goal.id,
+            agentName: original.agentName,
+            skillName: task.skillName,
+            requestedBy: requester.principal,
+          },
+        });
+
+        return { ok: true as const, runId: retry!.id };
+      });
+      if (!prepared.ok) return prepared;
+      retryRunId = prepared.runId;
+    } catch (error) {
+      if (isLockTimeout(error)) {
+        return refuse('GOAL_BUSY', 'The goal is being dispatched right now; try again shortly.');
+      }
+      // The partial unique index on in-flight runs caught what the checks above
+      // could not see (a writer that does not take the goal lock).
+      if (isUniqueViolation(error)) {
+        return refuse('RUN_ACTIVE', 'Goal already has an in-flight run.');
+      }
+      throw error;
+    }
+
+    const { AGENT_RUNS_QUEUE } = await import('./agent-run-worker');
+    const payload: AgentRunJobPayload = {
+      siteId: this.siteId,
+      goalId: goal.id,
+      runId: retryRunId,
+      skillName: task.skillName,
+      arguments: task.arguments,
+      principal: requester.principal,
+      userId: requester.userId,
+      ...(governance.contextMessage !== undefined ? { contextMessage: governance.contextMessage } : {}),
+      ...(governance.origin !== undefined ? { origin: governance.origin } : {}),
+      ...(governance.intentId !== undefined ? { intentId: governance.intentId } : {}),
+      ...(governance.driftFingerprint !== undefined
+        ? { driftFingerprint: governance.driftFingerprint }
+        : {}),
+      ...(governance.autonomyCap !== undefined ? { autonomyCap: governance.autonomyCap } : {}),
+      ...(governance.agentRole !== undefined ? { agentRole: governance.agentRole } : {}),
+      ...(governance.budget !== undefined ? { budget: governance.budget } : {}),
+    };
+
+    try {
+      // Outside the transaction on purpose: a queue call cannot be rolled back,
+      // so it must not run before the row it refers to is committed.
+      await queue.enqueue(AGENT_RUNS_QUEUE, 'execute', payload);
+    } catch (error) {
+      // Settle the row, or it stays `queued` with no job and — being in flight —
+      // blocks every later retry of this goal. `failed` makes it retryable.
+      const message = error instanceof Error ? error.message : String(error);
+      await this.failRun(retryRunId, `enqueue failed: ${message}`, {
+        stopReason: 'enqueue_failed',
+      }).catch(() => undefined);
+      return refuse('ENQUEUE_FAILED', `The retry could not be queued: ${message}`);
+    }
+
+    return {
+      ok: true,
+      retry: {
+        goalId: goal.id,
+        runId: retryRunId,
+        agentName: original.agentName,
+        status: 'queued',
+        retryOfRunId: original.id,
+      },
+    };
+  }
+
+  /**
+   * Finds the skill and arguments a run executed, from its recorded tool call.
+   *
+   * An attempt refused before the harness (frozen, capabilities denied at pickup)
+   * records no tool call; its task is its predecessor's by construction, so the
+   * `retryOfRunId` chain is walked — bounded, and never across goals.
+   */
+  private async recoverRetryTask(
+    run: typeof agentRuns.$inferSelect,
+  ): Promise<RecoveredTask | RetryRunRefusal> {
+    let cursor: { id: string; goalId: string; retryOfRunId: string | null } | undefined = run;
+    for (let depth = 0; cursor && depth < MAX_RETRY_CHAIN_DEPTH; depth += 1) {
+      const [call] = await this.db
+        .select({ toolName: agentToolCalls.toolName, input: agentToolCalls.input })
+        .from(agentToolCalls)
+        .where(and(eq(agentToolCalls.siteId, this.siteId), eq(agentToolCalls.runId, cursor.id)))
+        .orderBy(asc(agentToolCalls.createdAt), asc(agentToolCalls.id))
+        .limit(1);
+      if (call) {
+        if (!isPlainRecord(call.input)) {
+          return refuse(
+            'RETRY_UNRECOVERABLE',
+            `The recorded input of "${call.toolName}" is not an argument object; it cannot be replayed.`,
+          );
+        }
+        if (containsMaskedValue(call.input)) {
+          return refuse(
+            'RETRY_UNRECOVERABLE',
+            `The recorded input of "${call.toolName}" has masked secret values, so it cannot be ` +
+              'replayed faithfully; issue the request again instead.',
+          );
+        }
+        return { ok: true, skillName: call.toolName, arguments: call.input };
+      }
+      if (!cursor.retryOfRunId) break;
+      const [previous] = await this.db
+        .select({ id: agentRuns.id, goalId: agentRuns.goalId, retryOfRunId: agentRuns.retryOfRunId })
+        .from(agentRuns)
+        .where(and(eq(agentRuns.siteId, this.siteId), eq(agentRuns.id, cursor.retryOfRunId)))
+        .limit(1);
+      cursor = previous && previous.goalId === run.goalId ? previous : undefined;
+    }
+    return refuse(
+      'RETRY_UNRECOVERABLE',
+      'The run recorded no tool call, so there is no task to re-execute; create a new goal instead.',
+    );
+  }
+
+  /**
+   * Rebuilds the governance envelope a job for this goal carries.
+   *
+   * Mirrors the two enqueue sites: reconciler goals get the envelope dispatch
+   * builds (origin, intent, drift fingerprint, autonomy cap, role), everything
+   * else gets what `POST /goals` sends. Every recovered field can only narrow what
+   * the run may do — a role intersects the grant, a cap lowers the level, a budget
+   * limits — so omitting one would widen the retry, and a missing intent refuses.
+   */
+  private async recoverRetryGovernance(
+    goal: typeof agentGoals.$inferSelect,
+    run: typeof agentRuns.$inferSelect,
+  ): Promise<RecoveredGovernance | RetryRunRefusal> {
+    const reconciler = goal.origin === 'reconciler';
+    if (reconciler && !goal.intentId) {
+      return refuse(
+        'RETRY_UNRECOVERABLE',
+        'The reconciler goal has no governing intent, so its autonomy cap cannot be recovered.',
+      );
+    }
+
+    let intentFields: Pick<RecoveredGovernance, 'intentId' | 'autonomyCap'> = {};
+    if (goal.intentId) {
+      const [intent] = await this.db
+        .select({
+          id: contentIntents.id,
+          status: contentIntents.status,
+          autonomyCap: contentIntents.autonomyCap,
+        })
+        .from(contentIntents)
+        .where(and(eq(contentIntents.siteId, this.siteId), eq(contentIntents.id, goal.intentId)))
+        .limit(1);
+      if (!intent) {
+        return refuse(
+          'RETRY_UNRECOVERABLE',
+          'The goal\'s governing intent no longer exists, so its autonomy cap cannot be recovered.',
+        );
+      }
+      // A paused or errored intent must not spawn work — the rule dispatch
+      // applies, and what keeps the reconciler's breaker effective.
+      if (intent.status !== 'active') {
+        return refuse(
+          'INTENT_NOT_ACTIVE',
+          `The goal's intent is ${intent.status}; resume it before retrying.`,
+        );
+      }
+      intentFields = { intentId: intent.id, autonomyCap: intent.autonomyCap };
+    }
+
+    const agentRole = goal.agentRole ?? (reconciler ? goal.assigneeAgent : null);
+    const budget = isPlainRecord(run.budget) && Object.keys(run.budget).length > 0
+      ? run.budget
+      : undefined;
+
+    return {
+      ok: true,
+      ...intentFields,
+      ...(reconciler ? { origin: 'reconciler' } : {}),
+      ...(reconciler && goal.driftFingerprint ? { driftFingerprint: goal.driftFingerprint } : {}),
+      ...(agentRole ? { agentRole } : {}),
+      ...(budget ? { budget } : {}),
+      ...(goal.description ? { contextMessage: goal.description } : {}),
+    };
   }
 
   async listRuns(limit = 50) {
