@@ -43,4 +43,13 @@ describe('completeBodySchema — optional lockout policy', () => {
     expect(parsed.policy.userMaxFailedAttempts).toBe(9);
     expect(parsed.policy.notifyChannels).toEqual(['email', 'webhook']);
   });
+
+  it('defaults loginStallMs when a wizard policy omits it', () => {
+    const { loginStallMs: _omitted, ...wizardPolicy } = STANDARD_LOCKOUT_POLICY;
+    const parsed = completeBodySchema.parse({
+      ...validBody,
+      policy: { ...wizardPolicy, notifyChannels: ['email'] },
+    });
+    expect(parsed.policy.loginStallMs).toBe(STANDARD_LOCKOUT_POLICY.loginStallMs);
+  });
 });

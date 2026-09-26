@@ -52,7 +52,11 @@ export const completeBodySchema = z.object({
   // Optional: omit to apply the "Standard" lockout preset. A fresh mutable copy
   // (incl. a fresh notifyChannels array) is passed so Zod's default never holds
   // a reference to the frozen preset.
-  policy: lockoutPolicySchema.default(() => ({
+  // `loginStallMs` has no wizard control yet, so the Studio omits it; the codec
+  // owns its default rather than failing the whole setup.
+  policy: lockoutPolicySchema.extend({
+    loginStallMs: lockoutPolicySchema.shape.loginStallMs.default(STANDARD_LOCKOUT_POLICY.loginStallMs),
+  }).default(() => ({
     ...STANDARD_LOCKOUT_POLICY,
     notifyChannels: [...STANDARD_LOCKOUT_POLICY.notifyChannels],
   })),
