@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-09-08T21:14:35.111Z
+version: 3
+lastUpdated: 2026-09-26T03:57:31.179Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 9b1cd7a0097a7dee
+sourceHash: b473a29de49b4910
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-10T05:00:35.120Z
-codeVerifiedHash: 9b1cd7a0097a7dee
-codeVerifiedClaims: 18
+codeVerified: 2026-09-26T03:57:31.179Z
+codeVerifiedHash: b473a29de49b4910
+codeVerifiedClaims: 20
 ---
 
 <!--
@@ -177,6 +177,28 @@ cùng bước chuyển trạng thái.
 
 Chỉ `failed` mới reopen được. Một approval đã quyết định thì không được hồi sinh,
 còn một dòng `deciding` thuộc về một lần thực thi đang sống hoặc thuộc về sweeper.
+
+### 5.3. Thử lại một run
+
+`POST /api/v1/agent/runs/:id/retry` chạy lại một run `failed` hoặc `cancelled`
+dưới dạng một run **mới** ở trạng thái `queued`, có `retryOfRunId` trỏ về run gốc,
+và đưa nó vào hàng đợi `agent-runs` — cùng claim của worker, cùng harness,
+approval và kill switch như mọi run async. Tác vụ được khôi phục từ tool call mà
+run đã ghi lại, còn envelope quản trị (role, intent, autonomy cap, budget) lấy từ
+goal của nó; lần thử lại chạy với quyền của **người yêu cầu thử lại**, được resolve
+lại khi worker nhận job, không bao giờ mượn quyền của người yêu cầu ban đầu. Chỉ
+lần thử **mới nhất** của goal mới được thử lại, và chỉ khi goal không còn run nào
+đang chạy, nên một request sinh ra nhiều nhất một lần thực thi mới: các request
+thử lại đồng thời được tuần tự hoá trên hàng goal và bên thua nhận `409`.
+
+Phản hồi: `201` kèm `{ goalId, runId, agentName, status: 'queued', retryOfRunId }`;
+`404` cho run không tồn tại hoặc thuộc tenant khác; `409` cho `RUN_NOT_RETRYABLE`,
+`RUN_ACTIVE`, `RETRY_SUPERSEDED`, `GOAL_CLOSED`, `GOAL_BUSY`, `INTENT_NOT_ACTIVE`
+hoặc `RETRY_UNRECOVERABLE` (input đã ghi có giá trị secret bị che, hoặc run không
+ghi tool call nào); `423` `FROZEN`; `400` `ASYNC_UNAVAILABLE`; `503`
+`ENQUEUE_FAILED`, khi đó run thử lại được chốt ở `failed`. Một run bị cách ly với
+`stale_unverified` có thể đã tạo tác dụng rồi — thử lại nó là quyết định có chủ ý
+của con người để chạy lại, và được ghi là `agent_run.retried` trong activity.
 
 ## 6. App Generation Layer
 

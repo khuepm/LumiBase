@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 5
-lastUpdated: 2026-09-20T16:00:45.733Z
+version: 6
+lastUpdated: 2026-09-26T03:57:31.525Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 056914fa69d9dd50
+sourceHash: b157d8705dab563a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-20T16:00:45.733Z
-codeVerifiedHash: 056914fa69d9dd50
-codeVerifiedClaims: 382
+codeVerified: 2026-09-26T03:57:31.525Z
+codeVerifiedHash: b157d8705dab563a
+codeVerifiedClaims: 384
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -681,6 +681,7 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `GET/POST` | `/api/v1/agent/goals` | Liệt kê / tạo goal (`execution: 'async'` xếp hàng chạy) |
 | `POST` | `/api/v1/agent/goals/:id/decompose` | Planner: tạo sub-goal theo vai trò kế thừa ngân sách còn lại |
 | `POST` | `/api/v1/agent/goals/:id/settle` | Giải quyết goal cha từ trạng thái kết thúc của các goal con |
+| `POST` | `/api/v1/agent/runs/:id/retry` | Chạy lại một run `failed`/`cancelled` dưới dạng run mới ở `queued` (`retryOfRunId` → run gốc), đưa vào hàng đợi `agent-runs` với quyền của người yêu cầu thử lại, được resolve lại. Chỉ lần thử mới nhất của goal, chỉ khi goal không còn run nào đang chạy — mỗi request sinh nhiều nhất một lần thực thi mới. `201` `{ goalId, runId, agentName, status, retryOfRunId }`; `404` run không tồn tại hoặc thuộc tenant khác; `409` không thử lại được, đang chạy, đã bị thay thế, goal đã đóng hoặc đang bận, intent không active, hoặc không khôi phục được tác vụ; `423` đang đóng băng; `400` không có queue adapter; `503` enqueue thất bại. Xem [agent harness](../features/agent-harness-layer.md) |
 | `GET/POST/PATCH/DELETE` | `/api/v1/agent/roles[/:name]` | CRUD thư viện vai trò Agent (admin) — khởi tạo sẵn với Planner, Writer, … |
 | `GET` | `/api/v1/agent/autonomy` | Sổ bộ tin cậy: quyền hạn + sự cố đang mở |
 | `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Đề xuất thăng cấp; `POST :id/decide` là con đường duy nhất lên cấp cao hơn (admin) |
