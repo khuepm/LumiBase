@@ -4,7 +4,7 @@ name: Release Apps (desktop + mobile)
 # packages, and uploads them — together with the `latest.json` updater manifest
 # — to the GitHub Release for the pushed `v*.*.*` tag (created by release.yml).
 #
-# Required secrets:
+# Required secrets (desktop jobs fail fast in "Check updater signing key" when absent):
 #   TAURI_SIGNING_PRIVATE_KEY           minisign private key (see apps/shell/README.md)
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password ("" if none)
 # Optional platform code-signing secrets (builds run unsigned when absent):
@@ -84,18 +84,69 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build, sign & publish desktop bundles
-        uses: tauri-apps/tauri-action@v1
+      # `createUpdaterArtifacts: true` makes the updater signature mandatory, and
+      # an unset secret only surfaces after a full compile as the opaque
+      # "failed to decode secret key: … Missing comment in secret key".
+      - name: Check updater signing key
+        shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS notarization / signing (no-ops when the secrets are empty).
+        run: |
+          set -euo pipefail
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not set. Add the base64 contents of the .key file matching plugins.updater.pubkey in apps/shell/src-tauri/tauri.conf.json (see apps/shell/README.md, Auto-update)."
+            exit 1
+          fi
+          if ! printf '%s' "$TAURI_SIGNING_PRIVATE_KEY" | base64 -d 2>/dev/null | head -n1 | grep -q '^untrusted comment:'; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not a 'tauri signer generate' key: store the .key file contents verbatim (a single base64 line), not the decoded minisign key."
+            exit 1
+          fi
+
+      # The bundler treats a defined-but-empty APPLE_CERTIFICATE as "sign with
+      # this" and fails in `security import`, so only export what is configured.
+      - name: Export Apple signing credentials
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "::warning::APPLE_CERTIFICATE not set — macOS bundle is built without Apple code signing/notarization. The updater signature is still required."
+            exit 0
+          fi
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            value="${!name}"
+            [ -n "$value" ] || continue
+            delim="EOF_$(openssl rand -hex 16)"
+            { echo "$name<<$delim"; echo "$value"; echo "$delim"; } >> "$GITHUB_ENV"
+          done
+
+      # WiX rejects a non-numeric pre-release identifier (`1.0.0-rc.3`) for the
+      # MSI, so pre-release Windows builds ship the NSIS installer only.
+      - name: Resolve bundle targets
+        id: bundles
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./apps/shell/src-tauri/tauri.conf.json').version")
+          if [ "${{ matrix.platform }}" = "windows-latest" ] && [[ "$version" == *-* ]]; then
+            echo "args=--bundles nsis" >> "$GITHUB_OUTPUT"
+            echo "::notice::Pre-release version $version — skipping MSI (WiX needs a numeric pre-release)."
+          fi
+
+      - name: Build, sign & publish desktop bundles
+        uses: tauri-apps/tauri-action@v1
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS signing/notarization env comes from "Export Apple signing
+          # credentials" via $GITHUB_ENV, only for the secrets that are set.
         with:
           projectPath: apps/shell
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
@@ -104,7 +155,7 @@ jobs:
           prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-') }}
           # Emit + upload latest.json so tauri-plugin-updater can find updates.
           includeUpdaterJson: true
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} ${{ steps.bundles.outputs.args }}
 
   android:
     name: Mobile (Android)
@@ -133,8 +184,21 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
+      # `env.ANDROID_NDK_ROOT` is not in the `env` context (it is a runner-image
+      # OS variable), so passing it through a step `env:` left NDK_HOME empty.
+      # Point NDK_HOME at the NDK installed here, for every later step.
       - name: Install NDK
-        run: sdkmanager "ndk;27.2.12479018"
+        env:
+          NDK_VERSION: 27.2.12479018
+        run: |
+          set -euo pipefail
+          sdkmanager "ndk;$NDK_VERSION"
+          ndk_dir="$ANDROID_HOME/ndk/$NDK_VERSION"
+          if [ ! -f "$ndk_dir/source.properties" ]; then
+            echo "::error::NDK $NDK_VERSION not found at $ndk_dir"
+            exit 1
+          fi
+          echo "NDK_HOME=$ndk_dir" >> "$GITHUB_ENV"
 
       - name: Setup Rust (Android targets)
         uses: dtolnay/rust-toolchain@stable
@@ -162,8 +226,6 @@ jobs:
 
       - name: Initialize Android project
         run: pnpm -F @lumibase/shell exec tauri android init --ci
-        env:
-          NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
 
       - name: Configure signing keystore
         if: steps.android-secrets.outputs.signed == 'true'
@@ -180,8 +242,6 @@ jobs:
 
       - name: Build Android bundle
         run: pnpm -F @lumibase/shell exec tauri android build --apk --aab
-        env:
-          NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
 
       - name: Upload Android artifacts to release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'

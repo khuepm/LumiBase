@@ -9,7 +9,20 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Fixed
+
+- **Desktop and Android release builds run again.** `release-apps.yml` had
+  failed on every tag since v0.26.0. The `tauri-plugin-updater` crate is back in
+  step with `@tauri-apps/plugin-updater` (2.12), the Android job points
+  `NDK_HOME` at the NDK it installs, macOS no longer tries to import an empty
+  Apple certificate, and Windows pre-releases build the NSIS installer only
+  (WiX cannot version `-rc.N`). A missing updater signing key now fails fast
+  with instructions instead of after a full compile.
+
+### Added
+
+- **`pnpm tauri:check`** (in `check:all`): fails a PR when an `@tauri-apps/*`
+  package and its Rust crate drift to different major/minor releases.
 
 ## [1.0.0-rc.3] - 2026-09-26
 
