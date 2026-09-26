@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-09-10T21:54:17.369Z
+version: 6
+lastUpdated: 2026-09-26T03:23:24.163Z
 sourceLang: en
-contentHash: 8158614ce4b2ac56
-codeVerified: 2026-09-10T21:54:17.369Z
-codeVerifiedHash: 8158614ce4b2ac56
+contentHash: 04beacfe4a2450ac
+codeVerified: 2026-09-26T03:23:24.163Z
+codeVerifiedHash: 04beacfe4a2450ac
 codeVerifiedClaims: 6
 ---
 
@@ -62,8 +62,8 @@ still agree.
 | `vite` | `^8.2.0` | Unify on one Vite major and pull esbuild past the `0.28.1` RCE advisory. **This entry is why `pnpm drift:check` exists:** it sat at `^7.3.5` while `apps/studio` and `apps/docs` both declared `^8.1.3`, and because overrides apply to direct dependencies too, both apps were built with Vite 7 for as long as their manifests claimed Vite 8. Raise this in step with the manifests or the bump is cosmetic. | The workspace no longer needs a single forced Vite major. |
 | `brace-expansion@1` | `^1.1.16` | [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) — DoS via exponential-time expansion of consecutive non-expanding `{}` groups (high), backported to the 1.x line in `1.1.16`. **Dev-only** — reached through `minimatch@3` from ESLint and its plugins, so it never appears in `pnpm audit --prod`. Keyed per-major (same shape as the `nanoid@3` scope) because two incompatible majors coexist; see [Known-unfixable alerts](#known-unfixable-alerts) for why 1.x cannot be folded into 5.x. | Nothing in the tree resolves `minimatch@3` any more (`pnpm why brace-expansion -r`), at which point both `brace-expansion@*` rows collapse into one. |
 | `brace-expansion@5` | `^5.0.8` | [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) — DoS via unbounded expansion length causing an OOM process crash (high), patched in `5.0.8`. **Dev-only** — reached through `minimatch@10` from `glob`, `eslint`, `@typescript-eslint/typescript-estree`. Natural drift already lifted most of the tree to `5.0.9`, but `minimatch@10.2.5` still pinned a `5.0.7` copy; this floor removes that straggler. | Same as the `@1` row. |
-| `@types/react` | `19.2.18` | **Not a security pin** — enforces React 19 types workspace-wide so Studio/Docs/Landing/`@lumibase/ui` typecheck against the same major as runtime React 19. | Drift between apps is no longer a concern, or the workspace splits React majors again intentionally. |
-| `@types/react-dom` | `19.2.7` | Same as `@types/react` — React 19 type consistency. Being an exact pin, it is also the second entry `pnpm drift:check` has caught: the minor-and-patch group bump raised `apps/{docs,landing,studio}` to `^19.2.7` while this pin stayed at `19.2.5`, so the lockfile importers still recorded `specifier: 19.2.5`. Raise the pin in step with the manifests. | Same as `@types/react`. |
+| `@types/react` | `19.3.0` | **Not a security pin** — enforces React 19 types workspace-wide so Studio/Docs/Landing/`@lumibase/ui` typecheck against the same major as runtime React 19. | Drift between apps is no longer a concern, or the workspace splits React majors again intentionally. |
+| `@types/react-dom` | `19.3.0` | Same as `@types/react` — React 19 type consistency. Being an exact pin, it is also the second entry `pnpm drift:check` has caught: the minor-and-patch group bump raised `apps/{docs,landing,studio}` to `^19.2.7` while this pin stayed at `19.2.5`, so the lockfile importers still recorded `specifier: 19.2.5`. Raise the pin in step with the manifests. | Same as `@types/react`. |
 
 ## Audit ignore registry
 

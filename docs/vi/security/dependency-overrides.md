@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-09-10T21:54:17.369Z
+version: 6
+lastUpdated: 2026-09-26T03:23:24.163Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8158614ce4b2ac56
+sourceHash: 04beacfe4a2450ac
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-10T21:54:17.369Z
-codeVerifiedHash: 8158614ce4b2ac56
+codeVerified: 2026-09-26T03:23:24.163Z
+codeVerifiedHash: 04beacfe4a2450ac
 codeVerifiedClaims: 6
 ---
 
@@ -63,8 +63,8 @@ resolution / patch hash mới, rồi `pnpm settings:check` để xác nhận hai
 | `vite` | `^8.2.0` | Hợp nhất về một major Vite và kéo esbuild vượt advisory RCE `0.28.1`. **Chính entry này là lý do `pnpm drift:check` tồn tại:** nó đứng ở `^7.3.5` trong khi `apps/studio` và `apps/docs` đều khai `^8.1.3`, và vì override áp cả cho direct dependency, hai app build bằng Vite 7 suốt thời gian manifest tuyên bố Vite 8. Nâng entry này cùng nhịp với manifest, không thì cú bump chỉ là hình thức. | Workspace không còn cần ép một major Vite duy nhất. |
 | `brace-expansion@1` | `^1.1.16` | [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) — DoS do expansion thời gian mũ với các nhóm `{}` không expand liên tiếp (high), được backport về nhánh 1.x ở `1.1.16`. **Chỉ dev** — đi vào qua `minimatch@3` từ ESLint và các plugin, nên không bao giờ xuất hiện trong `pnpm audit --prod`. Key theo major (cùng dạng với scope `nanoid@3`) vì hai major không tương thích cùng tồn tại; xem [Advisory không vá được](#advisory-không-vá-được) để biết vì sao không gộp 1.x vào 5.x được. | Không còn gì trong cây resolve `minimatch@3` (`pnpm why brace-expansion -r`), lúc đó hai dòng `brace-expansion@*` gộp lại làm một. |
 | `brace-expansion@5` | `^5.0.8` | [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) — DoS do độ dài expansion không giới hạn gây crash OOM tiến trình (high), vá ở `5.0.8`. **Chỉ dev** — đi vào qua `minimatch@10` từ `glob`, `eslint`, `@typescript-eslint/typescript-estree`. Dependency trôi tự nhiên đã kéo phần lớn cây lên `5.0.9`, nhưng `minimatch@10.2.5` vẫn giữ một bản `5.0.7`; sàn này dọn nốt bản sót đó. | Giống dòng `@1`. |
-| `@types/react` | `19.2.18` | **Không phải pin bảo mật** — ép React 19 types toàn workspace để Studio/Docs/Landing/`@lumibase/ui` typecheck cùng major với runtime React 19. | Trôi lệch giữa các app không còn là mối lo, hoặc workspace cố ý tách React major trở lại. |
-| `@types/react-dom` | `19.2.7` | Giống `@types/react` — nhất quán type React 19. Vì là pin chính xác, đây cũng là mục thứ hai `pnpm drift:check` bắt được: đợt bump nhóm minor-and-patch nâng `apps/{docs,landing,studio}` lên `^19.2.7` trong khi pin này vẫn ở `19.2.5`, nên importer trong lockfile vẫn ghi `specifier: 19.2.5`. Nâng pin cùng nhịp với manifest. | Giống `@types/react`. |
+| `@types/react` | `19.3.0` | **Không phải pin bảo mật** — ép React 19 types toàn workspace để Studio/Docs/Landing/`@lumibase/ui` typecheck cùng major với runtime React 19. | Trôi lệch giữa các app không còn là mối lo, hoặc workspace cố ý tách React major trở lại. |
+| `@types/react-dom` | `19.3.0` | Giống `@types/react` — nhất quán type React 19. Vì là pin chính xác, đây cũng là mục thứ hai `pnpm drift:check` bắt được: đợt bump nhóm minor-and-patch nâng `apps/{docs,landing,studio}` lên `^19.2.7` trong khi pin này vẫn ở `19.2.5`, nên importer trong lockfile vẫn ghi `specifier: 19.2.5`. Nâng pin cùng nhịp với manifest. | Giống `@types/react`. |
 
 ## Bảng audit ignore
 
