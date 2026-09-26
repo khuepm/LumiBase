@@ -1,11 +1,11 @@
 ---
 title: LumiBase CLI
-version: 4
-lastUpdated: 2026-09-14T21:26:08.525Z
+version: 6
+lastUpdated: 2026-09-26T03:07:08.361Z
 sourceLang: en
-contentHash: 1efeb2d4feffe788
-codeVerified: 2026-09-14T21:33:46.476Z
-codeVerifiedHash: 1efeb2d4feffe788
+contentHash: 04285b01f04cb780
+codeVerified: 2026-09-26T03:07:08.361Z
+codeVerifiedHash: 04285b01f04cb780
 codeVerifiedClaims: 20
 ---
 
@@ -81,6 +81,8 @@ lumibase init my-site --template cloudflare --pm pnpm
 Three templates are accepted — `nextjs`, `default`, and `cloudflare` (`TEMPLATES` in `packages/create-lumibase/src/index.ts`). Passing no `--template` leaves the choice to the prompt, where **`nextjs`** is preselected: a Next.js website plus the CMS and Studio in Docker, seeded content, and a publishable key. The template *named* `default` is the Hono + Drizzle starter, not the default choice. [Getting started](../getting-started.md) walks through each one.
 
 The scaffolder is **not** a dependency of `lumibase` — it runs once per project, and its prompt/template libraries have no place in every install of a runtime package. `resolveScaffoldCommand` in `packages/cli/src/commands/init.ts` fetches it through the one-off runner of the package manager that invoked the CLI (`npx --yes` / `pnpm dlx` / `yarn dlx` / `bunx`, from `npm_config_user_agent`; yarn classic falls back to `npx`), pinned to the CLI's own version (`create-lumibase@<version>`) so both binaries always come from the same release.
+
+That pin has one consequence worth knowing before it surprises you: `init` resolves the scaffolder from the **registry**, not from this repository. A template that exists in the source tree is therefore not reachable through `lumibase init` until a `create-lumibase` that contains it has been published at the CLI's version. How that fails depends on the age of the published scaffolder: releases up to `1.0.0-rc.1` do not validate `--template`, so the command fails *inside* the scaffolder with a missing-template-directory error; later releases reject the name up front with `Unknown template`, listing only the templates that release ships. Either way the name is valid — the published artifact simply predates it. `npm create lumibase@latest` has the same constraint for the same reason. If you are working from a checkout and need a template that is not published yet, run the scaffolder from the repo instead of going through either entry point.
 
 ## `lumibase types`
 

@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-09-14T21:26:07.815Z
+version: 4
+lastUpdated: 2026-09-19T15:27:57.260Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 99526fe6886264cb
+sourceHash: 72d3a82d31669306
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-14T21:26:07.815Z
-codeVerifiedHash: 99526fe6886264cb
+codeVerified: 2026-09-19T15:27:57.260Z
+codeVerifiedHash: 72d3a82d31669306
 codeVerifiedClaims: 8
 ---
 
@@ -57,6 +57,13 @@ pnpm create lumibase my-project
 Khi không có tham số nào, CLI sẽ chạy ở chế độ tương tác và hỏi mọi thông tin cần
 thiết. Câu hỏi đầu tiên là câu quan trọng nhất — nó chọn template, và lựa chọn
 Next.js được chọn sẵn.
+
+Nếu project đã có CLI `lumibase` thì `lumibase init` là **cùng một** scaffold,
+không phải một cái thứ hai: nó chạy `create-lumibase` và chuyển tham số của bạn
+đi nguyên văn, nên hai đường vào không thể có bộ template khác nhau hay trôi lệch
+khỏi nhau. Dùng cái nào đang có sẵn — `npm create lumibase@latest` thì không cần
+cài gì cả. Xem [`lumibase init`](./cli/index.md#lumibase-init) để biết cơ chế uỷ
+quyền và vì sao scaffolder không phải dependency của `lumibase`.
 
 ## Điều gì diễn ra, theo từng bước
 
