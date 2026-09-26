@@ -282,6 +282,42 @@ describe('SetupService.complete() → audit events (Req 15.1)', () => {
     }
   });
 
+  it('reports an unissued token, rather than a missing one, before hashing or audit writes', async () => {
+    // #470: with the gate on and no hash stored — Cloudflare Workers, which
+    // have no startup step to mint one — `SETUP_TOKEN_REQUIRED` sent the
+    // operator looking for a token that was never printed anywhere.
+    const deriveSpy = vi.spyOn(crypto.subtle, 'deriveBits');
+    const { audit, calls } = makeSpyAudit();
+    const db = makeFakeDb({
+      state: 'uninitialized',
+      setupTokenHash: null,
+      adminPath: null,
+    }) as never;
+    const svc = new SetupService({
+      db,
+      requireSetupToken: true,
+      smtpAvailable: false, encryptionAvailable: true,
+      audit,
+    });
+
+    try {
+      // Even a caller who does send something gets the actionable code: with
+      // no stored hash, no value could ever verify.
+      const outcome = await svc.complete(
+        { ...makeInput(), setupToken: 'anything' },
+        { requestId: 'req-not-issued' },
+      );
+      expect(outcome).toEqual({
+        ok: false,
+        error: { code: 'SETUP_TOKEN_NOT_ISSUED' },
+      });
+      expect(deriveSpy).not.toHaveBeenCalled();
+      expect(calls).toHaveLength(0);
+    } finally {
+      deriveSpy.mockRestore();
+    }
+  });
+
   it('completes successfully with the default AuditLogger (no spy injected)', async () => {
     // Backward-compat: with no `audit` dep, complete() falls back to a
     // real AuditLogger bound to the same db. The fake DB's audit_log

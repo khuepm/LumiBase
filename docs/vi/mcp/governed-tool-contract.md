@@ -1,11 +1,11 @@
 ---
-version: 6
-lastUpdated: 2026-09-22T05:20:12.532Z
+version: 7
+lastUpdated: 2026-09-26T03:52:30.139Z
 sourceLang: vi
-contentHash: b44ccf017c86b180
-codeVerified: 2026-09-22T05:20:12.532Z
-codeVerifiedHash: b44ccf017c86b180
-codeVerifiedClaims: 28
+contentHash: 4f411aaa72bbc641
+codeVerified: 2026-09-26T03:52:30.139Z
+codeVerifiedHash: 4f411aaa72bbc641
+codeVerifiedClaims: 36
 translatedFrom: en
 sourceHash: b9ca7b4d798de9be
 mtEngine: manual
@@ -25,7 +25,7 @@ syncStatus: human-translated
 | Gate write | Chỉ khi skill bị xếp `dangerous` | Mọi skill có capability ghi đều qua autonomy resolution |
 | Capability của caller | `auth.roles` (role **id**, so khớp chuỗi) | Resolve từ RBAC bundle như REST |
 | Kết quả mutation ở stdio | Câu khẳng định tự dựng ("deleted") | Phản ánh `executed` / `pending_approval` / `denied` |
-| Mutation ở stdio | Gọi REST trực tiếp, bỏ qua harness | 27 tool đi qua harness; phần còn lại được **khai** là chưa governed |
+| Mutation ở stdio | Gọi REST trực tiếp, bỏ qua harness | 33 tool đi qua harness; phần còn lại được **khai** là chưa governed |
 
 ## 1. Nguồn schema duy nhất
 
@@ -154,24 +154,50 @@ Trước đây hợp đồng gộp `agentApprovalId ?? approvalId` vào một fi
 
 `packages/mcp-server/src/governed.ts` giữ hai bảng.
 
-**`GOVERNED_TOOLS` (27 tool)** — đi qua `POST /api/v1/mcp` `tools/call`. Tập này được **đo**, không chọn theo cảm tính: với mỗi tool ứng viên, property quảng bá (trừ `confirm`) được so với property của contract canonical; chỉ nhận khi không có property thừa và không có required nào không tới được. Ba tool cần rename tường minh:
+**`GOVERNED_TOOLS` (33 tool)** — đi qua `POST /api/v1/mcp` `tools/call`. Tập này được **đo**, không chọn theo cảm tính: với mỗi tool ứng viên, property quảng bá (trừ `confirm`) được so với property của contract canonical; chỉ nhận khi không có property thừa và không có required nào không tới được. Bốn tool cần rename tường minh:
 
 | Tool | Skill | Rename |
 |---|---|---|
 | `delete_field` | `deleteField` | `field_name` → `name` (kèm `force`, xem dưới) |
 | `add_team_member` | `addTeamMember` | `id` → `teamId` |
 | `remove_team_member` | `removeTeamMember` | `id` → `teamId` |
+| `delete_cdc_subscription` | `deleteCdcSubscription` | `id` → `subscriptionId` |
 
 `confirm` là prompt cho người vận hành, không phải argument của skill, nên bị **bỏ** chứ không forward.
 
 Ngược lại, `force` của `delete_field` **được** forward: `SchemaService.deleteField` nhận `FieldDeleteOptions.force` và REST truyền `?force=true`, nên nếu đường governed không diễn đạt được nó thì governed sẽ là chỗ duy nhất từ chối một arg mà REST nhận. Nguyên tắc chung: arg nào handler tôn trọng thì khai vào contract; arg nào chỉ dành cho người vận hành thì bỏ. Ranh giới này được `governed-binding-contract.test.ts` tính lại từ registry ở mỗi lần chạy test — trước đó nó chỉ được đo một lần bằng script rồi sửa tay, và đúng `force` bị bỏ sót.
+
+**Nhận đủ arg là điều kiện cần, chưa phải điều kiện đủ.** Route thay handler REST bằng handler của skill, nên skill nào bỏ qua một bước kiểm tra mà route REST có (xác minh chữ ký, gate graph hay cron) sẽ biến "governed" thành "governed nhưng yếu hơn". Vòng bổ sung schema canonical cho nhóm `no-canonical-contract` áp thêm phép đo này. Kết quả cho mười tool của nhóm:
+
+| Tool | Skill | Kết quả | Căn cứ |
+|---|---|---|---|
+| `create_relation` | `createRelation` | governed | Handler chuyển nguyên input cho `SchemaService.createRelation` — cùng service với `POST /relations` |
+| `create_intent` | `createIntent` | governed | `IntentService.create` parse lại bằng `intentInputSchema`, như REST |
+| `update_translation` | `updateTranslation` | governed | Cùng câu lệnh update theo `site_id` như `PATCH /translations/:id` |
+| `create_webhook` | `createWebhook` | governed | Cùng insert như `POST /webhooks`; default của route trùng default của cột |
+| `update_webhook` | `updateWebhook` | governed | Cùng update theo `site_id` như `PATCH /webhooks/:id` |
+| `delete_cdc_subscription` | `deleteCdcSubscription` | governed (rename `id` → `subscriptionId`) | Cùng `SubscriptionService.remove`; khác biệt đã biết ghi ở dưới |
+| `create_cdc_subscription` | `createCdcSubscription` | `contract-narrower-than-tool` | Tool quảng bá `payload_mode`, handler không chuyển tiếp nó |
+| `create_flow` | `createFlow` | `skill-weaker-than-rest` | Handler bỏ qua gate graph cho flow `active`, gate cron của trigger `schedule`, và không đặt `nextRunAt` |
+| `install_extension` | `installExtension` | `skill-weaker-than-rest` | Handler bỏ qua kiểm chữ ký bundle, kiểm namespace `lumibase-*` và probe quyền `extensions:*` theo từng hành động |
+| `update_extension` | `updateExtension` | `skill-weaker-than-rest` | Handler bỏ qua probe quyền theo hành động, việc từ chối bật extension official chưa xác minh, evict cache sandbox và đồng bộ subscription CDC |
+
+Cả mười skill đều đã có schema canonical, nên trên HTTP MCP chúng được validate ngay — kể cả bốn tool vẫn ở REST trên stdio. Ba schema update (`updateWebhook`, `updateTranslation`, `updateExtension`) còn đóng một lỗ cụ thể: handler đưa patch thẳng vào `.set()`, nên trước khi có `.strict()` một key như `siteId` (với extension còn có `isOfficial`, `verifiedAt`) được chuyển nguyên vào câu lệnh update.
+
+Cả mười skill cũng đều là control-plane (cờ `dangerous`, capability `schema:*` ghi, hoặc tiền tố `delete`), nên route không làm yếu HITL: trên `POST /api/v1/mcp` chúng cần admin principal, và dưới autopilot thì park approval thay vì chạy.
+
+Hai khác biệt quan sát được giữa đường governed và REST của tool đã route:
+
+- `delete_cdc_subscription`: harness dựng `SubscriptionService` không có `cache`/`audit`, nên dòng audit log `cdc_subscription_deleted` và việc xoá cache cờ feed của REST không xảy ra. Run, tool call và approval ghi lại việc xoá; cache cờ tự hết hạn theo TTL.
+- `update_webhook`: harness chỉ ghi các field người gọi gửi, còn `PATCH /webhooks/:id` hiện áp lại default của route cho field vắng mặt (backlog B86).
 
 **`UNGOVERNED_MUTATIONS`** — vẫn gọi REST, kèm lý do từng tool:
 
 | Lý do | Nghĩa |
 |---|---|
 | `contract-narrower-than-tool` | Skill có, nhưng contract canonical hẹp hơn surface tool đang quảng bá. Route vào sẽ **từ chối** đúng những arg caller đang gửi; rụng im lặng lại chính là lớp lỗi đang sửa. Ví dụ `create_collection` thừa 16 property |
-| `no-canonical-contract` | Skill có, chưa có schema canonical nên không có gì để validate |
+| `skill-weaker-than-rest` | Skill và contract canonical nhận đủ arg tool quảng bá, nhưng handler bỏ qua một bước kiểm tra mà route REST có. Route vào sẽ thêm HITL nhưng bỏ bước kiểm tra đó, nên tool ở lại REST cho tới khi handler mang đủ |
+| `no-canonical-contract` | Skill có, chưa có schema canonical nên không có gì để validate. Hiện **trống** — mười tool từng thuộc nhóm này đã có schema (bảng trên) |
 | `no-skill` | Không có skill tương ứng — không có đích để route |
 
 Đây là **khoảng trống được khai báo**, không phải khoảng trống bị che. Tripwire `S16` fail nếu một mutation tool không thuộc bảng nào, nên tập này không thể tự lớn lên trong im lặng.

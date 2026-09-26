@@ -1,11 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-08-30T08:11:17.536Z
+version: 5
+lastUpdated: 2026-09-26T03:53:06.669Z
 sourceLang: en
-contentHash: 476b4029000a09f2
-codeVerified: 2026-08-30T08:11:17.536Z
-codeVerifiedHash: 476b4029000a09f2
-codeVerifiedClaims: 66
+contentHash: 78fb758321a28f14
+codeVerified: 2026-09-26T03:53:06.669Z
+codeVerifiedHash: 78fb758321a28f14
+codeVerifiedClaims: 72
 ---
 
 # Environment Variables Reference
@@ -37,6 +37,40 @@ It is private operational state. Do not expose it through `VITE_*` environment
 variables or client build metadata, and do not automatically redirect
 public/setup routes to it in production. See
 [Private admin path](./private-admin-path.md).
+
+---
+
+## First-run setup
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ (Node/Docker only) | off | `true`, `1` or `yes` makes `POST /api/v1/setup/complete` demand a one-time setup token. Turn it on for any instance that someone other than you can reach before setup is finished — otherwise whoever reaches the port first creates the admin account. |
+
+With the flag on, every process that serves HTTP (`LUMIBASE_PROCESS_ROLE` `web` or
+`all`) mints the token as it starts, before it accepts requests, and prints it once:
+
+```text
+[lumibase-cms] SETUP_TOKEN=<token>
+```
+
+Paste it into the setup wizard, or send it as `setupToken` to `/setup/complete`. Only
+its SHA-256 hash is stored, and the hash is cleared when setup completes.
+
+A restart does **not** print a new token: the stored hash is kept so a token you already
+have stays valid, and the startup log says so instead. If you lost the line, clear the
+hash and restart — the next start prints a fresh token:
+
+```sql
+UPDATE lumibase_system_state SET setup_token_hash = NULL WHERE id = 'singleton';
+```
+
+Several replicas starting at once print exactly one token between them, so read it
+from whichever replica printed it.
+
+**Cloudflare Workers:** not supported. A Worker has no process start to mint the token
+in, so with the flag on `/setup/complete` answers `503 SETUP_TOKEN_NOT_ISSUED` with an
+explanation instead of accepting a token. Leave the flag unset there and complete setup
+right after deploying.
 
 ---
 

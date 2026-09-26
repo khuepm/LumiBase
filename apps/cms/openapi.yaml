@@ -1811,6 +1811,15 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: >-
+            `SETUP_TOKEN_NOT_ISSUED` — `LUMIBASE_REQUIRE_SETUP_TOKEN` is on but no
+            setup token has been minted, so no request can succeed. The Node/Docker
+            CMS mints and prints one at startup; Cloudflare Workers have no startup
+            step and do not support the flag. The error `message` says what to do.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /cdc/pipelines:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'

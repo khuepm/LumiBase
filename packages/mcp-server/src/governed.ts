@@ -21,9 +21,15 @@ import { asGovernedDecision, fail, renderDecision } from './tools/_shared.js';
  * advertised surface exceeds the contract would have their extra arguments
  * REJECTED once routed — silently dropping them is the exact class of bug this
  * change exists to remove — so they stay on REST and are listed in
- * {@link UNGOVERNED_MUTATIONS} with the reason. `governed-inventory.test.ts`
- * fails if a mutation tool appears in neither table, so the gap cannot grow
- * quietly.
+ * {@link UNGOVERNED_MUTATIONS} with the reason. Tripwire `S16`
+ * (`g2-transport-contract-repro.test.ts`) fails if a mutation tool appears in
+ * neither table, so the gap cannot grow quietly.
+ *
+ * Accepting the arguments is necessary, not sufficient. Routing replaces the REST
+ * handler with the skill's handler, so a skill that skips a check its REST route
+ * applies (signature verification, a graph or cron gate) would turn "governed"
+ * into "governed but weaker". Those tools stay on REST as
+ * `skill-weaker-than-rest` until the skill carries the same checks.
  */
 
 export interface GovernedBinding {
@@ -42,7 +48,11 @@ export interface GovernedBinding {
  * Every entry was verified to satisfy: a skill with the same token set exists,
  * the canonical contract has a schema for it, the advertised arguments (minus
  * `confirm`) map into that schema's properties, and no required property is
- * unreachable from the advertised set.
+ * unreachable from the advertised set. The six entries added with their canonical
+ * schemas (`create_relation`, `create_intent`, `update_translation`,
+ * `create_webhook`, `update_webhook`, `delete_cdc_subscription`) were also read
+ * against their REST route for checks the skill's handler would skip; the
+ * original 27 were not re-audited for that.
  */
 export const GOVERNED_TOOLS: Readonly<Record<string, GovernedBinding>> = {
   // ── items ────────────────────────────────────────────────────────────────
@@ -55,6 +65,7 @@ export const GOVERNED_TOOLS: Readonly<Record<string, GovernedBinding>> = {
   // `field_name` is this transport's name for the field; the skill reads `name`.
   // Renamed explicitly rather than dropped (see repro R17).
   delete_field: { skill: 'deleteField', rename: { field_name: 'name' } },
+  create_relation: { skill: 'createRelation' },
   delete_relation: { skill: 'deleteRelation' },
 
   // ── access ───────────────────────────────────────────────────────────────
@@ -64,13 +75,17 @@ export const GOVERNED_TOOLS: Readonly<Record<string, GovernedBinding>> = {
   // ── automation ───────────────────────────────────────────────────────────
   delete_flow: { skill: 'deleteFlow' },
   run_flow: { skill: 'runFlow' },
+  create_intent: { skill: 'createIntent' },
   delete_intent: { skill: 'deleteIntent' },
 
   // ── config ───────────────────────────────────────────────────────────────
   upsert_setting: { skill: 'upsertSetting' },
   delete_setting: { skill: 'deleteSetting' },
   create_translation: { skill: 'createTranslation' },
+  update_translation: { skill: 'updateTranslation' },
   delete_translation: { skill: 'deleteTranslation' },
+  create_webhook: { skill: 'createWebhook' },
+  update_webhook: { skill: 'updateWebhook' },
   delete_webhook: { skill: 'deleteWebhook' },
 
   // ── api keys / users / teams ──────────────────────────────────────────────
@@ -89,15 +104,29 @@ export const GOVERNED_TOOLS: Readonly<Record<string, GovernedBinding>> = {
 
   // ── extensions ───────────────────────────────────────────────────────────
   uninstall_extension: { skill: 'uninstallExtension' },
+
+  // ── cdc ──────────────────────────────────────────────────────────────────
+  // The change-feed skills name the subscription `subscriptionId` (as
+  // `getCdcSubscriptionStatus`/`replayCdcSubscription` do); the CRUD-generated
+  // stdio tool takes it as `id`, like every other `delete_*` tool.
+  // Known divergence, not a skipped gate: the harness builds `SubscriptionService`
+  // without `cache`/`audit`, so REST's `cdc_subscription_deleted` audit-log row
+  // and feed-flag cache eviction do not happen on this path. The run, tool-call
+  // and approval rows record the deletion instead, and the flag cache expires on
+  // its own TTL.
+  delete_cdc_subscription: { skill: 'deleteCdcSubscription', rename: { id: 'subscriptionId' } },
 };
 
 /**
  * Mutation tools that stay on REST, each with the measured reason.
  *
- * These are governance gaps, stated rather than hidden. Two shapes of reason:
- * `no-canonical-contract` (the skill has no entry in `AgentToolSchemas`, so
- * routing has nothing to validate against) and `contract-narrower-than-tool`
- * (routing would reject arguments the tool advertises today).
+ * These are governance gaps, stated rather than hidden. Three shapes of reason:
+ * `contract-narrower-than-tool` (routing would reject arguments the tool
+ * advertises today), `skill-weaker-than-rest` (the skill accepts the arguments
+ * but skips a check its REST route applies, so routing would trade one gate for
+ * another) and `no-skill` (nothing to route to). `no-canonical-contract` — a
+ * skill with no entry in `AgentToolSchemas` — is currently empty; it stays a
+ * valid reason for a tool whose skill is added before its schema.
  */
 export const UNGOVERNED_MUTATIONS: Readonly<Record<string, string>> = {
   // Skill exists, but the canonical contract is narrower than what this tool
@@ -106,18 +135,23 @@ export const UNGOVERNED_MUTATIONS: Readonly<Record<string, string>> = {
   create_policy: 'contract-narrower-than-tool: enforceTfa/ipAllow/ipDeny/validFrom/validUntil',
   create_role: 'contract-narrower-than-tool: systemKey',
   cdc_subscription_replay: 'contract-narrower-than-tool: cursor has no canonical counterpart',
+  create_cdc_subscription:
+    'contract-narrower-than-tool: payload_mode — the createCdcSubscription handler never forwards it, ' +
+    'so a snapshot subscription would be created as reference',
 
-  // Skill exists but has no canonical input contract yet.
-  create_cdc_subscription: 'no-canonical-contract',
-  delete_cdc_subscription: 'no-canonical-contract',
-  create_flow: 'no-canonical-contract',
-  create_intent: 'no-canonical-contract',
-  create_relation: 'no-canonical-contract',
-  create_webhook: 'no-canonical-contract',
-  update_webhook: 'no-canonical-contract',
-  update_translation: 'no-canonical-contract',
-  install_extension: 'no-canonical-contract',
-  update_extension: 'no-canonical-contract',
+  // Skill and canonical contract both exist and accept the advertised arguments,
+  // but the skill's handler skips checks the REST route applies. Routing would
+  // add HITL and remove those checks, so these stay on REST until the handler
+  // carries them.
+  create_flow:
+    'skill-weaker-than-rest: createFlow skips the active-graph validation and schedule-cron check of ' +
+    'POST /flows and never sets nextRunAt, so an active schedule flow would never fire',
+  install_extension:
+    'skill-weaker-than-rest: installExtension skips the bundle signature check, the reserved lumibase-* ' +
+    'namespace check and the per-action extensions:* permission probes of POST /extensions',
+  update_extension:
+    'skill-weaker-than-rest: updateExtension skips the per-action extensions:* permission probes, the ' +
+    'unverified-official enable refusal, sandbox cache eviction and CDC subscription sync of PATCH /extensions/:id',
 
   // No skill at all: nothing to route to. Listed so the set is closed.
   add_policy_permission: 'no-skill',

@@ -33,6 +33,67 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   is recorded as `agent_run.retried` in activity. This is the sanctioned way to
   re-run a `stale_unverified` run after inspecting it (#455) — nothing is replayed
   automatically. The `201` body gains `status` and `retryOfRunId`; no migration.
+- **`LUMIBASE_REQUIRE_SETUP_TOKEN=true` no longer locks the instance out
+  (#470).** `/setup/complete` demanded a token that nothing ever produced: the
+  helper that mints it, stores its hash and prints it had no caller, so the only
+  way out was turning the flag off and recreating the container. The Node/Docker
+  entrypoint now mints the token in every HTTP process before it starts
+  listening and prints one `[lumibase-cms] SETUP_TOKEN=<token>` line. Replicas
+  booting together print exactly one token between them (the write is
+  conditional, so the losers neither crash on the primary key nor print a token
+  the last writer invalidates — measured on Postgres). A restart keeps the issued
+  token instead of reprinting it and logs the SQL that clears it if the line was
+  lost. The request path and startup now share one parser for the flag
+  (`true`/`1`/`yes`, unchanged), so they cannot disagree on a value. Cloudflare
+  Workers have no process start to mint in, so the flag is documented as
+  Node/Docker-only and `/setup/complete` there answers
+  `503 SETUP_TOKEN_NOT_ISSUED` with an explanation instead of a silent
+  `SETUP_TOKEN_REQUIRED`. No migration; an instance stuck in the old state gets
+  its token on the first start after upgrading.
+
+### Security
+
+- **Ten more agent skills validate their input before anything runs (#454
+  follow-up).** `createRelation`, `createFlow`, `createIntent`, `updateTranslation`,
+  `createWebhook`, `updateWebhook`, `installExtension`, `updateExtension`,
+  `createCdcSubscription` and `deleteCdcSubscription` had a skill but no canonical
+  schema, so the harness executed whatever it was handed and `tools/list` advertised
+  `{type:'object'}` for them. They now have strict schemas in `@lumibase/contracts`,
+  mirroring what the handler and its REST route accept. That closes a concrete hole
+  on `POST /api/v1/mcp`: `updateWebhook`, `updateTranslation` and `updateExtension`
+  hand their patch straight to `.set()`, so a key such as `siteId` — or
+  `isOfficial`/`verifiedAt` on an extension — was passed through into the update
+  statement. Reaching it needed an admin principal and, below autopilot, a human
+  approval, since all ten skills are control-plane; it is now refused with
+  `VALIDATION` before a run or approval is created. `installExtension` also gains the
+  `bundleUrl` protocol gate `POST /extensions` applies.
+
+### Changed
+
+- **stdio routes 33 mutation tools through the governed harness, up from 27 (#454
+  follow-up).** With the schemas above, `create_relation`, `create_intent`,
+  `update_translation`, `create_webhook`, `update_webhook` and
+  `delete_cdc_subscription` (`id` → `subscriptionId`) now go to `POST /api/v1/mcp`
+  instead of REST. The other four of that group stay on REST with a sharper reason:
+  `create_cdc_subscription` is `contract-narrower-than-tool` (the handler never
+  forwards `payload_mode`), and `create_flow`, `install_extension` and
+  `update_extension` are the new `skill-weaker-than-rest` — the skill accepts the
+  arguments but skips checks its REST route applies (graph/cron gates and
+  `nextRunAt`; bundle signature, reserved namespace and per-action permission
+  probes), so routing would have traded one gate for another. Remaining gap: 55
+  ungoverned mutations — 5 `contract-narrower-than-tool`, 3
+  `skill-weaker-than-rest`, 47 `no-skill`; `no-canonical-contract` is empty.
+
+  Upgrade notes:
+
+  - **No migration, no backfill, no new environment variable.**
+  - With `LUMIBASE_MCP_GOVERNED=auto` (the default) on a site with `contentOs.mcp`
+    enabled, the six routed tools stop executing immediately: all six are
+    control-plane, so a non-admin principal now gets `CONTROL_PLANE_FORBIDDEN` and an
+    admin gets a pending approval below autopilot. With `on` they used to be refused
+    and now run governed. `off` is unchanged.
+  - On `POST /api/v1/mcp`, calls to the ten skills with an unknown or misspelled
+    argument now fail with `VALIDATION` instead of being executed.
 
 ## [1.0.0-rc.2] - 2026-09-23
 

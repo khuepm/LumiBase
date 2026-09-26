@@ -19,10 +19,17 @@
  *     its hash, and print the plaintext to stdout exactly once. The
  *     helper is idempotent across repeated invocations within the same
  *     process — once a hash already exists in `system_state`, it does
- *     not regenerate.
+ *     not regenerate. It is called from the Node/Docker entrypoint via
+ *     `./startup.ts` (`serve.ts` → `runSetupTokenStartup`); Cloudflare
+ *     Workers have no process startup, so the flag is Node/Docker-only.
+ *   - {@link isSetupTokenRequired} is the single parser of the flag. The
+ *     side that *checks* a token (`routes.ts`) and the side that *mints*
+ *     one (`startup.ts`) both go through it: if they disagreed about a
+ *     value such as `1`, one side would demand a token the other never
+ *     printed (#470).
  */
 
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, ne } from 'drizzle-orm';
 import type { Database } from '@lumibase/database';
 import { systemState } from '@lumibase/database';
 
@@ -82,8 +89,10 @@ export interface GeneratedSetupToken {
 /**
  * Mint a fresh Setup Token. Returns both the plaintext (for stdout) and
  * the hash (for `system_state.setup_token_hash`). The plaintext is
- * never persisted — losing it means the operator must restart the CMS
- * to regenerate.
+ * never persisted. Losing it is not fixed by a plain restart: the stored
+ * hash survives, and {@link printSetupTokenIfRequired} deliberately does
+ * not replace a hash whose token may already be in someone's hands. The
+ * operator clears `setup_token_hash` and restarts (see `./startup.ts`).
  */
 export async function generateSetupToken(): Promise<GeneratedSetupToken> {
   const bytes = crypto.getRandomValues(new Uint8Array(TOKEN_BYTES));
@@ -106,6 +115,25 @@ export async function verifySetupToken(
   if (typeof storedHash !== 'string' || storedHash.length === 0) return false;
   const candidate = await sha256Hex(plain);
   return constantTimeStringEquals(candidate, storedHash);
+}
+
+// ── flag parsing ────────────────────────────────────────────────────────
+
+/** Environment key that turns the setup-token gate on (Req 2.6). */
+export const REQUIRE_SETUP_TOKEN_ENV = 'LUMIBASE_REQUIRE_SETUP_TOKEN';
+
+/**
+ * Whether `LUMIBASE_REQUIRE_SETUP_TOKEN` is on in `env`.
+ *
+ * Accepts `true`, `1` and `yes` — exactly what the request path accepted
+ * before this parser existed, so no deployment changes meaning. Takes a
+ * plain record so it works for `process.env` (Node) and `c.env` (both
+ * runtimes) without touching either runtime's bindings.
+ */
+export function isSetupTokenRequired(env: Readonly<Record<string, unknown>>): boolean {
+  const v = env[REQUIRE_SETUP_TOKEN_ENV];
+  if (typeof v !== 'string') return false;
+  return v === 'true' || v === '1' || v === 'yes';
 }
 
 // ── startup wiring ──────────────────────────────────────────────────────
@@ -141,6 +169,13 @@ export interface SetupTokenStartupOptions {
  *   - Otherwise mints a new token, upserts the singleton row with the
  *     fresh hash, prints the plaintext exactly once and returns
  *     `'minted'`.
+ *
+ * The write is conditional (insert `ON CONFLICT DO NOTHING`, update only
+ * `WHERE setup_token_hash IS NULL`), and the token is printed only by the
+ * caller whose write landed. Several web replicas booting against a fresh
+ * database therefore print exactly one token between them — the one whose
+ * hash is stored — instead of each printing its own while the last writer
+ * silently invalidates the rest, or the losers crashing on the primary key.
  *
  * Errors from the DB layer are *not* caught here — the caller decides
  * whether a startup failure should crash the process.
@@ -183,17 +218,36 @@ export async function printSetupTokenIfRequired(
 
   const token = await generateSetupToken();
 
-  if (row) {
-    await db
+  // Claim the slot. Only the caller whose write lands may print: another
+  // process that got there first holds a token we must not invalidate.
+  let claimed = false;
+  if (!row) {
+    const inserted = await db
+      .insert(systemState)
+      .values({ id: 'singleton', state: 'uninitialized', setupTokenHash: token.hash })
+      .onConflictDoNothing()
+      .returning({ id: systemState.id });
+    claimed = inserted.length > 0;
+  }
+  if (!claimed) {
+    // Either the row existed already, or a concurrent writer created it
+    // between our read and our insert. Take it only while it still has no
+    // hash and setup has not completed.
+    const updated = await db
       .update(systemState)
       .set({ setupTokenHash: token.hash, updatedAt: new Date() })
-      .where(eq(systemState.id, 'singleton'));
-  } else {
-    await db.insert(systemState).values({
-      id: 'singleton',
-      state: 'uninitialized',
-      setupTokenHash: token.hash,
-    });
+      .where(
+        and(
+          eq(systemState.id, 'singleton'),
+          isNull(systemState.setupTokenHash),
+          ne(systemState.state, 'initialized'),
+        ),
+      )
+      .returning({ id: systemState.id });
+    claimed = updated.length > 0;
+  }
+  if (!claimed) {
+    return 'already_minted';
   }
 
   // Single, well-marked stdout line so log scrapers can extract it.
