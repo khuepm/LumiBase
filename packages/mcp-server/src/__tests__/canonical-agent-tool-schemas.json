@@ -20,6 +20,20 @@
       "name"
     ]
   },
+  "createCdcSubscription": {
+    "properties": [
+      "collections",
+      "extensionName",
+      "kind",
+      "name",
+      "operations",
+      "webhookId"
+    ],
+    "required": [
+      "kind",
+      "name"
+    ]
+  },
   "createCollection": {
     "properties": [
       "name",
@@ -42,6 +56,38 @@
       "collection",
       "name",
       "type"
+    ]
+  },
+  "createFlow": {
+    "properties": [
+      "description",
+      "graph",
+      "name",
+      "status",
+      "triggerOptions",
+      "triggerType"
+    ],
+    "required": [
+      "graph",
+      "name",
+      "triggerType"
+    ]
+  },
+  "createIntent": {
+    "properties": [
+      "autonomyCap",
+      "budget",
+      "collection",
+      "maintenanceWindow",
+      "name",
+      "rules",
+      "schedule"
+    ],
+    "required": [
+      "collection",
+      "name",
+      "rules",
+      "schedule"
     ]
   },
   "createItem": {
@@ -67,6 +113,28 @@
     ],
     "required": [
       "name"
+    ]
+  },
+  "createRelation": {
+    "properties": [
+      "aliasField",
+      "junctionCollection",
+      "junctionManyField",
+      "junctionOneField",
+      "manyCollection",
+      "manyField",
+      "meta",
+      "onDelete",
+      "oneCollection",
+      "oneField",
+      "relatedDisplayTemplate",
+      "sortField",
+      "type"
+    ],
+    "required": [
+      "manyCollection",
+      "manyField",
+      "oneCollection"
     ]
   },
   "createRole": {
@@ -105,6 +173,29 @@
       "language",
       "namespace",
       "value"
+    ]
+  },
+  "createWebhook": {
+    "properties": [
+      "actions",
+      "collections",
+      "headers",
+      "name",
+      "secret",
+      "status",
+      "url"
+    ],
+    "required": [
+      "name",
+      "url"
+    ]
+  },
+  "deleteCdcSubscription": {
+    "properties": [
+      "subscriptionId"
+    ],
+    "required": [
+      "subscriptionId"
     ]
   },
   "deleteCollection": {
@@ -208,6 +299,24 @@
       "id"
     ]
   },
+  "installExtension": {
+    "properties": [
+      "bundleUrl",
+      "capabilities",
+      "enabled",
+      "key",
+      "manifest",
+      "name",
+      "type",
+      "version"
+    ],
+    "required": [
+      "bundleUrl",
+      "name",
+      "type",
+      "version"
+    ]
+  },
   "inviteUser": {
     "properties": [
       "email",
@@ -278,6 +387,22 @@
       "id"
     ]
   },
+  "updateExtension": {
+    "properties": [
+      "bundleUrl",
+      "capabilities",
+      "enabled",
+      "id",
+      "key",
+      "manifest",
+      "name",
+      "type",
+      "version"
+    ],
+    "required": [
+      "id"
+    ]
+  },
   "updateItem": {
     "properties": [
       "collection",
@@ -291,11 +416,39 @@
       "id"
     ]
   },
+  "updateTranslation": {
+    "properties": [
+      "id",
+      "key",
+      "language",
+      "namespace",
+      "status",
+      "value"
+    ],
+    "required": [
+      "id"
+    ]
+  },
   "updateUser": {
     "properties": [
       "id",
       "roleId",
       "status"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "updateWebhook": {
+    "properties": [
+      "actions",
+      "collections",
+      "headers",
+      "id",
+      "name",
+      "secret",
+      "status",
+      "url"
     ],
     "required": [
       "id"
