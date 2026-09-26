@@ -1,14 +1,14 @@
 ---
 title: LumiBase CLI
-version: 4
-lastUpdated: 2026-09-14T21:26:08.525Z
+version: 6
+lastUpdated: 2026-09-26T03:07:08.361Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1efeb2d4feffe788
+sourceHash: 04285b01f04cb780
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-14T21:33:46.476Z
-codeVerifiedHash: 1efeb2d4feffe788
+codeVerified: 2026-09-26T03:07:08.361Z
+codeVerifiedHash: 04285b01f04cb780
 codeVerifiedClaims: 20
 ---
 
@@ -84,6 +84,8 @@ lumibase init my-site --template cloudflare --pm pnpm
 Có ba template được chấp nhận — `nextjs`, `default`, và `cloudflare` (`TEMPLATES` trong `packages/create-lumibase/src/index.ts`). Không truyền `--template` thì lựa chọn thuộc về prompt, nơi **`nextjs`** được chọn sẵn: một website Next.js kèm CMS và Studio chạy trong Docker, nội dung đã seed, và một publishable key. Template *tên* `default` là starter Hono + Drizzle, không phải lựa chọn mặc định. [Bắt đầu](../getting-started.md) hướng dẫn từng loại.
 
 Scaffolder **không** phải dependency của `lumibase` — nó chạy một lần cho mỗi project, và các thư viện prompt/template của nó không có chỗ trong mọi lần cài một package runtime. `resolveScaffoldCommand` trong `packages/cli/src/commands/init.ts` lấy nó qua trình chạy một-lần của package manager đã gọi CLI (`npx --yes` / `pnpm dlx` / `yarn dlx` / `bunx`, đọc từ `npm_config_user_agent`; yarn classic rơi về `npx`), ghim vào đúng phiên bản của CLI (`create-lumibase@<version>`) để hai binary luôn đến từ cùng một release.
+
+Cái ghim đó có một hệ quả nên biết trước khi nó làm bạn bất ngờ: `init` lấy scaffolder từ **registry**, không phải từ repository này. Nên một template đã có trong source tree vẫn **không** dùng được qua `lumibase init` cho tới khi một bản `create-lumibase` có chứa nó được publish ở đúng phiên bản của CLI. Lệnh fail thế nào tuỳ vào độ cũ của scaffolder đã publish: các bản tới `1.0.0-rc.1` không validate `--template`, nên lệnh fail *bên trong* scaffolder với lỗi thiếu thư mục template; các bản sau đó từ chối tên ngay từ đầu với `Unknown template`, chỉ liệt kê những template mà bản đó mang theo. Dù theo cách nào thì tên vẫn hợp lệ; chỉ là artifact đã publish ra đời trước nó. `npm create lumibase@latest` cũng bị đúng ràng buộc này vì cùng lý do. Nếu bạn đang làm từ một checkout và cần một template chưa publish, hãy chạy scaffolder trực tiếp từ repo thay vì đi qua một trong hai đường vào.
 
 ## `lumibase types`
 
