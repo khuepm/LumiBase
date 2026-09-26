@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import { ArrowDown, ArrowUp, Bookmark, ChevronLeft, ChevronRight, Code2, Filter, Lock, RefreshCw, Save } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bookmark, ChevronLeft, ChevronRight, ClipboardCheck, Code2, Filter, Lock, Plus, RefreshCw, Save } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FieldResource } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
@@ -117,6 +117,7 @@ export function ItemsListPage() {
 
   const canRead = perms.can(collection, 'read');
   const canUpdate = perms.can(collection, 'update');
+  const canCreate = perms.can(collection, 'create');
 
   const itemsQuery = useQuery({
     queryKey: ['items', collection, filterPayload, sort, page],
@@ -174,6 +175,24 @@ export function ItemsListPage() {
           <h1 className="text-2xl font-semibold">{collection}</h1>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            to="/content/$collection/reviews"
+            params={{ collection }}
+            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted"
+          >
+            <ClipboardCheck className="h-3.5 w-3.5" />
+            Reviews
+          </Link>
+          {canCreate && (
+            <Link
+              to="/content/$collection/$id"
+              params={{ collection, id: 'new' }}
+              className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New item
+            </Link>
+          )}
           {/* Live Mode Toggle */}
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground mr-2 cursor-pointer">
             <input
