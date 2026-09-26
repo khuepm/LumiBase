@@ -1,11 +1,11 @@
 ---
-version: 6
-lastUpdated: 2026-09-20T16:00:45.733Z
+version: 7
+lastUpdated: 2026-09-26T03:57:31.525Z
 sourceLang: en
-contentHash: 056914fa69d9dd50
-codeVerified: 2026-09-20T16:00:45.733Z
-codeVerifiedHash: 056914fa69d9dd50
-codeVerifiedClaims: 382
+contentHash: b157d8705dab563a
+codeVerified: 2026-09-26T03:57:31.525Z
+codeVerifiedHash: b157d8705dab563a
+codeVerifiedClaims: 384
 ---
 
 # Hono API Specification — LumiBase
@@ -790,6 +790,7 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `GET/POST` | `/api/v1/agent/goals` | List / create goals (`execution: 'async'` enqueues a queued run) |
 | `POST` | `/api/v1/agent/goals/:id/decompose` | Planner: create role-scoped sub-goals inheriting remaining budget |
 | `POST` | `/api/v1/agent/goals/:id/settle` | Settle a parent goal from its children's terminal states |
+| `POST` | `/api/v1/agent/runs/:id/retry` | Re-execute a `failed`/`cancelled` run as a new `queued` run (`retryOfRunId` → the original), enqueued on `agent-runs` under the requester's re-resolved rights. Only the goal's latest attempt, only while nothing on the goal is in flight — at most one new execution per request. `201` `{ goalId, runId, agentName, status, retryOfRunId }`; `404` unknown or other-tenant run; `409` not retryable, in flight, superseded, goal closed or busy, intent not active, or task unrecoverable; `423` frozen; `400` no queue adapter; `503` enqueue failed. See [agent harness](../features/agent-harness-layer.md) |
 | `GET/POST/PATCH/DELETE` | `/api/v1/agent/roles[/:name]` | Agent role library CRUD (admin) — seeded with Planner, Writer, … |
 | `GET` | `/api/v1/agent/autonomy` | Trust ledger: grants + open incidents |
 | `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Promotion proposals; `POST :id/decide` is the only path to a higher level (admin) |

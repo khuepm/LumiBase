@@ -11,6 +11,28 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **Retrying an agent run now actually runs it.** `POST /api/v1/agent/runs/:id/retry`
+  inserted a new run with `status: 'running'`, answered `201`, and enqueued nothing
+  — and because the worker only claims `queued` runs, nothing could ever have picked
+  it up. The row sat until the stale sweep failed it, and the goal read as having a
+  run in flight in the meantime. A retry now inserts a `queued` run (`retryOfRunId`
+  → the original) and enqueues it on `agent-runs`, so it goes through the same
+  worker claim, harness, approvals and kill switch as any async run. The task is
+  recovered from the original's recorded tool call and the governance envelope
+  (role, intent, autonomy cap, budget) from its goal; it executes under the
+  **requester's** re-resolved rights, never the original requester's. One request
+  yields at most one new execution: only `failed`/`cancelled` runs, only the goal's
+  latest attempt, only while nothing on the goal is in flight — decided under a lock
+  on the goal row, with the one-active-run-per-goal index behind it — so a
+  double-click or two operators produce one run and a `409`. Refusals are explicit:
+  `409` (not retryable, in flight, superseded, goal closed or being dispatched,
+  intent not active, or the input cannot be replayed because it was recorded with
+  masked secrets), `423` frozen, `400` without a queue adapter, `503` when the
+  enqueue fails (the retry row is then settled `failed`, so it can be retried). A
+  blocked reconciler goal resumes when its run is retried, and every accepted retry
+  is recorded as `agent_run.retried` in activity. This is the sanctioned way to
+  re-run a `stale_unverified` run after inspecting it (#455) — nothing is replayed
+  automatically. The `201` body gains `status` and `retryOfRunId`; no migration.
 - **`LUMIBASE_REQUIRE_SETUP_TOKEN=true` no longer locks the instance out
   (#470).** `/setup/complete` demanded a token that nothing ever produced: the
   helper that mints it, stores its hash and prints it had no caller, so the only
