@@ -27,7 +27,7 @@ interface SortState {
  * Phase B `/api/v1/items/:collection` endpoints via the typed SDK.
  */
 export function ItemsListPage() {
-  const { collection } = useParams({ from: '/admin-layout/content/$collection' });
+  const { collection } = useParams({ strict: false }) as { collection: string };
   const client = getApiClient();
   const perms = usePermissions();
 

@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-router';
 import { lazy, Suspense, useEffect } from 'react';
 import { AppShell } from './components/app-shell';
+import { adminBaseRewrite } from './lib/admin-base';
 import { BareLayout } from './components/bare-layout';
 import { AdminReadyGate } from './modules/setup/admin-ready-gate';
 import { shouldAutoRedirectToAdmin } from './modules/setup/setup-environment';
@@ -1397,7 +1398,7 @@ const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
-export const router = createRouter({ routeTree });
+export const router = createRouter({ routeTree, rewrite: adminBaseRewrite });
 
 declare module '@tanstack/react-router' {
   interface Register {
