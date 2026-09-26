@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-09-19T15:27:57.260Z
+version: 6
+lastUpdated: 2026-09-26T03:53:07.045Z
 sourceLang: en
-contentHash: 72d3a82d31669306
-codeVerified: 2026-09-19T15:27:57.260Z
-codeVerifiedHash: 72d3a82d31669306
+contentHash: 18193a74871ad6f5
+codeVerified: 2026-09-26T03:53:07.045Z
+codeVerifiedHash: 18193a74871ad6f5
 codeVerifiedClaims: 8
 ---
 
@@ -229,9 +229,10 @@ post unpublished so the check has something real to catch. Checks that cannot
 run are reported as SKIPPED rather than folded into the pass count.
 
 Two upstream CMS issues shape this template, both documented in the generated
-`README.md`: the setup-token gate demands a token the server never prints
-([#470](https://github.com/khuepm/lumibase/issues/470)), so the compose file
-leaves it off and binds every published port to `127.0.0.1` instead; and an
+`README.md`: in the CMS image the compose file pins, the setup-token gate demands a
+token the server never prints ([#470](https://github.com/khuepm/lumibase/issues/470),
+fixed after that image was built), so the compose file leaves it off and binds every
+published port to `127.0.0.1` instead; and an
 `X-Lumi-Site` header naming a site that does not exist can take the CMS process
 down ([#469](https://github.com/khuepm/lumibase/issues/469)), so that probe sits
 behind `LUMIBASE_VERIFY_CROSS_TENANT=1`. Tenant isolation against a *real*

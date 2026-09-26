@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 4
-lastUpdated: 2026-08-30T08:11:17.536Z
+version: 5
+lastUpdated: 2026-09-26T03:53:06.669Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 476b4029000a09f2
+sourceHash: 78fb758321a28f14
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-30T08:11:17.536Z
-codeVerifiedHash: 476b4029000a09f2
-codeVerifiedClaims: 66
+codeVerified: 2026-09-26T03:53:06.669Z
+codeVerifiedHash: 78fb758321a28f14
+codeVerifiedClaims: 72
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -41,6 +41,39 @@ lưu trong database, nên có thể rotate mà không cần redeploy — và kh�
 trong build artifact.
 
 Đây là trạng thái vận hành riêng tư. Không phơi bày qua biến môi trường `VITE_*` hay client build metadata, và không tự động redirect các route public/setup tới nó ở production. Xem [Admin path riêng tư](./private-admin-path.md).
+
+---
+
+## Setup lần đầu
+
+| Biến | Bắt buộc | Mặc định | Mô tả |
+|------|----------|----------|-------|
+| `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ (chỉ Node/Docker) | tắt | `true`, `1` hoặc `yes` khiến `POST /api/v1/setup/complete` đòi một setup token dùng một lần. Hãy bật cho mọi instance mà người khác ngoài bạn có thể truy cập trước khi setup xong — nếu không, ai chạm tới cổng trước sẽ tạo được tài khoản admin. |
+
+Khi cờ bật, mọi tiến trình phục vụ HTTP (`LUMIBASE_PROCESS_ROLE` là `web` hoặc
+`all`) sinh token ngay lúc khởi động, trước khi nhận request, và in ra đúng một lần:
+
+```text
+[lumibase-cms] SETUP_TOKEN=<token>
+```
+
+Dán nó vào setup wizard, hoặc gửi dưới dạng `setupToken` tới `/setup/complete`. Chỉ
+hash SHA-256 của nó được lưu, và hash bị xoá khi setup hoàn tất.
+
+Khởi động lại **không** in token mới: hash đã lưu được giữ nguyên để token bạn đang có
+vẫn dùng được, và log khởi động sẽ báo điều đó thay vì in token. Nếu bạn làm mất dòng
+đó, hãy xoá hash rồi khởi động lại — lần khởi động tiếp theo sẽ in một token mới:
+
+```sql
+UPDATE lumibase_system_state SET setup_token_hash = NULL WHERE id = 'singleton';
+```
+
+Nhiều replica khởi động cùng lúc chỉ in đúng một token cho cả nhóm, nên hãy đọc nó từ
+replica nào đã in ra.
+
+**Cloudflare Workers:** không hỗ trợ. Worker không có bước khởi động tiến trình để sinh
+token, nên khi cờ bật, `/setup/complete` trả `503 SETUP_TOKEN_NOT_ISSUED` kèm lời giải
+thích thay vì nhận token. Ở đó hãy để cờ tắt và hoàn tất setup ngay sau khi deploy.
 
 ---
 
