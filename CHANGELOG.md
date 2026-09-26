@@ -9,6 +9,26 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Fixed
+
+- **`LUMIBASE_REQUIRE_SETUP_TOKEN=true` no longer locks the instance out
+  (#470).** `/setup/complete` demanded a token that nothing ever produced: the
+  helper that mints it, stores its hash and prints it had no caller, so the only
+  way out was turning the flag off and recreating the container. The Node/Docker
+  entrypoint now mints the token in every HTTP process before it starts
+  listening and prints one `[lumibase-cms] SETUP_TOKEN=<token>` line. Replicas
+  booting together print exactly one token between them (the write is
+  conditional, so the losers neither crash on the primary key nor print a token
+  the last writer invalidates — measured on Postgres). A restart keeps the issued
+  token instead of reprinting it and logs the SQL that clears it if the line was
+  lost. The request path and startup now share one parser for the flag
+  (`true`/`1`/`yes`, unchanged), so they cannot disagree on a value. Cloudflare
+  Workers have no process start to mint in, so the flag is documented as
+  Node/Docker-only and `/setup/complete` there answers
+  `503 SETUP_TOKEN_NOT_ISSUED` with an explanation instead of a silent
+  `SETUP_TOKEN_REQUIRED`. No migration; an instance stuck in the old state gets
+  its token on the first start after upgrading.
+
 ### Security
 
 - **Ten more agent skills validate their input before anything runs (#454

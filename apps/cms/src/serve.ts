@@ -8,6 +8,7 @@ import type { Server as HttpServer } from 'node:http';
 import { createRuntime, leaderLockedCallback } from '@lumibase/runtime/node';
 import { getSharedRealtimeHub } from '@lumibase/runtime/docker';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import type { Sql } from 'postgres';
 import { schema } from '@lumibase/database';
 import cron, { type ScheduledTask } from 'node-cron';
 import { loadSecretFiles, validateProductionConfig } from './config/production';
@@ -19,6 +20,7 @@ import { createPressureLimiter } from './pressure-limiter';
 import { startWorkerHealthServer } from './worker-health';
 import { setRuntimeFactory } from './middleware/runtime';
 import { mountStudio } from './serve-studio';
+import { runSetupTokenStartup } from './modules/setup/startup';
 import type { Bindings } from './env';
 
 type ProcessRole = 'web' | 'worker' | 'all';
@@ -69,6 +71,23 @@ async function main() {
 
 
   if (runHttp) {
+    // ── Setup token (admin-setup-wizard Req 2.6; #470) ─────────────────────
+    //
+    // With LUMIBASE_REQUIRE_SETUP_TOKEN on, `/setup/complete` demands a token,
+    // and this is the only place one is minted and printed. It must finish
+    // before `serve()` so no setup request can reach a process that has not
+    // issued its token yet. Only HTTP processes run it: they serve `/setup`,
+    // and a worker-only process printing the token would put it in logs the
+    // operator is not reading. A DB failure here fails the start on purpose —
+    // see `runSetupTokenStartup`.
+    //
+    // `getConnection()` is typed `unknown` so the runtime package does not
+    // depend on postgres-js; both adapters return a postgres-js `Sql`.
+    await runSetupTokenStartup({
+      db: drizzle(runtime.database.getConnection() as Sql, { schema }),
+      env: process.env,
+    });
+
     // Serve the Studio SPA from this process when its bundle is present. Node
     // only: Workers has no filesystem, so on Cloudflare the Studio stays a
     // separate Pages deployment. `serve-studio` is imported nowhere else, which

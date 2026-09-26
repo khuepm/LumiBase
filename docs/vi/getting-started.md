@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-09-19T15:27:57.260Z
+version: 5
+lastUpdated: 2026-09-26T03:53:07.045Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 72d3a82d31669306
+sourceHash: 18193a74871ad6f5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-19T15:27:57.260Z
-codeVerifiedHash: 72d3a82d31669306
+codeVerified: 2026-09-26T03:53:07.045Z
+codeVerifiedHash: 18193a74871ad6f5
 codeVerifiedClaims: 8
 ---
 
@@ -231,9 +231,11 @@ một post chưa publish để bước kiểm tra này có thứ thật để b�
 chạy được sẽ báo SKIPPED chứ không bị gộp vào số lượt pass.
 
 Hai vấn đề upstream của CMS định hình template này, cả hai đều được ghi trong
-`README.md` được sinh ra: cổng chặn setup-token đòi một token mà server không bao
-giờ in ra ([#470](https://github.com/khuepm/lumibase/issues/470)), nên compose file
-để cờ đó tắt và bind mọi port công bố vào `127.0.0.1`; và một header `X-Lumi-Site`
+`README.md` được sinh ra: trong image CMS mà compose file ghim, cổng chặn setup-token
+đòi một token mà server không bao giờ in ra
+([#470](https://github.com/khuepm/lumibase/issues/470), đã sửa sau khi image đó được
+build), nên compose file để cờ đó tắt và bind mọi port công bố vào `127.0.0.1`; và một
+header `X-Lumi-Site`
 trỏ tới site không tồn tại có thể làm chết tiến trình CMS
 ([#469](https://github.com/khuepm/lumibase/issues/469)), nên phép thử đó nằm sau
 `LUMIBASE_VERIFY_CROSS_TENANT=1`. Việc kiểm tra cô lập tenant với một site thứ hai
