@@ -1,0 +1,138 @@
+{
+  "verdict": "passed",
+  "base": "http://localhost:21989",
+  "site": "__default__",
+  "llm": "deterministic local HTTP fixture; not real model evidence",
+  "queue": "CMS Docker Redis/BullMQ transport",
+  "approval": "real HTTP endpoint; test driver simulates human decision",
+  "events": [
+    {
+      "at": "2026-09-26T10:09:03.542Z",
+      "step": "intent-and-drift",
+      "collection": "proof_1790417332784",
+      "itemId": "uePrTbpo9_BQDDpWr8oOG",
+      "intentId": "zT4bX4HUINfVR3-Mf6rxm",
+      "scan": {
+        "scan": {
+          "scanned": 1,
+          "opened": 1,
+          "reopened": 0,
+          "resolved": 0,
+          "completed": true,
+          "cursor": null
+        },
+        "reconcile": {
+          "goalsCreated": 1,
+          "deferred": 0,
+          "breakerTripped": false
+        },
+        "dispatch": {
+          "dispatched": 1,
+          "completed": 0,
+          "skipped": 0,
+          "blocked": 0,
+          "outcomes": [
+            {
+              "goalId": "aOMOMlQ821tTBVO52D_cs",
+              "action": "dispatch_draft",
+              "runId": "t1CA-umzEO6rxZcm92J2q"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "at": "2026-09-26T10:09:05.048Z",
+      "step": "draft-requires-approval",
+      "runId": "t1CA-umzEO6rxZcm92J2q",
+      "approvalId": "cKYWfYeFHOqVsLKE6anEz"
+    },
+    {
+      "at": "2026-09-26T10:09:07.090Z",
+      "step": "draft-worker-succeeded",
+      "goalId": "aOMOMlQ821tTBVO52D_cs",
+      "runId": "t1CA-umzEO6rxZcm92J2q",
+      "publishedTranslationAbsent": true,
+      "providerCalls": 1
+    },
+    {
+      "at": "2026-09-26T10:09:07.571Z",
+      "step": "awaiting-human-approval",
+      "approvalId": "NHD7FCbDPXEnuvUp7Dw9P",
+      "runId": "r4LXTsvlDJebncgwNC07Q",
+      "publishedTranslationAbsent": true
+    },
+    {
+      "at": "2026-09-26T10:09:10.010Z",
+      "step": "http-approval-published",
+      "approvalId": "NHD7FCbDPXEnuvUp7Dw9P",
+      "decision": {
+        "id": "NHD7FCbDPXEnuvUp7Dw9P",
+        "runId": "r4LXTsvlDJebncgwNC07Q",
+        "siteId": "__default__",
+        "legacyApprovalId": "bHRfukl9Jz31gixJ8YT8F",
+        "subjectType": "tool_call",
+        "subjectId": "TqmXAQbltytaSVUtC7xTm",
+        "status": "approved",
+        "approvalPolicy": "before_execute",
+        "kind": "approval",
+        "autoCommitAt": null,
+        "requestedByAgent": "translator",
+        "requestedByPrincipal": {
+          "kind": "agentRole",
+          "role": "translator",
+          "intentId": "zT4bX4HUINfVR3-Mf6rxm",
+          "autonomyCap": 2
+        },
+        "decidedBy": "lvi6bCGjOW6bhztmgB84L",
+        "decisionReason": null,
+        "approverType": "human",
+        "approverRunId": null,
+        "expiresAt": null,
+        "createdAt": "2026-09-26T10:09:07.521Z",
+        "decidedAt": "2026-09-26T10:09:08.135Z"
+      },
+      "translations": {
+        "en": "Hello from RC.2 acceptance",
+        "vi": "Xin chào từ bản nghiệm thu RC.2"
+      }
+    },
+    {
+      "at": "2026-09-26T10:09:18.468Z",
+      "step": "verified-resolution",
+      "goalId": "aOMOMlQ821tTBVO52D_cs",
+      "status": "done",
+      "driftIds": [
+        "gMsXKpSrH68QjiliZQbe4"
+      ],
+      "verify": {
+        "scan": {
+          "scanned": 1,
+          "opened": 0,
+          "reopened": 0,
+          "resolved": 1,
+          "completed": true,
+          "cursor": null
+        },
+        "reconcile": {
+          "goalsCreated": 0,
+          "deferred": 0,
+          "breakerTripped": false
+        },
+        "dispatch": {
+          "dispatched": 0,
+          "completed": 1,
+          "skipped": 0,
+          "blocked": 0,
+          "outcomes": [
+            {
+              "goalId": "aOMOMlQ821tTBVO52D_cs",
+              "action": "complete"
+            }
+          ]
+        }
+      },
+      "providerCalls": 1
+    }
+  ]
+}
