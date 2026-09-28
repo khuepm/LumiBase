@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageCircle, Send, X, Loader2, Plus, ChevronDown, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';
 
 interface ChatMessage {
@@ -48,9 +49,10 @@ interface ChatApiResponse {
 const MAX_MESSAGES = 50;
 
 function getApiHeaders(): Record<string, string> {
-  const token = localStorage.getItem('lumibase_dev_token') ?? '';
+  const token = getActiveToken();
   return {
     'Content-Type': 'application/json',
+    'X-Lumi-Site': getActiveSite(),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }

@@ -20,6 +20,12 @@ COPY apps/cms/ ./apps/cms/
 # answered 404. `serve.ts` mounts whatever lands in /app/studio below.
 COPY apps/studio/ ./apps/studio/
 RUN pnpm install --frozen-lockfile
+# Build metadata for `/api/v1/system/version` and the Studio footer. The build
+# context has no .git, so the commit must come in as a build arg; the version
+# is read from the root package.json. Unset args fall back to "unknown" /
+# "development" (scripts/with-build-metadata.mjs).
+ARG LUMIBASE_GIT_SHA
+ARG LUMIBASE_RELEASE_CHANNEL
 # Build Cloudflare Worker bundle (not used at runtime but keeps build parity)
 RUN pnpm --filter @lumibase/cms build
 # Build Node.js server entrypoint (serve.js) and migration runner (migrate.js)

@@ -9,7 +9,43 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Fixed
+
+- **Studio panels that sent the wrong tenant header (B103).** Eleven Studio
+  request helpers sent `x-site-id` instead of `X-Lumi-Site`, so the CMS
+  answered `400 TENANT_REQUIRED`. On the published Docker image this broke,
+  for every user: the item Versions panel, list presets and bookmarks, role
+  presets, Mission Control actions, AI approvals, Insights, email settings,
+  materialisation, image-transform presets and push subscription. Found on
+  `1.0.0-rc.4`. A source-scan tripwire
+  (`apps/studio/src/lib/__tests__/tenant-header.wiring.test.ts`) now fails on
+  any `x-…site…` header other than `X-Lumi-Site`.
+- **Realtime in same-origin Studio (B104).** With the Studio served by the CMS
+  (Docker image) the API base URL is `''`, and `RealtimeClient` threw
+  `Invalid URL` building the socket URL, so Live Mode and notifications never
+  connected. `@lumibase/sdk` now resolves a relative `baseUrl` against the
+  page origin (new export `toWebSocketBase`); `AudienceClient` and the Studio
+  notification and presence sockets use the same helper.
+- **Presence never connected (B104).** `usePresence` read site and token from
+  `localStorage` keys the Studio never writes, so every item page sent an
+  empty ticket request (`400`). It now uses the shared accessors, which also
+  honour the desktop shell's keychain. The tripwire above also forbids those
+  raw keys.
+- **Docker image reported `version: "unknown"` (B105).** The Node bundle read
+  build metadata from runtime env, which never carries it, so
+  `GET /api/v1/system/version` answered `unknown` on every published image
+  and the upgrade runbook's "determine your current version" step could not
+  work. The metadata is now baked into `dist/serve.cjs` at build time
+  (runtime env still overrides it), and the release workflow passes the
+  commit and channel as build args.
+- **Studio footer said "Backend unavailable" (B105).** The footer read `.data`
+  from `/api/v1/system/version`, which answers with the bare metadata object.
+  It now reads both shapes. The endpoint's response shape is unchanged.
+
+### Changed
+
+- The release Docker smoke test now fails when the image reports a version
+  other than its tag, or when `/setup` does not serve the Studio.
 
 ## [1.0.0-rc.4] - 2026-09-29
 

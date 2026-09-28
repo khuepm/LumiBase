@@ -37,7 +37,7 @@ async function presetFetch<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(site ? { 'x-site-id': site } : {}),
+      ...(site ? { 'X-Lumi-Site': site } : {}),
       ...(init?.headers ?? {}),
     },
   });
