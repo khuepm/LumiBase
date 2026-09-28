@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { FieldResource, ItemRow, PermissionAction, RevisionRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { jsonEqual } from '@/lib/json-equal';
 import { usePermissions, type PermissionHelpers } from '@/lib/use-permissions';
 import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 import { PresenceStack } from '@/components/presence-chip';
@@ -187,7 +188,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
 
   const isDirty = useMemo(() => {
     if (!itemQuery.data || draft === null) return false;
-    if (JSON.stringify(draft) !== JSON.stringify(itemQuery.data.data ?? {})) return true;
+    if (!jsonEqual(draft, itemQuery.data.data ?? {})) return true;
     return (
       publishAt !== isoToLocalInput(itemQuery.data.publishAt) ||
       unpublishAt !== isoToLocalInput(itemQuery.data.unpublishAt)
