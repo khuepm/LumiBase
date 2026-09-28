@@ -99,9 +99,16 @@ let unauthorizedRedirectInFlight = false;
  * derived from the current URL's `/{adminPath}` prefix (the Zustand setup
  * store may be empty after a reload, so we do NOT rely on it here).
  */
-function handleUnauthorized(): void {
+export function handleUnauthorized(): void {
   if (typeof window === 'undefined') return;
   if (unauthorizedRedirectInFlight) return;
+
+  // No token means nothing stale to clear: the auth gate is already showing
+  // the login screen, and anonymous requests made before sign-in (the UI
+  // translations, for one) legitimately answer 401. Redirecting here is how a
+  // Studio served at the root reloaded itself forever — `/` → 401 → assign('/')
+  // → 401 … until the API limiter answered 429 (B99).
+  if (!hasActiveToken()) return;
 
   const { pathname } = window.location;
   // Already on a login/recovery page → clearing + redirecting would loop.
@@ -112,9 +119,13 @@ function handleUnauthorized(): void {
     return;
   }
 
-  unauthorizedRedirectInFlight = true;
   clearActiveToken();
-  window.location.assign(adminBase ? `${adminBase}/login` : '/');
+  const target = adminBase ? `${adminBase}/login` : '/';
+  // Navigating to the page we are on is a reload, not a redirect; with the
+  // token cleared the gate re-renders as login without one.
+  if (target === pathname) return;
+  unauthorizedRedirectInFlight = true;
+  window.location.assign(target);
 }
 
 function createApiClient(token: string, site: string) {
