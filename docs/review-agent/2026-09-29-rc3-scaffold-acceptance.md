@@ -67,7 +67,16 @@ Node 24.14.0, npm, Docker (OrbStack). Scaffolded from the packed tarball into a 
 Both fixes were checked against the same CMS with the branch's Studio build mounted at `/app/studio`. After a body-last save, Studio showed "Saved" and both editorial buttons were enabled with no reload.
 
 3. **Studio at the site root reloaded forever (B99).** Before sign-in, anonymous requests such as the UI translations answer 401. `handleUnauthorized` answered each one with `location.assign('/')`, the page it was already on, so the page reloaded until the API limiter answered 429. This first showed on the dev server, but any Studio served at the root is affected. The handler now redirects only when there is a stale token, and never to the current page. On the dev server `/` then held steady on the "configured admin URL" notice, and `/admin-a7f3c1/login` rendered.
-4. **Invited users were refused by `/permissions/me` (B100).** The control-plane backstop covers `/api/v1/permissions`. It only recognises a role literally named `admin`, and invited users carry their role **id**. As a result, every non-bootstrap user got 403 and Studio showed no read permission. `GET /permissions/me` returns only the caller's own bundle and is now open to any authenticated principal. The rest of `/permissions` stays admin-only. The broader mismatch, where an invited Administrator is refused by every control-plane route, is logged as B101 and not changed here.
+4. **Invited users were refused by `/permissions/me` (B100).** The control-plane backstop covers `/api/v1/permissions`. It only recognises a role literally named `admin`, and invited users carry their role **id**. As a result, every non-bootstrap user got 403 and Studio showed no read permission. `GET /permissions/me` returns only the caller's own bundle and is now open to any authenticated principal. The rest of `/permissions` stays admin-only. A broader mismatch remained: an invited Administrator was refused by every control-plane route (B101). It is fixed in the same PR. The backstop now also admits a signed-in **user** whose site bundle has `admin`, which is the check `requireSiteAdmin` makes. API keys, anonymous and `frontend`-audience sessions are excluded. Live results:
+
+| Principal | Endpoint | Status |
+| --- | --- | --- |
+| Invited Administrator | `/roles`, `/users`, `/settings` | 200 |
+| Editor (app access, no admin access) | `/roles` | 403 |
+| Editor | `/permissions/me` | 200 |
+| Editor | items (role grants nothing) | 403 |
+| Publishable key | `/roles` | 403 |
+| Anyone | invite with empty `roleId` | 400 |
 5. **`POST /users/invite` accepted `roleId: ""`** and stored it as the membership role. A malformed body answered 500. Both now answer 400.
 
 ## Validation

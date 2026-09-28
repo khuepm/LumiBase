@@ -37,6 +37,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   "You do not have read permission" — including users holding the
   Administrator role. The caller's own bundle is now readable by any signed-in
   principal; the rest of `/permissions` stays admin-only.
+- **Invited Administrators can administer the site.** The control-plane
+  backstop recognised admins by role *name* only, while invited users carry
+  their role *id*, so only the bootstrap admin could reach Users, Roles,
+  Settings and the other control-plane routes. It now also admits a signed-in
+  user whose role grants admin access in the active site — the same check
+  `requireSiteAdmin` makes. API keys are unchanged.
 - **A Studio served at the site root no longer reloads itself forever.**
   Anonymous requests made before sign-in answer 401, and the global handler
   answered each with `location.assign('/')` — the page it was on — until the
