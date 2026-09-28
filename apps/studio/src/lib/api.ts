@@ -119,13 +119,11 @@ export function handleUnauthorized(): void {
     return;
   }
 
-  clearActiveToken();
-  const target = adminBase ? `${adminBase}/login` : '/';
-  // Navigating to the page we are on is a reload, not a redirect; with the
-  // token cleared the gate re-renders as login without one.
-  if (target === pathname) return;
   unauthorizedRedirectInFlight = true;
-  window.location.assign(target);
+  clearActiveToken();
+  // On `/` this is a reload, and that is fine: the token is gone, so the
+  // reloaded page's anonymous 401s stop at the early return above.
+  window.location.assign(adminBase ? `${adminBase}/login` : '/');
 }
 
 function createApiClient(token: string, site: string) {

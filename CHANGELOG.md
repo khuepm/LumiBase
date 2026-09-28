@@ -46,8 +46,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - **A Studio served at the site root no longer reloads itself forever.**
   Anonymous requests made before sign-in answer 401, and the global handler
   answered each with `location.assign('/')` — the page it was on — until the
-  API limiter returned 429. It now redirects only a real stale session, and
-  never to the current page.
+  API limiter returned 429. It now redirects only when a stale session token
+  is present, so the reload that clears it cannot repeat.
 - **`POST /api/v1/users/invite` validates its body.** An empty `roleId` was
   stored as the member's role id, and a malformed body answered 500; both now
   answer 400 before touching the database.

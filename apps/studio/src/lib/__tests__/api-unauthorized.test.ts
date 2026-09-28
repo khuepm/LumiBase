@@ -32,12 +32,17 @@ describe('handleUnauthorized', () => {
     expect(assign).not.toHaveBeenCalled();
   });
 
-  it('does not reload the root page it is already on', async () => {
-    const api = await load('/');
+  it('reloads the root once for a stale session, and the reload does not loop', async () => {
+    let api = await load('/');
     api.setActiveToken('stale');
     api.handleUnauthorized();
-    expect(assign).not.toHaveBeenCalled();
+    expect(assign).toHaveBeenCalledWith('/');
     expect(api.hasActiveToken()).toBe(false);
+
+    // The reloaded page: no token, so its anonymous 401s must not navigate.
+    api = await load('/');
+    api.handleUnauthorized();
+    expect(assign).not.toHaveBeenCalled();
   });
 
   it('still sends a stale session on a module page back to the root gate', async () => {
