@@ -19,6 +19,16 @@ describe('toWebSocketBase', () => {
     expect(toWebSocketBase('/cms')).toBe('ws://localhost:1989/cms');
   });
 
+  it('trims only trailing slashes, in linear time on hostile input', () => {
+    expect(toWebSocketBase('https://api.example.com///')).toBe('wss://api.example.com');
+    expect(toWebSocketBase('https://api.example.com/a//b/')).toBe('wss://api.example.com/a//b');
+    // The shape CodeQL flagged for /\/+$/: a long slash run then a non-slash.
+    const hostile = `https://x${'/'.repeat(50_000)}a`;
+    const started = performance.now();
+    expect(toWebSocketBase(hostile)).toBe(hostile.replace(/^http/, 'ws'));
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+
   it('leaves a relative base alone when there is no location', () => {
     expect(toWebSocketBase('')).toBe('');
   });
