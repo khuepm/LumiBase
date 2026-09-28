@@ -59,16 +59,32 @@ export function encodeCdcCursor(cursor: CdcCursor): string {
   return toBase64Url(`${cursor.occurredAtMs}${CURSOR_SEPARATOR}${cursor.eventId}`);
 }
 
-/** Returns null on any malformed token — callers map that to 400. */
+const BASE64URL_TOKEN = /^[A-Za-z0-9_-]+$/;
+const DECIMAL_MS = /^(0|[1-9][0-9]*)$/;
+
+/**
+ * Returns null on any malformed token — callers map that to 400.
+ *
+ * Only the exact token `encodeCdcCursor` would produce is accepted. `atob`
+ * alone is too lenient: it takes the standard-base64 alphabet (`+`, `/`, `=`),
+ * and `Number()` reads whitespace or `''` as `0`, so a token such as `Czo+`
+ * (`"\v:>"`) decoded to `{ occurredAtMs: 0, eventId: '>' }` — a garbage cursor
+ * silently read as "from the beginning". The final round-trip check keeps any
+ * other non-canonical spelling out as well.
+ */
 export function decodeCdcCursor(token: string): CdcCursor | null {
+  if (!BASE64URL_TOKEN.test(token)) return null;
   const raw = fromBase64Url(token);
   if (raw === null) return null;
   const sep = raw.indexOf(CURSOR_SEPARATOR);
   if (sep <= 0 || sep === raw.length - 1) return null;
-  const ms = Number(raw.slice(0, sep));
+  const msText = raw.slice(0, sep);
+  if (!DECIMAL_MS.test(msText)) return null;
+  const ms = Number(msText);
   const eventId = raw.slice(sep + 1);
-  if (!Number.isSafeInteger(ms) || ms < 0 || eventId.length === 0) return null;
-  return { occurredAtMs: ms, eventId };
+  if (!Number.isSafeInteger(ms) || eventId.length === 0) return null;
+  const cursor = { occurredAtMs: ms, eventId };
+  return encodeCdcCursor(cursor) === token ? cursor : null;
 }
 
 export const CdcCursorTokenSchema = z

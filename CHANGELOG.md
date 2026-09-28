@@ -9,7 +9,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Fixed
+
+- **CDC feed cursors must be the exact token the server issued.** The decoder
+  accepted the standard-base64 alphabet and read a blank or whitespace
+  timestamp as `0`, so a malformed `cursor` such as `Czo+` was treated as a
+  valid position near the start of the feed instead of being rejected with
+  400. Found by the property test in the v1.0.0-rc.4 release run.
 
 ## [1.0.0-rc.4] - 2026-09-29
 
