@@ -9,6 +9,25 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [1.0.0-rc.4] - 2026-09-29
+
+### Version
+- `v1.0.0-rc.4`
+
+### Date
+- `2026-09-29`
+
+### Highlights
+- A fresh `create-lumibase` Next.js starter now runs the release it came from:
+  the `lumibase` client and the CMS image are pinned to the scaffolder's own
+  version, so a new install gets this release's Studio and API.
+- Invited users can use Studio, and invited Administrators can administer the
+  site — before this, only the bootstrap admin could.
+- The Studio editor saves long-form text as text and clears its unsaved state
+  after a save, so Submit for review and Publish are available right away.
+
 ### Fixed
 
 - **A new Next.js starter now runs the release it came from (B95).**
@@ -63,6 +82,9 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 - **`pnpm tauri:check`** (in `check:all`): fails a PR when an `@tauri-apps/*`
   package and its Rust crate drift to different major/minor releases.
+
+### Migrations
+- None
 
 ## [1.0.0-rc.3] - 2026-09-26
 

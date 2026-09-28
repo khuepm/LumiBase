@@ -115,7 +115,7 @@ That gives you the **API** on `:1989`. The development compose image mounts sour
 
 ```bash
 cp docker/.env.example docker/.env      # set JWT_SECRET; DATABASE_SSL_MODE=disable for the bundled Postgres
-LUMIBASE_VERSION=1.0.0-rc.3 docker compose \
+LUMIBASE_VERSION=1.0.0-rc.4 docker compose \
   -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
@@ -150,12 +150,12 @@ Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is 
 
 Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
 
-Current release: `v1.0.0-rc.3` (`2026-09-26`) — **third release candidate for the stable 1.0 contract**. Includes the unified [`lumibase`](https://www.npmjs.com/package/lumibase) package (JS/TS client + the `lumibase` CLI: `types`, `doctor`, `init`) while [`@lumibase/sdk`](https://www.npmjs.com/package/@lumibase/sdk) and [`create-lumibase`](https://www.npmjs.com/package/create-lumibase) keep working unchanged. Run database migrations before upgrading; see the [changelog](CHANGELOG.md) for the changes since rc.2.
+Current release: `v1.0.0-rc.4` (`2026-09-29`) — **fourth release candidate for the stable 1.0 contract**. A new `create-lumibase` Next.js starter now pins the `lumibase` client and the CMS image to its own version, invited users and Administrators can use Studio, and the item editor saves long-form text correctly. Includes the unified [`lumibase`](https://www.npmjs.com/package/lumibase) package (JS/TS client + the `lumibase` CLI: `types`, `doctor`, `init`) while [`@lumibase/sdk`](https://www.npmjs.com/package/@lumibase/sdk) and [`create-lumibase`](https://www.npmjs.com/package/create-lumibase) keep working unchanged. No new migrations since rc.3; see the [changelog](CHANGELOG.md).
 
 Every release before this one is summarised in [`CHANGELOG.md`](./CHANGELOG.md), including the **`v0.5.0` Content OS foundation** — intents/SLOs, control-loop reconciliation, the L0–L4 trust ledger, the veto window, the four-scope kill switch, the tenant constitution, provenance-first revisions, the multi-agent newsroom, and Studio Mission Control. That foundation remains the baseline every later release builds upon, not replaces.
 
 ```bash
-LUMIBASE_VERSION=1.0.0-rc.3 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+LUMIBASE_VERSION=1.0.0-rc.4 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
 See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.
