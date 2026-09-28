@@ -34,6 +34,7 @@ export const withControlPlaneAccessGuard = (): MiddlewareHandler<AppEnv> => asyn
 
   const auth = c.get('auth');
   if (isAdminPrincipal(auth)) return next();
+  if (auth && isSelfIntrospection(c.req.method, c.req.path)) return next();
 
   await auditSecurityGuardDenied(c, 'control_plane_access_denied', {
     path: c.req.path,
@@ -58,6 +59,19 @@ export const withControlPlaneAccessGuard = (): MiddlewareHandler<AppEnv> => asyn
 
 export function isControlPlanePath(path: string): boolean {
   return CONTROL_PLANE_PATHS.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
+/**
+ * `GET /permissions/me` returns the caller's OWN compiled permission bundle —
+ * reading it grants nothing. It sits under the control-plane `/permissions`
+ * prefix only by URL, and Studio needs it for every signed-in user to decide
+ * what to render. Behind the admin backstop every non-bootstrap user got 403,
+ * and Studio showed "You do not have read permission" on collections their
+ * role could read (RC.3 acceptance, B100). Everything else under
+ * `/permissions` (e.g. `POST /check`) stays admin-only.
+ */
+export function isSelfIntrospection(method: string, path: string): boolean {
+  return method === 'GET' && (path === '/api/v1/permissions/me' || path === '/api/v1/permissions/me/');
 }
 
 export function isAdminPrincipal(auth: AuthPrincipal | undefined): boolean {
