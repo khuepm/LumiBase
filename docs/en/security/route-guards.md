@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:09:21.814Z
+version: 3
+lastUpdated: 2026-09-28T19:54:26.843Z
 sourceLang: en
-contentHash: dcfa4f547e6476fb
-codeVerified: 2026-08-02T19:09:30.532Z
-codeVerifiedHash: dcfa4f547e6476fb
-codeVerifiedClaims: 20
+contentHash: 37d6129cb7adbf60
+codeVerified: 2026-09-28T19:54:26.843Z
+codeVerifiedHash: 37d6129cb7adbf60
+codeVerifiedClaims: 22
 ---
 
 # Route guards — the `/api/v1` security chain
@@ -26,7 +26,7 @@ Each layer answers one question, in order:
 | `withAuth` | Who is calling? (CF Access / custom JWT / API key / dev token) | 401 `UNAUTHENTICATED` |
 | `withSiteMembership` | Is this principal allowed on **that** site? (`user_sites` membership; API keys already site-matched by `withAuth`) | 403 `TENANT_FORBIDDEN` |
 | `withStudioAccess` | May this principal use the Studio surface? (`appAccess`, TFA) | 403 `APP_ACCESS_DENIED` / `TFA_REQUIRED` |
-| `withControlPlaneAccessGuard` | Is this a system-administration path? Then require an admin principal even if the route forgets its own check. | 403 `CONTROL_PLANE_FORBIDDEN` |
+| `withControlPlaneAccessGuard` | Is this a system-administration path? Then require an admin principal even if the route forgets its own check. One exception: `GET /api/v1/permissions/me` passes for any authenticated principal, because it only returns the caller's own permission bundle. | 403 `CONTROL_PLANE_FORBIDDEN` |
 | `withRls` | Postgres row-level security as the last line. | — |
 
 ## Rules when adding or changing routes
@@ -75,6 +75,7 @@ Behavioural companions:
 
 | Fix | Vulnerability |
 | --- | --- |
+| PR #495 | The backstop also covered `GET /api/v1/permissions/me`, the caller's own permission bundle. Every user without the literal `admin` role got 403, so Studio showed "no read permission" on collections their role could read. The exemption is GET-only and requires a principal; the rest of `/permissions` stays admin-only. |
 | PR #184 (ported) | No membership check between `withAuth` and handlers: any authenticated principal could pick an arbitrary `X-Lumi-Site` and operate on another tenant. |
 | PR #152 (ported) | Refactor dropped `adminOnly` from `extensionsRouter.all('/:name/*')` — non-admins could execute endpoint bundles with host bindings. |
 | PR #153/#154 | `/api/v1/agent` missing from `CONTROL_PLANE_PATHS` — low-privilege tokens could read/mutate Agent Harness state. |

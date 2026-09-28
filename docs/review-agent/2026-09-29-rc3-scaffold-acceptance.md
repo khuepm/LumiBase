@@ -44,7 +44,17 @@ Node 24.14.0, npm, Docker (OrbStack). Scaffolded from the packed tarball into a 
 | Studio → posts, direct reload of `/admin-a7f3c1/content/posts` (B96) | Prefix kept; "New item" links to `/admin-a7f3c1/content/posts/new` |
 | New item → Create draft → Submit for review → Approve → Publish (B97) | Pass. Public site did not show the post before Publish, showed it after |
 
-Separate reviewer role, Preview, pnpm/yarn/bun, and the `default`/`cloudflare` templates were not re-tested in this run.
+### Second pass: separate reviewer, other templates
+
+- **`default` / `cloudflare` templates**: `node scripts/smoke-scaffold.mjs` passed 4/4. That covers both templates × npm and pnpm (install and typecheck). yarn and bun were not run.
+- **Separate reviewer**:
+  - Set `meta.requireSeparateReviewer = true` on `posts`.
+  - Invited `reviewer@example.com`. With no mail server, the account was activated directly in the disposable database with the admin's fixture password, and given the Administrator role.
+  - Over the API, the author's own approve got `409 SEPARATE_REVIEWER_REQUIRED` and the reviewer's approve passed.
+  - In Studio, the author clicking Approve saw *"The reviewer must be different from the author."*
+  - On the RC.3 image the reviewer then could not open the item. Studio showed "You do not have read permission" because `/permissions/me` answered 403 (B100, below).
+  - On an image built from this branch (`lumibase-cms:b95-local`), the reviewer opened, approved and published in Studio. The publishable key then listed the post.
+- **Preview**: the editor has no Preview action (Share creates a share link). This is a feature gap, not a regression; logged as B102 and not built here.
 
 ### Studio defects found by the run, fixed on this branch
 
@@ -56,14 +66,17 @@ Separate reviewer role, Preview, pnpm/yarn/bun, and the `default`/`cloudflare` t
 
 Both fixes were checked against the same CMS with the branch's Studio build mounted at `/app/studio`. After a body-last save, Studio showed "Saved" and both editorial buttons were enabled with no reload.
 
-Also found, not fixed: the Studio **dev** server, pointed at a CMS with a private admin prefix, reloaded in a loop until the API limiter answered 429 (backlog B99).
+3. **Studio at the site root reloaded forever (B99).** Before sign-in, anonymous requests such as the UI translations answer 401. `handleUnauthorized` answered each one with `location.assign('/')`, the page it was already on, so the page reloaded until the API limiter answered 429. This first showed on the dev server, but any Studio served at the root is affected. The handler now redirects only when there is a stale token, and never to the current page. On the dev server `/` then held steady on the "configured admin URL" notice, and `/admin-a7f3c1/login` rendered.
+4. **Invited users were refused by `/permissions/me` (B100).** The control-plane backstop covers `/api/v1/permissions`. It only recognises a role literally named `admin`, and invited users carry their role **id**. As a result, every non-bootstrap user got 403 and Studio showed no read permission. `GET /permissions/me` returns only the caller's own bundle and is now open to any authenticated principal. The rest of `/permissions` stays admin-only. The broader mismatch, where an invited Administrator is refused by every control-plane route, is logged as B101 and not changed here.
+5. **`POST /users/invite` accepted `roleId: ""`** and stored it as the membership role. A malformed body answered 500. Both now answer 400.
 
 ## Validation
 
 - `create-lumibase`: 57 tests pass, including new ones for the version pin, the unknown-site probe and a bare-404 negative.
-- `@lumibase/studio`: 411 tests pass, including new `json-equal` and `interface-registry` suites.
+- `@lumibase/studio`: new `json-equal`, `interface-registry` and `api-unauthorized` suites pass, along with the rest of the suite (count in the PR).
+- `@lumibase/cms`: new self-introspection cases in `control-plane-access-guard.test.ts` and `users-invite-validation.test.ts` pass. So do the existing guard wiring, auth matrix and MCP backstop suites.
 - `turbo run typecheck` for both packages: pass.
-- `docs/{en,vi}/getting-started.md`: parity 0 problems, verify 0 findings, re-stamped `--verified`.
+- `docs/{en,vi}/getting-started.md` and `security/route-guards.md`: parity 0 problems, verify 0 findings, re-stamped `--verified`.
 
 ## Still required after release
 

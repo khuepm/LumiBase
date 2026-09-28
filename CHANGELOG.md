@@ -31,6 +31,20 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   successful save, and Submit for review / Publish stayed disabled until a
   reload.
 
+- **Invited users can use Studio.** `GET /api/v1/permissions/me` sat behind
+  the control-plane admin backstop, which recognises only the literal `admin`
+  role, so every user other than the bootstrap admin got 403 and Studio showed
+  "You do not have read permission" — including users holding the
+  Administrator role. The caller's own bundle is now readable by any signed-in
+  principal; the rest of `/permissions` stays admin-only.
+- **A Studio served at the site root no longer reloads itself forever.**
+  Anonymous requests made before sign-in answer 401, and the global handler
+  answered each with `location.assign('/')` — the page it was on — until the
+  API limiter returned 429. It now redirects only a real stale session, and
+  never to the current page.
+- **`POST /api/v1/users/invite` validates its body.** An empty `roleId` was
+  stored as the member's role id, and a malformed body answered 500; both now
+  answer 400 before touching the database.
 - **Desktop and Android release builds run again.** `release-apps.yml` had
   failed on every tag since v0.26.0. The `tauri-plugin-updater` crate is back in
   step with `@tauri-apps/plugin-updater` (2.12), the Android job points
