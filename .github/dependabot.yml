@@ -20,6 +20,13 @@ updates:
           - "minor"
           - "patch"
     # Majors still get their own PR (excluded from the group above by default).
+    ignore:
+      # TypeScript 7 (the native compiler) breaks the toolchain, not our code:
+      # typescript-eslint refuses TS 7.0, and tsup's --dts step crashes reading
+      # `useCaseSensitiveFileNames`. Closed in #417. Remove this entry once both
+      # support TS 7; minor/patch bumps of 5.x still come through the group.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # Keep GitHub Actions pinned to current, maintained versions.
   - package-ecosystem: "github-actions"
