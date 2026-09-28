@@ -1,10 +1,10 @@
 ---
-version: 7
-lastUpdated: 2026-09-28T19:24:08.221Z
+version: 8
+lastUpdated: 2026-09-28T23:50:21.665Z
 sourceLang: en
-contentHash: 1a294f789b9200ca
-codeVerified: 2026-09-28T19:24:08.221Z
-codeVerifiedHash: 1a294f789b9200ca
+contentHash: 99917b80bbbe6308
+codeVerified: 2026-09-28T23:50:21.665Z
+codeVerifiedHash: 99917b80bbbe6308
 codeVerifiedClaims: 8
 ---
 
@@ -46,10 +46,15 @@ The same package carries the CLI, so there is nothing extra to add for
 
 ```bash
 # any of these work — npx resolves the create-* convention
-npm create lumibase@latest my-project
-npx create-lumibase@latest my-project
-pnpm create lumibase my-project
+npm create lumibase@next my-project
+npx create-lumibase@next my-project
+pnpm create lumibase@next my-project
 ```
+
+> **Use `@next` during the 1.0 release candidates.** npm's `latest` tag still
+> points at the 0.x scaffolder, which has no Next.js template and pins no CMS.
+> `@next` is the current release candidate. The commands move back to `@latest`
+> when 1.0.0 ships.
 
 With no arguments, the CLI runs interactively and asks for everything it needs.
 The first prompt is the one that matters most — it chooses your template, and
@@ -58,14 +63,14 @@ the Next.js option is preselected.
 If a project already has the `lumibase` CLI, `lumibase init` is the same
 scaffold, not a second one: it runs `create-lumibase` and forwards your
 arguments verbatim, so the two entry points cannot offer different templates or
-drift apart. Use whichever is at hand — `npm create lumibase@latest` needs
+drift apart. Use whichever is at hand — `npm create lumibase@next` needs
 nothing installed. See [`lumibase init`](./cli/index.md#lumibase-init) for how
 the delegation works and why the scaffolder is not a dependency of `lumibase`.
 
 ## What happens, step by step
 
 ```
-npx create-lumibase@latest my-blog
+npx create-lumibase@next my-blog
 │
 ├─ 1. npx downloads the create-lumibase package from npm
 │
@@ -166,7 +171,7 @@ request validation.
 Pass flags to skip prompts entirely:
 
 ```bash
-npx create-lumibase@latest my-blog \
+npx create-lumibase@next my-blog \
   --template nextjs \
   --pm pnpm \
   --no-install \

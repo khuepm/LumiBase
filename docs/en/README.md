@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-09-14T21:26:08.918Z
+version: 6
+lastUpdated: 2026-09-28T23:50:22.173Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: f2050885621cde26
+sourceHash: 90c33343db27c61a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-14T21:26:08.918Z
-codeVerifiedHash: f2050885621cde26
+codeVerified: 2026-09-28T23:50:22.173Z
+codeVerifiedHash: 90c33343db27c61a
 codeVerifiedClaims: 4
 ---
 
@@ -21,7 +21,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
 
 ## Quick start
 
-- [getting-started.md](./getting-started.md) — Bootstrap a new LumiBase project with `npm create lumibase@latest` (the `create-lumibase` CLI): the preselected `nextjs` template builds a Next.js website with the CMS + Studio and seeded content behind it, while `default`/`cloudflare` build a Hono + Drizzle starter. The page also says when you need **no** scaffold at all — just `npm install lumibase`.
+- [getting-started.md](./getting-started.md) — Bootstrap a new LumiBase project with `npm create lumibase@next` (the `create-lumibase` CLI): the preselected `nextjs` template builds a Next.js website with the CMS + Studio and seeded content behind it, while `default`/`cloudflare` build a Hono + Drizzle starter. The page also says when you need **no** scaffold at all — just `npm install lumibase`.
 - [cli/index.md](./cli/index.md) — The `lumibase` CLI: `init` (scaffold a project), `types` (generate types from a running CMS), `doctor` (check configuration and connectivity).
 
 ## Tutorials
@@ -146,7 +146,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
 - **`packages/sdk`** — The JS SDK (REST + WS + typegen).
 - **`packages/ui`** — shadcn components + CVA tokens.
 - **`packages/extension-sdk`** — Types and helpers for developers writing extensions.
-- **`packages/create-lumibase`** — The bootstrap CLI (`npm create lumibase@latest`) that generates a new LumiBase project from one of three templates: `nextjs` (a Next.js website plus the CMS and Studio in Docker — preselected), `default` (Docker), or `cloudflare` (Workers). See [getting-started.md](./getting-started.md).
+- **`packages/create-lumibase`** — The bootstrap CLI (`npm create lumibase@next`) that generates a new LumiBase project from one of three templates: `nextjs` (a Next.js website plus the CMS and Studio in Docker — preselected), `default` (Docker), or `cloudflare` (Workers). See [getting-started.md](./getting-started.md).
 - **`packages/mcp-server`** — The MCP stdio server (`@lumibase/mcp-server`) exposing tools for AI assistants to create/manage collections, fields, and items.
 
 ## Principles for reading the documentation
