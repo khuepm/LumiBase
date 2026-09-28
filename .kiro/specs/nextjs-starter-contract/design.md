@@ -107,6 +107,15 @@ from source, so the repo's own compose file is *not* evidence that any published
 image runs. The `nextjs` template ships a compose file that **pulls** the pinned
 digest, verified by a cold pull.
 
+> **Superseded 2026-09-29 (B95).** The digest pin lagged a release by
+> construction — `create-lumibase@1.0.0-rc.2` and `rc.3` both shipped the
+> `3f125caa…` edge build, and `^1.0.0-rc.1` resolved the rc.1 client via the
+> `latest` dist-tag. Semver tags now carry Studio (`1.0.0-rc.3` =
+> `sha256:93687a55…`, contains `/app/studio/index.html`), so the template pins
+> the image **tag** and the `lumibase` client **exactly** to the scaffolder's
+> own version (`lumibaseVersion`, read from its manifest). Evidence:
+> `docs/review-agent/2026-09-29-rc3-scaffold-acceptance.md`.
+
 ### 3.3 Bootstrapping the first admin and site
 
 - `POST /api/v1/setup/complete` (`apps/cms/src/modules/setup/routes.ts:317-379`),

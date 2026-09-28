@@ -103,6 +103,19 @@ async function runScript(
 
 const PUBLISHED_ITEM = { id: 'pub1', status: 'published', data: { slug: 'a', title: 'A' } };
 
+/** The made-up site id `cms:verify` probes with. */
+const UNKNOWN_SITE = 'lumibase-verify-no-such-site';
+
+/** Answers every `cms:verify` request the way the pinned CMS does. */
+const healthyCms: Handler = ({ method, url, headers }) => {
+  if (headers['x-lumi-site'] === UNKNOWN_SITE) {
+    return { status: 404, body: JSON.stringify({ errors: [{ code: 'TENANT_NOT_FOUND' }] }) };
+  }
+  if (method === 'POST') return { status: 403, body: JSON.stringify({ errors: [{ code: 'FORBIDDEN' }] }) };
+  if (url.includes('status=draft')) return { status: 200, body: JSON.stringify({ data: [] }) };
+  return { status: 200, body: JSON.stringify({ data: [PUBLISHED_ITEM] }) };
+};
+
 /** This package's own `.env`, which no test may write to. */
 const PACKAGE_ENV = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env');
 
@@ -191,11 +204,7 @@ describe('cms:verify — a malformed 200 is not a passing check', { timeout: TIM
   it('passes when every guard answers the way a healthy CMS does', async () => {
     // The control: without this, the tests above could pass simply because the
     // script always fails.
-    const url = await stubCms(({ method, url }) => {
-      if (method === 'POST') return { status: 403, body: JSON.stringify({ errors: [{ code: 'FORBIDDEN' }] }) };
-      if (url.includes('status=draft')) return { status: 200, body: JSON.stringify({ data: [] }) };
-      return { status: 200, body: JSON.stringify({ data: [PUBLISHED_ITEM] }) };
-    });
+    const url = await stubCms(healthyCms);
 
     const result = await runScript('verify.mjs', {
       NEXT_PUBLIC_LUMIBASE_URL: url,
@@ -205,6 +214,26 @@ describe('cms:verify — a malformed 200 is not a passing check', { timeout: TIM
 
     expect(result.code, result.out).toBe(0);
     expect(result.out).toMatch(/All checks passed/);
+    expect(result.out).toMatch(/non-existent site id is refused — denied with 404 TENANT_NOT_FOUND/);
+  });
+
+  it('fails when a made-up site id answers a bare 404 instead of TENANT_NOT_FOUND', async () => {
+    // A bare 404 is what a wrong path looks like too. Accepting it would let
+    // the probe pass without the CMS ever having looked at the site header.
+    const url = await stubCms((req) =>
+      req.headers['x-lumi-site'] === UNKNOWN_SITE
+        ? { status: 404, body: JSON.stringify({ errors: [{ code: 'NOT_FOUND' }] }) }
+        : healthyCms(req),
+    );
+
+    const result = await runScript('verify.mjs', {
+      NEXT_PUBLIC_LUMIBASE_URL: url,
+      NEXT_PUBLIC_LUMIBASE_PUBLISHABLE_KEY: 'lbk_pub_test',
+      LUMIBASE_ADMIN_TOKEN: '',
+    });
+
+    expect(result.code).not.toBe(0);
+    expect(result.out).toMatch(/expected 401\/403 or 404 TENANT_NOT_FOUND but got 404/);
   });
 });
 

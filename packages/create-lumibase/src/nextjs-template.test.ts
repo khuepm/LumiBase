@@ -74,46 +74,44 @@ describe('nextjs template — the public grant cannot leak drafts', () => {
     expect(verify).toMatch(/status !== 'published'/);
   });
 
-  it('keeps the cross-tenant probe behind an opt-in flag', () => {
-    // Sending a foreign X-Lumi-Site crashes v1.0.0-rc.1 — the denial is
-    // audited under the client-supplied site id, which violates a foreign
-    // key and kills the process. `cms:verify` must not knock over the
-    // user's own CMS, so the probe stays opt-in until that is fixed.
+  it('always probes a made-up site id and re-checks health afterwards', () => {
+    // v1.0.0-rc.1 crashed on a foreign X-Lumi-Site (#469), so the probe was
+    // opt-in. The pinned CMS refuses it with 404 TENANT_NOT_FOUND before
+    // authentication; the probe now runs by default and confirms the server
+    // is still up, so a regression shows as a failure, not a dead CMS.
     const verify = read('scripts/verify.mjs');
-    expect(verify).toMatch(/LUMIBASE_VERIFY_CROSS_TENANT === '1'/);
+    expect(verify).not.toMatch(/LUMIBASE_VERIFY_CROSS_TENANT/);
+    expect(verify).toMatch(/TENANT_NOT_FOUND/);
+    expect(verify).toMatch(/still healthy after that probe/);
   });
 });
 
 describe('nextjs template — the CMS image is pinned', () => {
   it('pulls a published image rather than building from source', () => {
-    const compose = read('docker-compose.yml');
+    const compose = read('docker-compose.yml.hbs');
     expect(compose).toMatch(/image:\s*ghcr\.io\/khuepm\/lumibase-cms[@:]/);
     expect(compose, 'the starter must not build the CMS from source').not.toMatch(
       /^\s*build:/m,
     );
   });
 
-  it('pins the CMS by digest, not by any tag', () => {
-    // Tags are the wrong instrument here, and not for style reasons:
-    //
-    //  - every semver tag (1.0.0-rc.1 included) was built before the CMS could
-    //    serve Studio, so /app/studio is absent and Studio 404s. Verified by
-    //    running the image, not by reading the current Dockerfile — which
-    //    describes today's source, not what an older tag contains.
-    //  - `latest` still points at the 0.x line.
-    //  - `edge` does carry Studio but is rebuilt on every push to main, so it
-    //    would change underneath a user who scaffolded weeks ago.
-    //
-    // A digest is immutable and names an artifact proven to contain Studio.
-    const compose = read('docker-compose.yml');
+  it('pins the CMS image and the client to the scaffolder version (B95)', () => {
+    // A hand-written pin lags a release behind by construction: the RC.2
+    // scaffold shipped an older edge digest and `^1.0.0-rc.1`, which npm
+    // resolved to rc.1 because that is the `latest` dist-tag. Both now render
+    // from the scaffolder's own version, which is released in lockstep with
+    // the image and the client.
+    const compose = read('docker-compose.yml.hbs');
     const ref = /image:\s*(ghcr\.io\/khuepm\/lumibase-cms\S+)/.exec(compose)?.[1];
+    expect(ref).toBe('ghcr.io/khuepm/lumibase-cms:{{lumibaseVersion}}');
 
-    expect(ref, 'compose must reference the CMS image').toBeTruthy();
+    const manifest = JSON.parse(read('package.json.hbs')) as {
+      dependencies: Record<string, string>;
+    };
     expect(
-      ref,
-      `compose pins "${ref}". A tag can move or point at a Studio-less build; ` +
-        'pin a sha256 digest that has been verified to contain /app/studio.',
-    ).toMatch(/@sha256:[0-9a-f]{64}$/);
+      manifest.dependencies['lumibase'],
+      'a range lets npm pick the `latest` dist-tag instead of this release',
+    ).toBe('{{lumibaseVersion}}');
   });
 });
 
@@ -124,7 +122,7 @@ describe('nextjs template — the stack stays on loopback', () => {
   // interfaces unless a host IP is given, so anyone on the same network could
   // claim the admin account of a stack using a fixed dev JWT_SECRET.
   it.each(['1989', '5432', '6379'])('binds port %s to 127.0.0.1', (port) => {
-    const compose = read('docker-compose.yml');
+    const compose = read('docker-compose.yml.hbs');
     const mapping = new RegExp(`- "([^"]*:)?\\$\\{[A-Z_]+:-${port}\\}:${port}"`).exec(compose);
 
     expect(mapping, `no published mapping found for ${port}`).toBeTruthy();
@@ -251,13 +249,12 @@ describe('nextjs template — errors are identified, not lumped together', () =>
 });
 
 describe('nextjs template — tenant isolation is testable', () => {
-  it('probes a real second site by default, and a fake id only on request', () => {
+  it('probes a real second site on request, and a made-up id every run', () => {
     // These are different questions. A real second site answers the isolation
-    // question and is safe. A non-existent id crashes the published CMS (#469),
-    // so it stays opt-in — running cms:verify must not kill the user's server.
+    // question; a made-up id checks the CMS refuses an unknown tenant (#469).
     const verify = read('scripts/verify.mjs');
     expect(verify).toMatch(/LUMIBASE_VERIFY_OTHER_SITE/);
-    expect(verify).toMatch(/LUMIBASE_VERIFY_CROSS_TENANT === '1'/);
+    expect(verify).toMatch(/expectUnknownSiteRefused\(key\)/);
   });
 });
 

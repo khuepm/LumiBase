@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-09-26T03:53:07.045Z
+version: 6
+lastUpdated: 2026-09-28T19:24:08.221Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 18193a74871ad6f5
+sourceHash: 1a294f789b9200ca
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-26T03:53:07.045Z
-codeVerifiedHash: 18193a74871ad6f5
+codeVerified: 2026-09-28T19:24:08.221Z
+codeVerifiedHash: 1a294f789b9200ca
 codeVerifiedClaims: 8
 ---
 
@@ -226,20 +226,19 @@ npm run cms:verify
 
 Nó dùng publishable key — không bao giờ dùng admin token — để cho thấy nó đọc được
 các post đã publish, **không** thấy được bản draft đã seed (qua list, qua id trực
-tiếp, và khi hỏi thẳng `status=draft`), và không ghi được. Phần seed cố ý để lại
+tiếp, và khi hỏi thẳng `status=draft`), không ghi được, và bị từ chối với một site
+id không tồn tại — sau đó kiểm tra lại rằng CMS vẫn healthy. Phần seed cố ý để lại
 một post chưa publish để bước kiểm tra này có thứ thật để bắt. Các kiểm tra không
-chạy được sẽ báo SKIPPED chứ không bị gộp vào số lượt pass.
+chạy được sẽ báo SKIPPED chứ không bị gộp vào số lượt pass. Việc kiểm tra cô lập
+tenant với một site thứ hai *thật* chạy khi đặt `LUMIBASE_VERIFY_OTHER_SITE`.
 
-Hai vấn đề upstream của CMS định hình template này, cả hai đều được ghi trong
-`README.md` được sinh ra: trong image CMS mà compose file ghim, cổng chặn setup-token
-đòi một token mà server không bao giờ in ra
-([#470](https://github.com/khuepm/lumibase/issues/470), đã sửa sau khi image đó được
-build), nên compose file để cờ đó tắt và bind mọi port công bố vào `127.0.0.1`; và một
-header `X-Lumi-Site`
-trỏ tới site không tồn tại có thể làm chết tiến trình CMS
-([#469](https://github.com/khuepm/lumibase/issues/469)), nên phép thử đó nằm sau
-`LUMIBASE_VERIFY_CROSS_TENANT=1`. Việc kiểm tra cô lập tenant với một site thứ hai
-*thật* vẫn chạy bình thường, qua `LUMIBASE_VERIFY_OTHER_SITE`.
+Project được sinh ra ghim client `lumibase` và image CMS vào **đúng** phiên bản
+`create-lumibase` đã tạo ra nó, nên API, Studio và client luôn đến từ cùng một bản
+phát hành. Phiên bản được ghim chính xác chứ không dùng khoảng `^`: npm resolve một
+khoảng về phiên bản mới nhất mang tag `latest` thỏa khoảng đó, mà trong giai đoạn
+prerelease thì đó có thể là một release candidate cũ hơn. Compose file để cổng chặn
+setup-token tắt và bind mọi port công bố vào `127.0.0.1`; `README.md` được sinh ra
+hướng dẫn cách bật cổng này (CMS in `SETUP_TOKEN=…` một lần khi khởi động).
 
 #### Trỏ nó vào một CMS bạn đã chạy sẵn
 

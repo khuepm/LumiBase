@@ -12,6 +12,28 @@ const TEMPLATES_DIR = resolve(
 );
 
 /**
+ * The version of this scaffolder, read from its own manifest.
+ *
+ * The Next.js starter pins both the `lumibase` client and the CMS image to
+ * exactly this version (B95). A hand-maintained pin lags one release behind by
+ * construction — the image digest only exists after the release that should
+ * have carried it — so `create-lumibase@1.0.0-rc.2` shipped an older edge
+ * build and a `^1.0.0-rc.1` range that npm resolved to rc.1 (the `latest`
+ * dist-tag). Every package in the monorepo is released in lockstep, so the
+ * scaffolder's own version names the matching client and image.
+ *
+ * `../package.json` resolves from both `src/` (tests) and `dist/` (published).
+ */
+export function readScaffolderVersion(): string {
+  const manifestPath = resolve(dirname(fileURLToPath(import.meta.url)), '../package.json');
+  const { version } = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { version?: unknown };
+  if (typeof version !== 'string' || version.length === 0) {
+    throw new Error(`create-lumibase manifest has no version: ${manifestPath}`);
+  }
+  return version;
+}
+
+/**
  * Files that npm renames on publish (strips the dot).
  * We store them with an underscore prefix and rename on copy.
  */
@@ -43,6 +65,7 @@ function buildTemplateContext(config: ProjectConfig): Record<string, unknown> {
     isCloudflare: config.template === 'cloudflare',
     isDefault: config.template === 'default',
     isNextjs: config.template === 'nextjs',
+    lumibaseVersion: readScaffolderVersion(),
     year: new Date().getFullYear(),
   };
 }

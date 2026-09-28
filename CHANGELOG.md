@@ -11,6 +11,46 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **A new Next.js starter now runs the release it came from (B95).**
+  `create-lumibase` pinned an older `edge` CMS digest and `lumibase@^1.0.0-rc.1`,
+  which npm resolved to rc.1 because that is the `latest` dist-tag, so a fresh
+  scaffold ran none of the Studio fixes it shipped with. The client and the CMS
+  image are now rendered from the scaffolder's own version: an exact `lumibase`
+  pin and `ghcr.io/khuepm/lumibase-cms:<version>`. `cms:verify` also probes a
+  made-up site id on every run (the pinned CMS answers `404 TENANT_NOT_FOUND`
+  and stays up — #469) instead of behind `LUMIBASE_VERIFY_CROSS_TENANT`, and the
+  generated README documents the working setup-token gate (#470).
+- **Studio edits long-form text fields as text.** A `text` field whose interface
+  Studio does not recognise fell back to the JSON editor and rejected prose as
+  "not valid JSON" — the starter's `body` field (`textarea`) hit this. `text`
+  now resolves to the multi-line editor, and the starter creates `body` with
+  `input-multiline`; re-running `cms:bootstrap` repairs an existing project.
+- **Saving an item clears its unsaved state.** The editor compared the draft
+  with the saved row as JSON strings, so a field filled in after the others
+  (JSONB returns keys in its own order) left the form "unsaved" after a
+  successful save, and Submit for review / Publish stayed disabled until a
+  reload.
+
+- **Invited users can use Studio.** `GET /api/v1/permissions/me` sat behind
+  the control-plane admin backstop, which recognises only the literal `admin`
+  role, so every user other than the bootstrap admin got 403 and Studio showed
+  "You do not have read permission" — including users holding the
+  Administrator role. The caller's own bundle is now readable by any signed-in
+  principal; the rest of `/permissions` stays admin-only.
+- **Invited Administrators can administer the site.** The control-plane
+  backstop recognised admins by role *name* only, while invited users carry
+  their role *id*, so only the bootstrap admin could reach Users, Roles,
+  Settings and the other control-plane routes. It now also admits a signed-in
+  user whose role grants admin access in the active site — the same check
+  `requireSiteAdmin` makes. API keys are unchanged.
+- **A Studio served at the site root no longer reloads itself forever.**
+  Anonymous requests made before sign-in answer 401, and the global handler
+  answered each with `location.assign('/')` — the page it was on — until the
+  API limiter returned 429. It now redirects only when a stale session token
+  is present, so the reload that clears it cannot repeat.
+- **`POST /api/v1/users/invite` validates its body.** An empty `roleId` was
+  stored as the member's role id, and a malformed body answered 500; both now
+  answer 400 before touching the database.
 - **Desktop and Android release builds run again.** `release-apps.yml` had
   failed on every tag since v0.26.0. The `tauri-plugin-updater` crate is back in
   step with `@tauri-apps/plugin-updater` (2.12), the Android job points
