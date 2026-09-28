@@ -11,9 +11,9 @@ NEXT_PUBLIC_LUMIBASE_PUBLISHABLE_KEY=
 # ─── Server-only ─────────────────────────────────────────────────────────────
 # Never prefixed with NEXT_PUBLIC_, so Next.js cannot leak these to the browser.
 
-# Only needed if you enable LUMIBASE_REQUIRE_SETUP_TOKEN on the container.
-# The default stack does not: v1.0.0-rc.1 gates setup behind the token but
-# never prints one, so enabling it locks setup out entirely.
+# Only needed if you enable LUMIBASE_REQUIRE_SETUP_TOKEN on the container (the
+# default stack does not). The CMS then prints `SETUP_TOKEN=…` once at startup;
+# copy it from `npm run cms:logs`.
 LUMIBASE_SETUP_TOKEN=
 
 # First administrator, created by `npm run cms:bootstrap`.

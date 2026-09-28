@@ -57,9 +57,9 @@ async function runSetup() {
   if (state?.requiresSetupToken && !SETUP_TOKEN) {
     throw new Error(
       'This CMS requires a setup token, but LUMIBASE_SETUP_TOKEN is not set.\n' +
-        'Note that v1.0.0-rc.1 never prints one: the flag gates setup without\n' +
-        'any way to obtain the token. Unset LUMIBASE_REQUIRE_SETUP_TOKEN on the\n' +
-        'container, recreate it, and run this again.',
+        'The CMS prints it once at startup as SETUP_TOKEN=… — find it with\n' +
+        '`npm run cms:logs`, put it in .env as LUMIBASE_SETUP_TOKEN, and run this\n' +
+        'again. Or unset LUMIBASE_REQUIRE_SETUP_TOKEN on the container.',
     );
   }
 
@@ -88,8 +88,16 @@ async function runSetup() {
 const FIELDS = [
   { name: 'title', type: 'string', interface: 'input', required: true },
   { name: 'slug', type: 'string', interface: 'input', required: true },
-  { name: 'body', type: 'text', interface: 'textarea' },
+  { name: 'body', type: 'text', interface: 'input-multiline' },
 ];
+
+/**
+ * Interfaces an earlier version of this script wrote that Studio does not
+ * know. `textarea` is not an interface name — Studio fell back to its JSON
+ * editor and refused plain prose as "not valid JSON" — so a re-run repairs it.
+ * A field set to any other interface is left alone: that is the user's choice.
+ */
+const LEGACY_INTERFACES = new Map([['body', 'textarea']]);
 
 async function ensureCollection(token) {
   step(3, `Creating the "${COLLECTION}" collection…`);
@@ -132,10 +140,11 @@ async function ensureCollection(token) {
   // silently yields an empty set — which would make this block re-PUT every
   // field on every run and, worse, make the check at the end vacuous.
   const before = await api(`/api/v1/collections/${COLLECTION}/fields`, { token });
-  const existing = new Set((before?.data ?? []).map((f) => f?.name));
+  const existing = new Map((before?.data ?? []).map((f) => [f?.name, f]));
 
   for (const field of FIELDS) {
-    if (existing.has(field.name)) {
+    const current = existing.get(field.name);
+    if (current && current.interface !== LEGACY_INTERFACES.get(field.name)) {
       console.log(`      = ${field.name} (already there)`);
       continue;
     }
@@ -146,7 +155,7 @@ async function ensureCollection(token) {
       token,
       body: rest,
     });
-    console.log(`      + ${name}`);
+    console.log(`      ${current ? '~' : '+'} ${name}${current ? ` (interface → ${rest.interface})` : ''}`);
   }
 
   // Prove it rather than assume it: a field that silently failed to register
