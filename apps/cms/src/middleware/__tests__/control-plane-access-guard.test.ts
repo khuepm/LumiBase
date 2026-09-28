@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
 import type { AppEnv } from '../../env';
-import { isAdminPrincipal, isControlPlanePath, withControlPlaneAccessGuard } from '../control-plane-access-guard';
+import { hasSiteAdminAccess, isAdminPrincipal, isControlPlanePath, withControlPlaneAccessGuard } from '../control-plane-access-guard';
 
 describe('control-plane access guard helpers', () => {
   it('identifies system administration paths', () => {
@@ -124,5 +124,44 @@ describe('control-plane access guard — self-introspection (B100)', () => {
   it('does not open /permissions/me to other methods or to anonymous callers', async () => {
     expect((await appFor(invited).request('/api/v1/permissions/me', { method: 'POST' })).status).toBe(403);
     expect((await appFor(undefined).request('/api/v1/permissions/me')).status).toBe(403);
+  });
+});
+
+describe('control-plane access guard — site admin by role id (B101)', () => {
+  const adminBundle = { admin: true } as never;
+  const memberBundle = { admin: false } as never;
+  const invited = { userId: 'u_1', email: 'ops@example.com', roles: ['hJ9kYcDumu7Knxet_NSkE'], raw: { aud: 'studio' } };
+
+  function request(auth: Record<string, unknown>, access: unknown) {
+    const app = new Hono<AppEnv>();
+    const values = vi.fn().mockResolvedValue(undefined);
+    const db = { insert: vi.fn().mockReturnValue({ values }) };
+    app.use('*', async (c, next) => {
+      c.set('auth', auth as never);
+      if (access) c.set('access', access as never);
+      c.set('db', db as never);
+      c.set('siteId', 'site_1');
+      c.set('requestId', 'req_b101');
+      await next();
+    });
+    app.use('*', withControlPlaneAccessGuard());
+    app.get('/api/v1/roles', (c) => c.json({ ok: true }));
+    return app.request('/api/v1/roles');
+  }
+
+  it('admits an invited user whose role has admin access in this site', async () => {
+    expect((await request(invited, adminBundle)).status).toBe(200);
+  });
+
+  it('still refuses a user whose role has no admin access, or with no bundle', async () => {
+    expect((await request(invited, memberBundle)).status).toBe(403);
+    expect((await request(invited, undefined)).status).toBe(403);
+  });
+
+  it('never admits API keys, anonymous or frontend-audience sessions on the bundle alone', () => {
+    expect(hasSiteAdminAccess({ ...invited, apiKeyId: 'k_1' } as never, adminBundle)).toBe(false);
+    expect(hasSiteAdminAccess({ ...invited, type: 'anonymous' } as never, adminBundle)).toBe(false);
+    expect(hasSiteAdminAccess({ ...invited, raw: { aud: 'frontend' } } as never, adminBundle)).toBe(false);
+    expect(hasSiteAdminAccess({ roles: [], raw: {} } as never, adminBundle)).toBe(false);
   });
 });
