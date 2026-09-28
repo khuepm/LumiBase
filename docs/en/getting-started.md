@@ -1,10 +1,10 @@
 ---
-version: 6
-lastUpdated: 2026-09-26T03:53:07.045Z
+version: 7
+lastUpdated: 2026-09-28T19:24:08.221Z
 sourceLang: en
-contentHash: 18193a74871ad6f5
-codeVerified: 2026-09-26T03:53:07.045Z
-codeVerifiedHash: 18193a74871ad6f5
+contentHash: 1a294f789b9200ca
+codeVerified: 2026-09-28T19:24:08.221Z
+codeVerifiedHash: 1a294f789b9200ca
 codeVerifiedClaims: 8
 ---
 
@@ -224,19 +224,21 @@ npm run cms:verify
 
 It uses the publishable key — never the admin token — to show that it can read
 published posts, **cannot** see the seeded draft (by list, by direct id, and by
-asking for `status=draft`), and cannot write. The seed deliberately leaves one
-post unpublished so the check has something real to catch. Checks that cannot
-run are reported as SKIPPED rather than folded into the pass count.
+asking for `status=draft`), cannot write, and is refused for a site id that does
+not exist — after which it re-checks that the CMS is still healthy. The seed
+deliberately leaves one post unpublished so the check has something real to
+catch. Checks that cannot run are reported as SKIPPED rather than folded into
+the pass count. Tenant isolation against a *real* second site runs when
+`LUMIBASE_VERIFY_OTHER_SITE` is set.
 
-Two upstream CMS issues shape this template, both documented in the generated
-`README.md`: in the CMS image the compose file pins, the setup-token gate demands a
-token the server never prints ([#470](https://github.com/khuepm/lumibase/issues/470),
-fixed after that image was built), so the compose file leaves it off and binds every
-published port to `127.0.0.1` instead; and an
-`X-Lumi-Site` header naming a site that does not exist can take the CMS process
-down ([#469](https://github.com/khuepm/lumibase/issues/469)), so that probe sits
-behind `LUMIBASE_VERIFY_CROSS_TENANT=1`. Tenant isolation against a *real*
-second site is checked normally, with `LUMIBASE_VERIFY_OTHER_SITE`.
+The generated project pins the `lumibase` client and the CMS image to
+**exactly** the `create-lumibase` version that created it, so the API, Studio
+and the client always come from one release. The pin is exact rather than a `^`
+range: npm resolves a range to the newest version tagged `latest` that satisfies
+it, which during a prerelease line can be an older release candidate. The
+compose file leaves the setup-token gate off and binds every published port to
+`127.0.0.1`; the generated `README.md` shows how to turn the gate on (the CMS
+prints `SETUP_TOKEN=…` once at startup).
 
 #### Pointing it at a CMS you already run
 
