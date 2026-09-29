@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-09-14T21:26:08.918Z
+version: 5
+lastUpdated: 2026-09-28T23:50:22.173Z
 sourceLang: vi
-contentHash: f2050885621cde26
-codeVerified: 2026-09-14T21:26:08.918Z
-codeVerifiedHash: f2050885621cde26
+contentHash: 90c33343db27c61a
+codeVerified: 2026-09-28T23:50:22.173Z
+codeVerifiedHash: 90c33343db27c61a
 codeVerifiedClaims: 4
 ---
 
@@ -18,7 +18,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 
 ## Bắt đầu nhanh
 
-- [getting-started.md](./getting-started.md) — Khởi tạo dự án LumiBase mới bằng `npm create lumibase@latest` (CLI `create-lumibase`): template `nextjs` được chọn sẵn dựng website Next.js kèm CMS + Studio và nội dung mẫu, còn `default`/`cloudflare` dựng starter Hono + Drizzle. Trang này cũng chỉ rõ khi nào bạn **không** cần khung nào cả — chỉ cần `npm install lumibase`.
+- [getting-started.md](./getting-started.md) — Khởi tạo dự án LumiBase mới bằng `npm create lumibase@next` (CLI `create-lumibase`): template `nextjs` được chọn sẵn dựng website Next.js kèm CMS + Studio và nội dung mẫu, còn `default`/`cloudflare` dựng starter Hono + Drizzle. Trang này cũng chỉ rõ khi nào bạn **không** cần khung nào cả — chỉ cần `npm install lumibase`.
 - [cli/index.md](./cli/index.md) — CLI `lumibase`: `init` (tạo project), `types` (sinh type từ CMS đang chạy), `doctor` (kiểm tra cấu hình và kết nối).
 
 ## Tutorials (hướng dẫn thực hành)
@@ -143,7 +143,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - **`packages/sdk`** — JS SDK (REST + WS + typegen).
 - **`packages/ui`** — shadcn components + CVA tokens.
 - **`packages/extension-sdk`** — Types và helpers cho dev viết extension.
-- **`packages/create-lumibase`** — CLI bootstrap (`npm create lumibase@latest`) sinh dự án LumiBase mới từ một trong ba template: `nextjs` (website Next.js + CMS và Studio chạy trong Docker, chọn sẵn), `default` (Docker) hoặc `cloudflare` (Workers). Xem [getting-started.md](./getting-started.md).
+- **`packages/create-lumibase`** — CLI bootstrap (`npm create lumibase@next`) sinh dự án LumiBase mới từ một trong ba template: `nextjs` (website Next.js + CMS và Studio chạy trong Docker, chọn sẵn), `default` (Docker) hoặc `cloudflare` (Workers). Xem [getting-started.md](./getting-started.md).
 - **`packages/mcp-server`** — MCP stdio server (`@lumibase/mcp-server`) expose tool cho AI assistant tạo/quản lý collections, fields, items.
 
 ## Nguyên tắc khi đọc tài liệu

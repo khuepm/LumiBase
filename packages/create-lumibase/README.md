@@ -15,12 +15,17 @@ starter you own and extend.
 > | To talk to a CMS that already exists | [`lumibase`](https://www.npmjs.com/package/lumibase) or [`@lumibase/sdk`](https://www.npmjs.com/package/@lumibase/sdk) | A typed REST/realtime client plus a CLI for type generation. Install it as a **runtime** dependency (`npm install lumibase`), not with `-D` — your app imports from it at request time. |
 
 ```bash
-npm create lumibase@latest my-project
+npm create lumibase@next my-project
 # or
-npx create-lumibase@latest my-project
+npx create-lumibase@next my-project
 # or
-pnpm create lumibase my-project
+pnpm create lumibase@next my-project
 ```
+
+> **Use `@next` during the 1.0 release candidates.** npm's `latest` tag still
+> points at the 0.x scaffolder, which has no Next.js template and pins no CMS.
+> `@next` is the current release candidate. The commands move back to `@latest`
+> when 1.0.0 ships.
 
 ## What it does
 
@@ -43,7 +48,7 @@ Which stack you get depends on the template:
 
 ## Interactive flow
 
-Running `npm create lumibase@latest` with no arguments walks you through:
+Running `npm create lumibase@next` with no arguments walks you through:
 
 1. **Project name** — validated against npm package-name rules.
 2. **Deployment target** — `Next.js website` (+ CMS, Studio and seed content — preselected), `Docker` (Node.js + PostgreSQL), or `Cloudflare Workers` (Edge + D1).
@@ -70,7 +75,7 @@ kept so existing `--template default` scripts keep working.
 Skip every prompt by passing flags:
 
 ```bash
-npx create-lumibase@latest my-blog \
+npx create-lumibase@next my-blog \
   --template nextjs \
   --pm pnpm \
   --no-install \
