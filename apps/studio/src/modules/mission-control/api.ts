@@ -341,7 +341,7 @@ export const missionControlApi = {
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(site ? { 'x-site-id': site } : {}),
+        ...(site ? { 'X-Lumi-Site': site } : {}),
       },
     });
     if (res.status === 404) {

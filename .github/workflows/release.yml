@@ -332,6 +332,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            LUMIBASE_GIT_SHA=${{ github.sha }}
+            LUMIBASE_RELEASE_CHANNEL=production
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -403,6 +406,25 @@ jobs:
             sleep 5
           done
           echo "Released Docker image healthy."
+
+          # The image must report the version it was tagged with. Until
+          # 1.0.0-rc.5 every image answered "unknown", which broke the
+          # "determine your current version" step of the upgrade runbook
+          # and the Studio footer, and nothing noticed.
+          EXPECTED="${GITHUB_REF_NAME#v}"
+          ACTUAL="$(curl --max-time 5 -fsS http://localhost:1989/api/v1/system/version | jq -r .version)"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::/api/v1/system/version reports '$ACTUAL', expected '$EXPECTED'"
+            exit 1
+          fi
+
+          # The image must ship the Studio, not only the API: `/setup` is the
+          # first page a new operator opens.
+          if ! curl --max-time 5 -fsS http://localhost:1989/setup | grep -q '<title>LumiBase Studio</title>'; then
+            echo "::error::/setup did not serve the Studio shell"
+            exit 1
+          fi
+          echo "Image reports $ACTUAL and serves the Studio."
 
   publish-npm-packages:
     name: Publish npm packages

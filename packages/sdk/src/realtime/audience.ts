@@ -11,6 +11,8 @@
  * The Studio (admin) plane uses the separate `RealtimeClient` in `./index`.
  */
 
+import { toWebSocketBase } from './ws-url';
+
 export interface AudienceEvent {
   type: 'event';
   channel?: string;
@@ -161,8 +163,7 @@ export class AudienceClient {
 
     if (this.stopped) return;
 
-    const wsBase = this.opts.baseUrl.replace(/^http/, 'ws');
-    const url = `${wsBase}/api/v1/realtime?ticket=${encodeURIComponent(ticket)}`;
+    const url = `${toWebSocketBase(this.opts.baseUrl)}/api/v1/realtime?ticket=${encodeURIComponent(ticket)}`;
     const factory = this.opts.webSocketFactory ?? ((u: string) => new WebSocket(u) as unknown as WebSocketLike);
 
     let ws: WebSocketLike;
