@@ -41,6 +41,11 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - **Studio footer said "Backend unavailable" (B105).** The footer read `.data`
   from `/api/v1/system/version`, which answers with the bare metadata object.
   It now reads both shapes. The endpoint's response shape is unchanged.
+- **CDC feed cursors must be the exact token the server issued.** The decoder
+  accepted the standard-base64 alphabet and read a blank or whitespace
+  timestamp as `0`, so a malformed `cursor` such as `Czo+` was treated as a
+  valid position near the start of the feed instead of being rejected with
+  400. Found by the property test in the v1.0.0-rc.4 release run.
 - **Onboarding commands install the 1.0 release candidate (#333).** README,
   Getting Started (EN/VI) and the `create-lumibase` README said
   `npm create lumibase@latest`, but npm's `latest` is still the 0.x scaffolder,

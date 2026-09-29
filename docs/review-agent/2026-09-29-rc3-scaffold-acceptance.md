@@ -87,6 +87,31 @@ Both fixes were checked against the same CMS with the branch's Studio build moun
 - `turbo run typecheck` for both packages: pass.
 - `docs/{en,vi}/getting-started.md` and `security/route-guards.md`: parity 0 problems, verify 0 findings, re-stamped `--verified`.
 
-## Still required after release
+## Published-package acceptance (v1.0.0-rc.4)
 
-Repeat the first table against the **published** `create-lumibase@next` once the next release ships, as B95 asks. This run only proves the tarball packed from this branch. Moving `lumibase`'s `latest` dist-tag is no longer needed for the starter, because the pin is exact. It is still a separate question for anyone who types `npm install lumibase` directly.
+Release run [36478335762](https://github.com/khuepm/LumiBase/actions/runs/36478335762):
+- Attempt 1 failed in `Verify release tag` on a property test that found a real CDC cursor bug. The fix is [#497](https://github.com/khuepm/LumiBase/pull/497).
+- Attempt 2 succeeded: GitHub prerelease, npm `next`, Docker image and image smoke test.
+- The npm registry showed `create-lumibase@1.0.0-rc.4` about two minutes after the job had logged it as published.
+
+The run below started from `npx create-lumibase@next`, whose `next` tag is `1.0.0-rc.4`, in a clean directory. The CMS image was `ghcr.io/khuepm/lumibase-cms:1.0.0-rc.4`, revision `4c2078d8`.
+
+| Check | Result |
+| --- | --- |
+| Rendered pins | `"lumibase": "1.0.0-rc.4"`, `lumibase-cms:1.0.0-rc.4` |
+| Lockfile `node_modules/lumibase` | `1.0.0-rc.4` |
+| `cms:bootstrap`, `cms:seed` | Pass; `body` created as `input-multiline` |
+| `cms:verify` | Pass, including the unknown-site probe (`404 TENANT_NOT_FOUND`, health after); other-site skipped |
+| `tsc --noEmit`, `next build` | Pass |
+| Invite with `roleId: ""` | 400 |
+| Invited Administrator: `/roles`, `/users`, `/settings`, `/permissions/me` | 200 each |
+| Invited Editor (no admin access): the same four | 403, 403, 403, 200 |
+| `requireSeparateReviewer`: author approves own item | 409 `SEPARATE_REVIEWER_REQUIRED` |
+| Invited Administrator approves, then publishes | `approved`, then `published`; the publishable key lists it |
+| Studio `v1.0.0-rc.4`: new item, then body typed last and saved | Body uses the multi-line editor with no JSON error; "Saved", Submit for review and Publish enabled without a reload |
+
+The invited accounts were activated directly in the disposable database, because the test stack has no mail server.
+
+Still open, and out of this report's scope:
+- `lumibase`'s own `latest` dist-tag still points at rc.1 (B53). The starter no longer depends on it, because the pin is exact.
+- The preview feature (B102) is specified in [#496](https://github.com/khuepm/LumiBase/pull/496) and awaits review.
