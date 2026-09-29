@@ -18,7 +18,7 @@
  * "peer thoả tình cờ không tính là thoả".
  *
  * Usage:
- *   node scripts/smoke-scaffold.mjs                        # both templates × npm + pnpm
+ *   node scripts/smoke-scaffold.mjs                        # all three templates × npm + pnpm
  *   node scripts/smoke-scaffold.mjs --template cloudflare   # one template
  *   node scripts/smoke-scaffold.mjs --pm npm                # one package manager
  *   node scripts/smoke-scaffold.mjs --keep                  # leave the temp dir for inspection
@@ -34,7 +34,7 @@ import { spawnSync } from 'node:child_process';
 
 const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-const TEMPLATES = ['default', 'cloudflare'];
+const TEMPLATES = ['default', 'cloudflare', 'nextjs'];
 const PACKAGE_MANAGERS = ['npm', 'pnpm'];
 
 function parseArgs(argv) {
@@ -107,6 +107,16 @@ function smoke({ template, pm, workdir }) {
   const install = run(pm, INSTALL_ARGS[pm], projectDir);
   if (install.status !== 0) {
     return { label, step: `${pm} install`, status: install.status, output: install.output };
+  }
+
+  // Standalone starters do not inherit the monorepo's dependency overrides.
+  // Audit the installed production graph: a manifest-only test missed the
+  // vulnerable PostCSS pinned by Next.js in a fresh Next.js starter.
+  if (template === 'nextjs') {
+    const audit = run(pm, ['audit', pm === 'npm' ? '--omit=dev' : '--prod', '--audit-level=moderate'], projectDir);
+    if (audit.status !== 0) {
+      return { label, step: `${pm} audit`, status: audit.status, output: audit.output };
+    }
   }
 
   const typecheck = run(pm, ['run', 'typecheck'], projectDir);

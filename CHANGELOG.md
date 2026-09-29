@@ -11,6 +11,9 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- Next.js starters carry PostCSS security overrides for both npm and pnpm;
+  fresh-install smoke checks now include Next.js and audit its production dependencies.
+
 - **Studio panels that sent the wrong tenant header (B103).** Eleven Studio
   request helpers sent `x-site-id` instead of `X-Lumi-Site`, so the CMS
   answered `400 TENANT_REQUIRED`. On the published Docker image this broke,

@@ -556,7 +556,7 @@ jobs:
     # declared #450 fixed while it was not.
     #
     # Scoped to changes under the scaffolder: this job reaches the npm registry
-    # four times, and making every unrelated PR depend on that would trade one
+    # for each template and package manager; making every unrelated PR depend on that would trade one
     # flake class for another.
     steps:
       - name: Checkout code
@@ -631,6 +631,6 @@ jobs:
         if: steps.scope.outputs.changed == 'true'
         run: pnpm --filter create-lumibase build
 
-      - name: Smoke-test both templates with npm and pnpm
+      - name: Smoke-test all templates with npm and pnpm
         if: steps.scope.outputs.changed == 'true'
         run: pnpm --filter create-lumibase smoke
