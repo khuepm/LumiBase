@@ -90,8 +90,13 @@ Three different things get called "installing LumiBase". Pick the one you actual
 ### 1. A new project of your own
 
 ```bash
-npm create lumibase@latest my-project
+npm create lumibase@next my-project
 ```
+
+> **Use `@next` during the 1.0 release candidates.** npm's `latest` tag still
+> points at the 0.x scaffolder, which has no Next.js template and pins no CMS.
+> `@next` is the current release candidate. The commands move back to `@latest`
+> when 1.0.0 ships.
 
 The first prompt picks the template, and the preselected one — `nextjs` — is the fastest path to something real: a **Next.js website plus the actual CMS and Studio** in Docker, a `posts` collection, seeded content, and a publishable key the browser can safely hold. `npm run cms:verify` then proves that key cannot read drafts or write.
 

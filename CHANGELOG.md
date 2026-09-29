@@ -9,7 +9,17 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Fixed
+
+- **Onboarding commands install the 1.0 release candidate (#333).** README,
+  Getting Started (EN/VI) and the `create-lumibase` README said
+  `npm create lumibase@latest`, but npm's `latest` is still the 0.x scaffolder,
+  which has no Next.js template. They now use `@next`, with a note that the
+  commands return to `@latest` when 1.0.0 ships. The npm dist-tags are
+  unchanged.
+- **`lumibase init` suggests the release it pins.** When the package manager
+  cannot be spawned, the hint now reads `npm create lumibase@<cli version>`
+  instead of `@latest`, which pointed at a different major.
 
 ## [1.0.0-rc.4] - 2026-09-29
 
