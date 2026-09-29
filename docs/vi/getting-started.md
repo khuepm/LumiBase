@@ -1,13 +1,13 @@
 ---
-version: 6
-lastUpdated: 2026-09-28T19:24:08.221Z
+version: 7
+lastUpdated: 2026-09-28T23:50:21.665Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1a294f789b9200ca
+sourceHash: 99917b80bbbe6308
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-28T19:24:08.221Z
-codeVerifiedHash: 1a294f789b9200ca
+codeVerified: 2026-09-28T23:50:21.665Z
+codeVerifiedHash: 99917b80bbbe6308
 codeVerifiedClaims: 8
 ---
 
@@ -49,10 +49,15 @@ hay `lumibase doctor`.
 
 ```bash
 # any of these work — npx resolves the create-* convention
-npm create lumibase@latest my-project
-npx create-lumibase@latest my-project
-pnpm create lumibase my-project
+npm create lumibase@next my-project
+npx create-lumibase@next my-project
+pnpm create lumibase@next my-project
 ```
+
+> **Dùng `@next` trong giai đoạn release candidate của 1.0.** Tag `latest` trên
+> npm vẫn trỏ về scaffolder 0.x, bản không có template Next.js và không ghim CMS.
+> `@next` là release candidate hiện tại. Các lệnh sẽ quay về `@latest` khi 1.0.0
+> phát hành.
 
 Khi không có tham số nào, CLI sẽ chạy ở chế độ tương tác và hỏi mọi thông tin cần
 thiết. Câu hỏi đầu tiên là câu quan trọng nhất — nó chọn template, và lựa chọn
@@ -61,14 +66,14 @@ Next.js được chọn sẵn.
 Nếu project đã có CLI `lumibase` thì `lumibase init` là **cùng một** scaffold,
 không phải một cái thứ hai: nó chạy `create-lumibase` và chuyển tham số của bạn
 đi nguyên văn, nên hai đường vào không thể có bộ template khác nhau hay trôi lệch
-khỏi nhau. Dùng cái nào đang có sẵn — `npm create lumibase@latest` thì không cần
+khỏi nhau. Dùng cái nào đang có sẵn — `npm create lumibase@next` thì không cần
 cài gì cả. Xem [`lumibase init`](./cli/index.md#lumibase-init) để biết cơ chế uỷ
 quyền và vì sao scaffolder không phải dependency của `lumibase`.
 
 ## Điều gì diễn ra, theo từng bước
 
 ```
-npx create-lumibase@latest my-blog
+npx create-lumibase@next my-blog
 │
 ├─ 1. npx downloads the create-lumibase package from npm
 │
@@ -168,7 +173,7 @@ response trong `{ data }` / `{ errors }`, và xác thực request bằng Zod.
 Truyền các cờ (flag) để bỏ qua hoàn toàn các câu hỏi tương tác:
 
 ```bash
-npx create-lumibase@latest my-blog \
+npx create-lumibase@next my-blog \
   --template nextjs \
   --pm pnpm \
   --no-install \
