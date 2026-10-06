@@ -71,6 +71,7 @@
   },
   "pnpm": {
     "overrides": {
+      "@graphql-tools/utils@11": "^12.0.3",
       "@types/react": "19.3.0",
       "@types/react-dom": "19.3.0",
       "brace-expansion@1": "^1.1.16",
