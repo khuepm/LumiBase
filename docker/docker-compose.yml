@@ -108,6 +108,12 @@ services:
       LLM_PROVIDER: ${LLM_PROVIDER:-echo}
       LLM_MODEL: ${LLM_MODEL:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # Decision model for POST /api/ai/decisions (TypeSafe Jev). Unset = off.
+      DECISION_PROVIDER: ${DECISION_PROVIDER:-}
+      DECISION_MODEL: ${DECISION_MODEL:-}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      TYPESAFE_BASE_URL: ${TYPESAFE_BASE_URL:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     ports:
       - "${CMS_PORT:-1989}:1989"
     volumes:
