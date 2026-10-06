@@ -11,6 +11,14 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- Decision providers reject missing, malformed or out-of-range answers and invalid
+  probability distributions with `DECISION_PARSE_FAILED`, instead of turning them
+  into zero-valued or clamped decisions. Choice/Score confidence is required.
+  The Definition of Done now requires shared upstream AI-output validation and
+  regression coverage for this failure class.
+- CMS and Studio test suites cap isolated workers at four to prevent excessive
+  concurrent imports from causing test timeouts and worker startup failures.
+
 - Next.js starters carry PostCSS security overrides for both npm and pnpm;
   fresh-install smoke checks now include Next.js and audit its production dependencies.
 

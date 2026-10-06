@@ -151,4 +151,16 @@ describe('POST /ai/decisions', () => {
     const res = await post(validBody, typesafeEnv);
     expect(res.status).toBe(422);
   });
+
+  it.each([{}, null, { type: 'noul', noul: '0' }, { type: 'noul', noul: 1.1 }])(
+    'returns 502 for malformed upstream answers (%j)', async (answer) => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ answers: { spam: answer } }))));
+      const res = await post(validBody, typesafeEnv);
+      expect(res.status).toBe(502);
+      const json = await res.json() as { data?: unknown; errors: { code: string }[] };
+      expect(json.data).toBeUndefined();
+      expect(json.errors[0]?.code).toBe('DECISION_PARSE_FAILED');
+    },
+  );
 });

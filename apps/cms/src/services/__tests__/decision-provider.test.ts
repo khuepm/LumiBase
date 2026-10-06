@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import fc from 'fast-check';
 import {
   DecisionProviderError,
   LLMDecisionProvider,
@@ -39,7 +40,7 @@ const upstreamBody = {
   answers: {
     spam: { type: 'noul', noul: 0.12 },
     topic: { type: 'choice', choice: 'promo', probabilities: { promo: 0.9, news: 0.1 }, confidence: 0.9 },
-    quality: { type: 'score', score: 1.4, legend: { '0': 'poor' }, probabilities: { '1': 0.6 }, confidence: 0.6 },
+    quality: { type: 'score', score: 1.4, legend: { '0': 'poor', '1': 'ok', '2': 'great' }, probabilities: { '0': 0, '1': 0.6, '2': 0.4 }, confidence: 0.6 },
   },
   usage: { input_tokens: 120, output_tokens: 0 },
 };
@@ -139,8 +140,8 @@ describe('SystemOneDecisionProvider', () => {
         quality: {
           type: 'score',
           score: 1.4,
-          legend: { '0': 'poor' },
-          probabilities: { '1': 0.6 },
+          legend: { '0': 'poor', '1': 'ok', '2': 'great' },
+          probabilities: { '0': 0, '1': 0.6, '2': 0.4 },
           confidence: 0.6,
         },
       },
@@ -213,6 +214,88 @@ describe('SystemOneDecisionProvider', () => {
       DecisionProviderError,
     );
   });
+
+  it.each([
+    ['missing noul', 'spam', {}],
+    ['null answer', 'spam', null],
+    ['wrong type', 'spam', { type: 'score', noul: 0 }],
+    ['string noul', 'spam', { type: 'noul', noul: '0' }],
+    ['negative noul', 'spam', { type: 'noul', noul: -0.1 }],
+    ['noul above one', 'spam', { type: 'noul', noul: 1.1 }],
+    ['missing score', 'quality', { ...upstreamBody.answers.quality, score: undefined }],
+    ['score above rubric', 'quality', { ...upstreamBody.answers.quality, score: 3 }],
+    ['missing confidence', 'topic', { ...upstreamBody.answers.topic, confidence: undefined }],
+    ['invalid confidence', 'quality', { ...upstreamBody.answers.quality, confidence: 2 }],
+    ['missing legend levels', 'quality', { ...upstreamBody.answers.quality, legend: {} }],
+    ['missing probabilities', 'topic', { ...upstreamBody.answers.topic, probabilities: undefined }],
+    ['missing option', 'topic', { ...upstreamBody.answers.topic, probabilities: { promo: 1 } }],
+    ['extra option', 'topic', { ...upstreamBody.answers.topic, probabilities: { promo: 0.9, news: 0.1, extra: 0 } }],
+    ['sum above one', 'topic', { ...upstreamBody.answers.topic, probabilities: { promo: 0.9, news: 0.9 } }],
+    ['sum below one', 'topic', { ...upstreamBody.answers.topic, probabilities: { promo: 0.4, news: 0.4 } }],
+    ['negative probability', 'topic', { ...upstreamBody.answers.topic, probabilities: { promo: 1.1, news: -0.1 } }],
+    ['string probability', 'topic', { ...upstreamBody.answers.topic, probabilities: { promo: '0.9', news: 0.1 } }],
+    ['inherited choice', 'topic', { ...upstreamBody.answers.topic, choice: 'constructor' }],
+  ])('rejects %s rather than manufacturing an answer', async (_label, key, answer) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      ...upstreamBody, answers: { ...upstreamBody.answers, [key]: answer },
+    })));
+    await expect(new SystemOneDecisionProvider({ apiKey: 'k' }).decide(request))
+      .rejects.toMatchObject({ code: 'DECISION_PARSE_FAILED' });
+  });
+
+  it('rejects inherited answer keys and fields', async () => {
+    const provider = new SystemOneDecisionProvider({ apiKey: 'k' });
+    for (const answers of [
+      Object.assign(Object.create({ spam: upstreamBody.answers.spam }), {
+        topic: upstreamBody.answers.topic, quality: upstreamBody.answers.quality,
+      }),
+      { ...upstreamBody.answers, spam: Object.create(upstreamBody.answers.spam) },
+    ]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ answers }) }));
+      await expect(provider.decide(request)).rejects.toMatchObject({ code: 'DECISION_PARSE_FAILED' });
+    }
+  });
+
+  it.each([NaN, Infinity, -Infinity])('rejects non-finite numbers (%s) in every answer type', async (value) => {
+    for (const [key, answer] of Object.entries({
+      spam: { ...upstreamBody.answers.spam, noul: value },
+      topic: { ...upstreamBody.answers.topic, probabilities: { promo: value, news: 0.1 } },
+      quality: { ...upstreamBody.answers.quality, score: value },
+    })) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true, status: 200,
+        json: async () => ({ answers: { ...upstreamBody.answers, [key]: answer } }),
+      }));
+      await expect(new SystemOneDecisionProvider({ apiKey: 'k' }).decide(request))
+        .rejects.toMatchObject({ code: 'DECISION_PARSE_FAILED' });
+    }
+  });
+
+  it('accepts decimal serialization error without changing probabilities', async () => {
+    const probabilities = { promo: 0.666667, news: 0.333334 };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      ...upstreamBody, answers: { ...upstreamBody.answers, topic: { ...upstreamBody.answers.topic, probabilities } },
+    })));
+    const result = await new SystemOneDecisionProvider({ apiKey: 'k' }).decide(request);
+    expect(result.answers.topic).toMatchObject({ probabilities });
+  });
+
+  it('preserves arbitrary valid distributions and rejects incomplete ones (property)', async () => {
+    await fc.assert(fc.asyncProperty(fc.integer({ min: 0, max: 1_000_000 }), async (weight) => {
+      const p = weight / 1_000_000;
+      const probabilities = { promo: p, news: 1 - p };
+      const answer = { ...upstreamBody.answers.topic, choice: p >= 0.5 ? 'promo' : 'news', probabilities };
+      const mock = vi.fn().mockResolvedValueOnce(jsonResponse({
+        ...upstreamBody, answers: { ...upstreamBody.answers, topic: answer },
+      })).mockResolvedValueOnce(jsonResponse({
+        ...upstreamBody, answers: { ...upstreamBody.answers, topic: { ...answer, probabilities: { promo: 1 } } },
+      }));
+      vi.stubGlobal('fetch', mock);
+      const provider = new SystemOneDecisionProvider({ apiKey: 'k' });
+      expect((await provider.decide(request)).answers.topic).toMatchObject({ probabilities });
+      await expect(provider.decide(request)).rejects.toMatchObject({ code: 'DECISION_PARSE_FAILED' });
+    }), { numRuns: 100 });
+  });
 });
 
 describe('LLMDecisionProvider', () => {
@@ -220,14 +303,14 @@ describe('LLMDecisionProvider', () => {
     return { chat: vi.fn().mockResolvedValue({ content, toolCalls: [] }) };
   }
 
-  it('parses fenced JSON, clamps scores to rubric levels and fills the legend', async () => {
+  it('parses valid fenced JSON and fills the rubric legend', async () => {
     const content =
       'Here you go:\n```json\n' +
       JSON.stringify({
         answers: {
-          spam: { noul: 1.7 },
-          topic: { choice: 'news', probabilities: { news: 0.7, promo: 0.3 } },
-          quality: { score: 7, confidence: 0.5 },
+          spam: { noul: 1 },
+          topic: { choice: 'news', probabilities: { news: 0.7, promo: 0.3 }, confidence: 0.7 },
+          quality: { score: 2, probabilities: { '0': 0, '1': 0, '2': 1 }, confidence: 0.5 },
         },
       }) +
       '\n```';
@@ -250,5 +333,14 @@ describe('LLMDecisionProvider', () => {
     await expect(new LLMDecisionProvider(llmReturning(null), 'm').decide(request)).rejects.toMatchObject({
       code: 'DECISION_PARSE_FAILED',
     });
+  });
+
+  it.each([
+    ['missing noul', { ...upstreamBody.answers, spam: {} }],
+    ['out-of-range score', { ...upstreamBody.answers, quality: { ...upstreamBody.answers.quality, score: 7 } }],
+    ['missing confidence', { ...upstreamBody.answers, topic: { choice: 'news', probabilities: { news: 1, promo: 0 } } }],
+  ])('rejects malformed LLM output: %s', async (_label, answers) => {
+    await expect(new LLMDecisionProvider(llmReturning(JSON.stringify({ answers })), 'm').decide(request))
+      .rejects.toMatchObject({ code: 'DECISION_PARSE_FAILED' });
   });
 });

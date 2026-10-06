@@ -1,10 +1,10 @@
 ---
-version: 8
-lastUpdated: 2026-10-06T06:12:18.422Z
+version: 9
+lastUpdated: 2026-10-06T11:14:27.131Z
 sourceLang: en
-contentHash: 20da33725cdd6e53
-codeVerified: 2026-10-06T06:12:18.422Z
-codeVerifiedHash: 20da33725cdd6e53
+contentHash: 70c7f64ed634d765
+codeVerified: 2026-10-06T11:14:27.131Z
+codeVerifiedHash: 70c7f64ed634d765
 codeVerifiedClaims: 386
 ---
 
@@ -816,7 +816,7 @@ Authorization: Bearer <token>
     "answers": {
       "spam": { "type": "noul", "noul": 0.12 },
       "topic": { "type": "choice", "choice": "promo", "probabilities": { "promo": 0.9, "news": 0.1 }, "confidence": 0.9 },
-      "quality": { "type": "score", "score": 1.4, "legend": {}, "probabilities": {}, "confidence": 0.6 }
+      "quality": { "type": "score", "score": 1.4, "legend": { "0": "poor", "1": "ok", "2": "great" }, "probabilities": { "0": 0, "1": 0.6, "2": 0.4 }, "confidence": 0.6 }
     },
     "usage": { "inputTokens": 120, "outputTokens": 0 }
   }
@@ -824,6 +824,8 @@ Authorization: Bearer <token>
 ```
 
 Errors: `400 VALIDATION`, `503 DECISION_NOT_CONFIGURED` (no `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE`, `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`. The CMS retries upstream `429`/`529`/`503` twice with exponential backoff before giving up.
+
+The CMS validates upstream answers before returning them: required values must be finite and in range, Choice/Score distributions must include exactly the declared options/levels and sum to 1 within an absolute tolerance of `1e-6`, and Score must lie in `0..N-1`. Missing or malformed answers return `502 DECISION_PARSE_FAILED`; values are never clamped or defaulted into decisions. Confidence is required for Choice/Score and is not inferred from the winning probability. The LLM provider uses the same validation.
 
 ### Agent API (Content OS)
 
