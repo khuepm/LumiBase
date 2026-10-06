@@ -11,6 +11,14 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- **Production dependency audit is green again.** `pnpm audit --prod --audit-level high`
+  failed on `main` and blocked every PR. `next` is bumped to 16.3.8 in `apps/consumer` and
+  `apps/landing` (GHSA-vcvr-r3jv-pc5j, critical); the `postcss` floor rises to 8.5.29, which
+  pulls `source-map-js` 1.2.2 (GHSA-68fv-2mgg-jv7q, high); new overrides pin `proxy-addr`
+  ^2.0.8 under the MCP server's `express` (GHSA-jqcg-44mw-7w3h, critical) and
+  `@graphql-tools/utils` ^12.0.1 under `graphql-yoga` (GHSA-7mx3-vvmw-hjmv, high). No
+  audit ignores were added; see `docs/en/security/dependency-overrides.md`.
+
 - Next.js starters carry PostCSS security overrides for both npm and pnpm;
   fresh-install smoke checks now include Next.js and audit its production dependencies.
 
