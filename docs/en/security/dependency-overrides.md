@@ -1,10 +1,10 @@
 ---
-version: 6
-lastUpdated: 2026-09-26T03:23:24.163Z
+version: 7
+lastUpdated: 2026-10-06T09:00:17.405Z
 sourceLang: en
-contentHash: 04beacfe4a2450ac
-codeVerified: 2026-09-26T03:23:24.163Z
-codeVerifiedHash: 04beacfe4a2450ac
+contentHash: a30e05516aff1409
+codeVerified: 2026-10-06T09:00:17.405Z
+codeVerifiedHash: a30e05516aff1409
 codeVerifiedClaims: 6
 ---
 
@@ -51,7 +51,7 @@ still agree.
 | Package | Pinned to | Reason | Remove when |
 | --- | --- | --- | --- |
 | `js-yaml` | `^4.3.2` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — quadratic-complexity DoS in YAML merge-key handling (moderate), [GHSA-mxjm-jjmh-r63x](https://github.com/advisories/GHSA-mxjm-jjmh-r63x) — quadratic CPU consumption resolving `!!omap`, unpatched below `4.3.1` (high), and [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh) — `maxTotalMergeKeys` does not bound CPU for empty merge sources, unpatched below `4.3.2` (high). Pulled in transitively by `gray-matter@4.0.3`, which hard-pins js-yaml 3.x. See the patch note below. | `gray-matter` (or whatever consumes it) depends on js-yaml `>=4.2.0` directly, **and** no other dependency reintroduces a 3.x range. Verify with `pnpm why js-yaml`. |
-| `dompurify` | `^3.4.13` | Security advisory (resolved via Dependabot), then raised for [GHSA-8v5p-ggcr-6q56](https://github.com/advisories/GHSA-8v5p-ggcr-6q56) — an `IN_PLACE` hook removal leaves a detached subtree, allowing sanitizer bypass at `<=3.4.12` (moderate). | A direct/transitive consumer requires `>=3.4.13` on its own. |
+| `dompurify` | `^3.4.16` | Security advisory (resolved via Dependabot), then raised for [GHSA-8v5p-ggcr-6q56](https://github.com/advisories/GHSA-8v5p-ggcr-6q56) — an `IN_PLACE` hook removal leaves a detached subtree, allowing sanitizer bypass at `<=3.4.12` (moderate), and again for [GHSA-p98j-92pf-mc4p](https://github.com/advisories/GHSA-p98j-92pf-mc4p) / [GHSA-6688-9rhm-gjv2](https://github.com/advisories/GHSA-6688-9rhm-gjv2), unpatched below `3.4.16` (low). | A direct/transitive consumer requires `>=3.4.16` on its own. |
 | `esbuild` | `^0.28.2` | esbuild dev-server request RCE advisory (`<=0.24.2`). | All consumers (vite, tsx, etc.) require `>=0.28.2`. |
 | `form-data` | `^4.0.6` | Security advisory (unsafe random boundary). | All consumers require `>=4.0.6`. |
 | `postcss` | `^8.5.26` | Security advisory (resolved via Dependabot). | All consumers require `>=8.5.26`. |
@@ -62,6 +62,12 @@ still agree.
 | `vite` | `^8.2.0` | Unify on one Vite major and pull esbuild past the `0.28.1` RCE advisory. **This entry is why `pnpm drift:check` exists:** it sat at `^7.3.5` while `apps/studio` and `apps/docs` both declared `^8.1.3`, and because overrides apply to direct dependencies too, both apps were built with Vite 7 for as long as their manifests claimed Vite 8. Raise this in step with the manifests or the bump is cosmetic. | The workspace no longer needs a single forced Vite major. |
 | `brace-expansion@1` | `^1.1.16` | [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) — DoS via exponential-time expansion of consecutive non-expanding `{}` groups (high), backported to the 1.x line in `1.1.16`. **Dev-only** — reached through `minimatch@3` from ESLint and its plugins, so it never appears in `pnpm audit --prod`. Keyed per-major (same shape as the `nanoid@3` scope) because two incompatible majors coexist; see [Known-unfixable alerts](#known-unfixable-alerts) for why 1.x cannot be folded into 5.x. | Nothing in the tree resolves `minimatch@3` any more (`pnpm why brace-expansion -r`), at which point both `brace-expansion@*` rows collapse into one. |
 | `brace-expansion@5` | `^5.0.8` | [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) — DoS via unbounded expansion length causing an OOM process crash (high), patched in `5.0.8`. **Dev-only** — reached through `minimatch@10` from `glob`, `eslint`, `@typescript-eslint/typescript-estree`. Natural drift already lifted most of the tree to `5.0.9`, but `minimatch@10.2.5` still pinned a `5.0.7` copy; this floor removes that straggler. | Same as the `@1` row. |
+| `proxy-addr` | `^2.0.8` | [GHSA-jqcg-44mw-7w3h](https://github.com/advisories/GHSA-jqcg-44mw-7w3h) (critical), unpatched below `2.0.8`. Reached through `packages/mcp-server` → `@modelcontextprotocol/sdk` → `express@5.2.1`, which declares `^2.0.7`. | `express` requires `proxy-addr >=2.0.8`. Verify with `pnpm why -r proxy-addr`. |
+| `source-map-js` | `^1.2.2` | [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) (high), unpatched below `1.2.2`. Reached through `postcss` (`next`, `vite`) and `css-tree` (`jsdom`). | `postcss` and `css-tree` require `>=1.2.2`. |
+| `@graphql-tools/utils@11` | `^12.0.3` | [GHSA-7mx3-vvmw-hjmv](https://github.com/advisories/GHSA-7mx3-vvmw-hjmv) — prototype pollution in `mergeDeep` (high), affecting `<=12.0.0` with **no 11.x backport**. `graphql-yoga@5.24` (used by `apps/cms`) still declares `^11.2.0`, so this lifts that copy across a major. Scoped to the `@11` selector so 12.x consumers resolve on their own. Verified by the CMS GraphQL tests plus a `createYoga` smoke run (variables, masked errors, validation, introspection). | `graphql-yoga` declares `@graphql-tools/utils >=12.0.1`. |
+| `fast-uri` | `4.1.5` | [GHSA-qw65-cvwx-89v3](https://github.com/advisories/GHSA-qw65-cvwx-89v3) / [GHSA-58mr-gqgx-xq4g](https://github.com/advisories/GHSA-58mr-gqgx-xq4g) (high, fixed by the earlier `4.1.4` pin), then [GHSA-hrr3-gc8f-f4qj](https://github.com/advisories/GHSA-hrr3-gc8f-f4qj) / [GHSA-jvvf-x445-j334](https://github.com/advisories/GHSA-jvvf-x445-j334) (moderate), unpatched below `4.1.5`. Exact pin kept from the original fix. Reached through `ajv`. | `ajv` requires `fast-uri >=4.1.5`. |
+| `qs` | `^6.16.0` | [GHSA-x5fp-wj9c-mxmx](https://github.com/advisories/GHSA-x5fp-wj9c-mxmx) / [GHSA-4mjr-xmp4-gh2g](https://github.com/advisories/GHSA-4mjr-xmp4-gh2g) (moderate), unpatched below `6.16.0`. Reached through `express` in `packages/mcp-server`. | `express` (or `body-parser`) requires `qs >=6.16.0`. |
+| `ip-address` | `^10.7.3` | [GHSA-rpw4-54j3-4h4q](https://github.com/advisories/GHSA-rpw4-54j3-4h4q), [GHSA-2vr4-cq9g-pvrc](https://github.com/advisories/GHSA-2vr4-cq9g-pvrc), [GHSA-j6r3-76f7-8jcv](https://github.com/advisories/GHSA-j6r3-76f7-8jcv), [GHSA-h3mg-xc3c-68pw](https://github.com/advisories/GHSA-h3mg-xc3c-68pw) (moderate), unpatched below `10.7.1`. Reached through `express-rate-limit` in `packages/mcp-server`. | `express-rate-limit` requires `ip-address >=10.7.1`. |
 | `@types/react` | `19.3.0` | **Not a security pin** — enforces React 19 types workspace-wide so Studio/Docs/Landing/`@lumibase/ui` typecheck against the same major as runtime React 19. | Drift between apps is no longer a concern, or the workspace splits React majors again intentionally. |
 | `@types/react-dom` | `19.3.0` | Same as `@types/react` — React 19 type consistency. Being an exact pin, it is also the second entry `pnpm drift:check` has caught: the minor-and-patch group bump raised `apps/{docs,landing,studio}` to `^19.2.7` while this pin stayed at `19.2.5`, so the lockfile importers still recorded `specifier: 19.2.5`. Raise the pin in step with the manifests. | Same as `@types/react`. |
 
