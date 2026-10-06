@@ -185,6 +185,17 @@ export interface Bindings {
   WORKERS_AI_API_TOKEN?: string;
   /** Optional Workers AI gateway URL override. */
   WORKERS_AI_GATEWAY?: string;
+  // ── Decision Provider (services/decision-provider.ts) ──────────────────
+  /** `'typesafe'` | `'openrouter'` | `'llm'`. Unset disables `/ai/decisions`. */
+  DECISION_PROVIDER?: string;
+  /** Decision model override (default `jev-latest` / `~typesafe/jev-latest`). */
+  DECISION_MODEL?: string;
+  /** TypeSafe API key for Jev (System One API). */
+  TYPESAFE_API_KEY?: string;
+  /** Optional TypeSafe endpoint override. Defaults to `https://api.typesafe.ai/v1`. */
+  TYPESAFE_BASE_URL?: string;
+  /** OpenRouter API key, used when DECISION_PROVIDER = 'openrouter'. */
+  OPENROUTER_API_KEY?: string;
   // ── Custom domains / Cloudflare for SaaS (services/domains/*) ───────────
   /** API token with `SSL and Certificates: Edit` on the SaaS zone. */
   CLOUDFLARE_API_TOKEN?: string;

@@ -13,6 +13,12 @@ import { IntentService } from '../services/intent-service';
 import { SchemaService } from '../services/schema-service';
 import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
 import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
+import {
+  createDecisionProvider,
+  DecisionProviderError,
+  type DecisionErrorCode,
+  type DecisionProviderEnv,
+} from '../services/decision-provider';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPendingRun, FLOW_RUNS_QUEUE } from '../services/flow-run-service';
 
@@ -31,6 +37,51 @@ export const chatSchema = z.object({
 
 export const decideSchema = z.object({
   decision: z.enum(['approved', 'rejected']),
+});
+
+/** Upper bound on the serialized `state`; Jev's context window is 32k tokens. */
+const MAX_DECISION_STATE_CHARS = 200_000;
+
+const decisionPayloadSchema = z.union([
+  z.string().min(1).max(20_000),
+  z.record(z.string(), z.unknown()),
+  z.array(z.unknown()),
+]);
+
+const decisionQuestionSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('noul'),
+    instructions: decisionPayloadSchema,
+    criteria: z.object({ true: decisionPayloadSchema, false: decisionPayloadSchema }),
+  }),
+  z.object({
+    type: z.literal('choice'),
+    instructions: decisionPayloadSchema,
+    criteria: z
+      .record(z.string().min(1).max(128), decisionPayloadSchema.nullable())
+      .refine((options) => {
+        const count = Object.keys(options).length;
+        return count >= 2 && count <= 255;
+      }, 'A choice question needs 2-255 options'),
+  }),
+  z.object({
+    type: z.literal('score'),
+    instructions: decisionPayloadSchema,
+    criteria: z.array(decisionPayloadSchema).min(2).max(10),
+  }),
+]);
+
+export const decisionRequestSchema = z.object({
+  state: decisionPayloadSchema.refine(
+    (state) => JSON.stringify(state).length <= MAX_DECISION_STATE_CHARS,
+    `state must serialize to at most ${MAX_DECISION_STATE_CHARS} characters`,
+  ),
+  questions: z
+    .record(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'Invalid question key'), decisionQuestionSchema)
+    .refine((questions) => {
+      const count = Object.keys(questions).length;
+      return count >= 1 && count <= 32;
+    }, 'Provide 1-32 questions'),
 });
 
 // ---------------------------------------------------------------------------
@@ -464,6 +515,81 @@ aiRouter.delete('/conversations/:id', async (c) => {
     );
 
   return c.body(null, 204);
+});
+
+// ---------------------------------------------------------------------------
+// Decision routes (TypeSafe Jev / equivalent)
+// ---------------------------------------------------------------------------
+
+/** Upstream failures map to gateway-style statuses; the provider key is ours, not the caller's. */
+const DECISION_ERROR_STATUS: Record<DecisionErrorCode, 422 | 429 | 502 | 503> = {
+  DECISION_AUTH: 502,
+  DECISION_VALIDATION: 422,
+  DECISION_RATE_LIMITED: 429,
+  DECISION_UNAVAILABLE: 503,
+  DECISION_UPSTREAM: 502,
+  DECISION_PARSE_FAILED: 502,
+};
+
+const DECISION_ERROR_MESSAGE: Record<DecisionErrorCode, string> = {
+  DECISION_AUTH: 'The decision provider rejected the configured credentials.',
+  DECISION_VALIDATION: 'The decision provider rejected the request.',
+  DECISION_RATE_LIMITED: 'The decision provider rate limit was exceeded. Retry later.',
+  DECISION_UNAVAILABLE: 'The decision provider is temporarily unavailable. Retry later.',
+  DECISION_UPSTREAM: 'The decision provider returned an error.',
+  DECISION_PARSE_FAILED: 'The decision provider returned an unusable answer.',
+};
+
+/**
+ * POST /decisions
+ * Asks the configured decision model (DECISION_PROVIDER) typed questions
+ * about `state`. Read-only: no content is written, so no HITL approval.
+ */
+aiRouter.post('/decisions', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = decisionRequestSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(
+      {
+        errors: parsed.error.issues.map((issue) => ({
+          code: 'VALIDATION',
+          message: issue.message,
+          path: issue.path.map(String),
+        })),
+      },
+      400,
+    );
+  }
+
+  const configured = createDecisionProvider(c.env as unknown as DecisionProviderEnv);
+  if (!configured) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'DECISION_NOT_CONFIGURED',
+            message: 'Set DECISION_PROVIDER (typesafe | openrouter | llm) and its credentials.',
+          },
+        ],
+      },
+      503,
+    );
+  }
+
+  try {
+    const data = await configured.provider.decide(parsed.data);
+    return c.json({ data });
+  } catch (err) {
+    console.error('[ai/decisions] provider error', formatSafeError(err));
+    if (err instanceof DecisionProviderError) {
+      return c.json(
+        { errors: [{ code: err.code, message: DECISION_ERROR_MESSAGE[err.code] }] },
+        DECISION_ERROR_STATUS[err.code],
+      );
+    }
+    return c.json({ errors: [{ code: 'INTERNAL', message: 'Decision request failed.' }] }, 500);
+  }
 });
 
 // ---------------------------------------------------------------------------
