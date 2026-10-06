@@ -3374,6 +3374,101 @@ paths:
                 properties:
                   data: { $ref: '#/components/schemas/AIApproval' }
 
+  /ai/decisions:
+    post:
+      summary: Ask the decision model (TypeSafe Jev or equivalent) typed questions
+      description: >
+        Read-only. Each question is `noul` (yes/no), `choice` (2-255 options)
+        or `score` (2-10 rubric levels, lowest first). Answers carry
+        probabilities; `calibrated` is false when DECISION_PROVIDER=llm.
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state, questions]
+              properties:
+                state:
+                  description: String (≤ 20,000 chars), object or array; ≤ 200,000 serialized chars.
+                  oneOf:
+                    - { type: string, minLength: 1, maxLength: 20000 }
+                    - { type: object, additionalProperties: true }
+                    - { type: array, items: {} }
+                questions:
+                  type: object
+                  minProperties: 1
+                  maxProperties: 32
+                  description: Keys match ^[A-Za-z0-9_-]{1,64}$.
+                  additionalProperties:
+                    type: object
+                    required: [type, instructions, criteria]
+                    properties:
+                      type: { type: string, enum: [noul, choice, score] }
+                      instructions: {}
+                      criteria:
+                        description: >
+                          noul → { true, false }; choice → option key → description
+                          or null; score → ordered array of levels.
+      responses:
+        '200':
+          description: Typed answers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      provider: { type: string, enum: [typesafe, openrouter, llm] }
+                      model: { type: string }
+                      calibrated: { type: boolean }
+                      answers:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          required: [type]
+                          properties:
+                            type: { type: string, enum: [noul, choice, score] }
+                            noul: { type: number, minimum: 0, maximum: 1 }
+                            choice: { type: string }
+                            score: { type: number }
+                            legend: { type: object, additionalProperties: true }
+                            probabilities: { type: object, additionalProperties: { type: number } }
+                            confidence: { type: number, minimum: 0, maximum: 1 }
+                      usage:
+                        type: object
+                        properties:
+                          inputTokens: { type: integer }
+                          outputTokens: { type: integer }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: The decision provider rejected the request (DECISION_VALIDATION)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Decision provider rate limit (DECISION_RATE_LIMITED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '502':
+          description: DECISION_AUTH, DECISION_UPSTREAM or DECISION_PARSE_FAILED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: DECISION_NOT_CONFIGURED or DECISION_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /ai/suggest-field:
     post:
       summary: Suggest field type and interface for a given field name + context
