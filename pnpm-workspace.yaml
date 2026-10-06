@@ -33,7 +33,7 @@ overrides:
   "form-data": "^4.0.6"
   "js-yaml": "^4.3.2"
   "nanoid@3": "^3.3.17"
-  "postcss": "^8.5.26"
+  "postcss": "^8.5.29"
   "sharp": ">=0.35.0"
   "undici": "^7.28.0"
   "uuid": "^14.0.1"
