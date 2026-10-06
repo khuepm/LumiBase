@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 5
-lastUpdated: 2026-09-26T03:53:06.669Z
+version: 6
+lastUpdated: 2026-10-06T06:12:18.190Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 78fb758321a28f14
+sourceHash: 0cd5f609c3935513
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-26T03:53:06.669Z
-codeVerifiedHash: 78fb758321a28f14
-codeVerifiedClaims: 72
+codeVerified: 2026-10-06T06:12:18.190Z
+codeVerifiedHash: 0cd5f609c3935513
+codeVerifiedClaims: 74
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -180,6 +180,18 @@ Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#
 | `WORKERS_AI_GATEWAY` | Chỉ Workers AI | URL gateway CF Workers AI |
 
 > **Provider ↔ billing:** `nvidia` và `vertex` gọi các cloud *bên ngoài* — lần lượt là NVIDIA và Google Cloud — nên usage của chúng **không** được tính vào credit AWS. `nvidia` (hoặc NIM self-host qua `NVIDIA_BASE_URL`) và MeiliSearch là các phần ăn khớp tự nhiên với hạ tầng host trên AWS.
+
+### Decision model (TypeSafe Jev)
+
+Phục vụ `POST /api/v1/ai/decisions`: trả về câu trả lời có kiểu `noul` / `choice` / `score` kèm xác suất thay vì sinh văn bản. Độc lập với `LLM_PROVIDER`; không đặt thì endpoint trả `503 DECISION_NOT_CONFIGURED`.
+
+| Biến | Bắt buộc | Mô tả |
+|------|----------|-------|
+| `DECISION_PROVIDER` | ✗ | `typesafe` (TypeSafe Jev, gọi trực tiếp), `openrouter` (cùng System One API qua OpenRouter, tính phí vào OpenRouter), hoặc `llm` (dùng lại `LLM_PROVIDER`; câu trả lời được gắn `calibrated: false`). Không đặt = tắt. |
+| `DECISION_MODEL` | ✗ | Override model. Mặc định `jev-latest` (`typesafe`) hoặc `~typesafe/jev-latest` (`openrouter`). |
+| `TYPESAFE_API_KEY` | Nếu provider `typesafe` | API key TypeSafe. |
+| `TYPESAFE_BASE_URL` | ✗ | Override endpoint TypeSafe. Mặc định `https://api.typesafe.ai/v1`. |
+| `OPENROUTER_API_KEY` | Nếu provider `openrouter` | API key OpenRouter. |
 
 ---
 <!-- check-parity: allow inline-code -->

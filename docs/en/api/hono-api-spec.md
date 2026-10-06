@@ -1,11 +1,11 @@
 ---
-version: 7
-lastUpdated: 2026-09-26T03:57:31.525Z
+version: 8
+lastUpdated: 2026-10-06T06:12:18.422Z
 sourceLang: en
-contentHash: b157d8705dab563a
-codeVerified: 2026-09-26T03:57:31.525Z
-codeVerifiedHash: b157d8705dab563a
-codeVerifiedClaims: 384
+contentHash: 20da33725cdd6e53
+codeVerified: 2026-10-06T06:12:18.422Z
+codeVerifiedHash: 20da33725cdd6e53
+codeVerifiedClaims: 386
 ---
 
 # Hono API Specification — LumiBase
@@ -749,6 +749,7 @@ Authorization: Bearer <token>
 | `GET` | `/api/v1/ai/conversations` | List conversation history |
 | `GET` | `/api/v1/ai/conversations/:id/messages` | Get messages in a conversation |
 | `DELETE` | `/api/v1/ai/conversations/:id` | Delete a conversation |
+| `POST` | `/api/v1/ai/decisions` | Ask the decision model (TypeSafe Jev or equivalent) typed questions |
 
 **Chat request:**
 ```json
@@ -780,6 +781,49 @@ Authorization: Bearer <token>
 ```json
 { "decision": "approved" }
 ```
+
+**Decision request** (`POST /api/v1/ai/decisions`) — 1–32 questions keyed by `[A-Za-z0-9_-]{1,64}`; `noul` = yes/no, `choice` = 2–255 options, `score` = 2–10 rubric levels (lowest first). `state` is a string, object or array (≤ 200,000 serialized characters). Read-only, so no HITL approval:
+```json
+{
+  "state": { "title": "Summer sale", "body": "Buy now!!!" },
+  "questions": {
+    "spam": {
+      "type": "noul",
+      "instructions": "Is this post spam?",
+      "criteria": { "true": "spam", "false": "legitimate" }
+    },
+    "topic": {
+      "type": "choice",
+      "instructions": "Pick the topic",
+      "criteria": { "promo": "Promotion", "news": null }
+    },
+    "quality": {
+      "type": "score",
+      "instructions": "Rate editorial quality",
+      "criteria": ["poor", "ok", "great"]
+    }
+  }
+}
+```
+
+**Decision response** — `calibrated` is `false` when `DECISION_PROVIDER=llm`, because those probabilities are self-reported by the LLM:
+```json
+{
+  "data": {
+    "provider": "typesafe",
+    "model": "jev-1.13",
+    "calibrated": true,
+    "answers": {
+      "spam": { "type": "noul", "noul": 0.12 },
+      "topic": { "type": "choice", "choice": "promo", "probabilities": { "promo": 0.9, "news": 0.1 }, "confidence": 0.9 },
+      "quality": { "type": "score", "score": 1.4, "legend": {}, "probabilities": {}, "confidence": 0.6 }
+    },
+    "usage": { "inputTokens": 120, "outputTokens": 0 }
+  }
+}
+```
+
+Errors: `400 VALIDATION`, `503 DECISION_NOT_CONFIGURED` (no `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE`, `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`. The CMS retries upstream `429`/`529`/`503` twice with exponential backoff before giving up.
 
 ### Agent API (Content OS)
 
