@@ -1,11 +1,11 @@
 ---
-version: 5
-lastUpdated: 2026-09-26T03:53:06.669Z
+version: 6
+lastUpdated: 2026-10-06T06:12:18.190Z
 sourceLang: en
-contentHash: 78fb758321a28f14
-codeVerified: 2026-09-26T03:53:06.669Z
-codeVerifiedHash: 78fb758321a28f14
-codeVerifiedClaims: 72
+contentHash: 0cd5f609c3935513
+codeVerified: 2026-10-06T06:12:18.190Z
+codeVerifiedHash: 0cd5f609c3935513
+codeVerifiedClaims: 74
 ---
 
 # Environment Variables Reference
@@ -174,6 +174,18 @@ For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](
 > and Google Cloud respectively — so their usage is **not** covered by AWS
 > credit. `nvidia` (or a self-hosted NIM via `NVIDIA_BASE_URL`) and MeiliSearch
 > are the pieces that pair naturally with AWS-hosted infrastructure.
+
+### Decision model (TypeSafe Jev)
+
+Backs `POST /api/v1/ai/decisions`: typed `noul` / `choice` / `score` answers with probabilities instead of generated text. Independent of `LLM_PROVIDER`; unset means the endpoint answers `503 DECISION_NOT_CONFIGURED`.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DECISION_PROVIDER` | ✗ | `typesafe` (TypeSafe Jev, direct), `openrouter` (same System One API via OpenRouter, billed to OpenRouter), or `llm` (reuses `LLM_PROVIDER`; answers are flagged `calibrated: false`). Unset = disabled. |
+| `DECISION_MODEL` | ✗ | Model override. Defaults to `jev-latest` (`typesafe`) or `~typesafe/jev-latest` (`openrouter`). |
+| `TYPESAFE_API_KEY` | If `typesafe` provider | TypeSafe API key. |
+| `TYPESAFE_BASE_URL` | ✗ | TypeSafe endpoint override. Defaults to `https://api.typesafe.ai/v1`. |
+| `OPENROUTER_API_KEY` | If `openrouter` provider | OpenRouter API key. |
 
 ---
 

@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 6
-lastUpdated: 2026-09-26T03:57:31.525Z
+version: 7
+lastUpdated: 2026-10-06T06:12:18.422Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b157d8705dab563a
+sourceHash: 20da33725cdd6e53
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-26T03:57:31.525Z
-codeVerifiedHash: b157d8705dab563a
-codeVerifiedClaims: 384
+codeVerified: 2026-10-06T06:12:18.422Z
+codeVerifiedHash: 20da33725cdd6e53
+codeVerifiedClaims: 386
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -640,6 +640,7 @@ Authorization: Bearer <token>
 | `GET` | `/api/v1/ai/conversations` | Liệt kê lịch sử hội thoại |
 | `GET` | `/api/v1/ai/conversations/:id/messages` | Lấy danh sách tin nhắn trong một hội thoại |
 | `DELETE` | `/api/v1/ai/conversations/:id` | Xóa một hội thoại |
+| `POST` | `/api/v1/ai/decisions` | Hỏi decision model (TypeSafe Jev hoặc tương đương) các câu hỏi có kiểu |
 
 **Request chat:**
 ```json
@@ -671,6 +672,49 @@ Authorization: Bearer <token>
 ```json
 { "decision": "approved" }
 ```
+
+**Request decision** (`POST /api/v1/ai/decisions`) — 1–32 câu hỏi, key theo `[A-Za-z0-9_-]{1,64}`; `noul` = có/không, `choice` = 2–255 lựa chọn, `score` = 2–10 mức rubric (thấp nhất trước). `state` là string, object hoặc array (≤ 200,000 ký tự sau khi serialize). Chỉ đọc nên không cần phê duyệt HITL:
+```json
+{
+  "state": { "title": "Summer sale", "body": "Buy now!!!" },
+  "questions": {
+    "spam": {
+      "type": "noul",
+      "instructions": "Is this post spam?",
+      "criteria": { "true": "spam", "false": "legitimate" }
+    },
+    "topic": {
+      "type": "choice",
+      "instructions": "Pick the topic",
+      "criteria": { "promo": "Promotion", "news": null }
+    },
+    "quality": {
+      "type": "score",
+      "instructions": "Rate editorial quality",
+      "criteria": ["poor", "ok", "great"]
+    }
+  }
+}
+```
+
+**Response decision** — `calibrated` là `false` khi `DECISION_PROVIDER=llm`, vì xác suất do chính LLM tự báo:
+```json
+{
+  "data": {
+    "provider": "typesafe",
+    "model": "jev-1.13",
+    "calibrated": true,
+    "answers": {
+      "spam": { "type": "noul", "noul": 0.12 },
+      "topic": { "type": "choice", "choice": "promo", "probabilities": { "promo": 0.9, "news": 0.1 }, "confidence": 0.9 },
+      "quality": { "type": "score", "score": 1.4, "legend": {}, "probabilities": {}, "confidence": 0.6 }
+    },
+    "usage": { "inputTokens": 120, "outputTokens": 0 }
+  }
+}
+```
+
+Lỗi: `400 VALIDATION`, `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE`, `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`. CMS retry upstream `429`/`529`/`503` hai lần với exponential backoff trước khi bỏ cuộc.
 
 ### Agent API (Content OS)
 
