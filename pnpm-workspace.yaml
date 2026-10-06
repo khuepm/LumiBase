@@ -23,6 +23,7 @@ packages:
 #   docs/en/security/dependency-overrides.md
 
 overrides:
+  "@graphql-tools/utils": "^12.0.1"
   "@types/react": "19.3.0"
   "@types/react-dom": "19.3.0"
   "brace-expansion@1": "^1.1.16"
