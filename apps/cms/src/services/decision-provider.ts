@@ -414,7 +414,7 @@ export function createDecisionProvider(env: DecisionProviderEnv): ConfiguredDeci
   switch (name) {
     case 'typesafe': {
       if (!env.TYPESAFE_API_KEY) return null;
-      const model = env.DECISION_MODEL ?? 'jev-latest';
+      const model = env.DECISION_MODEL || 'jev-latest';
       return {
         name,
         model,
@@ -429,7 +429,7 @@ export function createDecisionProvider(env: DecisionProviderEnv): ConfiguredDeci
 
     case 'openrouter': {
       if (!env.OPENROUTER_API_KEY) return null;
-      const model = env.DECISION_MODEL ?? '~typesafe/jev-latest';
+      const model = env.DECISION_MODEL || '~typesafe/jev-latest';
       return {
         name,
         model,

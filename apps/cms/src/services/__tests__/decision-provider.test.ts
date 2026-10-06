@@ -91,6 +91,16 @@ describe('createDecisionProvider', () => {
     expect(configured?.model).toBe('jev-1.13');
   });
 
+  it('treats empty compose passthrough values as unset', () => {
+    const configured = createDecisionProvider({
+      DECISION_PROVIDER: 'typesafe',
+      TYPESAFE_API_KEY: 'ts-key',
+      DECISION_MODEL: '',
+      TYPESAFE_BASE_URL: '',
+    });
+    expect(configured?.model).toBe('jev-latest');
+  });
+
   it('wraps the configured LLM for the llm fallback', () => {
     const configured = createDecisionProvider({
       DECISION_PROVIDER: 'llm',
