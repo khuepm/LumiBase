@@ -1,10 +1,10 @@
 ---
-version: 8
-lastUpdated: 2026-10-08T09:58:13.856Z
+version: 9
+lastUpdated: 2026-10-08T14:29:53.287Z
 sourceLang: en
-contentHash: 36f0b0ea70864ea0
-codeVerified: 2026-10-08T09:58:13.856Z
-codeVerifiedHash: 36f0b0ea70864ea0
+contentHash: 67be3d1ac388263e
+codeVerified: 2026-10-08T14:29:53.287Z
+codeVerifiedHash: 67be3d1ac388263e
 codeVerifiedClaims: 402
 ---
 
@@ -772,7 +772,7 @@ Public (no session; signature-verified):
 
 **Deployment shape** (`data` of the deployment routes and the trigger): `{ id, siteId, targetId, provider, providerDeploymentId, status (queued|building|ready|error|canceled), branch, commitSha, commitMessage, url, triggeredBy, triggerSource (manual|auto|agent), errorMessage, logExcerpt, createdAt, updatedAt, completedAt }`.
 
-**Trigger rate limit:** each target has a two-tier budget, 5 triggers per 60 s and 30 per 3600 s, keyed by site and target (`apps/cms/src/services/deployment/trigger-rate-limit.ts`). It applies to every `triggerSource` (manual, flow, agent). A coalesced auto trigger reuses a recent build and does not consume budget. When the limiter backend is unreachable the trigger is allowed (fail-open). A rejected trigger creates no row and returns:
+**Trigger rate limit:** each target has a two-tier budget, 5 triggers per 60 s and 30 per 3600 s, keyed by site and target (`apps/cms/src/services/deployment/trigger-rate-limit.ts`). It applies to every `triggerSource` (`manual`, `auto`, `agent`). A coalesced auto trigger reuses a recent build and does not consume budget. When the limiter backend is unreachable the trigger is allowed (fail-open). A rejected trigger creates no row and returns:
 
 ```json
 {

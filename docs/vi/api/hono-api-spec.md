@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 7
-lastUpdated: 2026-10-08T09:58:13.856Z
+version: 8
+lastUpdated: 2026-10-08T14:29:53.287Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 36f0b0ea70864ea0
+sourceHash: 67be3d1ac388263e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-08T09:58:13.856Z
-codeVerifiedHash: 36f0b0ea70864ea0
+codeVerified: 2026-10-08T14:29:53.287Z
+codeVerifiedHash: 67be3d1ac388263e
 codeVerifiedClaims: 402
 ---
 
@@ -663,7 +663,7 @@ Công khai (không có phiên; xác thực bằng chữ ký):
 
 **Shape của deployment** (`data` của các route deployment và của trigger): `{ id, siteId, targetId, provider, providerDeploymentId, status (queued|building|ready|error|canceled), branch, commitSha, commitMessage, url, triggeredBy, triggerSource (manual|auto|agent), errorMessage, logExcerpt, createdAt, updatedAt, completedAt }`.
 
-**Giới hạn tần suất trigger:** mỗi target có ngân sách hai tầng, 5 trigger mỗi 60 s và 30 mỗi 3600 s, khoá theo site và target (`apps/cms/src/services/deployment/trigger-rate-limit.ts`). Giới hạn áp cho mọi `triggerSource` (manual, flow, agent). Một auto trigger được gộp (coalesced) dùng lại build gần đây và không tiêu ngân sách. Khi backend của limiter không truy cập được thì trigger được cho qua (fail-open). Trigger bị từ chối không tạo dòng nào và trả về:
+**Giới hạn tần suất trigger:** mỗi target có ngân sách hai tầng, 5 trigger mỗi 60 s và 30 mỗi 3600 s, khoá theo site và target (`apps/cms/src/services/deployment/trigger-rate-limit.ts`). Giới hạn áp cho mọi `triggerSource` (`manual`, `auto`, `agent`). Một auto trigger được gộp (coalesced) dùng lại build gần đây và không tiêu ngân sách. Khi backend của limiter không truy cập được thì trigger được cho qua (fail-open). Trigger bị từ chối không tạo dòng nào và trả về:
 
 ```json
 {
