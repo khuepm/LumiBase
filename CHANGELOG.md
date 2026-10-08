@@ -11,6 +11,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 
+- Cloudflare Sentry upgrades to 11.x: remove the obsolete `enableLogs` option and explicitly retain the v10 data-collection baseline, so the upgrade does not enable user data, cookies, HTTP bodies, AI content, database query data, queue payloads, or GraphQL documents/variables. No environment changes are required.
+
 - Dependency updates unblock the production audit gate and align the Tauri JavaScript packages with their Rust crates. Security overrides are declared in both pnpm settings files; Vite and ws overrides now match the grouped dependency updates.
 
 - Next.js starters carry PostCSS security overrides for both npm and pnpm;

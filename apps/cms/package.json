@@ -35,7 +35,7 @@
     "@lumibase/database": "workspace:*",
     "@lumibase/runtime": "workspace:*",
     "@lumibase/sdk": "workspace:*",
-    "@sentry/cloudflare": "^10.75.0",
+    "@sentry/cloudflare": "^11.0.0",
     "drizzle-orm": "^0.45.3",
     "graphql": "^17.0.2",
     "graphql-yoga": "^5.24.1",
