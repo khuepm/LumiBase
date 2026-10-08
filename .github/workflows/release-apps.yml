@@ -154,7 +154,9 @@ jobs:
           releaseDraft: false
           prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-') }}
           # Emit + upload latest.json so tauri-plugin-updater can find updates.
-          includeUpdaterJson: true
+          # tauri-action@v1 renamed this input from `includeUpdaterJson`; the old
+          # name is reported as unsupported and silently ignored (#451).
+          uploadUpdaterJson: true
           args: ${{ matrix.args }} ${{ steps.bundles.outputs.args }}
 
   android:
