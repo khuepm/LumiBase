@@ -1,10 +1,10 @@
 ---
-version: 8
-lastUpdated: 2026-10-08T07:59:35.940Z
+version: 9
+lastUpdated: 2026-10-08T08:10:04.303Z
 sourceLang: en
-contentHash: ca62bfcced1bf7a1
-codeVerified: 2026-10-08T07:59:35.940Z
-codeVerifiedHash: ca62bfcced1bf7a1
+contentHash: 09f2a59d9751b976
+codeVerified: 2026-10-08T08:10:04.303Z
+codeVerifiedHash: 09f2a59d9751b976
 codeVerifiedClaims: 6
 ---
 
@@ -68,6 +68,7 @@ still agree.
 | `fast-uri` | `4.1.5` | [GHSA-qw65-cvwx-89v3](https://github.com/advisories/GHSA-qw65-cvwx-89v3) / [GHSA-58mr-gqgx-xq4g](https://github.com/advisories/GHSA-58mr-gqgx-xq4g) (high, fixed by the earlier `4.1.4` pin), then [GHSA-hrr3-gc8f-f4qj](https://github.com/advisories/GHSA-hrr3-gc8f-f4qj) / [GHSA-jvvf-x445-j334](https://github.com/advisories/GHSA-jvvf-x445-j334) (moderate), unpatched below `4.1.5`. Exact pin kept from the original fix. Reached through `ajv`. | `ajv` requires `fast-uri >=4.1.5`. |
 | `qs` | `^6.16.0` | [GHSA-x5fp-wj9c-mxmx](https://github.com/advisories/GHSA-x5fp-wj9c-mxmx) / [GHSA-4mjr-xmp4-gh2g](https://github.com/advisories/GHSA-4mjr-xmp4-gh2g) (moderate), unpatched below `6.16.0`. Reached through `express` in `packages/mcp-server`. | `express` (or `body-parser`) requires `qs >=6.16.0`. |
 | `ip-address` | `^10.7.3` | [GHSA-rpw4-54j3-4h4q](https://github.com/advisories/GHSA-rpw4-54j3-4h4q), [GHSA-2vr4-cq9g-pvrc](https://github.com/advisories/GHSA-2vr4-cq9g-pvrc), [GHSA-j6r3-76f7-8jcv](https://github.com/advisories/GHSA-j6r3-76f7-8jcv), [GHSA-h3mg-xc3c-68pw](https://github.com/advisories/GHSA-h3mg-xc3c-68pw) (moderate), unpatched below `10.7.1`. Reached through `express-rate-limit` in `packages/mcp-server`. | `express-rate-limit` requires `ip-address >=10.7.1`. |
+| `sharp` | `>=0.35.5` | [GHSA-wq5f-xc86-pv6w](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) — vulnerability in the bundled librsvg dependency (high), unpatched below `0.35.5`. Reached through `next` in `apps/consumer` and `apps/landing`, and through `wrangler` → `miniflare` in `apps/cms`. Raises the existing override floor so fresh installs cannot retain `0.35.4`. | `next` and `miniflare` require `sharp >=0.35.5`. Verify with `pnpm why -r sharp`. |
 | `@types/react` | `19.3.0` | **Not a security pin** — enforces React 19 types workspace-wide so Studio/Docs/Landing/`@lumibase/ui` typecheck against the same major as runtime React 19. | Drift between apps is no longer a concern, or the workspace splits React majors again intentionally. |
 | `@types/react-dom` | `19.3.0` | Same as `@types/react` — React 19 type consistency. Being an exact pin, it is also the second entry `pnpm drift:check` has caught: the minor-and-patch group bump raised `apps/{docs,landing,studio}` to `^19.2.7` while this pin stayed at `19.2.5`, so the lockfile importers still recorded `specifier: 19.2.5`. Raise the pin in step with the manifests. | Same as `@types/react`. |
 

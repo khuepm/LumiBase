@@ -1,13 +1,13 @@
 ---
-version: 8
-lastUpdated: 2026-10-08T07:59:35.940Z
+version: 9
+lastUpdated: 2026-10-08T08:10:04.303Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ca62bfcced1bf7a1
+sourceHash: 09f2a59d9751b976
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-08T07:59:35.940Z
-codeVerifiedHash: ca62bfcced1bf7a1
+codeVerified: 2026-10-08T08:10:04.303Z
+codeVerifiedHash: 09f2a59d9751b976
 codeVerifiedClaims: 6
 ---
 
@@ -69,6 +69,7 @@ resolution / patch hash mới, rồi `pnpm settings:check` để xác nhận hai
 | `fast-uri` | `4.1.5` | [GHSA-qw65-cvwx-89v3](https://github.com/advisories/GHSA-qw65-cvwx-89v3) / [GHSA-58mr-gqgx-xq4g](https://github.com/advisories/GHSA-58mr-gqgx-xq4g) (high, đã vá bằng lần pin `4.1.4` trước đó), sau đó [GHSA-hrr3-gc8f-f4qj](https://github.com/advisories/GHSA-hrr3-gc8f-f4qj) / [GHSA-jvvf-x445-j334](https://github.com/advisories/GHSA-jvvf-x445-j334) (moderate), chưa vá dưới `4.1.5`. Giữ kiểu pin chính xác từ lần vá đầu. Đi vào qua `ajv`. | `ajv` yêu cầu `fast-uri >=4.1.5`. |
 | `qs` | `^6.16.0` | [GHSA-x5fp-wj9c-mxmx](https://github.com/advisories/GHSA-x5fp-wj9c-mxmx) / [GHSA-4mjr-xmp4-gh2g](https://github.com/advisories/GHSA-4mjr-xmp4-gh2g) (moderate), chưa vá dưới `6.16.0`. Đi vào qua `express` trong `packages/mcp-server`. | `express` (hoặc `body-parser`) yêu cầu `qs >=6.16.0`. |
 | `ip-address` | `^10.7.3` | [GHSA-rpw4-54j3-4h4q](https://github.com/advisories/GHSA-rpw4-54j3-4h4q), [GHSA-2vr4-cq9g-pvrc](https://github.com/advisories/GHSA-2vr4-cq9g-pvrc), [GHSA-j6r3-76f7-8jcv](https://github.com/advisories/GHSA-j6r3-76f7-8jcv), [GHSA-h3mg-xc3c-68pw](https://github.com/advisories/GHSA-h3mg-xc3c-68pw) (moderate), chưa vá dưới `10.7.1`. Đi vào qua `express-rate-limit` trong `packages/mcp-server`. | `express-rate-limit` yêu cầu `ip-address >=10.7.1`. |
+| `sharp` | `>=0.35.5` | [GHSA-wq5f-xc86-pv6w](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) — lỗ hổng trong dependency librsvg đi kèm (high), chưa vá dưới `0.35.5`. Đi vào qua `next` trong `apps/consumer` và `apps/landing`, và qua `wrangler` → `miniflare` trong `apps/cms`. Nâng sàn override hiện có để cài mới không giữ lại `0.35.4`. | `next` và `miniflare` yêu cầu `sharp >=0.35.5`. Kiểm tra bằng `pnpm why -r sharp`. |
 | `@types/react` | `19.3.0` | **Không phải pin bảo mật** — ép React 19 types toàn workspace để Studio/Docs/Landing/`@lumibase/ui` typecheck cùng major với runtime React 19. | Trôi lệch giữa các app không còn là mối lo, hoặc workspace cố ý tách React major trở lại. |
 | `@types/react-dom` | `19.3.0` | Giống `@types/react` — nhất quán type React 19. Vì là pin chính xác, đây cũng là mục thứ hai `pnpm drift:check` bắt được: đợt bump nhóm minor-and-patch nâng `apps/{docs,landing,studio}` lên `^19.2.7` trong khi pin này vẫn ở `19.2.5`, nên importer trong lockfile vẫn ghi `specifier: 19.2.5`. Nâng pin cùng nhịp với manifest. | Giống `@types/react`. |
 
