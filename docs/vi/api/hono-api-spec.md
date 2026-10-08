@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 6
-lastUpdated: 2026-09-26T03:57:31.525Z
+version: 7
+lastUpdated: 2026-10-08T09:58:13.856Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b157d8705dab563a
+sourceHash: 36f0b0ea70864ea0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-26T03:57:31.525Z
-codeVerifiedHash: b157d8705dab563a
-codeVerifiedClaims: 384
+codeVerified: 2026-10-08T09:58:13.856Z
+codeVerifiedHash: 36f0b0ea70864ea0
+codeVerifiedClaims: 402
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -624,6 +624,83 @@ Authorization: Bearer <token>
     "runId": "run_def456",
     "status": "running",
     "startedAt": "2026-06-07T00:00:00Z"
+  }
+}
+```
+
+---
+
+## 7c. Deployments
+
+Deployment target theo site (Vercel / Netlify), kích hoạt deploy thủ công,
+trạng thái build và log (spec `deployment-integrations`). Mọi route trừ inbound
+webhook đều yêu cầu site admin (`requireSiteAdmin`): `400 TENANT_REQUIRED` khi
+không resolve được site, `403 FORBIDDEN` khi không có quyền admin. Token của
+Provider được mã hoá khi ghi và không bao giờ được trả về. Body được xác thực bằng
+`DeploymentTargetCreateSchema` / `DeploymentTargetUpdateSchema` /
+`DeployTriggerSchema` (`@lumibase/contracts`); parse lỗi trả về
+`400 VALIDATION`.
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `GET` | `/api/v1/deployments/targets` | Liệt kê target của site (bỏ các cột token) |
+| `POST` | `/api/v1/deployments/targets` | Tạo `{ provider (vercel\|netlify), name, projectId, token, defaultBranch?, productionUrl? }` → `201`. Token được kiểm với Provider trước khi lưu bất cứ thứ gì: `400 TOKEN_INVALID` |
+| `PATCH` | `/api/v1/deployments/targets/:id` | Cập nhật `{ name?, projectId?, token?, defaultBranch?, productionUrl?, status? (active\|inactive) }`. Có `token` thì token được kiểm lại và mã hoá lại (rotation). `404 NOT_FOUND`, `400 TOKEN_INVALID` |
+| `DELETE` | `/api/v1/deployments/targets/:id` | Xoá target (các deployment của nó bị xoá theo cascade) → `{ data: null }`. `404 NOT_FOUND` |
+| `POST` | `/api/v1/deployments/targets/:id/deploy` | Kích hoạt build `{ branch?, reason? }` → `201` kèm dòng deployment mới (`triggerSource: "manual"`). `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (gọi Provider thất bại; vẫn ghi một dòng `error`) |
+| `GET` | `/api/v1/deployments` | Liệt kê deployment, lọc `?targetId=&status=&limit=` (`limit` mặc định 50, tối đa 200; không có `meta`) |
+| `GET` | `/api/v1/deployments/:id` | Lấy một deployment. `404 NOT_FOUND` |
+| `GET` | `/api/v1/deployments/:id/logs` | Lấy build log từ Provider, đã che secret → `{ data: { log } }`. `404 NOT_FOUND` khi deployment chưa có id phía Provider |
+| `POST` | `/api/v1/deployments/:id/refresh` | Ép đồng bộ trạng thái từ Provider (không làm gì khi trạng thái đã là terminal). `404 NOT_FOUND` |
+
+Công khai (không có phiên; xác thực bằng chữ ký):
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `POST` | `/api/v1/deployments/webhook/:provider` | Inbound status webhook (`vercel` \| `netlify`). Tenant lấy từ `withTenant` (`X-Lumi-Site` hoặc host mapping). `404 UNKNOWN_PROVIDER`, `401 INVALID_SIGNATURE`; còn lại `200 { data: null }`, kể cả khi body không khớp deployment nào |
+
+**Shape của target** (`data` của các route target): `{ id, provider, name, projectId, defaultBranch, productionUrl, status, createdAt, updatedAt }`.
+
+**Shape của deployment** (`data` của các route deployment và của trigger): `{ id, siteId, targetId, provider, providerDeploymentId, status (queued|building|ready|error|canceled), branch, commitSha, commitMessage, url, triggeredBy, triggerSource (manual|auto|agent), errorMessage, logExcerpt, createdAt, updatedAt, completedAt }`.
+
+**Giới hạn tần suất trigger:** mỗi target có ngân sách hai tầng, 5 trigger mỗi 60 s và 30 mỗi 3600 s, khoá theo site và target (`apps/cms/src/services/deployment/trigger-rate-limit.ts`). Giới hạn áp cho mọi `triggerSource` (manual, flow, agent). Một auto trigger được gộp (coalesced) dùng lại build gần đây và không tiêu ngân sách. Khi backend của limiter không truy cập được thì trigger được cho qua (fail-open). Trigger bị từ chối không tạo dòng nào và trả về:
+
+```json
+{
+  "errors": [
+    {
+      "code": "RATE_LIMITED",
+      "message": "Too many deploy triggers for this target. Please try again later.",
+      "retryAfterSeconds": 42
+    }
+  ]
+}
+```
+
+kèm header `Retry-After: 42` tương ứng.
+
+**Chữ ký webhook:** secret là setting theo site `deployment.webhook.<provider>` (giá trị `{ "secret": "…" }`), không bao giờ lấy từ request header. Secret rỗng hoặc vắng thì mọi request bị từ chối (fail-closed). Vercel gửi `x-vercel-signature`, là HMAC-SHA1 dạng hex chữ thường của raw body. Netlify gửi `x-webhook-signature`, một JWS compact (HS256) có claim `sha256` phải bằng SHA-256 hex digest của raw body (JWS có payload chính là raw body cũng được chấp nhận). Cả hai phép so sánh đều thời gian hằng số.
+
+**Kích hoạt một deploy:**
+```bash
+POST /api/v1/deployments/targets/dpt_abc123/deploy
+Content-Type: application/json
+Authorization: Bearer <token>
+X-Lumi-Site: <siteId>
+
+{ "branch": "main", "reason": "Homepage copy update" }
+```
+
+**Response (`201`, rút gọn):**
+```json
+{
+  "data": {
+    "id": "dep_def456",
+    "targetId": "dpt_abc123",
+    "provider": "vercel",
+    "status": "queued",
+    "branch": "main",
+    "triggerSource": "manual"
   }
 }
 ```

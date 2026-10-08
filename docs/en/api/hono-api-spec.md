@@ -1,11 +1,11 @@
 ---
-version: 7
-lastUpdated: 2026-09-26T03:57:31.525Z
+version: 8
+lastUpdated: 2026-10-08T09:58:13.856Z
 sourceLang: en
-contentHash: b157d8705dab563a
-codeVerified: 2026-09-26T03:57:31.525Z
-codeVerifiedHash: b157d8705dab563a
-codeVerifiedClaims: 384
+contentHash: 36f0b0ea70864ea0
+codeVerified: 2026-10-08T09:58:13.856Z
+codeVerifiedHash: 36f0b0ea70864ea0
+codeVerifiedClaims: 402
 ---
 
 # Hono API Specification — LumiBase
@@ -733,6 +733,83 @@ Authorization: Bearer <token>
     "runId": "run_def456",
     "status": "running",
     "startedAt": "2026-06-07T00:00:00Z"
+  }
+}
+```
+
+---
+
+## 7c. Deployments
+
+Per-site deployment targets (Vercel / Netlify), manual deploy triggers, build
+status and logs (spec `deployment-integrations`). Every route except the inbound
+webhook requires site admin (`requireSiteAdmin`): `400 TENANT_REQUIRED` without a
+resolved site, `403 FORBIDDEN` without admin access. Provider tokens are encrypted
+on write and never returned. Bodies are validated with
+`DeploymentTargetCreateSchema` / `DeploymentTargetUpdateSchema` /
+`DeployTriggerSchema` (`@lumibase/contracts`); a failed parse returns
+`400 VALIDATION`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/deployments/targets` | List targets for the site (token columns omitted) |
+| `POST` | `/api/v1/deployments/targets` | Create `{ provider (vercel\|netlify), name, projectId, token, defaultBranch?, productionUrl? }` → `201`. The token is verified against the provider before anything is stored: `400 TOKEN_INVALID` |
+| `PATCH` | `/api/v1/deployments/targets/:id` | Update `{ name?, projectId?, token?, defaultBranch?, productionUrl?, status? (active\|inactive) }`. A `token` is re-verified and re-encrypted (rotation). `404 NOT_FOUND`, `400 TOKEN_INVALID` |
+| `DELETE` | `/api/v1/deployments/targets/:id` | Delete a target (its deployments cascade) → `{ data: null }`. `404 NOT_FOUND` |
+| `POST` | `/api/v1/deployments/targets/:id/deploy` | Trigger a build `{ branch?, reason? }` → `201` with the new deployment row (`triggerSource: "manual"`). `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (provider call failed; an `error` row is still recorded) |
+| `GET` | `/api/v1/deployments` | List deployments, filter `?targetId=&status=&limit=` (`limit` defaults to 50, capped at 200; no `meta`) |
+| `GET` | `/api/v1/deployments/:id` | Get one deployment. `404 NOT_FOUND` |
+| `GET` | `/api/v1/deployments/:id/logs` | Fetch the build log from the provider, secrets masked → `{ data: { log } }`. `404 NOT_FOUND` when the deployment has no provider id yet |
+| `POST` | `/api/v1/deployments/:id/refresh` | Force a status sync from the provider (no-op once the status is terminal). `404 NOT_FOUND` |
+
+Public (no session; signature-verified):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/deployments/webhook/:provider` | Inbound status webhook (`vercel` \| `netlify`). Tenant comes from `withTenant` (`X-Lumi-Site` or host mapping). `404 UNKNOWN_PROVIDER`, `401 INVALID_SIGNATURE`; otherwise `200 { data: null }`, including when the body matches no deployment |
+
+**Target shape** (`data` of the target routes): `{ id, provider, name, projectId, defaultBranch, productionUrl, status, createdAt, updatedAt }`.
+
+**Deployment shape** (`data` of the deployment routes and the trigger): `{ id, siteId, targetId, provider, providerDeploymentId, status (queued|building|ready|error|canceled), branch, commitSha, commitMessage, url, triggeredBy, triggerSource (manual|auto|agent), errorMessage, logExcerpt, createdAt, updatedAt, completedAt }`.
+
+**Trigger rate limit:** each target has a two-tier budget, 5 triggers per 60 s and 30 per 3600 s, keyed by site and target (`apps/cms/src/services/deployment/trigger-rate-limit.ts`). It applies to every `triggerSource` (manual, flow, agent). A coalesced auto trigger reuses a recent build and does not consume budget. When the limiter backend is unreachable the trigger is allowed (fail-open). A rejected trigger creates no row and returns:
+
+```json
+{
+  "errors": [
+    {
+      "code": "RATE_LIMITED",
+      "message": "Too many deploy triggers for this target. Please try again later.",
+      "retryAfterSeconds": 42
+    }
+  ]
+}
+```
+
+with a matching `Retry-After: 42` header.
+
+**Webhook signatures:** the secret is the per-site setting `deployment.webhook.<provider>` (value `{ "secret": "…" }`), never a request header. An empty or missing secret rejects every request (fail-closed). Vercel sends `x-vercel-signature`, the lowercase hex HMAC-SHA1 of the raw body. Netlify sends `x-webhook-signature`, a compact JWS (HS256) whose `sha256` claim must equal the SHA-256 hex digest of the raw body (a JWS whose payload is the raw body itself is also accepted). Both comparisons are constant-time.
+
+**Trigger a deploy:**
+```bash
+POST /api/v1/deployments/targets/dpt_abc123/deploy
+Content-Type: application/json
+Authorization: Bearer <token>
+X-Lumi-Site: <siteId>
+
+{ "branch": "main", "reason": "Homepage copy update" }
+```
+
+**Response (`201`, abridged):**
+```json
+{
+  "data": {
+    "id": "dep_def456",
+    "targetId": "dpt_abc123",
+    "provider": "vercel",
+    "status": "queued",
+    "branch": "main",
+    "triggerSource": "manual"
   }
 }
 ```

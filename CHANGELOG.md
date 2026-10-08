@@ -10,6 +10,11 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Fixed
+- **Deployments API documented in the API spec (B55).** `docs/{en,vi}/api/hono-api-spec.md`
+  gains section 7c covering `/api/v1/deployments/*`: target CRUD, manual trigger,
+  deployment list/detail/logs/refresh, the inbound webhook, the per-target
+  trigger rate limit (`429 RATE_LIMITED` + `Retry-After`) and webhook signature
+  verification (`401 INVALID_SIGNATURE`). Docs only; no API change.
 
 - Raise the `sharp` override floor to 0.35.5 for GHSA-wq5f-xc86-pv6w (high), fixing the bundled librsvg dependency used by Next.js and Miniflare.
 
