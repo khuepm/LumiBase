@@ -191,6 +191,7 @@ Trạng thái: `pending` (chưa làm) · `in-progress` · `done` (setup + backfi
 | 145 | (Next.js starter: PostCSS security overrides cho npm/pnpm; thêm cài thật + audit vào smoke CI) | Unreleased (sau v1.0.0-rc.4) | Không thay đổi seed, env/settings, policy/grant, wizard, capability hoặc migration/backfill. Shell: không đổi Studio/auth/API base. Project mới nhận override; project đã tạo cần cập nhật manifest và cài lại dependencies. | n/a | main | Kiểm tra 2026-09-29: npm/pnpm install + typecheck + audit pass, npm build pass. |
 
 | 147 | (Dependency maintenance: audit fixes, grouped patch/minor updates, đồng bộ Tauri NPM/Rust và Sentry 11 giữ baseline thu thập dữ liệu v10) | Unreleased (sau v1.0.0-rc.4) | Không đổi seed, env/settings, policy/grant, wizard, capability hoặc migration/backfill. Shell: chỉ nâng dependency, không đổi auth/API base. Instance nhận bản vá khi build/deploy lại. | n/a | main | Rà soát 2026-10-08; registry #146 dành cho PR #504. |
+| 148 | (#451: release-apps dùng input `uploadUpdaterJson` của `tauri-action@v1` thay cho `includeUpdaterJson` đã bị bỏ) | Unreleased (sau v1.0.0-rc.4) | Chỉ đổi workflow CI release desktop. Không đổi seed, env/settings, policy/grant, wizard, capability hoặc migration/backfill. Shell: không đổi Studio/auth/API base; bản desktop vẫn phát `latest.json` cho updater. | n/a | main | Rà soát 2026-10-08; input xác nhận trong `action.yml` của `tauri-apps/tauri-action@v1`. |
 
 ## Lưu ý backfill
 
