@@ -1,10 +1,10 @@
 ---
-version: 7
-lastUpdated: 2026-10-06T09:00:17.405Z
+version: 8
+lastUpdated: 2026-10-08T07:59:35.940Z
 sourceLang: en
-contentHash: a30e05516aff1409
-codeVerified: 2026-10-06T09:00:17.405Z
-codeVerifiedHash: a30e05516aff1409
+contentHash: ca62bfcced1bf7a1
+codeVerified: 2026-10-08T07:59:35.940Z
+codeVerifiedHash: ca62bfcced1bf7a1
 codeVerifiedClaims: 6
 ---
 
@@ -57,9 +57,9 @@ still agree.
 | `postcss` | `^8.5.26` | Security advisory (resolved via Dependabot). | All consumers require `>=8.5.26`. |
 | `nanoid@3` | `^3.3.17` | [GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8) — a custom generator loops indefinitely when `size` is zero, unpatched below `3.3.17` (high). Reached only transitively: `next` → `postcss` → `nanoid@3`. Scoped to the 3.x range so it cannot raise the floor for the 6.x line `apps/cms` and `packages/database` declare directly. | `postcss` (or whatever consumes it) requires `nanoid >=3.3.17`. Verify with `pnpm why nanoid`. |
 | `undici` | `^7.28.0` | Security advisory (resolved via Dependabot). | All consumers require `>=7.28.0`. |
-| `ws` | `^8.21.3` | Security advisory (resolved via Dependabot). Declared directly by `apps/cms` for the realtime surface. | `apps/cms` declares `>=8.21.3` itself. |
+| `ws` | `^8.22.0` | Security advisory (resolved via Dependabot). Declared directly by `apps/cms` for the realtime surface. | `apps/cms` declares `>=8.22.0` itself. |
 | `uuid` | `^14.0.1` | Version unification / advisory (resolved via Dependabot). Only one import site exists (`apps/cms/src/modules/audit/worker.ts`, `v7`), so the major carries little surface — but v12+ reshaped the package `exports` map, so bumping it needs a real bundle check, not just a typecheck. | Version drift across packages is no longer a concern. |
-| `vite` | `^8.2.0` | Unify on one Vite major and pull esbuild past the `0.28.1` RCE advisory. **This entry is why `pnpm drift:check` exists:** it sat at `^7.3.5` while `apps/studio` and `apps/docs` both declared `^8.1.3`, and because overrides apply to direct dependencies too, both apps were built with Vite 7 for as long as their manifests claimed Vite 8. Raise this in step with the manifests or the bump is cosmetic. | The workspace no longer needs a single forced Vite major. |
+| `vite` | `^8.3.2` | Unify on one Vite major and pull esbuild past the `0.28.1` RCE advisory. **This entry is why `pnpm drift:check` exists:** it sat at `^7.3.5` while `apps/studio` and `apps/docs` both declared `^8.1.3`, and because overrides apply to direct dependencies too, both apps were built with Vite 7 for as long as their manifests claimed Vite 8. Raise this in step with the manifests or the bump is cosmetic. | The workspace no longer needs a single forced Vite major. |
 | `brace-expansion@1` | `^1.1.16` | [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) — DoS via exponential-time expansion of consecutive non-expanding `{}` groups (high), backported to the 1.x line in `1.1.16`. **Dev-only** — reached through `minimatch@3` from ESLint and its plugins, so it never appears in `pnpm audit --prod`. Keyed per-major (same shape as the `nanoid@3` scope) because two incompatible majors coexist; see [Known-unfixable alerts](#known-unfixable-alerts) for why 1.x cannot be folded into 5.x. | Nothing in the tree resolves `minimatch@3` any more (`pnpm why brace-expansion -r`), at which point both `brace-expansion@*` rows collapse into one. |
 | `brace-expansion@5` | `^5.0.8` | [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) — DoS via unbounded expansion length causing an OOM process crash (high), patched in `5.0.8`. **Dev-only** — reached through `minimatch@10` from `glob`, `eslint`, `@typescript-eslint/typescript-estree`. Natural drift already lifted most of the tree to `5.0.9`, but `minimatch@10.2.5` still pinned a `5.0.7` copy; this floor removes that straggler. | Same as the `@1` row. |
 | `proxy-addr` | `^2.0.8` | [GHSA-jqcg-44mw-7w3h](https://github.com/advisories/GHSA-jqcg-44mw-7w3h) (critical), unpatched below `2.0.8`. Reached through `packages/mcp-server` → `@modelcontextprotocol/sdk` → `express@5.2.1`, which declares `^2.0.7`. | `express` requires `proxy-addr >=2.0.8`. Verify with `pnpm why -r proxy-addr`. |

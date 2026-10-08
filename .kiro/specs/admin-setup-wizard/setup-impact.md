@@ -190,6 +190,8 @@ Trạng thái: `pending` (chưa làm) · `in-progress` · `done` (setup + backfi
 
 | 145 | (Next.js starter: PostCSS security overrides cho npm/pnpm; thêm cài thật + audit vào smoke CI) | Unreleased (sau v1.0.0-rc.4) | Không thay đổi seed, env/settings, policy/grant, wizard, capability hoặc migration/backfill. Shell: không đổi Studio/auth/API base. Project mới nhận override; project đã tạo cần cập nhật manifest và cài lại dependencies. | n/a | main | Kiểm tra 2026-09-29: npm/pnpm install + typecheck + audit pass, npm build pass. |
 
+| 147 | (Dependency maintenance: audit fixes, grouped patch/minor updates và đồng bộ Tauri NPM/Rust) | Unreleased (sau v1.0.0-rc.4) | Không đổi seed, env/settings, policy/grant, wizard, capability hoặc migration/backfill. Shell: chỉ nâng dependency, không đổi auth/API base. Instance nhận bản vá khi build/deploy lại. | n/a | main | Rà soát 2026-10-08; registry #146 dành cho PR #504. |
+
 ## Lưu ý backfill
 
 Các gap #1–#3 ảnh hưởng cả instance **đã setup** — fix không chỉ nằm trong setup wizard mà cần kèm migration/backfill idempotent (`onConflictDoNothing`) hoặc giữ lazy-init làm fallback song song.

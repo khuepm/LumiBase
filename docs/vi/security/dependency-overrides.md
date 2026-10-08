@@ -1,13 +1,13 @@
 ---
-version: 7
-lastUpdated: 2026-10-06T09:00:17.405Z
+version: 8
+lastUpdated: 2026-10-08T07:59:35.940Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a30e05516aff1409
+sourceHash: ca62bfcced1bf7a1
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-06T09:00:17.405Z
-codeVerifiedHash: a30e05516aff1409
+codeVerified: 2026-10-08T07:59:35.940Z
+codeVerifiedHash: ca62bfcced1bf7a1
 codeVerifiedClaims: 6
 ---
 
@@ -58,9 +58,9 @@ resolution / patch hash mới, rồi `pnpm settings:check` để xác nhận hai
 | `postcss` | `^8.5.26` | Advisory bảo mật (đã xử lý qua Dependabot). | Mọi consumer yêu cầu `>=8.5.26`. |
 | `nanoid@3` | `^3.3.17` | [GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8) — generator tuỳ biến lặp vô hạn khi `size` bằng 0, chưa vá ở dưới `3.3.17` (high). Chỉ tới được gián tiếp: `next` → `postcss` → `nanoid@3`. Giới hạn trong range 3.x để không nâng sàn cho nhánh 6.x mà `apps/cms` và `packages/database` khai trực tiếp. | `postcss` (hoặc thứ tiêu thụ nó) yêu cầu `nanoid >=3.3.17`. Xác minh bằng `pnpm why nanoid`. |
 | `undici` | `^7.28.0` | Advisory bảo mật (đã xử lý qua Dependabot). | Mọi consumer yêu cầu `>=7.28.0`. |
-| `ws` | `^8.21.3` | Advisory bảo mật (đã xử lý qua Dependabot). Được `apps/cms` khai trực tiếp cho bề mặt realtime. | `apps/cms` tự khai `>=8.21.3`. |
+| `ws` | `^8.22.0` | Advisory bảo mật (đã xử lý qua Dependabot). Được `apps/cms` khai trực tiếp cho bề mặt realtime. | `apps/cms` tự khai `>=8.22.0`. |
 | `uuid` | `^14.0.1` | Hợp nhất phiên bản / advisory (đã xử lý qua Dependabot). Chỉ có **một** chỗ import (`apps/cms/src/modules/audit/worker.ts`, `v7`) nên major này mang rất ít bề mặt — nhưng v12+ đã sắp xếp lại `exports` map của package, nên bump nó cần kiểm tra bundle thật, không chỉ typecheck. | Trôi lệch phiên bản giữa các package không còn là mối lo. |
-| `vite` | `^8.2.0` | Hợp nhất về một major Vite và kéo esbuild vượt advisory RCE `0.28.1`. **Chính entry này là lý do `pnpm drift:check` tồn tại:** nó đứng ở `^7.3.5` trong khi `apps/studio` và `apps/docs` đều khai `^8.1.3`, và vì override áp cả cho direct dependency, hai app build bằng Vite 7 suốt thời gian manifest tuyên bố Vite 8. Nâng entry này cùng nhịp với manifest, không thì cú bump chỉ là hình thức. | Workspace không còn cần ép một major Vite duy nhất. |
+| `vite` | `^8.3.2` | Hợp nhất về một major Vite và kéo esbuild vượt advisory RCE `0.28.1`. **Chính entry này là lý do `pnpm drift:check` tồn tại:** nó đứng ở `^7.3.5` trong khi `apps/studio` và `apps/docs` đều khai `^8.1.3`, và vì override áp cả cho direct dependency, hai app build bằng Vite 7 suốt thời gian manifest tuyên bố Vite 8. Nâng entry này cùng nhịp với manifest, không thì cú bump chỉ là hình thức. | Workspace không còn cần ép một major Vite duy nhất. |
 | `brace-expansion@1` | `^1.1.16` | [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) — DoS do expansion thời gian mũ với các nhóm `{}` không expand liên tiếp (high), được backport về nhánh 1.x ở `1.1.16`. **Chỉ dev** — đi vào qua `minimatch@3` từ ESLint và các plugin, nên không bao giờ xuất hiện trong `pnpm audit --prod`. Key theo major (cùng dạng với scope `nanoid@3`) vì hai major không tương thích cùng tồn tại; xem [Advisory không vá được](#advisory-không-vá-được) để biết vì sao không gộp 1.x vào 5.x được. | Không còn gì trong cây resolve `minimatch@3` (`pnpm why brace-expansion -r`), lúc đó hai dòng `brace-expansion@*` gộp lại làm một. |
 | `brace-expansion@5` | `^5.0.8` | [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) — DoS do độ dài expansion không giới hạn gây crash OOM tiến trình (high), vá ở `5.0.8`. **Chỉ dev** — đi vào qua `minimatch@10` từ `glob`, `eslint`, `@typescript-eslint/typescript-estree`. Dependency trôi tự nhiên đã kéo phần lớn cây lên `5.0.9`, nhưng `minimatch@10.2.5` vẫn giữ một bản `5.0.7`; sàn này dọn nốt bản sót đó. | Giống dòng `@1`. |
 | `proxy-addr` | `^2.0.8` | [GHSA-jqcg-44mw-7w3h](https://github.com/advisories/GHSA-jqcg-44mw-7w3h) (critical), chưa vá dưới `2.0.8`. Đi vào qua `packages/mcp-server` → `@modelcontextprotocol/sdk` → `express@5.2.1`, vốn khai `^2.0.7`. | `express` yêu cầu `proxy-addr >=2.0.8`. Kiểm tra bằng `pnpm why -r proxy-addr`. |
