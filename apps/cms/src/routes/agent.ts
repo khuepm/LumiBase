@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import {
   activity,
   agentApprovals,
@@ -231,7 +232,7 @@ agentRouter.patch('/roles/:name', async (c) => {
   if (!(await canManageRoles(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Managing agent roles requires an admin.' }] }, 403);
   }
-  const parsed = roleBodySchema.partial().omit({ name: true }).safeParse(await c.req.json().catch(() => null));
+  const parsed = patchSchema(roleBodySchema.omit({ name: true })).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
     return validationError(c, parsed.error);
   }

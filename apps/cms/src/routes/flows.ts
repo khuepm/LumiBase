@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 /**
  * Flows routes — POST-GA3.
  *
@@ -231,7 +232,7 @@ flowsRouter.patch('/:id', async (c) => {
   const siteId = c.get('siteId');
   const db = c.get('db');
   const id = c.req.param('id');
-  const parsed = flowSchema.partial().safeParse(await c.req.json());
+  const parsed = patchSchema(flowSchema).safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json(
       { errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) },

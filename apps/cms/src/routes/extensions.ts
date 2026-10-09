@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import { extensions } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -221,7 +222,7 @@ extensionsRouter.patch('/:id', adminOnly, async (c) => {
   const id = c.req.param('id');
   const siteId = c.get('siteId');
   const db = c.get('db');
-  const input = extensionSchema.partial().parse(await c.req.json());
+  const input = patchSchema(extensionSchema).parse(await c.req.json());
   for (const action of patchActions(input)) {
     const denied = await requireExtensionPermission(c, action);
     if (denied) return denied;
@@ -233,6 +234,7 @@ extensionsRouter.patch('/:id', adminOnly, async (c) => {
     .where(and(eq(extensions.siteId, siteId), eq(extensions.id, id)))
     .limit(1);
   if (!current) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
+  if (Object.keys(input).length === 0) return c.json({ data: current });
 
   // Enabling an official extension whose signature does not currently verify is
   // refused (fail-closed). `verifiedAt` is the persisted proof of a prior check.
