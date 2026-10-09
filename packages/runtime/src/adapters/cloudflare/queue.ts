@@ -37,6 +37,10 @@ export class CloudflareQueueProvider implements QueueProvider {
 
   constructor(private queues: Record<string, CloudflareQueue>) {}
 
+  supportsQueue(queueName: string): boolean {
+    return Boolean(this.queues[queueName]);
+  }
+
   async enqueue<T>(
     queueName: string,
     jobName: string,

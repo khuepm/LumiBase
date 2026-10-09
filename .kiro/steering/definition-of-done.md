@@ -10,6 +10,11 @@ Checklist bắt buộc trước khi đánh dấu một feature spec là hoàn th
 - [ ] `pnpm test` pass; feature có unit test cho logic chính
 - [ ] Tuân thủ non-negotiable rules trong `CLAUDE.md` (nanoid/uuidv7, `site_id`, runtime abstraction, HITL, response format)
 
+- [ ] PATCH chỉ giữ field caller gửi: dùng `patchSchema` trong routes/services;
+  không gọi `.partial()` trực tiếp trên schema tạo mới. Zod 4 vẫn áp default cho
+  field bị bỏ qua (B85/B86), từng nới autonomy và reset cấu hình. Gate:
+  `utils/__tests__/patch-schema.test.ts` + `routes/__tests__/patch-omission.test.ts`.
+
 ## 2. Setup impact — BẮT BUỘC RÀ SOÁT
 
 > Đây là bước hay bị bỏ sót nhất. Admin setup wizard đã từng tụt hậu nhiều phiên bản so với tính năng mới.

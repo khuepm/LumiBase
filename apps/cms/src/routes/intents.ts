@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
@@ -87,7 +88,7 @@ intentsRouter.post('/', async (c) => {
 
 intentsRouter.patch('/:id', async (c) => {
   if (!canWriteIntents(c)) return forbidden(c);
-  const parsed = intentInputSchema.partial().safeParse(await c.req.json().catch(() => null));
+  const parsed = patchSchema(intentInputSchema).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return handleError(c, parsed.error);
   try {
     const data = await service(c).update(c.req.param('id'), parsed.data);

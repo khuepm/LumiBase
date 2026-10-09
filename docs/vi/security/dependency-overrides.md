@@ -1,13 +1,13 @@
 ---
-version: 7
-lastUpdated: 2026-10-06T09:00:17.405Z
+version: 9
+lastUpdated: 2026-10-08T08:10:04.303Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a30e05516aff1409
+sourceHash: 09f2a59d9751b976
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-06T09:00:17.405Z
-codeVerifiedHash: a30e05516aff1409
+codeVerified: 2026-10-08T08:10:04.303Z
+codeVerifiedHash: 09f2a59d9751b976
 codeVerifiedClaims: 6
 ---
 
@@ -58,9 +58,9 @@ resolution / patch hash mới, rồi `pnpm settings:check` để xác nhận hai
 | `postcss` | `^8.5.26` | Advisory bảo mật (đã xử lý qua Dependabot). | Mọi consumer yêu cầu `>=8.5.26`. |
 | `nanoid@3` | `^3.3.17` | [GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8) — generator tuỳ biến lặp vô hạn khi `size` bằng 0, chưa vá ở dưới `3.3.17` (high). Chỉ tới được gián tiếp: `next` → `postcss` → `nanoid@3`. Giới hạn trong range 3.x để không nâng sàn cho nhánh 6.x mà `apps/cms` và `packages/database` khai trực tiếp. | `postcss` (hoặc thứ tiêu thụ nó) yêu cầu `nanoid >=3.3.17`. Xác minh bằng `pnpm why nanoid`. |
 | `undici` | `^7.28.0` | Advisory bảo mật (đã xử lý qua Dependabot). | Mọi consumer yêu cầu `>=7.28.0`. |
-| `ws` | `^8.21.3` | Advisory bảo mật (đã xử lý qua Dependabot). Được `apps/cms` khai trực tiếp cho bề mặt realtime. | `apps/cms` tự khai `>=8.21.3`. |
+| `ws` | `^8.22.0` | Advisory bảo mật (đã xử lý qua Dependabot). Được `apps/cms` khai trực tiếp cho bề mặt realtime. | `apps/cms` tự khai `>=8.22.0`. |
 | `uuid` | `^14.0.1` | Hợp nhất phiên bản / advisory (đã xử lý qua Dependabot). Chỉ có **một** chỗ import (`apps/cms/src/modules/audit/worker.ts`, `v7`) nên major này mang rất ít bề mặt — nhưng v12+ đã sắp xếp lại `exports` map của package, nên bump nó cần kiểm tra bundle thật, không chỉ typecheck. | Trôi lệch phiên bản giữa các package không còn là mối lo. |
-| `vite` | `^8.2.0` | Hợp nhất về một major Vite và kéo esbuild vượt advisory RCE `0.28.1`. **Chính entry này là lý do `pnpm drift:check` tồn tại:** nó đứng ở `^7.3.5` trong khi `apps/studio` và `apps/docs` đều khai `^8.1.3`, và vì override áp cả cho direct dependency, hai app build bằng Vite 7 suốt thời gian manifest tuyên bố Vite 8. Nâng entry này cùng nhịp với manifest, không thì cú bump chỉ là hình thức. | Workspace không còn cần ép một major Vite duy nhất. |
+| `vite` | `^8.3.2` | Hợp nhất về một major Vite và kéo esbuild vượt advisory RCE `0.28.1`. **Chính entry này là lý do `pnpm drift:check` tồn tại:** nó đứng ở `^7.3.5` trong khi `apps/studio` và `apps/docs` đều khai `^8.1.3`, và vì override áp cả cho direct dependency, hai app build bằng Vite 7 suốt thời gian manifest tuyên bố Vite 8. Nâng entry này cùng nhịp với manifest, không thì cú bump chỉ là hình thức. | Workspace không còn cần ép một major Vite duy nhất. |
 | `brace-expansion@1` | `^1.1.16` | [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) — DoS do expansion thời gian mũ với các nhóm `{}` không expand liên tiếp (high), được backport về nhánh 1.x ở `1.1.16`. **Chỉ dev** — đi vào qua `minimatch@3` từ ESLint và các plugin, nên không bao giờ xuất hiện trong `pnpm audit --prod`. Key theo major (cùng dạng với scope `nanoid@3`) vì hai major không tương thích cùng tồn tại; xem [Advisory không vá được](#advisory-không-vá-được) để biết vì sao không gộp 1.x vào 5.x được. | Không còn gì trong cây resolve `minimatch@3` (`pnpm why brace-expansion -r`), lúc đó hai dòng `brace-expansion@*` gộp lại làm một. |
 | `brace-expansion@5` | `^5.0.8` | [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) — DoS do độ dài expansion không giới hạn gây crash OOM tiến trình (high), vá ở `5.0.8`. **Chỉ dev** — đi vào qua `minimatch@10` từ `glob`, `eslint`, `@typescript-eslint/typescript-estree`. Dependency trôi tự nhiên đã kéo phần lớn cây lên `5.0.9`, nhưng `minimatch@10.2.5` vẫn giữ một bản `5.0.7`; sàn này dọn nốt bản sót đó. | Giống dòng `@1`. |
 | `proxy-addr` | `^2.0.8` | [GHSA-jqcg-44mw-7w3h](https://github.com/advisories/GHSA-jqcg-44mw-7w3h) (critical), chưa vá dưới `2.0.8`. Đi vào qua `packages/mcp-server` → `@modelcontextprotocol/sdk` → `express@5.2.1`, vốn khai `^2.0.7`. | `express` yêu cầu `proxy-addr >=2.0.8`. Kiểm tra bằng `pnpm why -r proxy-addr`. |
@@ -69,6 +69,7 @@ resolution / patch hash mới, rồi `pnpm settings:check` để xác nhận hai
 | `fast-uri` | `4.1.5` | [GHSA-qw65-cvwx-89v3](https://github.com/advisories/GHSA-qw65-cvwx-89v3) / [GHSA-58mr-gqgx-xq4g](https://github.com/advisories/GHSA-58mr-gqgx-xq4g) (high, đã vá bằng lần pin `4.1.4` trước đó), sau đó [GHSA-hrr3-gc8f-f4qj](https://github.com/advisories/GHSA-hrr3-gc8f-f4qj) / [GHSA-jvvf-x445-j334](https://github.com/advisories/GHSA-jvvf-x445-j334) (moderate), chưa vá dưới `4.1.5`. Giữ kiểu pin chính xác từ lần vá đầu. Đi vào qua `ajv`. | `ajv` yêu cầu `fast-uri >=4.1.5`. |
 | `qs` | `^6.16.0` | [GHSA-x5fp-wj9c-mxmx](https://github.com/advisories/GHSA-x5fp-wj9c-mxmx) / [GHSA-4mjr-xmp4-gh2g](https://github.com/advisories/GHSA-4mjr-xmp4-gh2g) (moderate), chưa vá dưới `6.16.0`. Đi vào qua `express` trong `packages/mcp-server`. | `express` (hoặc `body-parser`) yêu cầu `qs >=6.16.0`. |
 | `ip-address` | `^10.7.3` | [GHSA-rpw4-54j3-4h4q](https://github.com/advisories/GHSA-rpw4-54j3-4h4q), [GHSA-2vr4-cq9g-pvrc](https://github.com/advisories/GHSA-2vr4-cq9g-pvrc), [GHSA-j6r3-76f7-8jcv](https://github.com/advisories/GHSA-j6r3-76f7-8jcv), [GHSA-h3mg-xc3c-68pw](https://github.com/advisories/GHSA-h3mg-xc3c-68pw) (moderate), chưa vá dưới `10.7.1`. Đi vào qua `express-rate-limit` trong `packages/mcp-server`. | `express-rate-limit` yêu cầu `ip-address >=10.7.1`. |
+| `sharp` | `>=0.35.5` | [GHSA-wq5f-xc86-pv6w](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) — lỗ hổng trong dependency librsvg đi kèm (high), chưa vá dưới `0.35.5`. Đi vào qua `next` trong `apps/consumer` và `apps/landing`, và qua `wrangler` → `miniflare` trong `apps/cms`. Nâng sàn override hiện có để cài mới không giữ lại `0.35.4`. | `next` và `miniflare` yêu cầu `sharp >=0.35.5`. Kiểm tra bằng `pnpm why -r sharp`. |
 | `@types/react` | `19.3.0` | **Không phải pin bảo mật** — ép React 19 types toàn workspace để Studio/Docs/Landing/`@lumibase/ui` typecheck cùng major với runtime React 19. | Trôi lệch giữa các app không còn là mối lo, hoặc workspace cố ý tách React major trở lại. |
 | `@types/react-dom` | `19.3.0` | Giống `@types/react` — nhất quán type React 19. Vì là pin chính xác, đây cũng là mục thứ hai `pnpm drift:check` bắt được: đợt bump nhóm minor-and-patch nâng `apps/{docs,landing,studio}` lên `^19.2.7` trong khi pin này vẫn ở `19.2.5`, nên importer trong lockfile vẫn ghi `specifier: 19.2.5`. Nâng pin cùng nhịp với manifest. | Giống `@types/react`. |
 
