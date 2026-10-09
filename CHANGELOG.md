@@ -19,6 +19,10 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   deployment; see `docs/en/features/async-agent-runs.md`. No database migration.
 
 
+- Desktop release workflow passes `uploadUpdaterJson` to `tauri-action@v1`.
+  The old `includeUpdaterJson` input was reported as unsupported and ignored,
+  so `latest.json` for the in-app updater depended on the action's default (#451).
+
 - Raise the `sharp` override floor to 0.35.5 for GHSA-wq5f-xc86-pv6w (high), fixing the bundled librsvg dependency used by Next.js and Miniflare.
 
 - Cloudflare Sentry upgrades to 11.x: remove the obsolete `enableLogs` option and explicitly retain the v10 data-collection baseline, so the upgrade does not enable user data, cookies, HTTP bodies, AI content, database query data, queue payloads, or GraphQL documents/variables. No environment changes are required.
