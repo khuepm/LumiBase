@@ -10,6 +10,14 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Fixed
+- **P1 governance and async execution (B85, B86, B92, B10).** PATCH validates only
+  supplied fields without resetting intent autonomy/budgets, webhook configuration,
+  flows or extensions. Async goals retain their budget through queue execution,
+  including older jobs via the stored run budget. Cloudflare now binds and consumes
+  `agent-runs` with provider parity, individual acknowledgement/retry, dead-letter
+  queues and stale-run quarantine. Provision the environment-specific queue before
+  deployment; see `docs/en/features/async-agent-runs.md`. No database migration.
+
 
 - Raise the `sharp` override floor to 0.35.5 for GHSA-wq5f-xc86-pv6w (high), fixing the bundled librsvg dependency used by Next.js and Miniflare.
 
