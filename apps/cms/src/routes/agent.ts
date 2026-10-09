@@ -112,13 +112,13 @@ agentRouter.post('/goals', async (c) => {
       );
     }
     // No queue adapter → explicit error; sync execution remains available (Req 3.3).
-    if (!queue) {
+    if (!queue || queue.supportsQueue?.(AGENT_RUNS_QUEUE) === false) {
       return c.json(
         {
           errors: [
             {
               code: 'ASYNC_UNAVAILABLE',
-              message: 'Async execution requires a queue adapter; this runtime has none. Use execution: "sync".',
+              message: 'Async execution requires the agent-runs queue binding. Use execution: "sync".',
             },
           ],
         },
@@ -154,6 +154,7 @@ agentRouter.post('/goals', async (c) => {
       goalId: goal!.id,
       runId: run.runId,
       skillName: parsed.data.task!.skillName,
+      budget: parsed.data.budget,
       arguments: parsed.data.task!.arguments,
       // A principal reference, NOT a capability snapshot (#472). The worker
       // re-resolves the grant when it picks the job up, so a role change or a

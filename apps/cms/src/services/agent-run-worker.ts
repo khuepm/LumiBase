@@ -211,6 +211,13 @@ export async function processAgentRunJob(
   // whose payload never carried `assigneeAgent`.
   const persistedRun = await runService.getRun(payload.runId);
   const agentName = persistedRun?.agentName ?? payload.agentRole ?? undefined;
+  // Older async producers stored the budget but omitted it from the job (B92).
+  const savedBudget = persistedRun?.budget;
+  const budget = payload.budget ?? (
+    savedBudget && typeof savedBudget === 'object' && !Array.isArray(savedBudget)
+      ? savedBudget as Record<string, unknown>
+      : undefined
+  );
 
   const schemaService = new SchemaService({
     db: deps.db,
@@ -279,7 +286,7 @@ export async function processAgentRunJob(
           : {}),
         ...(agentName ? { agentName } : {}),
         ...(payload.agentRole ? { agentRole: payload.agentRole } : {}),
-        ...(payload.budget ? { budget: payload.budget } : {}),
+        ...(budget ? { budget } : {}),
         // Provenance for anything this run parks (#472). A queued run has no
         // human principal, so the authority is the agent role the intent routed
         // to — re-resolved when a human approves, which is what makes disabling
@@ -308,10 +315,8 @@ export async function processAgentRunJob(
 /**
  * Registers the agent-runs consumer on a long-lived runtime (Docker/Node).
  *
- * Cloudflare Workers would wire the same handler through a `queue()` consumer
- * export instead of `process()` — that export does not exist yet, so async
- * runs are Node/Docker-only for now (backlog `B9`). Whoever adds it must pass
- * `keys` (`createCloudflareKeyProvider(env)`) alongside the other providers.
+ * Cloudflare uses cloudflare-agent-queue.ts to call processAgentRunJob from
+ * its queue() export, with the same cache/search/queue/keys providers.
  */
 export function registerAgentRunWorker(deps: AgentRunWorkerDeps): void {
   deps.queue?.process<AgentRunJobPayload>(AGENT_RUNS_QUEUE, async (job) => {

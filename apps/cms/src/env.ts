@@ -9,6 +9,8 @@ import type { RuntimeContext } from '@lumibase/runtime';
  * - MEDIA: R2 bucket for asset storage.
  */
 export interface Bindings {
+  /** Producer for governed asynchronous agent runs. */
+  AGENT_RUNS_QUEUE?: Queue;
   HYPERDRIVE?: Hyperdrive;
   /** @deprecated Use `c.get('runtime').cache` (CacheProvider) instead of accessing KV directly. */
   CONFIG_CACHE?: KVNamespace;
