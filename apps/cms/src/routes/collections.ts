@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
@@ -50,7 +51,7 @@ const collectionInputSchema = z.object({
   meta: z.record(z.string(), z.unknown()).optional(),
 });
 
-const collectionPatchSchema = collectionInputSchema.partial().omit({ name: true });
+const collectionPatchSchema = patchSchema(collectionInputSchema.omit({ name: true }));
 
 const fieldInputSchema = z.object({
   name: z
@@ -91,9 +92,7 @@ const fieldInputSchema = z.object({
   confirmRiskyChange: z.boolean().optional(),
 });
 
-const schemaInputSchema = collectionInputSchema
-  .partial()
-  .extend({
+const schemaInputSchema = patchSchema(collectionInputSchema.extend({
     fields: z.array(fieldInputSchema).optional(),
     relations: z.array(z.object({
       manyCollection: z.string().min(1),
@@ -110,7 +109,7 @@ const schemaInputSchema = collectionInputSchema
       onDelete: z.enum(['restrict', 'cascade', 'set null', 'no action']).optional(),
       meta: z.record(z.string(), z.unknown()).optional(),
     })).optional(),
-  });
+  }));
 
 const buildService = (c: Context<AppEnv>) => {
   const auth = c.get('auth');

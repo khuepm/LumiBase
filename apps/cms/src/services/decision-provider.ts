@@ -310,7 +310,10 @@ export class SystemOneDecisionProvider implements DecisionProvider {
 
     const data: unknown = await res.json().catch(() => null);
     if (!isRecord(data)) {
-      throw new DecisionProviderError('DECISION_PARSE_FAILED', `${this.name} returned a non-JSON body.`);
+      throw new DecisionProviderError(
+        'DECISION_PARSE_FAILED',
+        `${this.name} returned a non-JSON body.`,
+      );
     }
     const usage = isRecord(data.usage) ? data.usage : {};
 
@@ -367,13 +370,15 @@ export class LLMDecisionProvider implements DecisionProvider {
   }
 
   async decide(request: DecisionRequest): Promise<DecisionResponse> {
-    const response = await this.llm.chat([
-      { role: 'system', content: LLM_DECISION_PROMPT },
-      {
-        role: 'user',
-        content: `STATE:\n${JSON.stringify(request.state)}\n\nQUESTIONS:\n${JSON.stringify(request.questions)}`,
-      },
-    ]);
+    const response = await this.llm.chat(
+      [
+        {
+          role: 'user',
+          content: `STATE:\n${JSON.stringify(request.state)}\n\nQUESTIONS:\n${JSON.stringify(request.questions)}`,
+        },
+      ],
+      { systemPrompt: LLM_DECISION_PROMPT, tools: false },
+    );
 
     const parsed = response.content ? extractJsonObject(response.content) : null;
     if (!isRecord(parsed)) {
@@ -439,7 +444,9 @@ export interface ConfiguredDecisionProvider {
  * configured. There is deliberately no stub fallback: a fabricated decision is
  * worse than a loud DECISION_NOT_CONFIGURED.
  */
-export function createDecisionProvider(env: DecisionProviderEnv): ConfiguredDecisionProvider | null {
+export function createDecisionProvider(
+  env: DecisionProviderEnv,
+): ConfiguredDecisionProvider | null {
   const name = env.DECISION_PROVIDER;
 
   switch (name) {
@@ -477,7 +484,11 @@ export function createDecisionProvider(env: DecisionProviderEnv): ConfiguredDeci
       const llm = createConfiguredLLMProvider(env);
       if (!llm) return null;
       const model = `${llm.name}:${llm.model}`;
-      return { name, model, provider: new LLMDecisionProvider(llm.provider, model) };
+      return {
+        name,
+        model,
+        provider: new LLMDecisionProvider(llm.provider, model),
+      };
     }
 
     default:

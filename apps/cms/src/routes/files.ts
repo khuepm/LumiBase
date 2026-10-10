@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import { files, folders } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -76,7 +77,7 @@ filesRouter.patch('/folders/:id', async (c) => {
   const id = c.req.param('id');
   const siteId = c.get('siteId');
   const db = c.get('db');
-  const input = folderSchema.partial().parse(await c.req.json());
+  const input = patchSchema(folderSchema).parse(await c.req.json());
 
   const [row] = await db
     .update(folders)
@@ -145,7 +146,7 @@ filesRouter.patch('/:id', async (c) => {
   const id = c.req.param('id');
   const siteId = c.get('siteId');
   const db = c.get('db');
-  const input = fileCreateSchema.partial().parse(await c.req.json());
+  const input = patchSchema(fileCreateSchema).parse(await c.req.json());
 
   const [row] = await db
     .update(files)

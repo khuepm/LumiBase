@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-28T20:16:00.287Z",
+  "generatedAt": "2026-10-10T04:08:02.134Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 150,
+    "upToDate": 152,
     "planned": 0
   },
   "actions": [
@@ -961,6 +961,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/async-agent-runs.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/bookmarks-presets.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1154,6 +1166,18 @@
     },
     {
       "rel": "features/git-integration.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/governed-write-parity.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",

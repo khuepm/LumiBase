@@ -10,6 +10,27 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Fixed
+- **P2 queue recovery and governed write parity (B93, B87).** Queue submission
+  failures settle only unclaimed runs, preserve masked tasks for explicit retries,
+  and expire stale queued runs across origins. Flow, extension and CDC skills now
+  share REST validation, signature/permission checks, scheduling, cache invalidation
+  and audit behavior. No migration. See `docs/en/features/governed-write-parity.md`
+  and `docs/en/features/async-agent-runs.md`.
+
+- **P1 governance and async execution (B85, B86, B92, B10).** PATCH validates only
+  supplied fields without resetting intent autonomy/budgets, webhook configuration,
+  flows or extensions. Async goals retain their budget through queue execution,
+  including older jobs via the stored run budget. Cloudflare now binds and consumes
+  `agent-runs` with provider parity, individual acknowledgement/retry, dead-letter
+  queues and stale-run quarantine. Provision the environment-specific queue before
+  deployment; see `docs/en/features/async-agent-runs.md`. No database migration.
+
+
+- Raise the `sharp` override floor to 0.35.5 for GHSA-wq5f-xc86-pv6w (high), fixing the bundled librsvg dependency used by Next.js and Miniflare.
+
+- Cloudflare Sentry upgrades to 11.x: remove the obsolete `enableLogs` option and explicitly retain the v10 data-collection baseline, so the upgrade does not enable user data, cookies, HTTP bodies, AI content, database query data, queue payloads, or GraphQL documents/variables. No environment changes are required.
+
+- Dependency updates unblock the production audit gate and align the Tauri JavaScript packages with their Rust crates. Security overrides are declared in both pnpm settings files; Vite and ws overrides now match the grouped dependency updates.
 
 - Decision providers reject missing, malformed or out-of-range answers and invalid
   probability distributions with `DECISION_PARSE_FAILED`, instead of turning them

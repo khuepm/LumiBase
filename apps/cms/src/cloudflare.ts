@@ -19,6 +19,7 @@ import * as Sentry from '@sentry/cloudflare';
 import { createDb } from '@lumibase/database';
 import { createCloudflareRuntime } from '@lumibase/runtime';
 import app from './index';
+import { processCloudflareAgentQueue } from './cloudflare-agent-queue';
 import type { Bindings } from './env';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
@@ -54,6 +55,8 @@ import { withWorkerRuntimeDefault } from './worker-runtime-default';
 export default Sentry.withSentry(
   (env: Bindings) => resolveSentryOptions(env),
   {
+  queue: processCloudflareAgentQueue,
+
   fetch: (request: Request, env: Bindings, ctx: ExecutionContext) =>
     app.fetch(request, withWorkerRuntimeDefault(env), ctx),
 
@@ -116,6 +119,13 @@ export default Sentry.withSentry(
             err instanceof Error ? err.message : String(err),
           );
         }),
+    );
+
+    // Quarantine executions interrupted by a Worker eviction; never replay writes.
+    ctx.waitUntil(
+      import('./services/agent-run-service')
+        .then(({ sweepStaleRuns }) => sweepStaleRuns({ db }))
+        .catch(() => console.error('[agent-run-sweep] failed')),
     );
 
     if (controller.cron === '0 * * * *') {

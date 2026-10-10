@@ -1192,55 +1192,10 @@ describe('G2 repro · the two transports are separate contracts', () => {
     // KHÔNG đề xuất delete+recreate làm workaround cho update (yêu cầu R2).
   });
 
-  it('R18: thay marketplace install bằng generic registration làm MẤT gate/default/provenance (probe cặp)', async () => {
-    /**
-     * Sửa theo yêu cầu **R1** của review vòng 8.
-     *
-     * Bản trước gọi đây là "bỏ qua verify chữ ký" nhưng chỉ assert sự tồn tại +
-     * description của skill ⇒ **không phải bằng chứng đo được**. Reviewer đã đọc
-     * đủ hai đường và xác nhận rủi ro là **có căn cứ nhưng có điều kiện**:
-     *
-     *   `routes/marketplace.ts:543-622` — kiểm `extensions:install`, resolve slug
-     *   thành listing global đã publish, gọi `ExtensionVerifierService
-     *   .verifyByMetadata`, chặn khi `requireSignature && !verdict.ok`, chặn
-     *   reserved `lumibase-*` không có official signature, rồi mới insert; đồng
-     *   thời bảo toàn signature/provenance/marketplaceSlug, derive
-     *   `isOfficial`/`verifiedAt` **ở server**, dùng `enabledByDefault`, khởi tạo
-     *   `capabilities: []`.
-     *
-     *   `ai-harness.ts:1740` → `extensions-service.ts:42` — generic registration
-     *   nhận metadata **do caller cấp** và insert; **không** marketplace lookup,
-     *   **không** verifier, và cho caller cấp `capabilities`.
-     *
-     * PHÁT BIỂU ĐÚNG (không phải "bypass đã thành công"): *nếu* một adapter
-     * resolve đủ metadata rồi thay marketplace install bằng generic registration
-     * thì **mất** các check/default/provenance đó. Bản thân slug-only sẽ **fail**
-     * vì thiếu tham số bắt buộc, nên đây **không** phải bypass chạy được, và
-     * **không** suy ra "đã chạy được unsigned code" — kiểm crypto là việc riêng.
-     *
-     * Probe dưới đây đo **nửa generic registration**: metadata đầy đủ do caller
-     * cấp thì insert **không** đi qua verifier nào. Nửa marketplace (invalid
-     * verdict ⇒ reject + zero insert) thuộc route marketplace, ngoài hai file
-     * repro được cấp, nên ghi là source-backed thay vì tự mở scope.
-     */
-    /**
-     * SỬA THEO F1. Bản trước gắn `verifyByMetadata` vào một **object giả** rồi
-     * assert bộ đếm bằng 0 — nhưng verifier thật là `ExtensionVerifierService`,
-     * một class khác, và `ExtensionsService` thật KHÔNG hề có method đó. Nên
-     * assertion ấy là **tautology**: nó đúng bất kể production làm gì. Kiểm âm
-     * đã chứng minh — thêm verification + ép provenance vào
-     * `ExtensionsService.installExtension` thật, test vẫn XANH.
-     *
-     * Bản này đo đường thật:
-     *   - `ExtensionsService` **thật** (không mock), trên db recorder;
-     *   - spy vào `ExtensionVerifierService.prototype.verifyByMetadata` — verifier
-     *     **thật** — nên nếu service thật bắt đầu verify thì spy sẽ bắt được;
-     *   - đọc giá trị **thực sự đi vào `db.insert().values()`**, không phải args
-     *     mà caller truyền.
-     *
-     * Nhờ đó: thêm verifier vào đường generic ⇒ đỏ ở bộ đếm; ép
-     * `capabilities: []` ⇒ đỏ; derive `isOfficial`/`verifiedAt` server-side ⇒ đỏ.
-     */
+  it('R: generic extension registration fails closed without principal context (B87)', async () => {
+    // Marketplace slug installation remains a separate contract. Generic
+    // registration now shares REST signature/permission gates; an unwired
+    // principal must never reach either verification or persistence.
     const verifierSpy = vi.spyOn(ExtensionVerifierService.prototype, 'verifyByMetadata');
 
     const inserts: Array<{ table: string; values: Record<string, unknown> }> = [];
@@ -1272,7 +1227,7 @@ describe('G2 repro · the two transports are separate contracts', () => {
     // Caller tự cấp TOÀN BỘ metadata, gồm cả `capabilities` — thứ mà đường
     // marketplace luôn khởi tạo `[]` ở server.
     const outcome = await harness.runSkill('installExtension', {
-      key: 'evil-panel',
+      key: 'evil_panel',
       name: 'evil-panel',
       version: '1.0.0',
       type: 'panel',
@@ -1282,25 +1237,10 @@ describe('G2 repro · the two transports are separate contracts', () => {
       capabilities: ['items:write', 'schema:write'],
     });
 
-    expect(outcome.success).toBe(true);
-
-    // Hàng THẬT mà service thật ghi xuống `extensions`.
-    const extRows = inserts.filter((i) => i.table === getTableName(extensions));
-    expect(extRows, 'service thật phải insert đúng 1 hàng extensions').toHaveLength(1);
-    const row = extRows[0]!.values;
-
-    // ĐO ĐƯỢC 1: verifier THẬT không được gọi ở đâu trên đường generic.
+    // B87: the shared service now refuses unscoped callers before any write.
+    expect(outcome.success).toBe(false);
+    expect(inserts).toEqual([]);
     expect(verifierSpy).not.toHaveBeenCalled();
-    expect(verifierSpy.mock.calls).toHaveLength(0);
-
-    // ĐO ĐƯỢC 2: capabilities do CALLER quyết định — server KHÔNG ép `[]`.
-    expect(row['capabilities']).toEqual(['items:write', 'schema:write']);
-
-    // ĐO ĐƯỢC 3: không trường provenance nào của marketplace được dựng, nên
-    // trust không thể derive ở server như đường marketplace làm.
-    for (const field of ['marketplaceSlug', 'verifiedAt', 'isOfficial', 'signature', 'publisherKeyId']) {
-      expect(row[field], `${field} không được dựng ở đường generic`).toBeUndefined();
-    }
 
     verifierSpy.mockRestore();
 

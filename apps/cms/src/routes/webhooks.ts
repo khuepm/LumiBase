@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import { webhooks } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -43,7 +44,14 @@ webhooksRouter.patch('/:id', async (c) => {
   const id = c.req.param('id');
   const siteId = c.get('siteId');
   const db = c.get('db');
-  const input = webhookSchema.partial().parse(await c.req.json());
+  const input = patchSchema(webhookSchema).parse(await c.req.json());
+  if (Object.keys(input).length === 0) {
+    const [row] = await db.select().from(webhooks)
+      .where(and(eq(webhooks.siteId, siteId), eq(webhooks.id, id))).limit(1);
+    if (!row) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
+    return c.json({ data: row });
+  }
+
 
   const [row] = await db
     .update(webhooks)

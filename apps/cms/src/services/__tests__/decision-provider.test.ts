@@ -149,6 +149,97 @@ describe('SystemOneDecisionProvider', () => {
     });
   });
 
+  it.each([null, {}, { noul: 'bad' }, { type: 'score', score: 2 }])(
+    'rejects malformed noul answers: %j',
+    async (spam) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          jsonResponse({
+            ...upstreamBody,
+            answers: { ...upstreamBody.answers, spam },
+          }),
+        ),
+      );
+      await expect(
+        new SystemOneDecisionProvider({ apiKey: 'k' }).decide(request),
+      ).rejects.toMatchObject({ code: 'DECISION_PARSE_FAILED' });
+    },
+  );
+
+  it.each([null, {}, { score: 'bad' }, { type: 'noul', noul: 0.5 }])(
+    'rejects malformed score answers: %j',
+    async (quality) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          jsonResponse({
+            ...upstreamBody,
+            answers: { ...upstreamBody.answers, quality },
+          }),
+        ),
+      );
+      await expect(
+        new SystemOneDecisionProvider({ apiKey: 'k' }).decide(request),
+      ).rejects.toMatchObject({ code: 'DECISION_PARSE_FAILED' });
+    },
+  );
+
+  it.each(['constructor', 'toString', '__proto__'])(
+    'rejects inherited option %s',
+    async (choice) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          jsonResponse({
+            ...upstreamBody,
+            answers: { ...upstreamBody.answers, topic: { choice } },
+          }),
+        ),
+      );
+      await expect(
+        new SystemOneDecisionProvider({ apiKey: 'k' }).decide(request),
+      ).rejects.toMatchObject({ code: 'DECISION_PARSE_FAILED' });
+    },
+  );
+
+  it('accepts an explicitly declared constructor option with finite confidence', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          answers: { topic: { type: 'choice', choice: 'constructor', probabilities: { constructor: 0.8, news: 0.2 }, confidence: 0.8 } },
+        }),
+      ),
+    );
+    const result = await new SystemOneDecisionProvider({ apiKey: 'k' }).decide({
+      state: 'x',
+      questions: {
+        topic: {
+          type: 'choice',
+          instructions: 'Pick',
+          criteria: { constructor: null, news: null },
+        },
+      },
+    });
+    expect(result.answers.topic).toEqual({
+      type: 'choice',
+      choice: 'constructor',
+      probabilities: { constructor: 0.8, news: 0.2 },
+      confidence: 0.8,
+    });
+  });
+
+  it('rejects missing answers even when their key exists on Object.prototype', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ answers: {} })));
+    await expect(
+      new SystemOneDecisionProvider({ apiKey: 'k' }).decide({
+        state: 'x',
+        questions: { constructor: request.questions.spam! },
+      }),
+    ).rejects.toMatchObject({ code: 'DECISION_PARSE_FAILED' });
+  });
+
   it('uses the OpenRouter base URL without a trailing slash', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(upstreamBody));
     vi.stubGlobal('fetch', fetchMock);
@@ -302,6 +393,15 @@ describe('LLMDecisionProvider', () => {
   function llmReturning(content: string | null): LLMProvider {
     return { chat: vi.fn().mockResolvedValue({ content, toolCalls: [] }) };
   }
+
+  it('uses decision instructions without exposing Copilot tools', async () => {
+    const llm = llmReturning(JSON.stringify(upstreamBody));
+    await new LLMDecisionProvider(llm, 'm').decide(request);
+    expect(llm.chat).toHaveBeenCalledWith([expect.objectContaining({ role: 'user' })], {
+      systemPrompt: expect.stringContaining('structured decision engine'),
+      tools: false,
+    });
+  });
 
   it('parses valid fenced JSON and fills the rubric legend', async () => {
     const content =

@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import { teams, teamMembers } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -70,7 +71,7 @@ teamsRouter.patch('/:id', async (c) => {
   const siteId = c.get('siteId');
   const db = c.get('db');
   const body = await c.req.json();
-  const input = teamSchema.partial().parse(body);
+  const input = patchSchema(teamSchema).parse(body);
 
   const [row] = await db
     .update(teams)

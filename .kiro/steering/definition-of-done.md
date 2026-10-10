@@ -13,6 +13,10 @@ Checklist bắt buộc trước khi đánh dấu một feature spec là hoàn th
 > Jev #508: missing numeric answers previously became zero-valued decisions. AI output validation must fail explicitly before any caller can treat a malformed response as evidence.
 
 - [ ] **AI upstream output:** validate required own fields, finite/ranged values and complete probability distributions at the shared provider boundary. Invalid answers must return an explicit error; no default/clamp into a decision. Add provider and route regressions plus probability boundary/property tests.
+- [ ] PATCH chỉ giữ field caller gửi: dùng `patchSchema` trong routes/services;
+  không gọi `.partial()` trực tiếp trên schema tạo mới. Zod 4 vẫn áp default cho
+  field bị bỏ qua (B85/B86), từng nới autonomy và reset cấu hình. Gate:
+  `utils/__tests__/patch-schema.test.ts` + `routes/__tests__/patch-omission.test.ts`.
 
 ## 2. Setup impact — BẮT BUỘC RÀ SOÁT
 

@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import {
   activity,
   agentApprovals,
@@ -16,7 +17,7 @@ import { AgentArtifactService } from '../services/agent-artifact-service';
 import { AgentEvaluationService } from '../services/agent-evaluation-service';
 import { AgentMemoryService } from '../services/agent-memory-service';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
-import { AgentRunService, type RetryRunRefusalCode } from '../services/agent-run-service';
+import { maskSecrets, AgentRunService, type RetryRunRefusalCode } from '../services/agent-run-service';
 import { CORE_SKILLS } from '../services/ai-harness';
 import {
   principalRefFromAuth,
@@ -111,13 +112,13 @@ agentRouter.post('/goals', async (c) => {
       );
     }
     // No queue adapter → explicit error; sync execution remains available (Req 3.3).
-    if (!queue) {
+    if (!queue || queue.supportsQueue?.(AGENT_RUNS_QUEUE) === false) {
       return c.json(
         {
           errors: [
             {
               code: 'ASYNC_UNAVAILABLE',
-              message: 'Async execution requires a queue adapter; this runtime has none. Use execution: "sync".',
+              message: 'Async execution requires the agent-runs queue binding. Use execution: "sync".',
             },
           ],
         },
@@ -135,6 +136,7 @@ agentRouter.post('/goals', async (c) => {
     assigneeAgent: parsed.data.assigneeAgent,
     priority: parsed.data.priority,
     successCriteria: parsed.data.successCriteria,
+    ...(parsed.data.execution === 'async' ? { metadata: { asyncTask: maskSecrets(parsed.data.task) } } : {}),
   }).returning();
 
   if (parsed.data.execution === 'async') {
@@ -153,6 +155,7 @@ agentRouter.post('/goals', async (c) => {
       goalId: goal!.id,
       runId: run.runId,
       skillName: parsed.data.task!.skillName,
+      budget: parsed.data.budget,
       arguments: parsed.data.task!.arguments,
       // A principal reference, NOT a capability snapshot (#472). The worker
       // re-resolves the grant when it picks the job up, so a role change or a
@@ -161,7 +164,14 @@ agentRouter.post('/goals', async (c) => {
       userId: auth.userId ?? null,
       contextMessage: parsed.data.description,
     };
-    await queue!.enqueue(AGENT_RUNS_QUEUE, 'execute', payload);
+    try {
+      await queue!.enqueue(AGENT_RUNS_QUEUE, 'execute', payload);
+    } catch {
+      // A transport can accept a job and then lose the acknowledgement. Only
+      // settle an unclaimed row; never overwrite a worker's actual outcome.
+      await runService.failQueuedRun(run.runId, 'enqueue_failed');
+      return c.json({ errors: [{ code: 'ENQUEUE_FAILED', message: 'The run could not be queued. Retry this run after queue recovery.', goalId: goal!.id, runId: run.runId }] }, 503);
+    }
     return c.json({ data: { goal, runId: run.runId, status: 'queued' } }, 202);
   }
 
@@ -231,7 +241,7 @@ agentRouter.patch('/roles/:name', async (c) => {
   if (!(await canManageRoles(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Managing agent roles requires an admin.' }] }, 403);
   }
-  const parsed = roleBodySchema.partial().omit({ name: true }).safeParse(await c.req.json().catch(() => null));
+  const parsed = patchSchema(roleBodySchema.omit({ name: true })).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
     return validationError(c, parsed.error);
   }

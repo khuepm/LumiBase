@@ -94,6 +94,18 @@ crons = ["0 * * * *", "*/5 * * * *"]
 # binding = "REALTIME_QUEUE"
 # queue = "lumibase-realtime"
 
+
+[[queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-local"
+
+[[queues.consumers]]
+queue = "lumibase-agent-runs-local"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-local-dlq"
+
 # ─── Environment Profiles ────────────────────────────────────────────────────
 # Top-level [vars] is intentionally local/development only. Named environments
 # below repeat their non-sensitive vars and bindings because Wrangler treats
@@ -186,6 +198,18 @@ new_sqlite_classes = ["PageviewCounter"]
 # binding = "MEDIA"
 # bucket_name = "lumibase-media-staging"
 
+
+[[env.staging.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-staging"
+
+[[env.staging.queues.consumers]]
+queue = "lumibase-agent-runs-staging"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-staging-dlq"
+
 [env.staging.triggers]
 crons = ["0 * * * *", "*/5 * * * *"]
 
@@ -277,6 +301,18 @@ bucket_name = "lumibase-media"
 binding = "REALTIME_QUEUE"
 queue = "lumibase-realtime"
 
+
+[[env.production.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-production"
+
+[[env.production.queues.consumers]]
+queue = "lumibase-agent-runs-production"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-production-dlq"
+
 [env.production.triggers]
 crons = ["0 * * * *", "*/5 * * * *"]
 
@@ -327,6 +363,18 @@ new_sqlite_classes = ["SiteRoom"]
 [[env.dev.migrations]]
 tag = "v2"
 new_sqlite_classes = ["PageviewCounter"]
+
+
+[[env.dev.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-dev"
+
+[[env.dev.queues.consumers]]
+queue = "lumibase-agent-runs-dev"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-dev-dlq"
 
 [env.dev.triggers]
 crons = ["0 * * * *", "*/5 * * * *"]
@@ -379,6 +427,18 @@ new_sqlite_classes = ["SiteRoom"]
 [[env.demo.migrations]]
 tag = "v2"
 new_sqlite_classes = ["PageviewCounter"]
+
+
+[[env.demo.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-demo"
+
+[[env.demo.queues.consumers]]
+queue = "lumibase-agent-runs-demo"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-demo-dlq"
 
 [env.demo.triggers]
 crons = ["0 * * * *", "*/5 * * * *"]

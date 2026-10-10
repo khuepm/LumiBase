@@ -1,8 +1,9 @@
 import type { Database } from '@lumibase/database';
 import { aiMessages } from '@lumibase/database';
-import type { KeyProvider } from '@lumibase/runtime';
+import type { CacheProvider, KeyProvider } from '@lumibase/runtime';
 import { asc, eq } from 'drizzle-orm';
 import { AISecureHarness } from './ai-harness';
+import { ExtensionsService } from './extensions-service';
 import { EffectiveCapabilityService } from './effective-capability-service';
 import { resolvePrincipalCapabilities } from './governed-capabilities';
 import { itemServiceForPrincipal, itemServiceForSystem } from './item-service-factory';
@@ -22,6 +23,7 @@ export async function executeAiChatRun(
   job: AiChatRunJob,
   keys?: KeyProvider,
   env?: Record<string, string | undefined>,
+  cache?: CacheProvider,
 ): Promise<void> {
   await markRunRunning(db, job.runId, job.siteId);
   const envRecord = env ?? {};
@@ -106,8 +108,14 @@ export async function executeAiChatRun(
       siteId: job.siteId,
       schemaService,
       itemService,
+      extensionsService: new ExtensionsService({
+        db, siteId: job.siteId, userId: job.userId, cache,
+        permissionCtx: capabilities.permissionContext,
+        env: { ...envRecord, LUMIBASE_ENV: envRecord.LUMIBASE_ENV ?? 'production' },
+      }),
       llm: createConfiguredLLMProvider(envRecord),
       keys,
+      cache,
     });
 
     const result = capabilities.allowed

@@ -1,6 +1,7 @@
 import type { Database } from '@lumibase/database';
 import type { CacheProvider, KeyProvider, QueueProvider, SearchProvider } from '@lumibase/runtime';
 import { AISecureHarness } from './ai-harness';
+import { ExtensionsService } from './extensions-service';
 import { AgentRunService } from './agent-run-service';
 import {
   EffectiveCapabilityService,
@@ -211,6 +212,13 @@ export async function processAgentRunJob(
   // whose payload never carried `assigneeAgent`.
   const persistedRun = await runService.getRun(payload.runId);
   const agentName = persistedRun?.agentName ?? payload.agentRole ?? undefined;
+  // Older async producers stored the budget but omitted it from the job (B92).
+  const savedBudget = persistedRun?.budget;
+  const budget = payload.budget ?? (
+    savedBudget && typeof savedBudget === 'object' && !Array.isArray(savedBudget)
+      ? savedBudget as Record<string, unknown>
+      : undefined
+  );
 
   const schemaService = new SchemaService({
     db: deps.db,
@@ -232,18 +240,6 @@ export async function processAgentRunJob(
     'background-worker',
   );
 
-  const harness = new AISecureHarness({
-    db: deps.db,
-    siteId: payload.siteId,
-    schemaService,
-    itemService,
-    llm: createConfiguredLLMProvider(deps.env),
-    queue: deps.queue,
-    // Deployment skills need the KeyProvider to decrypt target tokens; a
-    // queued run must be able to do exactly what the sync path does.
-    keys: deps.keys,
-  });
-
   // Capabilities are resolved HERE, not at enqueue (#472). A queued job can sit
   // for minutes; re-reading the grant at pickup is what makes a revoked API key
   // or a demoted user take effect on work that was already accepted.
@@ -256,6 +252,24 @@ export async function processAgentRunJob(
     );
     return;
   }
+
+  const harness = new AISecureHarness({
+    db: deps.db,
+    siteId: payload.siteId,
+    schemaService,
+    itemService,
+    extensionsService: new ExtensionsService({
+      db: deps.db, siteId: payload.siteId, userId: payload.userId,
+      permissionCtx: capabilities.permissionContext, cache: deps.cache,
+      env: { ...deps.env, LUMIBASE_ENV: deps.env?.LUMIBASE_ENV ?? 'production' },
+    }),
+    llm: createConfiguredLLMProvider(deps.env),
+    queue: deps.queue,
+    // Deployment skills need the KeyProvider to decrypt target tokens; a
+    // queued run must be able to do exactly what the sync path does.
+    keys: deps.keys,
+    cache: deps.cache,
+  });
 
   try {
     const result = await harness.execute(
@@ -279,7 +293,7 @@ export async function processAgentRunJob(
           : {}),
         ...(agentName ? { agentName } : {}),
         ...(payload.agentRole ? { agentRole: payload.agentRole } : {}),
-        ...(payload.budget ? { budget: payload.budget } : {}),
+        ...(budget ? { budget } : {}),
         // Provenance for anything this run parks (#472). A queued run has no
         // human principal, so the authority is the agent role the intent routed
         // to — re-resolved when a human approves, which is what makes disabling
@@ -308,10 +322,8 @@ export async function processAgentRunJob(
 /**
  * Registers the agent-runs consumer on a long-lived runtime (Docker/Node).
  *
- * Cloudflare Workers would wire the same handler through a `queue()` consumer
- * export instead of `process()` — that export does not exist yet, so async
- * runs are Node/Docker-only for now (backlog `B9`). Whoever adds it must pass
- * `keys` (`createCloudflareKeyProvider(env)`) alongside the other providers.
+ * Cloudflare uses cloudflare-agent-queue.ts to call processAgentRunJob from
+ * its queue() export, with the same cache/search/queue/keys providers.
  */
 export function registerAgentRunWorker(deps: AgentRunWorkerDeps): void {
   deps.queue?.process<AgentRunJobPayload>(AGENT_RUNS_QUEUE, async (job) => {
