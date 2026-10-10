@@ -136,8 +136,8 @@ function clamp01(value: number): number {
 }
 
 function toProbabilities(value: unknown): Record<string, number> {
-  if (!isRecord(value)) return {};
-  const out: Record<string, number> = {};
+  const out: Record<string, number> = Object.create(null);
+  if (!isRecord(value)) return out;
   for (const [key, raw] of Object.entries(value)) {
     if (typeof raw === 'number' && Number.isFinite(raw)) out[key] = clamp01(raw);
   }
@@ -164,7 +164,19 @@ function isRetryableStatus(status: number): boolean {
  * declared type so a malformed upstream answer cannot change the contract.
  */
 function normalizeAnswer(question: DecisionQuestion, raw: unknown): DecisionAnswer {
-  const answer = isRecord(raw) ? raw : {};
+  if (!isRecord(raw) || (raw.type !== undefined && raw.type !== question.type)) {
+    throw new DecisionProviderError('DECISION_PARSE_FAILED', 'Answer has an invalid type.');
+  }
+  const answer = raw;
+  if (question.type === 'noul' || question.type === 'score') {
+    const value = answer[question.type];
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new DecisionProviderError(
+        'DECISION_PARSE_FAILED',
+        `Answer is missing a numeric ${question.type}.`,
+      );
+    }
+  }
 
   switch (question.type) {
     case 'noul':
@@ -172,7 +184,7 @@ function normalizeAnswer(question: DecisionQuestion, raw: unknown): DecisionAnsw
 
     case 'choice': {
       const choice = typeof answer.choice === 'string' ? answer.choice : '';
-      if (!(choice in question.criteria)) {
+      if (!Object.hasOwn(question.criteria, choice)) {
         throw new DecisionProviderError(
           'DECISION_PARSE_FAILED',
           `Answer chose an unknown option "${choice}".`,
@@ -204,9 +216,9 @@ function normalizeAnswers(
   rawAnswers: unknown,
 ): Record<string, DecisionAnswer> {
   const answers = isRecord(rawAnswers) ? rawAnswers : {};
-  const out: Record<string, DecisionAnswer> = {};
+  const out: Record<string, DecisionAnswer> = Object.create(null);
   for (const [key, question] of Object.entries(request.questions)) {
-    if (!(key in answers)) {
+    if (!Object.hasOwn(answers, key)) {
       throw new DecisionProviderError('DECISION_PARSE_FAILED', `Missing answer for "${key}".`);
     }
     out[key] = normalizeAnswer(question, answers[key]);
@@ -292,7 +304,10 @@ export class SystemOneDecisionProvider implements DecisionProvider {
 
     const data: unknown = await res.json().catch(() => null);
     if (!isRecord(data)) {
-      throw new DecisionProviderError('DECISION_PARSE_FAILED', `${this.name} returned a non-JSON body.`);
+      throw new DecisionProviderError(
+        'DECISION_PARSE_FAILED',
+        `${this.name} returned a non-JSON body.`,
+      );
     }
     const usage = isRecord(data.usage) ? data.usage : {};
 
@@ -349,13 +364,15 @@ export class LLMDecisionProvider implements DecisionProvider {
   }
 
   async decide(request: DecisionRequest): Promise<DecisionResponse> {
-    const response = await this.llm.chat([
-      { role: 'system', content: LLM_DECISION_PROMPT },
-      {
-        role: 'user',
-        content: `STATE:\n${JSON.stringify(request.state)}\n\nQUESTIONS:\n${JSON.stringify(request.questions)}`,
-      },
-    ]);
+    const response = await this.llm.chat(
+      [
+        {
+          role: 'user',
+          content: `STATE:\n${JSON.stringify(request.state)}\n\nQUESTIONS:\n${JSON.stringify(request.questions)}`,
+        },
+      ],
+      { systemPrompt: LLM_DECISION_PROMPT, tools: false },
+    );
 
     const parsed = response.content ? extractJsonObject(response.content) : null;
     if (!isRecord(parsed)) {
@@ -408,7 +425,9 @@ export interface ConfiguredDecisionProvider {
  * configured. There is deliberately no stub fallback: a fabricated decision is
  * worse than a loud DECISION_NOT_CONFIGURED.
  */
-export function createDecisionProvider(env: DecisionProviderEnv): ConfiguredDecisionProvider | null {
+export function createDecisionProvider(
+  env: DecisionProviderEnv,
+): ConfiguredDecisionProvider | null {
   const name = env.DECISION_PROVIDER;
 
   switch (name) {
@@ -446,7 +465,11 @@ export function createDecisionProvider(env: DecisionProviderEnv): ConfiguredDeci
       const llm = createConfiguredLLMProvider(env);
       if (!llm) return null;
       const model = `${llm.name}:${llm.model}`;
-      return { name, model, provider: new LLMDecisionProvider(llm.provider, model) };
+      return {
+        name,
+        model,
+        provider: new LLMDecisionProvider(llm.provider, model),
+      };
     }
 
     default:
