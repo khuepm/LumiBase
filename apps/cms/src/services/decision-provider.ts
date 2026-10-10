@@ -109,6 +109,12 @@ export interface DecisionResponse {
 export interface DecisionCallOptions {
   /** Cancels the decision; no retry is attempted after it aborts. */
   signal?: AbortSignal;
+  /**
+   * Called right before each upstream request is sent, retries included, so
+   * a caller can account for attempts that failed or timed out. Not called
+   * for a request rejected locally (cancelled, over the input budget).
+   */
+  onAttempt?: () => void;
 }
 
 export interface DecisionProvider {
@@ -498,6 +504,8 @@ export class SystemOneDecisionProvider implements DecisionProvider {
       const remaining = deadlineAt - this.now();
       if (remaining <= 0) throw timeoutError(this.limits.deadlineMs);
 
+      throwIfCancelled(signal);
+      options.onAttempt?.();
       const outcome = await this.attempt(body, Math.min(this.limits.attemptTimeoutMs, remaining), signal);
       if (outcome.kind === 'ok') return this.parse(request, outcome.data);
 
@@ -652,6 +660,7 @@ export class LLMDecisionProvider implements DecisionProvider {
     options.signal?.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(abort, this.limits.deadlineMs);
     let response: LLMResponse;
+    options.onAttempt?.();
     try {
       response = await withDeadline(
         this.llm.chat(
@@ -738,7 +747,7 @@ export interface DecisionProviderEnv extends LLMProviderEnv {
   DECISION_MAX_INPUT_TOKENS?: string;
 }
 
-function readBound(raw: string | undefined, fallback: number, min: number, max: number, name: string): number {
+export function readBound(raw: string | undefined, fallback: number, min: number, max: number, name: string): number {
   if (raw === undefined || raw.trim() === '') return fallback;
   const value = Number(raw);
   if (!Number.isInteger(value) || value < min || value > max) {
@@ -768,6 +777,8 @@ export interface ConfiguredDecisionProvider {
   name: string;
   /** Resolved model identifier. */
   model: string;
+  /** Bounds the provider enforces; governance reserves quota against them. */
+  limits: DecisionLimits;
 }
 
 /**
@@ -788,6 +799,7 @@ export function createDecisionProvider(
       return {
         name,
         model,
+        limits,
         provider: new SystemOneDecisionProvider({
           apiKey: env.TYPESAFE_API_KEY,
           model,
@@ -804,6 +816,7 @@ export function createDecisionProvider(
       return {
         name,
         model,
+        limits,
         provider: new SystemOneDecisionProvider({
           apiKey: env.OPENROUTER_API_KEY,
           model,
@@ -821,6 +834,7 @@ export function createDecisionProvider(
       return {
         name,
         model,
+        limits,
         provider: new LLMDecisionProvider(llm.provider, model, limits),
       };
     }

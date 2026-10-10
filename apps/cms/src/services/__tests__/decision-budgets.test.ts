@@ -384,6 +384,42 @@ describe('LLM fallback bounds', () => {
   });
 });
 
+describe('attempt reporting (#511)', () => {
+  it('reports every upstream attempt, retries included, so governance can charge them', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+    const onAttempt = vi.fn();
+
+    await settle(new SystemOneDecisionProvider({ apiKey: 'k', limits: { maxRetries: 2 } }).decide(request, { onAttempt }));
+
+    expect(onAttempt).toHaveBeenCalledTimes(3);
+  });
+
+  it('reports nothing for a request rejected before any fetch', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const onAttempt = vi.fn();
+    const controller = new AbortController();
+    controller.abort();
+
+    await settle(new SystemOneDecisionProvider({ apiKey: 'k' }).decide(request, { signal: controller.signal, onAttempt }));
+    await settle(
+      new SystemOneDecisionProvider({ apiKey: 'k', limits: { maxInputTokens: 5 } }).decide(request, { onAttempt }),
+    );
+
+    expect(onAttempt).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reports one attempt for the LLM path, which retries in its own layer', async () => {
+    const llm: LLMProvider = { chat: vi.fn(() => new Promise<LLMResponse>(() => {})) };
+    const onAttempt = vi.fn();
+
+    await settle(new LLMDecisionProvider(llm, 'openai:gpt', { deadlineMs: 1_000 }).decide(request, { onAttempt }));
+
+    expect(onAttempt).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('configuration', () => {
   it('reads bounds from env and falls back on invalid values', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
