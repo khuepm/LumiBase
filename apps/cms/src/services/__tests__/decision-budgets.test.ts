@@ -10,7 +10,7 @@ import {
   parseRetryAfter,
   type DecisionRequest,
 } from '../decision-provider';
-import type { LLMProvider } from '../llm-provider';
+import type { LLMProvider, LLMResponse } from '../llm-provider';
 
 /**
  * #509 (J02): deadline, per-attempt timeout, cancellation, bounded retries and
@@ -240,7 +240,7 @@ describe('retry policy', () => {
       .mockResolvedValueOnce(new Response('', { status: 503 }))
       .mockResolvedValueOnce(ok());
     vi.stubGlobal('fetch', fetchMock);
-    const sleep = vi.fn(async () => {});
+    const sleep = vi.fn(async (_ms: number) => {});
 
     await new SystemOneDecisionProvider({ apiKey: 'k', retryBaseMs: 1_000, sleep, random: () => 0.5 }).decide(request);
 
@@ -348,7 +348,7 @@ describe('input budget', () => {
 
 describe('LLM fallback bounds', () => {
   function hangingLLM(): LLMProvider {
-    return { chat: vi.fn(() => new Promise(() => {})) };
+    return { chat: vi.fn(() => new Promise<LLMResponse>(() => {})) };
   }
 
   it('releases the caller at the deadline', async () => {
