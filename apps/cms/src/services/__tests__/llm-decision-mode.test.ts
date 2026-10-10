@@ -213,6 +213,33 @@ describe('usage and calibration are reported honestly', () => {
     expect(result.calibrated).toBe(false);
   });
 
+  it.each([
+    ['OpenAI', { choices: [{ message: { content: decisionJson } }], usage: { prompt_tokens: 321 } }, () => new OpenAIProvider('k'), { inputTokens: 321, outputTokens: null }],
+    ['Anthropic', { content: [{ type: 'text', text: decisionJson }], usage: { output_tokens: 45 } }, () => new AnthropicProvider('k'), { inputTokens: null, outputTokens: 45 }],
+    ['Gemini', { candidates: [{ content: { parts: [{ text: decisionJson }] } }], usageMetadata: { promptTokenCount: 77 } }, () => new GeminiProvider('k'), { inputTokens: 77, outputTokens: null }],
+    ['Workers AI', { result: { response: decisionJson, usage: { completion_tokens: 9 } } }, () => new WorkersAIProvider({ accountId: 'a', apiToken: 't' }), { inputTokens: null, outputTokens: 9 }],
+  ] as const)('keeps a partially reported usage field independently (%s)', async (_name, wire, make, expected) => {
+    stubFetch(wire);
+
+    const result = await new LLMDecisionProvider(make(), 'm').decide(request);
+
+    expect(result.usage).toEqual(expected);
+  });
+
+  it('keeps a partially reported Jev usage field independently', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      answers: { spam: { type: 'noul', noul: 0.3 }, quality: {
+        type: 'score', score: 1, legend: { '0': 'poor', '1': 'ok', '2': 'great' },
+        probabilities: { '0': 0.2, '1': 0.6, '2': 0.2 }, confidence: 0.6,
+      } },
+      usage: { input_tokens: 120 },
+    }), { status: 200 })));
+
+    const result = await new SystemOneDecisionProvider({ apiKey: 'k' }).decide(request);
+
+    expect(result.usage).toEqual({ inputTokens: 120, outputTokens: null });
+  });
+
   it.each([0, 2, 3, 5])('reports unknown usage as null, not zero (%s)', async (index) => {
     stubFetch(adapters[index]!.wire(decisionJson));
 

@@ -38,10 +38,13 @@ export interface LLMToolCall {
   arguments: Record<string, unknown>;
 }
 
-/** Token counts reported by the upstream; absent when the provider did not report them. */
+/**
+ * Token counts reported by the upstream. Each field is `null` when that count
+ * was not reported; the whole object is absent when neither was.
+ */
 export interface LLMUsage {
-  inputTokens: number;
-  outputTokens: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
 }
 
 export interface LLMResponse {
@@ -60,11 +63,17 @@ export interface LLMChatOptions {
   signal?: AbortSignal;
 }
 
-/** Builds LLMUsage only when both counts are finite numbers; otherwise usage is unknown. */
+function readCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/**
+ * Reads each count independently so a partially reported usage keeps the
+ * known field; returns undefined only when neither count is usable.
+ */
 function readUsage(input: unknown, output: unknown): LLMUsage | undefined {
-  return typeof input === 'number' && Number.isFinite(input) && typeof output === 'number' && Number.isFinite(output)
-    ? { inputTokens: input, outputTokens: output }
-    : undefined;
+  const usage = { inputTokens: readCount(input), outputTokens: readCount(output) };
+  return usage.inputTokens === null && usage.outputTokens === null ? undefined : usage;
 }
 
 export interface LLMProvider {
