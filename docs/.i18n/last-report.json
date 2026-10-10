@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-09T00:39:13.555Z",
+  "generatedAt": "2026-10-10T03:47:35.626Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 151,
+    "upToDate": 152,
     "planned": 0
   },
   "actions": [
@@ -1166,6 +1166,18 @@
     },
     {
       "rel": "features/git-integration.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/governed-write-parity.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
