@@ -12,14 +12,13 @@ import { patchSchema } from '../utils/patch-schema';
  */
 
 import { flows, flowRuns } from '@lumibase/database';
-import { validateGraph, type FlowGraph as SharedFlowGraph } from '@lumibase/contracts';
+import { type FlowGraph as SharedFlowGraph } from '@lumibase/contracts';
 import { and, desc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
-import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { listOperations } from '../services/flow-service';
-import { isValidCron, nextCronRun } from '../services/flow-scheduler';
+import { flowSchema, graphErrorsForSave, cronCheckForSave, createFlowRecord, FlowSaveError } from '../services/flow-management';
 import {
   createPendingRun,
   FLOW_RUNS_QUEUE,
@@ -109,63 +108,6 @@ flowsRouter.post('/:id/trigger', async (c) => {
 
 flowsRouter.use('*', requireFlowAdmin);
 
-const flowSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-  status: z.enum(['active', 'inactive', 'draft']).default('draft'),
-  triggerType: z.enum(['webhook', 'event', 'schedule', 'manual']),
-  triggerOptions: z.record(z.string(), z.unknown()).default({}),
-  graph: z.object({
-    entry: z.string().optional(),
-    nodes: z
-      .array(
-        z.object({
-          id: z.string(),
-          key: z.string(),
-          options: z.record(z.string(), z.unknown()).optional(),
-          next: z.string().nullable().optional(),
-          onError: z.string().nullable().optional(),
-        }),
-      )
-      .default([]),
-  }),
-});
-
-/**
- * Graph gate (visual-flow-builder Req 5.2): an `active` flow must have a
- * structurally valid graph. Drafts may be saved mid-edit with errors so the
- * editor can persist work-in-progress.
- */
-function graphErrorsForSave(status: string | undefined, graph: SharedFlowGraph | undefined) {
-  if (status !== 'active' || !graph) return null;
-  const result = validateGraph(graph, listOperations().map((o) => o.key));
-  return result.ok ? null : result.errors;
-}
-
-/**
- * Cron gate for schedule-triggered flows (visual-flow-builder Req 2.3): a
- * provided cron must parse, an *active* schedule flow must have one, and
- * `next_run_at` is (re)computed on save so the sweep picks the flow up.
- */
-function cronCheckForSave(
-  triggerType: string | undefined,
-  status: string | undefined,
-  triggerOptions: Record<string, unknown> | undefined,
-): { error?: { code: string; message: string }; nextRunAt: Date | null } {
-  if (triggerType !== 'schedule') return { nextRunAt: null };
-  const cron = (triggerOptions as { cron?: unknown } | undefined)?.cron;
-  if (cron !== undefined && !isValidCron(cron)) {
-    return { error: { code: 'CRON_INVALID', message: 'triggerOptions.cron is not a valid cron expression.' }, nextRunAt: null };
-  }
-  if (status === 'active') {
-    if (!isValidCron(cron)) {
-      return { error: { code: 'CRON_REQUIRED', message: 'An active schedule flow requires triggerOptions.cron.' }, nextRunAt: null };
-    }
-    return { nextRunAt: nextCronRun(cron, new Date()) };
-  }
-  return { nextRunAt: null };
-}
-
 // Registered before `/:id` so "operations" and "runs" are not captured as flow ids.
 flowsRouter.get('/operations', (c) => {
   return c.json({ data: { operations: listOperations() } });
@@ -201,22 +143,12 @@ flowsRouter.post('/', async (c) => {
       400,
     );
   }
-  const graphErrors = graphErrorsForSave(parsed.data.status, parsed.data.graph as SharedFlowGraph);
-  if (graphErrors) {
-    return c.json(
-      { errors: graphErrors.map((e) => ({ code: `GRAPH_${e.code}`, message: e.message, nodeId: e.nodeId })) },
-      400,
-    );
+  try {
+    return c.json({ data: await createFlowRecord(db, siteId, parsed.data) }, 201);
+  } catch (error) {
+    if (error instanceof FlowSaveError) return c.json({ errors: error.errors }, 400);
+    throw error;
   }
-  const cron = cronCheckForSave(parsed.data.triggerType, parsed.data.status, parsed.data.triggerOptions);
-  if (cron.error) {
-    return c.json({ errors: [cron.error] }, 400);
-  }
-  const inserted = await db
-    .insert(flows)
-    .values({ siteId, ...parsed.data, nextRunAt: cron.nextRunAt })
-    .returning();
-  return c.json({ data: inserted[0] }, 201);
 });
 
 flowsRouter.get('/:id', async (c) => {

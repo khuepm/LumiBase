@@ -351,6 +351,7 @@ async function main() {
   // ── Manual flow runs + AI chat async (high-load task 17) ────────────────
   const { registerFlowRunsWorker } = await import('./services/flow-run-service');
   registerFlowRunsWorker({
+    cache: runtime.cache,
     db: rotatorDb,
     queue: runtime.queue,
     keys: runtime.keys,

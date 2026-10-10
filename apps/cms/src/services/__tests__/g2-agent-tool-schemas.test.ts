@@ -221,11 +221,11 @@ describe('AgentToolSchemas · nhóm no-canonical-contract', () => {
     accept('createCdcSubscription', { name: 'feed', kind: 'webhook', webhookId: 'wh_1' });
   });
 
-  it('createCdcSubscription: không khai `payloadMode` vì handler không chuyển tiếp nó', () => {
+  it('createCdcSubscription: accepts the canonical payload_mode and rejects unknown spelling', () => {
     // Khai ra thì một yêu cầu `snapshot` sẽ được nhận rồi tạo subscription
     // `reference` — đúng lớp lỗi "nhận rồi rụng âm thầm".
     reject('createCdcSubscription', { name: 'feed', kind: 'pull', payloadMode: 'snapshot' });
-    reject('createCdcSubscription', { name: 'feed', kind: 'pull', payload_mode: 'snapshot' });
+    accept('createCdcSubscription', { name: 'feed', kind: 'pull', payload_mode: 'snapshot' });
   });
 
   it('createCdcSubscription: điều kiện theo `kind` khớp CdcSubscriptionCreateSchema mà handler parse lại', () => {

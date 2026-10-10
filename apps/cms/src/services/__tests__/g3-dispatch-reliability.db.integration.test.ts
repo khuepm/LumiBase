@@ -565,6 +565,26 @@ describe.skipIf(!hasDbIntegrationUrl)('G3 dispatch reliability — DB integratio
     }
   });
 
+  it('P2: a claimed delivery is not blocked when the broker acknowledgement is lost', async () => {
+    const { goalId } = await seedGoal();
+    const service = new AgentRunService(db, SITE);
+    const queue = {
+      enqueue: async (_queue: string, _name: string, data: unknown) => {
+        const payload = data as { runId: string };
+        expect(await service.claimQueuedRun(payload.runId)).toBe(true);
+        throw new Error('acknowledgement lost');
+      },
+      process: () => undefined,
+    } as never;
+    const result = await new GoalDispatchService({ db, siteId: SITE, queue, instanceId: 'solo' }).dispatchReconcilerGoals();
+    expect(result.dispatched).toBe(1);
+    expect(result.blocked).toBe(0);
+    const [goal] = await db.select().from(agentGoals).where(and(eq(agentGoals.siteId, SITE), eq(agentGoals.id, goalId)));
+    const [run] = await db.select().from(agentRuns).where(and(eq(agentRuns.siteId, SITE), eq(agentRuns.goalId, goalId)));
+    expect(goal!.status).not.toBe('blocked');
+    expect(run!.status).toBe('running');
+  });
+
   it('R3: the lease is released, so the next pass can advance the same goal', async () => {
     // A lease that leaked would look exactly like the bug it prevents: the goal
     // would stop advancing.

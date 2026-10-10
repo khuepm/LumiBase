@@ -1048,16 +1048,14 @@ export class GoalDispatchService {
 
     try {
       await this.deps.queue!.enqueue(AGENT_RUNS_QUEUE, 'execute', payload);
-    } catch (error) {
-      // A queue that accepted the run row but refused the job would otherwise
-      // leave the run `queued` with nothing to pick it up. Settle both sides.
-      const message = error instanceof Error ? error.message : String(error);
-      await runService.failRun(run.runId, `enqueue failed: ${message}`, {
-        stopReason: 'enqueue_failed',
-      });
-      await this.blockGoal(goal.id, 'ENQUEUE_FAILED');
-      result.blocked += 1;
-      return { goalId: goal.id, action: 'block', reason: 'ENQUEUE_FAILED', runId: run.runId };
+    } catch {
+      // Only block an unclaimed run; a lost broker acknowledgement may occur
+      // after a worker has started or even completed the action.
+      if (await runService.failQueuedRun(run.runId, 'enqueue_failed')) {
+        await this.blockGoal(goal.id, 'ENQUEUE_FAILED');
+        result.blocked += 1;
+        return { goalId: goal.id, action: 'block', reason: 'ENQUEUE_FAILED', runId: run.runId };
+      }
     }
 
     result.dispatched += 1;

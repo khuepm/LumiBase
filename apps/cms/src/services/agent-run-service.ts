@@ -408,6 +408,17 @@ export class AgentRunService {
     });
   }
 
+  /** CAS: an ambiguous enqueue failure must not overwrite a claimed run. */
+  async failQueuedRun(runId: string, stopReason: 'enqueue_failed' | 'queue_timeout', now = new Date()): Promise<boolean> {
+    const [row] = await this.db.update(agentRuns).set({
+      status: 'failed', finishedAt: now, updatedAt: now,
+      error: stopReason === 'enqueue_failed' ? 'Queue submission failed.' : 'Queue delivery exceeded the stale window.',
+      metrics: sql`coalesce(${agentRuns.metrics}, '{}'::jsonb) || ${JSON.stringify({ stopReason })}::jsonb`,
+    }).where(and(eq(agentRuns.siteId, this.siteId), eq(agentRuns.id, runId), eq(agentRuns.status, 'queued')))
+      .returning({ id: agentRuns.id });
+    return Boolean(row);
+  }
+
   async getRun(runId: string) {
     const [run] = await this.db
       .select()
@@ -469,7 +480,8 @@ export class AgentRunService {
   }
 
   /**
-   * Moves abandoned `running` runs to `failed` so a human can decide about them.
+   * Settles expired queued deliveries and quarantines abandoned running runs.
+   * Queued runs use queue_timeout; running runs remain stale_unverified.
    *
    * This is the other half of refusing to replay (#481 R3.1). Without it, a run
    * whose worker died would stay `running` forever: invisible to the dispatcher
@@ -495,23 +507,27 @@ export class AgentRunService {
   ): Promise<{ runId: string; goalId: string | null; agentName: string }[]> {
     const staleBefore = new Date(now.getTime() - RUN_STALE_MS);
     const candidates = await this.db
-      .select({ id: agentRuns.id, goalId: agentRuns.goalId, agentName: agentRuns.agentName })
+      .select({ id: agentRuns.id, goalId: agentRuns.goalId, agentName: agentRuns.agentName, status: agentRuns.status })
       .from(agentRuns)
       .where(
         and(
           eq(agentRuns.siteId, this.siteId),
-          eq(agentRuns.status, 'running'),
-          // A `running` row with no `startedAt` cannot be aged, so it is left
-          // alone rather than assumed stale — fail-closed on a shape that should
-          // not occur.
-          isNotNull(agentRuns.startedAt),
-          lt(agentRuns.startedAt, staleBefore),
+          or(
+            and(eq(agentRuns.status, 'queued'), lt(agentRuns.createdAt, staleBefore)),
+            and(eq(agentRuns.status, 'running'), isNotNull(agentRuns.startedAt), lt(agentRuns.startedAt, staleBefore)),
+          ),
         ),
       )
       .limit(Math.max(1, Math.trunc(limit)));
 
     const quarantined: { runId: string; goalId: string | null; agentName: string }[] = [];
     for (const candidate of candidates) {
+      if (candidate.status === 'queued') {
+        if (await this.failQueuedRun(candidate.id, 'queue_timeout', now)) {
+          quarantined.push({ runId: candidate.id, goalId: candidate.goalId, agentName: candidate.agentName });
+        }
+        continue;
+      }
       const [row] = await this.db
         .update(agentRuns)
         .set({
@@ -676,7 +692,7 @@ export class AgentRunService {
     // No queue adapter: refuse before writing anything, as `POST /goals` does for
     // async execution. A retry row with no job is exactly the defect being fixed.
     const queue = this.queue;
-    if (!queue) {
+    if (!queue || queue.supportsQueue?.('agent-runs') === false) {
       return refuse(
         'ASYNC_UNAVAILABLE',
         'Retrying a run requires a queue adapter; this runtime has none.',
@@ -707,7 +723,7 @@ export class AgentRunService {
       return refuse('GOAL_CLOSED', `Goal is ${goal.status}; there is nothing left to retry for.`);
     }
 
-    const task = await this.recoverRetryTask(original);
+    const task = await this.recoverRetryTask(original, goal);
     if (!task.ok) return task;
     const governance = await this.recoverRetryGovernance(goal, original);
     if (!governance.ok) return governance;
@@ -873,14 +889,11 @@ export class AgentRunService {
       // Outside the transaction on purpose: a queue call cannot be rolled back,
       // so it must not run before the row it refers to is committed.
       await queue.enqueue(AGENT_RUNS_QUEUE, 'execute', payload);
-    } catch (error) {
+    } catch {
       // Settle the row, or it stays `queued` with no job and — being in flight —
       // blocks every later retry of this goal. `failed` makes it retryable.
-      const message = error instanceof Error ? error.message : String(error);
-      await this.failRun(retryRunId, `enqueue failed: ${message}`, {
-        stopReason: 'enqueue_failed',
-      }).catch(() => undefined);
-      return refuse('ENQUEUE_FAILED', `The retry could not be queued: ${message}`);
+      await this.failQueuedRun(retryRunId, 'enqueue_failed').catch(() => undefined);
+      return refuse('ENQUEUE_FAILED', 'The retry could not be queued. Retry after queue recovery.');
     }
 
     return {
@@ -904,6 +917,7 @@ export class AgentRunService {
    */
   private async recoverRetryTask(
     run: typeof agentRuns.$inferSelect,
+    goal: typeof agentGoals.$inferSelect,
   ): Promise<RecoveredTask | RetryRunRefusal> {
     let cursor: { id: string; goalId: string; retryOfRunId: string | null } | undefined = run;
     for (let depth = 0; cursor && depth < MAX_RETRY_CHAIN_DEPTH; depth += 1) {
@@ -936,6 +950,10 @@ export class AgentRunService {
         .where(and(eq(agentRuns.siteId, this.siteId), eq(agentRuns.id, cursor.retryOfRunId)))
         .limit(1);
       cursor = previous && previous.goalId === run.goalId ? previous : undefined;
+    }
+    const task = isPlainRecord(goal.metadata) ? goal.metadata.asyncTask : undefined;
+    if (isPlainRecord(task) && typeof task.skillName === 'string' && isPlainRecord(task.arguments) && !containsMaskedValue(task.arguments)) {
+      return { ok: true, skillName: task.skillName, arguments: task.arguments };
     }
     return refuse(
       'RETRY_UNRECOVERABLE',
@@ -1069,7 +1087,7 @@ export interface StaleRunSweepResult {
 }
 
 /**
- * Quarantines abandoned `running` runs across every tenant that has one.
+ * Settles expired queued deliveries and abandoned running runs across tenants.
  *
  * Driven by the `agent-run-stale-sweep` cron on the Node/Docker runtime. It is the
  * companion to `claimQueuedRun` refusing to replay a stale run (#481 R3.1): the
@@ -1096,9 +1114,10 @@ export async function sweepStaleRuns(deps: {
     .from(agentRuns)
     .where(
       and(
-        eq(agentRuns.status, 'running'),
-        isNotNull(agentRuns.startedAt),
-        lt(agentRuns.startedAt, staleBefore),
+        or(
+          and(eq(agentRuns.status, 'queued'), lt(agentRuns.createdAt, staleBefore)),
+          and(eq(agentRuns.status, 'running'), isNotNull(agentRuns.startedAt), lt(agentRuns.startedAt, staleBefore)),
+        ),
       ),
     )
     .orderBy(asc(agentRuns.siteId))

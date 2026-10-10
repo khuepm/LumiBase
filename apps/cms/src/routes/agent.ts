@@ -17,7 +17,7 @@ import { AgentArtifactService } from '../services/agent-artifact-service';
 import { AgentEvaluationService } from '../services/agent-evaluation-service';
 import { AgentMemoryService } from '../services/agent-memory-service';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
-import { AgentRunService, type RetryRunRefusalCode } from '../services/agent-run-service';
+import { maskSecrets, AgentRunService, type RetryRunRefusalCode } from '../services/agent-run-service';
 import { CORE_SKILLS } from '../services/ai-harness';
 import {
   principalRefFromAuth,
@@ -136,6 +136,7 @@ agentRouter.post('/goals', async (c) => {
     assigneeAgent: parsed.data.assigneeAgent,
     priority: parsed.data.priority,
     successCriteria: parsed.data.successCriteria,
+    ...(parsed.data.execution === 'async' ? { metadata: { asyncTask: maskSecrets(parsed.data.task) } } : {}),
   }).returning();
 
   if (parsed.data.execution === 'async') {
@@ -163,7 +164,14 @@ agentRouter.post('/goals', async (c) => {
       userId: auth.userId ?? null,
       contextMessage: parsed.data.description,
     };
-    await queue!.enqueue(AGENT_RUNS_QUEUE, 'execute', payload);
+    try {
+      await queue!.enqueue(AGENT_RUNS_QUEUE, 'execute', payload);
+    } catch {
+      // A transport can accept a job and then lose the acknowledgement. Only
+      // settle an unclaimed row; never overwrite a worker's actual outcome.
+      await runService.failQueuedRun(run.runId, 'enqueue_failed');
+      return c.json({ errors: [{ code: 'ENQUEUE_FAILED', message: 'The run could not be queued. Retry this run after queue recovery.', goalId: goal!.id, runId: run.runId }] }, 503);
+    }
     return c.json({ data: { goal, runId: run.runId, status: 'queued' } }, 202);
   }
 

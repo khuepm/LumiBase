@@ -1,5 +1,5 @@
 import { flows, flowRuns, type Database } from '@lumibase/database';
-import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
+import type { CacheProvider, KeyProvider, QueueProvider } from '@lumibase/runtime';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { and, eq } from 'drizzle-orm';
 import type { AuthenticatedPrincipalRef } from './effective-capability-service';
@@ -175,10 +175,11 @@ export async function processFlowRunJob(
   job: FlowRunJob,
   keys?: KeyProvider,
   env?: Record<string, string | undefined>,
+  cache?: CacheProvider,
 ): Promise<void> {
   if (job.kind === 'ai_chat') {
     const { executeAiChatRun } = await import('./ai-chat-run-worker');
-    await executeAiChatRun(db, job, keys, env);
+    await executeAiChatRun(db, job, keys, env, cache);
     return;
   }
 
@@ -214,18 +215,19 @@ export async function processFlowRunJob(
 export interface FlowRunsWorkerDeps {
   db: Database;
   queue?: QueueProvider;
+  cache?: CacheProvider;
   keys?: KeyProvider;
   env?: Record<string, string | undefined>;
 }
 
 export function registerFlowRunsWorker(deps: FlowRunsWorkerDeps): void {
-  const { db, queue, keys, env } = deps;
+  const { db, queue, keys, env, cache } = deps;
   if (!queue) return;
 
   queue.process<FlowRunJob>(FLOW_RUNS_QUEUE, async (job) => {
     try {
       if (job.name === 'flow:run' || job.name === 'ai:chat') {
-        await processFlowRunJob(db, job.data, keys, env);
+        await processFlowRunJob(db, job.data, keys, env, cache);
       }
     } catch (err) {
       console.error('[flow-runs] job failed', { job: job.name, err: formatSafeError(err) });

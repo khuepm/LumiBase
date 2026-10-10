@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-10-08T14:15:38.469Z
+version: 3
+lastUpdated: 2026-10-09T08:37:00.422Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f7df31416aa1c0f0
+sourceHash: 302fbdb9fb9ca29a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-08T14:15:38.469Z
-codeVerifiedHash: f7df31416aa1c0f0
-codeVerifiedClaims: 6
+codeVerified: 2026-10-09T08:37:00.422Z
+codeVerifiedHash: 302fbdb9fb9ca29a
+codeVerifiedClaims: 8
 ---
 
 # Lượt chạy agent bất đồng bộ
@@ -68,6 +68,26 @@ lấy budget từ run đã lưu. Vì vậy `maxToolCalls: 0` chặn tool call
 đầu tiên. Việc đi qua queue không bỏ qua kiểm tra quyền hoặc yêu cầu con người duyệt.
 
 Probe `health_check` dùng chung được xác nhận mà không chạy agent hoặc mở kết nối DB.
+
+## Lỗi gửi vào queue
+
+`POST /api/v1/agent/goals` trả `503 ENQUEUE_FAILED` kèm `goalId` và `runId`
+khi gửi job thất bại. Xử lý bù chỉ chuyển run còn queued sang failed;
+không ghi đè run mà worker đã nhận. Retry và reconciler
+cũng dùng cùng phép chuyển trạng thái có điều kiện.
+
+Goal bất đồng bộ mới lưu task dự định chạy trong metadata của goal, che secret
+theo cùng quy tắc của audit tool-call. `POST /api/v1/agent/runs/:id/retry` có thể
+khôi phục task dù lần gửi đầu chưa tới harness.
+Tham số đã bị che không được replay; hãy gửi yêu cầu mới với
+secret cần thiết. Goal cũ không có task được lưu vẫn cần yêu cầu mới.
+Retry kiểm tra lại quyền và giữ budget đã lưu.
+
+Sweep cũng chuyển run queued quá 15 phút sang failed ở mọi
+origin của goal, với `queue_timeout`. Message tới muộn không thể nhận run đã failed.
+Timeout này có thể hết hạn công việc khi queue tồn đọng lâu; cần retry tường minh,
+không tự động replay. Run đang thực thi vẫn được cách ly riêng bằng
+`stale_unverified` vì có thể đã phát sinh tác động.
 
 ## Đa tenant
 
