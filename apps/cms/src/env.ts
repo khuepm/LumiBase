@@ -196,6 +196,16 @@ export interface Bindings {
   TYPESAFE_BASE_URL?: string;
   /** OpenRouter API key, used when DECISION_PROVIDER = 'openrouter'. */
   OPENROUTER_API_KEY?: string;
+  /** Total decision deadline in ms, retries included (default 20000, 1000–120000). */
+  DECISION_TIMEOUT_MS?: string;
+  /** Timeout of one upstream attempt in ms (default 8000, 500–120000). */
+  DECISION_ATTEMPT_TIMEOUT_MS?: string;
+  /** Retries after the first attempt (default 2, 0–5). */
+  DECISION_MAX_RETRIES?: string;
+  /** UTF-8 byte cap on serialized state + questions (default 131072). */
+  DECISION_MAX_INPUT_BYTES?: string;
+  /** Estimated token budget on the same payload (default 24000). */
+  DECISION_MAX_INPUT_TOKENS?: string;
   // ── Custom domains / Cloudflare for SaaS (services/domains/*) ───────────
   /** API token with `SSL and Certificates: Edit` on the SaaS zone. */
   CLOUDFLARE_API_TOKEN?: string;
