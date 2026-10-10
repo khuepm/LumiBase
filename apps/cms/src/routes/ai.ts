@@ -1,6 +1,7 @@
 import { aiApprovals, aiConversations, aiMessages } from '@lumibase/database';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
+import type { UnofficialStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
@@ -39,9 +40,6 @@ export const decideSchema = z.object({
   decision: z.enum(['approved', 'rejected']),
 });
 
-/** Upper bound on the serialized `state`; Jev's context window is 32k tokens. */
-const MAX_DECISION_STATE_CHARS = 200_000;
-
 const decisionPayloadSchema = z.union([
   z.string().min(1).max(20_000),
   z.record(z.string(), z.unknown()),
@@ -72,10 +70,9 @@ const decisionQuestionSchema = z.discriminatedUnion('type', [
 ]);
 
 export const decisionRequestSchema = z.object({
-  state: decisionPayloadSchema.refine(
-    (state) => JSON.stringify(state).length <= MAX_DECISION_STATE_CHARS,
-    `state must serialize to at most ${MAX_DECISION_STATE_CHARS} characters`,
-  ),
+  // Size is bounded on the whole request (state + questions) by the provider's
+  // input budget, so an oversized payload fails with 413 before any fetch.
+  state: decisionPayloadSchema,
   questions: z
     .record(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'Invalid question key'), decisionQuestionSchema)
     .refine((questions) => {
@@ -522,13 +519,17 @@ aiRouter.delete('/conversations/:id', async (c) => {
 // ---------------------------------------------------------------------------
 
 /** Upstream failures map to gateway-style statuses; the provider key is ours, not the caller's. */
-const DECISION_ERROR_STATUS: Record<DecisionErrorCode, 422 | 429 | 502 | 503> = {
+const DECISION_ERROR_STATUS: Record<DecisionErrorCode, 413 | 422 | 429 | 502 | 503 | 504 | UnofficialStatusCode> = {
   DECISION_AUTH: 502,
   DECISION_VALIDATION: 422,
   DECISION_RATE_LIMITED: 429,
   DECISION_UNAVAILABLE: 503,
   DECISION_UPSTREAM: 502,
   DECISION_PARSE_FAILED: 502,
+  DECISION_TIMEOUT: 504,
+  // Client closed the request; nginx convention. Hono needs the unofficial cast.
+  DECISION_CANCELLED: 499 as UnofficialStatusCode,
+  DECISION_INPUT_TOO_LARGE: 413,
 };
 
 const DECISION_ERROR_MESSAGE: Record<DecisionErrorCode, string> = {
@@ -538,6 +539,9 @@ const DECISION_ERROR_MESSAGE: Record<DecisionErrorCode, string> = {
   DECISION_UNAVAILABLE: 'The decision provider is temporarily unavailable. Retry later.',
   DECISION_UPSTREAM: 'The decision provider returned an error.',
   DECISION_PARSE_FAILED: 'The decision provider returned an unusable answer.',
+  DECISION_TIMEOUT: 'The decision did not complete within its deadline.',
+  DECISION_CANCELLED: 'The decision request was cancelled.',
+  DECISION_INPUT_TOO_LARGE: 'The decision input exceeds the configured size or token budget.',
 };
 
 /**
@@ -578,15 +582,15 @@ aiRouter.post('/decisions', async (c) => {
   }
 
   try {
-    const data = await configured.provider.decide(parsed.data);
+    // Client disconnect aborts the upstream call and suppresses retries.
+    const data = await configured.provider.decide(parsed.data, { signal: c.req.raw.signal });
     return c.json({ data });
   } catch (err) {
     console.error('[ai/decisions] provider error', formatSafeError(err));
     if (err instanceof DecisionProviderError) {
-      return c.json(
-        { errors: [{ code: err.code, message: DECISION_ERROR_MESSAGE[err.code] }] },
-        DECISION_ERROR_STATUS[err.code],
-      );
+      // The budget message carries only sizes, never content, so it is safe to return.
+      const message = err.code === 'DECISION_INPUT_TOO_LARGE' ? err.message : DECISION_ERROR_MESSAGE[err.code];
+      return c.json({ errors: [{ code: err.code, message }] }, DECISION_ERROR_STATUS[err.code]);
     }
     return c.json({ errors: [{ code: 'INTERNAL', message: 'Decision request failed.' }] }, 500);
   }

@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 8
-lastUpdated: 2026-10-06T11:14:27.131Z
+version: 9
+lastUpdated: 2026-10-10T09:15:58.977Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 70c7f64ed634d765
+sourceHash: 7df534ae6d4aefa8
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-06T11:14:27.131Z
-codeVerifiedHash: 70c7f64ed634d765
+codeVerified: 2026-10-10T09:15:58.977Z
+codeVerifiedHash: 7df534ae6d4aefa8
 codeVerifiedClaims: 386
 ---
 
@@ -673,7 +673,7 @@ Authorization: Bearer <token>
 { "decision": "approved" }
 ```
 
-**Request decision** (`POST /api/v1/ai/decisions`) — 1–32 câu hỏi, key theo `[A-Za-z0-9_-]{1,64}`; `noul` = có/không, `choice` = 2–255 lựa chọn, `score` = 2–10 mức rubric (thấp nhất trước). `state` là string, object hoặc array (≤ 200,000 ký tự sau khi serialize). Chỉ đọc nên không cần phê duyệt HITL:
+**Request decision** (`POST /api/v1/ai/decisions`) — 1–32 câu hỏi, key theo `[A-Za-z0-9_-]{1,64}`; `noul` = có/không, `choice` = 2–255 lựa chọn, `score` = 2–10 mức rubric (thấp nhất trước). `state` là string, object hoặc array. Toàn bộ request (state, instructions, criteria và cấu trúc lồng) phải nằm trong budget đầu vào: ≤ `DECISION_MAX_INPUT_BYTES` byte UTF-8 (mặc định 131,072) **và** ≤ `DECISION_MAX_INPUT_TOKENS` token ước lượng (mặc định 24,000), được kiểm tra trước khi gọi provider. Chỉ đọc nên không cần phê duyệt HITL:
 ```json
 {
   "state": { "title": "Summer sale", "body": "Buy now!!!" },
@@ -714,7 +714,11 @@ Authorization: Bearer <token>
 }
 ```
 
-Lỗi: `400 VALIDATION`, `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE`, `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`. CMS retry upstream `429`/`529`/`503` hai lần với exponential backoff trước khi bỏ cuộc.
+Lỗi: `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (vượt budget byte hoặc token; message chỉ nêu kích thước), `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream quá tải hoặc không kết nối được), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (client đã đóng request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
+
+Deadline và retry: mỗi decision có một deadline tổng (`DECISION_TIMEOUT_MS`, mặc định 20 giây) bao gồm mọi lần retry và thời gian chờ backoff, và mỗi lần gọi upstream có timeout riêng (`DECISION_ATTEMPT_TIMEOUT_MS`, mặc định 8 giây, không vượt phần còn lại của deadline). Chỉ `429`/`503`/`529`, lỗi mạng và timeout của một lần gọi mới được retry, tối đa `DECISION_MAX_RETRIES` lần (mặc định 2), với exponential backoff có full jitter và tôn trọng `Retry-After`. Lần chờ nào sẽ vượt deadline thì không bắt đầu. Lỗi auth, validation và parse không bao giờ được retry. Khi client ngắt kết nối, lần gọi upstream đang chạy bị huỷ và không retry nữa. Provider `llm` bị giới hạn bởi cùng deadline và budget nhưng chỉ gọi một lần; khi timeout, caller được giải phóng còn request LLM bên dưới có thể vẫn chạy xong và kết quả bị bỏ.
+
+Số token là ước lượng, không phải tokenizer của provider: khoảng 4 ký tự ASCII cho một token, và mỗi code point không phải ASCII (ví dụ chữ tiếng Việt có dấu) tính là một token. Cách đếm cố ý đếm dư; mặc định 24,000 chừa 25% dư địa dưới context 32,000 token của Jev.
 
 CMS kiểm tra câu trả lời upstream trước khi trả về: giá trị bắt buộc phải hữu hạn và nằm trong miền hợp lệ, phân phối Choice/Score phải có đúng các phương án/mức đã khai báo và có tổng bằng 1 với sai số tuyệt đối tối đa `1e-6`, Score phải nằm trong `0..N-1`. Câu trả lời thiếu hoặc sai định dạng trả `502 DECISION_PARSE_FAILED`; giá trị không bị ép miền hoặc gán mặc định thành quyết định. Choice/Score bắt buộc có confidence, không suy ra từ xác suất của phương án thắng. Provider LLM áp dụng cùng validation.
 

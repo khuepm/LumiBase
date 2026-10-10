@@ -82,7 +82,6 @@ describe('decisionRequestSchema', () => {
       },
     ],
     ['unknown type', { state: 'x', questions: { q: { type: 'free', instructions: 'i', criteria: [] } } }],
-    ['oversized state', { state: { blob: 'x'.repeat(200_001) }, questions: validBody.questions }],
   ])('rejects %s', (_label, body) => {
     expect(decisionRequestSchema.safeParse(body).success).toBe(false);
   });
@@ -163,4 +162,100 @@ describe('POST /ai/decisions', () => {
       expect(json.errors[0]?.code).toBe('DECISION_PARSE_FAILED');
     },
   );
+});
+
+describe('POST /ai/decisions — budgets and deadlines (#509)', () => {
+  function hangingFetch() {
+    return vi.fn((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      }),
+    );
+  }
+
+  it('returns 413 for Vietnamese input over the token budget without calling the provider', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await post(
+      { ...validBody, state: 'Bài viết tiếng Việt có dấu đầy đủ. '.repeat(400) },
+      { ...typesafeEnv, DECISION_MAX_INPUT_TOKENS: '2000' },
+    );
+
+    expect(res.status).toBe(413);
+    const json = (await res.json()) as { errors: { code: string; message: string }[] };
+    expect(json.errors[0]?.code).toBe('DECISION_INPUT_TOO_LARGE');
+    expect(json.errors[0]?.message).toContain('limit is 2000');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 413 for a large object state over the byte cap without calling the provider', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const state = { blocks: Array.from({ length: 3_000 }, (_, i) => ({ id: i, text: 'x'.repeat(50) })) };
+
+    const res = await post({ ...validBody, state }, typesafeEnv);
+
+    expect(res.status).toBe(413);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 504 DECISION_TIMEOUT when the provider never answers within the deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.stubGlobal('fetch', hangingFetch());
+
+      const pending = post(validBody, { ...typesafeEnv, DECISION_TIMEOUT_MS: '2000', DECISION_MAX_RETRIES: '0' });
+      await vi.runAllTimersAsync();
+      const res = await pending;
+
+      expect(res.status).toBe(504);
+      const json = (await res.json()) as { errors: { code: string }[] };
+      expect(json.errors[0]?.code).toBe('DECISION_TIMEOUT');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('returns 503 DECISION_UNAVAILABLE when the provider is unreachable', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await post(validBody, { ...typesafeEnv, DECISION_MAX_RETRIES: '0' });
+
+    expect(res.status).toBe(503);
+    const json = (await res.json()) as { errors: { code: string }[] };
+    expect(json.errors[0]?.code).toBe('DECISION_UNAVAILABLE');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts the upstream call when the client request is cancelled', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = hangingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+
+    const pending = buildApp().request(
+      '/ai/decisions',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(validBody),
+        signal: controller.signal,
+      },
+      typesafeEnv,
+    );
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    controller.abort();
+    const res = await pending;
+
+    expect(res.status).toBe(499);
+    const upstreamSignal = (fetchMock.mock.calls[0]?.[1] as RequestInit).signal;
+    expect(upstreamSignal?.aborted).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

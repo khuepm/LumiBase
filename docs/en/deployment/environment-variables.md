@@ -1,10 +1,10 @@
 ---
-version: 6
-lastUpdated: 2026-10-06T06:12:18.190Z
+version: 7
+lastUpdated: 2026-10-10T09:15:59.812Z
 sourceLang: en
-contentHash: 0cd5f609c3935513
-codeVerified: 2026-10-06T06:12:18.190Z
-codeVerifiedHash: 0cd5f609c3935513
+contentHash: 975cc7a6a6136d0d
+codeVerified: 2026-10-10T09:15:59.812Z
+codeVerifiedHash: 975cc7a6a6136d0d
 codeVerifiedClaims: 74
 ---
 
@@ -186,6 +186,13 @@ Backs `POST /api/v1/ai/decisions`: typed `noul` / `choice` / `score` answers wit
 | `TYPESAFE_API_KEY` | If `typesafe` provider | TypeSafe API key. |
 | `TYPESAFE_BASE_URL` | ✗ | TypeSafe endpoint override. Defaults to `https://api.typesafe.ai/v1`. |
 | `OPENROUTER_API_KEY` | If `openrouter` provider | OpenRouter API key. |
+| `DECISION_TIMEOUT_MS` | ✗ | Total deadline per decision in ms, retries and backoff included (default `20000`, range 1000–120000). |
+| `DECISION_ATTEMPT_TIMEOUT_MS` | ✗ | Timeout of one upstream attempt in ms (default `8000`, range 500–120000), capped by what remains of the deadline. |
+| `DECISION_MAX_RETRIES` | ✗ | Retries after the first attempt for 429/503/529, network errors and attempt timeouts (default `2`, range 0–5). |
+| `DECISION_MAX_INPUT_BYTES` | ✗ | UTF-8 byte cap on the serialized state + questions (default `131072`). Over the cap → `413 DECISION_INPUT_TOO_LARGE` before any provider call. |
+| `DECISION_MAX_INPUT_TOKENS` | ✗ | Estimated token budget for the same payload (default `24000`). The estimate counts ~4 ASCII chars or 1 non-ASCII code point per token; it is not the provider's tokenizer. |
+
+Invalid values in these five variables are ignored with a warning and the default applies.
 
 ---
 

@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 6
-lastUpdated: 2026-10-06T06:12:18.190Z
+version: 7
+lastUpdated: 2026-10-10T09:15:59.812Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 0cd5f609c3935513
+sourceHash: 975cc7a6a6136d0d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-06T06:12:18.190Z
-codeVerifiedHash: 0cd5f609c3935513
+codeVerified: 2026-10-10T09:15:59.812Z
+codeVerifiedHash: 975cc7a6a6136d0d
 codeVerifiedClaims: 74
 ---
 
@@ -192,6 +192,13 @@ Phục vụ `POST /api/v1/ai/decisions`: trả về câu trả lời có kiểu 
 | `TYPESAFE_API_KEY` | Nếu provider `typesafe` | API key TypeSafe. |
 | `TYPESAFE_BASE_URL` | ✗ | Override endpoint TypeSafe. Mặc định `https://api.typesafe.ai/v1`. |
 | `OPENROUTER_API_KEY` | Nếu provider `openrouter` | API key OpenRouter. |
+| `DECISION_TIMEOUT_MS` | ✗ | Deadline tổng cho mỗi decision, tính bằng ms, gồm cả retry và backoff (mặc định `20000`, khoảng 1000–120000). |
+| `DECISION_ATTEMPT_TIMEOUT_MS` | ✗ | Timeout của một lần gọi upstream, tính bằng ms (mặc định `8000`, khoảng 500–120000), không vượt phần còn lại của deadline. |
+| `DECISION_MAX_RETRIES` | ✗ | Số lần retry sau lần gọi đầu, cho 429/503/529, lỗi mạng và timeout của lần gọi (mặc định `2`, khoảng 0–5). |
+| `DECISION_MAX_INPUT_BYTES` | ✗ | Giới hạn byte UTF-8 của state + questions sau khi serialize (mặc định `131072`). Vượt giới hạn → `413 DECISION_INPUT_TOO_LARGE` trước khi gọi provider. |
+| `DECISION_MAX_INPUT_TOKENS` | ✗ | Budget token ước lượng cho cùng payload đó (mặc định `24000`). Cách ước lượng: khoảng 4 ký tự ASCII hoặc 1 code point không phải ASCII cho một token; không phải tokenizer của provider. |
+
+Giá trị không hợp lệ ở năm biến này sẽ bị bỏ qua kèm cảnh báo và dùng giá trị mặc định.
 
 ---
 <!-- check-parity: allow inline-code -->

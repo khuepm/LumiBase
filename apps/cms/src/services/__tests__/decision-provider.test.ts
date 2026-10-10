@@ -262,7 +262,8 @@ describe('SystemOneDecisionProvider', () => {
     vi.stubGlobal('fetch', fetchMock);
     const sleep = vi.fn().mockResolvedValue(undefined);
 
-    await new SystemOneDecisionProvider({ apiKey: 'k', retryBaseMs: 100, sleep }).decide(request);
+    // random → 1 draws the full jitter cap, so the delays expose the doubling.
+    await new SystemOneDecisionProvider({ apiKey: 'k', retryBaseMs: 100, sleep, random: () => 1 }).decide(request);
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([100, 200]);
