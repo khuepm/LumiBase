@@ -26,6 +26,7 @@
  */
 
 import { createConfiguredLLMProvider, type LLMProvider, type LLMProviderEnv } from './llm-provider';
+import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -131,17 +132,36 @@ function toNumber(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value));
+// Permit ordinary decimal serialization error, never repair a broken distribution.
+const PROBABILITY_SUM_TOLERANCE = 1e-6;
+const probabilitySchema = z.number().min(0).max(1);
+const probabilitiesSchema = z.record(z.string(), probabilitySchema);
+const answerSchemas = {
+  noul: z.object({ type: z.literal('noul'), noul: probabilitySchema }),
+  choice: z.object({
+    type: z.literal('choice'), choice: z.string(),
+    probabilities: probabilitiesSchema, confidence: probabilitySchema,
+  }),
+  score: z.object({
+    type: z.literal('score'), score: z.number().min(0),
+    legend: z.record(z.string(), z.unknown()),
+    probabilities: probabilitiesSchema, confidence: probabilitySchema,
+  }),
+};
+
+function unusableAnswer(): never {
+  throw new DecisionProviderError('DECISION_PARSE_FAILED', 'The decision answer violates its question contract.');
 }
 
-function toProbabilities(value: unknown): Record<string, number> {
-  const out: Record<string, number> = Object.create(null);
-  if (!isRecord(value)) return out;
-  for (const [key, raw] of Object.entries(value)) {
-    if (typeof raw === 'number' && Number.isFinite(raw)) out[key] = clamp01(raw);
-  }
-  return out;
+function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  return Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+function validateProbabilities(probabilities: Record<string, number>, keys: string[]): void {
+  if (!hasExactKeys(probabilities, keys)) unusableAnswer();
+  const sum = Object.values(probabilities).reduce((total, probability) => total + probability, 0);
+  // Allow machine addition error at the tolerance boundary itself.
+  if (Math.abs(sum - 1) > PROBABILITY_SUM_TOLERANCE + Number.EPSILON * keys.length) unusableAnswer();
 }
 
 function errorCodeForStatus(status: number): DecisionErrorCode {
@@ -164,50 +184,38 @@ function isRetryableStatus(status: number): boolean {
  * declared type so a malformed upstream answer cannot change the contract.
  */
 function normalizeAnswer(question: DecisionQuestion, raw: unknown): DecisionAnswer {
-  if (!isRecord(raw) || (raw.type !== undefined && raw.type !== question.type)) {
-    throw new DecisionProviderError('DECISION_PARSE_FAILED', 'Answer has an invalid type.');
+  // Zod object fields can be read from the prototype; require own fields first.
+  if (!isRecord(raw)) unusableAnswer();
+  const schema = answerSchemas[question.type];
+  if (!Object.keys(schema.shape).every((key) => Object.hasOwn(raw, key))) unusableAnswer();
+  if (question.type !== 'noul') {
+    const keys = question.type === 'choice'
+      ? Object.keys(question.criteria)
+      : question.criteria.map((_, i) => String(i));
+    if (!isRecord(raw.probabilities) || !hasExactKeys(raw.probabilities, keys)) unusableAnswer();
+    if (question.type === 'score' && (!isRecord(raw.legend) || !hasExactKeys(raw.legend, keys))) unusableAnswer();
   }
-  const answer = raw;
-  if (question.type === 'noul' || question.type === 'score') {
-    const value = answer[question.type];
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-      throw new DecisionProviderError(
-        'DECISION_PARSE_FAILED',
-        `Answer is missing a numeric ${question.type}.`,
-      );
-    }
-  }
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) unusableAnswer();
+  const answer = parsed.data;
 
-  switch (question.type) {
+  switch (answer.type) {
     case 'noul':
-      return { type: 'noul', noul: clamp01(toNumber(answer.noul)) };
+      return answer;
 
     case 'choice': {
-      const choice = typeof answer.choice === 'string' ? answer.choice : '';
-      if (!Object.hasOwn(question.criteria, choice)) {
-        throw new DecisionProviderError(
-          'DECISION_PARSE_FAILED',
-          `Answer chose an unknown option "${choice}".`,
-        );
-      }
-      const probabilities = toProbabilities(answer.probabilities);
-      return {
-        type: 'choice',
-        choice,
-        probabilities,
-        confidence: clamp01(toNumber(answer.confidence, probabilities[choice] ?? 0)),
-      };
+      if (question.type !== 'choice' || !Object.hasOwn(question.criteria, answer.choice)) unusableAnswer();
+      validateProbabilities(answer.probabilities, Object.keys(question.criteria));
+      return answer;
     }
 
-    case 'score':
-      // Scale is the upstream's own; only the LLM fallback maps it to a level index.
-      return {
-        type: 'score',
-        score: toNumber(answer.score),
-        legend: isRecord(answer.legend) ? answer.legend : {},
-        probabilities: toProbabilities(answer.probabilities),
-        confidence: clamp01(toNumber(answer.confidence)),
-      };
+    case 'score': {
+      if (question.type !== 'score' || answer.score > question.criteria.length - 1) unusableAnswer();
+      const levels = question.criteria.map((_, i) => String(i));
+      validateProbabilities(answer.probabilities, levels);
+      if (!hasExactKeys(answer.legend, levels)) unusableAnswer();
+      return answer;
+    }
   }
 }
 
@@ -216,14 +224,12 @@ function normalizeAnswers(
   rawAnswers: unknown,
 ): Record<string, DecisionAnswer> {
   const answers = isRecord(rawAnswers) ? rawAnswers : {};
-  const out: Record<string, DecisionAnswer> = Object.create(null);
-  for (const [key, question] of Object.entries(request.questions)) {
+  return Object.fromEntries(Object.entries(request.questions).map(([key, question]) => {
     if (!Object.hasOwn(answers, key)) {
       throw new DecisionProviderError('DECISION_PARSE_FAILED', `Missing answer for "${key}".`);
     }
-    out[key] = normalizeAnswer(question, answers[key]);
-  }
-  return out;
+    return [key, normalizeAnswer(question, answers[key])];
+  }));
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -379,13 +385,26 @@ export class LLMDecisionProvider implements DecisionProvider {
       throw new DecisionProviderError('DECISION_PARSE_FAILED', 'LLM did not return a JSON object.');
     }
 
-    const answers = normalizeAnswers(request, parsed.answers);
+    // The LLM prompt omits type/legend. Supply only those structural fields;
+    // numeric answers and probabilities must pass the same validation as Jev.
+    const rawAnswers = isRecord(parsed.answers) ? parsed.answers : {};
+    const prepared = Object.fromEntries(Object.entries(request.questions).map(([key, question]) => {
+      const raw = Object.hasOwn(rawAnswers, key) ? rawAnswers[key] : undefined;
+      if (!isRecord(raw)) return [key, raw];
+      return [key, {
+        type: question.type,
+        ...(question.type === 'score'
+          ? { legend: Object.fromEntries(question.criteria.map((level, i) => [String(i), level])) }
+          : {}),
+        ...raw,
+      }];
+    }));
+    const answers = normalizeAnswers(request, prepared);
     // Rubric levels are positional; mirror them in `legend` like Jev does.
     for (const [key, answer] of Object.entries(answers)) {
       const question = request.questions[key];
       if (answer.type === 'score' && question?.type === 'score') {
-        const maxLevel = question.criteria.length - 1;
-        answer.score = Math.min(maxLevel, Math.max(0, Math.round(answer.score)));
+        answer.score = Math.round(answer.score);
         answer.legend = Object.fromEntries(question.criteria.map((level, i) => [String(i), level]));
       }
     }

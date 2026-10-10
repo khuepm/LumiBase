@@ -3381,6 +3381,10 @@ paths:
         Read-only. Each question is `noul` (yes/no), `choice` (2-255 options)
         or `score` (2-10 rubric levels, lowest first). Answers carry
         probabilities; `calibrated` is false when DECISION_PROVIDER=llm.
+        Malformed upstream answers fail with 502 DECISION_PARSE_FAILED, never
+        zero-valued defaults. Choice/Score distributions must contain exactly
+        the declared options/levels and sum to 1 within 1e-6. Confidence is
+        required; Score lies in 0..N-1 for N rubric levels.
       parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
       requestBody:
         required: true
@@ -3430,13 +3434,25 @@ paths:
                         additionalProperties:
                           type: object
                           required: [type]
+                          oneOf:
+                            - required: [type, noul]
+                              properties:
+                                type: { type: string, enum: [noul] }
+                            - required: [type, choice, probabilities, confidence]
+                              properties:
+                                type: { type: string, enum: [choice] }
+                            - required: [type, score, legend, probabilities, confidence]
+                              properties:
+                                type: { type: string, enum: [score] }
                           properties:
                             type: { type: string, enum: [noul, choice, score] }
                             noul: { type: number, minimum: 0, maximum: 1 }
                             choice: { type: string }
-                            score: { type: number }
+                            score: { type: number, minimum: 0, maximum: 9 }
                             legend: { type: object, additionalProperties: true }
-                            probabilities: { type: object, additionalProperties: { type: number } }
+                            probabilities:
+                              type: object
+                              additionalProperties: { type: number, minimum: 0, maximum: 1 }
                             confidence: { type: number, minimum: 0, maximum: 1 }
                       usage:
                         type: object

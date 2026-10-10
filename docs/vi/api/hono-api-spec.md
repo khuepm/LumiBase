@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 7
-lastUpdated: 2026-10-06T06:12:18.422Z
+version: 8
+lastUpdated: 2026-10-06T11:14:27.131Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 20da33725cdd6e53
+sourceHash: 70c7f64ed634d765
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-06T06:12:18.422Z
-codeVerifiedHash: 20da33725cdd6e53
+codeVerified: 2026-10-06T11:14:27.131Z
+codeVerifiedHash: 70c7f64ed634d765
 codeVerifiedClaims: 386
 ---
 
@@ -707,7 +707,7 @@ Authorization: Bearer <token>
     "answers": {
       "spam": { "type": "noul", "noul": 0.12 },
       "topic": { "type": "choice", "choice": "promo", "probabilities": { "promo": 0.9, "news": 0.1 }, "confidence": 0.9 },
-      "quality": { "type": "score", "score": 1.4, "legend": {}, "probabilities": {}, "confidence": 0.6 }
+      "quality": { "type": "score", "score": 1.4, "legend": { "0": "poor", "1": "ok", "2": "great" }, "probabilities": { "0": 0, "1": 0.6, "2": 0.4 }, "confidence": 0.6 }
     },
     "usage": { "inputTokens": 120, "outputTokens": 0 }
   }
@@ -715,6 +715,8 @@ Authorization: Bearer <token>
 ```
 
 Lỗi: `400 VALIDATION`, `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE`, `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`. CMS retry upstream `429`/`529`/`503` hai lần với exponential backoff trước khi bỏ cuộc.
+
+CMS kiểm tra câu trả lời upstream trước khi trả về: giá trị bắt buộc phải hữu hạn và nằm trong miền hợp lệ, phân phối Choice/Score phải có đúng các phương án/mức đã khai báo và có tổng bằng 1 với sai số tuyệt đối tối đa `1e-6`, Score phải nằm trong `0..N-1`. Câu trả lời thiếu hoặc sai định dạng trả `502 DECISION_PARSE_FAILED`; giá trị không bị ép miền hoặc gán mặc định thành quyết định. Choice/Score bắt buộc có confidence, không suy ra từ xác suất của phương án thắng. Provider LLM áp dụng cùng validation.
 
 ### Agent API (Content OS)
 
