@@ -23,6 +23,13 @@
  *   TYPESAFE_API_KEY  — required when DECISION_PROVIDER = 'typesafe'
  *   TYPESAFE_BASE_URL — optional TypeSafe endpoint override
  *   OPENROUTER_API_KEY — required when DECISION_PROVIDER = 'openrouter'
+ *
+ * Bounds (all optional, see DEFAULT_DECISION_LIMITS):
+ *   DECISION_TIMEOUT_MS         — total deadline per decision, retries included
+ *   DECISION_ATTEMPT_TIMEOUT_MS — timeout of one upstream attempt
+ *   DECISION_MAX_RETRIES        — retries after the first attempt (0–5)
+ *   DECISION_MAX_INPUT_BYTES    — UTF-8 byte cap on the serialized state + questions
+ *   DECISION_MAX_INPUT_TOKENS   — estimated token budget for the same payload
  */
 
 import { createConfiguredLLMProvider, type LLMProvider, type LLMProviderEnv } from './llm-provider';
@@ -95,9 +102,40 @@ export interface DecisionResponse {
   usage: { inputTokens: number; outputTokens: number };
 }
 
-export interface DecisionProvider {
-  decide(request: DecisionRequest): Promise<DecisionResponse>;
+export interface DecisionCallOptions {
+  /** Cancels the decision; no retry is attempted after it aborts. */
+  signal?: AbortSignal;
 }
+
+export interface DecisionProvider {
+  decide(request: DecisionRequest, options?: DecisionCallOptions): Promise<DecisionResponse>;
+}
+
+export interface DecisionLimits {
+  /** Total wall-clock budget for one decision, retries and backoff included. */
+  deadlineMs: number;
+  /** Timeout of a single upstream attempt (capped by what remains of the deadline). */
+  attemptTimeoutMs: number;
+  /** Retries after the first attempt, for 429/503/529, network errors and attempt timeouts. */
+  maxRetries: number;
+  /** Hard cap on the UTF-8 size of the serialized `{ state, questions }`. */
+  maxInputBytes: number;
+  /** Cap on the estimated token count of the same payload (see estimateDecisionTokens). */
+  maxInputTokens: number;
+}
+
+/**
+ * Jev's context window is 32,000 tokens (OpenRouter model card). The token
+ * budget keeps 25% headroom for the provider's own framing because the count
+ * below is an estimate, not Jev's tokenizer.
+ */
+export const DEFAULT_DECISION_LIMITS: DecisionLimits = {
+  deadlineMs: 20_000,
+  attemptTimeoutMs: 8_000,
+  maxRetries: 2,
+  maxInputBytes: 131_072,
+  maxInputTokens: 24_000,
+};
 
 export type DecisionErrorCode =
   | 'DECISION_AUTH'
@@ -105,7 +143,10 @@ export type DecisionErrorCode =
   | 'DECISION_RATE_LIMITED'
   | 'DECISION_UNAVAILABLE'
   | 'DECISION_UPSTREAM'
-  | 'DECISION_PARSE_FAILED';
+  | 'DECISION_PARSE_FAILED'
+  | 'DECISION_TIMEOUT'
+  | 'DECISION_CANCELLED'
+  | 'DECISION_INPUT_TOO_LARGE';
 
 export class DecisionProviderError extends Error {
   readonly code: DecisionErrorCode;
@@ -232,7 +273,136 @@ function normalizeAnswers(
   }));
 }
 
-const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+// ---------------------------------------------------------------------------
+// Input budget
+// ---------------------------------------------------------------------------
+
+export interface DecisionInputSize {
+  bytes: number;
+  estimatedTokens: number;
+}
+
+/**
+ * Conservative token estimate without a tokenizer: ~4 ASCII characters per
+ * token, and every non-ASCII code point counted as a whole token. Vietnamese
+ * diacritics are mostly non-ASCII, so VI text is budgeted far more tightly
+ * than EN text of the same length. It over-counts rather than under-counts
+ * for the scripts LumiBase serves; it is not Jev's tokenizer.
+ */
+export function estimateDecisionTokens(text: string): number {
+  let ascii = 0;
+  let other = 0;
+  for (const char of text) {
+    if (char.codePointAt(0)! < 0x80) ascii += 1;
+    else other += 1;
+  }
+  return Math.ceil(ascii / 4) + other;
+}
+
+/** Measures everything sent upstream: state, instructions, criteria and nesting. */
+export function measureDecisionInput(request: DecisionRequest): DecisionInputSize {
+  const text = JSON.stringify({ state: request.state, questions: request.questions });
+  return {
+    bytes: new TextEncoder().encode(text).length,
+    estimatedTokens: estimateDecisionTokens(text),
+  };
+}
+
+export function assertDecisionInputBudget(request: DecisionRequest, limits: DecisionLimits): DecisionInputSize {
+  const size = measureDecisionInput(request);
+  if (size.bytes > limits.maxInputBytes) {
+    throw new DecisionProviderError(
+      'DECISION_INPUT_TOO_LARGE',
+      `Decision input is ${size.bytes} bytes; the limit is ${limits.maxInputBytes}.`,
+    );
+  }
+  if (size.estimatedTokens > limits.maxInputTokens) {
+    throw new DecisionProviderError(
+      'DECISION_INPUT_TOO_LARGE',
+      `Decision input is ~${size.estimatedTokens} tokens (estimated); the limit is ${limits.maxInputTokens}.`,
+    );
+  }
+  return size;
+}
+
+// ---------------------------------------------------------------------------
+// Deadline, cancellation and retry helpers
+// ---------------------------------------------------------------------------
+
+function cancelledError(): DecisionProviderError {
+  return new DecisionProviderError('DECISION_CANCELLED', 'The decision request was cancelled.');
+}
+
+function timeoutError(deadlineMs: number): DecisionProviderError {
+  return new DecisionProviderError('DECISION_TIMEOUT', `The decision did not complete within ${deadlineMs} ms.`);
+}
+
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw cancelledError();
+}
+
+/** Sleeps `ms`, rejecting with DECISION_CANCELLED as soon as `signal` aborts. */
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(cancelledError());
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(cancelledError());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/** `Retry-After` as delta-seconds or an HTTP date, in ms from `now`; null when absent/invalid. */
+export function parseRetryAfter(header: string | null, now: number): number | null {
+  if (!header) return null;
+  const trimmed = header.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000;
+  const date = Date.parse(trimmed);
+  return Number.isNaN(date) ? null : Math.max(0, date - now);
+}
+
+/** Races `work` against the deadline and the caller's signal. `work` itself is not cancelled. */
+function withDeadline<T>(work: Promise<T>, deadlineMs: number, signal?: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      cleanup();
+      reject(cancelledError());
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(timeoutError(deadlineMs));
+    }, deadlineMs);
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    work.then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error: unknown) => {
+        cleanup();
+        reject(error);
+      },
+    );
+  });
+}
+
+type AttemptOutcome =
+  | { kind: 'ok'; data: unknown }
+  | { kind: 'http'; status: number; text: string; retryAfterMs: number | null }
+  | { kind: 'network' }
+  | { kind: 'timeout' };
 
 // ---------------------------------------------------------------------------
 // TypeSafe System One (Jev)
@@ -245,12 +415,20 @@ export interface SystemOneProviderOptions {
   baseUrl?: string;
   /** Provider name echoed in responses and error messages. */
   name?: string;
-  /** Retries after the first attempt on 429/529/503. */
+  /** Deadline, attempt timeout, retry count and input budget. */
+  limits?: Partial<DecisionLimits>;
+  /** @deprecated Use `limits.maxRetries`. */
   maxRetries?: number;
-  /** Base backoff in ms; doubles per retry. */
+  /** Base backoff in ms; the cap doubles per retry and the delay is drawn below it (full jitter). */
   retryBaseMs?: number;
-  /** Injectable for tests. */
-  sleep?: (ms: number) => Promise<void>;
+  /** Upper bound of a single backoff delay before `Retry-After` is applied. */
+  maxRetryDelayMs?: number;
+  /** Injectable for tests. Must reject with DECISION_CANCELLED when `signal` aborts. */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** Injectable jitter source in [0, 1). */
+  random?: () => number;
+  /** Injectable clock. */
+  now?: () => number;
 }
 
 /**
@@ -263,52 +441,122 @@ export class SystemOneDecisionProvider implements DecisionProvider {
   private readonly model: string;
   private readonly baseUrl: string;
   private readonly name: string;
-  private readonly maxRetries: number;
+  private readonly limits: DecisionLimits;
   private readonly retryBaseMs: number;
-  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly maxRetryDelayMs: number;
+  private readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+  private readonly random: () => number;
+  private readonly now: () => number;
 
   constructor(options: SystemOneProviderOptions) {
     this.apiKey = options.apiKey;
     this.model = options.model ?? 'jev-latest';
     this.baseUrl = (options.baseUrl ?? 'https://api.typesafe.ai/v1').replace(/\/+$/, '');
     this.name = options.name ?? 'typesafe';
-    this.maxRetries = options.maxRetries ?? 2;
+    this.limits = {
+      ...DEFAULT_DECISION_LIMITS,
+      ...(options.maxRetries === undefined ? {} : { maxRetries: options.maxRetries }),
+      ...options.limits,
+    };
     this.retryBaseMs = options.retryBaseMs ?? 500;
-    this.sleep = options.sleep ?? defaultSleep;
+    this.maxRetryDelayMs = options.maxRetryDelayMs ?? 4_000;
+    this.sleep = options.sleep ?? abortableSleep;
+    this.random = options.random ?? Math.random;
+    this.now = options.now ?? Date.now;
   }
 
-  async decide(request: DecisionRequest): Promise<DecisionResponse> {
+  async decide(request: DecisionRequest, options: DecisionCallOptions = {}): Promise<DecisionResponse> {
+    const { signal } = options;
+    throwIfCancelled(signal);
+    // Rejected before any fetch: the budget is a property of the request.
+    assertDecisionInputBudget(request, this.limits);
+
     const body = JSON.stringify({
       model: this.model,
       state: request.state,
       questions: request.questions,
     });
+    const deadlineAt = this.now() + this.limits.deadlineMs;
 
-    let res: Response | null = null;
-    for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
-      res = await fetch(`${this.baseUrl}/systemone`, {
+    for (let attempt = 0; ; attempt += 1) {
+      const remaining = deadlineAt - this.now();
+      if (remaining <= 0) throw timeoutError(this.limits.deadlineMs);
+
+      const outcome = await this.attempt(body, Math.min(this.limits.attemptTimeoutMs, remaining), signal);
+      if (outcome.kind === 'ok') return this.parse(request, outcome.data);
+
+      const failure = this.failureFor(outcome);
+      // Auth, validation and other non-transient statuses are final.
+      const retryable = outcome.kind !== 'http' || isRetryableStatus(outcome.status);
+      if (!retryable || attempt >= this.limits.maxRetries) throw failure;
+
+      const cap = Math.min(this.maxRetryDelayMs, this.retryBaseMs * 2 ** attempt);
+      const backoff = Math.floor(this.random() * cap);
+      const retryAfter = outcome.kind === 'http' ? outcome.retryAfterMs : null;
+      const delay = Math.max(backoff, retryAfter ?? 0);
+      // A wait that would exhaust the deadline cannot produce an answer in time.
+      if (this.now() + delay >= deadlineAt) throw failure;
+      await this.sleep(delay, signal);
+      throwIfCancelled(signal);
+    }
+  }
+
+  /** One fetch, body read included, under its own timeout and the caller's signal. */
+  private async attempt(body: string, timeoutMs: number, signal?: AbortSignal): Promise<AttemptOutcome> {
+    throwIfCancelled(signal);
+    const controller = new AbortController();
+    let timedOut = false;
+    const onAbort = () => controller.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+
+    try {
+      const res = await fetch(`${this.baseUrl}/systemone`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.apiKey}`,
         },
         body,
+        signal: controller.signal,
       });
-      if (!isRetryableStatus(res.status) || attempt === this.maxRetries) break;
-      await this.sleep(this.retryBaseMs * 2 ** attempt);
+      if (res.ok) {
+        // A non-JSON body is a parse failure, not a transport one: never retried.
+        return { kind: 'ok', data: await res.json().catch(() => null) };
+      }
+      const text = await res.text().catch(() => '');
+      return {
+        kind: 'http',
+        status: res.status,
+        text,
+        retryAfterMs: parseRetryAfter(res.headers.get('retry-after'), this.now()),
+      };
+    } catch {
+      if (signal?.aborted) throw cancelledError();
+      return timedOut ? { kind: 'timeout' } : { kind: 'network' };
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
     }
+  }
 
-    if (!res || !res.ok) {
-      const status = res?.status ?? 0;
-      const detail = res ? (await res.text().catch(() => '')).slice(0, 500) : '';
-      throw new DecisionProviderError(
-        errorCodeForStatus(status),
-        `${this.name} decision API error ${status}${detail ? `: ${detail}` : ''}`,
-        status,
-      );
+  private failureFor(outcome: Exclude<AttemptOutcome, { kind: 'ok' }>): DecisionProviderError {
+    if (outcome.kind === 'timeout') return timeoutError(this.limits.deadlineMs);
+    if (outcome.kind === 'network') {
+      return new DecisionProviderError('DECISION_UNAVAILABLE', `${this.name} decision API is unreachable.`);
     }
+    const detail = outcome.text.slice(0, 500);
+    return new DecisionProviderError(
+      errorCodeForStatus(outcome.status),
+      `${this.name} decision API error ${outcome.status}${detail ? `: ${detail}` : ''}`,
+      outcome.status,
+    );
+  }
 
-    const data: unknown = await res.json().catch(() => null);
+  private parse(request: DecisionRequest, data: unknown): DecisionResponse {
     if (!isRecord(data)) {
       throw new DecisionProviderError(
         'DECISION_PARSE_FAILED',
@@ -363,21 +611,35 @@ function extractJsonObject(content: string): unknown {
 export class LLMDecisionProvider implements DecisionProvider {
   private readonly llm: LLMProvider;
   private readonly model: string;
+  private readonly limits: DecisionLimits;
 
-  constructor(llm: LLMProvider, model: string) {
+  constructor(llm: LLMProvider, model: string, limits: Partial<DecisionLimits> = {}) {
     this.llm = llm;
     this.model = model;
+    this.limits = { ...DEFAULT_DECISION_LIMITS, ...limits };
   }
 
-  async decide(request: DecisionRequest): Promise<DecisionResponse> {
-    const response = await this.llm.chat(
-      [
-        {
-          role: 'user',
-          content: `STATE:\n${JSON.stringify(request.state)}\n\nQUESTIONS:\n${JSON.stringify(request.questions)}`,
-        },
-      ],
-      { systemPrompt: LLM_DECISION_PROMPT, tools: false },
+  /**
+   * One LLM call bounded by the deadline. LLMProvider has no cancellation
+   * hook, so on timeout/cancel the caller is released but the underlying
+   * HTTP call may still run to completion; its result is discarded. Not
+   * retried: retries belong to the LLM provider layer.
+   */
+  async decide(request: DecisionRequest, options: DecisionCallOptions = {}): Promise<DecisionResponse> {
+    throwIfCancelled(options.signal);
+    assertDecisionInputBudget(request, this.limits);
+    const response = await withDeadline(
+      this.llm.chat(
+        [
+          {
+            role: 'user',
+            content: `STATE:\n${JSON.stringify(request.state)}\n\nQUESTIONS:\n${JSON.stringify(request.questions)}`,
+          },
+        ],
+        { systemPrompt: LLM_DECISION_PROMPT, tools: false },
+      ),
+      this.limits.deadlineMs,
+      options.signal,
     );
 
     const parsed = response.content ? extractJsonObject(response.content) : null;
@@ -429,6 +691,35 @@ export interface DecisionProviderEnv extends LLMProviderEnv {
   TYPESAFE_API_KEY?: string;
   TYPESAFE_BASE_URL?: string;
   OPENROUTER_API_KEY?: string;
+  DECISION_TIMEOUT_MS?: string;
+  DECISION_ATTEMPT_TIMEOUT_MS?: string;
+  DECISION_MAX_RETRIES?: string;
+  DECISION_MAX_INPUT_BYTES?: string;
+  DECISION_MAX_INPUT_TOKENS?: string;
+}
+
+function readBound(raw: string | undefined, fallback: number, min: number, max: number, name: string): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    console.warn(`[decision] ignoring ${name}=${raw}; expected an integer in ${min}..${max}`);
+    return fallback;
+  }
+  return value;
+}
+
+/** Reads the DECISION_* bounds; invalid values fall back to the defaults with a warning. */
+export function decisionLimitsFromEnv(env: DecisionProviderEnv): DecisionLimits {
+  const d = DEFAULT_DECISION_LIMITS;
+  return {
+    deadlineMs: readBound(env.DECISION_TIMEOUT_MS, d.deadlineMs, 1_000, 120_000, 'DECISION_TIMEOUT_MS'),
+    attemptTimeoutMs: readBound(
+      env.DECISION_ATTEMPT_TIMEOUT_MS, d.attemptTimeoutMs, 500, 120_000, 'DECISION_ATTEMPT_TIMEOUT_MS',
+    ),
+    maxRetries: readBound(env.DECISION_MAX_RETRIES, d.maxRetries, 0, 5, 'DECISION_MAX_RETRIES'),
+    maxInputBytes: readBound(env.DECISION_MAX_INPUT_BYTES, d.maxInputBytes, 1_024, 1_048_576, 'DECISION_MAX_INPUT_BYTES'),
+    maxInputTokens: readBound(env.DECISION_MAX_INPUT_TOKENS, d.maxInputTokens, 256, 1_000_000, 'DECISION_MAX_INPUT_TOKENS'),
+  };
 }
 
 export interface ConfiguredDecisionProvider {
@@ -448,6 +739,7 @@ export function createDecisionProvider(
   env: DecisionProviderEnv,
 ): ConfiguredDecisionProvider | null {
   const name = env.DECISION_PROVIDER;
+  const limits = decisionLimitsFromEnv(env);
 
   switch (name) {
     case 'typesafe': {
@@ -461,6 +753,7 @@ export function createDecisionProvider(
           model,
           baseUrl: env.TYPESAFE_BASE_URL || undefined,
           name,
+          limits,
         }),
       };
     }
@@ -476,6 +769,7 @@ export function createDecisionProvider(
           model,
           baseUrl: 'https://openrouter.ai/api/v1',
           name,
+          limits,
         }),
       };
     }
@@ -487,7 +781,7 @@ export function createDecisionProvider(
       return {
         name,
         model,
-        provider: new LLMDecisionProvider(llm.provider, model),
+        provider: new LLMDecisionProvider(llm.provider, model, limits),
       };
     }
 
