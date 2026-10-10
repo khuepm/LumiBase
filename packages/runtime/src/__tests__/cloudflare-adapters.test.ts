@@ -442,3 +442,27 @@ describe("CloudflareSearchProvider — host normalization", () => {
     expect(ratio).toBeLessThan(100);
   });
 });
+
+describe("CloudflareCacheProvider.drainSite", () => {
+  it("drains only pageview counters, leaving quota and rate-limit counters intact", async () => {
+    const fetchMock = vi.fn(async (_url: string) =>
+      new Response(JSON.stringify({ counters: [], uniques: [] })),
+    );
+    const namespace = {
+      idFromName: vi.fn((name: string) => name),
+      get: vi.fn(() => ({ fetch: fetchMock })),
+    };
+    const cache = new CloudflareCacheProvider(
+      createMockKV(),
+      namespace as unknown as ConstructorParameters<typeof CloudflareCacheProvider>[1],
+    );
+
+    await cache.drainSite("site_1");
+
+    expect(namespace.idFromName).toHaveBeenCalledWith("site_1");
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.pathname).toBe("/drain");
+    // `pv` covers `pv:` and `pvu:` (LIKE 'pv%'); `dq:` and `rl:` never match.
+    expect(url.searchParams.get("prefix")).toBe("pv");
+  });
+});

@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 10
-lastUpdated: 2026-10-10T10:34:35.843Z
+version: 11
+lastUpdated: 2026-10-10T19:24:05.784Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 72370d45ee2454a6
+sourceHash: bddddf229637bbae
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-10T10:34:35.843Z
-codeVerifiedHash: 72370d45ee2454a6
-codeVerifiedClaims: 386
+codeVerified: 2026-10-10T19:24:05.784Z
+codeVerifiedHash: bddddf229637bbae
+codeVerifiedClaims: 388
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -714,7 +714,7 @@ Authorization: Bearer <token>
 }
 ```
 
-Lỗi: `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (vượt budget byte hoặc token; message chỉ nêu kích thước), `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream quá tải hoặc không kết nối được), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (client đã đóng request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
+Lỗi: `403 FORBIDDEN` (không có `ai:decide`), `403 DECISION_DISABLED`, `422 DECISION_FIELD_NOT_ALLOWED`, `429 DECISION_QUOTA_EXCEEDED` / `DECISION_CONCURRENCY_LIMITED`, `503 DECISION_QUOTA_UNAVAILABLE` (xem phần Governance bên dưới), `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (vượt budget byte hoặc token; message chỉ nêu kích thước), `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream quá tải hoặc không kết nối được), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (client đã đóng request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
 
 Deadline và retry: mỗi decision có một deadline tổng (`DECISION_TIMEOUT_MS`, mặc định 20 giây) bao gồm mọi lần retry và thời gian chờ backoff, và mỗi lần gọi upstream có timeout riêng (`DECISION_ATTEMPT_TIMEOUT_MS`, mặc định 8 giây, không vượt phần còn lại của deadline). Chỉ `429`/`503`/`529`, lỗi mạng và timeout của một lần gọi mới được retry, tối đa `DECISION_MAX_RETRIES` lần (mặc định 2), với exponential backoff có full jitter và tôn trọng `Retry-After`. Lần chờ nào sẽ vượt deadline thì không bắt đầu. Lỗi auth, validation và parse không bao giờ được retry. Khi client ngắt kết nối, lần gọi upstream đang chạy bị huỷ và không retry nữa. Provider `llm` bị giới hạn bởi cùng deadline và budget nhưng chỉ gọi một lần; deadline và việc client ngắt kết nối sẽ huỷ request LLM đó.
 
@@ -723,6 +723,23 @@ Số token là ước lượng, không phải tokenizer của provider: khoảng
 CMS kiểm tra câu trả lời upstream trước khi trả về: giá trị bắt buộc phải hữu hạn và nằm trong miền hợp lệ, phân phối Choice/Score phải có đúng các phương án/mức đã khai báo và có tổng bằng 1 với sai số tuyệt đối tối đa `1e-6`, Score phải nằm trong `0..N-1`. Câu trả lời thiếu hoặc sai định dạng trả `502 DECISION_PARSE_FAILED`; giá trị không bị ép miền hoặc gán mặc định thành quyết định. Choice/Score bắt buộc có confidence, không suy ra từ xác suất của phương án thắng. Provider LLM áp dụng cùng validation.
 
 **`DECISION_PROVIDER=llm`** là provider tương đương do bạn chọn qua cấu hình; nó **không** phải cơ chế tự động chuyển khi lỗi (failover), và không có gì tự chuyển sang nó khi Jev lỗi. Nó gọi `LLM_PROVIDER` ở chế độ decision có cấu trúc: system prompt riêng cho decision, không có skill của Copilot và không cho tool calling. Câu trả lời Score từ LLM là mức kỳ vọng có trọng số `Σ i·p(i)` tính từ xác suất các mức đã được kiểm tra, cùng thang `0..N-1` với Jev và không làm tròn; mức mà model tự nêu bị bỏ qua, nên cùng một phân phối cho cùng một score trên mọi adapter. Vì xác suất không được hiệu chuẩn, không dùng nguyên ngưỡng đã chỉnh cho Jev cho `llm`. Câu trả lời chỉ có tool call hoặc không phải JSON sẽ lỗi `502 DECISION_PARSE_FAILED`.
+
+**Governance (#511).** Mọi cổng dưới đây chạy trước khi gọi provider, theo đúng thứ tự này; request bị chặn ở một cổng thì không bao giờ tới provider:
+
+1. **Capability `ai:decide`.** Cấp bằng permission `create` của policy trên collection dành riêng `lumibase_ai_decisions`; site admin đã có sẵn. Permission này không cấp thêm quyền nào khác (không có `items:write`). Không có → `403 FORBIDDEN`. Caller ẩn danh, member không có capability và principal của site khác đều bị từ chối ở bước này.
+2. **Đã cấu hình provider** → nếu chưa thì `503 DECISION_NOT_CONFIGURED`.
+3. **Site opt-in.** Site chỉ gửi nội dung tới provider sau khi site admin lưu setting `aiDecisions` với `enabled: true` (`POST /api/v1/settings`). Mặc định là tắt, và giá trị sai định dạng được coi là tắt. Đặt lại `false` (hoặc xoá key) là kill switch theo site: request kế tiếp nhận `403 DECISION_DISABLED`. Không chỗ nào khác đọc setting này, nên việc soạn thảo, publish và chat Copilot không bị ảnh hưởng. Bỏ đặt `DECISION_PROVIDER` là công tắc cho toàn nền tảng.
+4. **Danh sách field được phép.** Khi đặt `allowedStateFields`, `state` phải là object và mọi key cấp đầu đều nằm trong danh sách; nếu không thì `422 DECISION_FIELD_NOT_ALLOWED`.
+5. **Budget đầu vào** → `413 DECISION_INPUT_TOO_LARGE` (ở trên).
+6. **Quota theo site**, hạch toán atomic bằng counter của runtime (Redis `INCRBY` trên Docker, Durable Object `PageviewCounter` theo site trên Cloudflare): số decision được nhận mỗi giờ, số decision đang chạy, và số token ước lượng mỗi ngày UTC. Lượng token giữ chỗ là trường hợp xấu nhất, tính cả mọi lần retry: (input ước lượng + output ước lượng) × (`DECISION_MAX_RETRIES` + 1). Khi provider trả lời, site bị tính usage đã báo cộng với ước lượng cho mỗi lần gọi lỗi trước đó, phần còn lại được hoàn. Số token không biết được tính theo ước lượng, không bao giờ coi là miễn phí. Timeout hoặc lỗi sau khi đã gửi request thì tính theo từng lần gọi; request chưa tới provider được hoàn toàn bộ. Nếu sẽ vượt giới hạn → `429 DECISION_QUOTA_EXCEEDED` hoặc `429 DECISION_CONCURRENCY_LIMITED` kèm `Retry-After`. Nếu backend counter không hoạt động, request bị chặn (fail closed) với `503 DECISION_QUOTA_UNAVAILABLE`.
+
+Setting `aiDecisions` của site có thể siết các mức trần của nền tảng, nhưng không thể nâng lên:
+
+```json
+{ "key": "aiDecisions", "value": { "enabled": true, "allowedStateFields": ["title", "body"], "requestsPerHour": 100, "maxConcurrent": 2, "budgetPerDay": 200000 } }
+```
+
+Mỗi lần gọi ghi một audit event `ai_decision` gồm request ID, principal (loại và ID), provider, model, dấu vân tay rubric (`sha256:` của questions, nên cùng rubric thì cùng version), loại câu hỏi, outcome, HTTP status, latency, usage đã báo, số lần gọi, và số token đã giữ chỗ và đã tính. Event không bao giờ ghi `state`, instructions, criteria, câu trả lời, email của người gọi hay IP của client. Audit tuân theo thời hạn lưu của audit log (`LUMIBASE_AUDIT_RETENTION_DAYS`, mặc định 90 ngày). CMS không lưu nội dung decision; việc provider giữ lại gì do điều khoản của chính provider quy định.
 
 ### Agent API (Content OS)
 

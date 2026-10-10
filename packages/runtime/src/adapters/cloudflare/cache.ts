@@ -38,6 +38,9 @@ export interface KVNamespace {
  * when `get` actually throws (infra/runtime exceptions); primarily a Docker/
  * Redis-observable state.
  */
+/** Matches `pv:` (views) and `pvu:` (uniques); the DO drains with `LIKE prefix%`. */
+const PAGEVIEW_DRAIN_PREFIX = 'pv';
+
 export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProvider {
   onEvent?: (e: CacheEvent) => void;
 
@@ -194,6 +197,10 @@ export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProv
    * Drain-and-reset a single site's PageviewCounter DO. Used by the scheduled
    * flush to move counters/uniques into the durable rollup. Absent binding
    * yields empty results (nothing to flush).
+   *
+   * Only pageview keys (`pv:` and `pvu:`) are drained. The same DO also holds
+   * every other `increment()` counter for the site — rate-limit windows,
+   * decision quotas — and an empty prefix reset them all every flush.
    */
   async drainSite(siteId: string): Promise<{
     counters: Array<{ key: string; value: number }>;
@@ -201,7 +208,7 @@ export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProv
   }> {
     if (!this.counterNs) return { counters: [], uniques: [] };
     const id = this.counterNs.idFromName(siteId);
-    const res = await this.counterNs.get(id).fetch('https://internal/drain?prefix=');
+    const res = await this.counterNs.get(id).fetch(`https://internal/drain?prefix=${PAGEVIEW_DRAIN_PREFIX}`);
     return (await res.json()) as {
       counters: Array<{ key: string; value: number }>;
       uniques: Array<{ key: string; value: number }>;
