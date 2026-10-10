@@ -3460,8 +3460,8 @@ paths:
                       usage:
                         type: object
                         properties:
-                          inputTokens: { type: integer }
-                          outputTokens: { type: integer }
+                          inputTokens: { type: integer, nullable: true, description: null when the provider did not report it }
+                          outputTokens: { type: integer, nullable: true, description: null when the provider did not report it }
         '400':
           description: Validation error
           content:
