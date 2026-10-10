@@ -1,10 +1,10 @@
 ---
-version: 10
-lastUpdated: 2026-10-10T09:15:58.977Z
+version: 11
+lastUpdated: 2026-10-10T10:34:35.843Z
 sourceLang: en
-contentHash: 7df534ae6d4aefa8
-codeVerified: 2026-10-10T09:15:58.977Z
-codeVerifiedHash: 7df534ae6d4aefa8
+contentHash: 72370d45ee2454a6
+codeVerified: 2026-10-10T10:34:35.843Z
+codeVerifiedHash: 72370d45ee2454a6
 codeVerifiedClaims: 386
 ---
 
@@ -806,7 +806,7 @@ Authorization: Bearer <token>
 }
 ```
 
-**Decision response** — `calibrated` is `false` when `DECISION_PROVIDER=llm`, because those probabilities are self-reported by the LLM:
+**Decision response** — `calibrated` is `false` when `DECISION_PROVIDER=llm`, because those probabilities are self-reported by the LLM. `usage.inputTokens` / `usage.outputTokens` are `null` when the provider did not report them (unknown, never a made-up `0`):
 ```json
 {
   "data": {
@@ -825,11 +825,13 @@ Authorization: Bearer <token>
 
 Errors: `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (over the byte or token budget; the message gives sizes only), `503 DECISION_NOT_CONFIGURED` (no `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream overloaded or unreachable), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (the client closed the request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
 
-Deadlines and retries: one decision has a total deadline (`DECISION_TIMEOUT_MS`, default 20 s) that includes every retry and backoff, and each upstream attempt has its own timeout (`DECISION_ATTEMPT_TIMEOUT_MS`, default 8 s, capped by what remains of the deadline). Only `429`/`503`/`529`, network errors and attempt timeouts are retried, at most `DECISION_MAX_RETRIES` times (default 2), with full-jitter exponential backoff that honours `Retry-After`. A wait that would run past the deadline is not started. Auth, validation and parse failures are never retried. When the client disconnects, the in-flight upstream call is aborted and no retry follows. The `llm` provider is bounded by the same deadline and budget but makes a single call; on timeout the caller is released while the underlying LLM request may still finish and is discarded.
+Deadlines and retries: one decision has a total deadline (`DECISION_TIMEOUT_MS`, default 20 s) that includes every retry and backoff, and each upstream attempt has its own timeout (`DECISION_ATTEMPT_TIMEOUT_MS`, default 8 s, capped by what remains of the deadline). Only `429`/`503`/`529`, network errors and attempt timeouts are retried, at most `DECISION_MAX_RETRIES` times (default 2), with full-jitter exponential backoff that honours `Retry-After`. A wait that would run past the deadline is not started. Auth, validation and parse failures are never retried. When the client disconnects, the in-flight upstream call is aborted and no retry follows. The `llm` provider is bounded by the same deadline and budget but makes a single call; the deadline and a client disconnect abort that LLM request.
 
 The token count is an estimate, not the provider's tokenizer: about 4 ASCII characters per token, and every non-ASCII code point (e.g. Vietnamese diacritics) as one token. It over-counts on purpose; the 24,000 default leaves 25% headroom under Jev's 32,000-token context.
 
 The CMS validates upstream answers before returning them: required values must be finite and in range, Choice/Score distributions must include exactly the declared options/levels and sum to 1 within an absolute tolerance of `1e-6`, and Score must lie in `0..N-1`. Missing or malformed answers return `502 DECISION_PARSE_FAILED`; values are never clamped or defaulted into decisions. Confidence is required for Choice/Score and is not inferred from the winning probability. The LLM provider uses the same validation.
+
+**`DECISION_PROVIDER=llm`** is an equivalent provider you select by configuration; it is **not** an automatic failover, and nothing switches to it when Jev fails. It calls `LLM_PROVIDER` in structured decision mode: a dedicated decision system prompt, no Copilot skills and no tool calling. A Score answer from the LLM is the weighted expected level `Σ i·p(i)` computed from its validated level probabilities, on the same `0..N-1` scale as Jev and never rounded; the level the model names is ignored, so one distribution yields one score on every adapter. Because the probabilities are uncalibrated, thresholds tuned for Jev must not be reused for `llm` as-is. Tool-only or non-JSON replies fail with `502 DECISION_PARSE_FAILED`.
 
 ### Agent API (Content OS)
 

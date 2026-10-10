@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 9
-lastUpdated: 2026-10-10T09:15:58.977Z
+version: 10
+lastUpdated: 2026-10-10T10:34:35.843Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7df534ae6d4aefa8
+sourceHash: 72370d45ee2454a6
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-10T09:15:58.977Z
-codeVerifiedHash: 7df534ae6d4aefa8
+codeVerified: 2026-10-10T10:34:35.843Z
+codeVerifiedHash: 72370d45ee2454a6
 codeVerifiedClaims: 386
 ---
 
@@ -697,7 +697,7 @@ Authorization: Bearer <token>
 }
 ```
 
-**Response decision** — `calibrated` là `false` khi `DECISION_PROVIDER=llm`, vì xác suất do chính LLM tự báo:
+**Response decision** — `calibrated` là `false` khi `DECISION_PROVIDER=llm`, vì xác suất do chính LLM tự báo. `usage.inputTokens` / `usage.outputTokens` là `null` khi provider không báo số token (không biết, không bao giờ là `0` tự đặt):
 ```json
 {
   "data": {
@@ -716,11 +716,13 @@ Authorization: Bearer <token>
 
 Lỗi: `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (vượt budget byte hoặc token; message chỉ nêu kích thước), `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream quá tải hoặc không kết nối được), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (client đã đóng request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
 
-Deadline và retry: mỗi decision có một deadline tổng (`DECISION_TIMEOUT_MS`, mặc định 20 giây) bao gồm mọi lần retry và thời gian chờ backoff, và mỗi lần gọi upstream có timeout riêng (`DECISION_ATTEMPT_TIMEOUT_MS`, mặc định 8 giây, không vượt phần còn lại của deadline). Chỉ `429`/`503`/`529`, lỗi mạng và timeout của một lần gọi mới được retry, tối đa `DECISION_MAX_RETRIES` lần (mặc định 2), với exponential backoff có full jitter và tôn trọng `Retry-After`. Lần chờ nào sẽ vượt deadline thì không bắt đầu. Lỗi auth, validation và parse không bao giờ được retry. Khi client ngắt kết nối, lần gọi upstream đang chạy bị huỷ và không retry nữa. Provider `llm` bị giới hạn bởi cùng deadline và budget nhưng chỉ gọi một lần; khi timeout, caller được giải phóng còn request LLM bên dưới có thể vẫn chạy xong và kết quả bị bỏ.
+Deadline và retry: mỗi decision có một deadline tổng (`DECISION_TIMEOUT_MS`, mặc định 20 giây) bao gồm mọi lần retry và thời gian chờ backoff, và mỗi lần gọi upstream có timeout riêng (`DECISION_ATTEMPT_TIMEOUT_MS`, mặc định 8 giây, không vượt phần còn lại của deadline). Chỉ `429`/`503`/`529`, lỗi mạng và timeout của một lần gọi mới được retry, tối đa `DECISION_MAX_RETRIES` lần (mặc định 2), với exponential backoff có full jitter và tôn trọng `Retry-After`. Lần chờ nào sẽ vượt deadline thì không bắt đầu. Lỗi auth, validation và parse không bao giờ được retry. Khi client ngắt kết nối, lần gọi upstream đang chạy bị huỷ và không retry nữa. Provider `llm` bị giới hạn bởi cùng deadline và budget nhưng chỉ gọi một lần; deadline và việc client ngắt kết nối sẽ huỷ request LLM đó.
 
 Số token là ước lượng, không phải tokenizer của provider: khoảng 4 ký tự ASCII cho một token, và mỗi code point không phải ASCII (ví dụ chữ tiếng Việt có dấu) tính là một token. Cách đếm cố ý đếm dư; mặc định 24,000 chừa 25% dư địa dưới context 32,000 token của Jev.
 
 CMS kiểm tra câu trả lời upstream trước khi trả về: giá trị bắt buộc phải hữu hạn và nằm trong miền hợp lệ, phân phối Choice/Score phải có đúng các phương án/mức đã khai báo và có tổng bằng 1 với sai số tuyệt đối tối đa `1e-6`, Score phải nằm trong `0..N-1`. Câu trả lời thiếu hoặc sai định dạng trả `502 DECISION_PARSE_FAILED`; giá trị không bị ép miền hoặc gán mặc định thành quyết định. Choice/Score bắt buộc có confidence, không suy ra từ xác suất của phương án thắng. Provider LLM áp dụng cùng validation.
+
+**`DECISION_PROVIDER=llm`** là provider tương đương do bạn chọn qua cấu hình; nó **không** phải cơ chế tự động chuyển khi lỗi (failover), và không có gì tự chuyển sang nó khi Jev lỗi. Nó gọi `LLM_PROVIDER` ở chế độ decision có cấu trúc: system prompt riêng cho decision, không có skill của Copilot và không cho tool calling. Câu trả lời Score từ LLM là mức kỳ vọng có trọng số `Σ i·p(i)` tính từ xác suất các mức đã được kiểm tra, cùng thang `0..N-1` với Jev và không làm tròn; mức mà model tự nêu bị bỏ qua, nên cùng một phân phối cho cùng một score trên mọi adapter. Vì xác suất không được hiệu chuẩn, không dùng nguyên ngưỡng đã chỉnh cho Jev cho `llm`. Câu trả lời chỉ có tool call hoặc không phải JSON sẽ lỗi `502 DECISION_PARSE_FAILED`.
 
 ### Agent API (Content OS)
 
