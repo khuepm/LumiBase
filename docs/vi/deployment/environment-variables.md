@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 7
-lastUpdated: 2026-10-10T09:15:59.812Z
+version: 8
+lastUpdated: 2026-10-10T10:34:36.657Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 975cc7a6a6136d0d
+sourceHash: d0e7028900cd9e37
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-10T09:15:59.812Z
-codeVerifiedHash: 975cc7a6a6136d0d
+codeVerified: 2026-10-10T10:34:36.657Z
+codeVerifiedHash: d0e7028900cd9e37
 codeVerifiedClaims: 74
 ---
 
@@ -187,7 +187,7 @@ Phục vụ `POST /api/v1/ai/decisions`: trả về câu trả lời có kiểu 
 
 | Biến | Bắt buộc | Mô tả |
 |------|----------|-------|
-| `DECISION_PROVIDER` | ✗ | `typesafe` (TypeSafe Jev, gọi trực tiếp), `openrouter` (cùng System One API qua OpenRouter, tính phí vào OpenRouter), hoặc `llm` (dùng lại `LLM_PROVIDER`; câu trả lời được gắn `calibrated: false`). Không đặt = tắt. |
+| `DECISION_PROVIDER` | ✗ | `typesafe` (TypeSafe Jev, gọi trực tiếp), `openrouter` (cùng System One API qua OpenRouter, tính phí vào OpenRouter), hoặc `llm` (dùng lại `LLM_PROVIDER` ở chế độ decision có cấu trúc, không có tools; câu trả lời được gắn `calibrated: false`). Đây là lựa chọn qua cấu hình, không phải tự động failover. Không đặt = tắt. |
 | `DECISION_MODEL` | ✗ | Override model. Mặc định `jev-latest` (`typesafe`) hoặc `~typesafe/jev-latest` (`openrouter`). |
 | `TYPESAFE_API_KEY` | Nếu provider `typesafe` | API key TypeSafe. |
 | `TYPESAFE_BASE_URL` | ✗ | Override endpoint TypeSafe. Mặc định `https://api.typesafe.ai/v1`. |

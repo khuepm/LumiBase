@@ -74,7 +74,8 @@ export interface DecisionResult {
    */
   calibrated: boolean;
   answers: Record<string, DecisionAnswer>;
-  usage: { inputTokens: number; outputTokens: number };
+  /** `null` when the provider did not report the count (unknown, not zero). */
+  usage: { inputTokens: number | null; outputTokens: number | null };
 }
 
 /** `errors[0].code` values `POST /ai/decisions` returns, carried on `LumiError.body`. */

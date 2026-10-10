@@ -1,10 +1,10 @@
 ---
-version: 7
-lastUpdated: 2026-10-10T09:15:59.812Z
+version: 8
+lastUpdated: 2026-10-10T10:34:36.657Z
 sourceLang: en
-contentHash: 975cc7a6a6136d0d
-codeVerified: 2026-10-10T09:15:59.812Z
-codeVerifiedHash: 975cc7a6a6136d0d
+contentHash: d0e7028900cd9e37
+codeVerified: 2026-10-10T10:34:36.657Z
+codeVerifiedHash: d0e7028900cd9e37
 codeVerifiedClaims: 74
 ---
 
@@ -181,7 +181,7 @@ Backs `POST /api/v1/ai/decisions`: typed `noul` / `choice` / `score` answers wit
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DECISION_PROVIDER` | ✗ | `typesafe` (TypeSafe Jev, direct), `openrouter` (same System One API via OpenRouter, billed to OpenRouter), or `llm` (reuses `LLM_PROVIDER`; answers are flagged `calibrated: false`). Unset = disabled. |
+| `DECISION_PROVIDER` | ✗ | `typesafe` (TypeSafe Jev, direct), `openrouter` (same System One API via OpenRouter, billed to OpenRouter), or `llm` (reuses `LLM_PROVIDER` in structured decision mode, no tools; answers are flagged `calibrated: false`). A configured choice, not an automatic failover. Unset = disabled. |
 | `DECISION_MODEL` | ✗ | Model override. Defaults to `jev-latest` (`typesafe`) or `~typesafe/jev-latest` (`openrouter`). |
 | `TYPESAFE_API_KEY` | If `typesafe` provider | TypeSafe API key. |
 | `TYPESAFE_BASE_URL` | ✗ | TypeSafe endpoint override. Defaults to `https://api.typesafe.ai/v1`. |

@@ -401,6 +401,7 @@ describe('LLMDecisionProvider', () => {
     expect(llm.chat).toHaveBeenCalledWith([expect.objectContaining({ role: 'user' })], {
       systemPrompt: expect.stringContaining('structured decision engine'),
       tools: false,
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -438,7 +439,9 @@ describe('LLMDecisionProvider', () => {
 
   it.each([
     ['missing noul', { ...upstreamBody.answers, spam: {} }],
-    ['out-of-range score', { ...upstreamBody.answers, quality: { ...upstreamBody.answers.quality, score: 7 } }],
+    // The LLM's own score is ignored (#510), so a bad score is no longer the failure mode;
+    // an incomplete level distribution still is.
+    ['incomplete score distribution', { ...upstreamBody.answers, quality: { ...upstreamBody.answers.quality, probabilities: { '0': 0.5, '1': 0.5 } } }],
     ['missing confidence', { ...upstreamBody.answers, topic: { choice: 'news', probabilities: { news: 1, promo: 0 } } }],
   ])('rejects malformed LLM output: %s', async (_label, answers) => {
     await expect(new LLMDecisionProvider(llmReturning(JSON.stringify({ answers })), 'm').decide(request))
