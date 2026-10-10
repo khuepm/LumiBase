@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createLumiClient, LumiError } from "../../client";
-import { decide, type DecisionRequest, type DecisionResult } from "../decisions";
+import { decide, type DecisionErrorCode, type DecisionRequest, type DecisionResult } from "../decisions";
 
 const request: DecisionRequest = {
   state: { title: "Khuyến mãi mùa hè", body: "Mua ngay!!!" },
@@ -104,7 +104,13 @@ describe("decide", () => {
     [400, "VALIDATION"],
     [413, "DECISION_INPUT_TOO_LARGE"],
     [504, "DECISION_TIMEOUT"],
-  ])("surfaces %i %s as LumiError", async (status, code) => {
+    [403, "FORBIDDEN"],
+    [403, "DECISION_DISABLED"],
+    [422, "DECISION_FIELD_NOT_ALLOWED"],
+    [429, "DECISION_QUOTA_EXCEEDED"],
+    [429, "DECISION_CONCURRENCY_LIMITED"],
+    [503, "DECISION_QUOTA_UNAVAILABLE"],
+  ] satisfies Array<[number, DecisionErrorCode]>)("surfaces %i %s as LumiError", async (status, code) => {
     const sdk = client(async () => json(status, { errors: [{ code, message: "nope" }] }));
 
     const error = await sdk.request(decide(request)).catch((err: unknown) => err);

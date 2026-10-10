@@ -81,6 +81,12 @@ export interface DecisionResult {
 /** `errors[0].code` values `POST /ai/decisions` returns, carried on `LumiError.body`. */
 export type DecisionErrorCode =
   | "VALIDATION"
+  | "FORBIDDEN"
+  | "DECISION_DISABLED"
+  | "DECISION_FIELD_NOT_ALLOWED"
+  | "DECISION_QUOTA_EXCEEDED"
+  | "DECISION_CONCURRENCY_LIMITED"
+  | "DECISION_QUOTA_UNAVAILABLE"
   | "DECISION_NOT_CONFIGURED"
   | "DECISION_AUTH"
   | "DECISION_VALIDATION"
@@ -105,6 +111,11 @@ export interface DecideOptions {
  * Ask the decision model typed questions about `state`. Read-only on the
  * server. Rejects with `LumiError` on non-2xx — e.g. 503 with
  * `DECISION_NOT_CONFIGURED` when the CMS has no `DECISION_PROVIDER`.
+ *
+ * The caller needs the `ai:decide` capability (403 `FORBIDDEN`), the site
+ * must have opted in (403 `DECISION_DISABLED`), and each site has hourly,
+ * concurrency and daily budgets (429 `DECISION_QUOTA_EXCEEDED` /
+ * `DECISION_CONCURRENCY_LIMITED`, with `Retry-After`).
  */
 export function decide(request: DecisionRequest, options: DecideOptions = {}) {
   return async (client: LumiClient): Promise<DecisionResult> => {
