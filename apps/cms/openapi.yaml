@@ -3385,6 +3385,12 @@ paths:
         zero-valued defaults. Choice/Score distributions must contain exactly
         the declared options/levels and sum to 1 within 1e-6. Confidence is
         required; Score lies in 0..N-1 for N rubric levels.
+        Governed (#511), checked before the provider is called: the caller
+        needs the `ai:decide` capability (granted by `create` on
+        `lumibase_ai_decisions`; admins have it), the site must opt in via the
+        `aiDecisions` setting, `state` must respect its field allowlist, and
+        the site's hourly, concurrency and daily token budgets apply. Each call
+        writes an `ai_decision` audit event without content.
       parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
       requestBody:
         required: true
@@ -3467,18 +3473,33 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: >
+            FORBIDDEN (no `ai:decide` capability) or DECISION_DISABLED (the site
+            has not opted in, or turned decisions off)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '413':
           description: Over the input byte or estimated token budget (DECISION_INPUT_TOO_LARGE)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '422':
-          description: The decision provider rejected the request (DECISION_VALIDATION)
+          description: >
+            The decision provider rejected the request (DECISION_VALIDATION), or
+            `state` has fields outside the site allowlist (DECISION_FIELD_NOT_ALLOWED)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '429':
-          description: Decision provider rate limit (DECISION_RATE_LIMITED)
+          description: >
+            Decision provider rate limit (DECISION_RATE_LIMITED), or a site
+            budget used up (DECISION_QUOTA_EXCEEDED, DECISION_CONCURRENCY_LIMITED).
+            Site budgets set Retry-After in seconds.
+          headers:
+            Retry-After:
+              schema: { type: integer }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3488,7 +3509,9 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '503':
-          description: DECISION_NOT_CONFIGURED or DECISION_UNAVAILABLE
+          description: >
+            DECISION_NOT_CONFIGURED, DECISION_UNAVAILABLE, or
+            DECISION_QUOTA_UNAVAILABLE (quota accounting is down; fails closed)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
