@@ -87,10 +87,16 @@ export type DecisionErrorCode =
   | "DECISION_UNAVAILABLE"
   | "DECISION_UPSTREAM"
   | "DECISION_PARSE_FAILED"
+  | "DECISION_TIMEOUT"
+  | "DECISION_CANCELLED"
+  | "DECISION_INPUT_TOO_LARGE"
   | "INTERNAL";
 
 export interface DecideOptions {
-  /** Aborts the HTTP request; the promise rejects with the fetch `AbortError`. */
+  /**
+   * Aborts the HTTP request; the promise rejects with the fetch `AbortError`.
+   * The CMS sees the disconnect, aborts its upstream call and does not retry.
+   */
   signal?: AbortSignal;
 }
 
