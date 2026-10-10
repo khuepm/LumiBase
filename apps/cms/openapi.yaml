@@ -3395,7 +3395,10 @@ paths:
               required: [state, questions]
               properties:
                 state:
-                  description: String (≤ 20,000 chars), object or array; ≤ 200,000 serialized chars.
+                  description: >
+                    String (≤ 20,000 chars), object or array. The whole request
+                    (state + questions) must fit DECISION_MAX_INPUT_BYTES and the
+                    estimated DECISION_MAX_INPUT_TOKENS budget, else 413.
                   oneOf:
                     - { type: string, minLength: 1, maxLength: 20000 }
                     - { type: object, additionalProperties: true }
@@ -3464,6 +3467,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: Over the input byte or estimated token budget (DECISION_INPUT_TOO_LARGE)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '422':
           description: The decision provider rejected the request (DECISION_VALIDATION)
           content:
@@ -3481,6 +3489,16 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '503':
           description: DECISION_NOT_CONFIGURED or DECISION_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '504':
+          description: The decision did not complete within DECISION_TIMEOUT_MS (DECISION_TIMEOUT)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '499':
+          description: The client closed the request; the upstream call was aborted (DECISION_CANCELLED)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
