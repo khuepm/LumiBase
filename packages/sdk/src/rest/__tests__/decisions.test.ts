@@ -102,6 +102,8 @@ describe("decide", () => {
     [429, "DECISION_RATE_LIMITED"],
     [502, "DECISION_PARSE_FAILED"],
     [400, "VALIDATION"],
+    [413, "DECISION_INPUT_TOO_LARGE"],
+    [504, "DECISION_TIMEOUT"],
   ])("surfaces %i %s as LumiError", async (status, code) => {
     const sdk = client(async () => json(status, { errors: [{ code, message: "nope" }] }));
 
