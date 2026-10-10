@@ -9,6 +9,21 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Changed
+- **Governed decisions (#511).** `POST /api/v1/ai/decisions` now requires the
+  `ai:decide` capability (a policy permission `create` on
+  `lumibase_ai_decisions`; site admins have it) and a per-site opt-in: decisions
+  stay off until a site admin stores the `aiDecisions` setting with
+  `enabled: true`, and turning it off is the site kill switch. An optional
+  `allowedStateFields` list restricts what `state` may send. Hourly, in-flight
+  and daily token budgets per site are reserved atomically before the provider
+  is called (retries included, unknown usage charged at the estimate) and fail
+  closed when the counter is down. Each call writes an `ai_decision` audit event
+  without content, email or IP. **Upgrade:** sites that already call the
+  endpoint get `403 DECISION_DISABLED` until they opt in. New optional env
+  ceilings `DECISION_SITE_REQUESTS_PER_HOUR`, `DECISION_SITE_MAX_CONCURRENT`,
+  `DECISION_SITE_TOKENS_PER_DAY`. No migration.
+
 ### Fixed
 - **P2 queue recovery and governed write parity (B93, B87).** Queue submission
   failures settle only unclaimed runs, preserve masked tasks for explicit retries,
