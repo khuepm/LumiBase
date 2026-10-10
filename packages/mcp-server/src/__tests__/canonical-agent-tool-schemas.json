@@ -27,6 +27,7 @@
       "kind",
       "name",
       "operations",
+      "payload_mode",
       "webhookId"
     ],
     "required": [

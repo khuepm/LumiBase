@@ -11,7 +11,7 @@ import { ExtensionsService } from '../services/extensions-service';
 import { approvalRequesterFromAuth, principalRefFromAuth, resolveRequestCapabilities } from '../services/governed-capabilities';
 import { IntentService } from '../services/intent-service';
 import { SchemaService } from '../services/schema-service';
-import { itemServiceForRequest } from '../services/item-service-factory';
+import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
 import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPendingRun, FLOW_RUNS_QUEUE } from '../services/flow-run-service';
@@ -88,13 +88,17 @@ export function buildAuthorizedHarness(c: Context<AppEnv>): AISecureHarness {
     accessService: new AccessService({ db, siteId, userId: auth.userId ?? null, cache: runtime.cache }),
     intentService: new IntentService({ db, siteId, userId: auth.userId ?? null, llm }),
     configService: new ConfigService({ db, siteId }),
-    extensionsService: new ExtensionsService({ db, siteId, userId: auth.userId ?? null }),
+    extensionsService: new ExtensionsService({
+      db, siteId, userId: auth.userId ?? null, cache: runtime.cache, env: c.env,
+      permissionCtx: buildRequestPermissionContext({ auth, siteId, headers: c.req.header(), ip: c.get('ip') ?? null }),
+    }),
     llm,
     queue: runtime.queue,
     notify: buildAgentNotifier(c),
     // An approved `triggerDeployment` executes here — without the KeyProvider
     // the approval would resolve into a configuration error.
     keys: runtime.keys,
+    cache: runtime.cache,
   });
 }
 
@@ -309,6 +313,11 @@ aiRouter.post('/chat', async (c) => {
       notify: buildAgentNotifier(c),
       // Enables the deployment skills, which decrypt target tokens.
       keys: runtime.keys,
+      cache: runtime.cache,
+      extensionsService: new ExtensionsService({
+        db, siteId, userId: auth.userId ?? null, cache: runtime.cache, env: c.env,
+        permissionCtx: buildRequestPermissionContext({ auth, siteId, headers: c.req.header(), ip: c.get('ip') ?? null }),
+      }),
     });
     const result = await harness.execute(
       toolCall.name,

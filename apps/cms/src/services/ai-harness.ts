@@ -13,7 +13,7 @@ import type { IntentService } from './intent-service';
 import { runFlow, type FlowGraph } from './flow-service';
 import { ContentVersionService } from './content-version-service';
 import type { ConfiguredLLM } from './llm-provider';
-import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
+import type { CacheProvider, KeyProvider, QueueProvider } from '@lumibase/runtime';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentAutonomousOpsTotal } from './agent-metrics';
 import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
@@ -106,6 +106,7 @@ export interface AISecureHarnessConfig {
    * stubbing (they have no meaningful offline behaviour).
    */
   keys?: KeyProvider;
+  cache?: CacheProvider;
   /** AccessService for governed RBAC + identity skills (roles/policies/api-keys/users/teams). */
   accessService?: AccessService;
   /** IntentService for governed content-intent (SLO) skills. */
@@ -148,6 +149,7 @@ interface SkillServices {
   siteId?: string;
   /** KeyProvider for deployment token encryption/decryption. */
   keys?: KeyProvider;
+  cache?: CacheProvider;
   /**
    * Marks a service as reached, for retry safety (#453).
    *
@@ -524,6 +526,13 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         siteId: services.siteId,
         eventStore: new DrizzleCdcEventStore(services.db),
         retentionDays,
+        cache: services.cache,
+        audit: async (event, metadata) => {
+          const { AuditLogger } = await import('../modules/audit/logger');
+          await new AuditLogger({ db: services.db!, siteId: services.siteId! }).write({
+            event, metadata, actorEmail: null, ip: null, userAgent: null, requestId: null,
+          });
+        },
       }),
     );
   };
@@ -1508,20 +1517,10 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'flows',
       dangerous: true,
       handler: async (args) => {
-        if (!db || !siteId) return { created: true };
-        const [row] = await db
-          .insert(flows)
-          .values({
-            siteId,
-            name: args['name'] as string,
-            description: args['description'] as string | undefined,
-            status: (args['status'] as 'active' | 'inactive' | 'draft' | undefined) ?? 'draft',
-            triggerType: args['triggerType'] as 'webhook' | 'event' | 'schedule' | 'manual',
-            triggerOptions: (args['triggerOptions'] as Record<string, unknown>) ?? {},
-            graph: (args['graph'] as Record<string, unknown>) ?? { nodes: [] },
-          })
-          .returning();
-        return { created: true, flow: row };
+        if (!db || !siteId) throw new Error('FLOW_SERVICE_NOT_CONFIGURED');
+        const { createFlowRecord } = await import('./flow-management');
+        markTouched?.();
+        return { created: true, flow: await createFlowRecord(db, siteId, args) };
       },
     },
 
@@ -1930,7 +1929,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           key: args['key'] as string | undefined,
           name: args['name'] as string,
           version: args['version'] as string,
-          type: args['type'] as string,
+          type: args['type'] as 'interface' | 'display' | 'layout' | 'panel' | 'module' | 'hook' | 'endpoint',
           enabled: args['enabled'] as boolean | undefined,
           bundleUrl: args['bundleUrl'] as string,
           manifest: args['manifest'] as Record<string, string> | undefined,
@@ -2074,6 +2073,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           operations: Array.isArray(args['operations']) ? args['operations'] : [],
           webhook_id: args['webhookId'] ? String(args['webhookId']) : undefined,
           extension_name: args['extensionName'] ? String(args['extensionName']) : undefined,
+          payload_mode: args['payload_mode'],
         });
         return await service.create(input);
       },
@@ -2267,6 +2267,7 @@ export class AISecureHarness {
   private readonly itemService?: ItemService;
   /** Present when an ItemService was supplied; lets approvals rebind it (#472). */
   private readonly itemServiceRef?: Rebindable<ItemService>;
+  private readonly extensionsServiceRef?: Rebindable<ExtensionsService>;
   private readonly queue?: QueueProvider;
   private readonly notify?: AgentNotifier;
   /** Set when a skill handler reaches a service; drives retry safety (#453). */
@@ -2280,6 +2281,7 @@ export class AISecureHarness {
     // approval rebinding it reaches every write path rather than only the ones
     // this class calls directly.
     this.itemService = this.itemServiceRef?.proxy;
+    this.extensionsServiceRef = config.extensionsService ? rebindable(config.extensionsService) : undefined;
     this.queue = config.queue;
     this.notify = config.notify;
     const hasService = Boolean(
@@ -2305,11 +2307,12 @@ export class AISecureHarness {
         accessService: this.serviceTouch.wrap(config.accessService),
         intentService: this.serviceTouch.wrap(config.intentService),
         configService: this.serviceTouch.wrap(config.configService),
-        extensionsService: this.serviceTouch.wrap(config.extensionsService),
+        extensionsService: this.serviceTouch.wrap(this.extensionsServiceRef?.proxy),
         db: config.db,
         siteId: config.siteId,
         // Tenant context + KeyProvider enable the deployment skills.
         keys: config.keys,
+        cache: config.cache,
         // Reaches the services this factory builds itself (deployments,
         // cdc-feed, content-versions), which the constructor cannot proxy.
         trackTouch: (service) => this.serviceTouch.wrap(service),
@@ -3094,36 +3097,23 @@ export class AISecureHarness {
   }
 
   /**
-   * Row/field scope for an approval execution, or a no-op when there is none.
-   *
-   * Two cases deliberately produce no rebinding:
-   *
-   * - **An agent-role requester.** A role is a capability set, not a principal
-   *   with policies, so there is no row/field context to apply; the capability
-   *   check is the whole gate by design (this is the reconciler path, #455).
-   * - **A harness with no ItemService** (offline registry mode in tests).
-   *
-   * What is NOT applied is the *decider's* row/field scope. Approving is not
-   * performing: the decider authorises an action the requester asked for, and the
-   * action runs with the requester's reach. Intersecting two `MagicContext`s is
-   * not a defined operation here, so pretending to do it would be worse than
-   * saying plainly that it is not done — noted in the governed-tool contract docs
-   * and in the backlog.
+   * Bind approval execution to the original requester's current permissions.
+   * Item row/field scope applies when a principal context is available.
+   * Extension writes require that context even without an ItemService; an
+   * agent-role requester without principal policies cannot inherit the decider's
+   * extension permissions. Restore both services when execution finishes.
    */
   private scopeToRequester(grant: ApprovalRequesterResolution): () => void {
-    if (!grant.allowed || !grant.permissionContext || !this.itemServiceRef) {
-      return () => {};
+    if (!grant.allowed || (grant.permissionContext && grant.permissionContext.siteId !== this.siteId)) return () => {};
+    const restores: Array<() => void> = [];
+    const rebound = grant.permissionContext ? this.reboundItemService(grant.permissionContext) : null;
+    if (rebound && this.itemServiceRef) restores.push(this.itemServiceRef.rebind(rebound));
+    const extensions = this.extensionsServiceRef?.proxy;
+    if (extensions?.withPermissionContext) {
+      const scoped = extensions.withPermissionContext(grant.permissionContext);
+      if (scoped && typeof scoped.installExtension === 'function') restores.push(this.extensionsServiceRef!.rebind(scoped));
     }
-    const requesterContext = grant.permissionContext;
-    if (requesterContext.siteId !== this.siteId) {
-      // Resolution already refuses a cross-tenant requester; this is the second
-      // door on the same lock, because rebinding to another tenant's context
-      // would move `siteId` on the executing service.
-      return () => {};
-    }
-    const rebound = this.reboundItemService(requesterContext);
-    if (!rebound) return () => {};
-    return this.itemServiceRef.rebind(rebound);
+    return () => { for (const restore of restores.reverse()) restore(); };
   }
 
   /**

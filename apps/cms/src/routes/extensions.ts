@@ -1,14 +1,12 @@
-import { patchSchema } from '../utils/patch-schema';
+import { ExtensionsService, ExtensionMutationError } from '../services/extensions-service';
 import { extensions } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context, MiddlewareHandler } from 'hono';
-import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ExtensionSandbox } from '../extensions/sandbox';
 import { PermissionService, type PermissionAction } from '../services/permission-service';
 import {
-  ExtensionVerifierService,
   buildSandboxVerifyOptions,
 } from '../services/extension-verifier';
 import { formatSafeError } from '@lumibase/contracts/utils';
@@ -32,58 +30,6 @@ const adminOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (forbidden) return forbidden;
   return next();
 };
-
-/**
- * Allowed extension slot types. Constrained to an enum so an arbitrary `type`
- * string can never reach the loader's dynamic-mount path.
- */
-const EXTENSION_TYPES = [
-  'interface', 'display', 'layout', 'panel', 'module',
-  'hook', 'endpoint',
-] as const;
-
-/**
- * Shallow protocol gate for `bundleUrl` at the API boundary. The runtime
- * `validateExtensionBundleUrl` + `EXTENSION_BUNDLE_ORIGINS` allowlist remain the
- * authoritative SSRF/trust check at load time; this just rejects obviously
- * dangerous schemes (javascript:, vbscript:, file:, blob:) before they are ever
- * persisted. `data:text/javascript` stays permitted to match the loader.
- */
-const bundleUrlSchema = z
-  .string()
-  .min(1)
-  .refine(
-    (raw) => {
-      let url: URL;
-      try {
-        url = new URL(raw);
-      } catch {
-        return false;
-      }
-      if (url.protocol === 'https:' || url.protocol === 'http:') return true;
-      if (url.protocol === 'data:') return url.pathname.startsWith('text/javascript');
-      return false;
-    },
-    { message: 'bundleUrl must be an https:, http:, or data:text/javascript URL.' },
-  );
-
-const extensionSchema = z.object({
-  key: z.string().regex(/^[a-z0-9_:-]+$/).optional(),
-  name: z.string(),
-  version: z.string(),
-  type: z.enum(EXTENSION_TYPES),
-  enabled: z.boolean().default(false),
-  bundleUrl: bundleUrlSchema,
-  manifest: z.record(z.string(), z.string()).default({}),
-  capabilities: z.array(z.string()).default([]),
-});
-
-function extensionKey(input: { key?: string | null; name: string }): string {
-  return (
-    input.key?.trim() ||
-    input.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
-  );
-}
 
 function permissionCtx(c: Context<AppEnv>) {
   const auth = c.get('auth');
@@ -119,28 +65,6 @@ async function requireExtensionPermission(
   );
 }
 
-function createActions(input: z.infer<typeof extensionSchema>): PermissionAction[] {
-  const actions = new Set<PermissionAction>(['install']);
-  if (input.enabled) actions.add('enable');
-  if (input.capabilities.length > 0) actions.add('grant_capability');
-  return [...actions];
-}
-
-function patchActions(input: Partial<z.infer<typeof extensionSchema>>): PermissionAction[] {
-  const actions = new Set<PermissionAction>();
-  if (Object.prototype.hasOwnProperty.call(input, 'enabled')) actions.add('enable');
-  if (Object.prototype.hasOwnProperty.call(input, 'capabilities')) actions.add('grant_capability');
-  if (
-    ['key', 'name', 'version', 'type', 'bundleUrl', 'manifest'].some((field) =>
-      Object.prototype.hasOwnProperty.call(input, field),
-    )
-  ) {
-    actions.add('configure');
-  }
-  if (!actions.size) actions.add('configure');
-  return [...actions];
-}
-
 // Return type is inferred from Hono's own `executionCtx`, which is a narrower
 // shape than the global `ExecutionContext` that @cloudflare/workers-types v5
 // widened (it now requires `tracing`/`abort`). The value only ever flows back
@@ -164,142 +88,39 @@ extensionsRouter.get('/', adminOnly, async (c) => {
   return c.json({ data });
 });
 
-extensionsRouter.post('/', adminOnly, async (c) => {
-  const siteId = c.get('siteId');
-  const db = c.get('db');
-  const auth = c.get('auth');
-  const input = extensionSchema.parse(await c.req.json());
-
-  for (const action of createActions(input)) {
-    const denied = await requireExtensionPermission(c, action);
-    if (denied) return denied;
-  }
-
-  // Verify the bundle signature and DERIVE the official flag server-side — the
-  // request body cannot self-assert official status. `lumibase-*` must be
-  // signed by an official key; third-party follows the site signature policy.
-  const verifier = new ExtensionVerifierService(db, c.env);
-  const verdict = await verifier.verifyByMetadata(input.name, {
-    bundleUrl: input.bundleUrl,
-    bundleSha256: null,
-    signature: null,
-    publisherKeyId: null,
-    signatureAlg: null,
+function extensionService(c: Context<AppEnv>) {
+  return new ExtensionsService({
+    db: c.get('db'), siteId: c.get('siteId'), userId: c.get('auth')?.userId,
+    permissionCtx: permissionCtx(c), cache: c.get('runtime')?.cache, env: c.env,
   });
-  const isReserved = ExtensionVerifierService.isReservedName(input.name);
-  const requireSignature =
-    isReserved || (c.env.LUMIBASE_EXT_SIGNATURE_POLICY ?? 'require') !== 'warn';
+}
 
-  if (isReserved && !verdict.isOfficial) {
-    return c.json(
-      { errors: [{ code: 'RESERVED_NAMESPACE', message: 'lumibase-* requires an official signature.' }] },
-      400,
-    );
+extensionsRouter.post('/', adminOnly, async (c) => {
+  try {
+    return c.json({ data: await extensionService(c).installExtension(await c.req.json()) });
+  } catch (error) {
+    if (error instanceof ExtensionMutationError) return c.json({ errors: [{ code: error.code, message: error.message }] }, error.status);
+    throw error;
   }
-  if (requireSignature && !verdict.ok) {
-    return c.json(
-      { errors: [{ code: 'SIGNATURE_REQUIRED', message: `Signature check failed: ${verdict.reason}` }] },
-      400,
-    );
-  }
-
-  const [row] = await db
-    .insert(extensions)
-    .values({
-      ...input,
-      key: extensionKey(input),
-      siteId,
-      installedBy: auth?.userId,
-      isOfficial: verdict.isOfficial,
-      verifiedAt: verdict.ok ? new Date() : null,
-    })
-    .returning();
-
-  return c.json({ data: row });
 });
 
 extensionsRouter.patch('/:id', adminOnly, async (c) => {
-  const id = c.req.param('id');
-  const siteId = c.get('siteId');
-  const db = c.get('db');
-  const input = patchSchema(extensionSchema).parse(await c.req.json());
-  for (const action of patchActions(input)) {
-    const denied = await requireExtensionPermission(c, action);
-    if (denied) return denied;
-  }
-
-  const [current] = await db
-    .select()
-    .from(extensions)
-    .where(and(eq(extensions.siteId, siteId), eq(extensions.id, id)))
-    .limit(1);
-  if (!current) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
-  if (Object.keys(input).length === 0) return c.json({ data: current });
-
-  // Enabling an official extension whose signature does not currently verify is
-  // refused (fail-closed). `verifiedAt` is the persisted proof of a prior check.
-  const willEnable = input.enabled === true;
-  if (willEnable && current.isOfficial && !current.verifiedAt) {
-    return c.json(
-      { errors: [{ code: 'SIGNATURE_REQUIRED', message: 'Cannot enable an unverified official extension.' }] },
-      400,
-    );
-  }
-
-  const [row] = await db
-    .update(extensions)
-    .set(input)
-    .where(and(eq(extensions.siteId, siteId), eq(extensions.id, id)))
-    .returning();
-
-  if (!row) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
-
-  // A bundle/version change invalidates the cached module and any prior
-  // verification — evict the sandbox cache so the next load re-verifies.
-  if (input.bundleUrl !== undefined || input.version !== undefined) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    new ExtensionSandbox(c.env as unknown as Record<string, unknown>).evict(row.name);
-  }
-
-  // Change Feed (Req 3.4): enabling a hook extension with cdc:subscribe:*
-  // capabilities upserts its `ext:<name>` subscription; disabling pauses it.
-  // Best-effort — a sync failure must not fail the admin's enable/disable.
   try {
-    const { syncExtensionCdcSubscription } = await import(
-      '../modules/cdc/change-feed/extension-sender'
-    );
-    await syncExtensionCdcSubscription(
-      db,
-      siteId,
-      {
-        name: row.name,
-        type: row.type,
-        enabled: row.enabled,
-        capabilities: (row.capabilities as string[]) ?? [],
-      },
-      c.get('runtime')?.cache,
-    );
-  } catch (err) {
-    console.error('[extensions] cdc subscription sync failed:', err instanceof Error ? err.message : err);
+    return c.json({ data: await extensionService(c).updateExtension(c.req.param('id'), await c.req.json()) });
+  } catch (error) {
+    if (error instanceof ExtensionMutationError) return c.json({ errors: [{ code: error.code, message: error.message }] }, error.status);
+    throw error;
   }
-  return c.json({ data: row });
 });
 
 extensionsRouter.delete('/:id', adminOnly, async (c) => {
-  const denied = await requireExtensionPermission(c, 'delete');
-  if (denied) return denied;
-
-  const id = c.req.param('id');
-  const siteId = c.get('siteId');
-  const db = c.get('db');
-
-  const [row] = await db
-    .delete(extensions)
-    .where(and(eq(extensions.siteId, siteId), eq(extensions.id, id)))
-    .returning();
-
-  if (!row) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
-  return c.json({ data: null });
+  try {
+    await extensionService(c).uninstallExtension(c.req.param('id'));
+    return c.json({ data: null });
+  } catch (error) {
+    if (error instanceof ExtensionMutationError) return c.json({ errors: [{ code: error.code, message: error.message }] }, error.status);
+    throw error;
+  }
 });
 
 /**

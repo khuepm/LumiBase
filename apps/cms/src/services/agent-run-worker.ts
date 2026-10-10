@@ -1,6 +1,7 @@
 import type { Database } from '@lumibase/database';
 import type { CacheProvider, KeyProvider, QueueProvider, SearchProvider } from '@lumibase/runtime';
 import { AISecureHarness } from './ai-harness';
+import { ExtensionsService } from './extensions-service';
 import { AgentRunService } from './agent-run-service';
 import {
   EffectiveCapabilityService,
@@ -239,18 +240,6 @@ export async function processAgentRunJob(
     'background-worker',
   );
 
-  const harness = new AISecureHarness({
-    db: deps.db,
-    siteId: payload.siteId,
-    schemaService,
-    itemService,
-    llm: createConfiguredLLMProvider(deps.env),
-    queue: deps.queue,
-    // Deployment skills need the KeyProvider to decrypt target tokens; a
-    // queued run must be able to do exactly what the sync path does.
-    keys: deps.keys,
-  });
-
   // Capabilities are resolved HERE, not at enqueue (#472). A queued job can sit
   // for minutes; re-reading the grant at pickup is what makes a revoked API key
   // or a demoted user take effect on work that was already accepted.
@@ -263,6 +252,24 @@ export async function processAgentRunJob(
     );
     return;
   }
+
+  const harness = new AISecureHarness({
+    db: deps.db,
+    siteId: payload.siteId,
+    schemaService,
+    itemService,
+    extensionsService: new ExtensionsService({
+      db: deps.db, siteId: payload.siteId, userId: payload.userId,
+      permissionCtx: capabilities.permissionContext, cache: deps.cache,
+      env: { ...deps.env, LUMIBASE_ENV: deps.env?.LUMIBASE_ENV ?? 'production' },
+    }),
+    llm: createConfiguredLLMProvider(deps.env),
+    queue: deps.queue,
+    // Deployment skills need the KeyProvider to decrypt target tokens; a
+    // queued run must be able to do exactly what the sync path does.
+    keys: deps.keys,
+    cache: deps.cache,
+  });
 
   try {
     const result = await harness.execute(

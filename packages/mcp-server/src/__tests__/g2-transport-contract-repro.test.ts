@@ -362,9 +362,9 @@ describe('G2 regression · governed tools route through the harness', () => {
     expect(unknown).toEqual([]);
 
     // Measured counts, so a change in either direction is visible in review.
-    // 27 → 33: the `no-canonical-contract` group got canonical schemas; six were
-    // routed and four were re-classified with a sharper reason (see governed.ts).
-    expect(Object.keys(GOVERNED_TOOLS)).toHaveLength(33);
+    // 27 → 37: six tools gained canonical contracts; P2 repairs the shared
+    // REST gates and CDC payload mode for the remaining four candidates.
+    expect(Object.keys(GOVERNED_TOOLS)).toHaveLength(37);
     expect(mutations.length).toBeGreaterThan(70);
 
     const byReason: Record<string, number> = {};
@@ -373,8 +373,7 @@ describe('G2 regression · governed tools route through the harness', () => {
       byReason[kind] = (byReason[kind] ?? 0) + 1;
     }
     expect(byReason).toEqual({
-      'contract-narrower-than-tool': 5,
-      'skill-weaker-than-rest': 3,
+      'contract-narrower-than-tool': 4,
       'no-skill': 47,
     });
     // The two tables partition the mutation inventory: nothing counted twice.

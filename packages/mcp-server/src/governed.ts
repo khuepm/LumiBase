@@ -73,6 +73,7 @@ export const GOVERNED_TOOLS: Readonly<Record<string, GovernedBinding>> = {
   delete_policy: { skill: 'deletePolicy' },
 
   // ── automation ───────────────────────────────────────────────────────────
+  create_flow: { skill: 'createFlow' },
   delete_flow: { skill: 'deleteFlow' },
   run_flow: { skill: 'runFlow' },
   create_intent: { skill: 'createIntent' },
@@ -103,17 +104,15 @@ export const GOVERNED_TOOLS: Readonly<Record<string, GovernedBinding>> = {
   remove_team_member: { skill: 'removeTeamMember', rename: { id: 'teamId' } },
 
   // ── extensions ───────────────────────────────────────────────────────────
+  install_extension: { skill: 'installExtension' },
+  update_extension: { skill: 'updateExtension' },
   uninstall_extension: { skill: 'uninstallExtension' },
 
   // ── cdc ──────────────────────────────────────────────────────────────────
   // The change-feed skills name the subscription `subscriptionId` (as
   // `getCdcSubscriptionStatus`/`replayCdcSubscription` do); the CRUD-generated
   // stdio tool takes it as `id`, like every other `delete_*` tool.
-  // Known divergence, not a skipped gate: the harness builds `SubscriptionService`
-  // without `cache`/`audit`, so REST's `cdc_subscription_deleted` audit-log row
-  // and feed-flag cache eviction do not happen on this path. The run, tool-call
-  // and approval rows record the deletion instead, and the flag cache expires on
-  // its own TTL.
+  create_cdc_subscription: { skill: 'createCdcSubscription', rename: { payload_mode: 'payload_mode' } },
   delete_cdc_subscription: { skill: 'deleteCdcSubscription', rename: { id: 'subscriptionId' } },
 };
 
@@ -135,24 +134,6 @@ export const UNGOVERNED_MUTATIONS: Readonly<Record<string, string>> = {
   create_policy: 'contract-narrower-than-tool: enforceTfa/ipAllow/ipDeny/validFrom/validUntil',
   create_role: 'contract-narrower-than-tool: systemKey',
   cdc_subscription_replay: 'contract-narrower-than-tool: cursor has no canonical counterpart',
-  create_cdc_subscription:
-    'contract-narrower-than-tool: payload_mode — the createCdcSubscription handler never forwards it, ' +
-    'so a snapshot subscription would be created as reference',
-
-  // Skill and canonical contract both exist and accept the advertised arguments,
-  // but the skill's handler skips checks the REST route applies. Routing would
-  // add HITL and remove those checks, so these stay on REST until the handler
-  // carries them.
-  create_flow:
-    'skill-weaker-than-rest: createFlow skips the active-graph validation and schedule-cron check of ' +
-    'POST /flows and never sets nextRunAt, so an active schedule flow would never fire',
-  install_extension:
-    'skill-weaker-than-rest: installExtension skips the bundle signature check, the reserved lumibase-* ' +
-    'namespace check and the per-action extensions:* permission probes of POST /extensions',
-  update_extension:
-    'skill-weaker-than-rest: updateExtension skips the per-action extensions:* permission probes, the ' +
-    'unverified-official enable refusal, sandbox cache eviction and CDC subscription sync of PATCH /extensions/:id',
-
   // No skill at all: nothing to route to. Listed so the set is closed.
   add_policy_permission: 'no-skill',
   apply_access_import: 'no-skill',
