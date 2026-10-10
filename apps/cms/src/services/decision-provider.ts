@@ -13,9 +13,12 @@
  *   - `typesafe`   — TypeSafe Jev via `POST {base}/systemone` (TYPESAFE_API_KEY)
  *   - `openrouter` — the same System One surface proxied by OpenRouter
  *                    (OPENROUTER_API_KEY), billed to the OpenRouter account
- *   - `llm`        — equivalent fallback on top of the configured LLM_PROVIDER.
- *                    Its probabilities come from the LLM itself and are NOT
- *                    calibrated (`calibrated: false` on every response).
+ *   - `llm`        — equivalent provider on top of the configured LLM_PROVIDER,
+ *                    selected explicitly by configuration. It is NOT an
+ *                    automatic failover: nothing switches to it when Jev
+ *                    fails. Its probabilities come from the LLM itself and are
+ *                    NOT calibrated (`calibrated: false` on every response),
+ *                    so thresholds tuned for Jev do not transfer to it.
  *
  * Configuration:
  *   DECISION_PROVIDER = 'typesafe' | 'openrouter' | 'llm'   (unset → disabled)
@@ -32,7 +35,7 @@
  *   DECISION_MAX_INPUT_TOKENS   — estimated token budget for the same payload
  */
 
-import { createConfiguredLLMProvider, type LLMProvider, type LLMProviderEnv } from './llm-provider';
+import { createConfiguredLLMProvider, type LLMProvider, type LLMProviderEnv, type LLMResponse } from './llm-provider';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
@@ -99,7 +102,8 @@ export interface DecisionResponse {
   /** Whether probabilities come from a calibrated decision model. */
   calibrated: boolean;
   answers: Record<string, DecisionAnswer>;
-  usage: { inputTokens: number; outputTokens: number };
+  /** `null` when the provider did not report the count (unknown, not zero). */
+  usage: { inputTokens: number | null; outputTokens: number | null };
 }
 
 export interface DecisionCallOptions {
@@ -169,8 +173,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function toNumber(value: unknown, fallback = 0): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+function toCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/**
+ * Expected rubric level Σ i·p(i) on the 0..N-1 scale, the same weighted score
+ * Jev reports. Used for the LLM provider so one distribution yields one score
+ * whichever adapter produced it.
+ */
+export function weightedScore(probabilities: Record<string, number>, levels: number): number {
+  let score = 0;
+  for (let i = 0; i < levels; i += 1) score += i * (probabilities[String(i)] ?? 0);
+  // Rounding noise must not push the result outside the declared scale.
+  return Math.min(levels - 1, Math.max(0, score));
 }
 
 // Permit ordinary decimal serialization error, never repair a broken distribution.
@@ -571,8 +587,8 @@ export class SystemOneDecisionProvider implements DecisionProvider {
       calibrated: true,
       answers: normalizeAnswers(request, data.answers),
       usage: {
-        inputTokens: toNumber(usage.input_tokens),
-        outputTokens: toNumber(usage.output_tokens),
+        inputTokens: toCount(usage.input_tokens),
+        outputTokens: toCount(usage.output_tokens),
       },
     };
   }
@@ -587,8 +603,9 @@ You receive application STATE and a JSON map of typed QUESTIONS. Answer every qu
 Reply with ONLY a JSON object of the form {"answers": {"<question key>": <answer>}} where:
 - noul   → {"noul": <probability the "true" criterion holds, 0..1>}
 - choice → {"choice": "<one option key>", "probabilities": {"<option key>": 0..1, ...}, "confidence": 0..1}
-- score  → {"score": <0-based index of the best rubric level>, "probabilities": {"<level index>": 0..1, ...}, "confidence": 0..1}
-Probabilities in each answer must sum to 1. Do not call tools.`;
+- score  → {"probabilities": {"<0-based level index>": 0..1, ...}, "confidence": 0..1}
+Include every option key / level index in "probabilities"; each set must sum to 1.
+Do not call tools. Do not add any text outside the JSON object.`;
 
 function extractJsonObject(content: string): unknown {
   const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -620,63 +637,86 @@ export class LLMDecisionProvider implements DecisionProvider {
   }
 
   /**
-   * One LLM call bounded by the deadline. LLMProvider has no cancellation
-   * hook, so on timeout/cancel the caller is released but the underlying
-   * HTTP call may still run to completion; its result is discarded. Not
-   * retried: retries belong to the LLM provider layer.
+   * One LLM call in structured decision mode (decision system prompt, no
+   * CORE_SKILLS, no tool calling), bounded by the deadline. The deadline and
+   * the caller's signal abort the adapter's HTTP request; the race below
+   * still releases the caller if a custom LLMProvider ignores the signal.
+   * Not retried: retries belong to the LLM provider layer.
    */
   async decide(request: DecisionRequest, options: DecisionCallOptions = {}): Promise<DecisionResponse> {
     throwIfCancelled(options.signal);
     assertDecisionInputBudget(request, this.limits);
-    const response = await withDeadline(
-      this.llm.chat(
-        [
-          {
-            role: 'user',
-            content: `STATE:\n${JSON.stringify(request.state)}\n\nQUESTIONS:\n${JSON.stringify(request.questions)}`,
-          },
-        ],
-        { systemPrompt: LLM_DECISION_PROMPT, tools: false },
-      ),
-      this.limits.deadlineMs,
-      options.signal,
-    );
+
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    options.signal?.addEventListener('abort', abort, { once: true });
+    const timer = setTimeout(abort, this.limits.deadlineMs);
+    let response: LLMResponse;
+    try {
+      response = await withDeadline(
+        this.llm.chat(
+          [
+            {
+              role: 'user',
+              content: `STATE:\n${JSON.stringify(request.state)}\n\nQUESTIONS:\n${JSON.stringify(request.questions)}`,
+            },
+          ],
+          { systemPrompt: LLM_DECISION_PROMPT, tools: false, signal: controller.signal },
+        ),
+        this.limits.deadlineMs,
+        options.signal,
+      );
+    } catch (error) {
+      // Our own abort surfaces from the adapter as a raw AbortError: map it.
+      if (options.signal?.aborted) throw cancelledError();
+      if (controller.signal.aborted) throw timeoutError(this.limits.deadlineMs);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener('abort', abort);
+    }
+
+    // A tool-only reply (no text) cannot carry decision JSON.
+    if (response.toolCalls.length > 0 && !response.content) {
+      throw new DecisionProviderError('DECISION_PARSE_FAILED', 'LLM answered with tool calls instead of decision JSON.');
+    }
 
     const parsed = response.content ? extractJsonObject(response.content) : null;
     if (!isRecord(parsed)) {
       throw new DecisionProviderError('DECISION_PARSE_FAILED', 'LLM did not return a JSON object.');
     }
 
-    // The LLM prompt omits type/legend. Supply only those structural fields;
-    // numeric answers and probabilities must pass the same validation as Jev.
+    // The LLM prompt omits type/legend/score. Supply only those structural
+    // fields; probabilities and confidence pass the same validation as Jev.
     const rawAnswers = isRecord(parsed.answers) ? parsed.answers : {};
     const prepared = Object.fromEntries(Object.entries(request.questions).map(([key, question]) => {
       const raw = Object.hasOwn(rawAnswers, key) ? rawAnswers[key] : undefined;
       if (!isRecord(raw)) return [key, raw];
+      if (question.type !== 'score') return [key, { ...raw, type: question.type }];
+      // The score is derived, never taken from the model: an LLM-picked level
+      // would not match Jev's weighted score for the same distribution.
+      const { score: _ignored, ...rest } = raw;
+      const probabilities = isRecord(rest.probabilities) ? rest.probabilities : null;
+      const finite = probabilities !== null
+        && Object.values(probabilities).every((p) => typeof p === 'number' && Number.isFinite(p));
       return [key, {
-        type: question.type,
-        ...(question.type === 'score'
-          ? { legend: Object.fromEntries(question.criteria.map((level, i) => [String(i), level])) }
-          : {}),
-        ...raw,
+        ...rest,
+        type: 'score',
+        legend: Object.fromEntries(question.criteria.map((level, i) => [String(i), level])),
+        // Left out when the distribution is unusable, so validation rejects it.
+        ...(finite ? { score: weightedScore(probabilities as Record<string, number>, question.criteria.length) } : {}),
       }];
     }));
-    const answers = normalizeAnswers(request, prepared);
-    // Rubric levels are positional; mirror them in `legend` like Jev does.
-    for (const [key, answer] of Object.entries(answers)) {
-      const question = request.questions[key];
-      if (answer.type === 'score' && question?.type === 'score') {
-        answer.score = Math.round(answer.score);
-        answer.legend = Object.fromEntries(question.criteria.map((level, i) => [String(i), level]));
-      }
-    }
 
     return {
       provider: 'llm',
       model: this.model,
       calibrated: false,
-      answers,
-      usage: { inputTokens: 0, outputTokens: 0 },
+      answers: normalizeAnswers(request, prepared),
+      usage: {
+        inputTokens: response.usage?.inputTokens ?? null,
+        outputTokens: response.usage?.outputTokens ?? null,
+      },
     };
   }
 }
