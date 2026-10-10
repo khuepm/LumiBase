@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-10-08T14:15:38.469Z
+version: 3
+lastUpdated: 2026-10-09T08:37:00.422Z
 sourceLang: en
-contentHash: f7df31416aa1c0f0
-codeVerified: 2026-10-08T14:15:38.469Z
-codeVerifiedHash: f7df31416aa1c0f0
-codeVerifiedClaims: 6
+contentHash: 302fbdb9fb9ca29a
+codeVerified: 2026-10-09T08:37:00.422Z
+codeVerifiedHash: 302fbdb9fb9ca29a
+codeVerifiedClaims: 8
 ---
 
 # Asynchronous agent runs
@@ -65,6 +65,26 @@ fall back to the stored run budget. `maxToolCalls: 0` therefore blocks the first
 tool call. Queue transport does not bypass capability or human-approval checks.
 
 The shared `health_check` probe is acknowledged without running an agent or opening a database connection.
+
+## Queue submission failures
+
+`POST /api/v1/agent/goals` returns `503 ENQUEUE_FAILED` with `goalId` and `runId`
+when submission fails. Compensation changes only a still-queued run to failed;
+it never overwrites a run already claimed by a worker. Retry and reconciler
+submission use the same conditional transition.
+
+New asynchronous goals persist the intended task in goal metadata with the same
+secret masking used for tool-call audit. `POST /api/v1/agent/runs/:id/retry` can
+recover that task even if the original delivery never reached the harness.
+Masked arguments cannot be replayed; submit a fresh request with the required
+secrets instead. Old goals without a recorded task still require a new request.
+Retries re-resolve permissions and preserve the stored budget.
+
+The stale sweep also fails queued runs older than 15 minutes, for every goal
+origin, with `queue_timeout`. A delayed message for a failed run cannot claim it.
+This timeout may expire work during a long queue backlog; recovery is an explicit
+retry, never automatic replay. Running executions retain their separate
+`stale_unverified` quarantine because their side effects may have happened.
 
 ## Multi-tenancy
 

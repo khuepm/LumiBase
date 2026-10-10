@@ -194,6 +194,8 @@ Trạng thái: `pending` (chưa làm) · `in-progress` · `done` (setup + backfi
 
 | 148 | (P1 B85/B86/B92/B10: PATCH omission, budget async, consumer Cloudflare) | Unreleased | (1) Không seed. (2) Thêm binding hạ tầng `AGENT_RUNS_QUEUE` theo từng profile cùng queue/DLQ, cần provision trước deploy; không thêm settings key/secret. (3) Không đổi policy/grant. (4) Không đổi wizard. (5) Không capability mới. (6) Không migration/backfill; job cũ đọc budget đã lưu. Queue dùng chung deployment, payload/query giữ siteId; worker nhận cache/search/queue/keys. Shell: không đổi token/API base/CORS/build. | n/a (wizard); hạ tầng queue bắt buộc cho async | main | Rà soát 2026-10-08; test route/service, provider/batch và PostgreSQL hai tenant; hướng dẫn EN/VI `features/async-agent-runs.md`. |
 
+| 149 | (P2 B93/B87: phục hồi queue và parity REST/skills) | Unreleased | Không seed, env/settings, policy/grant mới, wizard, capability mới hay migration. Goal async mới lưu task đã mask trong metadata; goal cũ thiếu task cần gửi lại. Permission/signature hiện có nay áp cho skill. Dữ liệu/cache/audit cô lập tenant; signing config dùng chung deployment. Shell không đổi contract. | n/a | main | Rà soát 2026-10-09; kiểm PostgreSQL hai tenant và tài liệu EN/VI. |
+
 ## Lưu ý backfill
 
 Các gap #1–#3 ảnh hưởng cả instance **đã setup** — fix không chỉ nằm trong setup wizard mà cần kèm migration/backfill idempotent (`onConflictDoNothing`) hoặc giữ lazy-init làm fallback song song.

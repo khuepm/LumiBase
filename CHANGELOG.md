@@ -10,6 +10,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Fixed
+- **P2 queue recovery and governed write parity (B93, B87).** Queue submission
+  failures settle only unclaimed runs, preserve masked tasks for explicit retries,
+  and expire stale queued runs across origins. Flow, extension and CDC skills now
+  share REST validation, signature/permission checks, scheduling, cache invalidation
+  and audit behavior. No migration. See `docs/en/features/governed-write-parity.md`
+  and `docs/en/features/async-agent-runs.md`.
+
 - **P1 governance and async execution (B85, B86, B92, B10).** PATCH validates only
   supplied fields without resetting intent autonomy/budgets, webhook configuration,
   flows or extensions. Async goals retain their budget through queue execution,
