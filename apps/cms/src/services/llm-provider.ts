@@ -38,9 +38,17 @@ export interface LLMToolCall {
   arguments: Record<string, unknown>;
 }
 
+/** Token counts reported by the upstream; absent when the provider did not report them. */
+export interface LLMUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface LLMResponse {
   content: string | null;
   toolCalls: LLMToolCall[];
+  /** Omitted (not zero) when the provider response carries no usage. */
+  usage?: LLMUsage;
 }
 
 export interface LLMChatOptions {
@@ -48,6 +56,15 @@ export interface LLMChatOptions {
   systemPrompt?: string;
   /** Defaults to true for Copilot callers. */
   tools?: boolean;
+  /** Aborts the upstream HTTP request (deadline or caller cancellation). */
+  signal?: AbortSignal;
+}
+
+/** Builds LLMUsage only when both counts are finite numbers; otherwise usage is unknown. */
+function readUsage(input: unknown, output: unknown): LLMUsage | undefined {
+  return typeof input === 'number' && Number.isFinite(input) && typeof output === 'number' && Number.isFinite(output)
+    ? { inputTokens: input, outputTokens: output }
+    : undefined;
 }
 
 export interface LLMProvider {
@@ -141,6 +158,7 @@ interface GeminiGenerateContentResponse {
       }>;
     };
   }>;
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
 }
 
 /**
@@ -192,7 +210,8 @@ function parseGeminiResponse(data: GeminiGenerateContentResponse): LLMResponse {
       arguments: call.args ?? {},
     }));
 
-  return { content, toolCalls };
+  const usage = readUsage(data.usageMetadata?.promptTokenCount, data.usageMetadata?.candidatesTokenCount);
+  return { content, toolCalls, ...(usage ? { usage } : {}) };
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +253,7 @@ export class OpenAIProvider implements LLMProvider {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(body),
+      signal: options.signal,
     });
 
     if (!res.ok) {
@@ -242,6 +262,7 @@ export class OpenAIProvider implements LLMProvider {
     }
 
     const data = (await res.json()) as {
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
       choices: Array<{
         message: {
           content?: string | null;
@@ -259,9 +280,11 @@ export class OpenAIProvider implements LLMProvider {
         arguments: JSON.parse(tc.function.arguments) as Record<string, unknown>,
       })) ?? [];
 
+    const usage = readUsage(data.usage?.prompt_tokens, data.usage?.completion_tokens);
     return {
       content: choice?.content ?? null,
       toolCalls,
+      ...(usage ? { usage } : {}),
     };
   }
 }
@@ -328,6 +351,7 @@ export class AnthropicProvider implements LLMProvider {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(body),
+      signal: options.signal,
     });
 
     if (!res.ok) {
@@ -336,6 +360,7 @@ export class AnthropicProvider implements LLMProvider {
     }
 
     const data = (await res.json()) as {
+      usage?: { input_tokens?: number; output_tokens?: number };
       content: Array<
         | { type: 'text'; text: string }
         | { type: 'tool_use'; name: string; input: Record<string, unknown> }
@@ -353,7 +378,8 @@ export class AnthropicProvider implements LLMProvider {
       }
     }
 
-    return { content, toolCalls };
+    const usage = readUsage(data.usage?.input_tokens, data.usage?.output_tokens);
+    return { content, toolCalls, ...(usage ? { usage } : {}) };
   }
 }
 
@@ -382,6 +408,7 @@ export class GeminiProvider implements LLMProvider {
           'x-goog-api-key': this.apiKey,
         },
         body: JSON.stringify(body),
+        signal: options.signal,
       },
     );
 
@@ -442,6 +469,7 @@ export class VertexProvider implements LLMProvider {
         Authorization: `Bearer ${this.accessToken}`,
       },
       body: JSON.stringify(body),
+      signal: options.signal,
     });
 
     if (!res.ok) {
@@ -497,6 +525,7 @@ export class WorkersAIProvider implements LLMProvider {
         messages: allMessages,
         ...(options.tools === false ? {} : { tools }),
       }),
+      signal: options.signal,
     });
 
     if (!res.ok) {
@@ -507,6 +536,7 @@ export class WorkersAIProvider implements LLMProvider {
     const data = (await res.json()) as {
       result?: {
         response?: string;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
         tool_calls?: Array<{
           name: string;
           arguments: Record<string, unknown> | string;
@@ -523,9 +553,12 @@ export class WorkersAIProvider implements LLMProvider {
             : tc.arguments,
       })) ?? [];
 
+    // Not every Workers AI model reports usage; when absent it stays unknown.
+    const usage = readUsage(data.result?.usage?.prompt_tokens, data.result?.usage?.completion_tokens);
     return {
       content: data.result?.response ?? null,
       toolCalls,
+      ...(usage ? { usage } : {}),
     };
   }
 }
