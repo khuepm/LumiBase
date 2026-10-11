@@ -1,7 +1,6 @@
 import { aiApprovals, aiConversations, aiMessages } from '@lumibase/database';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
-import type { UnofficialStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
@@ -14,29 +13,17 @@ import { IntentService } from '../services/intent-service';
 import { SchemaService } from '../services/schema-service';
 import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
 import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
-import {
-  createDecisionProvider,
-  DecisionProviderError,
-  type DecisionErrorCode,
-  type DecisionProviderEnv,
-  type DecisionRequest,
-  type DecisionResponse,
-} from '../services/decision-provider';
+import { createDecisionProvider, type DecisionProviderEnv } from '../services/decision-provider';
 import {
   authorizeDecision,
-  decisionQuestionTypes,
   decisionQuotaFromEnv,
-  decisionRubricVersion,
   DecisionGovernanceError,
-  DecisionGovernanceService,
   readDecisionSettings,
-  type DecisionAccounting,
-  type DecisionGovernanceCode,
-  type DecisionOutcomeCode,
+  runGovernedDecision,
+  writeDecisionAudit,
+  type DecisionAuditContext,
   type DecisionQuotaEnv,
-  type GovernedDecisionResult,
 } from '../services/decision-governance';
-import { AuditLogger } from '../modules/audit/logger';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPendingRun, FLOW_RUNS_QUEUE } from '../services/flow-run-service';
 
@@ -535,87 +522,6 @@ aiRouter.delete('/conversations/:id', async (c) => {
 // Decision routes (TypeSafe Jev / equivalent)
 // ---------------------------------------------------------------------------
 
-/** Upstream failures map to gateway-style statuses; the provider key is ours, not the caller's. */
-const DECISION_ERROR_STATUS: Record<DecisionErrorCode, 413 | 422 | 429 | 502 | 503 | 504 | UnofficialStatusCode> = {
-  DECISION_AUTH: 502,
-  DECISION_VALIDATION: 422,
-  DECISION_RATE_LIMITED: 429,
-  DECISION_UNAVAILABLE: 503,
-  DECISION_UPSTREAM: 502,
-  DECISION_PARSE_FAILED: 502,
-  DECISION_TIMEOUT: 504,
-  // Client closed the request; nginx convention. Hono needs the unofficial cast.
-  DECISION_CANCELLED: 499 as UnofficialStatusCode,
-  DECISION_INPUT_TOO_LARGE: 413,
-};
-
-const DECISION_ERROR_MESSAGE: Record<DecisionErrorCode, string> = {
-  DECISION_AUTH: 'The decision provider rejected the configured credentials.',
-  DECISION_VALIDATION: 'The decision provider rejected the request.',
-  DECISION_RATE_LIMITED: 'The decision provider rate limit was exceeded. Retry later.',
-  DECISION_UNAVAILABLE: 'The decision provider is temporarily unavailable. Retry later.',
-  DECISION_UPSTREAM: 'The decision provider returned an error.',
-  DECISION_PARSE_FAILED: 'The decision provider returned an unusable answer.',
-  DECISION_TIMEOUT: 'The decision did not complete within its deadline.',
-  DECISION_CANCELLED: 'The decision request was cancelled.',
-  DECISION_INPUT_TOO_LARGE: 'The decision input exceeds the configured size or token budget.',
-};
-
-const DECISION_GOVERNANCE_STATUS: Record<DecisionGovernanceCode, 403 | 422 | 429 | 503> = {
-  FORBIDDEN: 403,
-  DECISION_NOT_CONFIGURED: 503,
-  DECISION_DISABLED: 403,
-  DECISION_FIELD_NOT_ALLOWED: 422,
-  DECISION_QUOTA_EXCEEDED: 429,
-  DECISION_CONCURRENCY_LIMITED: 429,
-  DECISION_QUOTA_UNAVAILABLE: 503,
-};
-
-interface DecisionAuditRecord {
-  outcome: DecisionOutcomeCode | 'OK' | 'VALIDATION';
-  status: number;
-  startedAt: number;
-  request?: DecisionRequest;
-  data?: DecisionResponse;
-  provider?: string;
-  model?: string;
-  accounting?: DecisionAccounting;
-}
-
-/**
- * One `ai_decision` audit event per call (#511). It records who, which
- * provider/model, a rubric fingerprint, the outcome, latency and usage — never
- * state, instructions, criteria, answers, the actor's email or the client IP.
- * Retention follows the audit log (`LUMIBASE_AUDIT_RETENTION_DAYS`).
- */
-async function auditDecision(c: Context<AppEnv>, record: DecisionAuditRecord): Promise<void> {
-  const db = c.get('db');
-  if (!db) return;
-  const siteId = c.get('siteId');
-  const principal = principalRefFromAuth(c.get('auth'), siteId);
-  await new AuditLogger({ db, siteId }).write({
-    event: 'ai_decision',
-    requestId: c.get('requestId') ?? null,
-    metadata: {
-      outcome: record.outcome,
-      status: record.status,
-      principal: principal
-        ? {
-            type: principal.type,
-            id: principal.type === 'user' ? principal.userId : principal.type === 'api_key' ? principal.apiKeyId : null,
-          }
-        : null,
-      provider: record.data?.provider ?? record.provider ?? null,
-      model: record.data?.model ?? record.model ?? null,
-      rubricVersion: record.request ? await decisionRubricVersion(record.request) : null,
-      questions: record.request ? decisionQuestionTypes(record.request) : null,
-      latencyMs: Date.now() - record.startedAt,
-      usage: record.data?.usage ?? null,
-      ...(record.accounting ?? {}),
-    },
-  });
-}
-
 /**
  * POST /decisions
  * Asks the configured decision model (DECISION_PROVIDER) typed questions
@@ -623,6 +529,16 @@ async function auditDecision(c: Context<AppEnv>, record: DecisionAuditRecord): P
  * Governed (#511): `ai:decide` capability, site opt-in, field allowlist,
  * per-site quota, and an audit event — all before the provider is called.
  */
+function decisionAuditContext(c: Context<AppEnv>): DecisionAuditContext {
+  const siteId = c.get('siteId');
+  return {
+    db: c.get('db'),
+    siteId,
+    requestId: c.get('requestId') ?? null,
+    principal: principalRefFromAuth(c.get('auth'), siteId),
+  };
+}
+
 aiRouter.post('/decisions', async (c) => {
   const startedAt = Date.now();
 
@@ -631,7 +547,7 @@ aiRouter.post('/decisions', async (c) => {
     authorizeDecision(grant);
   } catch (err) {
     const error = err as DecisionGovernanceError;
-    await auditDecision(c, { outcome: error.code, status: 403, startedAt });
+    await writeDecisionAudit(decisionAuditContext(c), { outcome: error.code, status: 403, startedAt });
     return c.json({ errors: [{ code: error.code, message: error.message }] }, 403);
   }
 
@@ -639,7 +555,7 @@ aiRouter.post('/decisions', async (c) => {
   const parsed = decisionRequestSchema.safeParse(body);
 
   if (!parsed.success) {
-    await auditDecision(c, { outcome: 'VALIDATION', status: 400, startedAt });
+    await writeDecisionAudit(decisionAuditContext(c), { outcome: 'VALIDATION', status: 400, startedAt });
     return c.json(
       {
         errors: parsed.error.issues.map((issue) => ({
@@ -655,47 +571,20 @@ aiRouter.post('/decisions', async (c) => {
   const request = parsed.data;
   const env = c.env as unknown as DecisionProviderEnv & DecisionQuotaEnv;
   const configured = createDecisionProvider(env);
-  let result: GovernedDecisionResult;
-  try {
-    const service = new DecisionGovernanceService({
+  const outcome = await runGovernedDecision(
+    async () => ({
       configured,
       settings: await readDecisionSettings(c.get('db'), c.get('siteId')),
       quota: decisionQuotaFromEnv(env),
       cache: c.get('runtime').cache,
       siteId: c.get('siteId'),
-    });
+    }),
+    request,
     // Client disconnect aborts the upstream call and suppresses retries.
-    result = await service.decide(request, { signal: c.req.raw.signal });
-  } catch (err) {
-    console.error('[ai/decisions] governance error', formatSafeError(err));
-    await auditDecision(c, { outcome: 'INTERNAL', status: 500, startedAt, request });
-    return c.json({ errors: [{ code: 'INTERNAL', message: 'Decision request failed.' }] }, 500);
-  }
-
-  const base = { startedAt, request, provider: configured?.name, model: configured?.model, accounting: result.accounting };
-  if (result.ok) {
-    await auditDecision(c, { ...base, outcome: 'OK', status: 200, data: result.data });
-    return c.json({ data: result.data });
-  }
-
-  const err = result.error;
-  if (err instanceof DecisionGovernanceError) {
-    const status = DECISION_GOVERNANCE_STATUS[err.code];
-    await auditDecision(c, { ...base, outcome: err.code, status });
-    if (err.retryAfterSeconds !== undefined) c.header('Retry-After', String(err.retryAfterSeconds));
-    // Governance messages carry limits and field names the caller sent, never content.
-    return c.json({ errors: [{ code: err.code, message: err.message }] }, status);
-  }
-  console.error('[ai/decisions] provider error', formatSafeError(err));
-  if (err instanceof DecisionProviderError) {
-    const status = DECISION_ERROR_STATUS[err.code];
-    await auditDecision(c, { ...base, outcome: err.code, status: Number(status) });
-    // The budget message carries only sizes, never content, so it is safe to return.
-    const message = err.code === 'DECISION_INPUT_TOO_LARGE' ? err.message : DECISION_ERROR_MESSAGE[err.code];
-    return c.json({ errors: [{ code: err.code, message }] }, status);
-  }
-  await auditDecision(c, { ...base, outcome: 'INTERNAL', status: 500 });
-  return c.json({ errors: [{ code: 'INTERNAL', message: 'Decision request failed.' }] }, 500);
+    { signal: c.req.raw.signal, audit: decisionAuditContext(c), startedAt },
+  );
+  if (outcome.retryAfterSeconds !== undefined) c.header('Retry-After', String(outcome.retryAfterSeconds));
+  return c.json(outcome.body, outcome.status);
 });
 
 // ---------------------------------------------------------------------------
