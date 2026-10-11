@@ -5,6 +5,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -498,5 +499,119 @@ export const agentMemory = pgTable(
   (t) => ({
     siteScopeIdx: index('agent_memory_site_scope_idx').on(t.siteId, t.scope, t.scopeId),
     siteSourceIdx: index('agent_memory_site_source_idx').on(t.siteId, t.sourceType, t.sourceId),
+  }),
+);
+// ---------------------------------------------------------------------------
+// Jev J05 (#512) — versioned review profiles and item-bound decision runs
+// ---------------------------------------------------------------------------
+/**
+ * A review profile: which fields a draft review reads and which Decision
+ * questions it asks. Rows are immutable — an edit inserts `version + 1` and
+ * archives the previous row — so a run always points at the exact rubric it
+ * was answered against. `collection` is the collection name (null = any).
+ */
+export const reviewProfiles = pgTable(
+  'lumibase_review_profiles',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    collection: text('collection'),
+    key: text('key').notNull(),
+    version: integer('version').notNull(),
+    /** `active` | `archived` */
+    status: text('status').default('active').notNull(),
+    /** `taxonomy` | `brand-voice` | `brief-alignment` | null (custom). */
+    preset: text('preset'),
+    /** Top-level field names the review reads. */
+    fields: jsonb('fields').default([]).notNull(),
+    /** Decision questions keyed by question key. */
+    questions: jsonb('questions').default({}).notNull(),
+    sourceField: text('source_field'),
+    /** Below this confidence a run is `abstained`. */
+    minConfidence: real('min_confidence'),
+    /** Caveat shown with results, e.g. "no source — not a fact-check". */
+    note: text('note'),
+    createdBy: text('created_by'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    siteKeyVersionUq: uniqueIndex('review_profiles_site_key_version_uq').on(t.siteId, t.key, t.version),
+    siteStatusIdx: index('review_profiles_site_status_idx').on(t.siteId, t.status, t.collection),
+  }),
+);
+/**
+ * One decision run of a profile against one item revision (or an unsaved
+ * snapshot). Ids are uuidv7, supplied by the service. `content_hash` is the
+ * sha256 of the canonical projected fields, so a later edit is detectable.
+ */
+export const reviewRuns = pgTable(
+  'lumibase_review_runs',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    profileId: text('profile_id')
+      .notNull()
+      .references(() => reviewProfiles.id, { onDelete: 'cascade' }),
+    profileKey: text('profile_key').notNull(),
+    profileVersion: integer('profile_version').notNull(),
+    collection: text('collection').notNull(),
+    itemId: text('item_id'),
+    revisionId: text('revision_id'),
+    contentHash: text('content_hash').notNull(),
+    /** `item` | `snapshot` */
+    source: text('source').notNull(),
+    /** Fields of the profile the caller could not read; never sent. */
+    omittedFields: jsonb('omitted_fields').default([]).notNull(),
+    principalType: text('principal_type').notNull(),
+    principalId: text('principal_id').notNull(),
+    /** `running` | `success` | `abstained` | `error` */
+    status: text('status').notNull(),
+    provider: text('provider'),
+    model: text('model'),
+    calibrated: boolean('calibrated'),
+    answers: jsonb('answers'),
+    usage: jsonb('usage'),
+    latencyMs: integer('latency_ms'),
+    errorCode: text('error_code'),
+    idempotencyKey: text('idempotency_key').notNull(),
+    createdAt: createdAt(),
+    completedAt: timestamp('completed_at'),
+  },
+  (t) => ({
+    siteIdempotencyUq: uniqueIndex('review_runs_site_idempotency_uq').on(t.siteId, t.idempotencyKey),
+    siteItemIdx: index('review_runs_site_item_idx').on(t.siteId, t.itemId, t.createdAt),
+    createdIdx: index('review_runs_created_idx').on(t.createdAt),
+  }),
+);
+/** Editor verdict on one answer of a run. One row per principal and question. */
+export const reviewFeedback = pgTable(
+  'lumibase_review_feedback',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    runId: text('run_id')
+      .notNull()
+      .references(() => reviewRuns.id, { onDelete: 'cascade' }),
+    questionKey: text('question_key').notNull(),
+    /** `accept` | `edit` | `reject` */
+    verdict: text('verdict').notNull(),
+    editedValue: jsonb('edited_value'),
+    principalType: text('principal_type').notNull(),
+    principalId: text('principal_id').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    runQuestionPrincipalUq: uniqueIndex('review_feedback_run_question_principal_uq').on(
+      t.siteId,
+      t.runId,
+      t.questionKey,
+      t.principalId,
+    ),
   }),
 );

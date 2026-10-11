@@ -212,6 +212,8 @@ export interface Bindings {
   DECISION_SITE_MAX_CONCURRENT?: string;
   /** Platform ceiling: estimated tokens per site per UTC day, retries included (default 2,000,000). */
   DECISION_SITE_TOKENS_PER_DAY?: string;
+  /** Days a draft review run (and its feedback) is kept before the hourly purge (default 180). */
+  DECISION_REVIEW_RETENTION_DAYS?: string;
   // ── Custom domains / Cloudflare for SaaS (services/domains/*) ───────────
   /** API token with `SSL and Certificates: Edit` on the SaaS zone. */
   CLOUDFLARE_API_TOKEN?: string;

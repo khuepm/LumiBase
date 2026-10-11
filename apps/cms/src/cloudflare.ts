@@ -23,6 +23,7 @@ import { processCloudflareAgentQueue } from './cloudflare-agent-queue';
 import type { Bindings } from './env';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
+import { runScheduledReviewRunPurge } from './services/review-run-retention';
 import { runScheduledPageviewFlush } from './modules/pageviews/scheduled';
 import { resolveSentryOptions } from './observability/sentry';
 import { withWorkerRuntimeDefault } from './worker-runtime-default';
@@ -131,6 +132,7 @@ export default Sentry.withSentry(
     if (controller.cron === '0 * * * *') {
       ctx.waitUntil(runScheduledRotation(db));
       ctx.waitUntil(runScheduledRefreshTokenPrune(db));
+      ctx.waitUntil(runScheduledReviewRunPurge(db, env.DECISION_REVIEW_RETENTION_DAYS));
     }
   },
   } satisfies ExportedHandler<Bindings>,
