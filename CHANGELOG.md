@@ -25,6 +25,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
 
 ### Fixed
+- **Cloudflare counters expire (#511).** The `PageviewCounter` Durable Object
+  now honours the `increment` TTL (window armed on create, like Redis `EXPIRE NX`)
+  and prunes expired rows, and the 5-minute pageview flush drains only `pv`
+  keys. API rate-limit windows and decision quotas on Cloudflare now reset on
+  their own window instead of every flush. Existing DOs add the `expires_at`
+  column on wake; no wrangler migration.
 - **P2 queue recovery and governed write parity (B93, B87).** Queue submission
   failures settle only unclaimed runs, preserve masked tasks for explicit retries,
   and expire stale queued runs across origins. Flow, extension and CDC skills now

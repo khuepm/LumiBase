@@ -215,6 +215,14 @@ export class DecisionQuotaLedger {
   ) {}
 
   async reserve(tokens: number): Promise<Reservation> {
+    // A reservation larger than the whole daily budget can never pass, so it
+    // carries no `Retry-After` — retrying tomorrow would fail the same way.
+    if (tokens > this.quota.budgetPerDay) {
+      throw new DecisionGovernanceError(
+        'DECISION_QUOTA_EXCEEDED',
+        `This request's worst-case cost of ${tokens} estimated tokens exceeds the site's daily decision budget of ${this.quota.budgetPerDay}, so it cannot be admitted.`,
+      );
+    }
     const at = this.now();
     const hour = Math.floor(at / HOUR_MS);
     const day = Math.floor(at / DAY_MS);

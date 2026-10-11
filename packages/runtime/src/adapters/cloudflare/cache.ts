@@ -167,11 +167,11 @@ export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProv
     return this.counterNs.get(id);
   }
 
-  async increment(key: string, by = 1, _opts?: { ttl?: number }): Promise<number> {
+  async increment(key: string, by = 1, opts?: { ttl?: number }): Promise<number> {
     const res = await this.stub(key).fetch('https://internal/incr', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, by }),
+      body: JSON.stringify({ key, by, ...(opts?.ttl ? { ttl: opts.ttl } : {}) }),
     });
     const { value } = (await res.json()) as { value: number };
     return value;
@@ -200,7 +200,8 @@ export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProv
    *
    * Only pageview keys (`pv:` and `pvu:`) are drained. The same DO also holds
    * every other `increment()` counter for the site — rate-limit windows,
-   * decision quotas — and an empty prefix reset them all every flush.
+   * decision quotas — which expire through the TTL forwarded by `increment`
+   * (the DO prunes expired rows), not through this drain.
    */
   async drainSite(siteId: string): Promise<{
     counters: Array<{ key: string; value: number }>;

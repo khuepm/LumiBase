@@ -211,6 +211,8 @@ describe('DecisionGovernanceService gates', () => {
     const { svc, cache } = service(provider, { quota: { budgetPerDay: perAttempt * 3 - 1 } });
     const result = await svc.decide(request);
     expect(!result.ok && (result.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_EXCEEDED');
+    // Unsatisfiable at any time, so no Retry-After hint.
+    expect(!result.ok && (result.error as DecisionGovernanceError).retryAfterSeconds).toBeUndefined();
     expect(provider.provider.decide).not.toHaveBeenCalled();
     expect(await counter(cache, tokensKey)).toBe(0);
     expect(await counter(cache, requestsKey)).toBe(0);

@@ -465,4 +465,24 @@ describe("CloudflareCacheProvider.drainSite", () => {
     // `pv` covers `pv:` and `pvu:` (LIKE 'pv%'); `dq:` and `rl:` never match.
     expect(url.searchParams.get("prefix")).toBe("pv");
   });
+
+  it("forwards the increment TTL so the DO can expire non-pageview counters", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      new Response(JSON.stringify({ value: 1 })),
+    );
+    const namespace = {
+      idFromName: vi.fn((name: string) => name),
+      get: vi.fn(() => ({ fetch: fetchMock })),
+    };
+    const cache = new CloudflareCacheProvider(
+      createMockKV(),
+      namespace as unknown as ConstructorParameters<typeof CloudflareCacheProvider>[1],
+    );
+
+    await cache.increment("rl:site_1:user_1", 1, { ttl: 60 });
+    await cache.increment("rl:site_1:user_1", 1);
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ key: "rl:site_1:user_1", by: 1, ttl: 60 });
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({ key: "rl:site_1:user_1", by: 1 });
+  });
 });

@@ -3496,7 +3496,8 @@ paths:
           description: >
             Decision provider rate limit (DECISION_RATE_LIMITED), or a site
             budget used up (DECISION_QUOTA_EXCEEDED, DECISION_CONCURRENCY_LIMITED).
-            Site budgets set Retry-After in seconds.
+            Site budgets set Retry-After in seconds, except when one request's
+            worst-case reservation exceeds the whole daily budget (never admissible).
           headers:
             Retry-After:
               schema: { type: integer }
