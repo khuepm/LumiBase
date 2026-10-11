@@ -206,6 +206,12 @@ export interface Bindings {
   DECISION_MAX_INPUT_BYTES?: string;
   /** Estimated token budget on the same payload (default 24000). */
   DECISION_MAX_INPUT_TOKENS?: string;
+  /** Platform ceiling: admitted decisions per site per hour (default 600). A site may only tighten it. */
+  DECISION_SITE_REQUESTS_PER_HOUR?: string;
+  /** Platform ceiling: decisions in flight per site (default 4). */
+  DECISION_SITE_MAX_CONCURRENT?: string;
+  /** Platform ceiling: estimated tokens per site per UTC day, retries included (default 2,000,000). */
+  DECISION_SITE_TOKENS_PER_DAY?: string;
   // ── Custom domains / Cloudflare for SaaS (services/domains/*) ───────────
   /** API token with `SSL and Certificates: Edit` on the SaaS zone. */
   CLOUDFLARE_API_TOKEN?: string;

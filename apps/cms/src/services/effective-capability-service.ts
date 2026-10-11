@@ -105,6 +105,15 @@ export function satisfiesCapability(
   return capabilities.includes(required);
 }
 
+/**
+ * `ai:decide` (#511) rides the existing permission language rather than a new
+ * one: a policy grants `create` on this reserved system collection. User
+ * collections cannot take the `lumibase_` prefix (schema-service), so a
+ * content collection never collides with it.
+ */
+export const DECISION_PERMISSION_COLLECTION = 'lumibase_ai_decisions';
+export const DECISION_CAPABILITY = 'ai:decide';
+
 const ITEM_CAPABILITIES_BY_ACTION: Readonly<Record<string, readonly string[]>> = {
   read: ['items:read'],
   create: ['items:create', 'items:write'],
@@ -129,6 +138,11 @@ export function capabilitiesFromPermissionBundle(bundle: PermissionBundle): stri
       if (/^schema:(read|create|update|delete|migrate)$/.test(action)) {
         capabilities.add(action);
       }
+      continue;
+    }
+    if (permission.collection === DECISION_PERMISSION_COLLECTION) {
+      // Never an item grant: `create` here must not mint items:write.
+      if (action === 'create') capabilities.add(DECISION_CAPABILITY);
       continue;
     }
 

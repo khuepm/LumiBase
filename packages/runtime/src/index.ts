@@ -23,7 +23,7 @@
 // types are erased.
 export * from './interfaces';
 export { createCloudflareRuntime, createCloudflareKeyProvider } from './adapters/cloudflare';
-export { CloudflareRealtimeProvider, CloudflareEdgeCacheProvider } from './adapters/cloudflare';
+export { CloudflareRealtimeProvider, CloudflareEdgeCacheProvider, CloudflareCacheProvider } from './adapters/cloudflare';
 export {
   EnvKeyProvider,
   collectKeys,

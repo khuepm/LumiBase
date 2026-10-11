@@ -1,7 +1,6 @@
 import { aiApprovals, aiConversations, aiMessages } from '@lumibase/database';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
-import type { UnofficialStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
@@ -14,12 +13,17 @@ import { IntentService } from '../services/intent-service';
 import { SchemaService } from '../services/schema-service';
 import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
 import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
+import { createDecisionProvider, type DecisionProviderEnv } from '../services/decision-provider';
 import {
-  createDecisionProvider,
-  DecisionProviderError,
-  type DecisionErrorCode,
-  type DecisionProviderEnv,
-} from '../services/decision-provider';
+  authorizeDecision,
+  decisionQuotaFromEnv,
+  DecisionGovernanceError,
+  readDecisionSettings,
+  runGovernedDecision,
+  writeDecisionAudit,
+  type DecisionAuditContext,
+  type DecisionQuotaEnv,
+} from '../services/decision-governance';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPendingRun, FLOW_RUNS_QUEUE } from '../services/flow-run-service';
 
@@ -518,42 +522,40 @@ aiRouter.delete('/conversations/:id', async (c) => {
 // Decision routes (TypeSafe Jev / equivalent)
 // ---------------------------------------------------------------------------
 
-/** Upstream failures map to gateway-style statuses; the provider key is ours, not the caller's. */
-const DECISION_ERROR_STATUS: Record<DecisionErrorCode, 413 | 422 | 429 | 502 | 503 | 504 | UnofficialStatusCode> = {
-  DECISION_AUTH: 502,
-  DECISION_VALIDATION: 422,
-  DECISION_RATE_LIMITED: 429,
-  DECISION_UNAVAILABLE: 503,
-  DECISION_UPSTREAM: 502,
-  DECISION_PARSE_FAILED: 502,
-  DECISION_TIMEOUT: 504,
-  // Client closed the request; nginx convention. Hono needs the unofficial cast.
-  DECISION_CANCELLED: 499 as UnofficialStatusCode,
-  DECISION_INPUT_TOO_LARGE: 413,
-};
-
-const DECISION_ERROR_MESSAGE: Record<DecisionErrorCode, string> = {
-  DECISION_AUTH: 'The decision provider rejected the configured credentials.',
-  DECISION_VALIDATION: 'The decision provider rejected the request.',
-  DECISION_RATE_LIMITED: 'The decision provider rate limit was exceeded. Retry later.',
-  DECISION_UNAVAILABLE: 'The decision provider is temporarily unavailable. Retry later.',
-  DECISION_UPSTREAM: 'The decision provider returned an error.',
-  DECISION_PARSE_FAILED: 'The decision provider returned an unusable answer.',
-  DECISION_TIMEOUT: 'The decision did not complete within its deadline.',
-  DECISION_CANCELLED: 'The decision request was cancelled.',
-  DECISION_INPUT_TOO_LARGE: 'The decision input exceeds the configured size or token budget.',
-};
-
 /**
  * POST /decisions
  * Asks the configured decision model (DECISION_PROVIDER) typed questions
  * about `state`. Read-only: no content is written, so no HITL approval.
+ * Governed (#511): `ai:decide` capability, site opt-in, field allowlist,
+ * per-site quota, and an audit event — all before the provider is called.
  */
+function decisionAuditContext(c: Context<AppEnv>): DecisionAuditContext {
+  const siteId = c.get('siteId');
+  return {
+    db: c.get('db'),
+    siteId,
+    requestId: c.get('requestId') ?? null,
+    principal: principalRefFromAuth(c.get('auth'), siteId),
+  };
+}
+
 aiRouter.post('/decisions', async (c) => {
+  const startedAt = Date.now();
+
+  const grant = await resolveRequestCapabilities(c);
+  try {
+    authorizeDecision(grant);
+  } catch (err) {
+    const error = err as DecisionGovernanceError;
+    await writeDecisionAudit(decisionAuditContext(c), { outcome: error.code, status: 403, startedAt });
+    return c.json({ errors: [{ code: error.code, message: error.message }] }, 403);
+  }
+
   const body = await c.req.json().catch(() => null);
   const parsed = decisionRequestSchema.safeParse(body);
 
   if (!parsed.success) {
+    await writeDecisionAudit(decisionAuditContext(c), { outcome: 'VALIDATION', status: 400, startedAt });
     return c.json(
       {
         errors: parsed.error.issues.map((issue) => ({
@@ -566,34 +568,23 @@ aiRouter.post('/decisions', async (c) => {
     );
   }
 
-  const configured = createDecisionProvider(c.env as unknown as DecisionProviderEnv);
-  if (!configured) {
-    return c.json(
-      {
-        errors: [
-          {
-            code: 'DECISION_NOT_CONFIGURED',
-            message: 'Set DECISION_PROVIDER (typesafe | openrouter | llm) and its credentials.',
-          },
-        ],
-      },
-      503,
-    );
-  }
-
-  try {
+  const request = parsed.data;
+  const env = c.env as unknown as DecisionProviderEnv & DecisionQuotaEnv;
+  const configured = createDecisionProvider(env);
+  const outcome = await runGovernedDecision(
+    async () => ({
+      configured,
+      settings: await readDecisionSettings(c.get('db'), c.get('siteId')),
+      quota: decisionQuotaFromEnv(env),
+      cache: c.get('runtime').cache,
+      siteId: c.get('siteId'),
+    }),
+    request,
     // Client disconnect aborts the upstream call and suppresses retries.
-    const data = await configured.provider.decide(parsed.data, { signal: c.req.raw.signal });
-    return c.json({ data });
-  } catch (err) {
-    console.error('[ai/decisions] provider error', formatSafeError(err));
-    if (err instanceof DecisionProviderError) {
-      // The budget message carries only sizes, never content, so it is safe to return.
-      const message = err.code === 'DECISION_INPUT_TOO_LARGE' ? err.message : DECISION_ERROR_MESSAGE[err.code];
-      return c.json({ errors: [{ code: err.code, message }] }, DECISION_ERROR_STATUS[err.code]);
-    }
-    return c.json({ errors: [{ code: 'INTERNAL', message: 'Decision request failed.' }] }, 500);
-  }
+    { signal: c.req.raw.signal, audit: decisionAuditContext(c), startedAt },
+  );
+  if (outcome.retryAfterSeconds !== undefined) c.header('Retry-After', String(outcome.retryAfterSeconds));
+  return c.json(outcome.body, outcome.status);
 });
 
 // ---------------------------------------------------------------------------
