@@ -1,11 +1,11 @@
 ---
-version: 12
-lastUpdated: 2026-10-10T19:24:05.784Z
+version: 13
+lastUpdated: 2026-10-11T23:27:45.575Z
 sourceLang: en
-contentHash: bddddf229637bbae
-codeVerified: 2026-10-10T19:24:05.784Z
-codeVerifiedHash: bddddf229637bbae
-codeVerifiedClaims: 388
+contentHash: 4ef88116d31482da
+codeVerified: 2026-10-11T23:27:45.575Z
+codeVerifiedHash: 4ef88116d31482da
+codeVerifiedClaims: 408
 ---
 
 # Hono API Specification — LumiBase
@@ -750,6 +750,14 @@ Authorization: Bearer <token>
 | `GET` | `/api/v1/ai/conversations/:id/messages` | Get messages in a conversation |
 | `DELETE` | `/api/v1/ai/conversations/:id` | Delete a conversation |
 | `POST` | `/api/v1/ai/decisions` | Ask the decision model (TypeSafe Jev or equivalent) typed questions |
+| `GET` | `/api/v1/ai/review-profiles` | List active draft review profiles (`?collection=`) |
+| `GET` | `/api/v1/ai/review-profiles/:key` | Get a review profile (`?version=` for an older one) |
+| `POST` | `/api/v1/ai/review-profiles` | Create version 1 of a review profile (admin) |
+| `POST` | `/api/v1/ai/review-profiles/:key/versions` | Publish the next version of a review profile (admin) |
+| `POST` | `/api/v1/ai/reviews` | Review an item or an unsaved draft with a profile (suggest-only) |
+| `GET` | `/api/v1/ai/reviews?collection=&itemId=` | List the review runs of an item |
+| `GET` | `/api/v1/ai/reviews/:id` | Get a review run with its staleness |
+| `POST` | `/api/v1/ai/reviews/:id/feedback` | Record accept / edit / reject on a run's answers |
 
 **Chat request:**
 ```json
@@ -848,7 +856,25 @@ The site `aiDecisions` setting can tighten the platform ceilings, never raise th
 { "key": "aiDecisions", "value": { "enabled": true, "allowedStateFields": ["title", "body"], "requestsPerHour": 100, "maxConcurrent": 2, "budgetPerDay": 200000 } }
 ```
 
-Each call writes one `ai_decision` audit event with the request ID, the principal (type and ID), provider, model, a rubric fingerprint (`sha256:` of the questions, so the same rubric gives the same version), question types, outcome, HTTP status, latency, reported usage, attempts, and reserved and charged tokens. It never records `state`, instructions, criteria, answers, the actor's email or the client IP. Audit rows follow the audit log retention (`LUMIBASE_AUDIT_RETENTION_DAYS`, default 90 days). The CMS stores no decision content; what the provider keeps is governed by the provider's own terms.
+Each call writes one `ai_decision` audit event with the request ID, the principal (type and ID), provider, model, a rubric fingerprint (`sha256:` of the questions, so the same rubric gives the same version), question types, outcome, HTTP status, latency, reported usage, attempts, and reserved and charged tokens. It never records `state`, instructions, criteria, answers, the actor's email or the client IP. Audit rows follow the audit log retention (`LUMIBASE_AUDIT_RETENTION_DAYS`, default 90 days). `POST /ai/decisions` stores no decision content. Draft review runs (below) store the answers, never the reviewed content. What the provider keeps is governed by the provider's own terms.
+
+**Draft review (#512).** A review profile is a versioned rubric: the top-level fields a review reads and the Decision questions it asks (same shapes as above). A review run applies one profile version to one item, or to an unsaved draft, through the governed path above (so the `ai:decide` capability, site opt-in, field allowlist, budgets and the `ai_decision` audit event all apply), and stores the answers with their provenance. Reviews only suggest: no endpoint here changes an item.
+
+- **Profiles.** Reading needs `ai:decide`; creating and versioning need a site admin. Rows are immutable: `POST /review-profiles/:key/versions` inserts version + 1 and archives the previous active version in one transaction, so a run always points at the exact questions it was answered against. A profile may be bound to one `collection` (others get `422 REVIEW_COLLECTION_MISMATCH`) and may set `minConfidence`.
+- **Presets.** `taxonomy` is a `choice` over `presetOptions.categories` plus `other` and `unknown`. `brand-voice` scores tone match and clarity on atomic 5-level rubrics (against `presetOptions.voice`) and adds a `needs_review` flag. `brief-alignment` compares the content with the `sourceField` (a brief or source the editor supplies). Without a `sourceField` it only checks internal coherence and the profile stores the note `no source — not a fact-check`. No preset claims to verify facts.
+- **Reading content.** With `itemId`, the server reads the profile's fields with the caller's own row and field permissions. Fields the caller cannot read are not sent and are listed in `omittedFields`. With `snapshot` (an unsaved draft), each key must be one of the profile's fields and one the caller may read and write (`create`, or `update` when `itemId` is also given). Otherwise the request fails with `422 REVIEW_FIELD_NOT_ALLOWED` before any provider call. Content travels only in `state` and the questions come from the stored profile, so text inside the content cannot change what is asked.
+- **Provenance and staleness.** A run records the actual provider, model, `calibrated`, the profile key and version, the latest live revision, the principal, latency, usage and `contentHash` (`sha256:` of the canonical JSON of the reviewed fields). `GET /reviews/:id` recomputes the hash and revision. When either changed, the run comes back `stale: true` with `staleReason` `content_changed`, `revision_changed` or `item_unavailable`. A caller who can no longer read a field the run reviewed gets `404`. Snapshot runs are visible only to their author and admins.
+- **Abstention.** `status` is `abstained` when every `choice` answer is `other`/`unknown`, or when a confidence is below the profile's `minConfidence`.
+- **Idempotency.** The same `idempotencyKey` (body) or `Idempotency-Key` header returns the same run (`200`) with no second provider call. A run that ended in `error` is retried in place, so it never becomes a second row.
+- **Feedback.** `POST /reviews/:id/feedback` takes `entries` of `{ questionKey, verdict: accept | edit | reject, editedValue? }`. It stores one row per run, question and principal; a retried submission adds none and returns the stored rows. `accept` or `edit` on a stale run returns `409 REVIEW_STALE` unless the body says `acknowledgeStale: true`, so a review is never silently applied to a different revision. For snapshot runs, send the current draft's `contentHash` to get the same check. `reject` is always accepted.
+- **Retention.** The hourly job deletes runs older than `DECISION_REVIEW_RETENTION_DAYS` (default 180), and their feedback with them. Profiles are kept.
+
+```json
+POST /api/v1/ai/reviews
+{ "profile": "spam-check", "collection": "posts", "itemId": "itm_1", "idempotencyKey": "review-itm_1-0001" }
+```
+
+Errors: `403 FORBIDDEN`, `404 REVIEW_PROFILE_NOT_FOUND` / `REVIEW_ITEM_NOT_FOUND` / `REVIEW_RUN_NOT_FOUND`, `409 REVIEW_PROFILE_EXISTS` / `REVIEW_PROFILE_CONFLICT` / `REVIEW_STALE` / `REVIEW_NOT_COMPLETE`, `422 REVIEW_FIELD_NOT_ALLOWED` / `REVIEW_COLLECTION_MISMATCH`, `400 VALIDATION`, plus every decision error above.
 
 ### Agent API (Content OS)
 

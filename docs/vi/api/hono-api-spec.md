@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 11
-lastUpdated: 2026-10-10T19:24:05.784Z
+version: 12
+lastUpdated: 2026-10-11T23:27:45.575Z
 sourceLang: en
 translatedFrom: en
-sourceHash: bddddf229637bbae
+sourceHash: 4ef88116d31482da
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-10T19:24:05.784Z
-codeVerifiedHash: bddddf229637bbae
-codeVerifiedClaims: 388
+codeVerified: 2026-10-11T23:27:45.575Z
+codeVerifiedHash: 4ef88116d31482da
+codeVerifiedClaims: 408
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -641,6 +641,14 @@ Authorization: Bearer <token>
 | `GET` | `/api/v1/ai/conversations/:id/messages` | Lấy danh sách tin nhắn trong một hội thoại |
 | `DELETE` | `/api/v1/ai/conversations/:id` | Xóa một hội thoại |
 | `POST` | `/api/v1/ai/decisions` | Hỏi decision model (TypeSafe Jev hoặc tương đương) các câu hỏi có kiểu |
+| `GET` | `/api/v1/ai/review-profiles` | Liệt kê các review profile đang hoạt động (`?collection=`) |
+| `GET` | `/api/v1/ai/review-profiles/:key` | Lấy một review profile (`?version=` cho phiên bản cũ) |
+| `POST` | `/api/v1/ai/review-profiles` | Tạo phiên bản 1 của một review profile (admin) |
+| `POST` | `/api/v1/ai/review-profiles/:key/versions` | Phát hành phiên bản tiếp theo của một review profile (admin) |
+| `POST` | `/api/v1/ai/reviews` | Review một item hoặc bản nháp chưa lưu theo một profile (chỉ đề xuất) |
+| `GET` | `/api/v1/ai/reviews?collection=&itemId=` | Liệt kê các lần review của một item |
+| `GET` | `/api/v1/ai/reviews/:id` | Lấy một lần review kèm trạng thái stale |
+| `POST` | `/api/v1/ai/reviews/:id/feedback` | Ghi nhận accept / edit / reject cho câu trả lời của một lần review |
 
 **Request chat:**
 ```json
@@ -739,7 +747,25 @@ Setting `aiDecisions` của site có thể siết các mức trần của nền 
 { "key": "aiDecisions", "value": { "enabled": true, "allowedStateFields": ["title", "body"], "requestsPerHour": 100, "maxConcurrent": 2, "budgetPerDay": 200000 } }
 ```
 
-Mỗi lần gọi ghi một audit event `ai_decision` gồm request ID, principal (loại và ID), provider, model, dấu vân tay rubric (`sha256:` của questions, nên cùng rubric thì cùng version), loại câu hỏi, outcome, HTTP status, latency, usage đã báo, số lần gọi, và số token đã giữ chỗ và đã tính. Event không bao giờ ghi `state`, instructions, criteria, câu trả lời, email của người gọi hay IP của client. Audit tuân theo thời hạn lưu của audit log (`LUMIBASE_AUDIT_RETENTION_DAYS`, mặc định 90 ngày). CMS không lưu nội dung decision; việc provider giữ lại gì do điều khoản của chính provider quy định.
+Mỗi lần gọi ghi một audit event `ai_decision` gồm request ID, principal (loại và ID), provider, model, dấu vân tay rubric (`sha256:` của questions, nên cùng rubric thì cùng version), loại câu hỏi, outcome, HTTP status, latency, usage đã báo, số lần gọi, và số token đã giữ chỗ và đã tính. Event không bao giờ ghi `state`, instructions, criteria, câu trả lời, email của người gọi hay IP của client. Audit tuân theo thời hạn lưu của audit log (`LUMIBASE_AUDIT_RETENTION_DAYS`, mặc định 90 ngày). `POST /ai/decisions` không lưu nội dung decision. Các lần review bản nháp (bên dưới) lưu câu trả lời, không bao giờ lưu nội dung được review. Việc provider giữ lại gì do điều khoản của chính provider quy định.
+
+**Review bản nháp (#512).** Review profile là một rubric có phiên bản: các field cấp cao nhất mà review đọc và các câu hỏi Decision mà nó hỏi (cùng dạng như trên). Một lần review (run) áp một phiên bản profile lên một item, hoặc lên một bản nháp chưa lưu, qua đường đi có governance ở trên (nên capability `ai:decide`, opt-in của site, allowlist field, các budget và audit event `ai_decision` đều áp dụng), rồi lưu câu trả lời cùng provenance. Review chỉ đề xuất: không endpoint nào ở đây thay đổi item.
+
+- **Profile.** Đọc cần `ai:decide`; tạo và tạo phiên bản cần site admin. Các dòng là bất biến: `POST /review-profiles/:key/versions` thêm phiên bản + 1 và archive phiên bản đang hoạt động trước đó trong cùng một transaction, nên một run luôn trỏ tới đúng bộ câu hỏi đã được trả lời. Profile có thể gắn với một `collection` (collection khác nhận `422 REVIEW_COLLECTION_MISMATCH`) và có thể đặt `minConfidence`.
+- **Preset.** `taxonomy` là một câu `choice` trên `presetOptions.categories` cộng thêm `other` và `unknown`. `brand-voice` chấm độ khớp giọng điệu và độ rõ ràng theo rubric 5 mức nguyên tử (so với `presetOptions.voice`) và thêm cờ `needs_review`. `brief-alignment` đối chiếu nội dung với `sourceField` (brief hoặc nguồn do biên tập viên cung cấp). Không có `sourceField` thì nó chỉ kiểm tra tính nhất quán nội tại và profile lưu ghi chú `no source — not a fact-check`. Không preset nào tuyên bố kiểm chứng sự thật.
+- **Đọc nội dung.** Với `itemId`, server đọc các field của profile bằng chính quyền row và field của người gọi. Field mà người gọi không đọc được sẽ không được gửi đi và được liệt kê trong `omittedFields`. Với `snapshot` (bản nháp chưa lưu), mỗi key phải là một field của profile và là field người gọi được đọc và ghi (`create`, hoặc `update` khi có cả `itemId`). Nếu không, request lỗi `422 REVIEW_FIELD_NOT_ALLOWED` trước mọi lần gọi provider. Nội dung chỉ đi trong `state` và câu hỏi lấy từ profile đã lưu, nên văn bản bên trong nội dung không thể thay đổi điều được hỏi.
+- **Provenance và stale.** Một run ghi provider, model thực tế, `calibrated`, key và phiên bản profile, revision live mới nhất, principal, latency, usage và `contentHash` (`sha256:` của JSON chuẩn hoá của các field được review). `GET /reviews/:id` tính lại hash và revision. Khi một trong hai thay đổi, run trả về `stale: true` kèm `staleReason` là `content_changed`, `revision_changed` hoặc `item_unavailable`. Người gọi không còn đọc được một field mà run đã review sẽ nhận `404`. Run từ snapshot chỉ hiển thị cho người tạo và admin.
+- **Abstain.** `status` là `abstained` khi mọi câu trả lời `choice` là `other`/`unknown`, hoặc khi có confidence thấp hơn `minConfidence` của profile.
+- **Idempotency.** Cùng `idempotencyKey` (body) hoặc header `Idempotency-Key` trả về cùng run (`200`) mà không gọi provider lần hai. Run kết thúc bằng `error` được thử lại tại chỗ, nên không bao giờ thành dòng thứ hai.
+- **Feedback.** `POST /reviews/:id/feedback` nhận `entries` dạng `{ questionKey, verdict: accept | edit | reject, editedValue? }`. Mỗi run, câu hỏi và principal chỉ có một dòng; gửi lại không thêm dòng nào và trả về các dòng đã lưu. `accept` hoặc `edit` trên run đã stale trả `409 REVIEW_STALE` trừ khi body có `acknowledgeStale: true`, nên review không bao giờ được âm thầm áp vào một revision khác. Với run từ snapshot, gửi `contentHash` của bản nháp hiện tại để có cùng kiểm tra. `reject` luôn được chấp nhận.
+- **Thời hạn lưu.** Job chạy mỗi giờ xoá các run cũ hơn `DECISION_REVIEW_RETENTION_DAYS` (mặc định 180), feedback bị xoá theo. Profile được giữ lại.
+
+```json
+POST /api/v1/ai/reviews
+{ "profile": "spam-check", "collection": "posts", "itemId": "itm_1", "idempotencyKey": "review-itm_1-0001" }
+```
+
+Lỗi: `403 FORBIDDEN`, `404 REVIEW_PROFILE_NOT_FOUND` / `REVIEW_ITEM_NOT_FOUND` / `REVIEW_RUN_NOT_FOUND`, `409 REVIEW_PROFILE_EXISTS` / `REVIEW_PROFILE_CONFLICT` / `REVIEW_STALE` / `REVIEW_NOT_COMPLETE`, `422 REVIEW_FIELD_NOT_ALLOWED` / `REVIEW_COLLECTION_MISMATCH`, `400 VALIDATION`, cùng mọi lỗi decision ở trên.
 
 ### Agent API (Content OS)
 
