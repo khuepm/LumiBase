@@ -418,6 +418,19 @@ describe('attempt reporting (#511)', () => {
 
     expect(onAttempt).toHaveBeenCalledTimes(1);
   });
+
+  it('swallows a throwing hook instead of failing the decision', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ok()));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const { error, value } = await settle(new SystemOneDecisionProvider({ apiKey: 'k' }).decide(request, {
+      onAttempt: () => { throw new Error('hook bug'); },
+    }));
+
+    expect(error).toBeUndefined();
+    expect(value?.answers.spam).toMatchObject({ noul: 0.2 });
+    expect(console.warn).toHaveBeenCalled();
+  });
 });
 
 describe('configuration', () => {
@@ -430,8 +443,12 @@ describe('configuration', () => {
         DECISION_MAX_RETRIES: '1',
         DECISION_MAX_INPUT_BYTES: '65536',
         DECISION_MAX_INPUT_TOKENS: '12000',
+        DECISION_LLM_MAX_OUTPUT_TOKENS: '8192',
       }),
-    ).toEqual({ deadlineMs: 15_000, attemptTimeoutMs: 5_000, maxRetries: 1, maxInputBytes: 65_536, maxInputTokens: 12_000 });
+    ).toEqual({
+      deadlineMs: 15_000, attemptTimeoutMs: 5_000, maxRetries: 1, maxInputBytes: 65_536, maxInputTokens: 12_000,
+      maxOutputTokens: 8_192,
+    });
 
     expect(
       decisionLimitsFromEnv({ DECISION_TIMEOUT_MS: 'soon', DECISION_MAX_RETRIES: '99', DECISION_MAX_INPUT_BYTES: '' }),

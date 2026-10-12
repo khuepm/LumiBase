@@ -223,6 +223,10 @@ export interface Bindings {
   DECISION_MAX_INPUT_BYTES?: string;
   /** Estimated token budget on the same payload (default 24000). */
   DECISION_MAX_INPUT_TOKENS?: string;
+  /** `llm` only: cap on the estimated answer size in tokens (default 4096, 256–32768). */
+  DECISION_LLM_MAX_OUTPUT_TOKENS?: string;
+  /** `llm` + Gemini/Vertex only: thinking headroom added to the sent cap (default 1024, 0–32768). */
+  DECISION_LLM_THINKING_TOKENS?: string;
   /** Platform ceiling: admitted decisions per site per hour (default 600). A site may only tighten it. */
   DECISION_SITE_REQUESTS_PER_HOUR?: string;
   /** Platform ceiling: decisions in flight per site (default 4). */

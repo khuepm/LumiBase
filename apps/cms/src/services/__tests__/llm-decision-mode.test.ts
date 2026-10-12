@@ -1,13 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  DecisionProviderError,
   LLMDecisionProvider,
   SystemOneDecisionProvider,
+  estimateDecisionAnswerTokens,
   weightedScore,
   type DecisionRequest,
 } from '../decision-provider';
 import {
   AnthropicProvider,
   GeminiProvider,
+  LLMHttpError,
+  LLMNetworkError,
+  LLMResponseError,
   NvidiaProvider,
   OpenAIProvider,
   VertexProvider,
@@ -298,5 +303,224 @@ describe('cancellation reaches the adapter request', () => {
 
     expect(await pending).toMatchObject({ code: 'DECISION_CANCELLED' });
     expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #510 J03 follow-up: errors classified at the adapter, output budget, thinking usage
+// ---------------------------------------------------------------------------
+
+function respond(status: number, body: string) {
+  const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response(body, { status }));
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
+const SENTINEL = 'SENTINEL_UPSTREAM_customer_jane@example.test';
+
+describe('LLM upstream HTTP status maps to the Jev error codes', () => {
+  const statusCases = [
+    [401, 'DECISION_AUTH', 502],
+    [429, 'DECISION_RATE_LIMITED', 429],
+    [503, 'DECISION_UNAVAILABLE', 503],
+    [500, 'DECISION_UPSTREAM', 500],
+  ] as const;
+
+  describe.each([
+    ['OpenAI', () => new OpenAIProvider('k')],
+    ['Gemini', () => new GeminiProvider('k')],
+  ] as const)('%s', (_name, make) => {
+    it.each(statusCases)('%i → %s', async (status, code) => {
+      respond(status, `upstream said ${SENTINEL}`);
+
+      const error = await new LLMDecisionProvider(make(), 'm').decide(request).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(DecisionProviderError);
+      expect(error).toMatchObject({ code, status });
+      expect((error as Error).message).toBe(`LLM provider error ${status}.`);
+      expect((error as Error).message).not.toContain('SENTINEL');
+    });
+  });
+});
+
+describe.each([
+  ['OpenAI', () => new OpenAIProvider('k')],
+  ['Anthropic', () => new AnthropicProvider('k')],
+] as const)('%s transport and body classification', (_name, make) => {
+  it('200 with a wrong envelope ({}) is DECISION_PARSE_FAILED, not a network error', async () => {
+    respond(200, '{}');
+    await expect(new LLMDecisionProvider(make(), 'm').decide(request)).rejects.toMatchObject({ code: 'DECISION_PARSE_FAILED' });
+  });
+
+  it('200 with a non-JSON body is DECISION_PARSE_FAILED', async () => {
+    respond(200, 'not json');
+    await expect(new LLMDecisionProvider(make(), 'm').decide(request)).rejects.toMatchObject({ code: 'DECISION_PARSE_FAILED' });
+  });
+
+  it('a rejected fetch (no abort) is DECISION_UNAVAILABLE', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed'); }));
+    await expect(new LLMDecisionProvider(make(), 'm').decide(request)).rejects.toMatchObject({ code: 'DECISION_UNAVAILABLE' });
+  });
+
+  it('a fetch rejected after the caller aborted stays DECISION_CANCELLED', async () => {
+    const controller = new AbortController();
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      controller.abort();
+      throw new TypeError('fetch failed');
+    }));
+    await expect(new LLMDecisionProvider(make(), 'm').decide(request, { signal: controller.signal }))
+      .rejects.toMatchObject({ code: 'DECISION_CANCELLED' });
+  });
+
+  it('fires onAttempt exactly once', async () => {
+    stubFetch(_name === 'OpenAI' ? adapters[0]!.wire(decisionJson) : adapters[2]!.wire(decisionJson));
+    const onAttempt = vi.fn();
+    await new LLMDecisionProvider(make(), 'm').decide(request, { onAttempt });
+    expect(onAttempt).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('/ai/chat keeps its error contract (regression)', () => {
+  it.each(adapters)('$name: non-2xx is still an Error with the original message', async (adapter) => {
+    respond(500, 'boom');
+    const error = await adapter.make().chat([{ role: 'user', content: 'hi' }]).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(LLMHttpError);
+    expect((error as Error).message).toMatch(/error 500: boom$/);
+  });
+
+  it('a network failure keeps the fetch message', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed'); }));
+    const error = await new OpenAIProvider('k').chat([{ role: 'user', content: 'hi' }]).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LLMNetworkError);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('fetch failed');
+  });
+
+  it('an unusable body keeps the parser message', async () => {
+    respond(200, 'not json');
+    const error = await new OpenAIProvider('k').chat([{ role: 'user', content: 'hi' }]).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LLMResponseError);
+    let original = '';
+    try { JSON.parse('not json'); } catch (e) { original = (e as Error).message; }
+    expect((error as Error).message).toBe(original);
+  });
+
+  it('Copilot still sends max 1024 on OpenAI/Anthropic/Gemini and nothing on Workers AI', async () => {
+    for (const index of [0, 2, 3]) {
+      const fetchMock = stubFetch(adapters[index]!.wire('hello'));
+      await adapters[index]!.make().chat([{ role: 'user', content: 'hi' }]);
+      const body = sentBody(fetchMock);
+      const cap = index === 3 ? (body.generationConfig as { maxOutputTokens: number }).maxOutputTokens : body.max_tokens;
+      expect(cap).toBe(1024);
+      vi.unstubAllGlobals();
+    }
+    const fetchMock = stubFetch(adapters[5]!.wire('hello'));
+    await adapters[5]!.make().chat([{ role: 'user', content: 'hi' }]);
+    expect(sentBody(fetchMock)).not.toHaveProperty('max_tokens');
+  });
+});
+
+describe('per-request output budget', () => {
+  const yesNo = (n: number): DecisionRequest => ({
+    state: 's',
+    questions: Object.fromEntries(Array.from({ length: n }, (_, i) => [`question_${String(i).padStart(2, '0')}`, {
+      type: 'choice' as const, instructions: 'x', criteria: { yes: null, no: null },
+    }])),
+  });
+  const tenLevels = (n: number): DecisionRequest => ({
+    state: 's',
+    questions: Object.fromEntries(Array.from({ length: n }, (_, i) => [`question_${String(i).padStart(2, '0')}`, {
+      type: 'score' as const, instructions: 'x', criteria: Array.from({ length: 10 }, (_, l) => `level ${l}`),
+    }])),
+  });
+  const answerAll = (req: DecisionRequest) => JSON.stringify({
+    answers: Object.fromEntries(Object.entries(req.questions).map(([k, q]) => [k, q.type === 'choice'
+      ? { choice: 'yes', probabilities: { yes: 0.5, no: 0.5 }, confidence: 0.5 }
+      : { probabilities: Object.fromEntries(Array.from({ length: 10 }, (_, l) => [String(l), 0.1])), confidence: 0.5 }])),
+  });
+
+  it('OpenAI: 32 yes/no questions send max_tokens = the estimate', async () => {
+    const req = yesNo(32);
+    const fetchMock = stubFetch(adapters[0]!.wire(answerAll(req)));
+    await new LLMDecisionProvider(new OpenAIProvider('k'), 'm').decide(req);
+    expect(sentBody(fetchMock).max_tokens).toBe(estimateDecisionAnswerTokens(req.questions));
+  });
+
+  it('a single noul question gets the 256 floor', async () => {
+    const req: DecisionRequest = { state: 's', questions: { q: { type: 'noul', instructions: 'x', criteria: { true: 'a', false: 'b' } } } };
+    expect(estimateDecisionAnswerTokens(req.questions)).toBeLessThan(256);
+    const fetchMock = stubFetch(adapters[0]!.wire(JSON.stringify({ answers: { q: { noul: 0.4 } } })));
+    await new LLMDecisionProvider(new OpenAIProvider('k'), 'm').decide(req);
+    expect(sentBody(fetchMock).max_tokens).toBe(256);
+  });
+
+  it('Gemini: maxOutputTokens = max(need, 256) + thinking headroom', async () => {
+    const req = yesNo(32);
+    const fetchMock = stubFetch(adapters[3]!.wire(answerAll(req)));
+    await new LLMDecisionProvider(new GeminiProvider('k'), 'm', {}, 1024).decide(req);
+    const sent = (sentBody(fetchMock).generationConfig as { maxOutputTokens: number }).maxOutputTokens;
+    expect(sent).toBe(Math.max(estimateDecisionAnswerTokens(req.questions), 256) + 1024);
+  });
+
+  it('Workers AI sends max_tokens in decision mode', async () => {
+    const fetchMock = stubFetch(adapters[5]!.wire(decisionJson));
+    await new LLMDecisionProvider(adapters[5]!.make(), 'm').decide(request);
+    expect(sentBody(fetchMock).max_tokens).toBe(Math.max(estimateDecisionAnswerTokens(request.questions), 256));
+  });
+
+  it('cap − 1024 < need ≤ cap is accepted on OpenAI and on Gemini (thinking not part of the cap check)', async () => {
+    const req = tenLevels(32);
+    const need = estimateDecisionAnswerTokens(req.questions);
+    expect(need).toBeGreaterThan(4096 - 1024);
+    expect(need).toBeLessThanOrEqual(4096);
+
+    stubFetch(adapters[0]!.wire(answerAll(req)));
+    await expect(new LLMDecisionProvider(new OpenAIProvider('k'), 'm').decide(req)).resolves.toMatchObject({ provider: 'llm' });
+    vi.unstubAllGlobals();
+
+    const fetchMock = stubFetch(adapters[3]!.wire(answerAll(req)));
+    await expect(new LLMDecisionProvider(new GeminiProvider('k'), 'm', {}, 1024).decide(req)).resolves.toMatchObject({ provider: 'llm' });
+    expect((sentBody(fetchMock).generationConfig as { maxOutputTokens: number }).maxOutputTokens).toBe(need + 1024);
+  });
+
+  it('need > cap → 413 before fetch and before onAttempt', async () => {
+    const req = tenLevels(32);
+    const fetchMock = stubFetch(adapters[0]!.wire(answerAll(req)));
+    const onAttempt = vi.fn();
+    await expect(new LLMDecisionProvider(new OpenAIProvider('k'), 'm', { maxOutputTokens: 1024 }).decide(req, { onAttempt }))
+      .rejects.toMatchObject({ code: 'DECISION_INPUT_TOO_LARGE' });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(onAttempt).not.toHaveBeenCalled();
+  });
+});
+
+describe('Gemini/Vertex usage includes thinking tokens', () => {
+  const withMeta = (usageMetadata: Record<string, unknown>) => ({
+    candidates: [{ content: { parts: [{ text: decisionJson }] } }],
+    usageMetadata,
+  });
+
+  describe.each([
+    ['Gemini', () => new GeminiProvider('k')],
+    ['Vertex', () => new VertexProvider({ accessToken: 't', projectId: 'p' })],
+  ] as const)('%s', (_name, make) => {
+    it('adds thoughtsTokenCount to the output count', async () => {
+      stubFetch(withMeta({ promptTokenCount: 12, candidatesTokenCount: 40, thoughtsTokenCount: 300 }));
+      const result = await new LLMDecisionProvider(make(), 'm').decide(request);
+      expect(result.usage).toEqual({ inputTokens: 12, outputTokens: 340 });
+    });
+
+    it('keeps candidatesTokenCount when no thinking count is reported', async () => {
+      stubFetch(withMeta({ promptTokenCount: 12, candidatesTokenCount: 40 }));
+      const result = await new LLMDecisionProvider(make(), 'm').decide(request);
+      expect(result.usage).toEqual({ inputTokens: 12, outputTokens: 40 });
+    });
+
+    it('a malformed thinking count makes output unknown, never an undercount', async () => {
+      stubFetch(withMeta({ promptTokenCount: 12, candidatesTokenCount: 40, thoughtsTokenCount: 'x' }));
+      const result = await new LLMDecisionProvider(make(), 'm').decide(request);
+      expect(result.usage).toEqual({ inputTokens: 12, outputTokens: null });
+    });
   });
 });
