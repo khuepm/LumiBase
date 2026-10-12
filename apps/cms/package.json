@@ -35,16 +35,16 @@
     "@lumibase/database": "workspace:*",
     "@lumibase/runtime": "workspace:*",
     "@lumibase/sdk": "workspace:*",
-    "@sentry/cloudflare": "^11.0.0",
-    "drizzle-orm": "^0.45.3",
+    "@sentry/cloudflare": "^11.6.0",
+    "drizzle-orm": "^0.45.4",
     "graphql": "^17.0.2",
-    "graphql-yoga": "^5.24.1",
+    "graphql-yoga": "^5.24.4",
     "hono": "^4.13.13",
     "jose": "^6.2.12",
     "maxmind": "5.0.7",
-    "nanoid": "^6.0.1",
+    "nanoid": "^6.0.2",
     "node-cron": "^4.6.0",
-    "nodemailer": "10.0.14",
+    "nodemailer": "10.0.16",
     "postgres": "^3.4.9",
     "prom-client": "^15.1.0",
     "uuid": "^14.0.1",
@@ -61,6 +61,6 @@
     "tsx": "^4.23.15",
     "typescript": "^5.6.2",
     "vitest": "^5.0.3",
-    "wrangler": "^4.147.0"
+    "wrangler": "^4.149.0"
   }
 }

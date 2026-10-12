@@ -28,8 +28,8 @@
     "migrate:version": "tsx scripts/migrate.ts version"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.3",
-    "nanoid": "^6.0.1",
+    "drizzle-orm": "^0.45.4",
+    "nanoid": "^6.0.2",
     "postgres": "^3.4.5"
   },
   "devDependencies": {
