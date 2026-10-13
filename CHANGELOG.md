@@ -98,7 +98,15 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   docstring in `apps/cms/scripts/typegen.ts` the wrong form had spread from.
   `pnpm docs:cmd:check` (`scripts/check-docs-commands.mjs`, in `check:all`) now
   resolves every `pnpm` command in a docs code fence against the package it
-  names, and fails when the script does not exist.
+  names, and fails when the script does not exist. It tokenises options
+  (`--filter=`, `-C`, `-r`, `--if-present`, flags such as `--silent`), resolves
+  the script after `pnpm run` instead of skipping it, and follows `cd` into a
+  workspace package. On its first run it found two more commands that could not
+  work as written: `pnpm landing:build` after a `cd apps/docs` in
+  `deployment/cloudflare-pages-ci.md` (the docs deploy now uses
+  `--cwd apps/docs`, as CI does), and `pnpm run deploy:production` in
+  `features/async-agent-runs.md`, which only exists in `apps/cms` (the block now
+  starts with `cd apps/cms`).
 - **Three dead Vietnamese links, and the reason they were invisible (B67).**
   `docs/vi/README.md`, `docs/vi/agent-setup/index.md` and `docs/vi/mcp/index.md`
   linked `./llms.txt` and `../agent-setup/mcp-config.json`, which resolve under
@@ -107,7 +115,9 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   link pointing at a real one perfectly. It now compares the file a link
   **resolves** to, collapsing the locale segment only when both trees have that
   file — which also stops it flagging a legitimately different path for the same
-  target. Repo-wide parity drops from 37 problems in 30 pairs to 35 in 29.
+  target. Repo-wide parity drops from 37 problems in 30 pairs to 35 in 29. A link
+  that is dead in both locales still compares equal, as it did before: parity is
+  not a dead-link check, and reporting it as a locale mismatch would mislead.
 - **The Docker production override is documented as the local trap it is
   (B47c).** `docs/{en,vi}/deployment/docker.md` now says to set
   `DATABASE_SSL_MODE=disable` when trying that stack locally: the override

@@ -171,8 +171,17 @@ export function resolveDocLink(target, { rel, locale }) {
   if (!match) return resolved + fragment;
   const [, targetLocale, inner] = match;
   if (!LOCALES.includes(targetLocale)) return resolved + fragment;
-  const existsEverywhere = LOCALES.every((l) => fs.existsSync(path.join(DOCS_ROOT, l, inner)));
-  return (existsEverywhere ? `docs/*/${inner}` : resolved) + fragment;
+  // Extensionless slug links (`../features/foo`) name `foo.md`.
+  const exists = (l) =>
+    [inner, `${inner}.md`].some((candidate) => fs.existsSync(path.join(DOCS_ROOT, l, candidate)));
+  const present = LOCALES.filter(exists).length;
+  // Present in every locale: an ordinary cross-doc link, compare equal. Present
+  // in none: parity is not a dead-link check, and a link that is dead in both
+  // trees is not a locale mismatch either — collapse it so the two sides compare
+  // as they did before resolution, instead of reporting a misleading mismatch.
+  // Present in only some: each side has to agree on one real file (B67).
+  const collapse = present === LOCALES.length || present === 0;
+  return (collapse ? `docs/*/${inner}` : resolved) + fragment;
 }
 
 /** Row counts of each pipe table, in document order. */

@@ -88,3 +88,28 @@ test('a path escaping the docs tree compares literally, not as a locale path', (
 test('omitting `from` keeps the old literal behaviour', () => {
   assert.deepEqual(linkTargets('[index](./llms.txt)').files, ['./llms.txt']);
 });
+
+test('a target dead in both locales is not reported as a locale mismatch', () => {
+  // Parity is not a dead-link check. Before resolution both sides compared equal
+  // as identical literals; resolving them to docs/en/x and docs/vi/x would turn a
+  // dead link into a misleading "link mismatch". Collapse instead.
+  const en = linkTargets('[gone](./no-such-page.md)', { rel: 'README.md', locale: 'en' });
+  const vi = linkTargets('[gone](./no-such-page.md)', { rel: 'README.md', locale: 'vi' });
+  assert.deepEqual(en.files, ['docs/*/no-such-page.md']);
+  assert.deepEqual(vi.files, en.files);
+});
+
+test('an extensionless slug link resolves to its .md file in both locales', () => {
+  const en = linkTargets('[docker](./deployment/docker)', { rel: 'README.md', locale: 'en' });
+  const vi = linkTargets('[docker](./deployment/docker)', { rel: 'README.md', locale: 'vi' });
+  assert.deepEqual(en.files, ['docs/*/deployment/docker']);
+  assert.deepEqual(vi.files, en.files);
+});
+
+test('the single-locale rule still holds after the dead-in-both change', () => {
+  // docs/en/llms.txt exists, docs/vi/llms.txt does not: present in SOME locales,
+  // so the broken VI side must still differ from the EN side (B67).
+  const en = linkTargets('[index](./llms.txt)', { rel: 'README.md', locale: 'en' });
+  const vi = linkTargets('[index](./llms.txt)', { rel: 'README.md', locale: 'vi' });
+  assert.notDeepEqual(vi.files, en.files);
+});

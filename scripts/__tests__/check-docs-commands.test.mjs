@@ -23,18 +23,21 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   checkDocument,
+  collectPackageDirs,
   collectPackages,
   extractCommands,
 } from '../check-docs-commands.mjs';
 
-const rootScripts = new Set(['db:migrate', 'db:generate', 'lumibase', 'test']);
+const rootScripts = new Set(['db:migrate', 'db:generate', 'lumibase', 'test', 'dev']);
+const cmsScripts = new Set(['dev', 'typegen', 'test', 'deploy:dev', 'deploy:production']);
 const packages = new Map([
   ['@lumibase/database', new Set(['migrate', 'generate', 'studio'])],
   ['@lumibase/sdk', new Set(['build', 'test', 'typecheck', 'clean'])],
-  ['@lumibase/cms', new Set(['dev', 'typegen', 'test'])],
+  ['@lumibase/cms', cmsScripts],
 ]);
+const packageDirs = new Map([['apps/cms', cmsScripts]]);
 const check = (text, rel = 'docs/en/x.md') =>
-  checkDocument({ rel, text, rootScripts, packages });
+  checkDocument({ rel, text, rootScripts, packages, packageDirs });
 const fence = (...lines) => ['```bash', ...lines, '```'].join('\n');
 
 test('catches the incident: -F @lumibase/database db:migrate', () => {
@@ -74,10 +77,94 @@ test('a root script that exists but is handed a bogus subcommand is NOT reported
 });
 
 test("pnpm's own subcommands after a filter are not scripts", () => {
-  assert.deepEqual(
-    check(fence('pnpm -F @lumibase/cms exec tsx scripts/x.ts', 'pnpm --filter @lumibase/cms run dev')),
-    [],
-  );
+  assert.deepEqual(check(fence('pnpm -F @lumibase/cms exec tsx scripts/x.ts')), []);
+});
+
+// ─── `run` is resolved, not skipped (review R2) ─────────────────────────────
+// `run` used to sit in the builtin list, so the script after it was never
+// examined and `pnpm run nosuch` passed. A passing `run dev` case alone cannot
+// tell "resolved" from "skipped", so every passing case here has a failing twin.
+
+test('pnpm run <missing> is reported against the root', () => {
+  const problems = check(fence('pnpm run nosuch'));
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /root package\.json has no "nosuch"/);
+  assert.deepEqual(check(fence('pnpm run db:migrate')), []);
+});
+
+test('pnpm -F <pkg> run <missing> is reported against that package', () => {
+  const problems = check(fence('pnpm -F @lumibase/cms run nosuch'));
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /@lumibase\/cms has no "nosuch"/);
+  assert.deepEqual(check(fence('pnpm --filter @lumibase/cms run dev')), []);
+});
+
+test('a placeholder script matches when some script fits the pattern', () => {
+  assert.deepEqual(check(fence('pnpm --filter @lumibase/cms run deploy:<env>')), []);
+  const problems = check(fence('pnpm --filter @lumibase/cms run release:<env>'));
+  assert.equal(problems.length, 1);
+});
+
+test('cd into a workspace package moves root-form resolution there', () => {
+  // features/async-agent-runs.md runs `pnpm run deploy:production` from apps/cms.
+  assert.deepEqual(check(fence('cd apps/cms', 'pnpm run deploy:production')), []);
+  assert.equal(check(fence('pnpm run deploy:production')).length, 1, 'from the root it is missing');
+  assert.equal(check(fence('cd apps/cms', 'pnpm db:migrate')).length, 1, 'apps/cms has no db:migrate');
+  assert.deepEqual(check(fence('cd apps/cms && pnpm dev')), []);
+  assert.deepEqual(check(fence('cd apps/cms', 'cd ../..', 'pnpm db:migrate')), []);
+});
+
+test('a cd that is not a workspace package keeps resolving against the root', () => {
+  // `cd lumibase` right after `git clone` is the repository root.
+  const problems = check(fence('git clone https://github.com/khuepm/lumibase.git', 'cd lumibase', 'pnpm db-migrate'));
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /root package\.json has no "db-migrate"/);
+});
+
+test('each fence starts at the repository root', () => {
+  const text = [fence('cd apps/cms', 'pnpm dev'), fence('pnpm deploy:production')].join('\n');
+  assert.equal(check(text).length, 1);
+});
+
+// ─── Option tokens and other shapes (review R3/R4) ──────────────────────────
+
+test('pnpm create is a builtin', () => {
+  assert.deepEqual(check(fence('pnpm create lumibase@next my-project')), []);
+});
+
+test('a flag before the script is not taken for the script', () => {
+  assert.deepEqual(check(fence('pnpm -F @lumibase/cms --silent dev')), []);
+  const problems = check(fence('pnpm -F @lumibase/cms --silent nosuch'));
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /has no "nosuch"/);
+});
+
+test('--filter=<pkg> and -F<pkg> are parsed like -F <pkg>', () => {
+  assert.equal(check(fence('pnpm --filter=@lumibase/database db:migrate')).length, 1);
+  assert.equal(check(fence('pnpm -F@lumibase/database db:migrate')).length, 1);
+  assert.deepEqual(check(fence('pnpm --filter=@lumibase/database migrate')), []);
+});
+
+test('-C <dir> resolves against that package', () => {
+  assert.deepEqual(check(fence('pnpm -C apps/cms dev')), []);
+  assert.equal(check(fence('pnpm --dir apps/cms db:migrate')).length, 1);
+});
+
+test('-r resolves against every workspace package', () => {
+  assert.deepEqual(check(fence('pnpm -r typecheck')), []);
+  assert.equal(check(fence('pnpm -r nosuch')).length, 1);
+});
+
+test('--if-present means a missing script is fine', () => {
+  assert.deepEqual(check(fence('pnpm -r --if-present nosuch')), []);
+});
+
+test('a filter selector that is a pattern is left to pnpm', () => {
+  assert.deepEqual(check(fence("pnpm --filter './apps/*' nosuch")), []);
+});
+
+test('a trailing comment is not part of the command', () => {
+  assert.deepEqual(check(fence('pnpm db:migrate        # apply it')), []);
 });
 
 test('prose outside a fence is never a command', () => {
@@ -96,6 +183,18 @@ test('tilde fences count too', () => {
     packages,
   });
   assert.equal(problems.length, 1);
+});
+
+test('the Next.js quickstart is checked: it documents this repository (review R1)', () => {
+  // Step 1 clones LumiBase and runs root scripts; it is a B69 incident site.
+  for (const rel of [
+    'docs/en/tutorials/nextjs-quickstart.md',
+    'docs/vi/tutorials/nextjs-quickstart.md',
+    'README.md',
+  ]) {
+    const problems = check(fence('cd lumibase', 'pnpm db-migrate'), rel);
+    assert.equal(problems.length, 1, rel);
+  }
 });
 
 test('a user-project doc may show root commands this repo does not have', () => {
@@ -138,6 +237,7 @@ test('collectPackages reads names and scripts, and skips the root manifest', () 
     const packages = collectPackages(root);
     assert.deepEqual([...packages.keys()], ['@x/a']);
     assert.deepEqual([...packages.get('@x/a')], ['test']);
+    assert.deepEqual([...collectPackageDirs(root).keys()], ['packages/a']);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
