@@ -122,8 +122,20 @@ function inlineCode(body) {
  * links follow the same rule because the target heading is translated; compare
  * their file paths while preserving fragments on external URLs. Everything else
  * must match exactly: a translated file path is a broken link.
+ *
+ * With `from` ({ rel, locale }), a relative link is compared by the file it
+ * actually RESOLVES to, not by its literal text. Two locales legitimately write
+ * a different path for the same target: `docs/vi/README.md` has to say
+ * `../en/llms.txt` for a file that exists only under `docs/en/`, while
+ * `docs/en/README.md` says `./llms.txt`. Comparing the literal strings called
+ * that a mismatch and — worse — called the *broken* VI link (`./llms.txt`,
+ * pointing at a `docs/vi/llms.txt` that does not exist) a perfect match. So:
+ * resolve both sides, then collapse the locale segment only when the target
+ * exists in both trees, which is what makes an ordinary cross-doc link compare
+ * equal while a single-locale target still has to agree on one real file.
+ * Backlog B67, and the false positive B37(d) recorded.
  */
-export function linkTargets(body) {
+export function linkTargets(body, from = null) {
   const files = [];
   let anchors = 0;
   const re = /\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
@@ -132,10 +144,35 @@ export function linkTargets(body) {
     if (m[1].startsWith('#')) anchors += 1;
     else {
       const localMarkdown = !/^[a-z][a-z0-9+.-]*:/i.test(m[1]) && !m[1].startsWith('//');
-      files.push(localMarkdown ? m[1].replace(/(?<=\.md)#[^#]*$/i, '') : m[1]);
+      if (!localMarkdown) {
+        files.push(m[1]);
+        continue;
+      }
+      const withoutFragment = m[1].replace(/(?<=\.md)#[^#]*$/i, '');
+      files.push(from ? resolveDocLink(withoutFragment, from) : withoutFragment);
     }
   }
   return { files, anchors };
+}
+
+/**
+ * A relative link reduced to the file it points at, locale-collapsed when both
+ * locales have that file. Absolute-looking targets (`/api/...`) and anything
+ * that escapes the docs tree are returned untouched, so they still compare
+ * literally.
+ */
+export function resolveDocLink(target, { rel, locale }) {
+  if (target.startsWith('/')) return target;
+  const [pathPart, ...rest] = target.split('#');
+  const fragment = rest.length > 0 ? `#${rest.join('#')}` : '';
+  const fromDir = path.posix.dirname(path.posix.join('docs', locale, rel));
+  const resolved = path.posix.normalize(path.posix.join(fromDir, pathPart));
+  const match = /^docs\/([a-z-]+)\/(.*)$/.exec(resolved);
+  if (!match) return resolved + fragment;
+  const [, targetLocale, inner] = match;
+  if (!LOCALES.includes(targetLocale)) return resolved + fragment;
+  const existsEverywhere = LOCALES.every((l) => fs.existsSync(path.join(DOCS_ROOT, l, inner)));
+  return (existsEverywhere ? `docs/*/${inner}` : resolved) + fragment;
 }
 
 /** Row counts of each pipe table, in document order. */
@@ -258,8 +295,8 @@ export function checkPair(rel) {
   }
 
   // 5. link targets
-  const lEn = linkTargets(parts.en.body);
-  const lVi = linkTargets(parts.vi.body);
+  const lEn = linkTargets(parts.en.body, { rel, locale: 'en' });
+  const lVi = linkTargets(parts.vi.body, { rel, locale: 'vi' });
   const lt = multisetDiff(lEn.files, lVi.files);
   if (lt.missing.length || lt.extra.length) {
     const bits = [];
@@ -293,7 +330,7 @@ export function checkPair(rel) {
       add(
         'bulk',
         `target/source length ratio ${ratio.toFixed(2)} outside [${MIN_RATIO}, ${MAX_RATIO}] ` +
-          `(${lenTgt} vs ${lenSrc} chars) — likely dropped or duplicated content`,
+        `(${lenTgt} vs ${lenSrc} chars) — likely dropped or duplicated content`,
       );
     }
   }
@@ -350,7 +387,7 @@ if (invokedDirectly) {
   } else {
     console.log(
       `[check-parity] pairs=${results.length - skipped.length} single-sided=${skipped.length} ` +
-        `problems=${total} in ${failed.length} pair(s)`,
+      `problems=${total} in ${failed.length} pair(s)`,
     );
     for (const r of failed) {
       console.log(`\n  ${r.rel}`);

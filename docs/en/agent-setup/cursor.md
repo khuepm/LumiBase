@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-09-21T05:44:47.423Z
+version: 5
+lastUpdated: 2026-10-10T04:59:29.301Z
 sourceLang: en
-contentHash: 4584e1d00c149b84
-codeVerified: 2026-09-21T05:44:47.423Z
-codeVerifiedHash: 4584e1d00c149b84
+contentHash: 243e88fc3a70efd2
+codeVerified: 2026-10-10T04:59:29.301Z
+codeVerifiedHash: 243e88fc3a70efd2
 codeVerifiedClaims: 4
 ---
 
@@ -120,7 +120,7 @@ Cursor background agents work well for longer LumiBase tasks like:
 ```bash
 # Generate types (run in terminal or via background agent)
 pnpm db:generate
-pnpm -F @lumibase/sdk typegen
+pnpm -F @lumibase/cms typegen --site <siteId> --out <path>
 ```
 
 ---

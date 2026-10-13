@@ -6,11 +6,14 @@ translatedFrom: en
 sourceHash: 9730149bdbd5cb5c
 mtEngine: manual
 syncStatus: human-translated
+codeVerified: 2026-10-10T04:59:29.608Z
+codeVerifiedHash: 9730149bdbd5cb5c
+codeVerifiedClaims: 10
 ---
 
 # Agent Setup — LumiBase
 
-> **Dành cho AI agent:** Trang này cũng có sẵn ở dạng Markdown thuần. Nếu bạn đang đọc HTML, hãy yêu cầu `index.md` thay thế. Để xem chỉ mục đầy đủ của trang, xem [`llms.txt`](../llms.txt).
+> **Dành cho AI agent:** Trang này cũng có sẵn ở dạng Markdown thuần. Nếu bạn đang đọc HTML, hãy yêu cầu `index.md` thay thế. Để xem chỉ mục đầy đủ của trang, xem [`llms.txt`](../../en/llms.txt).
 
 LumiBase cung cấp một [prompt template](./prompt.md), các cấu hình MCP server, và các file ngữ cảnh có cấu trúc để AI coding agent có thể hiểu codebase, gọi API, và xây dựng tính năng đúng cách. Chọn agent của bạn bên dưới để bắt đầu.
 
@@ -59,7 +62,7 @@ Thêm `/index.md` vào bất kỳ URL docs nào của LumiBase để lấy phiê
 Mỗi section cấp cao nhất đều có `llms.txt` riêng — một chỉ mục trang được chỉnh kích cỡ vừa với một context window:
 
 - [`docs/llms.txt`](../../llms.txt) — thư mục của toàn bộ docs LumiBase.
-- [`docs/en/llms.txt`](../llms.txt) — chỉ mục docs tiếng Anh đầy đủ.
+- [`docs/en/llms.txt`](../../en/llms.txt) — chỉ mục docs tiếng Anh đầy đủ.
 
 ### Prompt cho agent
 

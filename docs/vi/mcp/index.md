@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-09-19T06:45:16.890Z
+version: 4
+lastUpdated: 2026-10-10T05:01:03.738Z
 sourceLang: vi
-contentHash: ae814fddb61ee754
-codeVerified: 2026-09-19T06:45:16.890Z
-codeVerifiedHash: ae814fddb61ee754
+contentHash: 569d8b5541c89cde
+codeVerified: 2026-10-10T05:01:03.738Z
+codeVerifiedHash: 569d8b5541c89cde
 codeVerifiedClaims: 26
 ---
 
@@ -59,7 +59,7 @@ Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (dựng trên `
 - **Transport:** Stdio (`StdioServerTransport`). Dành cho tích hợp editor cục bộ.
 - **Entry:** `packages/mcp-server/src/index.ts` — `new McpServer({ name: 'lumibase', ... })`, đăng ký collection/field/item tools, `connect(StdioServerTransport)`.
 - **Client:** `LumiBaseClient` — HTTP tới `/api/v1` với Bearer token + site header.
-- **Config:** [`docs/en/agent-setup/mcp-config.json`](../agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
+- **Config:** [`docs/en/agent-setup/mcp-config.json`](../../en/agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
 
 ### Tool cố định (CRUD + insights read-only)
 

@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:21:09.581Z
+version: 2
+lastUpdated: 2026-10-10T04:59:28.969Z
 sourceLang: en
-contentHash: a17b76eead4e1b5f
-codeVerified: 2026-08-02T19:21:09.581Z
-codeVerifiedHash: a17b76eead4e1b5f
+contentHash: 2252ddfcab51b66e
+codeVerified: 2026-10-10T04:59:28.969Z
+codeVerifiedHash: 2252ddfcab51b66e
 codeVerifiedClaims: 4
 ---
 
@@ -83,7 +83,7 @@ Base interfaces represent stored item values. `CollectionExpanded` types represe
 The CLI lives in `apps/cms/scripts/typegen.ts`.
 
 ```sh
-pnpm lumibase typegen \
+pnpm -F @lumibase/cms typegen \
   --site <siteId> \
   --out ./apps/web/src/lumibase-types.ts \
   --format single|per-collection \

@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-09-28T23:50:22.173Z
+version: 6
+lastUpdated: 2026-10-10T04:59:56.112Z
 sourceLang: vi
-contentHash: 90c33343db27c61a
-codeVerified: 2026-09-28T23:50:22.173Z
-codeVerifiedHash: 90c33343db27c61a
+contentHash: 3288ce23dde726e0
+codeVerified: 2026-10-10T04:59:56.112Z
+codeVerifiedHash: 3288ce23dde726e0
 codeVerifiedClaims: 4
 ---
 
@@ -31,7 +31,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - [agent-setup/index.md](./agent-setup/index.md) — Trang tổng hợp thiết lập AI agent cho LumiBase.
 - [agent-setup/prompt.md](./agent-setup/prompt.md) — Hướng dẫn máy đọc được (machine-readable), agent fetch và execute trực tiếp.
 - [agent-setup/claude-code.md](./agent-setup/claude-code.md) · [cursor.md](./agent-setup/cursor.md) · [github-copilot.md](./agent-setup/github-copilot.md) · [codex.md](./agent-setup/codex.md) · [windsurf.md](./agent-setup/windsurf.md) — Hướng dẫn từng agent.
-- [llms.txt](../llms.txt) — Index toàn bộ docs cho LLM. [en/llms.txt](./llms.txt) — Index English docs.
+- [llms.txt](../llms.txt) — Index toàn bộ docs cho LLM. [en/llms.txt](../en/llms.txt) — Index English docs.
 
 ## Cấu trúc tài liệu
 

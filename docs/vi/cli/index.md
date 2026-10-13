@@ -1,14 +1,14 @@
 ---
 title: LumiBase CLI
-version: 6
-lastUpdated: 2026-09-26T03:07:08.361Z
+version: 7
+lastUpdated: 2026-10-10T04:59:28.224Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 04285b01f04cb780
+sourceHash: 9ea8177149217720
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-26T03:07:08.361Z
-codeVerifiedHash: 04285b01f04cb780
+codeVerified: 2026-10-10T04:59:28.224Z
+codeVerifiedHash: 9ea8177149217720
 codeVerifiedClaims: 20
 ---
 
@@ -134,5 +134,6 @@ Bước health gọi endpoint `/health` không cần xác thực (`apps/cms/src/
 ## Liên quan
 
 - [SDK — typegen](../sdk/typegen.md) — API lập trình nằm sau `lumibase types`
-- [Bắt đầu](../getting-started.md) — chạy một CMS để CLI trỏ vào
+- [Bắt đầu](../getting-started.md#bạn-thật-sự-cần-cái-nào) — starter vs platform vs consumer client, và `lumibase` nằm ở đâu
+- [Phát triển cục bộ](../deployment/local-development.md) — chạy CMS và Studio mà CLI này trỏ vào
 - [npm publishing](../release/npm-publishing.md) — cách package được phát hành

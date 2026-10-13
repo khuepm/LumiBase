@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:21:08.504Z
+version: 2
+lastUpdated: 2026-10-10T05:00:15.277Z
 sourceLang: en
-contentHash: 562cf0016bbc6d0f
-codeVerified: 2026-08-02T19:21:08.504Z
-codeVerifiedHash: 562cf0016bbc6d0f
+contentHash: 6552429e41352200
+codeVerified: 2026-10-10T05:00:15.277Z
+codeVerifiedHash: 6552429e41352200
 codeVerifiedClaims: 9
 ---
 
@@ -33,6 +33,14 @@ cp docker/.env.example docker/.env
 ```
 
 Set production values for database, Redis, object storage, JWT and admin authentication before starting the stack.
+
+> **If you are only trying this stack locally, set `DATABASE_SSL_MODE=disable`.**
+> The production override defaults it to `require`
+> (`DATABASE_SSL_MODE: ${DATABASE_SSL_MODE:-require}` in
+> `docker/docker-compose.prod.yml`), which is correct for a managed database but
+> cannot connect to the PostgreSQL container in the base compose file — that one
+> serves no TLS, so the CMS fails at startup with a connection error rather than
+> a configuration one. Leave the default as `require` for real deployments.
 
 ## Start production
 

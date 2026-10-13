@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-09-21T05:44:47.423Z
+version: 5
+lastUpdated: 2026-10-10T04:59:29.301Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 4584e1d00c149b84
+sourceHash: 243e88fc3a70efd2
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-21T05:44:47.423Z
-codeVerifiedHash: 4584e1d00c149b84
+codeVerified: 2026-10-10T04:59:29.301Z
+codeVerifiedHash: 243e88fc3a70efd2
 codeVerifiedClaims: 4
 ---
 
@@ -123,7 +123,7 @@ Background agent của Cursor hoạt động tốt cho các task LumiBase dài h
 ```bash
 # Generate types (run in terminal or via background agent)
 pnpm db:generate
-pnpm -F @lumibase/sdk typegen
+pnpm -F @lumibase/cms typegen --site <siteId> --out <path>
 ```
 
 ---

@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-09-03T03:08:23.994Z
+version: 3
+lastUpdated: 2026-10-10T04:59:30.302Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3385275ef5a15230
+sourceHash: 32dae2ce2bd59a31
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-03T03:08:23.994Z
-codeVerifiedHash: 3385275ef5a15230
+codeVerified: 2026-10-10T04:59:30.302Z
+codeVerifiedHash: 32dae2ce2bd59a31
 codeVerifiedClaims: 4
 ---
 
@@ -154,11 +154,9 @@ Thêm typegen vào CI pipeline để bắt các thay đổi schema gây phá v�
 
 ```yaml
 # .github/workflows/typegen.yml
-- name: Regenerate LumiBase types
-  run: pnpm typegen
-
-- name: Check for type drift
-  run: git diff --exit-code src/lumibase-types.ts
+- name: Check LumiBase types for drift
+  # --check thoát khác 0 khi file đã commit bị cũ, và không ghi gì
+  run: npx lumibase types --check
 ```
 
 Nếu schema đổi mà file type không được cập nhật, CI fail và báo cho cả nhóm.
