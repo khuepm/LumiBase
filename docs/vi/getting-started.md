@@ -1,13 +1,13 @@
 ---
-version: 7
-lastUpdated: 2026-09-28T23:50:21.665Z
+version: 8
+lastUpdated: 2026-10-10T04:59:28.499Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 99917b80bbbe6308
+sourceHash: f2ee89faa82774a0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-28T23:50:21.665Z
-codeVerifiedHash: 99917b80bbbe6308
+codeVerified: 2026-10-13T19:22:01.590Z
+codeVerifiedHash: f2ee89faa82774a0
 codeVerifiedClaims: 8
 ---
 
@@ -39,7 +39,9 @@ npm install -D lumibase     # ❌ the import disappears in production installs
 ```
 
 Cùng package đó mang theo CLI, nên không phải cài thêm gì cho `lumibase types`
-hay `lumibase doctor`.
+hay `lumibase doctor`. Trường hợp duy nhất `-D` là đúng: một repo cài nó **chỉ**
+để chạy `lumibase types --check` trong CI và không bao giờ import client — ở đó
+CLI là công cụ build, không phải code chạy lúc runtime.
 
 > **Package:** [`create-lumibase`](../../packages/create-lumibase) ·
 > **Published as:** `create-lumibase` trên npm ·

@@ -1,10 +1,10 @@
 ---
-version: 8
-lastUpdated: 2026-09-28T23:50:21.665Z
+version: 9
+lastUpdated: 2026-10-10T04:59:28.499Z
 sourceLang: en
-contentHash: 99917b80bbbe6308
-codeVerified: 2026-09-28T23:50:21.665Z
-codeVerifiedHash: 99917b80bbbe6308
+contentHash: f2ee89faa82774a0
+codeVerified: 2026-10-13T19:22:01.590Z
+codeVerifiedHash: f2ee89faa82774a0
 codeVerifiedClaims: 8
 ---
 
@@ -36,7 +36,9 @@ npm install -D lumibase     # ❌ the import disappears in production installs
 ```
 
 The same package carries the CLI, so there is nothing extra to add for
-`lumibase types` or `lumibase doctor`.
+`lumibase types` or `lumibase doctor`. The one case where `-D` is right is a
+repository that installs it *purely* to run `lumibase types --check` in CI and
+never imports the client — there the CLI is build tooling, not runtime code.
 
 > **Package:** [`create-lumibase`](../../packages/create-lumibase) ·
 > **Published as:** `create-lumibase` on npm ·
