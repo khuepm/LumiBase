@@ -45,6 +45,7 @@ import {
 
 export * from "./legacy";
 export * from "./gaps";
+export * from "./decisions";
 
 /**
  * Full-text search via `GET /api/v1/search`. Omit `params.collection` for a

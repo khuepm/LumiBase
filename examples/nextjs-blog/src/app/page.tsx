@@ -3,28 +3,20 @@ import { lumi, type Post } from '@/lib/lumi';
 
 export const revalidate = 60; // Revalidate every 60 seconds (ISR)
 
-// GraphQL query: list published posts, newest first.
-// The `posts` field + its arguments are generated per tenant from your schema.
-const LIST_POSTS = /* GraphQL */ `
-  query ListPosts($limit: Int) {
-    posts(status: "published", sort: ["-createdAt"], limit: $limit) {
-      id
-      title
-      content
-      author
-      createdAt
-    }
-  }
-`;
-
 export default async function HomePage() {
   let posts: Post[] = [];
   let errorMsg = '';
 
   try {
-    // Fetch only 'published' status posts via GraphQL
-    const data = await lumi.query<{ posts: Post[] }>(LIST_POSTS, { limit: 50 });
-    posts = data.posts;
+    // `status: 'published'` is a dedicated list parameter, not a filter.
+    // Drafts are excluded by the server, so they can never leak here.
+    // Structural columns sort by their snake_case name (`-created_at`).
+    const { data } = await lumi.items('posts').list({
+      status: 'published',
+      sort: ['-created_at'],
+      limit: 50,
+    });
+    posts = data;
   } catch (err: any) {
     errorMsg = err.message || 'Failed to fetch posts from LumiBase';
   }
@@ -34,7 +26,7 @@ export default async function HomePage() {
       <header style={styles.header}>
         <h1 style={styles.title}>LumiBase Next.js Blog</h1>
         <p style={styles.subtitle}>
-          Example app displaying posts fetched via the LumiBase GraphQL API.
+          Example app displaying posts fetched with the LumiBase SDK.
         </p>
       </header>
 
@@ -49,14 +41,14 @@ export default async function HomePage() {
         <div style={styles.grid}>
           {posts.map((post) => (
             <article key={post.id} style={styles.card}>
-              <h2 style={styles.cardTitle}>{post.title}</h2>
+              <h2 style={styles.cardTitle}>{post.data.title}</h2>
               <p style={styles.cardMeta}>
-                By {post.author} • {new Date(post.createdAt || Date.now()).toLocaleDateString()}
+                By {post.data.author} • {new Date(post.createdAt).toLocaleDateString()}
               </p>
               <p style={styles.cardExcerpt}>
-                {post.content.length > 150
-                  ? `${post.content.slice(0, 150)}...`
-                  : post.content}
+                {post.data.body.length > 150
+                  ? `${post.data.body.slice(0, 150)}...`
+                  : post.data.body}
               </p>
               <Link href={`/posts/${post.id}`} style={styles.cardLink}>
                 Read More →

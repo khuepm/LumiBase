@@ -4,7 +4,10 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "types": ["vite/client", "vitest/globals"],
-    "baseUrl": ".",
+    // No `baseUrl`: TypeScript 7 removed it (TS5102). Dropping it is a no-op
+    // here because it was `"."` — `paths` without `baseUrl` resolve relative to
+    // this tsconfig, which is the same directory. Vite resolves `@/*` from its
+    // own `resolve.alias` in vite.config.ts, so the bundler is unaffected.
     "paths": {
       "@/*": ["./src/*"]
     },

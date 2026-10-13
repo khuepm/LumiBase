@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 1
-lastUpdated: 2026-08-02T19:21:22.765Z
+version: 2
+lastUpdated: 2026-09-07T15:23:17.206Z
 sourceLang: en
 translatedFrom: en
-sourceHash: e1112e0c60482f60
+sourceHash: 6029fc9470a0c3a9
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:21:22.765Z
-codeVerifiedHash: e1112e0c60482f60
-codeVerifiedClaims: 70
+codeVerified: 2026-09-10T02:17:10.994Z
+codeVerifiedHash: 6029fc9470a0c3a9
+codeVerifiedClaims: 72
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -27,8 +27,8 @@ mới đi theo cùng một pattern, và (3) liệt kê các khoảng trống (ga
 lựa chọn có chủ đích, không phải do sơ suất.
 
 Về thiết kế guard runtime sâu hơn và bản audit ánh xạ CWE, xem các tài liệu đồng
-hành được cross-link ở phần "Tài liệu liên quan" — trang này giữ ở tầng bản
-đồ/best-practice và không lặp lại chi tiết của chúng.
+hành được cross-link ở phần [Tài liệu liên quan](#tài-liệu-liên-quan) — trang này
+giữ ở tầng bản đồ/best-practice và không lặp lại chi tiết của chúng.
 
 Nguyên tắc dẫn dắt là **defense-in-depth** (phòng thủ nhiều lớp): không lớp nào
 được tin là đủ. Mỗi lớp đều giả định lớp phía trước nó có thể bị vượt qua.
@@ -53,8 +53,8 @@ Nguyên tắc dẫn dắt là **defense-in-depth** (phòng thủ nhiều lớp):
 ```
 
 Tầng ứng dụng lo brute-force, anomaly và lạm dụng ở tầng nghiệp vụ. DDoS thể tích
-và chống bot chung được kỳ vọng xử lý ở upstream (xem phần Khoảng trống & khuyến
-nghị bên dưới).
+và chống bot chung được kỳ vọng xử lý ở upstream (xem phần
+[Khoảng trống](#khoảng-trống--khuyến-nghị)).
 
 ## Cơ chế hiện có (registry)
 
@@ -76,7 +76,8 @@ kèm `Retry-After`, và không bao giờ để một request bị từ chối k�
   sách **dùng chung** 3 request / IP / giờ cho *cả* `/recover` lẫn `/forgot-path`
   (key theo IP đơn thuần, nên kẻ tấn công không thể nhân đôi ngân sách bằng cách
   chia đều qua hai path). Cửa sổ cố định; `Retry-After` giảm đơn điệu. Limiter này
-  **in-memory theo từng process** (xem phần Khoảng trống & khuyến nghị bên dưới).
+  **in-memory theo từng process** (xem phần
+  [Khoảng trống](#khoảng-trống--khuyến-nghị)).
 - **Brake cho setup** — bề mặt setup công khai (mount *trước* auth, chỉ truy cập
   được khi chưa khởi tạo) bị throttle theo IP trong
   `apps/cms/src/modules/setup/routes.ts`: `GET /setup/state` ở 60 req / 60 s, và
@@ -86,7 +87,8 @@ kèm `Retry-After`, và không bao giờ để một request bị từ chối k�
   bằng 0 cho mỗi request bị chặn. Trả `429 RATE_LIMITED` + `Retry-After`. Hàng rào
   cứng chống tạo trùng admin đầu tiên vẫn là `SELECT … FOR UPDATE` trên singleton
   `system_state` cộng unique index — brake này là defence-in-depth. Nó **in-memory
-  theo từng isolate** (xem phần Khoảng trống & khuyến nghị bên dưới).
+  theo từng isolate** (xem phần
+  [Khoảng trống](#khoảng-trống--khuyến-nghị)).
 - **Throttle API chung** — `apps/cms/src/middleware/rate-limit.ts`
   (`withRateLimit`) là một lưới an toàn cửa sổ-cố-định thô trên bề mặt REST/GraphQL
   đã xác thực: mặc định 300 req / 60 s (`LUMIBASE_RATE_LIMIT_MAX` / `_WINDOW_S`),
@@ -94,6 +96,14 @@ kèm `Retry-After`, và không bao giờ để một request bị từ chối k�
   tenant không thể vắt cạn ngân sách của tenant khác. Trả `429 RATE_LIMITED` kèm
   header `X-RateLimit-*`. Dựa trên runtime cache (KV trên Workers); nó **fail
   open** và không phải quota chính xác.
+- **Limiter trigger deploy** — `apps/cms/src/services/deployment/trigger-rate-limit.ts`
+  giới hạn trigger deploy **theo từng target** (`rl:deploy:<tier>:<siteId>:<targetId>`)
+  ở mức 5 / 60 s (burst) + 30 / 3600 s (sustained), nằm trên gate admin: mỗi
+  trigger được nhận đều khởi động một build do provider tính phí, nên budget này
+  bảo vệ tài khoản provider của tenant khỏi script, flow hay agent chạy loạn. Áp
+  cho mọi `triggerSource`; trả `429 RATE_LIMITED` + `Retry-After` và không tạo
+  dòng `deployments` nào. Dùng `RateLimiterProvider` của runtime (Redis `INCR` ở
+  Docker) và **fail open** khi limiter không truy cập được.
 - **Policy** — ngưỡng login nằm trong bảng `settings` (`login_security_policy`)
   với fallback `STANDARD_LOCKOUT_POLICY`, nên operator chỉnh giới hạn mà không cần
   redeploy.

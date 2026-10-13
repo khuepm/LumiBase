@@ -4,6 +4,12 @@ import { AISecureHarness, CORE_SKILLS } from '../ai-harness';
 import type { SkillDefinition } from '../ai-harness';
 import type { Database } from '@lumibase/database';
 import { vi } from 'vitest';
+// The subject here is error propagation, not input shape. Since #454 the harness
+// refuses arguments that violate a skill's canonical schema, so generated
+// dictionaries would be denied before the throwing handler is ever called —
+// `argsForProperty` hands schema-bearing skills a valid set and leaves the rest
+// on the generated args.
+import { argsForProperty } from '../../test-utils/agent-tool-args';
 
 /**
  * Feature: ai-first-cms-engine, Property 4: Execution error handling
@@ -102,7 +108,7 @@ describe('Feature: ai-first-cms-engine, Property 4: Execution error handling', (
           const harness = new AISecureHarness({ db, siteId: 'test-site' });
 
           // Act
-          const result = await harness.execute(skillName, args, userCapabilities);
+          const result = await harness.execute(skillName, argsForProperty(skillName, args), userCapabilities);
 
           // Assert: status must be 'denied'
           expect(result.status).toBe('denied');
@@ -139,7 +145,7 @@ describe('Feature: ai-first-cms-engine, Property 4: Execution error handling', (
           const harness = new AISecureHarness({ db, siteId: 'test-site' });
 
           // Act
-          const result = await harness.execute(skillName, args, userCapabilities);
+          const result = await harness.execute(skillName, argsForProperty(skillName, args), userCapabilities);
 
           // Assert: status must be 'denied'
           expect(result.status).toBe('denied');
@@ -179,7 +185,7 @@ describe('Feature: ai-first-cms-engine, Property 4: Execution error handling', (
           const harness = new AISecureHarness({ db, siteId: 'test-site' });
 
           // Act
-          const result = await harness.execute(skillName, args, userCapabilities);
+          const result = await harness.execute(skillName, argsForProperty(skillName, args), userCapabilities);
 
           // Assert: status must be 'denied' even with wildcard
           expect(result.status).toBe('denied');

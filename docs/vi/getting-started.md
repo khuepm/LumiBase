@@ -1,82 +1,47 @@
 ---
-version: 3
-lastUpdated: 2026-09-09T02:49:01.933Z
+version: 8
+lastUpdated: 2026-10-10T04:59:28.499Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6936a8fe0bd36606
+sourceHash: f2ee89faa82774a0
 mtEngine: manual
 syncStatus: human-translated
+codeVerified: 2026-10-13T19:22:01.590Z
+codeVerifiedHash: f2ee89faa82774a0
+codeVerifiedClaims: 8
 ---
 
 # Getting Started — Khởi tạo dự án mới bằng `create-lumibase`
 
-`create-lumibase` là công cụ bootstrap dự án chính thức của LumiBase. Từ một thư mục trống bạn chạy một lệnh duy nhất và có ngay một dự án sẵn sàng chạy, tương tự `create-next-app` hay `create-vite`.
+`create-lumibase` là công cụ bootstrap dự án chính thức của LumiBase. Từ một thư
+mục trống bạn chạy một lệnh duy nhất và có ngay một dự án sẵn sàng chạy, tương tự
+`create-next-app` hay `create-vite`.
 
-> **Ba thứ khác nhau cùng mang tên "LumiBase".** Hãy chọn hướng đi trước khi cài
-> bất cứ thứ gì — [cây quyết định](#which-path-do-i-need) bên dưới cho biết bạn
-> thực sự cần cái nào, và phần còn lại của trang này tài liệu hóa cái thứ nhất.
+## Bạn thật sự cần cái nào?
 
-## Which path do I need?
+Có ba việc khác nhau đều được gọi là "cài LumiBase". Chúng không thay thế được
+cho nhau, nên hãy chọn đúng dòng khớp với thứ bạn đang xây.
 
-```
-Bạn đang xây gì?
-│
-├─ "Tôi muốn một backend nhỏ của riêng mình để phát triển tiếp."
-│     → STARTER:  npm create lumibase@latest my-app
-│       Một dự án Hono + Drizzle tối giản với tài nguyên mẫu `posts`.
-│       KHÔNG phải Content OS: không có Collections API, không Studio,
-│       không Email/Flows/AI.
-│       § Quick start (trang này)
-│
-├─ "Tôi muốn chính Content OS — Studio, collections, multi-tenancy."
-│     → PLATFORM:  Docker image, Cloudflare Workers, hoặc clone monorepo
-│       CMS API ở :1989 và Studio ở :2026, do bạn tự chạy và quản trị.
-│       § Phát triển cục bộ, § Tổng quan triển khai
-│
-└─ "Tôi đã có frontend (Next.js, Nuxt, SvelteKit…) và muốn đọc nội dung
-    từ một LumiBase đang chạy."
-      → CONSUMER CLIENT:  npm install lumibase
-        SDK có type kèm CLI `lumibase` trong một runtime dependency.
-        § Next.js Quickstart, § CLI, § JS SDK
-```
+| Bạn muốn… | Dùng | Những gì bạn nhận được |
+|-----------|-----|--------------|
+| **Một website có CMS phía sau** | `create-lumibase` → template `nextjs` (trang này, được chọn sẵn) | Một site Next.js **kèm** CMS thật và Studio chạy trong Docker, một collection `posts`, nội dung mẫu, và một publishable key an toàn cho trình duyệt. |
+| **Một starter app bạn tự sở hữu, không cần CMS** | `create-lumibase` → template `default` hoặc `cloudflare` | Một dự án **Hono + Drizzle** tối giản với tài nguyên mẫu `posts`. Không có Collections API, không có Studio — quy ước của LumiBase, không phải nền tảng. |
+| **Chỉ riêng nền tảng** | Image CMS `ghcr.io/khuepm/lumibase-cms` hoặc bản clone của [monorepo](https://github.com/khuepm/lumibase) | Nền tảng hoàn chỉnh mà không kèm khung ứng dụng: Collections API, Studio admin, Email, Flows, AI, multi-tenancy. Xem [Phát triển cục bộ](./deployment/local-development.md) và [Tổng quan triển khai](./deployment/overview.md). |
+| **Đọc dữ liệu từ một CMS đã có sẵn** | `npm install lumibase` — không cần khung nào cả | Client REST/realtime có type và CLI `lumibase` trong cùng một package. Xem [CLI](./cli/index.md) và [JS SDK](./sdk/javascript.md). |
 
-Ba hướng này không phải lựa chọn loại trừ nhau — một dự án thực tế thường có
-**platform** chạy ở đâu đó và **consumer client** được cài trong frontend của nó.
-**Starter** là một thứ riêng biệt, độc lập: đó là app Hono của bạn, không phải một
-instance LumiBase.
-
-| | Starter | Platform | Consumer client |
-|---|---|---|---|
-| **Bạn cài** | `create-lumibase` (chạy một lần, qua `npm create`) | image CMS / bản clone, không phải npm dependency | `lumibase` trong `dependencies` |
-| **Bạn nhận được** | một app Hono + Drizzle thuộc về bạn | Collections API, Studio, Email, Flows, AI, multi-tenancy | `createLumiClient`, đọc dữ liệu có type, `lumibase types` / `doctor` |
-| **Chạy tại** | `http://localhost:8787` (app của bạn) | `http://localhost:1989` API · `http://localhost:2026` Studio | port riêng của frontend |
-| **Cần một CMS đang chạy?** | Không | Nó *chính là* CMS | Có — platform, tự host hoặc managed |
-| **Bắt đầu ở đây** | [Quick start](#quick-start) | [Phát triển cục bộ](./deployment/local-development.md) · [Tổng quan triển khai](./deployment/overview.md) | [Next.js Quickstart](./tutorials/nextjs-quickstart.md) · [CLI](./cli/index.md) |
-
-### `lumibase` vs `@lumibase/sdk`
-
-Cả hai đều publish cùng một client. Hãy cài **`lumibase`** trừ khi bạn có lý do
-riêng: library entry của nó re-export `@lumibase/sdk`, nên một tên trong
-`dependencies` là đủ cho cả runtime client và lệnh `lumibase`.
+Dòng cuối là dòng bị hiểu sai nhiều nhất, nên cần nói thẳng: **`lumibase` là
+dependency runtime, không phải công cụ dev.** Ứng dụng của bạn import từ nó lúc
+xử lý request, nên nó thuộc `dependencies`:
 
 ```bash
-# SDK + CLI, một dependency
-npm install lumibase
+npm install lumibase        # ✅ runtime client + CLI
+npm install -D lumibase     # ❌ the import disappears in production installs
 ```
 
-```ts
-import { createLumiClient } from 'lumibase';
-```
-
-- Nó thuộc **`dependencies`**, không phải `devDependencies` — bạn import nó ở
-  runtime. Chỉ dùng `-D` nếu bạn cài thuần để chạy `lumibase types` trong CI và
-  không bao giờ import client.
-- **`@lumibase/sdk`** vẫn được hỗ trợ như package tầng thấp hơn cho các consumer
-  muốn client mà không cần CLI. `lumibase` *phụ thuộc vào* nó chứ không bundle
-  lại, nên khi import cả hai bạn vẫn chỉ có một bản duy nhất của mỗi class và
-  mỗi type.
-- Chi tiết đầy đủ: [CLI](./cli/index.md) · [JS SDK](./sdk/javascript.md) ·
-  [TypeGen](./sdk/typegen.md).
+Cùng package đó mang theo CLI, nên không phải cài thêm gì cho `lumibase types`
+hay `lumibase doctor`. Trường hợp duy nhất `-D` là đúng: một repo cài nó **chỉ**
+để chạy `lumibase types --check` trong CI và không bao giờ import client — ở đó
+CLI là công cụ build, không phải code chạy lúc runtime.
 
 > **Package:** [`create-lumibase`](../../packages/create-lumibase) ·
 > **Published as:** `create-lumibase` trên npm ·
@@ -86,23 +51,39 @@ import { createLumiClient } from 'lumibase';
 
 ```bash
 # any of these work — npx resolves the create-* convention
-npm create lumibase@latest my-project
-npx create-lumibase@latest my-project
-pnpm create lumibase my-project
+npm create lumibase@next my-project
+npx create-lumibase@next my-project
+pnpm create lumibase@next my-project
 ```
 
-Khi không có tham số nào, CLI sẽ chạy ở chế độ tương tác và hỏi mọi thông tin cần thiết.
+> **Dùng `@next` trong giai đoạn release candidate của 1.0.** Tag `latest` trên
+> npm vẫn trỏ về scaffolder 0.x, bản không có template Next.js và không ghim CMS.
+> `@next` là release candidate hiện tại. Các lệnh sẽ quay về `@latest` khi 1.0.0
+> phát hành.
+
+Khi không có tham số nào, CLI sẽ chạy ở chế độ tương tác và hỏi mọi thông tin cần
+thiết. Câu hỏi đầu tiên là câu quan trọng nhất — nó chọn template, và lựa chọn
+Next.js được chọn sẵn.
+
+Nếu project đã có CLI `lumibase` thì `lumibase init` là **cùng một** scaffold,
+không phải một cái thứ hai: nó chạy `create-lumibase` và chuyển tham số của bạn
+đi nguyên văn, nên hai đường vào không thể có bộ template khác nhau hay trôi lệch
+khỏi nhau. Dùng cái nào đang có sẵn — `npm create lumibase@next` thì không cần
+cài gì cả. Xem [`lumibase init`](./cli/index.md#lumibase-init) để biết cơ chế uỷ
+quyền và vì sao scaffolder không phải dependency của `lumibase`.
 
 ## Điều gì diễn ra, theo từng bước
 
 ```
-npx create-lumibase@latest my-blog
+npx create-lumibase@next my-blog
 │
 ├─ 1. npx downloads the create-lumibase package from npm
 │
 ├─ 2. Interactive prompts (skipped when flags are passed)
 │     ? Project name          my-blog
-│     ? Deployment target      › Docker / Cloudflare Workers
+│     ? Deployment target      › Next.js website  + CMS, Studio and seed content (recommended)
+│                                Docker           Node.js + PostgreSQL
+│                                Cloudflare Workers  Edge + D1
 │     ? Package manager        › pnpm / npm / yarn / bun  (auto-detected)
 │     ? Install dependencies   › Yes
 │     ? Initialize git         › Yes
@@ -121,16 +102,53 @@ npx create-lumibase@latest my-blog
 
 - Nếu thư mục đích chưa tồn tại thì nó sẽ được tạo.
 - Nếu thư mục đã tồn tại **và không rỗng**, CLI sẽ hỏi trước khi ghi đè.
-- Tên dự án được kiểm tra theo quy tắc đặt tên package của npm (chữ thường, không khoảng trắng, không được bắt đầu bằng `.`/`_`, ≤ 214 ký tự).
+- Tên dự án được kiểm tra theo quy tắc đặt tên package của npm (chữ thường, không
+  khoảng trắng, không được bắt đầu bằng `.`/`_`, ≤ 214 ký tự).
 
 ## Templates
 
 | Template | Flag | Stack | Phù hợp nhất cho |
 | --- | --- | --- | --- |
-| **Docker** (mặc định) | `--template default` | Hono + `@hono/node-server`, Drizzle ORM, PostgreSQL, Redis, `docker-compose.yml` | Self-hosting, đồng bộ giữa phát triển cục bộ và production |
-| **Cloudflare Workers** | `--template cloudflare` | Hono, Drizzle ORM, D1, `wrangler.toml` | Triển khai ở Edge |
+| **Next.js website + CMS** (chọn sẵn) | `--template nextjs` | Next.js 15 + React 19, client `lumibase`, và image CMS (đã kèm Studio) + PostgreSQL + Redis qua `docker-compose.yml` | Xuất bản một site thật: editor có Studio, trình duyệt chỉ có key chỉ-đọc |
+| **Docker starter** | `--template default` | Hono + `@hono/node-server`, Drizzle ORM, PostgreSQL, Redis, `docker-compose.yml` | Tự xây API của bạn theo quy ước LumiBase |
+| **Cloudflare Workers starter** | `--template cloudflare` | Hono, Drizzle ORM, D1, `wrangler.toml` | Vẫn starter đó, nhưng triển khai ở edge |
 
-### Các file được sinh ra (Docker template)
+> **Một cái bẫy tên gọi nên biết:** template *tên* `default` không còn là lựa
+> chọn *mặc định*. `--template default` vẫn chọn Docker starter, nhưng tuỳ chọn
+> được chọn sẵn trong prompt là `nextjs`. Tên cũ được giữ để tương thích với các
+> script đang dùng.
+
+### Các file được sinh ra (template Next.js)
+
+```
+my-blog/
+├── docker-compose.yml      # CMS (Studio included) + Postgres + Redis, bound to 127.0.0.1
+├── next.config.mjs
+├── package.json            # dev/build/start + cms:up/cms:bootstrap/cms:seed/cms:verify
+├── tsconfig.json
+├── .env.example            # NEXT_PUBLIC_* (browser-safe) vs server-only, split and labelled
+├── .gitignore
+├── app/
+│   ├── layout.tsx
+│   ├── page.tsx            # lists published posts; shows setup steps until configured
+│   └── globals.css
+├── lib/
+│   └── lumibase.ts         # createLumiClient + readItems from `lumibase`
+└── scripts/
+    ├── lumibase.mjs        # shared request helper
+    ├── bootstrap.mjs       # first admin + public read grant + publishable key
+    ├── seed.mjs            # sample posts (idempotent, leaves one draft on purpose)
+    └── verify.mjs          # asserts the public client cannot read drafts or write
+```
+
+Cách chia trong `.env.example` chính là điểm cốt lõi của template này. Các giá trị
+`NEXT_PUBLIC_*` được nhúng vào bundle phía client, nên credential duy nhất ở đó là
+một **publishable key** (`lbk_pub_…`) — chỉ đọc, khoá theo origin, và bị giới hạn ở
+các bản ghi đã publish bởi grant đứng sau nó. Admin token nằm ở
+`LUMIBASE_ADMIN_TOKEN`, không có tiền tố `NEXT_PUBLIC_`, nên Next.js không thể để
+lộ nó ra trình duyệt.
+
+### Các file được sinh ra (Docker starter)
 
 ```
 my-blog/
@@ -148,15 +166,17 @@ my-blog/
         └── migrate.ts       # migration runner
 ```
 
-Tài nguyên mẫu `posts` tuân theo [các quy tắc không thể thương lượng](../../CLAUDE.md) của dự án: ID dùng `nanoid()`, một cột `site_id` trên mọi bảng domain, bao bọc response trong `{ data }` / `{ errors }`, và xác thực request bằng Zod.
+Tài nguyên mẫu `posts` tuân theo [các quy tắc không thể thương lượng](../../CLAUDE.md)
+của dự án: ID dùng `nanoid()`, một cột `site_id` trên mọi bảng domain, bao bọc
+response trong `{ data }` / `{ errors }`, và xác thực request bằng Zod.
 
 ## Sử dụng không tương tác (CI / scripted)
 
 Truyền các cờ (flag) để bỏ qua hoàn toàn các câu hỏi tương tác:
 
 ```bash
-npx create-lumibase@latest my-blog \
-  --template default \
+npx create-lumibase@next my-blog \
+  --template nextjs \
   --pm pnpm \
   --no-install \
   --no-git
@@ -164,15 +184,89 @@ npx create-lumibase@latest my-blog \
 
 | Cờ (Flag) | Mô tả |
 | --- | --- |
-| `--template <default\|cloudflare>` | Template dự án. |
+| `--template <nextjs\|default\|cloudflare>` | Template dự án. Tên không hợp lệ bị từ chối ngay từ đầu, kèm giá trị bạn đã truyền. |
 | `--pm <pnpm\|npm\|yarn\|bun>` | Package manager dùng để cài đặt. Tự động phát hiện từ `npm_config_user_agent` khi bỏ trống. |
 | `--install` / `--no-install` | Bắt buộc bật hoặc bỏ qua bước cài đặt dependency. |
 | `--git` / `--no-git` | Bắt buộc bật hoặc bỏ qua `git init` + commit đầu tiên. |
 | `DEBUG=1` (env) | In đường dẫn từng file được sinh ra và xuất đầy đủ stack trace khi xảy ra lỗi. |
 
+Bỏ trống `--template` trong môi trường không tương tác vẫn dẫn tới prompt, nên hãy
+truyền nó tường minh khi chạy trong CI.
+
 ## Lần chạy đầu tiên sau khi khởi tạo
 
-### Docker template
+Scaffolder in ra đúng các bước này cho package manager bạn đã chọn. Các lệnh bên
+dưới dùng `npm run`; `pnpm cms:up`, `yarn cms:up` và `bun run cms:up` là tương
+đương.
+
+### Template Next.js
+
+```bash
+cd my-blog
+cp .env.example .env       # fill in secrets
+npm install                # only if you used --no-install
+npm run cms:up             # CMS + Studio + Postgres + Redis
+npm run cms:bootstrap      # first admin, public read grant, publishable key
+npm run cms:seed           # sample posts
+npm run dev                # http://localhost:3000
+```
+
+Không có bước migrate: container CMS tự chạy migration của nó ở lần boot đầu tiên.
+`cms:bootstrap` ghi publishable key trở lại vào `.env` giúp bạn, và cả
+`cms:bootstrap` lẫn `cms:seed` đều idempotent, nên chạy lại sau một lần thất bại
+giữa đường là an toàn.
+
+| Cái gì | Ở đâu |
+| --- | --- |
+| Website | <http://localhost:3000> |
+| API | <http://localhost:1989> |
+| Studio | `http://localhost:1989/<LUMIBASE_ADMIN_PATH>` |
+
+Studio nằm **bên trong image CMS**, nên một container phục vụ cả API lẫn UI admin
+— không có deployment thứ hai và không phải cấu hình thêm entry CORS nào.
+
+Sau đó hãy chứng minh client phía trình duyệt thật sự là least-privilege:
+
+```bash
+npm run cms:verify
+```
+
+Nó dùng publishable key — không bao giờ dùng admin token — để cho thấy nó đọc được
+các post đã publish, **không** thấy được bản draft đã seed (qua list, qua id trực
+tiếp, và khi hỏi thẳng `status=draft`), không ghi được, và bị từ chối với một site
+id không tồn tại — sau đó kiểm tra lại rằng CMS vẫn healthy. Phần seed cố ý để lại
+một post chưa publish để bước kiểm tra này có thứ thật để bắt. Các kiểm tra không
+chạy được sẽ báo SKIPPED chứ không bị gộp vào số lượt pass. Việc kiểm tra cô lập
+tenant với một site thứ hai *thật* chạy khi đặt `LUMIBASE_VERIFY_OTHER_SITE`.
+
+Project được sinh ra ghim client `lumibase` và image CMS vào **đúng** phiên bản
+`create-lumibase` đã tạo ra nó, nên API, Studio và client luôn đến từ cùng một bản
+phát hành. Phiên bản được ghim chính xác chứ không dùng khoảng `^`: npm resolve một
+khoảng về phiên bản mới nhất mang tag `latest` thỏa khoảng đó, mà trong giai đoạn
+prerelease thì đó có thể là một release candidate cũ hơn. Compose file để cổng chặn
+setup-token tắt và bind mọi port công bố vào `127.0.0.1`; `README.md` được sinh ra
+hướng dẫn cách bật cổng này (CMS in `SETUP_TOKEN=…` một lần khi khởi động).
+
+#### Trỏ nó vào một CMS bạn đã chạy sẵn
+
+Stack Docker chỉ là một trong hai đường. Nếu đã có một instance LumiBase, hãy bỏ
+qua `cms:up` và `cms:bootstrap` — website này chỉ đọc, nên ba giá trị trong `.env`
+là đủ:
+
+```bash
+NEXT_PUBLIC_LUMIBASE_URL=https://cms.example.com
+NEXT_PUBLIC_LUMIBASE_SITE_ID=your-site-id
+NEXT_PUBLIC_LUMIBASE_PUBLISHABLE_KEY=lbk_pub_…
+```
+
+Người quản trị CMS đó phải cấp một publishable key có origin của bạn trong danh
+sách cho phép, một read grant **chỉ-published** (`GET /api/v1/items` không tự áp
+bộ lọc đó), một collection `posts`, và các field được khai trên nó — một collection
+không khai field nào vẫn trả về JSON của item, nên site có thể trông ổn trong khi
+Studio hiện "No editable fields". `README.md` được sinh ra nói kỹ từng mục;
+`npm run cms:verify` kiểm tra kết quả.
+
+### Docker starter
 
 ```bash
 cd my-blog
@@ -194,9 +288,14 @@ curl -X POST http://localhost:8787/posts \
   -d '{"title":"Hello","slug":"hello","body":"First post"}'
 ```
 
-> **Lưu ý:** các script `dev`, `start`, và `db:migrate` sử dụng `--env-file=.env` để `tsx`/`node` nạp các biến môi trường của bạn. `drizzle-kit` (được dùng bởi `db:generate`) sẽ tự động nạp `.env`.
+> **Lưu ý:** các script `dev`, `start`, và `db:migrate` sử dụng `--env-file=.env`
+> để `tsx`/`node` nạp các biến môi trường của bạn. `drizzle-kit` (được dùng bởi
+> `db:generate`) sẽ tự động nạp `.env`.
 
-### Cloudflare template
+Starter lắng nghe ở `8787`, cố ý không phải `1989`: `1989` thuộc về CMS của
+LumiBase, còn starter là app của bạn, nên hai bên chạy song song được.
+
+### Cloudflare starter
 
 ```bash
 cd my-blog
@@ -211,14 +310,20 @@ pnpm dev                   # wrangler dev
 
 | Triệu chứng | Nguyên nhân / Cách khắc phục |
 | --- | --- |
+| `Unknown template: …` | `--template` chỉ nhận `nextjs`, `default`, hoặc `cloudflare`. Thông báo lỗi nêu rõ giá trị bạn đã truyền. |
 | `Project name must be lowercase` | Tên package npm phải là chữ thường; hãy đổi tên dự án. |
-| `DATABASE_URL is required` | Sao chép `.env.example` thành `.env` (với Docker template). |
+| `DATABASE_URL is required` | Sao chép `.env.example` thành `.env` (với Docker starter). |
+| Website hiện "Almost there" | `.env` còn thiếu một trong ba giá trị `NEXT_PUBLIC_LUMIBASE_*`. Chạy `cms:bootstrap`, hoặc điền tay. |
+| Studio trả về `404` | Bạn đang ở `/`, `/admin`, hoặc `/studio` — cả ba đều cố ý trả `404` không phân biệt được. Hãy dùng đường dẫn trong `LUMIBASE_ADMIN_PATH`. |
 | Port `5432` already allocated | Một Postgres khác đang chiếm port `5432`; hãy dừng nó hoặc đổi port host trong `docker-compose.yml`. |
+| Port `1989` already allocated | Một CMS LumiBase đang chạy rồi. Hãy dừng nó, hoặc đổi port host trong `docker-compose.yml` rồi cập nhật `NEXT_PUBLIC_LUMIBASE_URL`. |
 | Dependency install failed | Chạy lại `<pm> install` thủ công; CLI vẫn tiếp tục và thông báo cho bạn. |
 
 ## Tài liệu liên quan
 
+- [CLI](./cli/index.md) — `lumibase init`, `lumibase types`, `lumibase doctor`
+- [JS SDK](./sdk/javascript.md) — client mà template Next.js dùng để đọc dữ liệu
+- [Next.js quickstart](./tutorials/nextjs-quickstart.md) — cùng cách nối dây đó, làm bằng tay
 - [Tổng quan triển khai](./deployment/overview.md)
 - [Phát triển cục bộ](./deployment/local-development.md)
 - [Mô hình dữ liệu](./data-model.md)
-- [JS SDK](./sdk/javascript.md)

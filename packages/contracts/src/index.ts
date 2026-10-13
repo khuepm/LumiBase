@@ -3,6 +3,7 @@ export * from './policy/index';
 export * from './field/index';
 export * from './schemas/index';
 export * from './realtime/protocol';
+export * from './agent-tools/index';
 export type ID = string;
 export type Locale = string;
 

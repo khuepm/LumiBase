@@ -1,11 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-09-01T19:24:38.846Z
+version: 11
+lastUpdated: 2026-10-10T10:34:35.843Z
 sourceLang: en
-contentHash: f0c3698b7ea88443
-codeVerified: 2026-09-01T19:24:38.846Z
-codeVerifiedHash: f0c3698b7ea88443
-codeVerifiedClaims: 374
+contentHash: 72370d45ee2454a6
+codeVerified: 2026-10-10T10:34:35.843Z
+codeVerifiedHash: 72370d45ee2454a6
+codeVerifiedClaims: 386
 ---
 
 # Hono API Specification — LumiBase
@@ -749,6 +749,7 @@ Authorization: Bearer <token>
 | `GET` | `/api/v1/ai/conversations` | List conversation history |
 | `GET` | `/api/v1/ai/conversations/:id/messages` | Get messages in a conversation |
 | `DELETE` | `/api/v1/ai/conversations/:id` | Delete a conversation |
+| `POST` | `/api/v1/ai/decisions` | Ask the decision model (TypeSafe Jev or equivalent) typed questions |
 
 **Chat request:**
 ```json
@@ -781,6 +782,57 @@ Authorization: Bearer <token>
 { "decision": "approved" }
 ```
 
+**Decision request** (`POST /api/v1/ai/decisions`) — 1–32 questions keyed by `[A-Za-z0-9_-]{1,64}`; `noul` = yes/no, `choice` = 2–255 options, `score` = 2–10 rubric levels (lowest first). `state` is a string, object or array. The whole request (state, instructions, criteria and nesting) must fit the input budget: ≤ `DECISION_MAX_INPUT_BYTES` UTF-8 bytes (default 131,072) **and** ≤ `DECISION_MAX_INPUT_TOKENS` estimated tokens (default 24,000), checked before the provider is called. Read-only, so no HITL approval:
+```json
+{
+  "state": { "title": "Summer sale", "body": "Buy now!!!" },
+  "questions": {
+    "spam": {
+      "type": "noul",
+      "instructions": "Is this post spam?",
+      "criteria": { "true": "spam", "false": "legitimate" }
+    },
+    "topic": {
+      "type": "choice",
+      "instructions": "Pick the topic",
+      "criteria": { "promo": "Promotion", "news": null }
+    },
+    "quality": {
+      "type": "score",
+      "instructions": "Rate editorial quality",
+      "criteria": ["poor", "ok", "great"]
+    }
+  }
+}
+```
+
+**Decision response** — `calibrated` is `false` when `DECISION_PROVIDER=llm`, because those probabilities are self-reported by the LLM. `usage.inputTokens` / `usage.outputTokens` are `null` when the provider did not report them (unknown, never a made-up `0`):
+```json
+{
+  "data": {
+    "provider": "typesafe",
+    "model": "jev-1.13",
+    "calibrated": true,
+    "answers": {
+      "spam": { "type": "noul", "noul": 0.12 },
+      "topic": { "type": "choice", "choice": "promo", "probabilities": { "promo": 0.9, "news": 0.1 }, "confidence": 0.9 },
+      "quality": { "type": "score", "score": 1.4, "legend": { "0": "poor", "1": "ok", "2": "great" }, "probabilities": { "0": 0, "1": 0.6, "2": 0.4 }, "confidence": 0.6 }
+    },
+    "usage": { "inputTokens": 120, "outputTokens": 0 }
+  }
+}
+```
+
+Errors: `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (over the byte or token budget; the message gives sizes only), `503 DECISION_NOT_CONFIGURED` (no `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream overloaded or unreachable), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (the client closed the request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
+
+Deadlines and retries: one decision has a total deadline (`DECISION_TIMEOUT_MS`, default 20 s) that includes every retry and backoff, and each upstream attempt has its own timeout (`DECISION_ATTEMPT_TIMEOUT_MS`, default 8 s, capped by what remains of the deadline). Only `429`/`503`/`529`, network errors and attempt timeouts are retried, at most `DECISION_MAX_RETRIES` times (default 2), with full-jitter exponential backoff that honours `Retry-After`. A wait that would run past the deadline is not started. Auth, validation and parse failures are never retried. When the client disconnects, the in-flight upstream call is aborted and no retry follows. The `llm` provider is bounded by the same deadline and budget but makes a single call; the deadline and a client disconnect abort that LLM request.
+
+The token count is an estimate, not the provider's tokenizer: about 4 ASCII characters per token, and every non-ASCII code point (e.g. Vietnamese diacritics) as one token. It over-counts on purpose; the 24,000 default leaves 25% headroom under Jev's 32,000-token context.
+
+The CMS validates upstream answers before returning them: required values must be finite and in range, Choice/Score distributions must include exactly the declared options/levels and sum to 1 within an absolute tolerance of `1e-6`, and Score must lie in `0..N-1`. Missing or malformed answers return `502 DECISION_PARSE_FAILED`; values are never clamped or defaulted into decisions. Confidence is required for Choice/Score and is not inferred from the winning probability. The LLM provider uses the same validation.
+
+**`DECISION_PROVIDER=llm`** is an equivalent provider you select by configuration; it is **not** an automatic failover, and nothing switches to it when Jev fails. It calls `LLM_PROVIDER` in structured decision mode: a dedicated decision system prompt, no Copilot skills and no tool calling. A Score answer from the LLM is the weighted expected level `Σ i·p(i)` computed from its validated level probabilities, on the same `0..N-1` scale as Jev and never rounded; the level the model names is ignored, so one distribution yields one score on every adapter. Because the probabilities are uncalibrated, thresholds tuned for Jev must not be reused for `llm` as-is. Tool-only or non-JSON replies fail with `502 DECISION_PARSE_FAILED`.
+
 ### Agent API (Content OS)
 
 All routes mount under the authenticated chain; the token's roles are the capability set.
@@ -790,14 +842,19 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `GET/POST` | `/api/v1/agent/goals` | List / create goals (`execution: 'async'` enqueues a queued run) |
 | `POST` | `/api/v1/agent/goals/:id/decompose` | Planner: create role-scoped sub-goals inheriting remaining budget |
 | `POST` | `/api/v1/agent/goals/:id/settle` | Settle a parent goal from its children's terminal states |
+| `POST` | `/api/v1/agent/runs/:id/retry` | Re-execute a `failed`/`cancelled` run as a new `queued` run (`retryOfRunId` → the original), enqueued on `agent-runs` under the requester's re-resolved rights. Only the goal's latest attempt, only while nothing on the goal is in flight — at most one new execution per request. `201` `{ goalId, runId, agentName, status, retryOfRunId }`; `404` unknown or other-tenant run; `409` not retryable, in flight, superseded, goal closed or busy, intent not active, or task unrecoverable; `423` frozen; `400` no queue adapter; `503` enqueue failed. See [agent harness](../features/agent-harness-layer.md) |
 | `GET/POST/PATCH/DELETE` | `/api/v1/agent/roles[/:name]` | Agent role library CRUD (admin) — seeded with Planner, Writer, … |
 | `GET` | `/api/v1/agent/autonomy` | Trust ledger: grants + open incidents |
 | `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Promotion proposals; `POST :id/decide` is the only path to a higher level (admin) |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Veto window: pending stagings enriched with `approvalId/collection/itemId/patch/agentRole` from the staging revision (null fields when the staging is gone); `POST :id/veto` discards a staging |
+| `GET` | `/api/v1/agent/approvals` | Approval inbox (`status` filter; defaults to `pending`) |
+| `POST` | `/api/v1/agent/approvals/:id/decide` | Human decision on a parked action. Body `{ decision: 'approved' \| 'rejected', reason? }`; needs `approvals:decide` (403 otherwise), `404` for an unknown or other-tenant id, `409` when the approval already left `pending`. On `approved` the harness owns the state transition, so execution and the status write happen once. Execution re-resolves **the requester's** current rights and runs with `requester ∩ decider`: an approval whose requester was since revoked, demoted or removed is denied, and one with no recorded requester (parked before provenance existed) is denied with `APPROVAL_PROVENANCE_MISSING` |
+| `POST` | `/api/v1/agent/approvals/:id/reopen` | Return a `failed` approval to `pending` so it can be decided again. Body `{ reason }` is **required** and audited; needs `approvals:decide`. A skill that reached a service and then failed is parked rather than re-offered, because retrying could repeat a non-idempotent write — this is the deliberate way back |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Agent-as-reviewer decision (needs `review:<domain>`; self-review forbidden) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Versions, draft, `/compile` (NL→evaluators), `:id/dry-run`, `:id/activate` |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze` |
 | `*` | `/api/v1/agent/intents[...]` | Content intents CRUD, `:id/pause|resume|scan|drifts`, `/compile` |
+| `POST` | `/api/v1/intents/:id/scan` | One reconciliation cycle: `{ scan, reconcile, dispatch }`. `dispatch` advances each reconciler goal one step (draft → promote → verify) and reports `dispatched/completed/skipped/blocked` plus `queueUnavailable` on runtimes without a queue adapter. See [reconciler repair loop](../features/reconciler-repair-loop.md) |
 | `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Law Zero pins: list / release |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Public llms.txt index per site |

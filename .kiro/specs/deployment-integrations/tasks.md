@@ -28,7 +28,7 @@
 
 - [x] 6. DeploymentService (Req 1, 2, 3, 4, 9)
   - [x] 6.1 `services/deployment/deployment-service.ts`: createTarget (verify+encrypt), trigger (decrypt→provider→insert), syncDeployment, fetchLogs, applyWebhookRef. Mọi query filter `siteId`.
-  - [ ] 6.2 Rate-limit: hiện gate bằng `status='active'` + admin; rate-limit cứng theo target để TODO (Req 9.5) — chưa chặn lạm dụng nặng. **Open**.
+  - [x] 6.2 Rate-limit cứng theo target (Req 9.5) — done: `services/deployment/trigger-rate-limit.ts` (two-tier fixed window trên `runtime.rateLimiter`: 5/60s burst + 30/3600s sustained), key `rl:deploy:<tier>:<siteId>:<targetId>`. Check nằm trong `DeploymentService.trigger` **sau** nhánh coalesce và **trước** lời gọi provider → trigger bị coalesce không tiêu budget, trigger bị từ chối không tạo dòng `deployments`. Reject: `DeploymentError('RATE_LIMITED')` + `retryAfterSeconds` → route trả `429` `{ errors: [{ code: 'RATE_LIMITED', retryAfterSeconds }] }` + header `Retry-After`; audit `deployment.trigger.rate_limited`. Limiter không truy cập được → fail open. **Deviation:** áp cho **mọi** `triggerSource` (manual/auto/agent), không chỉ manual — budget bảo vệ tài khoản provider của tenant bất kể ai gọi; auto vẫn nằm xa ngưỡng nhờ `coalesceWindowMs`. Ngưỡng là constant (không có env knob) + override qua `deps.triggerRateLimit`. Caller ngoài request path (flow/harness/worker) không truyền limiter → dùng `MemoryRateLimiter` fallback theo isolate (pattern `modules/mfa/rate-limit.ts`). Test: `__tests__/trigger-rate-limit.test.ts` (8).
   - [x] 6.3 Mask secret trong log/excerpt (`maskLog`, cap 16KB) (Req 4.4).
 - [x] 7. Routes (Req 1.6, 2, 3.3, 4.1, 3.5) — `routes/deployments.ts` (admin router + inbound webhook router); đăng ký vào `index.ts` (`/api/v1/deployments`) + webhook mount public + `withTenant`/`withDb`.
 - [x] 8. Audit (Req 2.4, 6.4) — `auditLog` cho target.created/updated/deleted + deploy.triggered (mask secret, never-throw).
@@ -38,7 +38,11 @@
 - [x] 9. Status poller (Req 3.4, 3.6, 9.4)
   - [x] 9.1 `services/deployment/status-poller.ts`: `DEPLOYMENT_POLL_QUEUE`, `registerStatusPoller` (queue.process), `sweepPending`/`sweepAllSites`; conditional UPDATE chỉ flip `queued|building` (idempotent); set `completedAt`; lỗi từng cái không vỡ sweep. Đăng ký cron 30s trong `serve.ts`.
   - [x] 9.2 Fallback `POST /:id/refresh` đồng bộ (Req 3.5).
-  - [ ] 9.3 Idempotency được bảo đảm bằng `inArray(status, ['queued','building'])` guard; unit test idempotent end-to-end qua DB để TODO (cần Postgres). Pure-logic đã cover qua mapping + webhook tests. **Partial**.
+  - [x] 9.3 Idempotency end-to-end qua DB — done 2026-09-07: `__tests__/status-poller-idempotency.db.integration.test.ts` (5 ca, Postgres thật). Chạy được vì guard `inArray(status, ['queued','building'])` là quyết định của **database**, không phải của TypeScript, nên chỉ chứng minh được bằng DB thật. Bao: (a) sweep lần hai là no-op, `completedAt` ghi **đúng một lần**, câu trả lời provider khác về sau không re-flip dòng terminal (Req 3.4); (b) hai sweep **song song** — dòng thắng race ghi, dòng thua bị guard chặn, không có row "trộn" hai câu trả lời; (c) partial failure: một deployment lỗi provider không phá sweep, dòng lỗi ở lại `queued` cho tick sau và dòng terminal không bị check lại (Req 9.4); (d) webhook + poller đan xen + webhook giao trùng đều hội tụ, không double-write (Req 7.3); (e) two-site: sweep site A không chạm site B **dù trùng `providerDeploymentId`**, và `applyWebhookRef` của A không resolve dòng của B (DoD §2b).
+    - Provider giả đăng ký dưới key riêng (`it-fake-provider`) nên không ghi đè adapter Vercel/Netlify thật trong registry; token seed qua `encryptToken` + `EnvKeyProvider` (không có secret thật).
+    - **Đã kiểm âm:** bỏ `inArray(...)` khỏi conditional UPDATE → ca (d) đỏ (`expected 'error' to be 'ready'`). Guard được khôi phục nguyên trạng.
+    - Skip sạch khi không có Postgres (`DATABASE_URL` vắng **hoặc** không kết nối được) theo đúng convention `*.db.integration.test.ts` — đã kiểm cả hai ca.
+    - **Residual:** test dùng provider giả nên không xác nhận hình dạng response Vercel/Netlify thật (vẫn thuộc mục design §11 TODO ở dưới).
 
 ## Phase E — Flows & AI Skills
 
@@ -57,7 +61,10 @@
 - [x] 12. Inbound webhook (Req 7)
   - [x] 12.1 `POST /api/v1/deployments/webhook/:provider`: verify chữ ký (401 nếu sai) → parse → `applyWebhookRef` (match `providerDeploymentId`, idempotent với poller).
   - [x] 12.2 Test reject chữ ký sai + parse Vercel/Netlify event (`webhook-parse.test.ts`).
-  - [ ] Lưu ý: `verifyWebhook` hiện là presence + secret guard (reject thiếu chữ ký). HMAC/JWS đầy đủ để TODO (design §4 ghi rõ). **Partial**.
+  - [x] 12.3 HMAC/JWS verify đầy đủ (Req 7.2) — done 2026-09-07 (phần Vercel/JWS đã land ở `e274b02b`, phần body-binding của Netlify đóng ở lần này). `verifyWebhook` là `Promise<boolean>` vì dùng WebCrypto `crypto.subtle` (không `node:crypto` → chạy cả CF Workers + Node). Vercel: HMAC-SHA1 hex của **raw body** so với `x-vercel-signature`. Netlify: JWS compact HS256 ở `x-webhook-signature` — verify chữ ký **và** buộc payload vào body qua claim `sha256` (digest raw body). So sánh constant-time (`timingSafeEqual` gộp cả chênh lệch độ dài vào diff nên không early-exit và không throw). Secret rỗng → fail closed. Helper: `providers/http.ts` (`hmacHex`, `sha256Hex`, `verifyJwsHs256`, `decodeJwsPayload`, `timingSafeEqual`). Route đọc `await c.req.text()` **trước** khi parse JSON, secret lấy từ setting per-site `deployment.webhook.<provider>` (không phải header).
+    - **Deviation:** ngoài dạng có claim `sha256`, adapter Netlify còn nhận dạng payload **chính là raw body** — cả hai đều buộc chữ ký vào bytes nên đều an toàn; không nhận dạng header HMAC riêng (adapter chưa từng hỗ trợ). Giữ nguyên `x-vercel-signature` là **SHA-1** theo tài liệu Vercel (comment tại chỗ), chưa xác nhận trên API sống (design §11 TODO).
+    - **Lỗ hổng đóng được ở lần này:** trước đó Netlify chỉ verify chữ ký JWS mà không so digest, nên một JWS hợp lệ bắt được từ notification khác vẫn xác thực được **body khác** (body không nằm trong signing input của JWS). Test `webhook-parse.test.ts` có tripwire cho đúng ca này — đã kiểm âm: bỏ bước so digest → test đỏ.
+    - Test (13 ca ở `webhook-parse.test.ts`): chữ ký hợp lệ cả hai provider · chữ ký giả · chữ ký sai độ dài (không throw) · thiếu header · secret rỗng · body bị sửa sau khi ký (cả hai provider) · JWS ký bằng secret khác · JWS payload không decode được.
 
 ## Phase G — Studio UI
 
@@ -86,7 +93,6 @@
 
 ## Việc còn mở (Open / TODO cho vòng sau)
 
-- Rate-limit cứng theo target (Req 9.5 — 6.2).
-- HMAC/JWS verify đầy đủ cho inbound webhook (12 — hiện presence guard).
-- DB-integration test cho poller idempotency end-to-end (9.3 — cần Postgres).
+- ~~HMAC/JWS verify đầy đủ cho inbound webhook~~ — **done** (12.3, 2026-09-07).
+- ~~DB-integration test cho poller idempotency end-to-end~~ — **done** (9.3, 2026-09-07): `status-poller-idempotency.db.integration.test.ts`, chạy thật trên Postgres 16 (5/5 pass), skip sạch khi không có DB.
 - Xác nhận endpoint Vercel/Netlify API theo phiên bản tại thời điểm chạy thật (design §11 TODO).

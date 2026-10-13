@@ -5,7 +5,14 @@ import type {
   InboundRequest,
   TriggerOptions,
 } from './provider';
-import { bearer, guardedFetch, verifyJwsHs256 } from './http';
+import {
+  bearer,
+  decodeJwsPayload,
+  guardedFetch,
+  sha256Hex,
+  timingSafeEqual,
+  verifyJwsHs256,
+} from './http';
 
 const API = 'https://api.netlify.com/api/v1';
 
@@ -112,10 +119,31 @@ export const netlifyProvider: DeploymentProvider = {
 
   async verifyWebhook(req: InboundRequest, secret: string) {
     // Netlify signs outgoing notifications with a compact JWS (HS256) in
-    // `x-webhook-signature`, keyed by the per-site configured secret. Verify
-    // the signature fully. An empty secret or missing/invalid JWS is rejected.
+    // `x-webhook-signature`, keyed by the per-site configured secret. Two steps,
+    // both required: the JWS signature must verify under the secret, AND the
+    // JWS payload must bind to *these* body bytes. Verifying the signature
+    // alone would let a JWS captured from one notification authenticate a
+    // different body, since the body is not part of the signing input.
+    // An empty secret or a missing/malformed JWS is rejected.
     const sig = req.headers['x-webhook-signature'];
-    return verifyJwsHs256(sig ?? '', secret);
+    if (!sig || !secret) return false;
+    if (!(await verifyJwsHs256(sig, secret))) return false;
+
+    const payload = decodeJwsPayload(sig);
+    if (payload === null) return false;
+    // Documented form: `{ "sha256": "<hex digest of the raw body>" }`.
+    try {
+      const claims = JSON.parse(payload) as Record<string, unknown>;
+      const claimed = claims['sha256'];
+      if (typeof claimed === 'string') {
+        return timingSafeEqual(claimed.toLowerCase(), await sha256Hex(req.rawBody));
+      }
+    } catch {
+      // Not JSON — fall through to the literal-body form below.
+    }
+    // Tolerated variant: the payload *is* the raw body. Still binds the
+    // signature to the bytes, so it is safe to accept.
+    return timingSafeEqual(payload, req.rawBody);
   },
 
   parseWebhook(rawBody: string) {

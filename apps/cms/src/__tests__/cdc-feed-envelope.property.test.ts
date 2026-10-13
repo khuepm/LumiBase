@@ -90,6 +90,31 @@ describe('Feature: cdc-extension-integration, Property 3: Envelope round-trip', 
     );
   });
 
+  it('rejects non-canonical tokens the release run found (seed -1462993433)', () => {
+    // `Czo+` is standard base64 for "\v:>"; Number("\v") is 0, so it used to
+    // decode to { occurredAtMs: 0, eventId: '>' }.
+    expect(decodeCdcCursor('Czo+')).toBeNull();
+    expect(decodeCdcCursor(encodeCdcCursor({ occurredAtMs: 0, eventId: '>' }))).toEqual({
+      occurredAtMs: 0,
+      eventId: '>',
+    });
+    // Leading zeros, exponent and hex spellings of the ms part are not canonical.
+    for (const ms of ['01', '1e3', '0x10', ' 5', '']) {
+      const token = btoa(`${ms}:evt`).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      expect(decodeCdcCursor(token), ms).toBeNull();
+    }
+  });
+
+  it('never throws on malformed cursor tokens — replays the release-run seed', () => {
+    fc.assert(
+      fc.property(fc.string(), (raw) => {
+        const decoded = decodeCdcCursor(raw);
+        if (decoded !== null) expect(encodeCdcCursor(decoded)).toBe(raw);
+      }),
+      { numRuns: 200, seed: -1462993433 },
+    );
+  });
+
   it('never throws on malformed cursor tokens — returns null', () => {
     fc.assert(
       fc.property(fc.string(), (raw) => {

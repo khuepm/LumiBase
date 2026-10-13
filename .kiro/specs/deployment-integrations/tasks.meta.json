@@ -1,0 +1,26 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "6.2 Rate-limit: hiện gate bằng `status='active'` + admin; rate-limit cứng theo target để TODO (Req 9.5) — chưa chặn lạm dụng nặng. **Open**.": [
+      {
+        "executionId": "454c84d8-991b-406a-a8cf-7a452e276307",
+        "chatSessionId": "sess_61df13b5-80a5-42a4-8f79-e34cfacdc485",
+        "timestamp": 1788794108844
+      }
+    ],
+    "Lưu ý: `verifyWebhook` hiện là presence + secret guard (reject thiếu chữ ký). HMAC/JWS đầy đủ để TODO (design §4 ghi rõ). **Partial**.": [
+      {
+        "executionId": "1ad436b2-d628-4939-886f-e827b89a5af7",
+        "chatSessionId": "sess_ae2d7e16-d270-432a-9f72-c63e6911e83e",
+        "timestamp": 1788794795718
+      }
+    ],
+    "9.3 Idempotency được bảo đảm bằng `inArray(status, ['queued','building'])` guard; unit test idempotent end-to-end qua DB để TODO (cần Postgres). Pure-logic đã cover qua mapping + webhook tests. **Partial**.": [
+      {
+        "executionId": "2cc88472-6444-4b08-ac6b-a55015d27645",
+        "chatSessionId": "sess_eae08c25-4753-4a32-97ba-93437a652e04",
+        "timestamp": 1788795319333
+      }
+    ]
+  }
+}

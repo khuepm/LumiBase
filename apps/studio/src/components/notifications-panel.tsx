@@ -34,6 +34,7 @@ import {
 import { FillIcon } from '@/components/fill-icon';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getAdminBase } from '@/lib/admin-base';
+import { toWebSocketBase } from '@lumibase/sdk';
 import { getApiBaseUrl } from '@/lib/api-base';
 import { cn } from '@/lib/cn';
 import { disablePush, enablePush, getPushState, type PushState } from '@/lib/push';
@@ -47,34 +48,34 @@ import type { AgentNotification, RealtimeEvent } from '@/types/realtime';
 
 type Notification =
   | {
-      source: 'item';
-      id: string;
-      collection: string;
-      action: 'create' | 'update' | 'delete';
-      itemId: string;
-      timestamp: Date;
-      read: boolean;
-    }
+    source: 'item';
+    id: string;
+    collection: string;
+    action: 'create' | 'update' | 'delete';
+    itemId: string;
+    timestamp: Date;
+    read: boolean;
+  }
   | {
-      source: 'exception';
-      id: string;
-      entryId: string;
-      kind: InboxEntry['kind'];
-      label: string;
-      timestamp: Date;
-      read: boolean;
-    }
+    source: 'exception';
+    id: string;
+    entryId: string;
+    kind: InboxEntry['kind'];
+    label: string;
+    timestamp: Date;
+    read: boolean;
+  }
   | {
-      source: 'agent';
-      id: string;
-      kind: AgentNotification['kind'];
-      severity: AgentNotification['severity'];
-      title: string;
-      body: string;
-      deepLink?: string;
-      timestamp: Date;
-      read: boolean;
-    };
+    source: 'agent';
+    id: string;
+    kind: AgentNotification['kind'];
+    severity: AgentNotification['severity'];
+    title: string;
+    body: string;
+    deepLink?: string;
+    timestamp: Date;
+    read: boolean;
+  };
 
 const MAX_NOTIFICATIONS = 50;
 
@@ -212,7 +213,7 @@ export function NotificationsPanel() {
 
         if (!isMounted) return;
 
-        const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/api/v1/realtime?ticket=${encodeURIComponent(ticket)}&siteId=${encodeURIComponent(siteId)}`;
+        const wsUrl = `${toWebSocketBase(baseUrl)}/api/v1/realtime?ticket=${encodeURIComponent(ticket)}&siteId=${encodeURIComponent(siteId)}`;
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 

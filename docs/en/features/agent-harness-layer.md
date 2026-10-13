@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:22:27.836Z
+version: 3
+lastUpdated: 2026-09-26T03:57:31.179Z
 sourceLang: en
-contentHash: 29b0c5c9b54e50f5
+contentHash: b473a29de49b4910
+codeVerified: 2026-09-26T03:57:31.179Z
+codeVerifiedHash: b473a29de49b4910
+codeVerifiedClaims: 20
 ---
 
 # Agent Harness Layer
@@ -106,6 +109,7 @@ Run status follows `queued → running → awaiting_approval → succeeded | fai
 - The queue worker (`registerAgentRunWorker`, wired in the Node entrypoint) drives queued runs through the same harness codepath — capability checks, risk policy, budgets and audit apply identically. Capabilities are captured from the enqueuing session and never widened.
 - When a dangerous action creates an approval, the run parks as `awaiting_approval`. An approval decision resumes it and executes only the stored skill — completed tool calls are never re-run.
 - `POST /api/v1/agent/runs/:id/cancel` cancels `queued`/`running`/`awaiting_approval` runs. Cancellation takes effect at the next tool-call boundary (the harness re-checks before every tool call), wins over late approvals, and is recorded with `stopReason` in run metrics.
+- `POST /api/v1/agent/runs/:id/retry` re-executes a `failed` or `cancelled` run as a **new** `queued` run whose `retryOfRunId` points at the original, and enqueues it on `agent-runs` — the same worker claim, harness, approvals and kill switch as any async run. The task is recovered from the run's recorded tool call and the governance envelope (role, intent, autonomy cap, budget) from its goal; the retry executes under the **requester's** re-resolved rights, never the original requester's. Only the goal's latest attempt can be retried, and only while nothing on the goal is in flight, so one request yields at most one new execution: concurrent retries serialize on the goal row and the loser gets `409`. Responses: `201` with `{ goalId, runId, agentName, status: 'queued', retryOfRunId }`; `404` for an unknown or other-tenant run; `409` for `RUN_NOT_RETRYABLE`, `RUN_ACTIVE`, `RETRY_SUPERSEDED`, `GOAL_CLOSED`, `GOAL_BUSY`, `INTENT_NOT_ACTIVE` or `RETRY_UNRECOVERABLE` (the recorded input has masked secrets, or no tool call was recorded); `423` `FROZEN`; `400` `ASYNC_UNAVAILABLE`; `503` `ENQUEUE_FAILED`, with the retry row settled `failed`. A run quarantined as `stale_unverified` may already have had its effect — retrying it is the deliberate human decision to run it again, and is recorded as `agent_run.retried` in activity.
 
 ### Multi-agent org: roles and capability narrowing (Module C)
 
@@ -140,6 +144,58 @@ A constitution is a versioned set of evaluators (`constitutions` table, at most 
 - **Pinning (Property 12)** — the active hash is pinned to a run once (first-write-wins into run metrics); veto stagings carry it into revision provenance and artifact evaluations record it, so results stay reproducible even when a new version activates mid-run.
 - **Publish gate** — `publishArtifact` evaluates the active constitution against the artifact content: a blocking evaluator failure blocks publish; overriding requires an explicit reason and is recorded (`constitutionOverridden`) in the artifact metadata.
 - **Dry-run + diff audit** — drafts can be evaluated against real content samples before activation; activating archives the previous version and writes a `constitution.activated` activity entry with the added/removed evaluator ids and both hashes.
+
+### Deciding an approval: claim, execute, quarantine
+
+Approving is not a status change — it executes the stored action. That makes the
+decision path a three-step one, `claim → execute → finalize`, and every step
+exists because of a way the naive version goes wrong:
+
+- **Claim.** The decision first moves the row to `deciding`, a conditional
+  update guarded on `pending`. Read-then-act would let two concurrent
+  approvals both pass the read and both run the action.
+- **Execute.** The claim is held for exactly one skill execution. Every path
+  that does not complete releases it — a failing skill, a kill switch, a
+  cancellation, a thrown error.
+- **Finalize.** Only a completed execution records `approved`.
+
+A failure that the process *survives* does not go back to `pending`. If the
+skill touched a service before it failed, the side effect may already exist,
+and re-offering it as ordinary work invites a second one. Those land in
+**`failed`** instead — quarantined, out of the inbox, and re-runnable only
+through an explicit human step.
+
+What no in-process handler can cover is the process dying mid-execution: a
+crash, an OOM kill, a Worker eviction, a deploy rolling the pod. The row then
+stays `deciding` forever, and because the inbox filters on pending it also
+stops being visible — stuck *and* invisible. A periodic sweep
+(`sweepStaleApprovalClaims`, 15-minute window) is the safety net. It also lands
+those rows in `failed`, not `pending`: a crash says "no decision was recorded",
+never "nothing happened", so a crashed execution is at least as ambiguous as
+one that failed in-process, and gets the same gate.
+
+Elapsed time is not evidence the abandoned work stopped. A JavaScript timeout
+rejects a promise without cancelling the handler behind it, and a crashed
+process can leave a request in flight at an external provider. The window
+bounds how long the system **waits**, never what it concludes.
+
+### Recovering a quarantined approval
+
+`POST /api/v1/agent/approvals/:id/reopen` with `{ reason }` moves a `failed`
+approval back to `pending`. It requires the same `approvals:decide` capability
+as deciding, because reopening is what makes the action executable again. The
+transition and its `approval.reopened` audit record commit **together**: the
+record of who authorized a possible second execution is part of the
+authorization, not a log line that may or may not follow it.
+
+In the Studio, the Approvals tab calls out how many approvals were interrupted,
+shows the reason recorded for each, and offers **Reopen** only on those rows — a
+pending approval is ordinary work and gets no recovery affordance. The reason is
+required: it is what a human states they verified, and it is stored with the
+transition.
+
+Only `failed` reopens. A decided approval must not be revived, and a `deciding`
+row belongs to a live execution or to the sweeper.
 
 ### Kill switch (the human "stop" right)
 

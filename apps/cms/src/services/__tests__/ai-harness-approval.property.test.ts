@@ -2,6 +2,17 @@ import { describe, it, expect, vi } from 'vitest';
 import * as fc from 'fast-check';
 import { AISecureHarness, CORE_SKILLS } from '../ai-harness';
 import type { Database } from '@lumibase/database';
+import { argsForProperty } from '../../test-utils/agent-tool-args';
+import { requesterProvenance } from '../../test-utils/approval-provenance';
+
+// The requester's rights are re-resolved from RBAC at decision time (#472). This
+// suite models the database with a shallow mock, so that resolution is stubbed to
+// "still allowed" and the intersection rule itself stays real — the property under
+// test here is the decision flow, not the resolver.
+vi.mock('../approval-requester', async (importOriginal) => {
+  const { approvalRequesterModuleMock } = await import('../../test-utils/approval-provenance');
+  return approvalRequesterModuleMock(importOriginal);
+});
 
 /**
  * Feature: ai-first-cms-engine, Property 5: Approval execution flow — phê duyệt thực thi đúng
@@ -17,6 +28,35 @@ import type { Database } from '@lumibase/database';
  * **Validates: Requirements 3.1, 3.2, 6.1**
  */
 
+/**
+ * Skills with no offline behaviour: their handler requires a service that this
+ * serviceless harness does not have, so it throws `*_NOT_CONFIGURED` rather
+ * than returning a success-shaped stub (#453 — an unwired dependency must never
+ * be indistinguishable from a real side effect).
+ *
+ * Derived by probing the handler rather than by name, so a newly added write
+ * skill is classified by what it actually does. The missing-service contract
+ * itself is asserted in g1-missing-service.test.ts.
+ */
+async function hasNoOfflineBehaviour(name: string): Promise<boolean> {
+  try {
+    await CORE_SKILLS[name]!.handler({});
+    return false;
+  } catch (err) {
+    return /NOT_CONFIGURED/.test(err instanceof Error ? err.message : String(err));
+  }
+}
+
+const NO_OFFLINE_SKILLS = new Set<string>(
+  (await Promise.all(
+    Object.keys(CORE_SKILLS).map(async (name) => ((await hasNoOfflineBehaviour(name)) ? name : '')),
+  )).filter(Boolean),
+);
+
+function isOfflineWriteSkill(name: string): boolean {
+  return NO_OFFLINE_SKILLS.has(name);
+}
+
 // Safe skills that will execute successfully (not dangerous, handlers return data)
 const SAFE_SKILL_NAMES = Object.entries(CORE_SKILLS)
   .filter(([name, skill]) => {
@@ -26,7 +66,11 @@ const SAFE_SKILL_NAMES = Object.entries(CORE_SKILLS)
     // require a runtime KeyProvider / real tenant db, absent here) and
     // deliberately error instead of stubbing — they are covered by
     // deployment/__tests__ and cdc-feed-skills-hitl.test.ts instead.
-    const noOffline = ['deployments', 'cdc-feed'].includes(skill.service);
+    // Since #453 every WRITE handler behaves the same way: without its service
+    // it throws `*_NOT_CONFIGURED` rather than returning a success-shaped stub,
+    // so a serviceless harness can only exercise read handlers. The
+    // missing-service contract itself is covered by g1-missing-service.test.ts.
+    const noOffline = ['deployments', 'cdc-feed'].includes(skill.service) || isOfflineWriteSkill(name);
     return !requiresSchemaWrite && !startsWithDelete && !noOffline;
   })
   .map(([name]) => name);
@@ -38,7 +82,8 @@ const SAFE_SKILL_NAMES = Object.entries(CORE_SKILLS)
 // so they can't be executed in this mock harness; their approval/execution
 // paths are covered in deployment tests and cdc-feed-skills-hitl.test.ts.
 const ALL_SKILL_NAMES = Object.entries(CORE_SKILLS)
-  .filter(([, skill]) => !['deployments', 'cdc-feed'].includes(skill.service))
+  .filter(([name, skill]) =>
+    !['deployments', 'cdc-feed'].includes(skill.service) && !isOfflineWriteSkill(name))
   .map(([name]) => name);
 
 // Arbitrary: approvalId — nanoid-like string (21 alphanumeric chars)
@@ -77,8 +122,16 @@ function createMockDbForApproval(record: {
   // Track update calls
   const updateSetArgs: Record<string, unknown>[] = [];
 
-  // Mock: db.select().from().where() → returns [record]
-  const mockWhere = vi.fn().mockResolvedValue([record]);
+  // Mock: db.select().from().where() → returns [record]. Since #472 there is a
+  // second read for the approval's recorded requester, distinguished here by its
+  // trailing `.limit(1)`.
+  const mockWhere = vi.fn().mockImplementation(() =>
+    Object.assign(Promise.resolve([record]), {
+      limit: vi
+        .fn()
+        .mockResolvedValue([{ requestedByPrincipal: requesterProvenance(record.siteId) }]),
+    }),
+  );
   const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
   const mockSelect = vi.fn().mockReturnValue({ from: mockFrom });
 
@@ -119,12 +172,15 @@ describe('Feature: ai-first-cms-engine, Property 5: Approval execution flow — 
         argsArb,
         siteIdArb,
         async (approvalId, userId, skillName, args, siteId) => {
-          // Arrange: create a pending approval record
+          // Arrange: create a pending approval record. Stored arguments go
+          // through `runSkill`, which since #454 enforces the canonical input
+          // schema — so the record has to hold arguments that could actually
+          // execute. The subject of this property is the approval bookkeeping.
           const pendingRecord = {
             id: approvalId,
             siteId,
             skillName,
-            arguments: args,
+            arguments: argsForProperty(skillName, args),
             status: 'pending',
             agentName: 'lumibase-copilot',
             context: null,
@@ -172,12 +228,15 @@ describe('Feature: ai-first-cms-engine, Property 5: Approval execution flow — 
         argsArb,
         siteIdArb,
         async (approvalId, userId, skillName, args, siteId) => {
-          // Arrange
+          // Arrange. Same reason as above: the stored arguments must satisfy the
+          // canonical schema, otherwise `runSkill` refuses them and this property
+          // would measure validation instead of the handler's output.
+          const storedArgs = argsForProperty(skillName, args);
           const pendingRecord = {
             id: approvalId,
             siteId,
             skillName,
-            arguments: args,
+            arguments: storedArgs,
             status: 'pending',
             agentName: 'lumibase-copilot',
             context: null,
@@ -200,7 +259,7 @@ describe('Feature: ai-first-cms-engine, Property 5: Approval execution flow — 
           // Each CORE_SKILLS handler returns a specific object shape
           const skill = CORE_SKILLS[skillName];
           if (skill) {
-            const expectedData = await skill.handler(args);
+            const expectedData = await skill.handler(storedArgs);
             expect(result.data).toEqual(expectedData);
           }
         },
@@ -232,9 +291,13 @@ describe('Feature: ai-first-cms-engine, Property 5: Approval execution flow — 
       ['items:read'],
     );
 
+    // The message names both sides since #472: the check is against
+    // requester ∩ decider, so "the approver lacks it" is only half the reason a
+    // denial can happen, and an operator reading the message needs to know which
+    // set was consulted.
     expect(result).toEqual({
       status: 'denied',
-      message: 'Insufficient capabilities',
+      message: 'Insufficient capabilities for requester ∩ decider',
     });
     expect(updateSetArgs).toHaveLength(0);
   });

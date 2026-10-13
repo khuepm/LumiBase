@@ -188,3 +188,25 @@ export function itemServiceForSystem(
 ): ItemService {
   return new ItemService(deps);
 }
+
+/**
+ * Construct an ItemService bound to a principal resolved **off** the request
+ * path — a queue worker, or an approval being resumed.
+ *
+ * The third posture, and it exists because the first two did not cover this case.
+ * `itemServiceForRequest(c)` needs a Hono context a worker does not have, and
+ * `itemServiceForSystem` is fail-open by definition. A worker that re-resolved
+ * the caller's grant (see `EffectiveCapabilityService`) has a real
+ * `MagicContext` and should enforce with it, so neither of the other two is
+ * honest for it.
+ *
+ * `siteId` and `permissionCtx` are applied last, exactly as in
+ * `itemServiceForRequest`, so `deps` can neither cross tenants nor drop the
+ * enforcement context.
+ */
+export function itemServiceForPrincipal(
+  deps: Omit<ItemServiceDeps, 'permissionCtx'>,
+  permissionCtx: MagicContext,
+): ItemService {
+  return new ItemService({ ...deps, siteId: permissionCtx.siteId, permissionCtx });
+}

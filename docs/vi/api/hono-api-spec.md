@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 3
-lastUpdated: 2026-09-01T19:24:38.846Z
+version: 10
+lastUpdated: 2026-10-10T10:34:35.843Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f0c3698b7ea88443
+sourceHash: 72370d45ee2454a6
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-01T19:24:38.846Z
-codeVerifiedHash: f0c3698b7ea88443
-codeVerifiedClaims: 374
+codeVerified: 2026-10-10T10:34:35.843Z
+codeVerifiedHash: 72370d45ee2454a6
+codeVerifiedClaims: 386
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -640,6 +640,7 @@ Authorization: Bearer <token>
 | `GET` | `/api/v1/ai/conversations` | Liệt kê lịch sử hội thoại |
 | `GET` | `/api/v1/ai/conversations/:id/messages` | Lấy danh sách tin nhắn trong một hội thoại |
 | `DELETE` | `/api/v1/ai/conversations/:id` | Xóa một hội thoại |
+| `POST` | `/api/v1/ai/decisions` | Hỏi decision model (TypeSafe Jev hoặc tương đương) các câu hỏi có kiểu |
 
 **Request chat:**
 ```json
@@ -672,6 +673,57 @@ Authorization: Bearer <token>
 { "decision": "approved" }
 ```
 
+**Request decision** (`POST /api/v1/ai/decisions`) — 1–32 câu hỏi, key theo `[A-Za-z0-9_-]{1,64}`; `noul` = có/không, `choice` = 2–255 lựa chọn, `score` = 2–10 mức rubric (thấp nhất trước). `state` là string, object hoặc array. Toàn bộ request (state, instructions, criteria và cấu trúc lồng) phải nằm trong budget đầu vào: ≤ `DECISION_MAX_INPUT_BYTES` byte UTF-8 (mặc định 131,072) **và** ≤ `DECISION_MAX_INPUT_TOKENS` token ước lượng (mặc định 24,000), được kiểm tra trước khi gọi provider. Chỉ đọc nên không cần phê duyệt HITL:
+```json
+{
+  "state": { "title": "Summer sale", "body": "Buy now!!!" },
+  "questions": {
+    "spam": {
+      "type": "noul",
+      "instructions": "Is this post spam?",
+      "criteria": { "true": "spam", "false": "legitimate" }
+    },
+    "topic": {
+      "type": "choice",
+      "instructions": "Pick the topic",
+      "criteria": { "promo": "Promotion", "news": null }
+    },
+    "quality": {
+      "type": "score",
+      "instructions": "Rate editorial quality",
+      "criteria": ["poor", "ok", "great"]
+    }
+  }
+}
+```
+
+**Response decision** — `calibrated` là `false` khi `DECISION_PROVIDER=llm`, vì xác suất do chính LLM tự báo. `usage.inputTokens` / `usage.outputTokens` là `null` khi provider không báo số token (không biết, không bao giờ là `0` tự đặt):
+```json
+{
+  "data": {
+    "provider": "typesafe",
+    "model": "jev-1.13",
+    "calibrated": true,
+    "answers": {
+      "spam": { "type": "noul", "noul": 0.12 },
+      "topic": { "type": "choice", "choice": "promo", "probabilities": { "promo": 0.9, "news": 0.1 }, "confidence": 0.9 },
+      "quality": { "type": "score", "score": 1.4, "legend": { "0": "poor", "1": "ok", "2": "great" }, "probabilities": { "0": 0, "1": 0.6, "2": 0.4 }, "confidence": 0.6 }
+    },
+    "usage": { "inputTokens": 120, "outputTokens": 0 }
+  }
+}
+```
+
+Lỗi: `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (vượt budget byte hoặc token; message chỉ nêu kích thước), `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream quá tải hoặc không kết nối được), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (client đã đóng request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
+
+Deadline và retry: mỗi decision có một deadline tổng (`DECISION_TIMEOUT_MS`, mặc định 20 giây) bao gồm mọi lần retry và thời gian chờ backoff, và mỗi lần gọi upstream có timeout riêng (`DECISION_ATTEMPT_TIMEOUT_MS`, mặc định 8 giây, không vượt phần còn lại của deadline). Chỉ `429`/`503`/`529`, lỗi mạng và timeout của một lần gọi mới được retry, tối đa `DECISION_MAX_RETRIES` lần (mặc định 2), với exponential backoff có full jitter và tôn trọng `Retry-After`. Lần chờ nào sẽ vượt deadline thì không bắt đầu. Lỗi auth, validation và parse không bao giờ được retry. Khi client ngắt kết nối, lần gọi upstream đang chạy bị huỷ và không retry nữa. Provider `llm` bị giới hạn bởi cùng deadline và budget nhưng chỉ gọi một lần; deadline và việc client ngắt kết nối sẽ huỷ request LLM đó.
+
+Số token là ước lượng, không phải tokenizer của provider: khoảng 4 ký tự ASCII cho một token, và mỗi code point không phải ASCII (ví dụ chữ tiếng Việt có dấu) tính là một token. Cách đếm cố ý đếm dư; mặc định 24,000 chừa 25% dư địa dưới context 32,000 token của Jev.
+
+CMS kiểm tra câu trả lời upstream trước khi trả về: giá trị bắt buộc phải hữu hạn và nằm trong miền hợp lệ, phân phối Choice/Score phải có đúng các phương án/mức đã khai báo và có tổng bằng 1 với sai số tuyệt đối tối đa `1e-6`, Score phải nằm trong `0..N-1`. Câu trả lời thiếu hoặc sai định dạng trả `502 DECISION_PARSE_FAILED`; giá trị không bị ép miền hoặc gán mặc định thành quyết định. Choice/Score bắt buộc có confidence, không suy ra từ xác suất của phương án thắng. Provider LLM áp dụng cùng validation.
+
+**`DECISION_PROVIDER=llm`** là provider tương đương do bạn chọn qua cấu hình; nó **không** phải cơ chế tự động chuyển khi lỗi (failover), và không có gì tự chuyển sang nó khi Jev lỗi. Nó gọi `LLM_PROVIDER` ở chế độ decision có cấu trúc: system prompt riêng cho decision, không có skill của Copilot và không cho tool calling. Câu trả lời Score từ LLM là mức kỳ vọng có trọng số `Σ i·p(i)` tính từ xác suất các mức đã được kiểm tra, cùng thang `0..N-1` với Jev và không làm tròn; mức mà model tự nêu bị bỏ qua, nên cùng một phân phối cho cùng một score trên mọi adapter. Vì xác suất không được hiệu chuẩn, không dùng nguyên ngưỡng đã chỉnh cho Jev cho `llm`. Câu trả lời chỉ có tool call hoặc không phải JSON sẽ lỗi `502 DECISION_PARSE_FAILED`.
+
 ### Agent API (Content OS)
 
 Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các role của token là tập hợp capability.
@@ -681,14 +733,19 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `GET/POST` | `/api/v1/agent/goals` | Liệt kê / tạo goal (`execution: 'async'` xếp hàng chạy) |
 | `POST` | `/api/v1/agent/goals/:id/decompose` | Planner: tạo sub-goal theo vai trò kế thừa ngân sách còn lại |
 | `POST` | `/api/v1/agent/goals/:id/settle` | Giải quyết goal cha từ trạng thái kết thúc của các goal con |
+| `POST` | `/api/v1/agent/runs/:id/retry` | Chạy lại một run `failed`/`cancelled` dưới dạng run mới ở `queued` (`retryOfRunId` → run gốc), đưa vào hàng đợi `agent-runs` với quyền của người yêu cầu thử lại, được resolve lại. Chỉ lần thử mới nhất của goal, chỉ khi goal không còn run nào đang chạy — mỗi request sinh nhiều nhất một lần thực thi mới. `201` `{ goalId, runId, agentName, status, retryOfRunId }`; `404` run không tồn tại hoặc thuộc tenant khác; `409` không thử lại được, đang chạy, đã bị thay thế, goal đã đóng hoặc đang bận, intent không active, hoặc không khôi phục được tác vụ; `423` đang đóng băng; `400` không có queue adapter; `503` enqueue thất bại. Xem [agent harness](../features/agent-harness-layer.md) |
 | `GET/POST/PATCH/DELETE` | `/api/v1/agent/roles[/:name]` | CRUD thư viện vai trò Agent (admin) — khởi tạo sẵn với Planner, Writer, … |
 | `GET` | `/api/v1/agent/autonomy` | Sổ bộ tin cậy: quyền hạn + sự cố đang mở |
 | `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Đề xuất thăng cấp; `POST :id/decide` là con đường duy nhất lên cấp cao hơn (admin) |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Cửa sổ veto: các bản staging đang chờ bổ sung `approvalId/collection/itemId/patch/agentRole` từ bản sửa đổi staging (trường null khi staging không còn); `POST :id/veto` loại bỏ một staging |
+| `GET` | `/api/v1/agent/approvals` | Hộp thư approval (bộ lọc `status`; mặc định `pending`) |
+| `POST` | `/api/v1/agent/approvals/:id/decide` | Quyết định của con người cho một hành động đang bị giữ. Body `{ decision: 'approved' \| 'rejected', reason? }`; cần `approvals:decide` (nếu không thì 403), `404` cho id không tồn tại hoặc thuộc tenant khác, `409` khi approval đã rời `pending`. Với `approved`, harness là nơi duy nhất đổi trạng thái, nên việc thực thi và việc ghi status xảy ra đúng một lần. Lúc thực thi, quyền của **người yêu cầu** được resolve lại và hành động chạy với `requester ∩ decider`: approval mà người yêu cầu đã bị thu hồi, hạ quyền hay rời site sẽ bị từ chối, và approval không có thông tin người yêu cầu (bị giữ từ trước khi có cột provenance) bị từ chối với `APPROVAL_PROVENANCE_MISSING` |
+| `POST` | `/api/v1/agent/approvals/:id/reopen` | Đưa một approval đang ở `failed` về `pending` để quyết định lại. Body `{ reason }` là **bắt buộc** và được ghi audit; cần `approvals:decide`. Một skill đã chạm tới service rồi mới lỗi thì bị giữ lại chứ không tự mời lại, vì thử lại có thể lặp một phép ghi không idempotent — đây là đường về có chủ ý |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Quyết định của Agent với tư cách người đánh giá (cần `review:<domain>`; cấm tự đánh giá) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Các phiên bản, bản nháp, `/compile` (NL→đánh giá), `:id/dry-run`, `:id/activate` |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Dừng ở 4 phạm vi (`run/intent/role/site`); việc đóng đóng băng cần `agents:freeze` |
 | `*` | `/api/v1/agent/intents[...]` | CRUD ý định nội dung, `:id/pause|resume|scan|drifts`, `/compile` |
+| `POST` | `/api/v1/intents/:id/scan` | Một chu kỳ reconcile: `{ scan, reconcile, dispatch }`. `dispatch` đẩy mỗi reconciler goal tiến một bước (draft → promote → verify) và báo `dispatched/completed/skipped/blocked` cùng `queueUnavailable` trên runtime không có queue adapter. Xem [vòng sửa của reconciler](../features/reconciler-repair-loop.md) |
 | `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp` |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Ghim Law Zero: liệt kê / giải phóng |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Chỉ mục llms.txt công khai mỗi site |

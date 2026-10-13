@@ -1,8 +1,9 @@
 ---
+title: SDK Reference
 version: 2
-lastUpdated: 2026-09-09T02:49:02.007Z
+lastUpdated: 2026-09-21T05:45:14.986Z
 sourceLang: en
-contentHash: 9ad56a846efd4625
+contentHash: 8a51c4697f0696d0
 ---
 
 # SDK Reference
@@ -27,10 +28,13 @@ npm install lumibase
 import { createLumiClient } from 'lumibase';
 ```
 
-`lumibase` *depends on* `@lumibase/sdk` rather than bundling it, so a project
-importing both still gets one copy of every class (`LumiError` `instanceof`
-checks keep working) and one set of types. Not sure which path you are on? See
-the [decision tree in Getting Started](../getting-started.md#which-path-do-i-need).
+Either way it belongs in `dependencies`, not `devDependencies` — your app
+imports it at request time. `lumibase` *depends on* `@lumibase/sdk` rather than
+bundling it, so a project importing both still gets one copy of every class
+(`LumiError` `instanceof` checks keep working) and one set of types. Not sure
+which path you are on? See
+[Which one do you actually want?](../getting-started.md#which-one-do-you-actually-want)
+in Getting Started.
 
 ## Guides
 

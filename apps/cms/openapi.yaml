@@ -1811,6 +1811,15 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: >-
+            `SETUP_TOKEN_NOT_ISSUED` — `LUMIBASE_REQUIRE_SETUP_TOKEN` is on but no
+            setup token has been minted, so no request can succeed. The Node/Docker
+            CMS mints and prints one at startup; Cloudflare Workers have no startup
+            step and do not support the flag. The error `message` says what to do.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /cdc/pipelines:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'
@@ -3364,6 +3373,135 @@ paths:
                 type: object
                 properties:
                   data: { $ref: '#/components/schemas/AIApproval' }
+
+  /ai/decisions:
+    post:
+      summary: Ask the decision model (TypeSafe Jev or equivalent) typed questions
+      description: >
+        Read-only. Each question is `noul` (yes/no), `choice` (2-255 options)
+        or `score` (2-10 rubric levels, lowest first). Answers carry
+        probabilities; `calibrated` is false when DECISION_PROVIDER=llm.
+        Malformed upstream answers fail with 502 DECISION_PARSE_FAILED, never
+        zero-valued defaults. Choice/Score distributions must contain exactly
+        the declared options/levels and sum to 1 within 1e-6. Confidence is
+        required; Score lies in 0..N-1 for N rubric levels.
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state, questions]
+              properties:
+                state:
+                  description: >
+                    String (≤ 20,000 chars), object or array. The whole request
+                    (state + questions) must fit DECISION_MAX_INPUT_BYTES and the
+                    estimated DECISION_MAX_INPUT_TOKENS budget, else 413.
+                  oneOf:
+                    - { type: string, minLength: 1, maxLength: 20000 }
+                    - { type: object, additionalProperties: true }
+                    - { type: array, items: {} }
+                questions:
+                  type: object
+                  minProperties: 1
+                  maxProperties: 32
+                  description: Keys match ^[A-Za-z0-9_-]{1,64}$.
+                  additionalProperties:
+                    type: object
+                    required: [type, instructions, criteria]
+                    properties:
+                      type: { type: string, enum: [noul, choice, score] }
+                      instructions: {}
+                      criteria:
+                        description: >
+                          noul → { true, false }; choice → option key → description
+                          or null; score → ordered array of levels.
+      responses:
+        '200':
+          description: Typed answers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      provider: { type: string, enum: [typesafe, openrouter, llm] }
+                      model: { type: string }
+                      calibrated: { type: boolean }
+                      answers:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          required: [type]
+                          oneOf:
+                            - required: [type, noul]
+                              properties:
+                                type: { type: string, enum: [noul] }
+                            - required: [type, choice, probabilities, confidence]
+                              properties:
+                                type: { type: string, enum: [choice] }
+                            - required: [type, score, legend, probabilities, confidence]
+                              properties:
+                                type: { type: string, enum: [score] }
+                          properties:
+                            type: { type: string, enum: [noul, choice, score] }
+                            noul: { type: number, minimum: 0, maximum: 1 }
+                            choice: { type: string }
+                            score: { type: number, minimum: 0, maximum: 9 }
+                            legend: { type: object, additionalProperties: true }
+                            probabilities:
+                              type: object
+                              additionalProperties: { type: number, minimum: 0, maximum: 1 }
+                            confidence: { type: number, minimum: 0, maximum: 1 }
+                      usage:
+                        type: object
+                        properties:
+                          inputTokens: { type: integer, nullable: true, description: null when the provider did not report it }
+                          outputTokens: { type: integer, nullable: true, description: null when the provider did not report it }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: Over the input byte or estimated token budget (DECISION_INPUT_TOO_LARGE)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: The decision provider rejected the request (DECISION_VALIDATION)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Decision provider rate limit (DECISION_RATE_LIMITED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '502':
+          description: DECISION_AUTH, DECISION_UPSTREAM or DECISION_PARSE_FAILED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: DECISION_NOT_CONFIGURED or DECISION_UNAVAILABLE
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '504':
+          description: The decision did not complete within DECISION_TIMEOUT_MS (DECISION_TIMEOUT)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '499':
+          description: The client closed the request; the upstream call was aborted (DECISION_CANCELLED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /ai/suggest-field:
     post:

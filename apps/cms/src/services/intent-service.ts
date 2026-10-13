@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import { contentIntents, type Database } from '@lumibase/database';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -145,7 +146,7 @@ export class IntentService {
 
   async update(id: string, input: Partial<IntentInput>) {
     await this.get(id);
-    const parsed = intentInputSchema.partial().parse(input);
+    const parsed = patchSchema(intentInputSchema).parse(input);
     const [intent] = await this.deps.db
       .update(contentIntents)
       .set({

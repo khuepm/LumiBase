@@ -17,7 +17,10 @@
  *   rt.disconnect();
  */
 
+import { toWebSocketBase } from './ws-url';
+
 export * from './audience';
+export { toWebSocketBase } from './ws-url';
 
 export interface RealtimeEvent {
   type: 'event';
@@ -190,8 +193,17 @@ export class RealtimeClient {
 
     if (this.stopped) return; // Disconnected while fetching ticket
 
-    const wsBase = baseUrl.replace(/^http/, 'ws');
-    const url = new URL(`${wsBase}/api/v1/realtime`);
+    let url: URL;
+    try {
+      url = new URL(`${toWebSocketBase(baseUrl)}/api/v1/realtime`);
+    } catch (err) {
+      // A relative baseUrl with no `location` to resolve it against. Retrying
+      // cannot fix it, so report once instead of throwing out of a promise
+      // nobody awaits.
+      console.warn('[RealtimeClient] Cannot build the realtime URL from baseUrl', baseUrl, err);
+      this.stopped = true;
+      return;
+    }
     url.searchParams.set('ticket', ticket);
 
     // Site ID is embedded in ticket, but passed here as well

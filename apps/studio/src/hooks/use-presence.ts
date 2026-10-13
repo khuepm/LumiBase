@@ -10,6 +10,8 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { toWebSocketBase } from '@lumibase/sdk';
+import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';
 import type { PresenceEntry } from '@/types/realtime';
 
@@ -38,7 +40,7 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceResult
   // Obtain the current userId from localStorage dev token (or auth context).
   const userId = (() => {
     try {
-      const token = localStorage.getItem('lumibase_dev_token') ?? '';
+      const token = getActiveToken();
       // dev token format: "dev:<logtoId>"
       return token.startsWith('dev:') ? token.slice(4) : 'anon';
     } catch {
@@ -63,8 +65,12 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceResult
 
   useEffect(() => {
     let isMounted = true;
-    const siteId = localStorage.getItem('lumibase_site_id') ?? '';
-    const token = localStorage.getItem('lumibase_dev_token') ?? '';
+    // Through the shared accessors, not raw localStorage keys: the old
+    // `lumibase_site_id` / `lumibase_dev_token` keys are never written, so the
+    // ticket request went out with an empty site and token (400) and presence
+    // never connected. The accessors also honour the shell's OS keychain (C1).
+    const siteId = getActiveSite();
+    const token = getActiveToken();
     const baseUrl = getApiBaseUrl();
 
     const connect = async () => {
@@ -83,7 +89,7 @@ export function usePresence(options: UsePresenceOptions = {}): UsePresenceResult
 
         if (!isMounted) return;
 
-        const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/api/v1/realtime?ticket=${encodeURIComponent(ticket)}&siteId=${encodeURIComponent(siteId)}`;
+        const wsUrl = `${toWebSocketBase(baseUrl)}/api/v1/realtime?ticket=${encodeURIComponent(ticket)}&siteId=${encodeURIComponent(siteId)}`;
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 

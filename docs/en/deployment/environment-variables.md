@@ -1,11 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-08-30T08:11:17.536Z
+version: 8
+lastUpdated: 2026-10-10T10:34:36.657Z
 sourceLang: en
-contentHash: 476b4029000a09f2
-codeVerified: 2026-08-30T08:11:17.536Z
-codeVerifiedHash: 476b4029000a09f2
-codeVerifiedClaims: 66
+contentHash: d0e7028900cd9e37
+codeVerified: 2026-10-10T10:34:36.657Z
+codeVerifiedHash: d0e7028900cd9e37
+codeVerifiedClaims: 74
 ---
 
 # Environment Variables Reference
@@ -37,6 +37,40 @@ It is private operational state. Do not expose it through `VITE_*` environment
 variables or client build metadata, and do not automatically redirect
 public/setup routes to it in production. See
 [Private admin path](./private-admin-path.md).
+
+---
+
+## First-run setup
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ (Node/Docker only) | off | `true`, `1` or `yes` makes `POST /api/v1/setup/complete` demand a one-time setup token. Turn it on for any instance that someone other than you can reach before setup is finished — otherwise whoever reaches the port first creates the admin account. |
+
+With the flag on, every process that serves HTTP (`LUMIBASE_PROCESS_ROLE` `web` or
+`all`) mints the token as it starts, before it accepts requests, and prints it once:
+
+```text
+[lumibase-cms] SETUP_TOKEN=<token>
+```
+
+Paste it into the setup wizard, or send it as `setupToken` to `/setup/complete`. Only
+its SHA-256 hash is stored, and the hash is cleared when setup completes.
+
+A restart does **not** print a new token: the stored hash is kept so a token you already
+have stays valid, and the startup log says so instead. If you lost the line, clear the
+hash and restart — the next start prints a fresh token:
+
+```sql
+UPDATE lumibase_system_state SET setup_token_hash = NULL WHERE id = 'singleton';
+```
+
+Several replicas starting at once print exactly one token between them, so read it
+from whichever replica printed it.
+
+**Cloudflare Workers:** not supported. A Worker has no process start to mint the token
+in, so with the flag on `/setup/complete` answers `503 SETUP_TOKEN_NOT_ISSUED` with an
+explanation instead of accepting a token. Leave the flag unset there and complete setup
+right after deploying.
 
 ---
 
@@ -140,6 +174,25 @@ For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](
 > and Google Cloud respectively — so their usage is **not** covered by AWS
 > credit. `nvidia` (or a self-hosted NIM via `NVIDIA_BASE_URL`) and MeiliSearch
 > are the pieces that pair naturally with AWS-hosted infrastructure.
+
+### Decision model (TypeSafe Jev)
+
+Backs `POST /api/v1/ai/decisions`: typed `noul` / `choice` / `score` answers with probabilities instead of generated text. Independent of `LLM_PROVIDER`; unset means the endpoint answers `503 DECISION_NOT_CONFIGURED`.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DECISION_PROVIDER` | ✗ | `typesafe` (TypeSafe Jev, direct), `openrouter` (same System One API via OpenRouter, billed to OpenRouter), or `llm` (reuses `LLM_PROVIDER` in structured decision mode, no tools; answers are flagged `calibrated: false`). A configured choice, not an automatic failover. Unset = disabled. |
+| `DECISION_MODEL` | ✗ | Model override. Defaults to `jev-latest` (`typesafe`) or `~typesafe/jev-latest` (`openrouter`). |
+| `TYPESAFE_API_KEY` | If `typesafe` provider | TypeSafe API key. |
+| `TYPESAFE_BASE_URL` | ✗ | TypeSafe endpoint override. Defaults to `https://api.typesafe.ai/v1`. |
+| `OPENROUTER_API_KEY` | If `openrouter` provider | OpenRouter API key. |
+| `DECISION_TIMEOUT_MS` | ✗ | Total deadline per decision in ms, retries and backoff included (default `20000`, range 1000–120000). |
+| `DECISION_ATTEMPT_TIMEOUT_MS` | ✗ | Timeout of one upstream attempt in ms (default `8000`, range 500–120000), capped by what remains of the deadline. |
+| `DECISION_MAX_RETRIES` | ✗ | Retries after the first attempt for 429/503/529, network errors and attempt timeouts (default `2`, range 0–5). |
+| `DECISION_MAX_INPUT_BYTES` | ✗ | UTF-8 byte cap on the serialized state + questions (default `131072`). Over the cap → `413 DECISION_INPUT_TOO_LARGE` before any provider call. |
+| `DECISION_MAX_INPUT_TOKENS` | ✗ | Estimated token budget for the same payload (default `24000`). The estimate counts ~4 ASCII chars or 1 non-ASCII code point per token; it is not the provider's tokenizer. |
+
+Invalid values in these five variables are ignored with a warning and the default applies.
 
 ---
 

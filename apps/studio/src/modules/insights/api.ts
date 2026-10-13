@@ -15,7 +15,7 @@ async function rawFetch(path: string, init?: RequestInit): Promise<{ ok: boolean
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(site ? { 'x-site-id': site } : {}),
+      ...(site ? { 'X-Lumi-Site': site } : {}),
       ...(init?.headers ?? {}),
     },
   });

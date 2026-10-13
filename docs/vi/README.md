@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-09-01T19:24:37.025Z
+version: 6
+lastUpdated: 2026-10-10T04:59:56.112Z
 sourceLang: vi
-contentHash: 35c9bb80abddd0e4
-codeVerified: 2026-09-01T19:24:37.025Z
-codeVerifiedHash: 35c9bb80abddd0e4
+contentHash: 3288ce23dde726e0
+codeVerified: 2026-10-13T19:22:00.109Z
+codeVerifiedHash: 3288ce23dde726e0
 codeVerifiedClaims: 4
 ---
 
@@ -18,19 +18,20 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 
 ## Bắt đầu nhanh
 
-- [getting-started.md](./getting-started.md) — Khởi tạo dự án LumiBase mới bằng `npm create lumibase@latest` (CLI `create-lumibase`), từ thư mục trống đến server chạy được (Docker hoặc Cloudflare Workers).
+- [getting-started.md](./getting-started.md) — Khởi tạo dự án LumiBase mới bằng `npm create lumibase@next` (CLI `create-lumibase`): template `nextjs` được chọn sẵn dựng website Next.js kèm CMS + Studio và nội dung mẫu, còn `default`/`cloudflare` dựng starter Hono + Drizzle. Trang này cũng chỉ rõ khi nào bạn **không** cần khung nào cả — chỉ cần `npm install lumibase`.
+- [cli/index.md](./cli/index.md) — CLI `lumibase`: `init` (tạo project), `types` (sinh type từ CMS đang chạy), `doctor` (kiểm tra cấu hình và kết nối).
 
 ## Tutorials (hướng dẫn thực hành)
 
 - [tutorials/index.md](./tutorials/index.md) — Danh mục các tutorial end-to-end cho người mới.
-- [tutorials/nextjs-quickstart.md](./tutorials/nextjs-quickstart.md) — **Hiển thị nội dung LumiBase trên app Next.js**: chạy CMS local, tạo collection `posts`, rồi fetch & render bằng `fetch` thuần hoặc `@lumibase/sdk`.
+- [tutorials/nextjs-quickstart.md](./tutorials/nextjs-quickstart.md) — **Hiển thị nội dung LumiBase trên app Next.js**: chạy CMS local, tạo collection `posts`, rồi fetch & render bằng package chính thức `lumibase` (`fetch` thuần được nêu sau như một lựa chọn thay thế). Đây là bản làm bằng tay của thứ mà template `nextjs` dựng sẵn cho bạn.
 
 ## Agent Setup (cho AI agent)
 
 - [agent-setup/index.md](./agent-setup/index.md) — Trang tổng hợp thiết lập AI agent cho LumiBase.
 - [agent-setup/prompt.md](./agent-setup/prompt.md) — Hướng dẫn máy đọc được (machine-readable), agent fetch và execute trực tiếp.
 - [agent-setup/claude-code.md](./agent-setup/claude-code.md) · [cursor.md](./agent-setup/cursor.md) · [github-copilot.md](./agent-setup/github-copilot.md) · [codex.md](./agent-setup/codex.md) · [windsurf.md](./agent-setup/windsurf.md) — Hướng dẫn từng agent.
-- [llms.txt](../llms.txt) — Index toàn bộ docs cho LLM. [en/llms.txt](./llms.txt) — Index English docs.
+- [llms.txt](../llms.txt) — Index toàn bộ docs cho LLM. [en/llms.txt](../en/llms.txt) — Index English docs.
 
 ## Cấu trúc tài liệu
 
@@ -142,7 +143,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - **`packages/sdk`** — JS SDK (REST + WS + typegen).
 - **`packages/ui`** — shadcn components + CVA tokens.
 - **`packages/extension-sdk`** — Types và helpers cho dev viết extension.
-- **`packages/create-lumibase`** — CLI bootstrap (`npm create lumibase@latest`) sinh dự án LumiBase mới từ template Docker hoặc Cloudflare Workers. Xem [getting-started.md](./getting-started.md).
+- **`packages/create-lumibase`** — CLI bootstrap (`npm create lumibase@next`) sinh dự án LumiBase mới từ một trong ba template: `nextjs` (website Next.js + CMS và Studio chạy trong Docker, chọn sẵn), `default` (Docker) hoặc `cloudflare` (Workers). Xem [getting-started.md](./getting-started.md).
 - **`packages/mcp-server`** — MCP stdio server (`@lumibase/mcp-server`) expose tool cho AI assistant tạo/quản lý collections, fields, items.
 
 ## Nguyên tắc khi đọc tài liệu

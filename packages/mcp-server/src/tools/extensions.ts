@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
-import { buildQs, confirmDescription, okText, run } from './_shared.js';
+import { buildQs, confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
 const EXTENSION_TYPES = ['interface', 'display', 'layout', 'panel', 'module', 'hook', 'endpoint'] as const;
@@ -51,8 +51,8 @@ export function registerExtensionTools(server: McpServer, client: LumiBaseClient
     },
     async ({ id }) =>
       run(async () => {
-        await client.delete(`/extensions/${encodePathSegment(id)}`);
-        return okText(`Extension "${id}" uninstalled.`);
+        const response = await client.delete(`/extensions/${encodePathSegment(id)}`);
+        return okAfter(response, `Extension "${id}" uninstalled.`);
       }),
   );
 

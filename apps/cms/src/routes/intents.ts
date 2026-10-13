@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
@@ -87,7 +88,7 @@ intentsRouter.post('/', async (c) => {
 
 intentsRouter.patch('/:id', async (c) => {
   if (!canWriteIntents(c)) return forbidden(c);
-  const parsed = intentInputSchema.partial().safeParse(await c.req.json().catch(() => null));
+  const parsed = patchSchema(intentInputSchema).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return handleError(c, parsed.error);
   try {
     const data = await service(c).update(c.req.param('id'), parsed.data);
@@ -152,11 +153,23 @@ intentsRouter.post('/:id/scan', async (c) => {
   try {
     const { DriftService, DriftServiceError } = await import('../services/drift-service');
     const { ReconcilerService } = await import('../services/reconciler-service');
+    const { GoalDispatchService } = await import('../services/goal-dispatch-service');
     const deps = { db: c.get('db'), siteId: c.get('siteId') };
     try {
       const scan = await new DriftService(deps).scanIntent(c.req.param('id'));
       const reconcile = await new ReconcilerService(deps).reconcileIntent(c.req.param('id'));
-      return c.json({ data: { scan, reconcile } });
+      // Goal creation alone used to be the end of the cycle (#455): the goal was
+      // created, the drift flipped to `assigned`, and nothing ever executed it —
+      // which also locked the drift out of later cycles. Dispatching here is what
+      // makes this endpoint report a cycle that actually advances. `queueUnavailable`
+      // in the response is how a caller on a runtime without a queue adapter
+      // learns the goals were created but not dispatched.
+      const queue = c.get('runtime')?.queue;
+      const dispatch = await new GoalDispatchService({
+        ...deps,
+        ...(queue ? { queue } : {}),
+      }).dispatchReconcilerGoals();
+      return c.json({ data: { scan, reconcile, dispatch } });
     } catch (err) {
       if (err instanceof DriftServiceError) {
         return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);

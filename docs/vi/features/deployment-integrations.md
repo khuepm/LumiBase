@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T10:20:15.340Z
+version: 3
+lastUpdated: 2026-09-07T15:32:41.098Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 0ba8c0326e531abc
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T10:20:15.340Z
-codeVerifiedHash: 0ba8c0326e531abc
-codeVerifiedClaims: 32
+sourceHash: db3d36504104f971
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-09-07T15:32:41.098Z
+codeVerifiedHash: db3d36504104f971
+codeVerifiedClaims: 34
 ---
 
 # Deployment Integrations (Vercel / Netlify)
@@ -49,7 +49,7 @@ API token của provider **không bao giờ được lưu ở dạng plaintext**
 Hai đường bổ trợ nhau giữ cho trạng thái deployment luôn mới:
 
 - **Status poller** — một cron 30s (`apps/cms/src/services/deployment/status-poller.ts`, đăng ký trong `serve.ts`) quét mọi deployment chưa ở trạng thái cuối và sync nó từ provider. Mỗi lần sync là một conditional update có bảo vệ (chỉ đổi `queued`/`building`) và một lỗi provider đơn lẻ không bao giờ làm gián đoạn cả vòng quét — chạy lại là no-op.
-- **Webhook vào** — `POST /api/v1/deployments/webhook/:provider` (public, trước auth) nhận các event trạng thái do provider đẩy tới. Nó cố ý nằm ngoài bề mặt đã xác thực vì provider xác thực bằng cách **ký body request**, không phải bằng bearer token; nó vẫn chạy `withTenant` + `withDb`. Chữ ký được verify thật trên raw body qua Web Crypto: **Vercel** dùng HMAC-SHA1 (`x-vercel-signature`), **Netlify** dùng JWS/HS256 (`x-webhook-signature`), so sánh theo constant time. Secret chung được đọc từ setting theo site `deployment.webhook.<provider>` (giá trị `{ "secret": "…" }`) — **không bao giờ** từ một request header. Nếu chưa cấu hình secret, mọi request webhook đều bị từ chối (`401 INVALID_SIGNATURE`); trạng thái vẫn sync được qua poller.
+- **Webhook vào** — `POST /api/v1/deployments/webhook/:provider` (public, trước auth) nhận các event trạng thái do provider đẩy tới. Nó cố ý nằm ngoài bề mặt đã xác thực vì provider xác thực bằng cách **ký body request**, không phải bằng bearer token; nó vẫn chạy `withTenant` + `withDb`. Chữ ký được verify thật trên raw body qua Web Crypto: **Vercel** dùng HMAC-SHA1 (`x-vercel-signature`), **Netlify** dùng JWS/HS256 (`x-webhook-signature`), so sánh theo constant time. Với Netlify, verify chữ ký một mình là chưa đủ — body không nằm trong signing input của JWS — nên payload còn phải buộc vào đúng bytes đó: claim `sha256` của nó được so với digest của raw body (payload **chính là** raw body cũng được nhận). Thiếu bước này, một JWS hợp lệ bắt được từ notification khác vẫn xác thực được một body khác. Chữ ký sai độ dài, payload không decode được, hay body bị sửa sau khi ký đều trả `401`, không bao giờ `500`. Secret chung được đọc từ setting theo site `deployment.webhook.<provider>` (giá trị `{ "secret": "…" }`) — **không bao giờ** từ một request header. Nếu chưa cấu hình secret, mọi request webhook đều bị từ chối (`401 INVALID_SIGNATURE`); trạng thái vẫn sync được qua poller.
 
 ## 5. REST API
 
@@ -68,6 +68,20 @@ Toàn bộ route nằm dưới `/api/v1/deployments`, trên bề mặt đã xác
 | `POST /:id/refresh` | Buộc sync trạng thái từ provider |
 
 SDK (`@lumibase/sdk`): `client.deployments.targets.{list,create,update,delete,deploy}` và `client.deployments.{list,get,logs,refresh}`, có type `DeploymentTargetResource` / `DeploymentResource`.
+
+### 5a. Rate limit khi trigger
+
+Mỗi trigger được nhận đều khởi động một build do provider tính phí, nên `POST /targets/:id/deploy` bị giới hạn **theo từng target**, nằm trên gate admin (`apps/cms/src/services/deployment/trigger-rate-limit.ts`):
+
+| Tầng | Ngưỡng |
+|---|---|
+| Burst | 5 trigger / 60 s |
+| Sustained | 30 trigger / 3600 s |
+
+- **Phạm vi** — khoá budget mang cả `site_id` và target id (`rl:deploy:<tier>:<siteId>:<targetId>`), nên hai target không bao giờ dùng chung budget và một site không thể làm cạn budget của site khác.
+- **Áp cho mọi nguồn trigger** — manual, flow (`auto`) và agent đều tiêu cùng một budget theo target, vì giới hạn này bảo vệ tài khoản provider của tenant bất kể ai gọi. Auto-deploy từ flow thường nằm rất xa ngưỡng nhờ `coalesceWindowMs`; một trigger bị coalesce sẽ tái dùng build có sẵn và **không** tiêu budget (kiểm tra chạy ngay trước lời gọi provider ra ngoài).
+- **Vượt ngưỡng** — request bị từ chối với `429` và `{ "errors": [{ "code": "RATE_LIMITED", "retryAfterSeconds": <n> }] }` kèm header `Retry-After`. Không có dòng `deployments` nào được tạo cho trigger bị từ chối; lần thử được audit là `deployment.trigger.rate_limited`.
+- **Fail-open** — nếu backend rate limiter không truy cập được thì trigger vẫn được cho qua; sự cố limiter không được làm sập đường deploy. Gate admin và kiểm tra target `status='active'` vẫn áp dụng.
 
 ## 6. Auto-deploy qua Flows
 

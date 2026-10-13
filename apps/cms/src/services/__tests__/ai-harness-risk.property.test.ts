@@ -2,6 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import * as fc from 'fast-check';
 import { AISecureHarness, CORE_SKILLS } from '../ai-harness';
 import type { Database } from '@lumibase/database';
+// The subject here is risk classification, not input shape. Since #454 the
+// harness refuses arguments that violate a skill's canonical schema, so the
+// generated dictionaries would classify every schema-bearing skill as `denied`
+// regardless of its risk. `argsForProperty` keeps the property measuring risk.
+import { argsForProperty } from '../../test-utils/agent-tool-args';
 
 /**
  * Feature: ai-first-cms-engine, Property 3: Risk classification và execution flow
@@ -20,8 +25,32 @@ import type { Database } from '@lumibase/database';
 // deliberately error rather than stub. They are covered by their own unit
 // tests (deployment/__tests__, cdc-feed-skills-hitl.test.ts), including the
 // dangerous→HITL classification of triggerDeployment/deleteCdcSubscription.
+/**
+ * Since #453 the same "no offline behaviour" rule covers every WRITE handler:
+ * without its service it throws `*_NOT_CONFIGURED` instead of returning a
+ * success-shaped stub, so a serviceless harness cannot execute it. Probed by
+ * behaviour rather than by name so a newly added skill classifies itself; the
+ * missing-service contract is asserted in g1-missing-service.test.ts.
+ */
+async function hasNoOfflineBehaviour(name: string): Promise<boolean> {
+  try {
+    await CORE_SKILLS[name]!.handler({});
+    return false;
+  } catch (err) {
+    return /NOT_CONFIGURED/.test(err instanceof Error ? err.message : String(err));
+  }
+}
+
+const noOfflineSkills = new Set<string>(
+  (await Promise.all(
+    Object.keys(CORE_SKILLS).map(async (name) => ((await hasNoOfflineBehaviour(name)) ? name : '')),
+  )).filter(Boolean),
+);
+
 const validSkillNames = Object.keys(CORE_SKILLS).filter(
-  (name) => !['deployments', 'cdc-feed'].includes(CORE_SKILLS[name]?.service ?? ''),
+  (name) =>
+    !['deployments', 'cdc-feed'].includes(CORE_SKILLS[name]?.service ?? '') &&
+    !noOfflineSkills.has(name),
 );
 
 // Arbitrary: pick a valid skill name from CORE_SKILLS
@@ -69,7 +98,7 @@ describe('Feature: ai-first-cms-engine, Property 3: Risk classification và exec
           });
 
           // Use wildcard '*' so capability check always passes
-          const result = await harness.execute(skillName, args, ['*']);
+          const result = await harness.execute(skillName, argsForProperty(skillName, args), ['*']);
 
           // Property: dangerous skill → pending_approval with valid approvalId
           expect(result.status).toBe('pending_approval');
@@ -95,7 +124,7 @@ describe('Feature: ai-first-cms-engine, Property 3: Risk classification và exec
           });
 
           // Use wildcard '*' so capability check always passes
-          const result = await harness.execute(skillName, args, ['*']);
+          const result = await harness.execute(skillName, argsForProperty(skillName, args), ['*']);
 
           // Property: safe skill → executed with data
           expect(result.status).toBe('executed');
@@ -117,7 +146,7 @@ describe('Feature: ai-first-cms-engine, Property 3: Risk classification và exec
 
         const skill = CORE_SKILLS[skillName]!;
         const riskResult = harness.evaluateRisk(skill, skillName);
-        const executeResult = await harness.execute(skillName, args, ['*']);
+        const executeResult = await harness.execute(skillName, argsForProperty(skillName, args), ['*']);
 
         // Property: evaluateRisk(true) ↔ pending_approval, evaluateRisk(false) ↔ executed
         if (riskResult) {

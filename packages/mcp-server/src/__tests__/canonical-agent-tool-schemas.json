@@ -1,0 +1,469 @@
+{
+  "addTeamMember": {
+    "properties": [
+      "teamId",
+      "userId"
+    ],
+    "required": [
+      "teamId",
+      "userId"
+    ]
+  },
+  "createApiKey": {
+    "properties": [
+      "description",
+      "expiresAt",
+      "metadata",
+      "name"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "createCdcSubscription": {
+    "properties": [
+      "collections",
+      "extensionName",
+      "kind",
+      "name",
+      "operations",
+      "payload_mode",
+      "webhookId"
+    ],
+    "required": [
+      "kind",
+      "name"
+    ]
+  },
+  "createCollection": {
+    "properties": [
+      "name",
+      "singleton"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "createField": {
+    "properties": [
+      "collection",
+      "interface",
+      "name",
+      "note",
+      "required",
+      "type"
+    ],
+    "required": [
+      "collection",
+      "name",
+      "type"
+    ]
+  },
+  "createFlow": {
+    "properties": [
+      "description",
+      "graph",
+      "name",
+      "status",
+      "triggerOptions",
+      "triggerType"
+    ],
+    "required": [
+      "graph",
+      "name",
+      "triggerType"
+    ]
+  },
+  "createIntent": {
+    "properties": [
+      "autonomyCap",
+      "budget",
+      "collection",
+      "maintenanceWindow",
+      "name",
+      "rules",
+      "schedule"
+    ],
+    "required": [
+      "collection",
+      "name",
+      "rules",
+      "schedule"
+    ]
+  },
+  "createItem": {
+    "properties": [
+      "collection",
+      "data",
+      "status"
+    ],
+    "required": [
+      "collection",
+      "data"
+    ]
+  },
+  "createPolicy": {
+    "properties": [
+      "adminAccess",
+      "appAccess",
+      "description",
+      "icon",
+      "key",
+      "name",
+      "rules"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "createRelation": {
+    "properties": [
+      "aliasField",
+      "junctionCollection",
+      "junctionManyField",
+      "junctionOneField",
+      "manyCollection",
+      "manyField",
+      "meta",
+      "onDelete",
+      "oneCollection",
+      "oneField",
+      "relatedDisplayTemplate",
+      "sortField",
+      "type"
+    ],
+    "required": [
+      "manyCollection",
+      "manyField",
+      "oneCollection"
+    ]
+  },
+  "createRole": {
+    "properties": [
+      "adminAccess",
+      "appAccess",
+      "description",
+      "icon",
+      "key",
+      "name",
+      "parentId"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "createTeam": {
+    "properties": [
+      "description",
+      "name"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "createTranslation": {
+    "properties": [
+      "key",
+      "language",
+      "namespace",
+      "status",
+      "value"
+    ],
+    "required": [
+      "key",
+      "language",
+      "namespace",
+      "value"
+    ]
+  },
+  "createWebhook": {
+    "properties": [
+      "actions",
+      "collections",
+      "headers",
+      "name",
+      "secret",
+      "status",
+      "url"
+    ],
+    "required": [
+      "name",
+      "url"
+    ]
+  },
+  "deleteCdcSubscription": {
+    "properties": [
+      "subscriptionId"
+    ],
+    "required": [
+      "subscriptionId"
+    ]
+  },
+  "deleteCollection": {
+    "properties": [
+      "name"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "deleteField": {
+    "properties": [
+      "collection",
+      "force",
+      "name"
+    ],
+    "required": [
+      "collection",
+      "name"
+    ]
+  },
+  "deleteFlow": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "deleteIntent": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "deleteItem": {
+    "properties": [
+      "collection",
+      "id"
+    ],
+    "required": [
+      "collection",
+      "id"
+    ]
+  },
+  "deletePolicy": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "deleteRelation": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "deleteRole": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "deleteSetting": {
+    "properties": [
+      "key"
+    ],
+    "required": [
+      "key"
+    ]
+  },
+  "deleteTeam": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "deleteTranslation": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "deleteWebhook": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "installExtension": {
+    "properties": [
+      "bundleUrl",
+      "capabilities",
+      "enabled",
+      "key",
+      "manifest",
+      "name",
+      "type",
+      "version"
+    ],
+    "required": [
+      "bundleUrl",
+      "name",
+      "type",
+      "version"
+    ]
+  },
+  "inviteUser": {
+    "properties": [
+      "email",
+      "roleId"
+    ],
+    "required": [
+      "email"
+    ]
+  },
+  "removeTeamMember": {
+    "properties": [
+      "teamId",
+      "userId"
+    ],
+    "required": [
+      "teamId",
+      "userId"
+    ]
+  },
+  "removeUser": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "replayCdcSubscription": {
+    "properties": [
+      "occurredAfter",
+      "subscriptionId"
+    ],
+    "required": [
+      "subscriptionId"
+    ]
+  },
+  "revokeApiKey": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "rotateApiKey": {
+    "properties": [
+      "expiresAt",
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "runFlow": {
+    "properties": [
+      "id",
+      "input"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "uninstallExtension": {
+    "properties": [
+      "id"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "updateExtension": {
+    "properties": [
+      "bundleUrl",
+      "capabilities",
+      "enabled",
+      "id",
+      "key",
+      "manifest",
+      "name",
+      "type",
+      "version"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "updateItem": {
+    "properties": [
+      "collection",
+      "data",
+      "id",
+      "status"
+    ],
+    "required": [
+      "collection",
+      "data",
+      "id"
+    ]
+  },
+  "updateTranslation": {
+    "properties": [
+      "id",
+      "key",
+      "language",
+      "namespace",
+      "status",
+      "value"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "updateUser": {
+    "properties": [
+      "id",
+      "roleId",
+      "status"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "updateWebhook": {
+    "properties": [
+      "actions",
+      "collections",
+      "headers",
+      "id",
+      "name",
+      "secret",
+      "status",
+      "url"
+    ],
+    "required": [
+      "id"
+    ]
+  },
+  "upsertSetting": {
+    "properties": [
+      "key",
+      "scope",
+      "value"
+    ],
+    "required": [
+      "key",
+      "value"
+    ]
+  }
+}

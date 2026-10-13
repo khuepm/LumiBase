@@ -3,7 +3,17 @@ import * as fc from 'fast-check';
 import { AISecureHarness, CORE_SKILLS } from '../ai-harness';
 import type { SkillDefinition } from '../ai-harness';
 import type { Database } from '@lumibase/database';
+import { validArgsFor } from '../../test-utils/agent-tool-args';
+import { requesterProvenance } from '../../test-utils/approval-provenance';
 import { vi } from 'vitest';
+
+// Requester re-resolution reads RBAC from the database (#472); this suite models
+// the DB with a shallow chainable mock, so the resolution is stubbed to "still
+// allowed". See `test-utils/approval-provenance.ts` for where it is measured for real.
+vi.mock('../approval-requester', async (importOriginal) => {
+  const { approvalRequesterModuleMock } = await import('../../test-utils/approval-provenance');
+  return approvalRequesterModuleMock(importOriginal);
+});
 
 /**
  * Feature: ai-first-cms-engine, Property 7: Execution failure preserves pending state
@@ -103,7 +113,14 @@ function createMockDbWithPendingApproval(
     },
   ];
 
-  const whereFn = vi.fn().mockResolvedValue(selectResult);
+  // `executeApproved` now makes two reads (R2/#472): the approval itself, and the
+  // `agent_approvals` row carrying who requested it. The second one ends in
+  // `.limit(1)`, which is how this shallow mock tells them apart.
+  const whereFn = vi.fn().mockReturnValue(
+    Object.assign(Promise.resolve(selectResult), {
+      limit: vi.fn().mockResolvedValue([{ requestedByPrincipal: requesterProvenance(siteId) }]),
+    }),
+  );
   const fromFn = vi.fn().mockReturnValue({ where: whereFn });
   const selectFn = vi.fn().mockReturnValue({ from: fromFn });
 
@@ -236,11 +253,14 @@ describe('Feature: ai-first-cms-engine, Property 7: Execution failure preserves 
             throw new Error(errorMsg);
           };
 
+          // Stored arguments must satisfy the canonical schema (#454); `{}` would
+          // now be refused by `runSkill` before the throwing handler runs, and
+          // this property is about the *handler's* error reaching the caller.
           const { db, updateFn } = createMockDbWithPendingApproval(
             approvalId,
             siteId,
             skillName,
-            {},
+            validArgsFor(skillName),
           );
 
           const harness = new AISecureHarness({ db, siteId });

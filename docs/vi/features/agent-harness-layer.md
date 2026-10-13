@@ -1,12 +1,31 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:22:27.836Z
+version: 3
+lastUpdated: 2026-09-26T03:57:31.179Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 29b0c5c9b54e50f5
+sourceHash: b473a29de49b4910
 mtEngine: manual
 syncStatus: human-translated
+codeVerified: 2026-09-26T03:57:31.179Z
+codeVerifiedHash: b473a29de49b4910
+codeVerifiedClaims: 20
 ---
+
+<!--
+  check-parity: allow headings code-fences inline-code links tables bulk
+
+  Cặp EN/VI này KHÔNG phải một bản dịch. Bản VI là một tài liệu khác — đề xuất
+  8 mục có đánh số, 10 heading so với 25 của bản EN và dài khoảng 1/3 — có từ
+  trước, không phải do PR nào gần đây gây ra.
+
+  Waiver này chỉ ghi nhận hiện trạng để gate parity không chặn những thay đổi
+  KHÔNG liên quan tới nó; nó không chấp nhận hiện trạng đó là đúng. Việc dịch
+  lại bản VI cho khớp bản EN được theo dõi ở B60 trong
+  `.kiro/steering/out-of-scope-backlog.md`.
+
+  GỠ waiver này ngay khi B60 xong — lúc đó cặp phải qua được parity mà không
+  cần miễn trừ nào.
+-->
 
 # Agent Harness Layer
 
@@ -106,6 +125,80 @@ Nguyên tắc:
 - Kết quả sinh ra không ghi thẳng vào content/schema nếu vượt risk threshold.
 - Mọi tool call và artifact đều có `site_id`, audit metadata, correlation id.
 - Harness phải hỗ trợ replay/retry idempotent cho run thất bại.
+
+### 5.1. Quyết định một approval: claim, execute, quarantine
+
+Approve không phải là đổi trạng thái — nó **thực thi** hành động đã lưu. Vì vậy
+đường quyết định gồm ba bước, `claim → execute → finalize`, và mỗi bước tồn tại
+vì một cách mà bản làm đơn giản sẽ sai:
+
+- **Claim.** Quyết định trước tiên chuyển dòng sang `deciding`, bằng một
+  conditional update guard trên `pending`. Kiểu read-rồi-act sẽ để hai approval
+  đồng thời cùng qua bước đọc và **cùng** chạy hành động.
+- **Execute.** Claim được giữ trong đúng một lần thực thi skill. Mọi đường không
+  hoàn tất đều tự nhả claim — skill lỗi, kill switch, cancel, hay một exception.
+- **Finalize.** Chỉ một lần thực thi hoàn tất mới ghi `approved`.
+
+Một lỗi mà process **sống sót qua được** sẽ không quay về `pending`. Nếu skill đã
+chạm tới một service trước khi lỗi thì side effect có thể đã tồn tại, và đưa nó
+trở lại inbox như việc bình thường là mời gọi một side effect thứ hai. Những ca
+đó vào **`failed`** — bị cách ly, ra khỏi inbox, và chỉ chạy lại được qua một
+bước có con người tham gia.
+
+Điều mà không handler in-process nào che được là **process chết giữa lúc thực
+thi**: crash, bị OOM kill, Worker bị evict, hay một lần deploy cuốn pod đi. Dòng
+đó sẽ ở `deciding` mãi mãi, và vì inbox filter theo pending nên nó cũng **biến
+mất khỏi tầm mắt** — vừa kẹt vừa vô hình. Một sweep định kỳ
+(`sweepStaleApprovalClaims`, cửa sổ 15 phút) là lưới an toàn. Nó cũng đưa các
+dòng đó vào `failed` chứ không phải `pending`: một cú crash nói "không có quyết
+định nào được ghi", chứ **không** nói "không có gì xảy ra" — nên một lần thực thi
+bị crash ít nhất cũng mơ hồ như một lần lỗi in-process, và phải qua cùng một cửa.
+
+Thời gian đã trôi qua **không** là bằng chứng công việc bị bỏ rơi đã dừng. Một
+timeout của JavaScript reject một promise mà không cancel handler phía sau, và
+một process đã crash có thể để lại một request đang bay ở provider bên ngoài.
+Cửa sổ chỉ giới hạn hệ thống **chờ** bao lâu, không bao giờ giới hạn điều nó
+kết luận.
+
+### 5.2. Phục hồi một approval bị cách ly
+
+`POST /api/v1/agent/approvals/:id/reopen` với `{ reason }` đưa một approval
+`failed` trở lại `pending`. Nó đòi đúng capability `approvals:decide` như khi
+quyết định, vì reopen chính là thứ làm hành động có thể thực thi lại. Bước chuyển
+trạng thái và audit record `approval.reopened` của nó commit **cùng nhau**: ghi
+nhận ai đã cho phép một lần thực thi thứ hai là **một phần của** sự cho phép đó,
+không phải một dòng log có thể có mà cũng có thể không.
+
+Trong Studio, tab Approvals nêu rõ có bao nhiêu approval bị ngắt giữa đường, hiện
+lý do đã ghi cho từng cái, và chỉ đưa nút **Reopen** ở đúng những dòng đó — một
+approval `pending` là việc bình thường, không có affordance phục hồi nào. Lý do là
+**bắt buộc**: đó là điều con người tuyên bố mình đã kiểm chứng, và nó được lưu
+cùng bước chuyển trạng thái.
+
+Chỉ `failed` mới reopen được. Một approval đã quyết định thì không được hồi sinh,
+còn một dòng `deciding` thuộc về một lần thực thi đang sống hoặc thuộc về sweeper.
+
+### 5.3. Thử lại một run
+
+`POST /api/v1/agent/runs/:id/retry` chạy lại một run `failed` hoặc `cancelled`
+dưới dạng một run **mới** ở trạng thái `queued`, có `retryOfRunId` trỏ về run gốc,
+và đưa nó vào hàng đợi `agent-runs` — cùng claim của worker, cùng harness,
+approval và kill switch như mọi run async. Tác vụ được khôi phục từ tool call mà
+run đã ghi lại, còn envelope quản trị (role, intent, autonomy cap, budget) lấy từ
+goal của nó; lần thử lại chạy với quyền của **người yêu cầu thử lại**, được resolve
+lại khi worker nhận job, không bao giờ mượn quyền của người yêu cầu ban đầu. Chỉ
+lần thử **mới nhất** của goal mới được thử lại, và chỉ khi goal không còn run nào
+đang chạy, nên một request sinh ra nhiều nhất một lần thực thi mới: các request
+thử lại đồng thời được tuần tự hoá trên hàng goal và bên thua nhận `409`.
+
+Phản hồi: `201` kèm `{ goalId, runId, agentName, status: 'queued', retryOfRunId }`;
+`404` cho run không tồn tại hoặc thuộc tenant khác; `409` cho `RUN_NOT_RETRYABLE`,
+`RUN_ACTIVE`, `RETRY_SUPERSEDED`, `GOAL_CLOSED`, `GOAL_BUSY`, `INTENT_NOT_ACTIVE`
+hoặc `RETRY_UNRECOVERABLE` (input đã ghi có giá trị secret bị che, hoặc run không
+ghi tool call nào); `423` `FROZEN`; `400` `ASYNC_UNAVAILABLE`; `503`
+`ENQUEUE_FAILED`, khi đó run thử lại được chốt ở `failed`. Một run bị cách ly với
+`stale_unverified` có thể đã tạo tác dụng rồi — thử lại nó là quyết định có chủ ý
+của con người để chạy lại, và được ghi là `agent_run.retried` trong activity.
 
 ## 6. App Generation Layer
 

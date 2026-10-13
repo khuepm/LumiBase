@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 4
-lastUpdated: 2026-08-30T08:11:17.536Z
+version: 8
+lastUpdated: 2026-10-10T10:34:36.657Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 476b4029000a09f2
+sourceHash: d0e7028900cd9e37
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-30T08:11:17.536Z
-codeVerifiedHash: 476b4029000a09f2
-codeVerifiedClaims: 66
+codeVerified: 2026-10-10T10:34:36.657Z
+codeVerifiedHash: d0e7028900cd9e37
+codeVerifiedClaims: 74
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -41,6 +41,39 @@ lưu trong database, nên có thể rotate mà không cần redeploy — và kh�
 trong build artifact.
 
 Đây là trạng thái vận hành riêng tư. Không phơi bày qua biến môi trường `VITE_*` hay client build metadata, và không tự động redirect các route public/setup tới nó ở production. Xem [Admin path riêng tư](./private-admin-path.md).
+
+---
+
+## Setup lần đầu
+
+| Biến | Bắt buộc | Mặc định | Mô tả |
+|------|----------|----------|-------|
+| `LUMIBASE_REQUIRE_SETUP_TOKEN` | ✗ (chỉ Node/Docker) | tắt | `true`, `1` hoặc `yes` khiến `POST /api/v1/setup/complete` đòi một setup token dùng một lần. Hãy bật cho mọi instance mà người khác ngoài bạn có thể truy cập trước khi setup xong — nếu không, ai chạm tới cổng trước sẽ tạo được tài khoản admin. |
+
+Khi cờ bật, mọi tiến trình phục vụ HTTP (`LUMIBASE_PROCESS_ROLE` là `web` hoặc
+`all`) sinh token ngay lúc khởi động, trước khi nhận request, và in ra đúng một lần:
+
+```text
+[lumibase-cms] SETUP_TOKEN=<token>
+```
+
+Dán nó vào setup wizard, hoặc gửi dưới dạng `setupToken` tới `/setup/complete`. Chỉ
+hash SHA-256 của nó được lưu, và hash bị xoá khi setup hoàn tất.
+
+Khởi động lại **không** in token mới: hash đã lưu được giữ nguyên để token bạn đang có
+vẫn dùng được, và log khởi động sẽ báo điều đó thay vì in token. Nếu bạn làm mất dòng
+đó, hãy xoá hash rồi khởi động lại — lần khởi động tiếp theo sẽ in một token mới:
+
+```sql
+UPDATE lumibase_system_state SET setup_token_hash = NULL WHERE id = 'singleton';
+```
+
+Nhiều replica khởi động cùng lúc chỉ in đúng một token cho cả nhóm, nên hãy đọc nó từ
+replica nào đã in ra.
+
+**Cloudflare Workers:** không hỗ trợ. Worker không có bước khởi động tiến trình để sinh
+token, nên khi cờ bật, `/setup/complete` trả `503 SETUP_TOKEN_NOT_ISSUED` kèm lời giải
+thích thay vì nhận token. Ở đó hãy để cờ tắt và hoàn tất setup ngay sau khi deploy.
 
 ---
 
@@ -147,6 +180,25 @@ Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#
 | `WORKERS_AI_GATEWAY` | Chỉ Workers AI | URL gateway CF Workers AI |
 
 > **Provider ↔ billing:** `nvidia` và `vertex` gọi các cloud *bên ngoài* — lần lượt là NVIDIA và Google Cloud — nên usage của chúng **không** được tính vào credit AWS. `nvidia` (hoặc NIM self-host qua `NVIDIA_BASE_URL`) và MeiliSearch là các phần ăn khớp tự nhiên với hạ tầng host trên AWS.
+
+### Decision model (TypeSafe Jev)
+
+Phục vụ `POST /api/v1/ai/decisions`: trả về câu trả lời có kiểu `noul` / `choice` / `score` kèm xác suất thay vì sinh văn bản. Độc lập với `LLM_PROVIDER`; không đặt thì endpoint trả `503 DECISION_NOT_CONFIGURED`.
+
+| Biến | Bắt buộc | Mô tả |
+|------|----------|-------|
+| `DECISION_PROVIDER` | ✗ | `typesafe` (TypeSafe Jev, gọi trực tiếp), `openrouter` (cùng System One API qua OpenRouter, tính phí vào OpenRouter), hoặc `llm` (dùng lại `LLM_PROVIDER` ở chế độ decision có cấu trúc, không có tools; câu trả lời được gắn `calibrated: false`). Đây là lựa chọn qua cấu hình, không phải tự động failover. Không đặt = tắt. |
+| `DECISION_MODEL` | ✗ | Override model. Mặc định `jev-latest` (`typesafe`) hoặc `~typesafe/jev-latest` (`openrouter`). |
+| `TYPESAFE_API_KEY` | Nếu provider `typesafe` | API key TypeSafe. |
+| `TYPESAFE_BASE_URL` | ✗ | Override endpoint TypeSafe. Mặc định `https://api.typesafe.ai/v1`. |
+| `OPENROUTER_API_KEY` | Nếu provider `openrouter` | API key OpenRouter. |
+| `DECISION_TIMEOUT_MS` | ✗ | Deadline tổng cho mỗi decision, tính bằng ms, gồm cả retry và backoff (mặc định `20000`, khoảng 1000–120000). |
+| `DECISION_ATTEMPT_TIMEOUT_MS` | ✗ | Timeout của một lần gọi upstream, tính bằng ms (mặc định `8000`, khoảng 500–120000), không vượt phần còn lại của deadline. |
+| `DECISION_MAX_RETRIES` | ✗ | Số lần retry sau lần gọi đầu, cho 429/503/529, lỗi mạng và timeout của lần gọi (mặc định `2`, khoảng 0–5). |
+| `DECISION_MAX_INPUT_BYTES` | ✗ | Giới hạn byte UTF-8 của state + questions sau khi serialize (mặc định `131072`). Vượt giới hạn → `413 DECISION_INPUT_TOO_LARGE` trước khi gọi provider. |
+| `DECISION_MAX_INPUT_TOKENS` | ✗ | Budget token ước lượng cho cùng payload đó (mặc định `24000`). Cách ước lượng: khoảng 4 ký tự ASCII hoặc 1 code point không phải ASCII cho một token; không phải tokenizer của provider. |
+
+Giá trị không hợp lệ ở năm biến này sẽ bị bỏ qua kèm cảnh báo và dùng giá trị mặc định.
 
 ---
 <!-- check-parity: allow inline-code -->

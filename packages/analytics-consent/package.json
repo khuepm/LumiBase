@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/analytics-consent",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.4",
   "private": true,
   "description": "Consent-gated Google Analytics for the public sites (landing, docs). Framework-free core plus an optional React entry.",
   "type": "module",
@@ -24,9 +24,9 @@
     }
   },
   "devDependencies": {
-    "@types/react": "^19.2.18",
-    "react": "^19.2.8",
+    "@types/react": "^19.3.0",
+    "react": "^19.3.0",
     "typescript": "^5.6.2",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.3"
   }
 }

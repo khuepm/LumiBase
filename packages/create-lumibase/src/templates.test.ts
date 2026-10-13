@@ -46,7 +46,7 @@ function majorOf(range: string): number {
 }
 
 describe('template manifests', () => {
-  it.each(['default', 'cloudflare'])('%s parses as JSON and names the project', (template) => {
+  it.each(['default', 'cloudflare', 'nextjs'])('%s parses as JSON and names the project', (template) => {
     const manifest = readTemplateManifest(template) as { name?: string };
     expect(manifest.name).toBe('{{projectName}}');
   });
@@ -84,5 +84,24 @@ describe('template manifests', () => {
     // here. If it ever leaves, the assertion above stops meaning anything.
     const template = readTemplateManifest('cloudflare');
     expect(template.devDependencies?.wrangler).toBeTruthy();
+  });
+});
+
+describe('nextjs template release pins (B95)', () => {
+  it('renders the client and CMS image at exactly the scaffolder version', async () => {
+    const { default: Handlebars } = await import('handlebars');
+    const { readScaffolderVersion } = await import('./scaffold.js');
+    const version = readScaffolderVersion();
+    const own = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8')) as { version: string };
+    expect(version).toBe(own.version);
+
+    const render = (rel: string) =>
+      Handlebars.compile(readFileSync(join(pkgRoot, 'templates/nextjs', rel), 'utf8'), {
+        noEscape: true,
+      })({ projectName: 'b95', lumibaseVersion: version });
+
+    const manifest = JSON.parse(render('package.json.hbs')) as { dependencies: Record<string, string> };
+    expect(manifest.dependencies['lumibase']).toBe(version);
+    expect(render('docker-compose.yml.hbs')).toContain(`image: ghcr.io/khuepm/lumibase-cms:${version}\n`);
   });
 });

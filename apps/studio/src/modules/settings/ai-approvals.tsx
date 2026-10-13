@@ -22,7 +22,7 @@ async function fetchApprovals(): Promise<ApprovalRecord[]> {
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(site ? { 'x-site-id': site } : {}),
+      ...(site ? { 'X-Lumi-Site': site } : {}),
     },
   });
   if (!res.ok) {
@@ -43,7 +43,7 @@ async function decideApproval(
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(site ? { 'x-site-id': site } : {}),
+      ...(site ? { 'X-Lumi-Site': site } : {}),
     },
     body: JSON.stringify({ decision }),
   });

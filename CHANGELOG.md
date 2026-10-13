@@ -9,7 +9,957 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Fixed
+- **P2 queue recovery and governed write parity (B93, B87).** Queue submission
+  failures settle only unclaimed runs, preserve masked tasks for explicit retries,
+  and expire stale queued runs across origins. Flow, extension and CDC skills now
+  share REST validation, signature/permission checks, scheduling, cache invalidation
+  and audit behavior. No migration. See `docs/en/features/governed-write-parity.md`
+  and `docs/en/features/async-agent-runs.md`.
+
+- **P1 governance and async execution (B85, B86, B92, B10).** PATCH validates only
+  supplied fields without resetting intent autonomy/budgets, webhook configuration,
+  flows or extensions. Async goals retain their budget through queue execution,
+  including older jobs via the stored run budget. Cloudflare now binds and consumes
+  `agent-runs` with provider parity, individual acknowledgement/retry, dead-letter
+  queues and stale-run quarantine. Provision the environment-specific queue before
+  deployment; see `docs/en/features/async-agent-runs.md`. No database migration.
+
+
+- Raise the `sharp` override floor to 0.35.5 for GHSA-wq5f-xc86-pv6w (high), fixing the bundled librsvg dependency used by Next.js and Miniflare.
+
+- Cloudflare Sentry upgrades to 11.x: remove the obsolete `enableLogs` option and explicitly retain the v10 data-collection baseline, so the upgrade does not enable user data, cookies, HTTP bodies, AI content, database query data, queue payloads, or GraphQL documents/variables. No environment changes are required.
+
+- Dependency updates unblock the production audit gate and align the Tauri JavaScript packages with their Rust crates. Security overrides are declared in both pnpm settings files; Vite and ws overrides now match the grouped dependency updates.
+
+- Decision providers reject missing, malformed or out-of-range answers and invalid
+  probability distributions with `DECISION_PARSE_FAILED`, instead of turning them
+  into zero-valued or clamped decisions. Choice/Score confidence is required.
+  The Definition of Done now requires shared upstream AI-output validation and
+  regression coverage for this failure class.
+- CMS and Studio test suites cap isolated workers at four to prevent excessive
+  concurrent imports from causing test timeouts and worker startup failures.
+
+- Next.js starters carry PostCSS security overrides for both npm and pnpm;
+  fresh-install smoke checks now include Next.js and audit its production dependencies.
+
+- **Studio panels that sent the wrong tenant header (B103).** Eleven Studio
+  request helpers sent `x-site-id` instead of `X-Lumi-Site`, so the CMS
+  answered `400 TENANT_REQUIRED`. On the published Docker image this broke,
+  for every user: the item Versions panel, list presets and bookmarks, role
+  presets, Mission Control actions, AI approvals, Insights, email settings,
+  materialisation, image-transform presets and push subscription. Found on
+  `1.0.0-rc.4`. A source-scan tripwire
+  (`apps/studio/src/lib/__tests__/tenant-header.wiring.test.ts`) now fails on
+  any `x-…site…` header other than `X-Lumi-Site`.
+- **Realtime in same-origin Studio (B104).** With the Studio served by the CMS
+  (Docker image) the API base URL is `''`, and `RealtimeClient` threw
+  `Invalid URL` building the socket URL, so Live Mode and notifications never
+  connected. `@lumibase/sdk` now resolves a relative `baseUrl` against the
+  page origin (new export `toWebSocketBase`); `AudienceClient` and the Studio
+  notification and presence sockets use the same helper.
+- **Presence never connected (B104).** `usePresence` read site and token from
+  `localStorage` keys the Studio never writes, so every item page sent an
+  empty ticket request (`400`). It now uses the shared accessors, which also
+  honour the desktop shell's keychain. The tripwire above also forbids those
+  raw keys.
+- **Docker image reported `version: "unknown"` (B105).** The Node bundle read
+  build metadata from runtime env, which never carries it, so
+  `GET /api/v1/system/version` answered `unknown` on every published image
+  and the upgrade runbook's "determine your current version" step could not
+  work. The metadata is now baked into `dist/serve.cjs` at build time
+  (runtime env still overrides it), and the release workflow passes the
+  commit and channel as build args.
+- **Studio footer said "Backend unavailable" (B105).** The footer read `.data`
+  from `/api/v1/system/version`, which answers with the bare metadata object.
+  It now reads both shapes. The endpoint's response shape is unchanged.
+- **CDC feed cursors must be the exact token the server issued.** The decoder
+  accepted the standard-base64 alphabet and read a blank or whitespace
+  timestamp as `0`, so a malformed `cursor` such as `Czo+` was treated as a
+  valid position near the start of the feed instead of being rejected with
+  400. Found by the property test in the v1.0.0-rc.4 release run.
+- **Onboarding commands install the 1.0 release candidate (#333).** README,
+  Getting Started (EN/VI) and the `create-lumibase` README said
+  `npm create lumibase@latest`, but npm's `latest` is still the 0.x scaffolder,
+  which has no Next.js template. They now use `@next`, with a note that the
+  commands return to `@latest` when 1.0.0 ships. The npm dist-tags are
+  unchanged.
+- **`lumibase init` suggests the release it pins.** When the package manager
+  cannot be spawned, the hint now reads `npm create lumibase@<cli version>`
+  instead of `@latest`, which pointed at a different major.
+- **Six more documented commands that never ran (B69).** The guard written for
+  the `pnpm -F @lumibase/database db:migrate` family found a second one on its
+  first run: `pnpm lumibase typegen` (the root `lumibase` script is
+  `turbo run dev`, so it started two dev servers and ignored the argument),
+  `pnpm -F @lumibase/sdk typegen` (that package has build/test/typecheck/clean)
+  and a CI snippet running `pnpm typegen`, which is not a root script either.
+  All six now name what exists — `pnpm -F @lumibase/cms typegen` in the
+  monorepo, `npx lumibase types --check` for a consumer's CI — including the
+  docstring in `apps/cms/scripts/typegen.ts` the wrong form had spread from.
+  `pnpm docs:cmd:check` (`scripts/check-docs-commands.mjs`, in `check:all`) now
+  resolves every `pnpm` command in a docs code fence against the package it
+  names, and fails when the script does not exist. It tokenises options
+  (`--filter=`, `-C`, `-r`, `--if-present`, flags such as `--silent`), resolves
+  the script after `pnpm run` instead of skipping it, and follows `cd` into a
+  workspace package. On its first run it found two more commands that could not
+  work as written: `pnpm landing:build` after a `cd apps/docs` in
+  `deployment/cloudflare-pages-ci.md` (the docs deploy now uses
+  `--cwd apps/docs`, as CI does), and `pnpm run deploy:production` in
+  `features/async-agent-runs.md`, which only exists in `apps/cms` (the block now
+  starts with `cd apps/cms`).
+- **Three dead Vietnamese links, and the reason they were invisible (B67).**
+  `docs/vi/README.md`, `docs/vi/agent-setup/index.md` and `docs/vi/mcp/index.md`
+  linked `./llms.txt` and `../agent-setup/mcp-config.json`, which resolve under
+  `docs/vi/` where neither file exists. The parity checker could not see it: it
+  compared link *text*, so a VI link pointing at a missing file matched an EN
+  link pointing at a real one perfectly. It now compares the file a link
+  **resolves** to, collapsing the locale segment only when both trees have that
+  file — which also stops it flagging a legitimately different path for the same
+  target. Repo-wide parity drops from 37 problems in 30 pairs to 35 in 29. A link
+  that is dead in both locales still compares equal, as it did before: parity is
+  not a dead-link check, and reporting it as a locale mismatch would mislead.
+- **The Docker production override is documented as the local trap it is
+  (B47c).** `docs/{en,vi}/deployment/docker.md` now says to set
+  `DATABASE_SSL_MODE=disable` when trying that stack locally: the override
+  defaults to `require`, which is right for a managed database and cannot
+  connect to the compose PostgreSQL, which serves no TLS — so the CMS fails with
+  a connection error rather than a configuration one.
+### Changed
+
+- The release Docker smoke test now fails when the image reports a version
+  other than its tag, or when `/setup` does not serve the Studio.
+
+
+## [1.0.0-rc.4] - 2026-09-29
+
+### Version
+- `v1.0.0-rc.4`
+
+### Date
+- `2026-09-29`
+
+### Highlights
+- A fresh `create-lumibase` Next.js starter now runs the release it came from:
+  the `lumibase` client and the CMS image are pinned to the scaffolder's own
+  version, so a new install gets this release's Studio and API.
+- Invited users can use Studio, and invited Administrators can administer the
+  site — before this, only the bootstrap admin could.
+- The Studio editor saves long-form text as text and clears its unsaved state
+  after a save, so Submit for review and Publish are available right away.
+
+### Fixed
+
+- **A new Next.js starter now runs the release it came from (B95).**
+  `create-lumibase` pinned an older `edge` CMS digest and `lumibase@^1.0.0-rc.1`,
+  which npm resolved to rc.1 because that is the `latest` dist-tag, so a fresh
+  scaffold ran none of the Studio fixes it shipped with. The client and the CMS
+  image are now rendered from the scaffolder's own version: an exact `lumibase`
+  pin and `ghcr.io/khuepm/lumibase-cms:<version>`. `cms:verify` also probes a
+  made-up site id on every run (the pinned CMS answers `404 TENANT_NOT_FOUND`
+  and stays up — #469) instead of behind `LUMIBASE_VERIFY_CROSS_TENANT`, and the
+  generated README documents the working setup-token gate (#470).
+- **Studio edits long-form text fields as text.** A `text` field whose interface
+  Studio does not recognise fell back to the JSON editor and rejected prose as
+  "not valid JSON" — the starter's `body` field (`textarea`) hit this. `text`
+  now resolves to the multi-line editor, and the starter creates `body` with
+  `input-multiline`; re-running `cms:bootstrap` repairs an existing project.
+- **Saving an item clears its unsaved state.** The editor compared the draft
+  with the saved row as JSON strings, so a field filled in after the others
+  (JSONB returns keys in its own order) left the form "unsaved" after a
+  successful save, and Submit for review / Publish stayed disabled until a
+  reload.
+
+- **Invited users can use Studio.** `GET /api/v1/permissions/me` sat behind
+  the control-plane admin backstop, which recognises only the literal `admin`
+  role, so every user other than the bootstrap admin got 403 and Studio showed
+  "You do not have read permission" — including users holding the
+  Administrator role. The caller's own bundle is now readable by any signed-in
+  principal; the rest of `/permissions` stays admin-only.
+- **Invited Administrators can administer the site.** The control-plane
+  backstop recognised admins by role *name* only, while invited users carry
+  their role *id*, so only the bootstrap admin could reach Users, Roles,
+  Settings and the other control-plane routes. It now also admits a signed-in
+  user whose role grants admin access in the active site — the same check
+  `requireSiteAdmin` makes. API keys are unchanged.
+- **A Studio served at the site root no longer reloads itself forever.**
+  Anonymous requests made before sign-in answer 401, and the global handler
+  answered each with `location.assign('/')` — the page it was on — until the
+  API limiter returned 429. It now redirects only when a stale session token
+  is present, so the reload that clears it cannot repeat.
+- **`POST /api/v1/users/invite` validates its body.** An empty `roleId` was
+  stored as the member's role id, and a malformed body answered 500; both now
+  answer 400 before touching the database.
+- **Desktop and Android release builds run again.** `release-apps.yml` had
+  failed on every tag since v0.26.0. The `tauri-plugin-updater` crate is back in
+  step with `@tauri-apps/plugin-updater` (2.12), the Android job points
+  `NDK_HOME` at the NDK it installs, macOS no longer tries to import an empty
+  Apple certificate, and Windows pre-releases build the NSIS installer only
+  (WiX cannot version `-rc.N`). A missing updater signing key now fails fast
+  with instructions instead of after a full compile.
+
 ### Added
+
+- **`pnpm tauri:check`** (in `check:all`): fails a PR when an `@tauri-apps/*`
+  package and its Rust crate drift to different major/minor releases.
+
+### Migrations
+- None
+
+## [1.0.0-rc.3] - 2026-09-26
+
+### Version
+- `v1.0.0-rc.3`
+
+### Date
+- `2026-09-26`
+
+### Highlights
+- The editorial journey runs end to end in Studio: create an item, submit it for
+  review, approve and publish it without touching the API.
+- Studio behind a private admin path survives reloads on every content screen.
+- Quick setup no longer fails at the last step on a fresh install.
+
+### Added
+
+- **Create items and drive the editorial workflow from Studio.** The collection
+  list gains **New item** and **Reviews**; the editor shows the item's editorial
+  state with **Submit for review**, **Approve**, **Reject**, **Publish** and
+  **Unpublish**, backed by the existing `/api/v1/editorial/*` endpoints and item
+  `PATCH`. Transitions are offered only with `update` permission and never while
+  edits are unsaved; the CMS still enforces the `editorialWorkflow` gate and the
+  separate-reviewer rule, and its error is shown inline. The previously broken
+  **Save & create new** action now lands on the create form.
+
+### Fixed
+
+- **Studio keeps the private admin prefix while you navigate.** From
+  `/{adminPath}`, content links such as the item list and editor breadcrumbs went
+  to `/content/...`: client-side navigation worked, but a reload behind the CMS
+  answered 404. A router output rewrite now re-applies the prefix to every module
+  path in one place rather than per link, and the content screens read their
+  params from either route shape. `/setup`, `/insights` and `/teams` are no longer
+  mistaken for an admin prefix.
+- **Quick setup completes on a fresh install.** The Studio wizard has no control
+  for `loginStallMs` and omits it, while `POST /api/v1/setup/complete` required it,
+  so the last step failed with `400 VALIDATION_ERROR`. The route now applies the
+  codec default (500 ms).
+
+- **Retrying an agent run now actually runs it.** `POST /api/v1/agent/runs/:id/retry`
+  inserted a new run with `status: 'running'`, answered `201`, and enqueued nothing
+  — and because the worker only claims `queued` runs, nothing could ever have picked
+  it up. The row sat until the stale sweep failed it, and the goal read as having a
+  run in flight in the meantime. A retry now inserts a `queued` run (`retryOfRunId`
+  → the original) and enqueues it on `agent-runs`, so it goes through the same
+  worker claim, harness, approvals and kill switch as any async run. The task is
+  recovered from the original's recorded tool call and the governance envelope
+  (role, intent, autonomy cap, budget) from its goal; it executes under the
+  **requester's** re-resolved rights, never the original requester's. One request
+  yields at most one new execution: only `failed`/`cancelled` runs, only the goal's
+  latest attempt, only while nothing on the goal is in flight — decided under a lock
+  on the goal row, with the one-active-run-per-goal index behind it — so a
+  double-click or two operators produce one run and a `409`. Refusals are explicit:
+  `409` (not retryable, in flight, superseded, goal closed or being dispatched,
+  intent not active, or the input cannot be replayed because it was recorded with
+  masked secrets), `423` frozen, `400` without a queue adapter, `503` when the
+  enqueue fails (the retry row is then settled `failed`, so it can be retried). A
+  blocked reconciler goal resumes when its run is retried, and every accepted retry
+  is recorded as `agent_run.retried` in activity. This is the sanctioned way to
+  re-run a `stale_unverified` run after inspecting it (#455) — nothing is replayed
+  automatically. The `201` body gains `status` and `retryOfRunId`; no migration.
+- **`LUMIBASE_REQUIRE_SETUP_TOKEN=true` no longer locks the instance out
+  (#470).** `/setup/complete` demanded a token that nothing ever produced: the
+  helper that mints it, stores its hash and prints it had no caller, so the only
+  way out was turning the flag off and recreating the container. The Node/Docker
+  entrypoint now mints the token in every HTTP process before it starts
+  listening and prints one `[lumibase-cms] SETUP_TOKEN=<token>` line. Replicas
+  booting together print exactly one token between them (the write is
+  conditional, so the losers neither crash on the primary key nor print a token
+  the last writer invalidates — measured on Postgres). A restart keeps the issued
+  token instead of reprinting it and logs the SQL that clears it if the line was
+  lost. The request path and startup now share one parser for the flag
+  (`true`/`1`/`yes`, unchanged), so they cannot disagree on a value. Cloudflare
+  Workers have no process start to mint in, so the flag is documented as
+  Node/Docker-only and `/setup/complete` there answers
+  `503 SETUP_TOKEN_NOT_ISSUED` with an explanation instead of a silent
+  `SETUP_TOKEN_REQUIRED`. No migration; an instance stuck in the old state gets
+  its token on the first start after upgrading.
+
+### Security
+
+- **Ten more agent skills validate their input before anything runs (#454
+  follow-up).** `createRelation`, `createFlow`, `createIntent`, `updateTranslation`,
+  `createWebhook`, `updateWebhook`, `installExtension`, `updateExtension`,
+  `createCdcSubscription` and `deleteCdcSubscription` had a skill but no canonical
+  schema, so the harness executed whatever it was handed and `tools/list` advertised
+  `{type:'object'}` for them. They now have strict schemas in `@lumibase/contracts`,
+  mirroring what the handler and its REST route accept. That closes a concrete hole
+  on `POST /api/v1/mcp`: `updateWebhook`, `updateTranslation` and `updateExtension`
+  hand their patch straight to `.set()`, so a key such as `siteId` — or
+  `isOfficial`/`verifiedAt` on an extension — was passed through into the update
+  statement. Reaching it needed an admin principal and, below autopilot, a human
+  approval, since all ten skills are control-plane; it is now refused with
+  `VALIDATION` before a run or approval is created. `installExtension` also gains the
+  `bundleUrl` protocol gate `POST /extensions` applies.
+
+### Changed
+
+- **stdio routes 33 mutation tools through the governed harness, up from 27 (#454
+  follow-up).** With the schemas above, `create_relation`, `create_intent`,
+  `update_translation`, `create_webhook`, `update_webhook` and
+  `delete_cdc_subscription` (`id` → `subscriptionId`) now go to `POST /api/v1/mcp`
+  instead of REST. The other four of that group stay on REST with a sharper reason:
+  `create_cdc_subscription` is `contract-narrower-than-tool` (the handler never
+  forwards `payload_mode`), and `create_flow`, `install_extension` and
+  `update_extension` are the new `skill-weaker-than-rest` — the skill accepts the
+  arguments but skips checks its REST route applies (graph/cron gates and
+  `nextRunAt`; bundle signature, reserved namespace and per-action permission
+  probes), so routing would have traded one gate for another. Remaining gap: 55
+  ungoverned mutations — 5 `contract-narrower-than-tool`, 3
+  `skill-weaker-than-rest`, 47 `no-skill`; `no-canonical-contract` is empty.
+
+  Upgrade notes:
+
+  - **No migration, no backfill, no new environment variable.**
+  - With `LUMIBASE_MCP_GOVERNED=auto` (the default) on a site with `contentOs.mcp`
+    enabled, the six routed tools stop executing immediately: all six are
+    control-plane, so a non-admin principal now gets `CONTROL_PLANE_FORBIDDEN` and an
+    admin gets a pending approval below autopilot. With `on` they used to be refused
+    and now run governed. `off` is unchanged.
+  - On `POST /api/v1/mcp`, calls to the ten skills with an unknown or misspelled
+    argument now fail with `VALIDATION` instead of being executed.
+
+### Migrations
+- None
+
+## [1.0.0-rc.2] - 2026-09-23
+
+### Fixed
+
+- **Translation repair preserves a human translation entered during generation
+  (#455).** Drafts retain the latest target-locale text instead of replacing it
+  with the provider response. Approval resume also checks the requesting agent's
+  freeze, including pending approvals with the old legacy agent name, and keeps
+  frozen runs parked until the freeze is lifted.
+
+- **An abandoned agent run is no longer replayed automatically (#455).** A run left
+  `running` by a dead worker could be taken over after fifteen minutes and executed
+  again. Age cannot support that: a process can die *after* the content write and
+  *before* the terminal status is saved, at which point the row is
+  indistinguishable from one that did nothing. Measured on Postgres with a fault
+  injected in exactly that window — one item written, run stuck `running`, age
+  pushed past the threshold, job redelivered: **two items**. The queue claim now
+  accepts only `queued` runs (nothing has executed under one yet, so redelivering it
+  cannot repeat a side effect), and abandoned runs are quarantined instead: a new
+  `agent-run-stale-sweep` cron moves them to `failed` with
+  `stopReason: 'stale_unverified'` and a message telling the operator it was
+  deliberately not retried. Ambiguity becomes a visible state rather than a silent
+  second execution.
+- **Dispatch now fences at the storage boundary, not with a preceding check
+  (#455).** The lease was verified by a `SELECT` and the run was inserted after it —
+  check-then-write, one level below the race it was meant to fix. Measured: A passed
+  the check, A's lease expired, B claimed the goal and dispatched, A resumed and
+  inserted anyway → **two runs and two queue jobs for one goal and phase**. Every
+  write a dispatch authorises now happens inside one transaction that holds the goal
+  row (`SELECT … FOR UPDATE SKIP LOCKED`), with the lease token checked inside that
+  lock; the enqueue stays outside, because a queue call cannot be rolled back. A
+  contending caller skips instead of waiting, and every statement touching the goal
+  row has a two-second `lock_timeout`, so one stuck dispatcher cannot stall later
+  ticks. Underneath it, a partial unique index makes "one in-flight run per goal" a
+  database rule rather than a convention any future call site could forget.
+- **Goals and tenants waiting on something no longer starve the ones behind them
+  (#455).** Filtering settled goals fixed one prefix; a goal whose intent is
+  `paused` or `error` was another, and it came back on every tick with
+  `INTENT_NOT_ACTIVE`. Measured with `limit = 1`: two consecutive passes reported
+  that skip, enqueued nothing, and never reached the runnable goal behind it — and
+  the same shape with `sitesLimit = 1` meant one tenant was visited twice while the
+  other never ran. Unrunnable goals are now excluded in SQL, and selection rotates:
+  `dispatch_attempted_at` records when a goal was last *considered*, so being looked
+  at costs it its place in the queue. `sitesLimit` is a per-tick budget rather than a
+  cutoff — tenants are visited least-recently-considered first, so a deployment with
+  more sites than the limit reaches the rest on later ticks.
+- **A site administrator can decide an agent-reviewer approval again (#453).** The
+  capability resolver emits `admin` and deliberately never mints `*`, while
+  `ReviewerService` accepted only `review:<domain>` or `*` — so a real administrator
+  was refused with `Capability "review:items" is required`, and the agent-reviewer
+  route had no reachable positive path. The existing tests passed `review:items`
+  straight into the service, which proved it honoured a capability without proving
+  anything could produce one. Both the harness and the reviewer now share a single
+  `satisfiesCapability` predicate, so "what counts as admin" cannot drift apart
+  again, and a new suite drives the decision with capabilities from the real
+  resolver. Deciding remains admin-only on all three entry points, with regressions
+  that refuse a non-admin — including a member holding exactly the write permission
+  the parked action needs.
+- **An approved action now runs under the requester's row and field rules, not
+  only their capability tokens (#472).** The capability intersection shipped first
+  and was not enough: `items:write` says nothing about which collection, which
+  rows or which fields, so a restriction written in the policy DSL passed straight
+  through it. Measured on Postgres with a real `ItemService` — an API key parked an
+  update to `title`, its update permission was narrowed to `body` while the
+  approval waited, a direct call was refused with
+  `Permission does not allow writing field(s): title`, and the admin approving the
+  parked action **wrote `title` anyway**, because the skill executed against the
+  approver's ItemService. The executing service is now rebound to the requester's
+  permission context for the duration of the decision. Two limits are stated
+  explicitly in the governed-tool contract rather than left to be discovered: the
+  decider's own mask is not applied (approving is not performing, and intersecting
+  two policy contexts is not a defined operation), and an `agentRole` requester has
+  no row/field context by construction.
+- **An approval parked by the async chat path could not be approved by anyone
+  (#472).** `POST /ai/chat` with `Prefer: respond-async` never passed the
+  requesting principal into the harness, so the approval it created carried no
+  provenance — indistinguishable from a row written before the column existed, and
+  refused with `APPROVAL_PROVENANCE_MISSING` and an instruction to re-request.
+  Re-requesting down the same path produced the same dead end. The worker now
+  carries `job.principal` through, and a source-scan tripwire requires every
+  production `harness.execute` call to pass provenance, since the argument is
+  optional by necessity (a legacy queued job has no principal) and the type system
+  therefore cannot catch the next omission.
+- **Duplicate queue delivery no longer executes twice (#455).** `markRunning` read
+  the run status and then wrote, and it accepted `running` as a startable state —
+  so under at-least-once delivery it was not a guard at all. Measured: one job
+  delivered twice concurrently created **two items**; delivered again while its run
+  sat in `awaiting_approval` it created a **second pending approval** for the same
+  run. It is replaced by two conditional UPDATEs with distinct owners:
+  `claimQueuedRun` (the queue's, `queued → running`, with takeover of a `running`
+  row older than 15 minutes so a crashed worker still recovers) and
+  `resumeApprovedRun` (the approval's, `awaiting_approval → running`). A queue
+  redelivery can no longer resume a parked run, which is how the duplicate approval
+  appeared.
+- **A dispatch lease could be released by the caller it replaced (#455).** The
+  holder was recorded as `${HOSTNAME}:${pid}`, which is the same string for every
+  acquisition in a process — so two overlapping ticks were indistinguishable: A's
+  lease expired, B reclaimed it, A's `finally` released "its" lease by owner match
+  and deleted B's, and a third caller walked in while B was still working. Each
+  acquisition now carries its own token, release and the pre-write fence both check
+  it, and a pass that outlived its lease stops with `LEASE_LOST` instead of
+  enqueueing alongside the new holder.
+- **Goals waiting on a human no longer starve the ones behind them (#455).**
+  Filtering terminal goals in SQL fixed one starvation and left another:
+  `in_progress` is exactly the status of a goal whose run is parked at
+  `awaiting_approval`. With `limit = 1`, two consecutive passes each took the
+  oldest such goal, skipped it with `RUN_ACTIVE`, enqueued nothing, and never
+  looked at the actionable goal behind it — oldest-first had moved the starvation to
+  the front of the queue. Goals with a run in flight are now excluded in SQL, so
+  the limit counts goals that can actually move, and the same rule applies to
+  multi-tenant site discovery. A goal returns the moment its run leaves the
+  in-flight set, so nothing has to remember it.
+- **`LUMIBASE_MCP_GOVERNED=on` no longer falls back to ungoverned REST (#454).**
+  The mode that exists to guarantee governance quietly bypassed it: a mutation
+  tool with no governed mapping fell through to a direct REST call, so autonomy
+  level, HITL parking, the kill switch and run audit were all skipped — for the
+  write, after the tool had already been declared governed. `on` now **refuses**
+  such a tool before any REST call is made, naming the tool and the reason.
+  `auto` (the default) and `off` are unchanged: `auto` still falls back with a
+  one-time stderr warning, which is the documented "governance not available
+  here" path. The classifier that decides what counts as a mutation moved into
+  the source so the gate and the tripwire share one definition rather than two
+  regexes that can drift — the drifting copy would have been the one deciding
+  whether a write is allowed. 47 tools are currently ungoverned and enumerated in
+  `UNGOVERNED_MUTATIONS` with a reason each; deployments pinned to `on` will see
+  those refused instead of executed.
+- **An approval no longer executes with only the decider's authority (#472).**
+  `executeApproved` resolved capabilities for whoever pressed approve and never
+  re-read the requester's, so an action parked by user A still executed after A
+  was demoted, deactivated, or had their key revoked — the approval outlived the
+  authority it was requested under. `agent_approvals` now records the requesting
+  principal (`requested_by_principal`), and execution resolves **both** sides at
+  decision time and uses the intersection: the requester must still be allowed to
+  ask, and the decider must be allowed to approve. Pre-existing `pending`
+  approvals carry no provenance and are refused with
+  `APPROVAL_PROVENANCE_MISSING` rather than falling back to the decider — that
+  fallback is the defect. They need re-requesting; the migration header carries
+  the query that lists them. Deliberately not backfilled: nothing records who
+  asked, and inventing an identity is the error being fixed.
+- **Leader-locked cron jobs released the lock before their work finished
+  (#455).** All nine registrations in `serve.ts` were shaped
+  `() => { void work() }`. `void` discards the promise, so the callback returned
+  immediately, `leaderLockedCallback` awaited `undefined`, and the lock was
+  released while the work was still running — it guaranteed nothing for **any**
+  of them: `audit-rotation`, `pageview-flush`, `veto-sweep`,
+  `approval-claim-sweep`, `content-scheduler`, `retention-sweep`,
+  `goal-dispatch`, `deployment-poll`, `flow-schedule`. Two replicas could run the
+  same sweep concurrently. All nine now await, and both halves are locked down: a
+  source scan rejects the old shape, and a behavioural test shows
+  `withLeaderLock` releasing only after an awaited function settles.
+- **Goal dispatch is now serialized, self-healing and fair (#455).** Three
+  distinct defects in the dispatch loop added above:
+  - **Two entry points could dispatch the same goal.** The cron tick and
+    `POST /intents/:id/scan` both read-then-write, so both could see "no active
+    run" and create one. A goal now carries a dispatch lease
+    (`dispatch_lease_until` / `dispatch_lease_by`) taken with a single
+    conditional `UPDATE`, so Postgres picks the winner and the loser reports
+    `LEASE_HELD`. The lease is a timestamp, not a flag, so a process killed
+    mid-dispatch costs one skipped tick instead of stranding the goal.
+  - **A lost job stalled a goal forever.** The run row is inserted before the job
+    is enqueued; a process dying in between left a `queued` run that nothing
+    consumed, and every later pass skipped the goal on `RUN_ACTIVE`. A run
+    `queued` longer than five minutes is now treated as lost: the goal is
+    re-dispatched and the orphan is settled as `cancelled` with
+    `stopReason: 'dispatch_lost'` — cancelled rather than failed, because a lost
+    job is not a decision anyone made.
+  - **An older goal could starve.** The query took the newest `limit * 4`
+    reconciler goals and filtered for `open`/`in_progress` in memory, so enough
+    newer terminal goals pushed an older pending one out of every pass, silently.
+    Status is now filtered in SQL and goals are served oldest-first; site
+    discovery likewise only visits sites that actually have a dispatchable goal.
+- **One rejected audit row no longer discards the whole batch (#469, defence in
+  depth).** A multi-row `INSERT` is atomic, so a row rejected by the
+  `audit_log.site_id` foreign key discarded **every** row batched with it — up to
+  99 records belonging to real tenants, and precisely the ones worth keeping:
+  denied control-plane access, rejected uploads, failed authentication. The
+  batcher now retries row by row **only** when the batched statement fails, so
+  the offending row is dropped (logged with its site and event, never its
+  metadata) while the rest are written. Each table is attempted independently so
+  a failure in one cannot cause the other's rows to be written twice, and the
+  error is still rethrown so a caller that awaits `flush()` observes it.
+  To be precise about what this does and does not fix: the HTTP path can no
+  longer produce such a row. `withTenantExists` rejects an unknown site with
+  `404` before `withAuth` — the first middleware that writes audit — and that
+  landed earlier. Measured against a live CMS: four probes with a forged
+  `X-Lumi-Site` (three unauthenticated, one with a valid key from another site)
+  all answered `404`, the process stayed up, and `audit_log` gained no rows. What
+  remains reachable is the path *outside* a request: an audit job sitting in the
+  queue when its site is deleted, or a cron/CDC/worker passing a site id that has
+  since gone. Verified in `audit-batch-isolation.db.integration.test.ts`.
+
+- **Reconciler goals now execute (#455).** A content intent's drift became an
+  `agent_goals` row and stopped there. Nothing turned that goal into a run: no cron
+  task, no queue consumer, no route. Measured on Postgres before the fix — one
+  reconcile plus three further cycles left `agent_runs` empty, the drift `assigned`
+  with its `goalId` set, and the content unchanged. That was worse than inaction,
+  because goal assignment deliberately skips drift that already carries a `goalId`,
+  so the unexecutable goal **locked** its drift out of every later cycle: a site
+  accumulated assigned drift that no longer looked actionable and was never repaired.
+  - **New `GoalDispatchService`** advances each reconciler goal by one step per pass:
+    draft → promote → verify. The next step is derived from observable state (goal
+    phase, latest run, whether the draft branch exists, drift status), so a pass is
+    safe to repeat, safe to resume after a crash, and unaffected by duplicate queue
+    delivery. Driven by a leader-locked `goal-dispatch` cron tick on Node/Docker, and
+    by `POST /api/v1/intents/:id/scan`, whose response gains a `dispatch` section.
+  - **New `repairTranslation` skill** fills one missing locale into a **version
+    branch**, never live content. Publishing is a separate `promoteVersion` run, which
+    is classified dangerous and therefore always parks for human approval (#453), so
+    published content changes exactly once in the sequence, after a human approves.
+  - **The goal completes only when a fresh scan can no longer find the violation.** A
+    promote that publishes content which does not actually resolve the drift blocks the
+    goal with `VERIFY_FAILED` instead of reporting success.
+  - **Every dead end is named.** `metadata.blockedReason` records `RUN_FAILED`,
+    `RUN_CANCELLED`, `NO_REPAIR_SKILL`, `DRAFT_MISSING`, `PROMOTE_INCOMPLETE`,
+    `VERIFY_FAILED`, `ENQUEUE_FAILED` or `DRIFT_MISSING`, and Studio → Mission Control
+    shows it. The loop never retries on its own: the most common cause of a failed
+    phase is a human rejecting the approval, and re-dispatching would re-ask them.
+  - **Governance survives the queue hop.** `AgentRunJobPayload` gains optional
+    `origin`, `intentId`, `driftFingerprint`, `autonomyCap` and `agentRole`, and the
+    worker forwards them into the harness envelope. Without that, the intent's autonomy
+    ceiling was recorded on the payload and enforced nowhere at execution time.
+    Capabilities are **not** snapshotted: the worker resolves them from the agent role
+    at pickup, so disabling a role stops work already sitting in the queue.
+  - **Also fixed: the agent role library seeded only when someone opened the Studio
+    Roles page.** `agent_roles` is seeded lazily and nothing on the background path
+    triggered it, so on a site where nobody had visited that page every reconciler run
+    resolved to zero capabilities and failed `capabilities_denied`. The worker now
+    seeds before resolving; the seed is idempotent and adds no new definitions.
+  - **Runtime limits, stated rather than implied.** Dispatch runs on Node/Docker. On
+    Cloudflare Workers the `agent-runs` queue still has no consumer export, so
+    asynchronous runs — including this loop — do not execute there; a tripwire asserts
+    that rather than leaving readers to infer it. Documented in
+    `docs/{en,vi}/features/reconciler-repair-loop.md`.
+
+### Changed
+
+- **Onboarding docs: `lumibase init` is the same scaffold, and the version pin has
+  a consequence.** Two gaps on the pages a newcomer actually reads. Getting started
+  showed `npm create lumibase@latest` and never mentioned `lumibase init` outside a
+  link at the very bottom, so nothing said the two entry points are one scaffold
+  (`init` runs `create-lumibase` and forwards argv verbatim — they cannot offer
+  different templates). And the CLI reference explained the version pin without
+  stating what it costs: `init` resolves the scaffolder from the **registry**, so a
+  template that exists in the source tree is unreachable through `lumibase init`
+  until `create-lumibase` is published at that version. On releases up to
+  `1.0.0-rc.1` it fails *inside* the scaffolder with a missing-template-directory
+  error (those releases do not validate `--template`); later ones reject it as
+  `Unknown template`. Either way the name is valid. That trap
+  was known — it was recorded in a test comment and in the Setup Impact Registry —
+  but had never been told to users. Docs only; no runtime change.
+- **Corrected: `revalidate` is not an upper bound on stale content (#334).** The
+  Next.js quickstart and the `nextjs-blog` example said the withdrawal window was
+  "finite and bounded by `revalidate`". It is not. `revalidate` is the minimum age
+  at which a page may look for fresh data; the first request after expiry is still
+  answered from the stale cache while regeneration runs behind it, a page nobody
+  requests is never regenerated, and a failed regeneration keeps the previous HTML.
+  The measured 64 s is one path — traffic present, regeneration successful — not a
+  ceiling. Both documents now state plainly that this setup has **no hard takedown
+  guarantee** and that on-demand revalidation from a webhook is the only listed
+  option that reacts to the change rather than to a clock.
+- **API spec: the human approval endpoints were missing.** `POST
+  /api/v1/agent/approvals/:id/decide` and `/reopen` existed in code and in tests
+  but not in `hono-api-spec.md`, which is the document the v1 surface freeze points
+  at. Both are now specified with their capability (`approvals:decide`), status
+  codes, and — for `decide` — the requester ∩ decider rule and the
+  `APPROVAL_PROVENANCE_MISSING` refusal.
+- **MCP: one governed tool contract across both transports (#454, #472).** LumiBase
+  exposes MCP twice — `POST /api/v1/mcp` and the `@lumibase/mcp-server` stdio
+  package — and the two did not agree. The same logical operation was governed on one
+  surface and ungoverned on the other, and the schema advertised to clients did not
+  describe what the server accepted. Six changes, each closing a case that was
+  reproduced first:
+  - **One schema source.** `packages/contracts/src/agent-tools/` holds canonical Zod
+    contracts; the harness validates against them and `tools/list` advertises the
+    JSON Schema derived from the same definitions. Previously every skill without a
+    hand-written schema advertised `{type:'object'}`, so a well-behaved client could
+    send `{}` and be dispatched into a service. `.strict()` means unknown fields are
+    rejected rather than dropped silently.
+  - **Input is validated before any side effect,** and before `ensureRun` — placing
+    the check later would leave a `running` run and tool call behind for input that
+    can never execute. `createItem {}` used to reach
+    `ItemService.create(undefined, …)` and surface a raw
+    `TypeError: Cannot read properties of undefined` as the tool-result message;
+    `deleteItem {}` used to park an approval a human could approve and which could
+    then never succeed. Both now return `denied` with `code: 'VALIDATION'` naming the
+    offending field.
+  - **Writes are gated on the autonomy level, not on the `dangerous` flag.** The trust
+    gradient was reachable only through the dangerous branch, so a plain content write
+    executed at L0 and never asked for approval at L1 — contradicting
+    `AutonomyService`'s own definitions of those levels. L0 now refuses
+    (`code: 'AUTONOMY_SHADOW'`), L1 parks an approval through the same rows and ids a
+    control-plane skill uses, L2+ executes. **No behaviour change without
+    configuration:** the resolver defaults a safe capability to L2, so an install that
+    never configured autonomy is unaffected.
+  - **Capabilities are resolved from RBAC.** `auth.roles` holds a role *id* for a
+    normal user, `[]` for an API key, and the literal `'admin'` only for
+    bootstrap/dev — compared by exact string against `items:write`, the gate was
+    admin-or-nothing, and a site admin holding a real `adminAccess` role was refused
+    outright. Every transport and both queue workers now call one resolver backed by
+    the compiled permission bundle. Queue payloads carry a principal *reference*
+    instead of a capability snapshot, so a revoked key or a demoted user takes effect
+    on work that was already accepted.
+  - **The decision contract states which approval id you hold.** `approvalId` used to
+    collapse two id spaces — `agent_approvals` and the legacy `ai_approvals`, decided
+    at two different endpoints — so a client could hold a valid-looking id and call the
+    wrong route. `approvalSpace`, `agentApprovalId` and `legacyApprovalId` are
+    additive; `approvalId` keeps its meaning.
+  - **stdio routes 27 mutation tools through the harness.** Destructive tools also stop
+    asserting success: 22 call sites used to `await client.delete(...)` and then return
+    a hardcoded "deleted" without reading the response, which reports a deletion that
+    has not happened the moment a call can come back pending. The set of 27 was
+    measured by comparing each tool's advertised properties against the canonical
+    contract, not chosen by name; the remaining mutation tools stay on REST and are
+    **enumerated** with their reason in `UNGOVERNED_MUTATIONS`, with a tripwire that
+    fails when a mutation tool appears in neither table.
+
+  Upgrade notes:
+
+  - **No migration, no backfill, no new CMS environment variable.**
+  - `@lumibase/mcp-server` gains `LUMIBASE_MCP_GOVERNED`: `auto` (default) uses
+    governance when the site has `contentOs.mcp` enabled and otherwise falls back to
+    REST with one stderr warning; `on` refuses instead of falling back — the correct
+    setting for a deployment that requires governance, because a fallback that triggers
+    exactly when governance is unavailable is a bypass of governance; `off` keeps the
+    previous behaviour. The default is `auto` because `contentOs.mcp` also defaults
+    off, and defaulting to `on` would break every existing install on upgrade.
+  - Because only `items:*` and `schema:*` capabilities are derived for non-admins,
+    control-plane skills are admin-only in practice. That is fail-closed by design;
+    granting one to a non-admin means adding a pseudo-resource to the `permissions`
+    table, not loosening the capability check.
+  - Known limitation, stated rather than hidden: an approved action executes with the
+    **decider's** capabilities. The approval tables do not persist a principal
+    reference, so the requester's grant cannot be re-resolved at decision time.
+
+  Full contract: `docs/{en,vi}/mcp/governed-tool-contract.md`.
+
+- **Dependency batch: 27 minor/patch bumps, Vitest 5, Framer Motion 13.** The
+  group bump carries `zod` 4.4→4.6, `next` 16.3.3→16.3.4, `hono` 4.13.5→4.13.7,
+  `wrangler` 4.127→4.129, `bullmq` 6.3.1→6.3.4, `lucide-react` 1.34→1.41 and
+  `@types/node` 26.4.0→26.4.1 among others. Vitest moves to `5.0.0` across all
+  eleven packages that run it, and `apps/landing` to Framer Motion `13.2.0`.
+  Nothing in the public surface changes.
+
+  Two of the four upgrades needed a fix before they were honest, and both were
+  the same shape — a declaration that read correctly while the thing it
+  described did not happen:
+
+  - `pnpm.overrides.@types/react-dom` was an exact pin at `19.2.5` while the
+    bump raised `apps/{docs,landing,studio}` to `^19.2.7`. Overrides apply to
+    direct dependencies too, so the pin won and every lockfile importer still
+    recorded `specifier: 19.2.5` — the manifests claimed a version that was not
+    installed. `pnpm drift:check` caught it, which is the second time that gate
+    has paid for itself (the first was the `vite` 7-vs-8 incident it was built
+    for). The pin now moves with the manifests.
+  - `apps/docs` registered its Testing Library matchers through the bare
+    `@testing-library/jest-dom` entry, which declares them on the global
+    `jest.Matchers` interface. Vitest read that interface up to v4 and stopped
+    in v5, so under `5.0.0` every `toBeInTheDocument` / `toHaveAttribute` /
+    `toHaveClass` lost its type — fifteen `TS2339` errors that failed
+    `typecheck` **and** `build` while the tests themselves kept passing at
+    runtime. It now imports `@testing-library/jest-dom/vitest`, which is what
+    `apps/studio` already did; that difference is the whole reason only one of
+    the two apps broke.
+
+  Framer Motion 13's only breaking change is dropping `@emotion/is-prop-valid`
+  as an optional dependency, and this workspace has no CSS-in-JS at all, so it
+  could not apply. Because `apps/landing` has no component tests, that was
+  verified in a real browser rather than inferred: the page renders with 96
+  elements carrying Framer Motion's inline transform/opacity styles, no console
+  errors and no uncaught exceptions, against a 12.43 baseline of 95 on the same
+  1053-element tree.
+
+- **`baseUrl` removed from the `apps/docs` and `apps/studio` tsconfigs.** Both
+  set it to `"."`, so dropping it changes nothing today: `paths` without
+  `baseUrl` resolve relative to the tsconfig, which is the same directory, and
+  Vite resolves `@/*` from its own `resolve.alias` regardless. TypeScript 7
+  removed the option outright (`TS5102`), so this is groundwork rather than a
+  fix — verified on 5.9.3 to keep `typecheck`, `build` and `lint` green.
+
+  TypeScript 7 itself is **not** adopted. Its native compiler works here — the
+  full workspace typechecks 18/18, and in 8.5s against 2m9s on 5.9.3 — but 7.0
+  ships without the programmatic compiler API, and two tools the build depends
+  on refuse to run: `typescript-eslint` throws `does not support TS 7.0` at
+  require time, failing lint for `apps/{landing,consumer}`, and `tsup --dts`
+  crashes inside `rollup-plugin-dts` reading `ts.sys.useCaseSensitiveFileNames`,
+  which breaks the build of all six published packages including the
+  semver-frozen `@lumibase/sdk` types. Tracked as `B63` in the out-of-scope
+  backlog, pending the stable API in 7.1.
+
+- **Onboarding docs now describe one story with three entry points, and the
+  commands in them are the ones that exist.** `docs/{en,vi}/getting-started.md`
+  opens with a decision table — a website with a CMS behind it, a starter app
+  you own, the platform on its own, or no scaffold at all when you only need to
+  read from a CMS that already runs — and says plainly that `lumibase` is a
+  **runtime** dependency (`npm install lumibase`), not a `-D` dev tool, because
+  the same package carries both the client you import and the CLI. The
+  `nextjs` template that shipped with the scaffolder is documented for the
+  first time: it was already the preselected choice in the prompt while every
+  doc still listed only `default` and `cloudflare`, described the starter as
+  having no Studio, and printed `--template <default|cloudflare>`. The real
+  first-run sequence (`cms:up` → `cms:bootstrap` → `cms:seed` → `dev`, then
+  `cms:verify`) replaces commands that never applied to it. The same
+  correction lands on the surfaces people actually read first — the npm page
+  for `create-lumibase`, the root `README.md` quick start, and both
+  `docs/{en,vi}/README.md` — and `getting-started` now cross-links the CLI, the
+  SDK and the Next.js quickstart in both locales.
+
+### Fixed
+
+- **Docs navigation no longer points at pages that do not exist.** The sidebar
+  resolves each configured slug and drops the ones it cannot find *silently*,
+  so a typo or an unwritten page cost a nav entry with no error and a green
+  build: six entries were dead on `main` (three `architecture/*`, `api/openapi`
+  and both `guides/*`, which left the whole **Guides** category rendering
+  empty), and `tutorials/index` had been dead since the loader started
+  collapsing `index.md` onto its parent slug. The navbar was not even filtered,
+  because its targets are hrefs rather than slugs — `/docs/api` was a plain
+  **404** on `docs.lumibase.dev` and `/docs/tutorials/index` survived only via
+  a Cloudflare 308. Every target now resolves, and `pnpm docs:nav:check`
+  (`scripts/check-docs-nav.mjs`, wired into `check:all`, so it runs in CI and
+  in the pre-commit hook) fails the build when a sidebar item, a whole
+  category, or a navbar/footer `/docs/…` link no longer has a page behind it.
+  The pages that were declared but never written are tracked as `B68`.
+
+- **The database commands printed all over the docs did not exist.**
+  `packages/database` defines `migrate` / `generate` / `studio`; the `db:`
+  prefix belongs to the **root** scripts only, so every
+  `pnpm -F @lumibase/database db:migrate` in the docs failed with *"None of the
+  selected packages has a db:migrate script"* — and `db:reset` was never a
+  script anywhere. It appeared 22 times across twelve doc files and
+  `AGENTS.md`, including **step 5 of Local Development** and **step 1 of the
+  Next.js quickstart**, which is the first command a new user runs. `CLAUDE.md`
+  had carried a warning that the form is invalid the whole time. All of them now
+  call the root scripts (`pnpm db:migrate`, `pnpm db:generate`,
+  `pnpm db:studio`); tracked as `B69`, whose remaining half is that nothing
+  verifies the commands inside a docs code fence.
+
+- **Local Development described services the compose file does not run.** Step 4
+  and the service table listed **Logto** on `:3001`; `docker/docker-compose.yml`
+  has no Logto service — `:3001` is Bull Board, and MinIO and imgproxy were
+  missing from the table entirely. The port-conflict section told readers to
+  override `STUDIO_PORT`, which nothing reads: Studio's dev port is hardcoded as
+  `server.port: 2026` in `apps/studio/vite.config.ts`, so the fix is to pass
+  `--port` to Vite. `pnpm -F @lumibase/cms wrangler:dev`, also gone — the `dev`
+  script already runs under Wrangler. This closes part (b) of `B47`; the
+  production-override SSL trap in part (c) is still open.
+
+- **A DB integration suite pointed at a database that is not there no longer
+  reports as passing.** All 20 `*.db.integration.test.ts` suites gated
+  themselves with `if (!canConnect) return;` — and an early return is a
+  *passing* test, so a run against a closed port produced `20 passed / 76
+  passed / exit 0`, byte-for-byte indistinguishable from a real run. It had
+  already misled: three consecutive "3/3 pass" runs during earlier work had
+  executed nothing after the session's Postgres died. The two situations now
+  differ in outcome, because they differ in intent: `DATABASE_URL` absent means
+  nobody asked for DB tests, so the suite reports **skipped**; `DATABASE_URL`
+  set but unreachable means someone asked and did not get them, so the suite
+  **fails** loudly. A source-scan tripwire keeps the old shape from returning.
+  Contributor-facing only — no runtime code changed.
+- **Approving an agent action now executes it, exactly once.** Approving used to
+  record a decision without running the stored action, and the decision path
+  read-then-acted, so two concurrent approvals could both pass the read and
+  both execute. Deciding is now `claim → execute → finalize`: a conditional
+  update moves the row to `deciding` so exactly one decision executes, and only
+  a completed execution records `approved`.
+- **A failure that may already have taken effect is no longer re-offered as
+  ordinary work.** If a skill touched a service and then failed, returning the
+  approval to `pending` invited a second side effect. Those approvals now land
+  in `failed` — quarantined, out of the inbox, re-runnable only through
+  `POST /api/v1/agent/approvals/:id/reopen` with a stated reason. The
+  transition and its `approval.reopened` audit record commit together, since
+  the record of who authorized a possible second execution is part of the
+  authorization.
+- **A crashed execution no longer strands the approval, invisibly.** A process
+  dying mid-execution (OOM kill, Worker eviction, a deploy rolling the pod)
+  left the row in `deciding` forever, and because the inbox filters on pending
+  it also stopped being visible — stuck *and* invisible. A 15-minute sweep now
+  quarantines abandoned claims into `failed` (not `pending`: a crash says "no
+  decision was recorded", never "nothing happened") together with an
+  `approval.claim_quarantined` activity record explaining what to verify.
+  Elapsed time is not treated as evidence the abandoned work stopped — a JS
+  timeout rejects a promise without cancelling the handler behind it.
+- **Every side-effecting skill is covered, not just the injected ones.** The
+  touch tracker proxied the six injected services but missed three the harness
+  builds itself (deployments, cdc-feed, content-versions) and `runFlow`, which
+  writes straight through `db` — so a `triggerDeployment` could fire at an
+  external provider, fail afterwards, and still be sent back to `pending` for a
+  second deploy.
+- **The Studio surfaces the recovery.** The Approvals tab now says how many
+  approvals were interrupted, shows the reason recorded for each, and offers
+  **Reopen** on exactly those rows, requiring the reason that is stored as the
+  authorization to retry.
+
+### Security
+
+- **Inbound deployment webhooks now require a real provider signature.** The
+  `POST /api/v1/deployments/webhook/:provider` receiver verifies HMAC/JWS over
+  the raw request bytes using Web Crypto (so the same code runs on Workers and
+  Node): **Vercel** HMAC-SHA1 hex in `x-vercel-signature`, **Netlify** a compact
+  JWS/HS256 in `x-webhook-signature`. Comparison is constant-time and folds the
+  length difference into the result, so a malformed or wrong-length signature
+  returns `401 INVALID_SIGNATURE` rather than raising a `500`. The shared secret
+  is read from the per-site setting `deployment.webhook.<provider>` (value
+  `{ "secret": "…" }`) — never from a request header — and an unconfigured
+  secret fails closed.
+  For Netlify, verifying the signature was not sufficient on its own: the body
+  is not part of a JWS signing input, so an authentic JWS captured from one
+  notification could authenticate a **different** body. The payload must now
+  also bind to the bytes on the wire — its `sha256` claim is compared against
+  the digest of the raw body (a payload that is itself the raw body is also
+  accepted, since that binds too). Rejected requests write nothing, so a forged
+  webhook can no longer move a deployment's status.
+  Response shapes are unchanged; status still converges through the 30s poller
+  if webhooks are not configured at all.
+
+  **Upgrade note.** This is a behaviour change for anyone who relied on the
+  earlier presence-only guard, which accepted a request as long as *some*
+  signature header was present. Configure the provider's webhook secret under
+  the per-site setting `deployment.webhook.<provider>` and use the same value in
+  the Vercel/Netlify notification config; until you do, inbound webhooks are
+  rejected with `401` (deployment status keeps syncing via the poller, so
+  nothing breaks silently).
+
+- **Bumped `nodemailer` to `9.1.1` and the tree-wide `js-yaml` override to
+  `^4.3.2`**, clearing the two high-severity advisories that began failing the
+  dependency-audit gate. Both are denial-of-service issues reachable from
+  attacker-shaped input: [GHSA-2x7j-588g-ccc2](https://github.com/advisories/GHSA-2x7j-588g-ccc2)
+  (quadratic time in nodemailer's `addressparser` on a crafted address list)
+  and [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh)
+  (`maxTotalMergeKeys` failing to bound CPU for empty YAML merge sources,
+  reached via `gray-matter` in `apps/docs`). Both fixes stay inside the current
+  major, so no API surface changes; the `gray-matter` patch still applies,
+  since js-yaml 4.3.2 keeps the `load`/`dump` API it targets.
+
+### Added
+
+- **`npm create lumibase --template nextjs` scaffolds a working website, not a
+  starting point.** The two existing templates give you a server to build on;
+  this one gives you a site that already works: a Next.js front end, a CMS with
+  Studio in one container, a `posts` collection with real fields, and seeded
+  content you can edit and publish. The point of #332 was to make that loop
+  provable end to end, so the generated project ships `cms:bootstrap`,
+  `cms:seed` and `cms:verify` and all three are re-runnable.
+
+  The browser never holds an admin credential, and two independent things keep
+  that true. It gets a *publishable* key (`lbk_pub_…`), origin-locked and bound
+  to one site, while the admin token stays in a variable with no `NEXT_PUBLIC_`
+  prefix so Next.js cannot inline it. And the public read grant carries
+  `publishedOnly`, which matters more than it sounds: `GET /api/v1/items`
+  applies no published-only filter of its own, so a grant without it would serve
+  drafts to every visitor. The seed deliberately leaves one post unpublished so
+  `cms:verify` has a real draft to fail on, and it checks the list, the item by
+  its own id, an explicit `status=draft` query, a write attempt, and — given a
+  second site id — cross-tenant isolation.
+
+  A refusal only counts when the server actually refused. An earlier version
+  treated any failed request as proof of a working guard, so an HTTP 500 read as
+  "denied" and a broken server produced a green run; it now requires 401/403
+  (plus 404 where hiding a row *is* the refusal) and a well-formed response
+  envelope, and reports checks it could not run as skipped rather than passed.
+
+  The CMS image is pinned by digest rather than tag, because no semver tag
+  contains Studio yet — the commit adding it postdates the last release build —
+  and `edge`, which does, is rebuilt on every push to main. Every published port
+  binds `127.0.0.1`: the stack ships development secrets, and the setup-token
+  gate is deliberately left off because enabling it locks an instance out
+  ([#470](https://github.com/khuepm/LumiBase/issues/470)).
+
+  `lumibase init --template nextjs` resolves the scaffolder from the registry,
+  so it reaches this template only after `create-lumibase` is published again.
+
+- **Deploy triggers are now rate-limited per target.** `POST /api/v1/deployments/targets/:id/deploy`
+  was gated on "site admin" and "target is active" — who may trigger, never how
+  often — so anything holding admin credentials (a script, a stuck flow, an
+  agent loop) could keep starting provider-billed builds until the tenant's
+  Vercel/Netlify account throttled or its build minutes were gone. A two-tier
+  fixed window now caps each target at 5 triggers / 60 s and 30 / 3600 s,
+  keyed on `siteId` **and** target id so no two targets share a budget and no
+  site can spend another's. Over the limit the request is rejected with `429`
+  `{ "errors": [{ "code": "RATE_LIMITED", "retryAfterSeconds": n }] }` plus
+  `Retry-After`; no `deployments` row is written and the attempt is audited as
+  `deployment.trigger.rate_limited`.
+  The check sits after the coalescing branch and before the outbound provider
+  call, so budget is spent only by triggers that actually reach the provider —
+  a coalesced flow deploy costs nothing. It applies to every trigger source
+  rather than manual ones alone: the cap protects the tenant's provider account
+  regardless of who asked, and flow auto-deploys already stay far below it via
+  `coalesceWindowMs`. It runs on the runtime rate limiter (Redis `INCR` on
+  Docker, cache/isolate on Workers) and **fails open** when that limiter is
+  unreachable, since a limiter outage must not take deploys down.
+
+- **The Docker image now serves the Studio.** Until this release no shipped
+  artifact contained it: neither compose file referenced the Studio, the image
+  copied only `apps/cms/dist`, and the CMS served no HTML — so a self-hoster
+  following the docs reached `GET /setup` and got a `404`, while
+  `docs/en/deployment/overview.md` claimed Docker served the Studio from the
+  same origin. That sentence is now true rather than deleted.
+
+  Where it answers: `/setup` and `/<adminPath>/…` return the SPA shell,
+  `/assets/*` and `/sw.js` return the build output, and `/`, `/admin`, `/studio`
+  and every other path still return the indistinguishable `404`. The Hide-Login
+  guarantee (admin-setup-wizard Req 5.1/5.6) is unchanged: an admin path that
+  differs by one character still 404s, and the bundle refuses to embed the admin
+  path at build time. The Property 7 indistinguishability test was re-run and
+  passes. What the change concedes is narrow — someone holding a valid
+  content-hashed filename can tell a Studio is hosted on the origin, but not
+  where the login is.
+
+  Two optional variables: `LUMIBASE_STUDIO_DIST` overrides the bundle location
+  (default `./studio`), and `LUMIBASE_SERVE_STUDIO=false` runs API-only. Turn it
+  off when the Studio is also on Pages in front of this CMS, because two copies
+  can drift to different versions. A missing bundle degrades to API-only with a
+  log line, which is the previous behaviour; a *misconfigured*
+  `LUMIBASE_STUDIO_DIST` warns loudly rather than degrading silently.
+
+  Cloudflare is unaffected — Workers has no filesystem, so the Studio stays a
+  Pages deployment there, and `serve-studio` is imported only by `serve.ts` so
+  `@hono/node-server/serve-static` cannot reach the Workers bundle.
+
+  Two notes for anyone extending this. Serving the SPA needs a catch-all, and a
+  naive one also answers `/api/v1/nonexistent` with `index.html` and a `200`;
+  mounting order does not prevent it, because Hono returns control to the
+  catch-all after `app.route('/api/v1', api)` matches without finalizing. An
+  explicit reserved-prefix list is the guard, and it is tested. Separately, a
+  missing file under `/assets/` returns `404` rather than the shell — a
+  deliberate divergence from Cloudflare Pages, which answers `200` with HTML and
+  hands the browser markup where it expected JavaScript. That divergence found a
+  real bug on its first run: `index.html` references a `favicon.svg` that does
+  not exist in the repository, which Pages has been masking with a `200`.
 
 - Root `.env.example`. The file was already anticipated — `.gitignore` carried
   `!.env.example` — but never existed, so both the README and
@@ -47,12 +997,32 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   platform, with a table pointing at the CMS image and the client packages, and
   explains why the starter listens on `8787` rather than `1989`; `lumibase`
   states that it is the client for a CMS you already run.
+- Updated the README's platform path to match the shipped Docker experience:
+  the CMS image builds and serves the Studio SPA, including first-run setup,
+  while Cloudflare deployments continue to host the Studio separately.
 - The landing page's `SoftwareApplication` JSON-LD reads `softwareVersion` from
   `apps/landing/package.json` instead of a hardcoded string, so it tracks
   `pnpm version:sync` rather than drifting at the next bump.
 
 - Removed page-level horizontal scrolling caused by full-bleed landing scenes,
   preserving vertical sticky scenes and scrolling inside code panels.
+- **EN/VI documentation parity is now enforced on the pairs a PR changes.** The
+  parity check already ran on pull requests but was report-only (`|| true`), so
+  nothing stopped the backlog from growing. Enforcing it repo-wide is not an
+  option either — 48 of 148 pairs still fail, mostly legacy machine-translated
+  ones — so the gate is scoped to what the PR actually touched: a contributor
+  answers for the pairs they edited, and the inherited backlog is retired on
+  its own schedule.
+  The changed-file list deliberately **includes deletions and renames**.
+  Excluding them left a hole wide enough to bypass the gate entirely: a PR
+  deleting only `docs/vi/x.md` orphaned the EN side, supplied no changed doc,
+  and the gate exited 0. A pair is now checked whenever either locale appears
+  in the diff — one surviving locale fails, both locales deleted passes, since
+  retiring a doc in both languages is legitimate and must not need an override.
+  Relative Markdown links compare their file path while allowing translated
+  heading fragments, and in-page link counts still catch omitted references.
+  Contributor-facing only; no runtime code changed.
+
 - Redesigned the landing footer with a flower video, oversized LumiBase wordmark,
   responsive navigation, reduced-motion support, and an explicit video pause control.
 - Extended the footer's Literata heading typography across the landing site while
@@ -291,6 +1261,48 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   up recovery codes deliberately still requires a real TOTP code, since new
   codes for an unusable enrollment would only extend the outage. Runbook:
   `docs/en/operations/encryption-keys.md`.
+- **Cloudflare Worker deploys were rejected outright, and no gate noticed.**
+  Every deploy since BullMQ 6 landed failed with
+  `Uncaught Error: Could not determine sql-loader directory path` (Cloudflare
+  validation error 10021). `packages/runtime`'s barrel re-exported the Docker
+  adapters, `createRuntime` (which statically imports both), and a leader lock
+  that value-imports `ioredis` — so the Worker bundle contained `bullmq`, whose
+  new Postgres `sql-loader` resolves its own directory at **module top level**
+  and throws where there is no `__dirname` and no `file:///` stack frame. The
+  Worker therefore threw before serving anything.
+
+  It stayed invisible because `pnpm build` runs `wrangler deploy --dry-run`,
+  which bundles **without instantiating**, so no CI job ever booted the Worker.
+  `deploy-cms.yml` (dev/staging) had failed on every push since 2026-08-30 —
+  six days, run 33953796948 being the last of them. Production is owned by
+  `release.yml` and only runs on tags, so it had not broken yet, but it would
+  have at the next release, `v1.0.0` included.
+
+  Fixed by splitting the entry points: `@lumibase/runtime` is now
+  Cloudflare-safe, with the Docker adapters behind `@lumibase/runtime/docker` and
+  `createRuntime` plus the leader lock behind `@lumibase/runtime/node`. A dynamic
+  import is still a static edge for the bundler (measured — the Docker tree was
+  still inlined), so `wrangler.toml` additionally aliases the Docker subpath to a
+  stub that throws a descriptive error if that unreachable branch ever runs.
+  The Worker upload drops from **8848.98 KiB to 6085.28 KiB** — the former is
+  the figure in the last failing deploy log, the latter this build — with no
+  trace of `bullmq`, `ioredis`, `@aws-sdk/client-s3` or the `sql-loader` string
+  in any of the three environments. Closes #459; tracked as `B40`.
+- **New `worker-bundle` CI job so this class cannot pass `build` again.**
+  `pnpm verify:worker-bundle` asserts the Worker bundle's composition across all
+  three environments, and `pnpm verify:worker-startup` boots the Worker under
+  workerd. Note which one is load-bearing: the bundle assertion is the real
+  fence and was negative-tested (re-adding the Docker re-export turns it red).
+  The startup probe demonstrably does **not** catch this particular bug — with
+  the Docker adapters back in the bundle, `wrangler dev` still booted and served
+  `/health`, because BullMQ's stack-scanning fallback finds a `file:///` frame
+  locally and none in a deployed Worker. It is kept for eagerly-thrown top-level
+  errors, not as evidence that a deploy will succeed.
+- **Docker mode built two runtimes per process.** `serve.ts` injected its runtime
+  with a second middleware registered *after* `withRuntime`, which had already
+  constructed one — two Redis connections and two pg pools per process, one
+  discarded on the first request. It now registers a factory via
+  `setRuntimeFactory`, so there is exactly one.
 - **`perf-k6.yml` was an invalid workflow file, failing on every push for
   weeks.** Its `on:` never declared `push` at all — the failures were not the
   load-test job running and breaking. The `perf-gate` job's `if:` referenced
@@ -3448,4 +4460,3 @@ Initial tagged release.
 [0.2.1]: https://github.com/khuepm/lumibase/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/khuepm/lumibase/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/khuepm/lumibase/releases/tag/v0.1.0
-

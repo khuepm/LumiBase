@@ -1,0 +1,46 @@
+{
+  "passed": true,
+  "evidence": [
+    {
+      "step": "created",
+      "id": "uoeEd-wPLARigpeEPSCL7",
+      "status": "draft"
+    },
+    {
+      "step": "draft-hidden",
+      "passed": true
+    },
+    {
+      "step": "submit-review",
+      "result": {
+        "review": {
+          "id": "2a9Xf1MwHxK8qSJP5E8Jq",
+          "siteId": "__default__",
+          "itemId": "uoeEd-wPLARigpeEPSCL7",
+          "revisionId": "N686xQH4kmhN5RAfK3Kxw",
+          "requestedBy": "lvi6bCGjOW6bhztmgB84L",
+          "assignedTo": null,
+          "status": "pending",
+          "reason": null,
+          "decidedBy": null,
+          "decidedAt": null,
+          "createdAt": "2026-09-26T10:05:14.909Z"
+        },
+        "editorialState": "in_review"
+      }
+    },
+    {
+      "step": "approve",
+      "result": {
+        "editorialState": "approved",
+        "reviewId": "2a9Xf1MwHxK8qSJP5E8Jq"
+      }
+    },
+    {
+      "step": "published-frontend-read",
+      "passed": true,
+      "title": "RC2 reviewed publication 1790417109365",
+      "adminTokenAbsentFromHtmlAndStatic": true
+    }
+  ]
+}

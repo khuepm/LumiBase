@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { SignJWT } from 'jose';
 import { WebSocket } from 'ws';
-import { InProcessRealtimeHub } from '@lumibase/runtime';
+import { InProcessRealtimeHub } from '@lumibase/runtime/docker';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { attachNodeRealtime } from '../node-hub';
 

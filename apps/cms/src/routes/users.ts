@@ -153,14 +153,20 @@ usersRouter.get('/:id', async (c) => {
 // Invite user
 const inviteSchema = z.object({
   email: z.string().email(),
-  roleId: z.string().optional(),
+  // An empty string is not "no role": it was stored verbatim as the site
+  // membership's role id, leaving a member whose role resolves to nothing.
+  // Omit the field to invite without a role.
+  roleId: z.string().min(1).optional(),
 });
 
 usersRouter.post('/invite', async (c) => {
   const siteId = c.get('siteId');
   const db = c.get('db');
-  const body = await c.req.json();
-  const input = inviteSchema.parse(body);
+  const parsed = inviteSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message, path: i.path })) }, 400);
+  }
+  const input = parsed.data;
 
   // Check if user exists globally by email
   let [existingUser] = await db.select().from(users).where(eq(users.email, input.email)).limit(1);

@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { and, asc, eq, like, sql } from 'drizzle-orm';
-import { auditLog, collections, createDb, fields, items, roles, sites, userSites, users, type Database } from '@lumibase/database';
+import { and, asc, eq, like } from 'drizzle-orm';
+import { auditLog, collections, fields, items, roles, sites, userSites, users, type Database } from '@lumibase/database';
 import type { AppEnv } from '../../env';
 import { ItemService } from '../../services/item-service';
 import { ReleaseService, sweepDueReleases } from '../../services/release-service';
 import { releasesRouter } from '../releases';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
  * Route-level audit tests for Content Releases (task 8.2 — Req 12.1-12.4):
@@ -17,14 +18,12 @@ import { releasesRouter } from '../releases';
  * **Validates: Requirements 12.1, 12.2, 12.3, 12.4**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_rel_audit_it';
 const ADMIN = 'usr_rel_audit_admin';
 const ADMIN_EMAIL = 'rel-audit-admin@x.dev';
 
-describe('releases route — publish audit (DB integration)', () => {
+describe.skipIf(!hasDbIntegrationUrl)('releases route — publish audit (DB integration)', () => {
   let db: Database;
-  let canConnect = false;
 
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
@@ -38,27 +37,16 @@ describe('releases route — publish audit (DB integration)', () => {
   app.route('/api/v1/releases', releasesRouter);
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping releases-route audit DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping releases-route audit DB test: database not reachable.');
-    }
+    db = await connectDbIntegration('releases-route-audit');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
     await db.delete(users).where(eq(users.id, ADMIN)).catch(() => undefined);
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
     await db.delete(auditLog).where(eq(auditLog.siteId, SITE));
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.insert(sites).values({ id: SITE, name: 'Release Audit IT' });
@@ -105,7 +93,6 @@ describe('releases route — publish audit (DB integration)', () => {
   }
 
   it('manual success → release_published with counts-only metadata (Req 12.1, 12.4)', async () => {
-    if (!canConnect) return;
     const svc = new ReleaseService({ db, siteId: SITE });
     const release = await svc.create({ name: 'OK' });
     const a = await makeItem('articles', 'A');
@@ -124,7 +111,6 @@ describe('releases route — publish audit (DB integration)', () => {
   });
 
   it('manual partial (best_effort, editorial gate) → release_partially_published (Req 12.2)', async () => {
-    if (!canConnect) return;
     const svc = new ReleaseService({ db, siteId: SITE });
     const release = await svc.create({ name: 'Mixed', atomicityMode: 'best_effort' });
     const ok = await makeItem('gated', 'Approved');
@@ -149,7 +135,6 @@ describe('releases route — publish audit (DB integration)', () => {
   });
 
   it('manual failed (all_or_nothing, deleted item blocks preflight) → release_publish_failed (Req 12.3)', async () => {
-    if (!canConnect) return;
     const svc = new ReleaseService({ db, siteId: SITE });
     const release = await svc.create({ name: 'Blocked', atomicityMode: 'all_or_nothing' });
     const a = await makeItem('articles', 'A');
@@ -166,7 +151,6 @@ describe('releases route — publish audit (DB integration)', () => {
   });
 
   it('scheduled success via sweep → release_published with trigger scheduled (Req 12.1)', async () => {
-    if (!canConnect) return;
     const svc = new ReleaseService({ db, siteId: SITE });
     // create() rejects a past publishAt, so schedule in the future and run
     // the sweep with a `now` beyond it.

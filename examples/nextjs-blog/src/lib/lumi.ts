@@ -1,4 +1,4 @@
-import { createLumiClient, graphql } from '@lumibase/sdk';
+import { createLumiClient, legacyRest, type ItemRow } from 'lumibase';
 
 const url = process.env.LUMIBASE_URL || 'http://127.0.0.1:1989';
 const token = process.env.LUMIBASE_TOKEN || '';
@@ -10,22 +10,33 @@ if (!token || !siteId) {
   );
 }
 
-// 1. Initialize the client and attach the GraphQL composable plugin.
-//    `.with(graphql())` adds `query()` / `mutate()` that hit POST /api/v1/graphql.
-export const lumi = createLumiClient({
+// Content fields of the `posts` collection, exactly as declared in Studio.
+// A schema maps a collection name to its *data* shape only — structural
+// columns (id, status, createdAt, …) are added by `ItemRow` below.
+export interface PostFields {
+  title: string;
+  body: string;
+  author: string;
+  [key: string]: unknown;
+}
+
+// `DefaultSchema` is an index-signature type, so the schema is written as a
+// type alias with one entry per collection you read.
+export type Schema = {
+  posts: PostFields;
+};
+
+/** A `posts` row as the REST API returns it: fields live under `.data`. */
+export type Post = ItemRow<PostFields>;
+
+// The client is created once and reused. `legacyRest()` adds the typed
+// resource helpers (`.items('posts').list()` / `.detail(id)`) over
+// `GET /api/v1/items/posts`.
+//
+// This module is imported only from Server Components, so the token never
+// reaches the browser bundle. Keep it out of `NEXT_PUBLIC_*`.
+export const lumi = createLumiClient<Schema>({
   url,
   token,
   siteId,
-}).with(graphql());
-
-// 2. Shape of a `posts` item as exposed by the per-tenant GraphQL schema.
-//    Content fields (`title`, `content`, `author`) keep their declared names;
-//    structural columns are surfaced as camelCase (`createdAt`, not `created_at`).
-export interface Post {
-  id: string;
-  title: string;
-  content: string;
-  author: string;
-  status: 'draft' | 'published';
-  createdAt: string;
-}
+}).with(legacyRest());

@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
-import { collections, createDb, fields, items, relations, sites, type Database } from '@lumibase/database';
+import { collections, fields, items, relations, sites, type Database } from '@lumibase/database';
 import { ItemService } from '../item-service';
 import { DependentsService } from '../dependents-service';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
  * DB-backed tests for the FK dependent-records handler (Req 1, 4, 5, 6, 7).
@@ -11,36 +12,23 @@ import { DependentsService } from '../dependents-service';
  * **Validates: Requirements 1, 4 (restrict blocks), 5 (set_null), 6 (delete), 7 (reassign)**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_deps_it';
 
-describe('DependentsService — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('DependentsService — DB integration', () => {
   let db: Database;
-  let canConnect = false;
   let articlesId = '';
   let commentsId = '';
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping dependents DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping dependents DB test: database not reachable.');
-    }
+    db = await connectDbIntegration('dependents-service');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.insert(sites).values({ id: SITE, name: 'Deps IT' });
     articlesId = (await db.insert(collections).values({ siteId: SITE, name: 'articles', label: 'Articles' }).returning({ id: collections.id }))[0]!.id;
@@ -76,7 +64,6 @@ describe('DependentsService — DB integration', () => {
   }
 
   it('finds reverse dependents with the right count + onDelete (Req 1)', async () => {
-    if (!canConnect) return;
     await relation('restrict');
     const { articleId } = await seedArticleWithComments(3);
     const svc = new DependentsService({ db, siteId: SITE });
@@ -87,7 +74,6 @@ describe('DependentsService — DB integration', () => {
   });
 
   it('does not block when the relation is set null (Req 4)', async () => {
-    if (!canConnect) return;
     await relation('set null');
     const { articleId } = await seedArticleWithComments(2);
     const svc = new DependentsService({ db, siteId: SITE });
@@ -95,7 +81,6 @@ describe('DependentsService — DB integration', () => {
   });
 
   it('set_null clears the reference on every dependent (Req 5)', async () => {
-    if (!canConnect) return;
     await relation('restrict');
     const { articleId } = await seedArticleWithComments(2);
     const svc = new DependentsService({ db, siteId: SITE });
@@ -106,7 +91,6 @@ describe('DependentsService — DB integration', () => {
   });
 
   it('reassign points dependents at a new target (Req 7)', async () => {
-    if (!canConnect) return;
     await relation('restrict');
     const { articleId } = await seedArticleWithComments(2);
     const item = new ItemService({ db, siteId: SITE });
@@ -120,7 +104,6 @@ describe('DependentsService — DB integration', () => {
   });
 
   it('reassign rejects a missing/self target (Req 7.2)', async () => {
-    if (!canConnect) return;
     await relation('restrict');
     const { articleId } = await seedArticleWithComments(1);
     const svc = new DependentsService({ db, siteId: SITE });
@@ -129,7 +112,6 @@ describe('DependentsService — DB integration', () => {
   });
 
   it('delete soft-deletes every dependent (Req 6)', async () => {
-    if (!canConnect) return;
     await relation('restrict');
     const { articleId, commentIds } = await seedArticleWithComments(2);
     const svc = new DependentsService({ db, siteId: SITE });
@@ -143,7 +125,6 @@ describe('DependentsService — DB integration', () => {
   });
 
   it('does not count dependents from another site (tenant isolation, Req 1)', async () => {
-    if (!canConnect) return;
     await relation('restrict');
     const { articleId } = await seedArticleWithComments(2);
 
@@ -174,7 +155,6 @@ describe('DependentsService — DB integration', () => {
   });
 
   it('set_null is rejected when the field is required (Req 5.3)', async () => {
-    if (!canConnect) return;
     await relation('restrict');
     await db.update(fields).set({ required: true }).where(sql`${fields.collectionId} = ${commentsId} and ${fields.name} = 'article'`);
     const { articleId } = await seedArticleWithComments(1);

@@ -38,13 +38,46 @@ export interface LLMToolCall {
   arguments: Record<string, unknown>;
 }
 
+/**
+ * Token counts reported by the upstream. Each field is `null` when that count
+ * was not reported; the whole object is absent when neither was.
+ */
+export interface LLMUsage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+}
+
 export interface LLMResponse {
   content: string | null;
   toolCalls: LLMToolCall[];
+  /** Omitted (not zero) when the provider response carries no usage. */
+  usage?: LLMUsage;
+}
+
+export interface LLMChatOptions {
+  /** Override the Copilot instructions for a specialized caller. */
+  systemPrompt?: string;
+  /** Defaults to true for Copilot callers. */
+  tools?: boolean;
+  /** Aborts the upstream HTTP request (deadline or caller cancellation). */
+  signal?: AbortSignal;
+}
+
+function readCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/**
+ * Reads each count independently so a partially reported usage keeps the
+ * known field; returns undefined only when neither count is usable.
+ */
+function readUsage(input: unknown, output: unknown): LLMUsage | undefined {
+  const usage = { inputTokens: readCount(input), outputTokens: readCount(output) };
+  return usage.inputTokens === null && usage.outputTokens === null ? undefined : usage;
 }
 
 export interface LLMProvider {
-  chat(messages: LLMMessage[]): Promise<LLMResponse>;
+  chat(messages: LLMMessage[], options?: LLMChatOptions): Promise<LLMResponse>;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +167,7 @@ interface GeminiGenerateContentResponse {
       }>;
     };
   }>;
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
 }
 
 /**
@@ -141,7 +175,10 @@ interface GeminiGenerateContentResponse {
  * and Vertex AI: system instruction, mapped turns, and CORE_SKILLS exposed as
  * function declarations with automatic function-calling.
  */
-function buildGeminiRequestBody(messages: LLMMessage[]): Record<string, unknown> {
+function buildGeminiRequestBody(
+  messages: LLMMessage[],
+  options: LLMChatOptions = {},
+): Record<string, unknown> {
   const contents = messages.map((message) => ({
     role: message.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: message.content }],
@@ -149,19 +186,15 @@ function buildGeminiRequestBody(messages: LLMMessage[]): Record<string, unknown>
 
   return {
     systemInstruction: {
-      parts: [{ text: SYSTEM_PROMPT }],
+      parts: [{ text: options.systemPrompt ?? SYSTEM_PROMPT }],
     },
     contents,
-    tools: [
-      {
-        functionDeclarations: skillsToGeminiFunctionDeclarations(),
-      },
-    ],
-    toolConfig: {
-      functionCallingConfig: {
-        mode: 'AUTO',
-      },
-    },
+    ...(options.tools === false
+      ? {}
+      : {
+          tools: [{ functionDeclarations: skillsToGeminiFunctionDeclarations() }],
+          toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+        }),
     generationConfig: {
       maxOutputTokens: 1024,
     },
@@ -186,7 +219,8 @@ function parseGeminiResponse(data: GeminiGenerateContentResponse): LLMResponse {
       arguments: call.args ?? {},
     }));
 
-  return { content, toolCalls };
+  const usage = readUsage(data.usageMetadata?.promptTokenCount, data.usageMetadata?.candidatesTokenCount);
+  return { content, toolCalls, ...(usage ? { usage } : {}) };
 }
 
 // ---------------------------------------------------------------------------
@@ -213,12 +247,11 @@ export class OpenAIProvider implements LLMProvider {
     this.label = label;
   }
 
-  async chat(messages: LLMMessage[]): Promise<LLMResponse> {
+  async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
     const body = {
       model: this.model,
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
-      tools: skillsToOpenAITools(),
-      tool_choice: 'auto',
+      messages: [{ role: 'system', content: options.systemPrompt ?? SYSTEM_PROMPT }, ...messages],
+      ...(options.tools === false ? {} : { tools: skillsToOpenAITools(), tool_choice: 'auto' }),
       max_tokens: 1024,
     };
 
@@ -229,6 +262,7 @@ export class OpenAIProvider implements LLMProvider {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(body),
+      signal: options.signal,
     });
 
     if (!res.ok) {
@@ -237,6 +271,7 @@ export class OpenAIProvider implements LLMProvider {
     }
 
     const data = (await res.json()) as {
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
       choices: Array<{
         message: {
           content?: string | null;
@@ -254,9 +289,11 @@ export class OpenAIProvider implements LLMProvider {
         arguments: JSON.parse(tc.function.arguments) as Record<string, unknown>,
       })) ?? [];
 
+    const usage = readUsage(data.usage?.prompt_tokens, data.usage?.completion_tokens);
     return {
       content: choice?.content ?? null,
       toolCalls,
+      ...(usage ? { usage } : {}),
     };
   }
 }
@@ -300,7 +337,7 @@ export class AnthropicProvider implements LLMProvider {
     this.model = model;
   }
 
-  async chat(messages: LLMMessage[]): Promise<LLMResponse> {
+  async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
     // Anthropic separates system from messages
     const userMessages = messages.map((m) => ({
       role: m.role === 'system' ? ('user' as const) : m.role,
@@ -309,9 +346,9 @@ export class AnthropicProvider implements LLMProvider {
 
     const body = {
       model: this.model,
-      system: SYSTEM_PROMPT,
+      system: options.systemPrompt ?? SYSTEM_PROMPT,
       messages: userMessages,
-      tools: skillsToAnthropicTools(),
+      ...(options.tools === false ? {} : { tools: skillsToAnthropicTools() }),
       max_tokens: 1024,
     };
 
@@ -323,6 +360,7 @@ export class AnthropicProvider implements LLMProvider {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(body),
+      signal: options.signal,
     });
 
     if (!res.ok) {
@@ -331,6 +369,7 @@ export class AnthropicProvider implements LLMProvider {
     }
 
     const data = (await res.json()) as {
+      usage?: { input_tokens?: number; output_tokens?: number };
       content: Array<
         | { type: 'text'; text: string }
         | { type: 'tool_use'; name: string; input: Record<string, unknown> }
@@ -348,7 +387,8 @@ export class AnthropicProvider implements LLMProvider {
       }
     }
 
-    return { content, toolCalls };
+    const usage = readUsage(data.usage?.input_tokens, data.usage?.output_tokens);
+    return { content, toolCalls, ...(usage ? { usage } : {}) };
   }
 }
 
@@ -365,8 +405,8 @@ export class GeminiProvider implements LLMProvider {
     this.model = normalizeGeminiModel(model);
   }
 
-  async chat(messages: LLMMessage[]): Promise<LLMResponse> {
-    const body = buildGeminiRequestBody(messages);
+  async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
+    const body = buildGeminiRequestBody(messages, options);
 
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
@@ -377,6 +417,7 @@ export class GeminiProvider implements LLMProvider {
           'x-goog-api-key': this.apiKey,
         },
         body: JSON.stringify(body),
+        signal: options.signal,
       },
     );
 
@@ -415,20 +456,15 @@ export class VertexProvider implements LLMProvider {
   private readonly location: string;
   private readonly model: string;
 
-  constructor(opts: {
-    accessToken: string;
-    projectId: string;
-    location?: string;
-    model?: string;
-  }) {
+  constructor(opts: { accessToken: string; projectId: string; location?: string; model?: string }) {
     this.accessToken = opts.accessToken;
     this.projectId = opts.projectId;
     this.location = opts.location || 'us-central1';
     this.model = normalizeGeminiModel(opts.model ?? 'gemini-3.5-flash');
   }
 
-  async chat(messages: LLMMessage[]): Promise<LLMResponse> {
-    const body = buildGeminiRequestBody(messages);
+  async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
+    const body = buildGeminiRequestBody(messages, options);
 
     const url =
       `https://${this.location}-aiplatform.googleapis.com/v1/projects/` +
@@ -442,6 +478,7 @@ export class VertexProvider implements LLMProvider {
         Authorization: `Bearer ${this.accessToken}`,
       },
       body: JSON.stringify(body),
+      signal: options.signal,
     });
 
     if (!res.ok) {
@@ -464,20 +501,21 @@ export class WorkersAIProvider implements LLMProvider {
   private readonly model: string;
   private readonly gatewayUrl?: string;
 
-  constructor(opts: {
-    accountId: string;
-    apiToken: string;
-    model?: string;
-    gatewayUrl?: string;
-  }) {
+  constructor(opts: { accountId: string; apiToken: string; model?: string; gatewayUrl?: string }) {
     this.accountId = opts.accountId;
     this.apiToken = opts.apiToken;
     this.model = opts.model ?? '@cf/meta/llama-3.1-8b-instruct';
     this.gatewayUrl = opts.gatewayUrl;
   }
 
-  async chat(messages: LLMMessage[]): Promise<LLMResponse> {
-    const allMessages = [{ role: 'system' as const, content: SYSTEM_PROMPT }, ...messages];
+  async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
+    const allMessages = [
+      {
+        role: 'system' as const,
+        content: options.systemPrompt ?? SYSTEM_PROMPT,
+      },
+      ...messages,
+    ];
 
     // Workers AI tool calling: pass tools in the request body
     const tools = skillsToOpenAITools(); // Workers AI uses OpenAI-compatible format
@@ -492,7 +530,11 @@ export class WorkersAIProvider implements LLMProvider {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.apiToken}`,
       },
-      body: JSON.stringify({ messages: allMessages, tools }),
+      body: JSON.stringify({
+        messages: allMessages,
+        ...(options.tools === false ? {} : { tools }),
+      }),
+      signal: options.signal,
     });
 
     if (!res.ok) {
@@ -503,6 +545,7 @@ export class WorkersAIProvider implements LLMProvider {
     const data = (await res.json()) as {
       result?: {
         response?: string;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
         tool_calls?: Array<{
           name: string;
           arguments: Record<string, unknown> | string;
@@ -519,9 +562,12 @@ export class WorkersAIProvider implements LLMProvider {
             : tc.arguments,
       })) ?? [];
 
+    // Not every Workers AI model reports usage; when absent it stays unknown.
+    const usage = readUsage(data.result?.usage?.prompt_tokens, data.result?.usage?.completion_tokens);
     return {
       content: data.result?.response ?? null,
       toolCalls,
+      ...(usage ? { usage } : {}),
     };
   }
 }

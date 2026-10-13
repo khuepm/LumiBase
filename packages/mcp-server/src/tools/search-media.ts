@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { LumiBaseClient } from '../client.js';
-import { buildQs, confirmDescription, okText, run } from './_shared.js';
+import { buildQs, confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodeMediaKey, mediaKeySchema } from './path.js';
 
 export function registerSearchMediaTools(server: McpServer, client: LumiBaseClient) {
@@ -51,8 +51,8 @@ export function registerSearchMediaTools(server: McpServer, client: LumiBaseClie
     },
     async ({ key }) =>
       run(async () => {
-        await client.delete(`/media/${encodeMediaKey(key)}`);
-        return okText(`Media asset "${key}" deleted.`);
+        const response = await client.delete(`/media/${encodeMediaKey(key)}`);
+        return okAfter(response, `Media asset "${key}" deleted.`);
       }),
   );
 

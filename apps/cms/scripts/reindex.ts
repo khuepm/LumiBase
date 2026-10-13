@@ -23,7 +23,9 @@ export {};
 
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { and, eq, isNull } from 'drizzle-orm';
-import { createRuntime } from '@lumibase/runtime';
+// Node CLI — `createRuntime` lives behind the `/node` subpath so it stays out
+// of the Cloudflare Worker bundle. See `packages/runtime/src/index.ts`.
+import { createRuntime } from '@lumibase/runtime/node';
 import {
   searchIndexName,
   defaultIndexSettings,

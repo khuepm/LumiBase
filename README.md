@@ -87,15 +87,24 @@ lumibase/
 
 Three different things get called "installing LumiBase". Pick the one you actually want.
 
-### 1. A starter app to build on
-
-Scaffolds a minimal **Hono + Drizzle** project with a demo `posts` resource — LumiBase conventions, not the platform. No Studio, no Collections API.
+### 1. A new project of your own
 
 ```bash
-npm create lumibase@latest my-project
+npm create lumibase@next my-project
 ```
 
-Guide: [`docs/en/getting-started.md`](./docs/en/getting-started.md) · package: [`create-lumibase`](https://www.npmjs.com/package/create-lumibase)
+> **Use `@next` during the 1.0 release candidates.** npm's `latest` tag still
+> points at the 0.x scaffolder, which has no Next.js template and pins no CMS.
+> `@next` is the current release candidate. The commands move back to `@latest`
+> when 1.0.0 ships.
+
+The first prompt picks the template, and the preselected one — `nextjs` — is the fastest path to something real: a **Next.js website plus the actual CMS and Studio** in Docker, a `posts` collection, seeded content, and a publishable key the browser can safely hold. `npm run cms:verify` then proves that key cannot read drafts or write.
+
+The other two templates, `--template default` and `--template cloudflare`, scaffold a minimal **Hono + Drizzle** app with a demo `posts` resource — LumiBase conventions, no Studio, no Collections API. (The template *named* `default` is not the default choice.)
+
+Already have a CMS and only need to read from it? Skip the scaffold and install the client as a runtime dependency: `npm install lumibase`.
+
+Guide: [`docs/en/getting-started.md`](./docs/en/getting-started.md) · packages: [`create-lumibase`](https://www.npmjs.com/package/create-lumibase) · [`lumibase`](https://www.npmjs.com/package/lumibase)
 
 ### 2. The full Content OS platform
 
@@ -104,15 +113,18 @@ Brings up the CMS plus everything it needs — PostgreSQL, Redis, MinIO, MeiliSe
 ```bash
 git clone https://github.com/khuepm/lumibase.git && cd lumibase
 docker compose -f docker/docker-compose.yml up -d
+curl http://localhost:1989/health
 ```
 
-Then open <http://localhost:1989/setup> to create the first admin. For a real deployment use the published image (`ghcr.io/khuepm/lumibase-cms`) with the production override and your own secrets — that path has decisions this one skips (TLS to the database, `ENCRYPTION_KEY`, CORS origins):
+That gives you the **API** on `:1989`. The development compose image mounts source for hot reload rather than building, so it has no Studio bundle and runs API-only — pair it with `pnpm studio:dev` (option 3), or use the published image below, which ships the Studio.
 
 ```bash
-cp docker/.env.example docker/.env      # JWT_SECRET, DATABASE_URL, DATABASE_SSL_MODE…
-LUMIBASE_VERSION=1.0.0-rc.1 docker compose \
+cp docker/.env.example docker/.env      # set JWT_SECRET; DATABASE_SSL_MODE=disable for the bundled Postgres
+LUMIBASE_VERSION=1.0.0-rc.4 docker compose \
   -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
+
+The image serves the Studio from the same origin as the API, so there is no second deployment and no CORS entry to configure. Open <http://localhost:1989/setup> to create the first admin; afterwards the Studio lives under the admin path that setup chose. `/`, `/admin` and `/studio` deliberately return an indistinguishable `404` — the login location is not meant to be discoverable. Set `LUMIBASE_SERVE_STUDIO=false` to run API-only when you host the Studio separately. Details: [Deployment overview](./docs/en/deployment/overview.md#studio-api-connectivity) · [Deployment checklist](./docs/en/DEPLOYMENT-CHECKLIST.md)
 
 Runbook: [Deployment overview](./docs/en/deployment/overview.md) · [Deployment checklist](./docs/en/DEPLOYMENT-CHECKLIST.md)
 
@@ -143,12 +155,12 @@ Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is 
 
 Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
 
-Current release: `v1.0.0-rc.1` (`2026-09-03`) — **first release candidate for the stable 1.0 contract**. Introduces the unified [`lumibase`](https://www.npmjs.com/package/lumibase) package (JS/TS client + the `lumibase` CLI: `types`, `doctor`, `init`) while [`@lumibase/sdk`](https://www.npmjs.com/package/@lumibase/sdk) and [`create-lumibase`](https://www.npmjs.com/package/create-lumibase) keep working unchanged. Follows the `0.26.0` migration path; no new migrations.
+Current release: `v1.0.0-rc.4` (`2026-09-29`) — **fourth release candidate for the stable 1.0 contract**. A new `create-lumibase` Next.js starter now pins the `lumibase` client and the CMS image to its own version, invited users and Administrators can use Studio, and the item editor saves long-form text correctly. Includes the unified [`lumibase`](https://www.npmjs.com/package/lumibase) package (JS/TS client + the `lumibase` CLI: `types`, `doctor`, `init`) while [`@lumibase/sdk`](https://www.npmjs.com/package/@lumibase/sdk) and [`create-lumibase`](https://www.npmjs.com/package/create-lumibase) keep working unchanged. No new migrations since rc.3; see the [changelog](CHANGELOG.md).
 
 Every release before this one is summarised in [`CHANGELOG.md`](./CHANGELOG.md), including the **`v0.5.0` Content OS foundation** — intents/SLOs, control-loop reconciliation, the L0–L4 trust ledger, the veto window, the four-scope kill switch, the tenant constitution, provenance-first revisions, the multi-agent newsroom, and Studio Mission Control. That foundation remains the baseline every later release builds upon, not replaces.
 
 ```bash
-LUMIBASE_VERSION=1.0.0-rc.1 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+LUMIBASE_VERSION=1.0.0-rc.4 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
 See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.

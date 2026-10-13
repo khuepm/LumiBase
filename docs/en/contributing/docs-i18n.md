@@ -1,11 +1,11 @@
 ---
 title: Docs i18n Sync
 sourceLang: en
-version: 3
-lastUpdated: 2026-08-02T17:29:27.319Z
-contentHash: fe0bd18530a46592
-codeVerified: 2026-08-02T17:29:27.319Z
-codeVerifiedHash: fe0bd18530a46592
+version: 5
+lastUpdated: 2026-09-10T18:46:03.939Z
+contentHash: de2580e713420bb0
+codeVerified: 2026-09-08T21:06:29.319Z
+codeVerifiedHash: dec76e7ef1afaebb
 codeVerifiedClaims: 10
 ---
 
@@ -101,9 +101,12 @@ has drifted — a target still in the source language, dropped sections, transla
 identifiers, broken link targets, a truncated tail. Stamping is what makes a pair
 read "up-to-date" everywhere else, so it is the last point at which a bad
 translation can be stopped, and there is no reviewer standing after it. Use
-`--allow-structure-drift` only for a deliberate divergence, and prefer a
-`<!-- check-parity: allow <check> -->` waiver in the doc so the reason lives next
-to it. `--verified` likewise refuses while any code claim is stale, and refuses
+`--allow-structure-drift` only for a deliberate divergence. It automatically writes
+a `<!-- check-parity: allow <check> -->` waiver in the target document for the
+checks actually bypassed, with a timestamp and the command that recorded it.
+Explain the rationale in the commit message. Re-stamping does not duplicate the
+waiver; unrelated check categories still block. No waiver is written if verification
+fails. `--verified` likewise refuses while any code claim is stale, and refuses
 when a doc makes no testable claim at all — "nothing to check" is not a pass, so
 such a file is stamped without the marker and needs a human read.
 
@@ -128,10 +131,17 @@ Without an API key, `--apply` exits `2` and points you at `docs:i18n:detect` /
 `.github/workflows/docs-i18n-sync.yml` runs on changes under `docs/**` or
 `scripts/docs-i18n/**`:
 
-- **Pull requests:** detect + code-reference + parity checks, all report-only.
-  Uploads the reports as artifacts; writes nothing. Report-only because the
-  existing corpus still carries findings — the gate that bites today is
-  `stamp-pair.mjs`, which no new translation can get past unchecked.
+- **Pull requests:** detect + code-reference + parity checks, then an
+  **enforcing gate scoped to the pairs this PR changed**. The repo-wide parity
+  run stays report-only — the inherited backlog still fails and blocking PRs
+  that never touched it would punish the wrong person — but a pair you edited
+  must be consistent, or the check fails. Reports are uploaded as artifacts
+  before the gate runs, so a failing run still leaves them attached.
+  The gate reads the changed-file list **including deletions and renames**: a
+  pair with one surviving locale fails (that is the orphan case), and a pair
+  deleted in both locales passes, since retiring a doc is legitimate. Together
+  with `stamp-pair.mjs`, which no new translation gets past unchecked, that is
+  two gates rather than one advisory report.
 - **Push to `main`:** preservation + version stamps, committed back. It does
   **not** translate, and the outstanding-pair count is echoed into the job
   summary so the backlog stays visible.

@@ -1,7 +1,14 @@
 import { serve } from '@hono/node-server';
 import type { Server as HttpServer } from 'node:http';
-import { createRuntime, getSharedRealtimeHub, leaderLockedCallback } from '@lumibase/runtime';
+// Node-only entry: `@lumibase/runtime/node` carries `createRuntime` (which
+// branches between adapters) and the ioredis-backed leader lock, and
+// `@lumibase/runtime/docker` the Docker adapters. Neither is exported from the
+// package root, because doing so put them in the Cloudflare Worker bundle and
+// broke Worker startup — see the note atop `packages/runtime/src/index.ts`.
+import { createRuntime, leaderLockedCallback } from '@lumibase/runtime/node';
+import { getSharedRealtimeHub } from '@lumibase/runtime/docker';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import type { Sql } from 'postgres';
 import { schema } from '@lumibase/database';
 import cron, { type ScheduledTask } from 'node-cron';
 import { loadSecretFiles, validateProductionConfig } from './config/production';
@@ -11,6 +18,9 @@ import { bootstrapNodeObservability } from './observability/node';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPressureLimiter } from './pressure-limiter';
 import { startWorkerHealthServer } from './worker-health';
+import { setRuntimeFactory } from './middleware/runtime';
+import { mountStudio } from './serve-studio';
+import { runSetupTokenStartup } from './modules/setup/startup';
 import type { Bindings } from './env';
 
 type ProcessRole = 'web' | 'worker' | 'all';
@@ -52,12 +62,56 @@ async function main() {
   let server: ReturnType<typeof serve> | undefined;
   let workerHealthServer: HttpServer | undefined;
 
+  // Hand the runtime we just built to `withRuntime` (registered inside
+  // `./index`) instead of injecting it with a second middleware. The old
+  // approach layered an override *after* `withRuntime` had already constructed
+  // its own Docker runtime, so every process ended up with two — two Redis
+  // connections, two pg pools — and discarded one on the first request.
+  setRuntimeFactory(() => runtime);
+
+
   if (runHttp) {
-    // Inject runtime into Hono context for all requests.
-    app.use('*', async (c, next) => {
-      c.set('runtime', runtime);
-      await next();
+    // ── Setup token (admin-setup-wizard Req 2.6; #470) ─────────────────────
+    //
+    // With LUMIBASE_REQUIRE_SETUP_TOKEN on, `/setup/complete` demands a token,
+    // and this is the only place one is minted and printed. It must finish
+    // before `serve()` so no setup request can reach a process that has not
+    // issued its token yet. Only HTTP processes run it: they serve `/setup`,
+    // and a worker-only process printing the token would put it in logs the
+    // operator is not reading. A DB failure here fails the start on purpose —
+    // see `runSetupTokenStartup`.
+    //
+    // `getConnection()` is typed `unknown` so the runtime package does not
+    // depend on postgres-js; both adapters return a postgres-js `Sql`.
+    await runSetupTokenStartup({
+      db: drizzle(runtime.database.getConnection() as Sql, { schema }),
+      env: process.env,
     });
+
+    // Serve the Studio SPA from this process when its bundle is present. Node
+    // only: Workers has no filesystem, so on Cloudflare the Studio stays a
+    // separate Pages deployment. `serve-studio` is imported nowhere else, which
+    // is what keeps `@hono/node-server/serve-static` out of the Workers bundle
+    // — the same containment `node-cron` relies on.
+    //
+    // Mounted after every route in `index.ts` (already registered at import)
+    // so the API answers for itself; the module's reserved-prefix list is what
+    // stops the SPA catch-all from turning API 404s into HTML.
+    const studio = mountStudio(app, process.env as Record<string, string | undefined>);
+    if (studio.mounted) {
+      console.log(`[lumibase-cms] Serving Studio from ${studio.root}`);
+    } else if (studio.reason === 'disabled') {
+      console.log('[lumibase-cms] Studio disabled via LUMIBASE_SERVE_STUDIO — running API-only');
+    } else if (studio.reason === 'configured-but-missing') {
+      // Loud: someone asked for the Studio and named a path that has no
+      // index.html. Silently running API-only here is how a broken deployment
+      // looks healthy.
+      console.warn(
+        `[lumibase-cms] LUMIBASE_STUDIO_DIST=${studio.root} has no index.html — running API-only`,
+      );
+    } else {
+      console.log('[lumibase-cms] Studio bundle not present — running API-only');
+    }
 
     server = serve({
       fetch: (request, nodeBindings) => {
@@ -100,10 +154,13 @@ async function main() {
   let rotationTask: ScheduledTask | undefined;
   let pageviewFlushTask: ScheduledTask | undefined;
   let vetoSweepTask: ScheduledTask | undefined;
+  let claimSweepTask: ScheduledTask | undefined;
+  let staleRunSweepTask: ScheduledTask | undefined;
   let schedulerTask: ScheduledTask | undefined;
   let retentionTask: ScheduledTask | undefined;
   let deploymentPollTask: ScheduledTask | undefined;
   let flowScheduleTask: ScheduledTask | undefined;
+  let goalDispatchTask: ScheduledTask | undefined;
   let loadGuardTimer: ReturnType<typeof setInterval> | undefined;
 
   if (runWorkers) {
@@ -150,8 +207,8 @@ async function main() {
     leaderLockedCallback(
       'audit-rotation',
       3_300_000,
-      () => {
-        void runScheduledRotation(rotatorDb);
+      async () => {
+        await runScheduledRotation(rotatorDb);
         void runScheduledRefreshTokenPrune(rotatorDb);
       },
       lockOpts,
@@ -166,8 +223,8 @@ async function main() {
     leaderLockedCallback(
       'pageview-flush',
       240_000,
-      () => {
-        void runScheduledPageviewFlush(rotatorDb, runtime);
+      async () => {
+        await runScheduledPageviewFlush(rotatorDb, runtime);
       },
       lockOpts,
     ),
@@ -294,6 +351,7 @@ async function main() {
   // ── Manual flow runs + AI chat async (high-load task 17) ────────────────
   const { registerFlowRunsWorker } = await import('./services/flow-run-service');
   registerFlowRunsWorker({
+    cache: runtime.cache,
     db: rotatorDb,
     queue: runtime.queue,
     keys: runtime.keys,
@@ -321,10 +379,83 @@ async function main() {
     leaderLockedCallback(
       'veto-sweep',
       240_000,
-      () => {
-        void sweepDueVetoCommits(vetoWorkerDeps).catch((err) => {
+      async () => {
+        await sweepDueVetoCommits(vetoWorkerDeps).catch((err) => {
           console.error('[veto-sweep] failed', formatSafeError(err));
         });
+      },
+      lockOpts,
+    ),
+  );
+
+  // ── Abandoned approval claims (#453) ────────────────────────────────────
+  //
+  // Deciding an approval claims the row (`pending → deciding`) so exactly one
+  // decision executes it. Every in-process failure path settles that claim;
+  // what none of them can cover is the process dying mid-execution, which
+  // leaves the row `deciding` — stuck, and invisible to Mission Control's
+  // `status === 'pending'` inbox. This sweep moves claims older than the
+  // staleness window to `failed`, so recovery goes through the same explicit
+  // reopen gate an in-process failure does. Guarded conditional updates, so it
+  // can never interrupt a live execution.
+  const { sweepStaleApprovalClaims } = await import('./services/approval-claim-sweeper');
+  claimSweepTask = cron.schedule(
+    '*/5 * * * *',
+    leaderLockedCallback(
+      'approval-claim-sweep',
+      240_000,
+      async () => {
+        await sweepStaleApprovalClaims({ db: rotatorDb })
+          .then((released) => {
+            for (const claim of released) {
+              console.warn(
+                '[approval-claim-sweep] quarantined abandoned claim',
+                JSON.stringify({
+                  approvalId: claim.approvalId,
+                  siteId: claim.siteId,
+                  heldForMs: claim.heldForMs,
+                }),
+              );
+            }
+          })
+          .catch((err) => {
+            console.error('[approval-claim-sweep] failed', formatSafeError(err));
+          });
+      },
+      lockOpts,
+    ),
+  );
+
+  // ── Abandoned agent run sweep (#481 R3.1) ──────────────────────────────────
+  //
+  // A worker that dies mid-run leaves `agent_runs` on `running`. The queue claim
+  // deliberately refuses to take such a run over — age cannot prove the first
+  // attempt had no side effect, and taking it over wrote the same item twice in a
+  // measured probe — so without this sweep the row would stay `running` forever:
+  // read as in-flight by the dispatcher, absent from the approvals inbox.
+  //
+  // Quarantining moves it to `failed` with `stopReason: 'stale_unverified'`, which
+  // is a state an operator can act on. Guarded conditional updates, so a run that
+  // finishes normally in the meantime is never overwritten.
+  const { sweepStaleRuns } = await import('./services/agent-run-service');
+  staleRunSweepTask = cron.schedule(
+    '*/5 * * * *',
+    leaderLockedCallback(
+      'agent-run-stale-sweep',
+      240_000,
+      async () => {
+        await sweepStaleRuns({ db: rotatorDb })
+          .then((swept) => {
+            for (const run of swept) {
+              console.warn(
+                '[agent-run-stale-sweep] quarantined abandoned run',
+                JSON.stringify({ runId: run.runId, siteId: run.siteId, goalId: run.goalId }),
+              );
+            }
+          })
+          .catch((err) => {
+            console.error('[agent-run-stale-sweep] failed', formatSafeError(err));
+          });
       },
       lockOpts,
     ),
@@ -345,8 +476,8 @@ async function main() {
     leaderLockedCallback(
       'content-scheduler',
       50_000,
-      () => {
-        void runSchedulerTick(schedulerDeps).catch((err) => {
+      async () => {
+        await runSchedulerTick(schedulerDeps).catch((err) => {
           console.error('[content-scheduler] tick failed', formatSafeError(err));
         });
       },
@@ -359,10 +490,54 @@ async function main() {
     leaderLockedCallback(
       'retention-sweep',
       3_300_000,
-      () => {
-        void sweepRetention(schedulerDeps).catch((err) => {
+      async () => {
+        await sweepRetention(schedulerDeps).catch((err) => {
           console.error('[retention-sweep] failed', formatSafeError(err));
         });
+      },
+      lockOpts,
+    ),
+  );
+
+  // ── Reconciler goal dispatch (#455) ─────────────────────────────────────
+  //
+  // The reconciler creates goals; this tick is what turns them into runs. Before
+  // it existed, a reconciler goal was terminal: it was created, the drift flipped
+  // to `assigned` with the goal id, and nothing anywhere executed it — and
+  // because `planReconciliation` skips drifts that already carry a goal, the
+  // unexecutable goal locked that drift out of every later cycle.
+  //
+  // One minute is deliberate: each pass advances a goal by at most one step
+  // (draft → promote → verify), and the promote step waits on a human approval,
+  // so a faster tick would only re-observe the same waiting state. The pass is
+  // leader-locked because two processes dispatching the same goal would create
+  // two runs for one drift.
+  //
+  // The callback is `async` and AWAITS the tick. Every cron callback in this file
+  // used to be `() => { void work(); }`, which returns `undefined` immediately —
+  // so `leaderLockedCallback`'s `await fn()` completed at once and released the
+  // lock while the work was still running. Measured with the real helper and a
+  // fake Redis: `lockReleased=true` while `workDone=false`. The lock therefore
+  // guaranteed nothing, for any of these jobs; `goal-dispatch` is simply the one
+  // where the consequence is two runs for one drift. `serve-cron-await.test.ts`
+  // keeps the shape from coming back.
+  const { runGoalDispatchTick } = await import('./services/goal-dispatch-service');
+  const goalDispatchDeps = { db: rotatorDb, queue: runtime.queue };
+  goalDispatchTask = cron.schedule(
+    '* * * * *',
+    leaderLockedCallback(
+      'goal-dispatch',
+      50_000,
+      async () => {
+        await runGoalDispatchTick(goalDispatchDeps)
+          .then((summary) => {
+            if (summary.dispatched > 0 || summary.blocked > 0 || summary.completed > 0) {
+              console.log('[goal-dispatch] pass', JSON.stringify(summary));
+            }
+          })
+          .catch((err) => {
+            console.error('[goal-dispatch] tick failed', formatSafeError(err));
+          });
       },
       lockOpts,
     ),
@@ -382,8 +557,8 @@ async function main() {
     leaderLockedCallback(
       'deployment-poll',
       25_000,
-      () => {
-        void sweepAllSites(deployPollerDeps).catch((err) => {
+      async () => {
+        await sweepAllSites(deployPollerDeps).catch((err) => {
           console.error('[deployment-poll] sweep failed', formatSafeError(err));
         });
       },
@@ -403,8 +578,8 @@ async function main() {
     leaderLockedCallback(
       'flow-schedule',
       50_000,
-      () => {
-        void runDueScheduledFlows({ db: rotatorDb, queue: runtime.queue }).catch((err) => {
+      async () => {
+        await runDueScheduledFlows({ db: rotatorDb, queue: runtime.queue }).catch((err) => {
           console.error('[flow-schedule] tick failed', formatSafeError(err));
         });
       },
@@ -450,10 +625,13 @@ async function main() {
     rotationTask?.stop();
     pageviewFlushTask?.stop();
     vetoSweepTask?.stop();
+    claimSweepTask?.stop();
+    staleRunSweepTask?.stop();
     schedulerTask?.stop();
     retentionTask?.stop();
     deploymentPollTask?.stop();
     flowScheduleTask?.stop();
+    goalDispatchTask?.stop();
     if (runHttp) {
       pressureLimiter.stop();
     }

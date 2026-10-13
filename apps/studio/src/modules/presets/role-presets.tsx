@@ -17,7 +17,7 @@ async function listAllPresets(): Promise<ViewPreset[]> {
   const res = await fetch('/api/v1/presets', {
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(site ? { 'x-site-id': site } : {}),
+      ...(site ? { 'X-Lumi-Site': site } : {}),
     },
   });
   const body = (await res.json().catch(() => ({}))) as { data?: ViewPreset[] };

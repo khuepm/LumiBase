@@ -4,9 +4,10 @@ import { Check, ChevronDown, ChevronLeft, Copy, Lock, Pin, Save, Share2, Star, T
 import type { SaveAction } from '@lumibase/contracts/schemas';
 import { useSaveAction, saveActionLabel } from './use-save-action';
 import { useEffect, useMemo, useState } from 'react';
-import type { FieldResource, ItemRow, RevisionRow } from '@lumibase/sdk';
+import type { FieldResource, ItemRow, PermissionAction, RevisionRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { jsonEqual } from '@/lib/json-equal';
 import { usePermissions, type PermissionHelpers } from '@/lib/use-permissions';
 import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 import { PresenceStack } from '@/components/presence-chip';
@@ -23,6 +24,8 @@ import { DependentRecordsDialog, type DependentGroup } from './dependent-records
 import { TranslationMode } from './translation-mode';
 import { translatableFields, tmLearnEntries } from './translatable-fields';
 import { useSiteLocales } from './use-site-locales';
+import { ItemCreate } from './item-create';
+import { EditorialActions } from './editorial-actions';
 
 type Tab = 'fields' | 'translation' | 'revisions' | 'versions' | 'raw';
 
@@ -32,7 +35,13 @@ type Tab = 'fields' | 'translation' | 'revisions' | 'versions' | 'raw';
  * around a basic field editor. The full Interface registry lands in slice 3+.
  */
 export function ItemDetailPage() {
-  const { collection, id } = useParams({ from: '/admin-layout/content/$collection/$id' });
+  // Non-strict: rendered by both `/content/...` and `/$adminPath/content/...`.
+  const { collection, id } = useParams({ strict: false }) as { collection: string; id: string };
+  if (id === 'new') return <ItemCreate key={collection} collection={collection} />;
+  return <ItemEditor key={`${collection}/${id}`} collection={collection} id={id} />;
+}
+
+function ItemEditor({ collection, id }: { collection: string; id: string }) {
   const client = getApiClient();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -179,7 +188,7 @@ export function ItemDetailPage() {
 
   const isDirty = useMemo(() => {
     if (!itemQuery.data || draft === null) return false;
-    if (JSON.stringify(draft) !== JSON.stringify(itemQuery.data.data ?? {})) return true;
+    if (!jsonEqual(draft, itemQuery.data.data ?? {})) return true;
     return (
       publishAt !== isoToLocalInput(itemQuery.data.publishAt) ||
       unpublishAt !== isoToLocalInput(itemQuery.data.unpublishAt)
@@ -324,6 +333,12 @@ export function ItemDetailPage() {
         <div className="flex items-center gap-2">
           {/* Avatar stack — other users currently editing this same item */}
           <PresenceStack peers={coEditors} />
+          <EditorialActions
+            collection={collection}
+            item={itemQuery.data}
+            canUpdate={canUpdate}
+            isDirty={isDirty}
+          />
           <button
             type="button"
             onClick={() => setShareOpen(true)}
@@ -736,7 +751,7 @@ function Meta({ label, value }: { label: string; value: string }) {
  * the user sees them but cannot mutate them. Fields without `read` are
  * filtered upstream in `editable`, so they never reach here.
  */
-function FieldsTab({
+export function FieldsTab({
   fields,
   value,
   onChange,
@@ -744,6 +759,7 @@ function FieldsTab({
   perms,
   pinnedFields,
   onReleasePin,
+  writeAction = 'update',
 }: {
   fields: FieldResource[];
   value: Record<string, unknown>;
@@ -754,6 +770,8 @@ function FieldsTab({
   pinnedFields: string[];
   /** Present when the user may release pins; absent renders the badge only. */
   onReleasePin?: (field: string) => void;
+  /** Field permission that makes a cell writable; `create` on the new-item form. */
+  writeAction?: Extract<PermissionAction, 'create' | 'update'>;
 }) {
   if (fields.length === 0) {
     return <p className="text-sm text-muted-foreground">No editable fields.</p>;
@@ -784,7 +802,7 @@ function FieldsTab({
 
     const Interface = resolveInterface(f);
     const cellValue = value?.[f.name];
-    const writable = perms.fieldAllowed(collection, 'update', f.name);
+    const writable = perms.fieldAllowed(collection, writeAction, f.name);
     const pinned = pinnedFields.includes(f.name);
     const setCell = (next: unknown) => {
       if (!writable) return;

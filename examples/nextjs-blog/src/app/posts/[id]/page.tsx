@@ -1,43 +1,33 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { LumiError } from 'lumibase';
 import { lumi, type Post } from '@/lib/lumi';
 
 interface PostPageProps {
-  params: {
-    id: string;
-  };
+  params: Promise<{ id: string }>;
 }
 
-// GraphQL query for a single post by id (`posts_by_id` is generated per tenant).
-const GET_POST = /* GraphQL */ `
-  query GetPost($id: ID!) {
-    posts_by_id(id: $id) {
-      id
-      title
-      content
-      author
-      status
-      createdAt
-    }
-  }
-`;
+// Revalidate on the same cadence as the list page. Without this the route
+// would be cached indefinitely: `generateStaticParams` alone pre-renders each
+// post once at build time and never refreshes it, so edits made in Studio
+// would never reach the detail page.
+export const revalidate = 60;
 
-// Lightweight query used only to collect ids for static generation.
-const LIST_POST_IDS = /* GraphQL */ `
-  query ListPostIds($limit: Int) {
-    posts(status: "published", limit: $limit) {
-      id
-    }
-  }
-`;
+// A post published after the build is not in `generateStaticParams`. Leaving
+// `dynamicParams` at its default (`true`) lets Next render it on demand the
+// first time it is requested, then cache it like the rest.
+export const dynamicParams = true;
 
-// Generate static params for all published posts for static generation (SSG)
+// Pre-render a page per published post. The reader credential cannot see
+// drafts, so this list is exactly the public set.
 export async function generateStaticParams() {
   try {
-    const data = await lumi.query<{ posts: Pick<Post, 'id'>[] }>(LIST_POST_IDS, {
+    const { data } = await lumi.items('posts').list({
+      status: 'published',
+      fields: ['id'],
       limit: 100,
     });
-    return data.posts.map((post) => ({ id: post.id }));
+    return data.map((post) => ({ id: post.id }));
   } catch (err) {
     console.error('Failed to generate static params for posts:', err);
     return [];
@@ -45,20 +35,20 @@ export async function generateStaticParams() {
 }
 
 export default async function PostDetailPage({ params }: PostPageProps) {
-  let post: Post | null = null;
+  const { id } = await params;
+  let post: Post;
 
   try {
-    // Fetch a single post detail via GraphQL
-    const data = await lumi.query<{ posts_by_id: Post | null }>(GET_POST, {
-      id: params.id,
-    });
-    post = data.posts_by_id;
+    // A draft (or unknown id) answers 404 for this credential — the SDK
+    // turns every non-2xx into a `LumiError` carrying the status.
+    const res = await lumi.items('posts').detail(id);
+    post = res.data;
   } catch (err) {
-    // If not found or API error, fall back to 404
-    return notFound();
+    if (err instanceof LumiError && err.status === 404) return notFound();
+    throw err;
   }
 
-  if (!post || post.status !== 'published') {
+  if (post.status !== 'published') {
     return notFound();
   }
 
@@ -69,16 +59,16 @@ export default async function PostDetailPage({ params }: PostPageProps) {
       </Link>
       
       <header style={styles.header}>
-        <h1 style={styles.title}>{post.title}</h1>
+        <h1 style={styles.title}>{post.data.title}</h1>
         <div style={styles.meta}>
-          <span>By <strong>{post.author}</strong></span>
+          <span>By <strong>{post.data.author}</strong></span>
           <span>•</span>
-          <span>{new Date(post.createdAt || Date.now()).toLocaleDateString()}</span>
+          <span>{new Date(post.createdAt).toLocaleDateString()}</span>
         </div>
       </header>
 
       <div style={styles.content}>
-        {post.content.split('\n\n').map((para: string, idx: number) => (
+        {post.data.body.split('\n\n').map((para: string, idx: number) => (
           <p key={idx} style={styles.paragraph}>
             {para}
           </p>

@@ -69,27 +69,30 @@ function makeRun(status: string): RunRow {
 }
 
 describe('Feature: content-os, Requirement 3: run state machine', () => {
-  it('markRunning transitions queued → running', async () => {
+  /**
+   * These two pin the *destination* of each transition. They cannot pin who is
+   * allowed to make it: the stand-in above ignores `where`, so every conditional
+   * UPDATE appears to match.
+   *
+   * That is exactly why the old `markRunning` tests were misleading. They asserted
+   * "refuses cancelled and terminal runs" against a fake that cannot refuse
+   * anything — the real method returned `false` only because it had *read* the row
+   * first, and the same read-then-write let two concurrent deliveries both start
+   * one run (#455 F3). Exclusion is now measured where it actually lives, on
+   * Postgres: `g3-run-claim.db.integration.test.ts`.
+   */
+  it('claimQueuedRun moves a queued run to running', async () => {
     const db = fakeRunsDb(makeRun('queued'));
     const service = new AgentRunService(db, 'site_1');
-    expect(await service.markRunning('run_1')).toBe(true);
+    expect(await service.claimQueuedRun('run_1')).toBe(true);
     expect(db.row()!.status).toBe('running');
   });
 
-  it('markRunning resumes awaiting_approval → running', async () => {
+  it('resumeApprovedRun moves a parked run back to running', async () => {
     const db = fakeRunsDb(makeRun('awaiting_approval'));
     const service = new AgentRunService(db, 'site_1');
-    expect(await service.markRunning('run_1')).toBe(true);
+    expect(await service.resumeApprovedRun('run_1')).toBe(true);
     expect(db.row()!.status).toBe('running');
-  });
-
-  it('markRunning refuses cancelled and terminal runs', async () => {
-    for (const status of ['cancelled', 'succeeded', 'failed']) {
-      const db = fakeRunsDb(makeRun(status));
-      const service = new AgentRunService(db, 'site_1');
-      expect(await service.markRunning('run_1')).toBe(false);
-      expect(db.row()!.status).toBe(status);
-    }
   });
 
   it('awaitApproval parks a run as awaiting_approval', async () => {
@@ -136,14 +139,16 @@ describe('Feature: content-os, Requirement 3.5: worker honours cancellation', ()
     capabilities: ['items:read'],
   };
 
-  it('skips execution when the run was cancelled while queued', async () => {
-    const db = fakeRunsDb(makeRun('cancelled'));
-    // A cancelled run must short-circuit before any service construction —
-    // the fake db would throw on the insert the harness audit path performs.
-    await processAgentRunJob({ db, env: {} }, payload);
-    expect(db.row()!.status).toBe('cancelled');
-  });
-
+  /**
+   * "Cancelled while queued" moved to `g3-run-claim.db.integration.test.ts`.
+   *
+   * It cannot be measured here any more, and arguably never could: the claim is a
+   * conditional UPDATE, and the stand-in above applies every `set` regardless of
+   * `where`, so the fake reports a successful claim for a cancelled run and the
+   * worker proceeds. The old `markRunning` passed this case only because it read
+   * the row first — the same read-then-write that let two deliveries both execute
+   * one run (#455 F3).
+   */
   it('skips execution when the run no longer exists', async () => {
     const db = fakeRunsDb(null);
     await expect(processAgentRunJob({ db, env: {} }, payload)).resolves.toBeUndefined();

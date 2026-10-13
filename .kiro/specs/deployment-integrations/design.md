@@ -119,8 +119,17 @@ export interface DeploymentProvider {
   getStatus(token: string, target: DeploymentTarget, providerDeploymentId: string): Promise<DeploymentRef>;
   /** Lấy build log (cho debug). */
   getLogs(token: string, target: DeploymentTarget, providerDeploymentId: string): Promise<string>;
-  /** Verify chữ ký inbound webhook (Req 7.2). */
-  verifyWebhook(req: { headers: Record<string,string>; rawBody: string }, secret: string): boolean;
+  /**
+   * Verify chữ ký inbound webhook (Req 7.2). **Async** vì dùng WebCrypto
+   * `crypto.subtle` (chạy cả CF Workers + Node, không `node:crypto`):
+   * - Vercel: HMAC-SHA1 hex của raw body ở header `x-vercel-signature`.
+   * - Netlify: JWS compact HS256 ở header `x-webhook-signature`; verify chữ ký
+   *   **và** buộc payload vào body (claim `sha256` = digest của raw body, hoặc
+   *   payload chính là raw body).
+   * So sánh constant-time; secret rỗng / header thiếu / chữ ký sai độ dài /
+   * payload không decode được → `false` (không bao giờ throw).
+   */
+  verifyWebhook(req: { headers: Record<string,string>; rawBody: string }, secret: string): Promise<boolean>;
   /** Parse payload inbound webhook → DeploymentRef. */
   parseWebhook(rawBody: string): DeploymentRef | null;
 }
@@ -214,10 +223,17 @@ khi status=error: poller/refresh đã lưu logExcerpt + errorMessage  [Req 4.2]
 ### 6.7 Inbound webhook (Req 7, optional)
 ```
 POST /api/v1/deployments/webhook/:provider
-  → provider.verifyWebhook(headers, rawBody, secret)   [401 nếu fail, Req 7.2]
+  → rawBody = await c.req.text()                        [verify trên RAW bytes, trước JSON.parse]
+  → secret = settings['deployment.webhook.<provider>'].secret   [per-site, KHÔNG từ header]
+  → await provider.verifyWebhook({ headers, rawBody }, secret)  [401 nếu fail, Req 7.2]
   → provider.parseWebhook → match deployments theo providerDeploymentId
   → conditional UPDATE (idempotent với poller)          [Req 7.3]
 ```
+
+Verify là **HMAC/JWS thật** (WebCrypto), không phải presence guard: chữ ký sai,
+sai độ dài, thiếu header, secret chưa cấu hình, hay body bị sửa sau khi ký đều
+trả `401 INVALID_SIGNATURE` và **không** ghi gì vào DB. Không có nhánh nào biến
+input do client kiểm soát thành `500` (class lỗi backlog B12).
 
 ## 7. API surface
 

@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { type LumiBaseClient, LumiBaseApiError } from '../client.js';
 import { collectionNameSchema, encodePathSegment, fieldNameSchema } from './path.js';
+import { okAfter } from './_shared.js';
 
 const collectionInputSchema = z.object({
   name: collectionNameSchema,
@@ -136,8 +137,8 @@ export function registerCollectionTools(server: McpServer, client: LumiBaseClien
     },
     async ({ name, confirm: _ }) => {
       try {
-        await client.delete(`/collections/${encodePathSegment(name)}`);
-        return { content: [{ type: 'text', text: `Collection "${name}" deleted.` }] };
+        const response = await client.delete(`/collections/${encodePathSegment(name)}`);
+        return okAfter(response, `Collection "${name}" deleted.`);
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${formatError(err)}` }], isError: true };
       }

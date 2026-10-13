@@ -1,11 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:13:16.483Z
+version: 3
+lastUpdated: 2026-09-21T05:44:47.343Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 58eee638b9682bbc
+sourceHash: 043f68875437c868
 mtEngine: manual
 syncStatus: human-translated
+codeVerified: 2026-09-21T05:44:47.343Z
+codeVerifiedHash: 043f68875437c868
+codeVerifiedClaims: 2
 ---
 
 # Claude Code — LumiBase Agent Setup
@@ -130,7 +133,7 @@ to the items table, following the site_id multi-tenancy pattern.
 
 **Claude không tìm thấy docs**: Đảm bảo bạn đang chạy `claude` từ thư mục gốc dự án, hoặc cung cấp đường dẫn tuyệt đối.
 
-**Lỗi type sau khi thay đổi schema**: Chạy `pnpm -F @lumibase/database db:generate` để regenerate các type Drizzle.
+**Lỗi type sau khi thay đổi schema**: Chạy `pnpm db:generate` để regenerate các type Drizzle.
 
 **CMS API không khởi động được**: Kiểm tra `apps/cms/.dev.vars` và đảm bảo mọi env var bắt buộc đã được đặt (xem `docs/en/deployment/environment-variables.md`).
 

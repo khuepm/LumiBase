@@ -1,13 +1,25 @@
 import { aiApprovals, aiConversations, aiMessages } from '@lumibase/database';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
+import type { UnofficialStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
 import { AISecureHarness } from '../services/ai-harness';
+import { AccessService } from '../services/access-service';
+import { ConfigService } from '../services/config-service';
+import { ExtensionsService } from '../services/extensions-service';
+import { approvalRequesterFromAuth, principalRefFromAuth, resolveRequestCapabilities } from '../services/governed-capabilities';
+import { IntentService } from '../services/intent-service';
 import { SchemaService } from '../services/schema-service';
-import { itemServiceForRequest } from '../services/item-service-factory';
+import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
 import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
+import {
+  createDecisionProvider,
+  DecisionProviderError,
+  type DecisionErrorCode,
+  type DecisionProviderEnv,
+} from '../services/decision-provider';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPendingRun, FLOW_RUNS_QUEUE } from '../services/flow-run-service';
 
@@ -28,6 +40,47 @@ export const decideSchema = z.object({
   decision: z.enum(['approved', 'rejected']),
 });
 
+const decisionPayloadSchema = z.union([
+  z.string().min(1).max(20_000),
+  z.record(z.string(), z.unknown()),
+  z.array(z.unknown()),
+]);
+
+const decisionQuestionSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('noul'),
+    instructions: decisionPayloadSchema,
+    criteria: z.object({ true: decisionPayloadSchema, false: decisionPayloadSchema }),
+  }),
+  z.object({
+    type: z.literal('choice'),
+    instructions: decisionPayloadSchema,
+    criteria: z
+      .record(z.string().min(1).max(128), decisionPayloadSchema.nullable())
+      .refine((options) => {
+        const count = Object.keys(options).length;
+        return count >= 2 && count <= 255;
+      }, 'A choice question needs 2-255 options'),
+  }),
+  z.object({
+    type: z.literal('score'),
+    instructions: decisionPayloadSchema,
+    criteria: z.array(decisionPayloadSchema).min(2).max(10),
+  }),
+]);
+
+export const decisionRequestSchema = z.object({
+  // Size is bounded on the whole request (state + questions) by the provider's
+  // input budget, so an oversized payload fails with 413 before any fetch.
+  state: decisionPayloadSchema,
+  questions: z
+    .record(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'Invalid question key'), decisionQuestionSchema)
+    .refine((questions) => {
+      const count = Object.keys(questions).length;
+      return count >= 1 && count <= 32;
+    }, 'Provide 1-32 questions'),
+});
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -41,15 +94,73 @@ const MAX_CONTEXT_MESSAGES = 20;
 
 export const aiRouter = new Hono<AppEnv>();
 
-function getUserCapabilities(c: Context<AppEnv>): string[] {
-  const auth = c.get('auth');
-  return Array.isArray(auth.roles) ? auth.roles : [];
+/**
+ * Capabilities for the current principal, resolved from the live RBAC bundle
+ * (#472).
+ *
+ * This used to return `auth.roles` — a role *id* for a normal user, `[]` for an
+ * API key, and the literal `'admin'` only for bootstrap/dev. Compared by exact
+ * string against `items:write` and friends, that made the harness
+ * admin-or-nothing on every transport. Now the same model REST uses decides.
+ */
+async function getUserCapabilities(c: Context<AppEnv>): Promise<string[]> {
+  return (await resolveRequestCapabilities(c)).capabilities;
 }
 
-function requireAdmin(c: Context<AppEnv>) {
-  const roles = getUserCapabilities(c);
+/**
+ * Builds a harness with every governed service wired, for the paths that
+ * actually execute an approved action.
+ *
+ * Approval decisions are the one place where an unwired dependency is
+ * indistinguishable from a completed side effect, so the decision paths must
+ * not construct a partially-wired harness. Previously `/ai/approvals/:id/decide`
+ * omitted access/intent/config/extensions while `routes/mcp.ts` wired them —
+ * so an approved `access:*`/`intents:*`/`config:*`/`extensions:*` skill (all
+ * forced dangerous, hence all park for approval) resolved with its service
+ * absent. Both decision routes now share this builder.
+ */
+export function buildAuthorizedHarness(c: Context<AppEnv>): AISecureHarness {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const auth = c.get('auth');
+  const runtime = c.get('runtime');
+  const llm = createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>);
 
-  if (!roles.includes('admin')) {
+  return new AISecureHarness({
+    db,
+    siteId,
+    schemaService: new SchemaService({ db, siteId, cache: runtime.cache }),
+    // Request-scoped so an executed skill enforces the same row/field RBAC the
+    // caller's own token would.
+    itemService: itemServiceForRequest(c),
+    accessService: new AccessService({ db, siteId, userId: auth.userId ?? null, cache: runtime.cache }),
+    intentService: new IntentService({ db, siteId, userId: auth.userId ?? null, llm }),
+    configService: new ConfigService({ db, siteId }),
+    extensionsService: new ExtensionsService({
+      db, siteId, userId: auth.userId ?? null, cache: runtime.cache, env: c.env,
+      permissionCtx: buildRequestPermissionContext({ auth, siteId, headers: c.req.header(), ip: c.get('ip') ?? null }),
+    }),
+    llm,
+    queue: runtime.queue,
+    notify: buildAgentNotifier(c),
+    // An approved `triggerDeployment` executes here — without the KeyProvider
+    // the approval would resolve into a configuration error.
+    keys: runtime.keys,
+    cache: runtime.cache,
+  });
+}
+
+/**
+ * Admin gate for the legacy approval surface.
+ *
+ * Now asks the resolver rather than looking for the literal role string
+ * `'admin'`, which only a bootstrap or dev principal ever carried — a site admin
+ * holding a real `adminAccess` role was rejected here.
+ */
+async function requireAdmin(c: Context<AppEnv>) {
+  const grant = await resolveRequestCapabilities(c);
+
+  if (!grant.controlPlaneAdmin) {
     return c.json(
       {
         errors: [
@@ -147,7 +258,7 @@ aiRouter.post('/chat', async (c) => {
       content: message,
     });
 
-    const userCapabilities = getUserCapabilities(c);
+    const userCapabilities = await getUserCapabilities(c);
 
     // Async path: enqueue LLM + harness on worker; HITL still surfaces via poll.
     if (prefersAsyncResponse(c) && runtime.queue) {
@@ -162,7 +273,9 @@ aiRouter.post('/chat', async (c) => {
         runId: run.id,
         conversationId,
         message,
-        userCapabilities,
+        // Principal reference, not a capability snapshot (#472) — the worker
+        // re-resolves the grant when it picks the job up.
+        principal: principalRefFromAuth(auth, siteId),
         userId,
       });
       return c.json(
@@ -248,12 +361,23 @@ aiRouter.post('/chat', async (c) => {
       notify: buildAgentNotifier(c),
       // Enables the deployment skills, which decrypt target tokens.
       keys: runtime.keys,
+      cache: runtime.cache,
+      extensionsService: new ExtensionsService({
+        db, siteId, userId: auth.userId ?? null, cache: runtime.cache, env: c.env,
+        permissionCtx: buildRequestPermissionContext({ auth, siteId, headers: c.req.header(), ip: c.get('ip') ?? null }),
+      }),
     });
     const result = await harness.execute(
       toolCall.name,
       toolCall.arguments,
       userCapabilities,
       message,
+      {
+        // Provenance for anything this call parks (#472). A capability snapshot
+        // would go stale while the approval waits; a reference is re-resolved at
+        // the moment a human approves.
+        requestedByPrincipal: approvalRequesterFromAuth(c.get('auth'), siteId),
+      },
     );
 
     const responseMessage =
@@ -391,6 +515,88 @@ aiRouter.delete('/conversations/:id', async (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// Decision routes (TypeSafe Jev / equivalent)
+// ---------------------------------------------------------------------------
+
+/** Upstream failures map to gateway-style statuses; the provider key is ours, not the caller's. */
+const DECISION_ERROR_STATUS: Record<DecisionErrorCode, 413 | 422 | 429 | 502 | 503 | 504 | UnofficialStatusCode> = {
+  DECISION_AUTH: 502,
+  DECISION_VALIDATION: 422,
+  DECISION_RATE_LIMITED: 429,
+  DECISION_UNAVAILABLE: 503,
+  DECISION_UPSTREAM: 502,
+  DECISION_PARSE_FAILED: 502,
+  DECISION_TIMEOUT: 504,
+  // Client closed the request; nginx convention. Hono needs the unofficial cast.
+  DECISION_CANCELLED: 499 as UnofficialStatusCode,
+  DECISION_INPUT_TOO_LARGE: 413,
+};
+
+const DECISION_ERROR_MESSAGE: Record<DecisionErrorCode, string> = {
+  DECISION_AUTH: 'The decision provider rejected the configured credentials.',
+  DECISION_VALIDATION: 'The decision provider rejected the request.',
+  DECISION_RATE_LIMITED: 'The decision provider rate limit was exceeded. Retry later.',
+  DECISION_UNAVAILABLE: 'The decision provider is temporarily unavailable. Retry later.',
+  DECISION_UPSTREAM: 'The decision provider returned an error.',
+  DECISION_PARSE_FAILED: 'The decision provider returned an unusable answer.',
+  DECISION_TIMEOUT: 'The decision did not complete within its deadline.',
+  DECISION_CANCELLED: 'The decision request was cancelled.',
+  DECISION_INPUT_TOO_LARGE: 'The decision input exceeds the configured size or token budget.',
+};
+
+/**
+ * POST /decisions
+ * Asks the configured decision model (DECISION_PROVIDER) typed questions
+ * about `state`. Read-only: no content is written, so no HITL approval.
+ */
+aiRouter.post('/decisions', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = decisionRequestSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return c.json(
+      {
+        errors: parsed.error.issues.map((issue) => ({
+          code: 'VALIDATION',
+          message: issue.message,
+          path: issue.path.map(String),
+        })),
+      },
+      400,
+    );
+  }
+
+  const configured = createDecisionProvider(c.env as unknown as DecisionProviderEnv);
+  if (!configured) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'DECISION_NOT_CONFIGURED',
+            message: 'Set DECISION_PROVIDER (typesafe | openrouter | llm) and its credentials.',
+          },
+        ],
+      },
+      503,
+    );
+  }
+
+  try {
+    // Client disconnect aborts the upstream call and suppresses retries.
+    const data = await configured.provider.decide(parsed.data, { signal: c.req.raw.signal });
+    return c.json({ data });
+  } catch (err) {
+    console.error('[ai/decisions] provider error', formatSafeError(err));
+    if (err instanceof DecisionProviderError) {
+      // The budget message carries only sizes, never content, so it is safe to return.
+      const message = err.code === 'DECISION_INPUT_TOO_LARGE' ? err.message : DECISION_ERROR_MESSAGE[err.code];
+      return c.json({ errors: [{ code: err.code, message }] }, DECISION_ERROR_STATUS[err.code]);
+    }
+    return c.json({ errors: [{ code: 'INTERNAL', message: 'Decision request failed.' }] }, 500);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Approval routes
 // ---------------------------------------------------------------------------
 
@@ -399,12 +605,12 @@ aiRouter.delete('/conversations/:id', async (c) => {
  * Returns pending approval records for the current site, sorted by createdAt DESC, max 100.
  */
 aiRouter.get('/approvals', async (c) => {
-  const forbidden = requireAdmin(c);
+  const forbidden = await requireAdmin(c);
   if (forbidden) return forbidden;
 
   const db = c.get('db');
   const siteId = c.get('siteId');
-  const userCapabilities = getUserCapabilities(c);
+  const userCapabilities = await getUserCapabilities(c);
   const harness = new AISecureHarness({ db, siteId });
 
   const pendingApprovals = await db
@@ -432,7 +638,7 @@ aiRouter.get('/approvals', async (c) => {
  * Approves or rejects a pending approval record.
  */
 aiRouter.post('/approvals/:id/decide', async (c) => {
-  const forbidden = requireAdmin(c);
+  const forbidden = await requireAdmin(c);
   if (forbidden) return forbidden;
 
   // Step 1: Parse and validate input
@@ -459,7 +665,7 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
   const auth = c.get('auth');
   const runtime = c.get('runtime');
   const userId = auth.userId ?? auth.externalId ?? 'unknown';
-  const userCapabilities = getUserCapabilities(c);
+  const userCapabilities = await getUserCapabilities(c);
   const harness = new AISecureHarness({ db, siteId });
 
   const [approval] = await db
@@ -497,24 +703,7 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
 
   if (decision === 'approved') {
     // Wire up real services for skill execution on approval only after authorization.
-    const schemaService = new SchemaService({
-      db,
-      siteId,
-      cache: runtime.cache,
-    });
-    const itemService = itemServiceForRequest(c);
-    const authorizedHarness = new AISecureHarness({
-      db,
-      siteId,
-      schemaService,
-      itemService,
-      llm: createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>),
-      queue: runtime.queue,
-      notify: buildAgentNotifier(c),
-      // An approved `triggerDeployment` executes here — without the
-      // KeyProvider the approval would resolve into a configuration error.
-      keys: runtime.keys,
-    });
+    const authorizedHarness = buildAuthorizedHarness(c);
     const result = await authorizedHarness.executeApproved(
       approvalId,
       userId,

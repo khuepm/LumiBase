@@ -1,5 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import type { AppEnv, AuthPrincipal } from '../env';
+import { isFrontendAudience } from '../services/auth/token-audience';
+import type { PermissionBundle } from '../services/permission-service';
 import { auditSecurityGuardDenied } from './security-audit';
 
 const CONTROL_PLANE_PATHS = [
@@ -34,6 +36,8 @@ export const withControlPlaneAccessGuard = (): MiddlewareHandler<AppEnv> => asyn
 
   const auth = c.get('auth');
   if (isAdminPrincipal(auth)) return next();
+  if (hasSiteAdminAccess(auth, c.get('access'))) return next();
+  if (auth && isSelfIntrospection(c.req.method, c.req.path)) return next();
 
   await auditSecurityGuardDenied(c, 'control_plane_access_denied', {
     path: c.req.path,
@@ -58,6 +62,42 @@ export const withControlPlaneAccessGuard = (): MiddlewareHandler<AppEnv> => asyn
 
 export function isControlPlanePath(path: string): boolean {
   return CONTROL_PLANE_PATHS.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
+/**
+ * `GET /permissions/me` returns the caller's OWN compiled permission bundle —
+ * reading it grants nothing. It sits under the control-plane `/permissions`
+ * prefix only by URL, and Studio needs it for every signed-in user to decide
+ * what to render. Behind the admin backstop every non-bootstrap user got 403,
+ * and Studio showed "You do not have read permission" on collections their
+ * role could read (RC.3 acceptance, B100). Everything else under
+ * `/permissions` (e.g. `POST /check`) stays admin-only.
+ */
+export function isSelfIntrospection(method: string, path: string): boolean {
+  return method === 'GET' && (path === '/api/v1/permissions/me' || path === '/api/v1/permissions/me/');
+}
+
+/**
+ * A signed-in USER whose role grants admin access in the active site.
+ *
+ * `isAdminPrincipal` matches role *names*, but an invited user carries its
+ * role *id* (`roles: ['<nanoid>']`), so a user holding the Administrator role
+ * was refused by every control-plane route while the inner `requireSiteAdmin`
+ * — which reads the same permission bundle — would have admitted it (B101).
+ * The bundle is the one `withSiteMembership` resolved for this site before the
+ * guard runs; nothing is resolved here.
+ *
+ * Deliberately narrow: API keys, anonymous principals and `frontend`-audience
+ * (subscriber) sessions never qualify, whatever their role says. Widening
+ * control-plane access for API keys is a separate decision (#472).
+ */
+export function hasSiteAdminAccess(
+  auth: AuthPrincipal | undefined,
+  access: PermissionBundle | undefined,
+): boolean {
+  if (!auth?.userId || auth.apiKeyId || auth.type === 'anonymous') return false;
+  if (isFrontendAudience(auth.raw?.aud)) return false;
+  return access?.admin === true;
 }
 
 export function isAdminPrincipal(auth: AuthPrincipal | undefined): boolean {

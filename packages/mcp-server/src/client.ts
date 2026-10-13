@@ -20,6 +20,18 @@ export class LumiBaseApiError extends Error {
   }
 }
 
+/**
+ * The governed MCP endpoint exists but the site has not enabled it
+ * (`contentOs.mcp`, which defaults off). Distinct from a generic failure so the
+ * caller can decide between "fall back and say so" and "refuse".
+ */
+export class McpUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'McpUnavailableError';
+  }
+}
+
 export class LumiBaseClient {
   private readonly baseUrl: string;
   private readonly origin: string;
@@ -71,6 +83,53 @@ export class LumiBaseClient {
 
   delete<T = void>(path: string) {
     return this.request<T>('DELETE', path);
+  }
+
+  /**
+   * Sends a JSON-RPC request to the governed MCP endpoint (`POST /api/v1/mcp`).
+   *
+   * Deliberately NOT built on `request()`. That helper returns `json.data`,
+   * which is the REST envelope — a JSON-RPC response carries `result` / `error`
+   * at the top level and has no `data` key at all, so routing this through
+   * `request()` would quietly resolve to `undefined` for every call. The bug
+   * would look like "governance returned nothing" rather than "we read the wrong
+   * field".
+   *
+   * @throws {McpUnavailableError} when the site has not enabled `contentOs.mcp`.
+   * @throws {LumiBaseApiError} for transport/HTTP failures and JSON-RPC errors.
+   */
+  async jsonRpc<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+    const res = await fetch(`${this.baseUrl}/mcp`, {
+      method: 'POST',
+      headers: this.headers,
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, ...(params ? { params } : {}) }),
+    });
+
+    const body = (await res.json().catch(() => null)) as
+      | {
+          result?: T;
+          error?: { code: number; message: string };
+          errors?: ApiError[];
+        }
+      | null;
+
+    if (!res.ok) {
+      const errors = body?.errors ?? [{ code: 'UNKNOWN', message: `HTTP ${res.status}` }];
+      // The route answers 404 MCP_DISABLED when the per-site flag is off. That
+      // is an operator-configuration state, not a failed call, and the caller
+      // needs to tell them apart to decide whether falling back is acceptable.
+      if (errors.some((e) => e.code === 'MCP_DISABLED')) {
+        throw new McpUnavailableError(errors[0]?.message ?? 'MCP endpoint disabled');
+      }
+      throw new LumiBaseApiError(res.status, errors);
+    }
+
+    if (body?.error) {
+      throw new LumiBaseApiError(res.status, [
+        { code: `JSONRPC_${body.error.code}`, message: body.error.message },
+      ]);
+    }
+    return body?.result as T;
   }
 
   /**

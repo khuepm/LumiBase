@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-03T04:32:28.583Z",
+  "generatedAt": "2026-10-13T21:38:08.827Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 148,
+    "upToDate": 152,
     "planned": 0
   },
   "actions": [
@@ -961,6 +961,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/async-agent-runs.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/bookmarks-presets.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1165,6 +1177,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/governed-write-parity.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/marketplace-ui.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1268,6 +1292,18 @@
       "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/reconciler-repair-loop.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
       "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0
@@ -1424,6 +1460,18 @@
       "viLang": "vi",
       "sourceLocale": "en",
       "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "mcp/governed-tool-contract.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "vi",
+      "targetLocale": "en",
       "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0

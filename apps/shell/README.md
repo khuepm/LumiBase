@@ -115,6 +115,20 @@ GitHub Release. Required/optional secrets are documented at the top of that
 workflow. The desktop `.deb`/`.rpm`/`.AppImage`/`.msi`/`.dmg` build was verified
 locally end-to-end (`.deb` + `.rpm` produced from a signed release build).
 
+- **Updater key is mandatory.** Every desktop job stops at "Check updater
+  signing key" when `TAURI_SIGNING_PRIVATE_KEY` is unset or is not the verbatim
+  `.key` file contents (see [Auto-update](#auto-update-desktop)).
+- **Apple signing is optional.** Without `APPLE_CERTIFICATE` the macOS bundle is
+  built unsigned by Apple (a warning is emitted); the updater signature still
+  applies.
+- **Pre-release tags skip the MSI.** WiX rejects `1.0.0-rc.3`-style versions, so
+  Windows pre-releases ship the NSIS installer only; stable tags ship both.
+- **npm and Rust Tauri versions move together.** `tauri build` refuses an
+  `@tauri-apps/*` package and its crate on different major/minor releases, and
+  Dependabot only bumps the npm side. `pnpm tauri:check` (part of
+  `pnpm check:all`) catches the drift on the PR; fix it with
+  `cargo update -p <crate>` in `src-tauri/`.
+
 ## Server connection
 
 Because the bundled app is served from `tauri://localhost` with no co-located

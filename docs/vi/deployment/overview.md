@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:10:07.375Z
+version: 2
+lastUpdated: 2026-09-07T03:34:14.317Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 36ae5aa938f6c83d
+sourceHash: 1767648d90471727
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:10:07.375Z
-codeVerifiedHash: 36ae5aa938f6c83d
-codeVerifiedClaims: 8
+codeVerified: 2026-09-07T03:34:14.317Z
+codeVerifiedHash: 1767648d90471727
+codeVerifiedClaims: 10
 ---
 
 # Deployment Overview
@@ -28,7 +28,20 @@ Trang web Marketplace công khai cũng được triển khai trên **Cloudflare 
 
 Studio SPA giao tiếp với CMS qua một URL cơ sở duy nhất được giải quyết bởi `apps/studio/src/lib/api-base.ts` (`getApiBaseUrl()`):
 
-- **Dev / Docker cùng origin (single-origin):** để trống `VITE_API_URL`. Studio sử dụng các request cùng origin — Vite dev server proxy `/api` tới CMS local, và Docker phục vụ Studio từ cùng origin với CMS.
+- **Dev / Docker cùng origin (single-origin):** để trống `VITE_API_URL`. Studio sử dụng các request cùng origin — Vite dev server proxy `/api` tới CMS local, và ảnh Docker phục vụ Studio từ cùng origin với CMS.
+
+  Ảnh chứa sẵn bản build của SPA tại `/app/studio` và CMS mount nó, nên có admin UI mà không cần triển khai thứ hai. Nó trả lời ở đâu:
+
+  | Path | Được phục vụ |
+  |------|--------------|
+  | `/setup` | shell của SPA, cho lần chạy đầu |
+  | `/<adminPath>` và các path con | shell của SPA, sau khi setup đã chọn admin path |
+  | `/assets/*`, `/sw.js` | output của bản build |
+  | `/`, `/admin`, `/studio`, mọi path khác | vẫn là `404` không phân biệt được — bảo đảm Hide-Login không đổi |
+
+  Hai biến môi trường điều khiển việc này. `LUMIBASE_STUDIO_DIST` đổi vị trí bundle (mặc định: `./studio` tương đối với thư mục làm việc), còn `LUMIBASE_SERVE_STUDIO=false` tắt hẳn. Hãy tắt khi Studio cũng được deploy lên Pages đứng trước CMS này — hai bản sao có thể trôi lệch phiên bản, và lúc đó người dùng gặp bản nào phụ thuộc vào hostname họ gõ.
+
+  Điều này áp dụng cho **ảnh** (`docker/Dockerfile`). Ảnh development hot-reload mount source thay vì build, nên không có bundle và chạy API-only; dùng kèm `pnpm studio:dev`.
 - **Cloudflare Pages (ví dụ `studio.lumibase.dev`):** SPA tĩnh **không có backend đi kèm**, do đó nó phải gọi CMS cross-origin. Đặt `VITE_API_URL` tại thời điểm build thành origin của CMS (ví dụ `https://api.lumibase.dev`). Workflow release kết nối giá trị này từ biến repository `LUMIBASE_CMS_PRODUCTION_URL`.
 
 Vì Studio sau đó gọi CMS từ một origin khác, CMS phải cho phép origin đó qua `CORS_ALLOWED_ORIGINS` (xem `apps/cms/wrangler.toml`). Môi trường production từ chối `*`, vì vậy hãy liệt kê chính xác origin của Studio. Nếu thiếu `VITE_API_URL` trên một triển khai độc lập, Studio sẽ quay về cùng origin và cổng setup hiển thị **"Couldn't reach the server."**

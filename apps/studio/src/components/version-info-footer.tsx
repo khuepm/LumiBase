@@ -25,6 +25,22 @@ function formatBuildTime(value: string): string {
   });
 }
 
+/**
+ * `GET /api/v1/system/version` answers with the bare metadata object — not a
+ * `{ data }` envelope — and operators script against that shape
+ * (`docs/en/operations/upgrades.md`). Reading only `.data` made the footer say
+ * "Backend unavailable" on every healthy CMS. Accept both so a future envelope
+ * does not break it again.
+ */
+function readBuildMetadata(body: unknown): BuildMetadata | null {
+  if (!body || typeof body !== 'object') return null;
+  const record = body as { data?: unknown; version?: unknown };
+  if (record.data && typeof record.data === 'object') {
+    return readBuildMetadata(record.data);
+  }
+  return typeof record.version === 'string' ? (body as BuildMetadata) : null;
+}
+
 function shouldWarnVersionMismatch(frontendVersion: string, backendVersion?: string): boolean {
   if (!backendVersion || frontendVersion === UNKNOWN || backendVersion === UNKNOWN) return false;
   return frontendVersion !== backendVersion;
@@ -36,7 +52,7 @@ export function VersionInfoFooter() {
     queryKey: ['system-version'],
     queryFn: async () => {
       const response = await client.rawRequest<BuildMetadata>('/api/v1/system/version');
-      return response.data;
+      return readBuildMetadata(response);
     },
     staleTime: 5 * 60 * 1000,
     retry: 1,
@@ -106,6 +122,7 @@ export function VersionInfoFooter() {
 
 export const versionInfoFooterInternals = {
   formatBuildTime,
+  readBuildMetadata,
   shouldWarnVersionMismatch,
   shortSha,
 };

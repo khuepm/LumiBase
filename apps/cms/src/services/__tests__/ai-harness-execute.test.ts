@@ -107,9 +107,18 @@ describe('AISecureHarness - execute', () => {
   });
 
   it('should return pending_approval for deleteItem with wildcard (dangerous by name)', async () => {
-    const result = await harness.execute('deleteItem', {}, ['*']);
+    // Arguments must be executable: since #454 an approval is never parked for
+    // input that violates the skill's canonical schema (repro R5).
+    const result = await harness.execute('deleteItem', { collection: 'posts', id: 'item_1' }, ['*']);
     expect(result.status).toBe('pending_approval');
     expect(result.approvalId).toBeDefined();
+  });
+
+  it('refuses deleteItem with empty arguments before writing an approval', async () => {
+    const result = await harness.execute('deleteItem', {}, ['*']);
+    expect(result.status).toBe('denied');
+    expect(result.code).toBe('VALIDATION');
+    expect(result.approvalId).toBeUndefined();
   });
 });
 

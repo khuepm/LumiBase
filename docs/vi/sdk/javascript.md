@@ -1,15 +1,18 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:42:32.541Z
+version: 2
+lastUpdated: 2026-10-10T09:01:07.711Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f4cef639eade1ebc
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T11:42:32.541Z
-codeVerifiedHash: f4cef639eade1ebc
-codeVerifiedClaims: 4
+sourceHash: 6e60b18d751ffc9c
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-10-10T09:01:07.711Z
+codeVerifiedHash: 6e60b18d751ffc9c
+codeVerifiedClaims: 6
 ---
+
+<!-- check-parity: allow code-fences -->
+<!-- Recorded by stamp-pair --allow-structure-drift on 2026-10-10T09:01:07.711Z. See commit history for rationale. -->
 
 # LumiBase JavaScript SDK
 
@@ -240,6 +243,47 @@ Các command agent khác: `createAgentGoal`, `listAgentGoals`, `retryAgentRun`,
 `listAgentTools`, `listAgentApprovals`, `decideAgentApproval`,
 `createAgentArtifact`, `listAgentArtifacts`, `evaluateAgentArtifact`,
 `readAgentMemoryContext`, `writeAgentMemory`.
+
+---
+
+## Decisions
+
+`decide` gọi `POST /api/v1/ai/decisions`: các câu hỏi có kiểu `noul` / `choice` / `score`, được TypeSafe Jev hoặc AI tương đương đã cấu hình trả lời kèm xác suất. Key của provider nằm ở CMS; client chỉ gửi bearer và header `X-Lumi-Site` như thường lệ, nên không bao giờ đặt key TypeSafe hay OpenRouter trong code chạy trên trình duyệt.
+
+```typescript
+import { decide, LumiError } from '@lumibase/sdk'
+
+const controller = new AbortController()
+try {
+  const result = await client.request(
+    decide(
+      {
+        state: { title: 'Summer sale', body: 'Buy now!!!' },
+        questions: {
+          spam: {
+            type: 'noul',
+            instructions: 'Is this post spam?',
+            criteria: { true: 'spam', false: 'legitimate' },
+          },
+          topic: {
+            type: 'choice',
+            instructions: 'Pick the topic',
+            criteria: { promo: 'Promotion', news: null },
+          },
+        },
+      },
+      { signal: controller.signal },
+    ),
+  )
+  result.answers.spam // { type: 'noul', noul: 0.12 }
+} catch (err) {
+  if (err instanceof LumiError && err.body.errors[0]?.code === 'DECISION_NOT_CONFIGURED') {
+    // CMS chưa đặt DECISION_PROVIDER
+  }
+}
+```
+
+`calibrated` là `false` khi CMS trả lời bằng `DECISION_PROVIDER=llm`. Mã lỗi có kiểu `DecisionErrorCode`; xem [đặc tả API](../api/hono-api-spec.md) để biết giới hạn và status.
 
 ---
 

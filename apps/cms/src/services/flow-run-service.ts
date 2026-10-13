@@ -1,7 +1,8 @@
 import { flows, flowRuns, type Database } from '@lumibase/database';
-import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
+import type { CacheProvider, KeyProvider, QueueProvider } from '@lumibase/runtime';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { and, eq } from 'drizzle-orm';
+import type { AuthenticatedPrincipalRef } from './effective-capability-service';
 import { runFlow, type FlowGraph, type FlowRunResult } from './flow-service';
 
 /**
@@ -31,7 +32,13 @@ export interface AiChatRunJob {
   runId: string;
   conversationId: string;
   message: string;
-  userCapabilities: string[];
+  /**
+   * @deprecated Compatibility field for jobs enqueued before `principal` (#472).
+   * A snapshot cannot notice a revoked grant while the job waits in the queue.
+   */
+  userCapabilities?: string[];
+  /** Principal reference; capabilities are re-resolved when the job is picked up. */
+  principal?: AuthenticatedPrincipalRef | null;
   userId: string | null;
 }
 
@@ -168,10 +175,11 @@ export async function processFlowRunJob(
   job: FlowRunJob,
   keys?: KeyProvider,
   env?: Record<string, string | undefined>,
+  cache?: CacheProvider,
 ): Promise<void> {
   if (job.kind === 'ai_chat') {
     const { executeAiChatRun } = await import('./ai-chat-run-worker');
-    await executeAiChatRun(db, job, keys, env);
+    await executeAiChatRun(db, job, keys, env, cache);
     return;
   }
 
@@ -207,18 +215,19 @@ export async function processFlowRunJob(
 export interface FlowRunsWorkerDeps {
   db: Database;
   queue?: QueueProvider;
+  cache?: CacheProvider;
   keys?: KeyProvider;
   env?: Record<string, string | undefined>;
 }
 
 export function registerFlowRunsWorker(deps: FlowRunsWorkerDeps): void {
-  const { db, queue, keys, env } = deps;
+  const { db, queue, keys, env, cache } = deps;
   if (!queue) return;
 
   queue.process<FlowRunJob>(FLOW_RUNS_QUEUE, async (job) => {
     try {
       if (job.name === 'flow:run' || job.name === 'ai:chat') {
-        await processFlowRunJob(db, job.data, keys, env);
+        await processFlowRunJob(db, job.data, keys, env, cache);
       }
     } catch (err) {
       console.error('[flow-runs] job failed', { job: job.name, err: formatSafeError(err) });

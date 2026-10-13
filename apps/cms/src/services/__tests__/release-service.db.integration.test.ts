@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { eq, sql } from 'drizzle-orm';
-import { collections, createDb, fields, items, releases, sites, type Database } from '@lumibase/database';
+import { eq } from 'drizzle-orm';
+import { collections, fields, items, releases, sites, type Database } from '@lumibase/database';
 import { ItemService } from '../item-service';
 import { ReleaseService, sweepDueReleases, withinMaintenanceWindow } from '../release-service';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
  * DB-backed tests for Content Releases (Req 1–9). Skips when DATABASE_URL is
@@ -11,36 +12,23 @@ import { ReleaseService, sweepDueReleases, withinMaintenanceWindow } from '../re
  * **Validates: Requirements 1, 2, 3, 4, 5, 6, 7, 9**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_release_it';
 const COLLECTION = 'articles';
 
-describe('ReleaseService — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('ReleaseService — DB integration', () => {
   let db: Database;
-  let canConnect = false;
   let collId = '';
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping release-service DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping release-service DB test: database not reachable.');
-    }
+    db = await connectDbIntegration('release-service');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.insert(sites).values({ id: SITE, name: 'Release IT' });
     const [coll] = await db
@@ -62,7 +50,6 @@ describe('ReleaseService — DB integration', () => {
   }
 
   it('creates a draft release, adds cross-collection items, publishes (Req 1, 2, 5, 7)', async () => {
-    if (!canConnect) return;
     const svc = new ReleaseService({ db, siteId: SITE });
     const release = await svc.create({ name: 'Spring launch' });
     expect(release!.status).toBe('draft');
@@ -89,7 +76,6 @@ describe('ReleaseService — DB integration', () => {
   });
 
   it('rejects publishing an empty release and double-publish (Req 7.2, 7.3)', async () => {
-    if (!canConnect) return;
     const svc = new ReleaseService({ db, siteId: SITE });
     const release = await svc.create({ name: 'Empty' });
     await expect(svc.publish(release!.id)).rejects.toMatchObject({ code: 'EMPTY_RELEASE' });
@@ -101,7 +87,6 @@ describe('ReleaseService — DB integration', () => {
   });
 
   it('best_effort records a per-item outcome and partially_failed on a deleted item (Req 5.3, 5.6)', async () => {
-    if (!canConnect) return;
     const svc = new ReleaseService({ db, siteId: SITE });
     const release = await svc.create({ name: 'Mixed', atomicityMode: 'best_effort' });
     const a = await makeItem('A');
@@ -124,7 +109,6 @@ describe('ReleaseService — DB integration', () => {
   });
 
   it('pins a specific revision and publishes its snapshot (Req 3)', async () => {
-    if (!canConnect) return;
     const item = new ItemService({ db, siteId: SITE });
     const id = await makeItem('v1');
     // Create a second revision by patching the title.
@@ -144,7 +128,6 @@ describe('ReleaseService — DB integration', () => {
   });
 
   it('scheduled sweep publishes due releases idempotently (Req 6)', async () => {
-    if (!canConnect) return;
     const svc = new ReleaseService({ db, siteId: SITE });
     const a = await makeItem('A');
     const release = await svc.create({ name: 'Scheduled' });
@@ -167,7 +150,6 @@ describe('ReleaseService — DB integration', () => {
   });
 
   it('deletes a release and cascades its items (Req 9)', async () => {
-    if (!canConnect) return;
     const svc = new ReleaseService({ db, siteId: SITE });
     const a = await makeItem('A');
     const release = await svc.create({ name: 'ToDelete' });

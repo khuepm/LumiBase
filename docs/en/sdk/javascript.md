@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:42:32.541Z
+version: 2
+lastUpdated: 2026-10-10T09:01:07.711Z
 sourceLang: en
-contentHash: f4cef639eade1ebc
-codeVerified: 2026-07-28T11:42:32.541Z
-codeVerifiedHash: f4cef639eade1ebc
-codeVerifiedClaims: 4
+contentHash: 6e60b18d751ffc9c
+codeVerified: 2026-10-10T09:01:07.711Z
+codeVerifiedHash: 6e60b18d751ffc9c
+codeVerifiedClaims: 6
 ---
 
 # LumiBase JavaScript SDK
@@ -238,6 +238,47 @@ Other agent commands: `createAgentGoal`, `listAgentGoals`, `retryAgentRun`,
 `listAgentTools`, `listAgentApprovals`, `decideAgentApproval`,
 `createAgentArtifact`, `listAgentArtifacts`, `evaluateAgentArtifact`,
 `readAgentMemoryContext`, `writeAgentMemory`.
+
+---
+
+## Decisions
+
+`decide` calls `POST /api/v1/ai/decisions`: typed `noul` / `choice` / `score` questions answered with probabilities by TypeSafe Jev or the configured equivalent. Provider keys stay on the CMS; the client only sends its usual bearer and `X-Lumi-Site` headers, so never put a TypeSafe or OpenRouter key in browser code.
+
+```typescript
+import { decide, LumiError } from '@lumibase/sdk'
+
+const controller = new AbortController()
+try {
+  const result = await client.request(
+    decide(
+      {
+        state: { title: 'Summer sale', body: 'Buy now!!!' },
+        questions: {
+          spam: {
+            type: 'noul',
+            instructions: 'Is this post spam?',
+            criteria: { true: 'spam', false: 'legitimate' },
+          },
+          topic: {
+            type: 'choice',
+            instructions: 'Pick the topic',
+            criteria: { promo: 'Promotion', news: null },
+          },
+        },
+      },
+      { signal: controller.signal },
+    ),
+  )
+  result.answers.spam // { type: 'noul', noul: 0.12 }
+} catch (err) {
+  if (err instanceof LumiError && err.body.errors[0]?.code === 'DECISION_NOT_CONFIGURED') {
+    // the CMS has no DECISION_PROVIDER set
+  }
+}
+```
+
+`calibrated` is `false` when the CMS answers with `DECISION_PROVIDER=llm`. Error codes are typed as `DecisionErrorCode`; see the [API spec](../api/hono-api-spec.md) for limits and statuses.
 
 ---
 

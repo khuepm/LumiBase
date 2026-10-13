@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-08-30T16:44:53.762Z
+version: 9
+lastUpdated: 2026-10-08T08:10:04.303Z
 sourceLang: en
 translatedFrom: en
-sourceHash: aee0ac3265b6420f
+sourceHash: 09f2a59d9751b976
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-30T16:44:53.762Z
-codeVerifiedHash: aee0ac3265b6420f
+codeVerified: 2026-10-08T08:10:04.303Z
+codeVerifiedHash: 09f2a59d9751b976
 codeVerifiedClaims: 6
 ---
 
@@ -51,20 +51,27 @@ resolution / patch hash mới, rồi `pnpm settings:check` để xác nhận hai
 
 | Package | Pin tới | Lý do | Gỡ khi |
 | --- | --- | --- | --- |
-| `js-yaml` | `^4.3.1` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — DoS độ phức tạp bậc hai (quadratic) trong xử lý merge-key của YAML (moderate), và [GHSA-mxjm-jjmh-r63x](https://github.com/advisories/GHSA-mxjm-jjmh-r63x) — tiêu thụ CPU bậc hai khi resolve `!!omap`, chưa vá ở dưới `4.3.1` (high). Được kéo vào gián tiếp bởi `gray-matter@4.0.3`, vốn hard-pin js-yaml 3.x. Xem ghi chú patch bên dưới. | `gray-matter` (hoặc thứ tiêu thụ nó) phụ thuộc js-yaml `>=4.2.0` trực tiếp, **và** không dependency nào khác tái introduce range 3.x. Xác minh bằng `pnpm why js-yaml`. |
-| `dompurify` | `^3.4.13` | Advisory bảo mật (đã xử lý qua Dependabot), sau đó nâng thêm vì [GHSA-8v5p-ggcr-6q56](https://github.com/advisories/GHSA-8v5p-ggcr-6q56) — việc gỡ hook `IN_PLACE` để lại một subtree bị tách rời, cho phép bypass sanitizer ở `<=3.4.12` (moderate). | Một consumer trực tiếp/gián tiếp tự yêu cầu `>=3.4.13`. |
+| `js-yaml` | `^4.3.2` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — DoS độ phức tạp bậc hai (quadratic) trong xử lý merge-key của YAML (moderate), [GHSA-mxjm-jjmh-r63x](https://github.com/advisories/GHSA-mxjm-jjmh-r63x) — tiêu thụ CPU bậc hai khi resolve `!!omap`, chưa vá ở dưới `4.3.1` (high), và [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh) — `maxTotalMergeKeys` không giới hạn CPU cho merge source rỗng, chưa vá ở dưới `4.3.2` (high). Được kéo vào gián tiếp bởi `gray-matter@4.0.3`, vốn hard-pin js-yaml 3.x. Xem ghi chú patch bên dưới. | `gray-matter` (hoặc thứ tiêu thụ nó) phụ thuộc js-yaml `>=4.2.0` trực tiếp, **và** không dependency nào khác tái introduce range 3.x. Xác minh bằng `pnpm why js-yaml`. |
+| `dompurify` | `^3.4.16` | Advisory bảo mật (đã xử lý qua Dependabot), sau đó nâng thêm vì [GHSA-8v5p-ggcr-6q56](https://github.com/advisories/GHSA-8v5p-ggcr-6q56) — việc gỡ hook `IN_PLACE` để lại một subtree bị tách rời, cho phép bypass sanitizer ở `<=3.4.12` (moderate), và nâng tiếp vì [GHSA-p98j-92pf-mc4p](https://github.com/advisories/GHSA-p98j-92pf-mc4p) / [GHSA-6688-9rhm-gjv2](https://github.com/advisories/GHSA-6688-9rhm-gjv2), chưa vá dưới `3.4.16` (low). | Một consumer trực tiếp/gián tiếp tự yêu cầu `>=3.4.16`. |
 | `esbuild` | `^0.28.2` | Advisory RCE qua request tới dev-server của esbuild (`<=0.24.2`). | Mọi consumer (vite, tsx, v.v.) yêu cầu `>=0.28.2`. |
 | `form-data` | `^4.0.6` | Advisory bảo mật (random boundary không an toàn). | Mọi consumer yêu cầu `>=4.0.6`. |
 | `postcss` | `^8.5.26` | Advisory bảo mật (đã xử lý qua Dependabot). | Mọi consumer yêu cầu `>=8.5.26`. |
 | `nanoid@3` | `^3.3.17` | [GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8) — generator tuỳ biến lặp vô hạn khi `size` bằng 0, chưa vá ở dưới `3.3.17` (high). Chỉ tới được gián tiếp: `next` → `postcss` → `nanoid@3`. Giới hạn trong range 3.x để không nâng sàn cho nhánh 6.x mà `apps/cms` và `packages/database` khai trực tiếp. | `postcss` (hoặc thứ tiêu thụ nó) yêu cầu `nanoid >=3.3.17`. Xác minh bằng `pnpm why nanoid`. |
 | `undici` | `^7.28.0` | Advisory bảo mật (đã xử lý qua Dependabot). | Mọi consumer yêu cầu `>=7.28.0`. |
-| `ws` | `^8.21.3` | Advisory bảo mật (đã xử lý qua Dependabot). Được `apps/cms` khai trực tiếp cho bề mặt realtime. | `apps/cms` tự khai `>=8.21.3`. |
+| `ws` | `^8.22.0` | Advisory bảo mật (đã xử lý qua Dependabot). Được `apps/cms` khai trực tiếp cho bề mặt realtime. | `apps/cms` tự khai `>=8.22.0`. |
 | `uuid` | `^14.0.1` | Hợp nhất phiên bản / advisory (đã xử lý qua Dependabot). Chỉ có **một** chỗ import (`apps/cms/src/modules/audit/worker.ts`, `v7`) nên major này mang rất ít bề mặt — nhưng v12+ đã sắp xếp lại `exports` map của package, nên bump nó cần kiểm tra bundle thật, không chỉ typecheck. | Trôi lệch phiên bản giữa các package không còn là mối lo. |
-| `vite` | `^8.2.0` | Hợp nhất về một major Vite và kéo esbuild vượt advisory RCE `0.28.1`. **Chính entry này là lý do `pnpm drift:check` tồn tại:** nó đứng ở `^7.3.5` trong khi `apps/studio` và `apps/docs` đều khai `^8.1.3`, và vì override áp cả cho direct dependency, hai app build bằng Vite 7 suốt thời gian manifest tuyên bố Vite 8. Nâng entry này cùng nhịp với manifest, không thì cú bump chỉ là hình thức. | Workspace không còn cần ép một major Vite duy nhất. |
+| `vite` | `^8.3.2` | Hợp nhất về một major Vite và kéo esbuild vượt advisory RCE `0.28.1`. **Chính entry này là lý do `pnpm drift:check` tồn tại:** nó đứng ở `^7.3.5` trong khi `apps/studio` và `apps/docs` đều khai `^8.1.3`, và vì override áp cả cho direct dependency, hai app build bằng Vite 7 suốt thời gian manifest tuyên bố Vite 8. Nâng entry này cùng nhịp với manifest, không thì cú bump chỉ là hình thức. | Workspace không còn cần ép một major Vite duy nhất. |
 | `brace-expansion@1` | `^1.1.16` | [GHSA-3jxr-9vmj-r5cp](https://github.com/advisories/GHSA-3jxr-9vmj-r5cp) — DoS do expansion thời gian mũ với các nhóm `{}` không expand liên tiếp (high), được backport về nhánh 1.x ở `1.1.16`. **Chỉ dev** — đi vào qua `minimatch@3` từ ESLint và các plugin, nên không bao giờ xuất hiện trong `pnpm audit --prod`. Key theo major (cùng dạng với scope `nanoid@3`) vì hai major không tương thích cùng tồn tại; xem [Advisory không vá được](#advisory-không-vá-được) để biết vì sao không gộp 1.x vào 5.x được. | Không còn gì trong cây resolve `minimatch@3` (`pnpm why brace-expansion -r`), lúc đó hai dòng `brace-expansion@*` gộp lại làm một. |
 | `brace-expansion@5` | `^5.0.8` | [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg) — DoS do độ dài expansion không giới hạn gây crash OOM tiến trình (high), vá ở `5.0.8`. **Chỉ dev** — đi vào qua `minimatch@10` từ `glob`, `eslint`, `@typescript-eslint/typescript-estree`. Dependency trôi tự nhiên đã kéo phần lớn cây lên `5.0.9`, nhưng `minimatch@10.2.5` vẫn giữ một bản `5.0.7`; sàn này dọn nốt bản sót đó. | Giống dòng `@1`. |
-| `@types/react` | `19.2.18` | **Không phải pin bảo mật** — ép React 19 types toàn workspace để Studio/Docs/Landing/`@lumibase/ui` typecheck cùng major với runtime React 19. | Trôi lệch giữa các app không còn là mối lo, hoặc workspace cố ý tách React major trở lại. |
-| `@types/react-dom` | `19.2.4` | Giống `@types/react` — nhất quán type React 19. | Giống `@types/react`. |
+| `proxy-addr` | `^2.0.8` | [GHSA-jqcg-44mw-7w3h](https://github.com/advisories/GHSA-jqcg-44mw-7w3h) (critical), chưa vá dưới `2.0.8`. Đi vào qua `packages/mcp-server` → `@modelcontextprotocol/sdk` → `express@5.2.1`, vốn khai `^2.0.7`. | `express` yêu cầu `proxy-addr >=2.0.8`. Kiểm tra bằng `pnpm why -r proxy-addr`. |
+| `source-map-js` | `^1.2.2` | [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) (high), chưa vá dưới `1.2.2`. Đi vào qua `postcss` (`next`, `vite`) và `css-tree` (`jsdom`). | `postcss` và `css-tree` yêu cầu `>=1.2.2`. |
+| `@graphql-tools/utils@11` | `^12.0.3` | [GHSA-7mx3-vvmw-hjmv](https://github.com/advisories/GHSA-7mx3-vvmw-hjmv) — prototype pollution trong `mergeDeep` (high), ảnh hưởng `<=12.0.0` và **không có bản vá cho nhánh 11.x**. `graphql-yoga@5.24` (dùng trong `apps/cms`) vẫn khai `^11.2.0`, nên override này nâng bản đó qua một major. Giới hạn ở selector `@11` để các consumer 12.x tự resolve. Đã kiểm chứng bằng test GraphQL của CMS và một lượt smoke `createYoga` (biến, lỗi được che, validation, introspection). | `graphql-yoga` khai `@graphql-tools/utils >=12.0.1`. |
+| `fast-uri` | `4.1.5` | [GHSA-qw65-cvwx-89v3](https://github.com/advisories/GHSA-qw65-cvwx-89v3) / [GHSA-58mr-gqgx-xq4g](https://github.com/advisories/GHSA-58mr-gqgx-xq4g) (high, đã vá bằng lần pin `4.1.4` trước đó), sau đó [GHSA-hrr3-gc8f-f4qj](https://github.com/advisories/GHSA-hrr3-gc8f-f4qj) / [GHSA-jvvf-x445-j334](https://github.com/advisories/GHSA-jvvf-x445-j334) (moderate), chưa vá dưới `4.1.5`. Giữ kiểu pin chính xác từ lần vá đầu. Đi vào qua `ajv`. | `ajv` yêu cầu `fast-uri >=4.1.5`. |
+| `qs` | `^6.16.0` | [GHSA-x5fp-wj9c-mxmx](https://github.com/advisories/GHSA-x5fp-wj9c-mxmx) / [GHSA-4mjr-xmp4-gh2g](https://github.com/advisories/GHSA-4mjr-xmp4-gh2g) (moderate), chưa vá dưới `6.16.0`. Đi vào qua `express` trong `packages/mcp-server`. | `express` (hoặc `body-parser`) yêu cầu `qs >=6.16.0`. |
+| `ip-address` | `^10.7.3` | [GHSA-rpw4-54j3-4h4q](https://github.com/advisories/GHSA-rpw4-54j3-4h4q), [GHSA-2vr4-cq9g-pvrc](https://github.com/advisories/GHSA-2vr4-cq9g-pvrc), [GHSA-j6r3-76f7-8jcv](https://github.com/advisories/GHSA-j6r3-76f7-8jcv), [GHSA-h3mg-xc3c-68pw](https://github.com/advisories/GHSA-h3mg-xc3c-68pw) (moderate), chưa vá dưới `10.7.1`. Đi vào qua `express-rate-limit` trong `packages/mcp-server`. | `express-rate-limit` yêu cầu `ip-address >=10.7.1`. |
+| `sharp` | `>=0.35.5` | [GHSA-wq5f-xc86-pv6w](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) — lỗ hổng trong dependency librsvg đi kèm (high), chưa vá dưới `0.35.5`. Đi vào qua `next` trong `apps/consumer` và `apps/landing`, và qua `wrangler` → `miniflare` trong `apps/cms`. Nâng sàn override hiện có để cài mới không giữ lại `0.35.4`. | `next` và `miniflare` yêu cầu `sharp >=0.35.5`. Kiểm tra bằng `pnpm why -r sharp`. |
+| `@types/react` | `19.3.0` | **Không phải pin bảo mật** — ép React 19 types toàn workspace để Studio/Docs/Landing/`@lumibase/ui` typecheck cùng major với runtime React 19. | Trôi lệch giữa các app không còn là mối lo, hoặc workspace cố ý tách React major trở lại. |
+| `@types/react-dom` | `19.3.0` | Giống `@types/react` — nhất quán type React 19. Vì là pin chính xác, đây cũng là mục thứ hai `pnpm drift:check` bắt được: đợt bump nhóm minor-and-patch nâng `apps/{docs,landing,studio}` lên `^19.2.7` trong khi pin này vẫn ở `19.2.5`, nên importer trong lockfile vẫn ghi `specifier: 19.2.5`. Nâng pin cùng nhịp với manifest. | Giống `@types/react`. |
 
 ## Bảng audit ignore
 
@@ -157,7 +164,7 @@ Kiểm bằng `cargo tree -i glib` sau khi bump `tauri`.
 **Vì sao cần:** `gray-matter@4.0.3` là bản phát hành mới nhất và thực chất đã ngừng bảo trì.
 Nó hard-pin `js-yaml@^3.13.1` và gọi `safeLoad`/`safeDump`. Các hàm đó đã bị **gỡ bỏ** trong
 js-yaml 4.x (nơi `load`/`dump` an toàn mặc định — và `safeLoad` là stub *ném lỗi*). Vì
-override `js-yaml: ^4.3.1` (ở trên) nâng js-yaml toàn cây để vá
+override `js-yaml: ^4.3.2` (ở trên) nâng js-yaml toàn cây để vá
 [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68), gray-matter sẽ crash
 lúc parse nếu không có patch này. gray-matter chỉ được dùng ở thời điểm build/dev trong
 [`apps/docs`](../../../apps/docs/src/plugins/vite-plugin-docs-loader.ts) để parse front

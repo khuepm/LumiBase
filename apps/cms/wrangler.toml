@@ -3,6 +3,23 @@ main = "src/cloudflare.ts"
 compatibility_date = "2024-10-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Keep the Docker adapters out of the Worker bundle.
+#
+# `withRuntime` reaches them via `await import('@lumibase/runtime/docker')` on a
+# branch that cannot execute under Workers, but a dynamic import is still a
+# static edge to the bundler: esbuild inlines the target. That shipped BullMQ,
+# ioredis, @aws-sdk/client-s3 and MeiliSearch inside the Worker (~8 MB), and
+# BullMQ 6's Postgres `sql-loader` calls `getDirname()` at module top level,
+# which throws where there is no `__dirname` and no `file:///` stack frame.
+# Result: the Worker failed to start and Cloudflare rejected every deploy with
+# validation error 10021, while `wrangler deploy --dry-run` stayed green because
+# it bundles without instantiating.
+#
+# The alias swaps that subpath for a stub which throws a descriptive error if the
+# unreachable branch ever runs. Verified by `pnpm verify:worker-bundle`.
+[alias]
+"@lumibase/runtime/docker" = "./src/runtime-docker-unavailable.ts"
+
 # Hyperdrive binding pools PostgreSQL connections at the edge.
 # Run `wrangler hyperdrive create lumibase-hyperdrive --connection-string=...`
 # and paste the resulting id below.
@@ -77,6 +94,18 @@ crons = ["0 * * * *", "*/5 * * * *"]
 # binding = "REALTIME_QUEUE"
 # queue = "lumibase-realtime"
 
+
+[[queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-local"
+
+[[queues.consumers]]
+queue = "lumibase-agent-runs-local"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-local-dlq"
+
 # ─── Environment Profiles ────────────────────────────────────────────────────
 # Top-level [vars] is intentionally local/development only. Named environments
 # below repeat their non-sensitive vars and bindings because Wrangler treats
@@ -113,6 +142,7 @@ crons = ["0 * * * *", "*/5 * * * *"]
 name = "lumibase-cms-staging"
 
 [env.staging.vars]
+LUMIBASE_RUNTIME = "cloudflare"
 LUMIBASE_ENV = "staging"
 LUMIBASE_VERSION = "unknown"
 LUMIBASE_GIT_SHA = "unknown"
@@ -167,6 +197,18 @@ new_sqlite_classes = ["PageviewCounter"]
 # [[env.staging.r2_buckets]]
 # binding = "MEDIA"
 # bucket_name = "lumibase-media-staging"
+
+
+[[env.staging.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-staging"
+
+[[env.staging.queues.consumers]]
+queue = "lumibase-agent-runs-staging"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-staging-dlq"
 
 [env.staging.triggers]
 crons = ["0 * * * *", "*/5 * * * *"]
@@ -259,6 +301,18 @@ bucket_name = "lumibase-media"
 binding = "REALTIME_QUEUE"
 queue = "lumibase-realtime"
 
+
+[[env.production.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-production"
+
+[[env.production.queues.consumers]]
+queue = "lumibase-agent-runs-production"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-production-dlq"
+
 [env.production.triggers]
 crons = ["0 * * * *", "*/5 * * * *"]
 
@@ -268,6 +322,7 @@ crons = ["0 * * * *", "*/5 * * * *"]
 name = "lumibase-cms-dev"
 
 [env.dev.vars]
+LUMIBASE_RUNTIME = "cloudflare"
 LUMIBASE_ENV = "staging"
 LUMIBASE_VERSION = "unknown"
 LUMIBASE_GIT_SHA = "unknown"
@@ -309,6 +364,18 @@ new_sqlite_classes = ["SiteRoom"]
 tag = "v2"
 new_sqlite_classes = ["PageviewCounter"]
 
+
+[[env.dev.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-dev"
+
+[[env.dev.queues.consumers]]
+queue = "lumibase-agent-runs-dev"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-dev-dlq"
+
 [env.dev.triggers]
 crons = ["0 * * * *", "*/5 * * * *"]
 
@@ -319,6 +386,7 @@ crons = ["0 * * * *", "*/5 * * * *"]
 name = "lumibase-cms-demo"
 
 [env.demo.vars]
+LUMIBASE_RUNTIME = "cloudflare"
 LUMIBASE_ENV = "staging"
 LUMIBASE_VERSION = "unknown"
 LUMIBASE_GIT_SHA = "unknown"
@@ -359,6 +427,18 @@ new_sqlite_classes = ["SiteRoom"]
 [[env.demo.migrations]]
 tag = "v2"
 new_sqlite_classes = ["PageviewCounter"]
+
+
+[[env.demo.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-demo"
+
+[[env.demo.queues.consumers]]
+queue = "lumibase-agent-runs-demo"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-demo-dlq"
 
 [env.demo.triggers]
 crons = ["0 * * * *", "*/5 * * * *"]

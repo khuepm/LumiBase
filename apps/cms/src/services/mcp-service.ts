@@ -71,18 +71,56 @@ export interface McpHarnessPort {
  */
 export interface McpToolDecision {
   status: HarnessExecutionResult['status'];
+  /**
+   * Machine-readable denial reason, e.g. `VALIDATION`, `AUTONOMY_SHADOW`. Lets a
+   * client branch on "fix your arguments" vs "you are not allowed" without
+   * parsing prose.
+   */
+  code?: string;
   data?: unknown;
-  /** Present when status is `pending_approval` — resolve via the approvals API. */
+  /**
+   * Id to act on when status is `pending_approval`.
+   *
+   * ⚠️ Two id spaces exist and they are not interchangeable. `execute()` inserts
+   * into BOTH `lumibase_agent_approvals` and the legacy `lumibase_ai_approvals`,
+   * and they are decided at two different routes. This field carries the
+   * `agent_approvals` id whenever one exists — see `approvalSpace` for which one
+   * you actually got, instead of having to guess from the value.
+   */
   approvalId?: string;
+  /**
+   * Which table `approvalId` belongs to, and therefore which endpoint accepts it:
+   * - `agent` → `POST /api/v1/agent/approvals/{approvalId}/decide` (`routes/agent.ts`)
+   * - `legacy_ai` → `POST /api/v1/ai/approvals/{approvalId}/decide` (`routes/ai.ts`)
+   *
+   * Added because the previous shape collapsed `agentApprovalId ?? approvalId`
+   * into one field, so a client could hold a valid-looking id and call the wrong
+   * route with no way to tell.
+   */
+  approvalSpace?: 'agent' | 'legacy_ai';
+  /** The `agent_approvals` id, when the governed path produced one. */
+  agentApprovalId?: string;
+  /** The legacy `ai_approvals` id, when one was written. */
+  legacyApprovalId?: string;
   runId?: string;
   message?: string;
 }
 
 export function toToolDecision(result: HarnessExecutionResult): McpToolDecision {
   const decision: McpToolDecision = { status: result.status };
+  if (result.code) decision.code = result.code;
   if (result.data !== undefined) decision.data = result.data;
+
+  // `approvalId` keeps its historical meaning (agent id preferred) so existing
+  // clients do not change, and the space is now stated rather than inferred.
   const approvalId = result.agentApprovalId ?? result.approvalId;
-  if (approvalId) decision.approvalId = approvalId;
+  if (approvalId) {
+    decision.approvalId = approvalId;
+    decision.approvalSpace = result.agentApprovalId ? 'agent' : 'legacy_ai';
+  }
+  if (result.agentApprovalId) decision.agentApprovalId = result.agentApprovalId;
+  if (result.approvalId) decision.legacyApprovalId = result.approvalId;
+
   if (result.runId) decision.runId = result.runId;
   if (result.message) decision.message = result.message;
   return decision;

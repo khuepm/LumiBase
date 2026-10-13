@@ -498,6 +498,30 @@ export class ItemService {
   }
 
   /**
+   * The same service bound to a different principal's row/field rules.
+   *
+   * Exists for work that is **authorised by one principal and triggered by
+   * another** — an approval being executed after a human approves it (#472).
+   * The action must run under the requester's rules, not the approver's, so the
+   * executing service has to be rebound at that moment.
+   *
+   * Every other dependency is carried over deliberately. Constructing a fresh
+   * `ItemService` from `{ db, siteId }` alone would silently drop the cache,
+   * search, queue, key provider and extension environment, so writes would stop
+   * invalidating tags and stop indexing — a regression that looks like nothing at
+   * the call site and shows up as stale reads later (DoD §2b).
+   *
+   * `siteId` comes from the context, so a context for another tenant cannot be
+   * used to widen this service's scope; the caller checks tenancy first, and this
+   * keeps the two from disagreeing.
+   */
+  withPermissionContext(permissionCtx: MagicContext): ItemService {
+    const next = new ItemService({ ...this.deps, siteId: permissionCtx.siteId, permissionCtx });
+    next.setProvenance(this.provenance);
+    return next;
+  }
+
+  /**
    * Whether new writes for this site should use envelope (per-record DEK) mode.
    * Driven by the `encryption.envelope` setting (operator-controlled, not a raw
    * env flag); memoized so a batch write reads the setting at most once.

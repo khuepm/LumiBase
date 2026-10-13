@@ -36,6 +36,7 @@ interface CloudflareEnv {
   // (e.g. REALTIME_QUEUE) wired in wrangler.toml. See collectQueues().
   QUEUES?: Record<string, CloudflareQueue>;
   REALTIME_QUEUE?: CloudflareQueue;
+  AGENT_RUNS_QUEUE?: CloudflareQueue;
   MEDIA_BASE_URL?: string;
   /** Zone id for global edge purge (#392). Absent → colo-local purge only. */
   CF_PURGE_ZONE_ID?: string;
@@ -56,7 +57,7 @@ interface CloudflareEnv {
  */
 function collectQueues(env: Record<string, unknown>): Record<string, CloudflareQueue> {
   const cfEnv = env as unknown as CloudflareEnv;
-  if (cfEnv.QUEUES) return cfEnv.QUEUES;
+  if (cfEnv.QUEUES) return { ...cfEnv.QUEUES, ...(cfEnv.AGENT_RUNS_QUEUE ? { 'agent-runs': cfEnv.AGENT_RUNS_QUEUE } : {}) };
 
   const queues: Record<string, CloudflareQueue> = {};
   for (const [key, value] of Object.entries(env)) {
@@ -64,6 +65,9 @@ function collectQueues(env: Record<string, unknown>): Record<string, CloudflareQ
       queues[key] = value as CloudflareQueue;
     }
   }
+
+  // Business code addresses logical queues; binding names are platform config.
+  if (cfEnv.AGENT_RUNS_QUEUE) queues['agent-runs'] = cfEnv.AGENT_RUNS_QUEUE;
 
   // Provide generic aliases pointing at the first available queue so health
   // probes and queue-agnostic callers work without hardcoding a binding name.

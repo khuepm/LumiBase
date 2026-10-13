@@ -19,11 +19,13 @@ import * as Sentry from '@sentry/cloudflare';
 import { createDb } from '@lumibase/database';
 import { createCloudflareRuntime } from '@lumibase/runtime';
 import app from './index';
+import { processCloudflareAgentQueue } from './cloudflare-agent-queue';
 import type { Bindings } from './env';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
 import { runScheduledPageviewFlush } from './modules/pageviews/scheduled';
 import { resolveSentryOptions } from './observability/sentry';
+import { withWorkerRuntimeDefault } from './worker-runtime-default';
 
 // ── Default export: ExportedHandler (fetch + scheduled) ─────────────────────
 //
@@ -53,8 +55,10 @@ import { resolveSentryOptions } from './observability/sentry';
 export default Sentry.withSentry(
   (env: Bindings) => resolveSentryOptions(env),
   {
-  // Bind so `this` inside Hono's fetch stays the app instance.
-  fetch: app.fetch.bind(app),
+  queue: processCloudflareAgentQueue,
+
+  fetch: (request: Request, env: Bindings, ctx: ExecutionContext) =>
+    app.fetch(request, withWorkerRuntimeDefault(env), ctx),
 
   /**
    * Cloudflare Cron Trigger handler (design §10.2). Fires on the
@@ -92,6 +96,37 @@ export default Sentry.withSentry(
     // work doesn't run 12× per hour. The pageview flush runs on every tick.
     const runtime = createCloudflareRuntime(env as unknown as Record<string, unknown>);
     ctx.waitUntil(runScheduledPageviewFlush(db, runtime));
+
+    // Abandoned approval claims (#453). A Worker eviction mid-execution leaves
+    // the approval `deciding` — stuck, and filtered out of Mission Control's
+    // pending inbox. Runs on the 5-minute tick like the pageview flush; the
+    // sweep only ever quarantines claims past the staleness window, so
+    // overlapping invocations and a live execution are both safe.
+    ctx.waitUntil(
+      import('./services/approval-claim-sweeper')
+        .then(({ sweepStaleApprovalClaims }) => sweepStaleApprovalClaims({ db }))
+        .then((released) => {
+          for (const claim of released) {
+            console.warn(
+              '[approval-claim-sweep] quarantined abandoned claim',
+              JSON.stringify(claim),
+            );
+          }
+        })
+        .catch((err: unknown) => {
+          console.error(
+            '[approval-claim-sweep] failed',
+            err instanceof Error ? err.message : String(err),
+          );
+        }),
+    );
+
+    // Quarantine executions interrupted by a Worker eviction; never replay writes.
+    ctx.waitUntil(
+      import('./services/agent-run-service')
+        .then(({ sweepStaleRuns }) => sweepStaleRuns({ db }))
+        .catch(() => console.error('[agent-run-sweep] failed')),
+    );
 
     if (controller.cron === '0 * * * *') {
       ctx.waitUntil(runScheduledRotation(db));

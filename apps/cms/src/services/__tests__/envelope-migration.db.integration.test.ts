@@ -1,8 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   collections,
-  createDb,
   fields,
   items,
   sites,
@@ -13,45 +12,33 @@ import { ItemService } from '../item-service';
 import { runEnvelopeMigration } from '../envelope-migration-worker';
 import { readEnvelopeSetting, writeEnvelopeSetting } from '../crypto/envelope-settings';
 import { parseEnvelope } from '../crypto/envelope-codec';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
  * DB-backed envelope migration + hot-path integration (task 3.6; Req 4.5).
  * Skips when DATABASE_URL is unset/unreachable.
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_envelope_it';
 const COLLECTION = 'patients';
 const KEK = Buffer.alloc(32, 44).toString('base64');
 
-describe('Envelope migration — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('Envelope migration — DB integration', () => {
   let db: Database;
-  let canConnect = false;
   let collectionId: string;
   const keyProvider = new EnvKeyProvider(new Map([['v0', KEK]]), 'v0');
   const svc = () => new ItemService({ db, siteId: SITE, keyProvider });
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping envelope migration DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping envelope migration DB test: database not reachable.');
-    }
+    db = await connectDbIntegration('envelope-migration');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.insert(sites).values({ id: SITE, name: 'Envelope IT' });
     const [coll] = await db
@@ -75,7 +62,6 @@ describe('Envelope migration — DB integration', () => {
   }
 
   it('migrates shared → envelope and back, keeping plaintext readable throughout', async () => {
-    if (!canConnect) return;
     // Created in shared mode: versioned envelope ciphertext, no wrapped DEK.
     const item = await svc().create(COLLECTION, { data: { name: 'A', ssn: 's-100' } });
     expect(await rawDek(item.id)).toBeNull();
@@ -115,7 +101,6 @@ describe('Envelope migration — DB integration', () => {
   });
 
   it('hot path: new writes honor the setting (envelope on → wrapped DEK persisted)', async () => {
-    if (!canConnect) return;
     const base = await readEnvelopeSetting(db, SITE);
     await writeEnvelopeSetting(db, SITE, { ...base, enabled: true });
 
@@ -128,7 +113,6 @@ describe('Envelope migration — DB integration', () => {
   });
 
   it('migration is idempotent — a second pass migrates nothing', async () => {
-    if (!canConnect) return;
     await svc().create(COLLECTION, { data: { name: 'C', ssn: 's-300' } });
     const base = await readEnvelopeSetting(db, SITE);
     await writeEnvelopeSetting(db, SITE, {

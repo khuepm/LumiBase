@@ -101,6 +101,10 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
   boolean: ToggleInterface,
   number: NumberInterface,
   string: TextInterface,
+  // Long-form text. Without this a `text` field whose interface Studio does not
+  // know (the RC.3 starter shipped `textarea`) fell through to the JSON editor,
+  // which rejects plain prose as "not valid JSON".
+  text: TextMultilineInterface,
 };
 
 export function resolveInterface(field: FieldResource): InterfaceComponent<unknown> {

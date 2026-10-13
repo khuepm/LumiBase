@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   auditLog,
   collections,
-  createDb,
   fields,
   items,
   sites,
@@ -13,6 +12,7 @@ import { EnvKeyProvider } from '@lumibase/runtime';
 import { ItemService } from '../item-service';
 import { rewrapBatch } from '../rewrap-worker';
 import { parseEnvelope } from '../crypto/envelope-codec';
+import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
  * DB-backed crypto integration (regulated-content-readiness task 3.7;
@@ -21,38 +21,25 @@ import { parseEnvelope } from '../crypto/envelope-codec';
  * **Validates: Requirements 1.1, 2.1-2.3, 3.1-3.2, 3.6**
  */
 
-const TEST_DATABASE_URL = process.env.DATABASE_URL;
 const SITE = 'site_crypto_it';
 const COLLECTION = 'patients';
 const KEY_V0 = Buffer.alloc(32, 11).toString('base64');
 const KEY_V1 = Buffer.alloc(32, 22).toString('base64');
 
-describe('Field encryption — DB integration', () => {
+describe.skipIf(!hasDbIntegrationUrl)('Field encryption — DB integration', () => {
   let db: Database;
-  let canConnect = false;
   let collectionId: string;
 
   beforeAll(async () => {
-    if (!TEST_DATABASE_URL) {
-      console.warn('Skipping crypto DB test: DATABASE_URL not set.');
-      return;
-    }
-    try {
-      db = createDb(TEST_DATABASE_URL);
-      await db.execute(sql`SELECT 1`);
-      canConnect = true;
-    } catch {
-      console.warn('Skipping crypto DB test: database not reachable.');
-    }
+    db = await connectDbIntegration('crypto');
   });
 
   afterAll(async () => {
-    if (!canConnect) return;
+    if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
   });
 
   beforeEach(async () => {
-    if (!canConnect) return;
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.insert(sites).values({ id: SITE, name: 'Crypto IT' });
     const [coll] = await db
@@ -78,7 +65,6 @@ describe('Field encryption — DB integration', () => {
     new ItemService({ db, siteId: SITE, keyProvider });
 
   it('stores an AES-GCM envelope, not plaintext, and round-trips internally', async () => {
-    if (!canConnect) return;
     const keys = new EnvKeyProvider(new Map([['v0', KEY_V0]]), 'v0');
     const created = await svc(keys).create(COLLECTION, {
       data: { name: 'Jane', ssn: '123-45-6789' },
@@ -96,7 +82,6 @@ describe('Field encryption — DB integration', () => {
   });
 
   it('decrypts ciphertext from a retired key after rotation, and rewrap upgrades it', async () => {
-    if (!canConnect) return;
     const v0only = new EnvKeyProvider(new Map([['v0', KEY_V0]]), 'v0');
     const created = await svc(v0only).create(COLLECTION, { data: { ssn: 'rotate-me' } });
 
@@ -113,7 +98,6 @@ describe('Field encryption — DB integration', () => {
   });
 
   it('fail-closed: a corrupted ciphertext throws DECRYPTION_FAILED + audits it', async () => {
-    if (!canConnect) return;
     const keys = new EnvKeyProvider(new Map([['v0', KEY_V0]]), 'v0');
     const created = await svc(keys).create(COLLECTION, { data: { ssn: 'tamper' } });
 

@@ -55,10 +55,8 @@ export function initCommand(
   argv: string[],
   options: InitCommandOptions = {},
 ): number {
-  const scaffold = resolveScaffoldCommand(
-    options.version ?? readVersion(),
-    options.userAgent,
-  );
+  const version = options.version ?? readVersion();
+  const scaffold = resolveScaffoldCommand(version, options.userAgent);
 
   const run =
     options.run ??
@@ -71,7 +69,9 @@ export function initCommand(
       if (result.error) {
         throw new CliError(
           `Failed to run the scaffolder: ${result.error.message}`,
-          "Run `npm create lumibase@latest` directly.",
+          // The same pinned release `init` tried — `@latest` can be a different
+          // major (it was 0.x throughout the 1.0 release candidates).
+          `Run \`npm create lumibase@${version}\` directly.`,
         );
       }
       return result.status ?? 1;

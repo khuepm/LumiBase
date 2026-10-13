@@ -1,4 +1,6 @@
+import { patchSchema } from '../utils/patch-schema';
 import {
+  activity,
   agentApprovals,
   agentGoals,
   agentRuns,
@@ -15,8 +17,12 @@ import { AgentArtifactService } from '../services/agent-artifact-service';
 import { AgentEvaluationService } from '../services/agent-evaluation-service';
 import { AgentMemoryService } from '../services/agent-memory-service';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
-import { AgentRunService } from '../services/agent-run-service';
+import { maskSecrets, AgentRunService, type RetryRunRefusalCode } from '../services/agent-run-service';
 import { CORE_SKILLS } from '../services/ai-harness';
+import {
+  principalRefFromAuth,
+  resolveRequestCapabilities,
+} from '../services/governed-capabilities';
 import { ToolRegistryService } from '../services/tool-registry-service';
 
 export const agentRouter = new Hono<AppEnv>();
@@ -106,13 +112,13 @@ agentRouter.post('/goals', async (c) => {
       );
     }
     // No queue adapter → explicit error; sync execution remains available (Req 3.3).
-    if (!queue) {
+    if (!queue || queue.supportsQueue?.(AGENT_RUNS_QUEUE) === false) {
       return c.json(
         {
           errors: [
             {
               code: 'ASYNC_UNAVAILABLE',
-              message: 'Async execution requires a queue adapter; this runtime has none. Use execution: "sync".',
+              message: 'Async execution requires the agent-runs queue binding. Use execution: "sync".',
             },
           ],
         },
@@ -130,6 +136,7 @@ agentRouter.post('/goals', async (c) => {
     assigneeAgent: parsed.data.assigneeAgent,
     priority: parsed.data.priority,
     successCriteria: parsed.data.successCriteria,
+    ...(parsed.data.execution === 'async' ? { metadata: { asyncTask: maskSecrets(parsed.data.task) } } : {}),
   }).returning();
 
   if (parsed.data.execution === 'async') {
@@ -148,12 +155,23 @@ agentRouter.post('/goals', async (c) => {
       goalId: goal!.id,
       runId: run.runId,
       skillName: parsed.data.task!.skillName,
+      budget: parsed.data.budget,
       arguments: parsed.data.task!.arguments,
-      capabilities: auth.roles ?? [],
+      // A principal reference, NOT a capability snapshot (#472). The worker
+      // re-resolves the grant when it picks the job up, so a role change or a
+      // revoked key between enqueue and execution takes effect.
+      principal: principalRefFromAuth(auth, siteId),
       userId: auth.userId ?? null,
       contextMessage: parsed.data.description,
     };
-    await queue!.enqueue(AGENT_RUNS_QUEUE, 'execute', payload);
+    try {
+      await queue!.enqueue(AGENT_RUNS_QUEUE, 'execute', payload);
+    } catch {
+      // A transport can accept a job and then lose the acknowledgement. Only
+      // settle an unclaimed row; never overwrite a worker's actual outcome.
+      await runService.failQueuedRun(run.runId, 'enqueue_failed');
+      return c.json({ errors: [{ code: 'ENQUEUE_FAILED', message: 'The run could not be queued. Retry this run after queue recovery.', goalId: goal!.id, runId: run.runId }] }, 503);
+    }
     return c.json({ data: { goal, runId: run.runId, status: 'queued' } }, 202);
   }
 
@@ -162,9 +180,26 @@ agentRouter.post('/goals', async (c) => {
 
 // ── Agent roles + planner delegation (content-os task 10; Req 10.1-10.5) ───
 
-function canManageRoles(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('*');
+/**
+ * Shared governance gate, resolved from RBAC (#472).
+ *
+ * Every gate on this router used to read `auth.roles` and look for the literal
+ * strings `'admin'` / `'*'` / a capability name. Only a bootstrap or dev
+ * principal ever carries `'admin'`, and a normal user carries a role *id*, so in
+ * practice these were bootstrap-only gates that silently rejected real site
+ * admins. They now ask the same resolver the harness uses, so there is one
+ * authorization model on this surface rather than two.
+ *
+ * `controlPlaneAdmin` is the admin bypass; a named capability is still honoured
+ * for principals whose bundle grants it.
+ */
+async function hasGovernanceCapability(c: Context<AppEnv>, capability: string): Promise<boolean> {
+  const grant = await resolveRequestCapabilities(c);
+  return grant.controlPlaneAdmin || grant.capabilities.includes(capability);
+}
+
+async function canManageRoles(c: Context<AppEnv>): Promise<boolean> {
+  return (await resolveRequestCapabilities(c)).controlPlaneAdmin;
 }
 
 const roleBodySchema = z.object({
@@ -183,7 +218,7 @@ agentRouter.get('/roles', async (c) => {
 });
 
 agentRouter.post('/roles', async (c) => {
-  if (!canManageRoles(c)) {
+  if (!(await canManageRoles(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Managing agent roles requires an admin.' }] }, 403);
   }
   const parsed = roleBodySchema.safeParse(await c.req.json().catch(() => null));
@@ -203,10 +238,10 @@ agentRouter.post('/roles', async (c) => {
 });
 
 agentRouter.patch('/roles/:name', async (c) => {
-  if (!canManageRoles(c)) {
+  if (!(await canManageRoles(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Managing agent roles requires an admin.' }] }, 403);
   }
-  const parsed = roleBodySchema.partial().omit({ name: true }).safeParse(await c.req.json().catch(() => null));
+  const parsed = patchSchema(roleBodySchema.omit({ name: true })).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
     return validationError(c, parsed.error);
   }
@@ -223,7 +258,7 @@ agentRouter.patch('/roles/:name', async (c) => {
 });
 
 agentRouter.delete('/roles/:name', async (c) => {
-  if (!canManageRoles(c)) {
+  if (!(await canManageRoles(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Managing agent roles requires an admin.' }] }, 403);
   }
   const { AgentRoleService, AgentRoleError } = await import('../services/agent-role-service');
@@ -255,8 +290,7 @@ const decomposeSchema = z.object({
 
 /** Planner: decompose a goal into role-scoped sub-goals (Req 10.1/10.3). */
 agentRouter.post('/goals/:id/decompose', async (c) => {
-  const roles = c.get('auth').roles ?? [];
-  if (!(roles.includes('admin') || roles.includes('goals:write') || roles.includes('*'))) {
+  if (!(await hasGovernanceCapability(c, 'goals:write'))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Capability "goals:write" is required.' }] }, 403);
   }
   const parsed = decomposeSchema.safeParse(await c.req.json().catch(() => null));
@@ -333,8 +367,7 @@ const promotionDecideSchema = z.object({
 
 /** Human decision on a promotion proposal — the only path to a higher level. */
 agentRouter.post('/autonomy/promotions/:id/decide', async (c) => {
-  const roles = c.get('auth').roles ?? [];
-  if (!(roles.includes('admin') || roles.includes('agents:freeze') || roles.includes('*'))) {
+  if (!(await hasGovernanceCapability(c, 'agents:freeze'))) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Promotion decisions require an admin.' }] },
       403,
@@ -364,9 +397,8 @@ agentRouter.post('/autonomy/promotions/:id/decide', async (c) => {
 
 // ── Constitution (content-os task 16; Req 15.1-15.6) ────────────────────────
 
-function canEditConstitution(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('constitution:write') || roles.includes('*');
+function canEditConstitution(c: Context<AppEnv>): Promise<boolean> {
+  return hasGovernanceCapability(c, 'constitution:write');
 }
 
 /** All versions plus the active one — the editor's version list. */
@@ -377,7 +409,7 @@ agentRouter.get('/constitution', async (c) => {
 });
 
 agentRouter.post('/constitution', async (c) => {
-  if (!canEditConstitution(c)) {
+  if (!(await canEditConstitution(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Editing the constitution requires an admin.' }] }, 403);
   }
   const body = (await c.req.json().catch(() => null)) as { evaluators?: unknown } | null;
@@ -447,7 +479,7 @@ agentRouter.post('/constitution/:id/dry-run', async (c) => {
 });
 
 agentRouter.post('/constitution/:id/activate', async (c) => {
-  if (!canEditConstitution(c)) {
+  if (!(await canEditConstitution(c))) {
     return c.json({ errors: [{ code: 'FORBIDDEN', message: 'Activating a constitution requires an admin.' }] }, 403);
   }
   const { ConstitutionService, ConstitutionError } = await import('../services/constitution-service');
@@ -470,14 +502,12 @@ const killSwitchSchema = z.object({
   reason: z.string().max(500).optional(),
 });
 
-function canFreeze(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('agents:freeze') || roles.includes('*');
+function canFreeze(c: Context<AppEnv>): Promise<boolean> {
+  return hasGovernanceCapability(c, 'agents:freeze');
 }
 
-function canOperateAgents(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('agents:freeze') || roles.includes('*');
+function canOperateAgents(c: Context<AppEnv>): Promise<boolean> {
+  return hasGovernanceCapability(c, 'agents:freeze');
 }
 
 /** Active freezes + recent freeze/lift history. */
@@ -494,7 +524,9 @@ agentRouter.post('/kill-switch', async (c) => {
   }
   // Freezing a role/site requires the dedicated capability (Req 14.3);
   // run/intent scopes accept the same operators.
-  const allowed = parsed.data.scope === 'role' || parsed.data.scope === 'site' ? canFreeze(c) : canOperateAgents(c);
+  const allowed = parsed.data.scope === 'role' || parsed.data.scope === 'site'
+    ? await canFreeze(c)
+    : await canOperateAgents(c);
   if (!allowed) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Capability "agents:freeze" is required.' }] },
@@ -521,7 +553,7 @@ agentRouter.post('/kill-switch/lift', async (c) => {
   if (!parsed.success) {
     return validationError(c, parsed.error);
   }
-  if (!canFreeze(c)) {
+  if (!(await canFreeze(c))) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Capability "agents:freeze" is required.' }] },
       403,
@@ -545,9 +577,8 @@ agentRouter.post('/kill-switch/lift', async (c) => {
 
 // ── Veto window (content-os task 14; Req 13.2/13.4/13.6) ────────────────────
 
-function canVeto(c: Context<AppEnv>): boolean {
-  const roles = c.get('auth').roles ?? [];
-  return roles.includes('admin') || roles.includes('veto') || roles.includes('*');
+function canVeto(c: Context<AppEnv>): Promise<boolean> {
+  return hasGovernanceCapability(c, 'veto');
 }
 
 /** Stagings inside their veto window, soonest deadline first. */
@@ -558,7 +589,7 @@ agentRouter.get('/staged', async (c) => {
 });
 
 agentRouter.post('/staged/:id/veto', async (c) => {
-  if (!canVeto(c)) {
+  if (!(await canVeto(c))) {
     return c.json(
       { errors: [{ code: 'FORBIDDEN', message: 'Veto requires the admin or veto role.' }] },
       403,
@@ -595,13 +626,60 @@ agentRouter.get('/runs', async (c) => {
   return c.json({ data: await service.listRuns() });
 });
 
+/**
+ * HTTP status per retry refusal. 409 is "the run or its goal is not in a state
+ * that can be retried"; the others mirror what `POST /goals` answers for the same
+ * condition (423 frozen, 400 no queue adapter).
+ */
+const RETRY_REFUSAL_STATUS: Record<RetryRunRefusalCode, 400 | 404 | 409 | 423 | 503> = {
+  NOT_FOUND: 404,
+  RUN_NOT_RETRYABLE: 409,
+  RUN_ACTIVE: 409,
+  RETRY_SUPERSEDED: 409,
+  GOAL_CLOSED: 409,
+  GOAL_BUSY: 409,
+  RETRY_UNRECOVERABLE: 409,
+  INTENT_NOT_ACTIVE: 409,
+  FROZEN: 423,
+  ASYNC_UNAVAILABLE: 400,
+  ENQUEUE_FAILED: 503,
+};
+
+/**
+ * Retries a failed or cancelled run as a new `queued` run and enqueues it.
+ *
+ * It used to insert a `running` row and enqueue nothing, so a 201 here meant
+ * nothing would ever execute. The retry now runs through the same queue worker,
+ * claim and harness as any async run, under the requester's re-resolved rights
+ * (#472); see `AgentRunService.retryRun` for the at-most-once guarantee.
+ */
 agentRouter.post('/runs/:id/retry', async (c) => {
-  const service = new AgentRunService(c.get('db'), c.get('siteId'), c.get('runtime').queue);
-  const retry = await service.retryRun(c.req.param('id'));
-  if (!retry) {
-    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Run not found' }] }, 404);
+  const siteId = c.get('siteId');
+  const auth = c.get('auth');
+  const principal = principalRefFromAuth(auth, siteId);
+  if (!principal) {
+    return c.json(
+      {
+        errors: [{
+          code: 'REQUESTER_UNRESOLVED',
+          message: 'A retry executes under the principal who requests it, and this request has none that can be re-resolved.',
+        }],
+      },
+      403,
+    );
   }
-  return c.json({ data: retry }, 201);
+  const service = new AgentRunService(c.get('db'), siteId, c.get('runtime').queue);
+  const result = await service.retryRun(c.req.param('id'), {
+    principal,
+    userId: auth.userId ?? null,
+  });
+  if (!result.ok) {
+    return c.json(
+      { errors: [{ code: result.code, message: result.message }] },
+      RETRY_REFUSAL_STATUS[result.code],
+    );
+  }
+  return c.json({ data: result.retry }, 201);
 });
 
 agentRouter.get('/tools', async (c) => {
@@ -642,7 +720,30 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
     return validationError(c, parsed.error);
   }
   const { ReviewerService, ReviewerError } = await import('../services/reviewer-service');
-  const service = new ReviewerService({ db: c.get('db'), siteId: c.get('siteId') });
+  const { buildAuthorizedHarness } = await import('./ai');
+  const auth = c.get('auth');
+  // Resolved once, from RBAC (#472), and used for BOTH the reviewer's own gate
+  // and the capability check inside `executeApproved`. Two different sources here
+  // would mean a reviewer could pass one check and fail the other.
+  const deciderCapabilities = (await resolveRequestCapabilities(c)).capabilities;
+  const service = new ReviewerService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    // A confident agent approval executes the stored action, exactly as a
+    // human approval does (#453). Same fully-wired harness, so a missing
+    // dependency fails loudly instead of resolving as a phantom side effect.
+    execute: async ({ legacyApprovalId }) => {
+      if (!legacyApprovalId) {
+        return { executed: false, message: 'Approval has no stored action to execute.' };
+      }
+      const result = await buildAuthorizedHarness(c).executeApproved(
+        legacyApprovalId,
+        auth.userId ?? auth.externalId ?? 'agent-reviewer',
+        deciderCapabilities,
+      );
+      return { executed: result.status === 'executed', message: result.message };
+    },
+  });
   try {
     const data = await service.decide({
       approvalId: c.req.param('id'),
@@ -650,7 +751,7 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
       decision: parsed.data.decision,
       confidence: parsed.data.confidence,
       reason: parsed.data.reason,
-      capabilities: c.get('auth').roles ?? [],
+      capabilities: deciderCapabilities,
     });
     return c.json({ data });
   } catch (err) {
@@ -661,6 +762,34 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
   }
 });
 
+/**
+ * Deciding an approval is a governed write: it releases a parked, already
+ * risk-classified action. It requires the same capability as freezing/operating
+ * agents rather than mere tenant membership.
+ */
+async function canDecideApprovals(c: Context<AppEnv>): Promise<boolean> {
+  const grant = await resolveRequestCapabilities(c);
+  return grant.controlPlaneAdmin || grant.capabilities.includes('approvals:decide');
+}
+
+/**
+ * Human approval decision (#453 / G1).
+ *
+ * An "approved" decision must EXECUTE or RESUME the stored action, not just
+ * flip a status column. Previously this handler updated `agent_approvals` and
+ * returned the row, leaving the run parked in `awaiting_approval` and the tool
+ * call in `pending_approval` — a success-shaped response with no side effect.
+ *
+ * The claim → execute → finalize sequence lives in the harness, not here, so
+ * that this route, the agent-reviewer route and the legacy
+ * `/ai/approvals/:id/decide` all serialize against the SAME conditional
+ * update. An earlier version of this fix claimed the row in the route too;
+ * the harness then found the approval no longer `pending` and denied every
+ * single approve. One owner of that transition, not two.
+ *
+ * A rejection has no side effect to order, so it is written directly here,
+ * guarded on `pending` so it cannot overwrite a concurrent approve.
+ */
 agentRouter.post('/approvals/:id/decide', async (c) => {
   const body = z.object({
     decision: z.enum(['approved', 'rejected']),
@@ -673,14 +802,24 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
   const auth = c.get('auth');
+  const approvalId = c.req.param('id');
   const [existing] = await db
     .select()
     .from(agentApprovals)
-    .where(and(eq(agentApprovals.id, c.req.param('id')), eq(agentApprovals.siteId, siteId)))
+    .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)))
     .limit(1);
 
   if (!existing) {
     return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Approval not found' }] }, 404);
+  }
+  // Capability is checked after existence so a caller without it cannot use
+  // the response code to probe which approval ids exist in another tenant —
+  // a cross-tenant id already returned 404 above.
+  if (!(await canDecideApprovals(c))) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Capability "approvals:decide" is required.' }] },
+      403,
+    );
   }
   if (existing.status !== 'pending') {
     return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
@@ -689,26 +828,246 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
     return c.json({ errors: [{ code: 'EXPIRED', message: 'Approval expired' }] }, 409);
   }
 
+  const observe = (row: typeof agentApprovals.$inferSelect) => {
+    agentApprovalsTotal.inc({ subject_type: row.subjectType, status: row.status });
+    agentApprovalLatency.observe(
+      { subject_type: row.subjectType, status: row.status },
+      (Date.now() - row.createdAt.getTime()) / 1000,
+    );
+  };
+
+  if (body.data.decision === 'approved') {
+    if (!existing.legacyApprovalId) {
+      // Without the stored action there is nothing to execute, and reporting
+      // success here is exactly the success-shaped stub this issue forbids.
+      return c.json(
+        {
+          errors: [{
+            code: 'NO_STORED_ACTION',
+            message: 'Approval has no stored action to execute.',
+          }],
+        },
+        422,
+      );
+    }
+
+    // The harness owns the whole claim → execute → finalize sequence, and is
+    // the single serialization point shared by this route, the agent-reviewer
+    // route and the legacy `/ai/approvals/:id/decide`. Claiming the row here
+    // as well would take it out of `pending` before the harness looks, which
+    // is exactly what made the first version of this fix respond 409 to every
+    // approve.
+    const { buildAuthorizedHarness } = await import('./ai');
+    // The decider's own live capabilities (#472). They are one half of the check:
+    // the harness re-resolves the REQUESTER's grant too and executes with the
+    // intersection, under the requester's row/field rules. An earlier version of
+    // this comment claimed execution used the decider's grant alone — it did, and
+    // that was the defect: an action parked by a user who was since demoted still
+    // ran, with the approver's reach.
+    const result = await buildAuthorizedHarness(c).executeApproved(
+      existing.legacyApprovalId,
+      auth.userId ?? auth.externalId ?? 'unknown',
+      (await resolveRequestCapabilities(c)).capabilities,
+    );
+
+    if (result.status !== 'executed') {
+      // Kill switch, cancellation, expiry, a lost race, or a genuine failure.
+      // The harness has already released its claim, so the approval is pending
+      // again and an operator can retry or reject it.
+      return c.json(
+        { errors: [{ code: 'EXECUTION_FAILED', message: result.message ?? 'Execution failed' }] },
+        409,
+      );
+    }
+
+    // The harness committed the transition; re-read for the caller.
+    const [decided] = await db
+      .select()
+      .from(agentApprovals)
+      .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)))
+      .limit(1);
+    const row = decided ?? existing;
+
+    // The decision reason is the route's to record; the harness does not carry it.
+    if (body.data.reason) {
+      await db
+        .update(agentApprovals)
+        .set({ decisionReason: body.data.reason })
+        .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)));
+    }
+
+    observe(row);
+    return c.json({
+      data: row,
+      meta: { execution: { status: result.status, runId: result.runId, toolCallId: result.toolCallId } },
+    });
+  }
+
+  // Rejection also goes through the harness, for the same reason an approve
+  // does: `rejectApproval` claims `agent_approvals` first and only then takes
+  // the legacy record, so a reject and a concurrent approve contend for one
+  // row. Rejecting here first would take that row out of `pending`, the
+  // harness would then find nothing to claim, and the legacy record would be
+  // left behind — the parked action still executable through
+  // `/ai/approvals/:id/decide`.
+  if (existing.legacyApprovalId) {
+    const { buildAuthorizedHarness } = await import('./ai');
+    const rejected = await buildAuthorizedHarness(c).rejectApproval(
+      existing.legacyApprovalId,
+      auth.userId ?? auth.externalId ?? 'unknown',
+    );
+    if (!rejected) {
+      return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
+    }
+
+    const [decided] = await db
+      .select()
+      .from(agentApprovals)
+      .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)))
+      .limit(1);
+    const row = decided ?? existing;
+
+    if (body.data.reason) {
+      await db
+        .update(agentApprovals)
+        .set({ decisionReason: body.data.reason })
+        .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)));
+    }
+
+    observe(row);
+    return c.json({ data: row });
+  }
+
+  // No linked legacy record: nothing to execute later, so the reject is a
+  // plain guarded write here.
   const [record] = await db
     .update(agentApprovals)
     .set({
-      status: body.data.decision,
+      status: 'rejected',
       decidedAt: new Date(),
       decidedBy: auth.userId ?? null,
       decisionReason: body.data.reason ?? null,
     })
-    .where(and(eq(agentApprovals.id, c.req.param('id')), eq(agentApprovals.siteId, siteId)))
+    .where(and(
+      eq(agentApprovals.id, approvalId),
+      eq(agentApprovals.siteId, siteId),
+      eq(agentApprovals.status, 'pending'),
+    ))
     .returning();
 
   if (!record) {
+    return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
+  }
+
+  observe(record);
+  return c.json({ data: record });
+});
+
+/**
+ * Reopens an approval that stopped at `failed` (#453).
+ *
+ * A skill that reached a service and then failed leaves an unknown amount of
+ * work done, so the approval is parked at `failed` rather than silently
+ * re-offered — retrying it could repeat a non-idempotent mutation. This is the
+ * deliberate way back: a human checks what actually happened and reopens it.
+ *
+ * Requires the same capability as deciding, because reopening is what makes a
+ * second execution possible. The reason is mandatory and audited: the whole
+ * point is a record of who judged the retry safe, and why.
+ */
+agentRouter.post('/approvals/:id/reopen', async (c) => {
+  const parsed = z
+    .object({ reason: z.string().min(1).max(1000) })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return validationError(c, parsed.error);
+  }
+
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  const auth = c.get('auth');
+  const approvalId = c.req.param('id');
+
+  const [existing] = await db
+    .select()
+    .from(agentApprovals)
+    .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)))
+    .limit(1);
+
+  if (!existing) {
     return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Approval not found' }] }, 404);
   }
-  agentApprovalsTotal.inc({ subject_type: record.subjectType, status: record.status });
-  agentApprovalLatency.observe(
-    { subject_type: record.subjectType, status: record.status },
-    (Date.now() - record.createdAt.getTime()) / 1000,
-  );
-  return c.json({ data: record });
+  if (!(await canDecideApprovals(c))) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Capability "approvals:decide" is required.' }] },
+      403,
+    );
+  }
+
+  // The transition and its audit commit together. Reopening authorizes a second
+  // run of an action that may already have taken effect, so the record of who
+  // authorized it and why is part of the authorization — not a log line that
+  // may or may not follow it. Split, a failing insert would leave the approval
+  // executable again with no audit trail at all.
+  //
+  // Duck-typed like `config-import-service.ts`: the fake-DB route suites have
+  // no `transaction`, and the ordering is still correct without one.
+  const withTx = db as typeof db & {
+    transaction?: <T>(cb: (tx: typeof db) => Promise<T>) => Promise<T>;
+  };
+
+  const reopenWithin = async (tx: typeof db) => {
+    // Only `failed` reopens. A decided approval must not be revived, and a
+    // `deciding` row belongs to a live execution or the claim sweeper.
+    const [row] = await tx
+      .update(agentApprovals)
+      .set({
+        status: 'pending',
+        decidedAt: null,
+        decidedBy: null,
+        decisionReason: `reopened by ${auth.userId ?? 'unknown'}: ${parsed.data.reason}`.slice(0, 1000),
+      })
+      .where(and(
+        eq(agentApprovals.id, approvalId),
+        eq(agentApprovals.siteId, siteId),
+        eq(agentApprovals.status, 'failed'),
+      ))
+      .returning();
+
+    if (!row) return undefined;
+
+    await tx.insert(activity).values({
+      siteId,
+      action: 'approval.reopened',
+      payload: {
+        approvalId,
+        reopenedBy: auth.userId ?? null,
+        reason: parsed.data.reason,
+        previousReason: existing.decisionReason,
+      },
+    });
+
+    return row;
+  };
+
+  const reopened =
+    typeof withTx.transaction === 'function'
+      ? await withTx.transaction(reopenWithin)
+      : await reopenWithin(db);
+
+  if (!reopened) {
+    return c.json(
+      {
+        errors: [{
+          code: 'CONFLICT',
+          message: `Only a failed approval can be reopened (this one is ${existing.status}).`,
+        }],
+      },
+      409,
+    );
+  }
+
+  return c.json({ data: reopened });
 });
 
 agentRouter.get('/artifacts', async (c) => {

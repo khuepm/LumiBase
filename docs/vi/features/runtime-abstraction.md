@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:03:22.000Z
+version: 2
+lastUpdated: 2026-09-01T16:48:56.430Z
 sourceLang: vi
-contentHash: 9ec3924addf5c76e
+contentHash: be568838e320c7e9
+codeVerified: 2026-09-01T16:48:56.430Z
+codeVerifiedHash: be568838e320c7e9
+codeVerifiedClaims: 10
 ---
 
 # Runtime Abstraction Layer (`@lumibase/runtime`)
@@ -24,9 +27,56 @@ packages/runtime/
 │   │   ├── cloudflare/       # Implementation cho Cloudflare Workers
 │   │   └── docker/           # Implementation cho Docker/Node
 │   ├── factory.ts            # createRuntime(env) chọn theo LUMIBASE_RUNTIME
-│   └── index.ts              # Public API
+│   ├── index.ts              # entry "." — chỉ phần an toàn cho Worker
+│   ├── docker.ts             # entry "./docker" — adapter Docker
+│   └── node.ts               # entry "./node" — createRuntime + leader lock
 └── package.json              # deps: ioredis, @aws-sdk/client-s3, postgres, meilisearch, bullmq, prom-client
 ```
+
+## Ba entry point, và vì sao điều đó quan trọng
+
+| Import | Chứa gì | An toàn trong Worker? |
+|---|---|---|
+| `@lumibase/runtime` | Interface, cache helper, memory provider, xử lý key dùng chung, adapter **Cloudflare** | Có |
+| `@lumibase/runtime/docker` | Adapter Docker — Redis, BullMQ, S3, MeiliSearch, Imgproxy | **Không** |
+| `@lumibase/runtime/node` | `createRuntime` (rẽ nhánh theo `LUMIBASE_RUNTIME`) và leader lock dùng Redis | **Không** |
+
+Việc tách này không phải chuyện hình thức. Trước đây root của package re-export
+mọi thứ, nên bundle Cloudflare Worker chứa cả `bullmq`, `ioredis` và
+`@aws-sdk/client-s3` dù Worker không bao giờ dùng tới. Rồi BullMQ 6 thêm backend
+Postgres, và `sql-loader` của nó resolve đường dẫn thư mục của chính nó ở **top
+level module**, throw khi không có `__dirname` lẫn frame `file:///` — đúng môi
+trường một Worker đã bundle. Worker ngừng khởi tạo được, và Cloudflare từ chối
+mọi deploy với validation error 10021.
+
+Các quy tắc suy ra từ đó:
+
+- **Business logic chỉ import từ root.** Cần `RuntimeContext` hay một provider
+  interface thì import từ `@lumibase/runtime` — đó là type và bị xoá lúc build.
+- **Entry point Node** (`apps/cms/src/serve.ts`, script CLI trong
+  `apps/cms/scripts/`) được phép import `/node` và `/docker`.
+- **Đừng bao giờ import `/docker` từ bất cứ thứ gì mà `apps/cms/src/index.ts`
+  chạm tới.** Module đó là app của Worker. `await import()` động cũng không phải
+  cửa thoát: bundler vẫn inline target, nên `wrangler.toml` alias subpath này
+  sang một stub cho các bản build Worker.
+- **Muốn thêm export vào root?** Nếu module của nó cần một built-in của Node hoặc
+  một package chỉ dành cho Node dưới dạng value import, nó thuộc về subpath.
+  `import type` thì luôn ổn.
+
+Hai gate CI canh việc này, và chúng không thay thế được nhau:
+
+```bash
+# assert bundle Worker không chứa code chỉ dành cho Docker
+pnpm verify:worker-bundle
+# boot Worker bằng workerd
+pnpm verify:worker-startup
+```
+
+`verify:worker-bundle` mới là hàng rào thật. `verify:worker-startup` **không**
+bắt được class lỗi này — khi cố tình đưa adapter Docker trở lại, `wrangler dev`
+vẫn boot thành công, vì fallback quét stack của BullMQ tìm được frame `file:///`
+ở local nhưng không có trong Worker đã deploy. Hãy đọc startup probe xanh là
+"không có throw top-level chạy ngay", chứ đừng đọc thành "cái này deploy được".
 
 ## 6 Provider interfaces
 

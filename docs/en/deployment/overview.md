@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:10:07.375Z
+version: 2
+lastUpdated: 2026-09-07T03:34:14.317Z
 sourceLang: en
-contentHash: 36ae5aa938f6c83d
-codeVerified: 2026-08-02T19:10:07.375Z
-codeVerifiedHash: 36ae5aa938f6c83d
-codeVerifiedClaims: 8
+contentHash: 1767648d90471727
+codeVerified: 2026-09-07T03:34:14.317Z
+codeVerifiedHash: 1767648d90471727
+codeVerifiedClaims: 10
 ---
 
 # Deployment Overview
@@ -30,7 +30,28 @@ The Studio SPA talks to the CMS over a single base URL resolved by
 
 - **Dev / Docker single-origin:** leave `VITE_API_URL` unset. The Studio uses
   same-origin requests — the Vite dev server proxies `/api` to the local CMS,
-  and Docker serves the Studio from the same origin as the CMS.
+  and the Docker image serves the Studio from the same origin as the CMS.
+
+  The image ships the built SPA at `/app/studio` and the CMS mounts it, so an
+  admin UI is reachable without a second deployment. Where it answers:
+
+  | Path | Served |
+  |------|--------|
+  | `/setup` | the SPA shell, for first-run setup |
+  | `/<adminPath>` and below | the SPA shell, once setup has chosen the admin path |
+  | `/assets/*`, `/sw.js` | the build output |
+  | `/`, `/admin`, `/studio`, anything else | the indistinguishable `404` — the Hide-Login guarantee is unchanged |
+
+  Two environment variables control it. `LUMIBASE_STUDIO_DIST` overrides the
+  bundle location (default: `./studio` relative to the working directory), and
+  `LUMIBASE_SERVE_STUDIO=false` turns serving off. Turn it off when the Studio is
+  also deployed to Pages in front of this CMS — two copies can drift to
+  different versions, and which one a person gets then depends on the hostname
+  they typed.
+
+  This applies to the **image** (`docker/Dockerfile`). The hot-reload development
+  image mounts source instead of building, so it has no bundle and runs API-only;
+  use `pnpm studio:dev` alongside it.
 - **Cloudflare Pages (e.g. `studio.lumibase.dev`):** the static SPA has **no
   co-located backend**, so it must call the CMS cross-origin. Set
   `VITE_API_URL` at build time to the CMS origin (e.g.

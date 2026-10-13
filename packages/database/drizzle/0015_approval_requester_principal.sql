@@ -1,0 +1,33 @@
+-- 0015_approval_requester_principal — record WHO asked for a parked approval,
+-- so the grant can be re-resolved when the action finally executes (#472).
+--
+-- Additive only: one nullable column, no backfill, no data rewrite, no index.
+-- Idempotent (IF NOT EXISTS), so re-running is safe.
+--
+-- Why a column rather than a lookup. An approval can sit pending for days. Until
+-- now the only identity available at execution time was the decider's, so a
+-- requester who was demoted, whose API key was revoked, or who was removed from
+-- the site between parking and approval still had their action executed — under
+-- the decider's rights. The run that requested it is reachable
+-- (`agent_runs`), but a run carries an agent name, not the principal that
+-- started it, so there was nothing to re-resolve.
+--
+-- The value is a reference, never a capability snapshot. Two shapes:
+--   {"kind":"principal","ref":{"type":"user","siteId":"…","userId":"…"}}
+--   {"kind":"principal","ref":{"type":"api_key","siteId":"…","apiKeyId":"…"}}
+--   {"kind":"agentRole","role":"translator","intentId":"…","autonomyCap":2}
+--
+-- EXISTING ROWS STAY NULL, AND THAT IS NOT BACKFILLED. A null means "this
+-- approval predates provenance", and `executeApproved` refuses to run those
+-- rather than inferring an identity. Operationally that means approvals parked
+-- before this migration must be re-requested after deploy; the alternative —
+-- treating unknown provenance as the decider's own rights — is the behaviour
+-- this change exists to remove. The set is small and visible:
+--
+--   SELECT id, run_id, created_at FROM lumibase_agent_approvals
+--    WHERE status = 'pending' AND requested_by_principal IS NULL;
+--
+-- No FAIL condition: the column is nullable with no default, no constraint and
+-- no unique index, so it cannot conflict with existing data.
+ALTER TABLE "lumibase_agent_approvals"
+	ADD COLUMN IF NOT EXISTS "requested_by_principal" jsonb;

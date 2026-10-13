@@ -73,7 +73,8 @@ jobs:
       # One aggregate step so the local pre-commit hook and CI cannot drift
       # apart: `.husky/pre-commit` runs this same `pnpm check:all`. Adding a
       # guard to the script therefore arms it in both places at once. Covers
-      # version:check, registry:check, settings:check, drift:check, scripts:test.
+      # version:check, registry:check, settings:check, drift:check, tauri:check,
+      # scripts:test.
       #
       # Why each one earns its place:
       #  - settings:check — pnpm 9 reads install settings from package.json;
@@ -86,7 +87,11 @@ jobs:
       #    shipped Vite 7 builds under manifests claiming Vite 8. The parity
       #    check cannot see this — the two override copies agreed with each
       #    other, they were only both wrong relative to the manifests.
-      - name: Check repo guards (versions, registry, pnpm settings, override drift, scripts)
+      #  - tauri:check — Dependabot bumps @tauri-apps/* on the npm side only;
+      #    `tauri build` refuses mismatched major/minor against Cargo.lock, and
+      #    only release-apps.yml runs it, so the drift surfaced at release
+      #    time (v0.26.0 → v1.0.0-rc.3) instead of on the bump PR.
+      - name: Check repo guards (versions, registry, pnpm settings, override drift, tauri, scripts)
         run: pnpm check:all
 
       # `pnpm -r` runs tsc in every workspace package directly — no turbo cache
@@ -473,6 +478,67 @@ jobs:
       - name: Lint workflow files
         run: ./actionlint
 
+  worker-bundle:
+    name: Worker bundle excludes Docker adapters
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # `pnpm build` runs `wrangler deploy --dry-run`, which bundles the Worker
+    # WITHOUT instantiating it. A module that throws at top level therefore
+    # builds green and then fails when Cloudflare starts it. That is exactly what
+    # happened: BullMQ 6 arrived through `@lumibase/runtime`'s barrel, its
+    # Postgres `sql-loader` resolves its own directory at module scope, and every
+    # deploy was rejected with validation error 10021 while CI stayed green.
+    #
+    # The reliable fence is bundle composition, not a local boot: with the Docker
+    # adapters re-added, `wrangler dev` still booted fine — the throw only
+    # happens in a deployed Worker, which has no `file:///` stack frames for
+    # BullMQ's fallback to find. So the bundle assertion below is the gate; the
+    # startup probe is a complementary check for eagerly-thrown errors.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Build all three Worker environments: the alias that keeps the Docker
+      # subtree out is declared once at the top level of wrangler.toml, so a
+      # future env block overriding it would only show up here.
+      - name: Build Worker (default env) and assert bundle composition
+        run: |
+          pnpm --filter @lumibase/cms build
+          pnpm verify:worker-bundle
+
+      - name: Build Worker (staging) and assert bundle composition
+        run: |
+          pnpm --filter @lumibase/cms build:staging
+          pnpm verify:worker-bundle
+
+      - name: Build Worker (production) and assert bundle composition
+        run: |
+          pnpm --filter @lumibase/cms build:production
+          pnpm verify:worker-bundle
+
+      # Complementary, and deliberately last: proves the module graph evaluates
+      # under workerd. See the SCOPE note in the script for what it cannot catch.
+      - name: Boot the Worker under workerd
+        run: pnpm verify:worker-startup
+
   scaffold-smoke:
     name: Scaffolded starters install and typecheck
     runs-on: ubuntu-latest
@@ -490,7 +556,7 @@ jobs:
     # declared #450 fixed while it was not.
     #
     # Scoped to changes under the scaffolder: this job reaches the npm registry
-    # four times, and making every unrelated PR depend on that would trade one
+    # for each template and package manager; making every unrelated PR depend on that would trade one
     # flake class for another.
     steps:
       - name: Checkout code
@@ -565,6 +631,6 @@ jobs:
         if: steps.scope.outputs.changed == 'true'
         run: pnpm --filter create-lumibase build
 
-      - name: Smoke-test both templates with npm and pnpm
+      - name: Smoke-test all templates with npm and pnpm
         if: steps.scope.outputs.changed == 'true'
         run: pnpm --filter create-lumibase smoke

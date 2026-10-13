@@ -46,12 +46,12 @@ const RUN_ROW = {
  * freeze, no tool override, no deployment targets configured. Writes are
  * recorded so the test can assert on the tool-call outcome the harness wrote.
  */
-function fakeDb(recorded: Recorded): Database {
+function fakeDb(recorded: Recorded, budget?: Record<string, unknown>): Database {
   let idCounter = 0;
   const nextId = () => `id_${++idCounter}`;
 
   const rowsFor = (table: string) =>
-    table === getTableName(agentRuns) ? [{ ...RUN_ROW }] : [];
+    table === getTableName(agentRuns) ? [{ ...RUN_ROW, budget }] : [];
 
   const selectResult = (table: string) => {
     const rows = rowsFor(table);
@@ -166,5 +166,19 @@ describe('queued agent runs: deployment skills need the runtime KeyProvider', ()
       (row) => row.table === 'lumibase_agent_tool_calls',
     );
     expect(toolCallInsert?.values['siteId']).toBe(payload.siteId);
+  });
+});
+
+// Execute the real worker + harness, not just a payload-shape assertion.
+describe('async budget enforcement (B92)', () => {
+  it.each(['payload', 'persisted legacy run'])('blocks the skill when maxToolCalls=0 comes from %s', async (source) => {
+    const recorded: Recorded = { selected: [], inserted: [], updated: [] };
+    const budget = { maxToolCalls: 0 };
+    await processAgentRunJob({ db: fakeDb(recorded, source === 'persisted legacy run' ? budget : undefined), env: {}, keys }, {
+      ...payload, ...(source === 'payload' ? { budget } : {}),
+    });
+    expect(runOutcome(recorded)).toMatchObject({ status: 'failed', error: 'Run budget exceeded: maxToolCalls=0' });
+    expect(recorded.selected).not.toContain('lumibase_deployment_targets');
+    expect(recorded.inserted.filter((row) => row.table === 'lumibase_agent_tool_calls')).toHaveLength(0);
   });
 });
