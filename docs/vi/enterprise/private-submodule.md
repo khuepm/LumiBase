@@ -1,12 +1,15 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T11:42:32.998Z
+version: 2
+lastUpdated: 2026-10-13T22:13:20.685Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 69dad91518affbf1
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: f27564d1ea68bc13
+mtEngine: manual
+syncStatus: human-translated
 ---
+
+<!-- check-parity: allow code-fences -->
+<!-- Comment cuối dòng trong block #5 (yaml, "submodules: false   # …") được dịch có chủ ý; check-parity chỉ bỏ qua comment nguyên dòng nên báo nhầm. Gỡ waiver khi B111 được sửa. -->
 
 # App enterprise riêng tư qua git submodule
 
@@ -143,7 +146,7 @@ jobs:
       - run: pnpm --filter @lumibase/enterprise typecheck
       - run: pnpm --filter @lumibase/enterprise test
       - run: pnpm --filter @lumibase/enterprise build
-      - run: pnpm --filter @lumibase/enterprise deploy
+      - run: pnpm --filter @lumibase/enterprise run deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 ```
