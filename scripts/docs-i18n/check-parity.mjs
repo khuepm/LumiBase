@@ -130,10 +130,15 @@ function inlineCode(body) {
  * `docs/en/README.md` says `./llms.txt`. Comparing the literal strings called
  * that a mismatch and — worse — called the *broken* VI link (`./llms.txt`,
  * pointing at a `docs/vi/llms.txt` that does not exist) a perfect match. So:
- * resolve both sides, then collapse the locale segment only when the target
- * exists in both trees, which is what makes an ordinary cross-doc link compare
- * equal while a single-locale target still has to agree on one real file.
- * Backlog B67, and the false positive B37(d) recorded.
+ * resolve both sides, then collapse the locale segment only for a link that
+ * stays inside the linking doc's own locale tree and whose target exists in
+ * both trees, which is what makes an ordinary cross-doc link compare equal
+ * while a single-locale target still has to agree on one real file. A link
+ * into the OTHER locale's tree always stays locale-specific: a VI page that
+ * sends readers to the English copy (`../en/getting-started.md`) of a page
+ * that has a Vietnamese one is reported, not matched against the EN page's
+ * `./getting-started.md`. Backlog B67, the false positive B37(d) recorded, and
+ * the own-tree rule B112.
  */
 export function linkTargets(body, from = null) {
   const files = [];
@@ -156,8 +161,8 @@ export function linkTargets(body, from = null) {
 }
 
 /**
- * A relative link reduced to the file it points at, locale-collapsed when both
- * locales have that file. Absolute-looking targets (`/api/...`) and anything
+ * A relative link reduced to the file it points at, locale-collapsed when it
+ * stays in the linking doc's own locale tree and both locales have that file. Absolute-looking targets (`/api/...`) and anything
  * that escapes the docs tree are returned untouched, so they still compare
  * literally.
  */
@@ -180,7 +185,10 @@ export function resolveDocLink(target, { rel, locale }) {
   // trees is not a locale mismatch either — collapse it so the two sides compare
   // as they did before resolution, instead of reporting a misleading mismatch.
   // Present in only some: each side has to agree on one real file (B67).
-  const collapse = present === LOCALES.length || present === 0;
+  // Only inside the linking doc's own locale tree: a link that crosses into
+  // the other locale stays locale-specific, so `../en/x.md` from a VI page
+  // never compares equal to `./x.md` from the EN page (B112).
+  const collapse = targetLocale === locale && (present === LOCALES.length || present === 0);
   return (collapse ? `docs/*/${inner}` : resolved) + fragment;
 }
 

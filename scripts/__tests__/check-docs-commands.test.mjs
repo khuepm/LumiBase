@@ -22,22 +22,27 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  binLookup,
   checkDocument,
   collectPackageDirs,
+  collectPackageDirsByName,
   collectPackages,
   extractCommands,
+  fencedLines,
+  resolveFilterName,
 } from '../check-docs-commands.mjs';
 
 const rootScripts = new Set(['db:migrate', 'db:generate', 'lumibase', 'test', 'dev']);
-const cmsScripts = new Set(['dev', 'typegen', 'test', 'deploy:dev', 'deploy:production']);
+const cmsScripts = new Set(['dev', 'typegen', 'test', 'deploy', 'deploy:dev', 'deploy:production']);
 const packages = new Map([
   ['@lumibase/database', new Set(['migrate', 'generate', 'studio'])],
   ['@lumibase/sdk', new Set(['build', 'test', 'typecheck', 'clean'])],
   ['@lumibase/cms', cmsScripts],
 ]);
 const packageDirs = new Map([['apps/cms', cmsScripts]]);
-const check = (text, rel = 'docs/en/x.md') =>
-  checkDocument({ rel, text, rootScripts, packages, packageDirs });
+const packageDirsByName = new Map([['@lumibase/cms', 'apps/cms']]);
+const check = (text, rel = 'docs/en/x.md', options = {}) =>
+  checkDocument({ rel, text, rootScripts, packages, packageDirs, packageDirsByName, ...options });
 const fence = (...lines) => ['```bash', ...lines, '```'].join('\n');
 
 test('catches the incident: -F @lumibase/database db:migrate', () => {
@@ -238,6 +243,201 @@ test('collectPackages reads names and scripts, and skips the root manifest', () 
     assert.deepEqual([...packages.keys()], ['@x/a']);
     assert.deepEqual([...packages.get('@x/a')], ['test']);
     assert.deepEqual([...collectPackageDirs(root).keys()], ['packages/a']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ─── Follow-ups from the review of PR #535 (B112) ────────────────────────────
+// Each fix has a failing twin: the assertion marked "twin" fails on the guard
+// as it was before B112, which is how these cases were proven to test the fix.
+
+// N6 — fences follow CommonMark, and only shell-like fences are scanned.
+
+test('a four-backtick fence showing a three-backtick block does not invert the fence state', () => {
+  const text = [
+    '````md',
+    '```bash',
+    'pnpm nosuch1',
+    '```',
+    'pnpm nosuch2 is prose inside the outer example',
+    '````',
+    'The pnpm workspace is prose.',
+  ].join('\n');
+  // twin: the old toggle closed the outer fence at the inner ``` and checked
+  // `pnpm nosuch2` as a command.
+  assert.deepEqual(check(text), []);
+});
+
+test('a shell fence after a four-backtick fence is still checked', () => {
+  const text = ['````md', '```bash', 'x', '```', '````', '```bash', 'pnpm typegen', '```'].join('\n');
+  assert.equal(check(text).length, 1);
+});
+
+test('a closer shorter than the opener does not close the fence', () => {
+  const text = ['````bash', '```', 'pnpm typegen', '````'].join('\n');
+  // twin: the old toggle closed at the inner ``` and never saw pnpm typegen.
+  assert.equal(check(text).length, 1);
+});
+
+test('a closer must use the same character as the opener', () => {
+  const text = ['~~~bash', '```', 'pnpm typegen', '~~~'].join('\n');
+  assert.equal(check(text).length, 1);
+});
+
+test('a SQL comment that mentions pnpm is not a command', () => {
+  // twin: the old guard parsed `-- then pnpm picks it up` and reported "picks".
+  assert.deepEqual(check(['```sql', '-- then pnpm picks it up', 'SELECT 1;', '```'].join('\n')), []);
+});
+
+test('non-shell fences are skipped, shell-like ones are checked', () => {
+  for (const lang of ['ts', 'json', 'text', 'md', 'sql'])
+    assert.deepEqual(check([`\`\`\`${lang}`, 'pnpm typegen', '```'].join('\n')), [], lang);
+  for (const lang of ['', 'bash', 'sh', 'shell', 'zsh', 'console', 'Bash', 'dockerfile'])
+    assert.equal(check([`\`\`\`${lang}`, 'pnpm typegen', '```'].join('\n')).length, 1, lang || 'untagged');
+});
+
+test('a CI run: step in a yaml fence is still checked', () => {
+  assert.equal(check(['```yaml', '- run: pnpm typegen', '```'].join('\n')).length, 1);
+});
+
+test('fencedLines numbers fences and reports physical line numbers', () => {
+  assert.deepEqual(fencedLines(['```bash', 'a', '```', 'p', '```sh', 'b', '```'].join('\n')), [
+    { text: 'a', lineNumber: 2, fence: 1 },
+    { text: 'b', lineNumber: 6, fence: 2 },
+  ]);
+});
+
+// N5 — `\` continuation joins lines before parsing.
+
+test('a backslash-continued command is checked as one command', () => {
+  const problems = check(fence('pnpm -F @lumibase/cms \\', '  nosuch'));
+  // twin: each physical line was parsed alone, so `nosuch` was never seen.
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /x\.md:2 .*@lumibase\/cms has no "nosuch"/);
+});
+
+test('a continuation between pnpm and its filter is joined too', () => {
+  assert.equal(check(fence('pnpm \\', '  -F @lumibase/database db:migrate')).length, 1);
+});
+
+test('a continued command with real arguments keeps passing', () => {
+  // The shape of features/typegen.md.
+  assert.deepEqual(check(fence('pnpm -F @lumibase/cms typegen \\', '  --site x')), []);
+});
+
+test('a continuation does not run past the fence closer', () => {
+  assert.deepEqual(check([fence('echo x \\'), 'pnpm typegen in prose'].join('\n')), []);
+});
+
+// N4 — scope-less filter names resolve like pnpm 9.
+
+test('a scope-less filter name resolves to its unique scoped package', () => {
+  assert.deepEqual(check(fence('pnpm --filter cms dev')), []);
+  const problems = check(fence('pnpm --filter cms nosuch'));
+  // twin: the old guard said "no workspace package is named cms".
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /@lumibase\/cms has no "nosuch"/);
+});
+
+test('a scope-less name shared by two scopes is ambiguous', () => {
+  const two = new Map([...packages, ['@other/cms', new Set(['dev'])]]);
+  const problems = checkDocument({
+    rel: 'docs/en/x.md',
+    text: fence('pnpm --filter cms dev'),
+    rootScripts,
+    packages: two,
+  });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /cms is ambiguous \(matches @lumibase\/cms, @other\/cms\)/);
+});
+
+test('a scope-less name with no match is still unknown', () => {
+  const problems = check(fence('pnpm --filter nope build'));
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /no workspace package is named nope/);
+});
+
+test('resolveFilterName prefers an exact name and never strips a given scope', () => {
+  const names = ['create-lumibase', '@lumibase/cms', '@x/create-lumibase'];
+  assert.deepEqual(resolveFilterName('create-lumibase', names), { pkg: 'create-lumibase' });
+  assert.deepEqual(resolveFilterName('cms', names), { pkg: '@lumibase/cms' });
+  assert.deepEqual(resolveFilterName('@other/cms', names), { missing: true });
+  assert.deepEqual(resolveFilterName('apps/cms', names), { missing: true });
+});
+
+// N2 — a builtin that shadows a script runs the builtin.
+
+test('a builtin named like a package script is reported with the run fix', () => {
+  const problems = check(fence('pnpm -F @lumibase/cms deploy'));
+  // twin: builtins returned null, so this passed while pnpm ran its own deploy.
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /builtin "deploy"/);
+  assert.match(problems[0], /pnpm -F @lumibase\/cms run deploy/);
+  assert.deepEqual(check(fence('pnpm -F @lumibase/cms run deploy')), []);
+});
+
+test('the same shadowing is reported from a package directory', () => {
+  assert.equal(check(fence('cd apps/cms', 'pnpm deploy')).length, 1);
+  assert.equal(check(fence('pnpm --if-present -F @lumibase/cms deploy')).length, 1, '--if-present still runs the builtin');
+});
+
+test('a builtin that shadows nothing is still a builtin', () => {
+  assert.deepEqual(check(fence('pnpm --filter @lumibase/database deploy out/')), []);
+  assert.deepEqual(check(fence('pnpm install')), []);
+  assert.deepEqual(check(fence('pnpm --filter @lumibase/enterprise deploy')), [], 'optional package');
+});
+
+// N3 — pnpm 9 falls back to a binary in root and directory form only.
+
+test('a root command that is an installed binary is not a missing script', () => {
+  const tsxAtRoot = (dir, name) => dir === '.' && name === 'tsx';
+  assert.deepEqual(check(fence('pnpm tsx scripts/x.ts'), 'docs/en/x.md', { binExists: tsxAtRoot }), []);
+  // twin: with nothing installed (the old behaviour for every binary) it is reported.
+  assert.equal(check(fence('pnpm tsx scripts/x.ts')).length, 1);
+});
+
+test('a directory command resolves binaries of that directory', () => {
+  const wrangler = (dir, name) => dir === 'apps/cms' && name === 'wrangler';
+  assert.deepEqual(check(fence('cd apps/cms', 'pnpm wrangler --version'), 'docs/en/x.md', { binExists: wrangler }), []);
+  assert.equal(check(fence('pnpm wrangler --version'), 'docs/en/x.md', { binExists: wrangler }).length, 1);
+});
+
+test('pnpm node runs node', () => {
+  assert.deepEqual(check(fence('pnpm node -e "console.log(1)"')), []);
+});
+
+test('--filter does not fall back to binaries, and the message says so', () => {
+  const wrangler = (dir, name) => dir === 'apps/cms' && name === 'wrangler';
+  const problems = check(fence('pnpm -F @lumibase/cms wrangler deploy'), 'docs/en/x.md', { binExists: wrangler });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /pnpm --filter @lumibase\/cms exec wrangler/);
+});
+
+test('binLookup finds a package or root node_modules/.bin entry', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-cmd-bin-'));
+  try {
+    fs.mkdirSync(path.join(root, 'apps', 'a', 'node_modules', '.bin'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'apps', 'a', 'node_modules', '.bin', 'foo'), '');
+    fs.mkdirSync(path.join(root, 'node_modules', '.bin'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'node_modules', '.bin', 'bar'), '');
+    const exists = binLookup(root);
+    assert.equal(exists('apps/a', 'foo'), true);
+    assert.equal(exists('apps/a', 'bar'), true, 'root bins are on the path too');
+    assert.equal(exists('.', 'foo'), false);
+    assert.equal(exists('.', 'baz'), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('collectPackageDirsByName maps names to directories', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-cmd-'));
+  try {
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'root' }));
+    fs.mkdirSync(path.join(root, 'apps', 'cms'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'apps', 'cms', 'package.json'), JSON.stringify({ name: '@x/cms' }));
+    assert.deepEqual([...collectPackageDirsByName(root)], [['@x/cms', 'apps/cms']]);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -397,11 +397,28 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `docs/vi/` where neither file exists. The parity checker could not see it: it
   compared link *text*, so a VI link pointing at a missing file matched an EN
   link pointing at a real one perfectly. It now compares the file a link
-  **resolves** to, collapsing the locale segment only when both trees have that
-  file — which also stops it flagging a legitimately different path for the same
+  **resolves** to, collapsing the locale segment only for links inside the
+  doc's own locale tree when both trees have that file — which also stops it flagging a legitimately different path for the same
   target. Repo-wide parity drops from 37 problems in 30 pairs to 35 in 29. A link
   that is dead in both locales still compares equal, as it did before: parity is
   not a dead-link check, and reporting it as a locale mismatch would mislead.
+- **Docs command guard and parity follow-ups (B112).** `pnpm --filter
+  @lumibase/cms deploy` in `deployment/overview.md` and the enterprise CI recipe
+  in `enterprise/private-submodule.md` ran pnpm's builtin `deploy` (which fails
+  with `ERR_PNPM_INVALID_DEPLOY_TARGET`), not the package's deploy script; both
+  now say `run deploy`, and the guard reports a builtin that shadows a script of
+  the target package. The guard also follows pnpm 9's fallback to a
+  `node_modules/.bin` binary (root and directory form only — `--filter`/`-r`
+  get an `exec` hint instead), resolves scope-less `--filter` names to their
+  unique `@scope/<name>` (ambiguous names are reported), joins `\`-continued
+  lines before parsing, tracks fence markers per CommonMark, and scans only
+  shell-like fences, so a SQL `-- … pnpm …` comment is no longer a command. No
+  documented command lost coverage: on the unchanged docs the guard checks the
+  same 183 script commands as before. The parity checker no longer
+  treats a link into the other locale's tree as equal to an own-locale link; on
+  its first run that found `docs/vi/deployment/google-cloud-vm.md` sending
+  readers to the English Devpost draft although a Vietnamese one exists, now
+  fixed together with a drifted `git clone` line in the same pair.
 - **The Docker production override is documented as the local trap it is
   (B47c).** `docs/{en,vi}/deployment/docker.md` now says to set
   `DATABASE_SSL_MODE=disable` when trying that stack locally: the override
