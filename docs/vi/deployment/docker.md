@@ -7,7 +7,7 @@ translatedFrom: en
 sourceHash: 6552429e41352200
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-10T05:00:15.277Z
+codeVerified: 2026-10-13T19:22:02.312Z
 codeVerifiedHash: 6552429e41352200
 codeVerifiedClaims: 9
 ---

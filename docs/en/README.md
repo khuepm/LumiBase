@@ -6,7 +6,7 @@ translatedFrom: vi
 sourceHash: 3288ce23dde726e0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-10T04:59:56.112Z
+codeVerified: 2026-10-13T19:22:00.109Z
 codeVerifiedHash: 3288ce23dde726e0
 codeVerifiedClaims: 4
 ---
