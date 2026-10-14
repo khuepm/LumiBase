@@ -1,14 +1,14 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-10-14T09:26:12.152Z
+lastUpdated: 2026-10-14T15:33:32.071Z
 translatedFrom: en
-sourceHash: e1cdbe3698ee497e
+sourceHash: 32d37bd869afa977
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T09:26:12.152Z
-codeVerifiedHash: e1cdbe3698ee497e
-codeVerifiedClaims: 14
+codeVerified: 2026-10-14T15:33:32.071Z
+codeVerifiedHash: 32d37bd869afa977
+codeVerifiedClaims: 16
 ---
 
 # Kiểm tra bản nháp trong Studio
@@ -23,6 +23,8 @@ Code: `apps/studio/src/modules/content/draft-review-panel.tsx`, `apps/studio/src
 - **Mục mới** (`item-create.tsx`): panel kiểm tra form chưa lưu. Chỉ những trường của hồ sơ mà bạn vừa được đọc vừa được tạo mới được gửi đi; panel cho biết trường nào không được kiểm tra.
 
 Panel liệt kê các hồ sơ đang hoạt động của bộ sưu tập. Khi có nhiều hơn một hồ sơ, bạn chọn hồ sơ bằng một ô chọn.
+
+Panel chỉ hiện khi bộ sưu tập đang nằm trong pilot kiểm tra bản nháp ở chế độ `assisted` (`GET /api/v1/ai/reviews/rollout`). Ở chế độ `baseline`, khi pilot tắt, hoặc khi không đọc được chế độ (ví dụ thiếu `ai:decide`), trình soạn thảo không có panel và hoạt động như trước. Site admin bật tắt ở **Settings → AI decisions**; xem [Pilot kiểm tra bản nháp](./jev-draft-review-pilot.md).
 
 ## Gợi ý và thao tác
 

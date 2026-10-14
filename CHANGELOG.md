@@ -76,8 +76,33 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `apps/cms/eval/`, outside the Worker bundle. **No measured results yet**: no
   live run has been recorded, so there is no automation go/no-go. Guide:
   `docs/{en,vi}/features/jev-benchmark.md`. No migration, env or setup step.
+- **Draft-review pilot: rollout controls, timing and metrics (#516).** The
+  `aiDecisions` setting gains `review: { enabled, pilotCollections, mode:
+  'baseline' | 'assisted' }` (off when absent or malformed). Studio adds
+  **Settings → AI decisions** with the opt-in, the pilot collections and mode,
+  and a **Turn everything off** kill switch. Turning it off hides and blocks the
+  entry points and deletes nothing: runs, feedback, sessions and history stay
+  readable. Editors' sessions (open → first save) on pilot collections are
+  timed in both modes through `POST /api/v1/ai/reviews/sessions`;
+  `GET /api/v1/ai/reviews/rollout` reports a collection's mode. Site admins
+  read `GET /api/v1/ai/reviews/metrics?from=&to=`: time per item (baseline vs
+  assisted p50/p95), accept/edit/reject rates over viewed suggestions only,
+  coverage, errors, latency, tokens per run, splits by locale, provider and
+  profile version, and the pre-registered criteria of protocol `jev-pilot-v1`
+  with `insufficientSample` flags. API calls are never counted as user value.
+  `pnpm -F @lumibase/cms pilot:report` turns the metrics into a versioned
+  report. **No pilot data yet**: the committed report is an empty template and
+  there is no go/no-go. Guide: `docs/{en,vi}/features/jev-draft-review-pilot.md`.
+  **Migration** `0020_jev_review_sessions` adds one table (additive, no
+  backfill); `lumibase_review_sessions` is added to `rls-policies.sql`.
 
 ### Changed
+- **Draft review needs the pilot (#516).** The Studio draft review panel shows
+  only while the collection is in the pilot in `assisted` mode, and
+  `POST /api/v1/ai/reviews` plus new feedback return `403 DECISION_DISABLED`
+  otherwise. **Upgrade step:** a site already using reviews adds
+  `"review": { "enabled": true, "pilotCollections": ["<collection>"], "mode":
+  "assisted" }` to its `aiDecisions` setting, or uses Settings → AI decisions.
 - **Governed decisions (#511).** `POST /api/v1/ai/decisions` now requires the
   `ai:decide` capability (a policy permission `create` on
   `lumibase_ai_decisions`; site admins have it) and a per-site opt-in: decisions

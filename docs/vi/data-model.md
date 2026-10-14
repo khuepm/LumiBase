@@ -1,15 +1,18 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T00:11:35.763Z
+version: 2
+lastUpdated: 2026-10-14T15:33:47.070Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6edecac703c795d3
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T00:11:35.763Z
-codeVerifiedHash: 6edecac703c795d3
+sourceHash: 14f47ef563b3727c
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-10-14T15:33:47.070Z
+codeVerifiedHash: 14f47ef563b3727c
 codeVerifiedClaims: 14
 ---
+
+<!-- check-parity: allow inline-code -->
+<!-- Recorded by stamp-pair --allow-structure-drift on 2026-10-14T15:33:47.070Z. See commit history for rationale. -->
 
 # Data Model (Drizzle / Postgres)
 
@@ -348,6 +351,18 @@ Ghi chú vận hành:
 - `agent_runs.metrics.stopReason` ghi lý do hoàn tất hoặc dừng theo budget, ví dụ `completed`, `error`, `max_tool_calls`.
 - `agent_tool_calls.cost` lưu token/cost estimate sau khi đã mask secret.
 - Nếu cùng một goal fail ít nhất ba run và runtime có `QueueProvider`, run service enqueue `agent-dead-letter` với payload thất bại theo tenant.
+
+### Các bảng kiểm tra bản nháp (Jev)
+
+| Bảng | Mục đích |
+|---|---|
+| `lumibase_review_profiles` | Rubric kiểm tra có phiên bản; các dòng là bất biến, unique `(site_id, key, version)` |
+| `lumibase_review_runs` | Một lần chạy decision của profile trên item hoặc snapshot, kèm provider, model, content hash và câu trả lời; bị xoá sau `DECISION_REVIEW_RETENTION_DAYS` |
+| `lumibase_review_feedback` | Accept/edit/reject theo run, câu hỏi và principal; bị xoá cùng run |
+| `lumibase_review_sessions` | Đo thời gian pilot (#516): một phiên biên tập từ lúc mở trình soạn thảo tới lần lưu đầu tiên, `mode` `baseline`/`assisted`, `duration_ms`, `locale`, `run_id` đã xem và `viewed_questions`. Không lưu nội dung. `run_id` được set null khi run bị xoá |
+
+Cả bốn bảng đều có `site_id` (FK cascade) và mọi truy vấn đều theo site.
+Tắt pilot kiểm tra bản nháp không xoá dòng nào trong các bảng này.
 
 ### Các bảng Content OS (`content-os.ts`)
 

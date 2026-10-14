@@ -1,11 +1,11 @@
 ---
-version: 14
-lastUpdated: 2026-10-13T21:52:28.876Z
+version: 15
+lastUpdated: 2026-10-14T15:33:32.232Z
 sourceLang: en
-contentHash: 63846b4c2345e273
-codeVerified: 2026-10-13T21:52:28.876Z
-codeVerifiedHash: 63846b4c2345e273
-codeVerifiedClaims: 408
+contentHash: 5579b5ef1bc6bb82
+codeVerified: 2026-10-14T15:33:32.232Z
+codeVerifiedHash: 5579b5ef1bc6bb82
+codeVerifiedClaims: 418
 ---
 
 # Hono API Specification — LumiBase
@@ -758,6 +758,9 @@ Authorization: Bearer <token>
 | `GET` | `/api/v1/ai/reviews?collection=&itemId=` | List the review runs of an item |
 | `GET` | `/api/v1/ai/reviews/:id` | Get a review run with its staleness |
 | `POST` | `/api/v1/ai/reviews/:id/feedback` | Record accept / edit / reject on a run's answers |
+| `GET` | `/api/v1/ai/reviews/rollout?collection=` | Draft-review pilot mode of a collection: `off`, `baseline` or `assisted` |
+| `POST` | `/api/v1/ai/reviews/sessions` | Record one editor review session on a pilot collection (timing) |
+| `GET` | `/api/v1/ai/reviews/metrics?from=&to=` | Draft-review pilot metrics (admin) |
 
 **Chat request:**
 ```json
@@ -868,13 +871,16 @@ Each call writes one `ai_decision` audit event with the request ID, the principa
 - **Idempotency.** Keys are scoped to the caller: the same `idempotencyKey` (body) or `Idempotency-Key` header from the same principal returns the same run (`200`) with no second provider call, while another principal using the same key gets its own run. A run that ended in `error` is retried in place, so it never becomes a second row. The retry re-reads the item and rebinds the run (content hash, revision, profile version, omitted fields) to what it actually reviewed. A run still `running` five minutes after it started (its process died) is reclaimed the same way; until then a replay returns it as `running`.
 - **Feedback.** `POST /reviews/:id/feedback` takes `entries` of `{ questionKey, verdict: accept | edit | reject, editedValue? }`. It stores one row per run, question and principal; a retried submission adds none and returns the stored rows. The first verdict is final: resubmitting a different verdict (or `editedValue`) for the same question does not overwrite it, and the response carries the stored verdict, so compare it with what you sent. `accept` or `edit` on a stale run returns `409 REVIEW_STALE` unless the body says `acknowledgeStale: true`, so a review is never silently applied to a different revision. For snapshot runs, send the current draft's `contentHash` to get the same check. `reject` is always accepted.
 - **Retention.** The hourly job deletes runs older than `DECISION_REVIEW_RETENTION_DAYS` (default 180), and their feedback with them. Profiles are kept.
+- **Pilot rollout (#516).** The `aiDecisions` setting has a `review` object: `{ enabled, pilotCollections, mode: 'baseline' | 'assisted' }`. It is off when absent or malformed. `POST /reviews` and new feedback need the collection in the pilot in `assisted` mode (which also needs `aiDecisions.enabled`); otherwise they return `403 DECISION_DISABLED` before any content is read. `GET /reviews/rollout?collection=` reports the mode (`ai:decide`). Turning the pilot off deletes nothing: runs, feedback and sessions stay readable.
+- **Sessions.** `POST /reviews/sessions` (`ai:decide`) records `{ collection, itemId?, mode, runId?, viewedQuestions?, durationMs, locale? }`: one editor session from opening the editor to the first save. The mode must match the collection's current mode (`409 REVIEW_SESSION_MODE_MISMATCH`), the collection must be in the pilot (`403 DECISION_DISABLED`), and a `runId` must be the caller's own run on the same collection and item, with `viewedQuestions` it answered (`422 REVIEW_SESSION_RUN_INVALID`). No content is stored. The run retention purge sets `run_id` to null and keeps the session.
+- **Metrics.** `GET /reviews/metrics?from=&to=` (site admin, window at most 366 days, default the last 30) returns time per item (baseline vs assisted p50/p95), accept/edit/reject/no-action rates over **viewed** suggestions only with 95% Wilson intervals, coverage, abstention, error rate, latency p50/p95, tokens per run, splits by locale, provider and profile version, sample counts, and the pre-registered criteria of protocol `jev-pilot-v1` with `insufficientSample` flags. Run counts are operational denominators, never user value. See [Draft-review pilot](../features/jev-draft-review-pilot.md).
 
 ```json
 POST /api/v1/ai/reviews
 { "profile": "spam-check", "collection": "posts", "itemId": "itm_1", "idempotencyKey": "review-itm_1-0001" }
 ```
 
-Errors: `403 FORBIDDEN`, `404 REVIEW_PROFILE_NOT_FOUND` / `REVIEW_ITEM_NOT_FOUND` / `REVIEW_RUN_NOT_FOUND`, `409 REVIEW_PROFILE_EXISTS` / `REVIEW_PROFILE_CONFLICT` / `REVIEW_STALE` / `REVIEW_NOT_COMPLETE`, `422 REVIEW_FIELD_NOT_ALLOWED` / `REVIEW_COLLECTION_MISMATCH`, `400 VALIDATION`, plus every decision error above.
+Errors: `403 FORBIDDEN`, `404 REVIEW_PROFILE_NOT_FOUND` / `REVIEW_ITEM_NOT_FOUND` / `REVIEW_RUN_NOT_FOUND`, `409 REVIEW_PROFILE_EXISTS` / `REVIEW_PROFILE_CONFLICT` / `REVIEW_STALE` / `REVIEW_NOT_COMPLETE`, `422 REVIEW_FIELD_NOT_ALLOWED` / `REVIEW_COLLECTION_MISMATCH` / `REVIEW_SESSION_RUN_INVALID`, `409 REVIEW_SESSION_MODE_MISMATCH`, `400 VALIDATION`, plus every decision error above.
 
 ### Agent API (Content OS)
 
