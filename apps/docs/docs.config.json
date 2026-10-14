@@ -62,7 +62,8 @@
           "features/extensions-system",
           "features/websockets-realtime",
           "features/reconciler-repair-loop",
-          "features/draft-review"
+          "features/draft-review",
+          "features/jev-benchmark"
         ]
       },
       {

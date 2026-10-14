@@ -62,6 +62,20 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   Cancel and leaving the editor abort the request. Copy ships in EN and VI.
   Guide: `docs/{en,vi}/features/draft-review.md`. No migration, env or setup
   step.
+- **Jev benchmark harness (#513).** `pnpm -F @lumibase/cms bench:jev` scores a
+  decision provider (`typesafe`, `openrouter`, `llm`, or a seeded `mock`) on a
+  versioned dataset of 200 hand-authored synthetic editorial samples (100 VI,
+  100 EN; taxonomy, ambiguous, out-of-taxonomy, thin, prompt-injection and
+  needs-review cases) using the shipped review presets. Reports keep VI and EN
+  apart and give per-label precision/recall, coverage/abstention, Brier/ECE
+  (not a correctness probability), p50/p95 latency, usage/cost when reported,
+  failures/timeouts and Wilson 95% intervals. Thresholds are derived only on
+  the tune split; a held-out run loads them frozen and cannot write them. Mock
+  reports are flagged and cannot be merged with live ones. An opt-in live smoke
+  test covers both Jev endpoints and is skipped without keys. Lives in
+  `apps/cms/eval/`, outside the Worker bundle. **No measured results yet**: no
+  live run has been recorded, so there is no automation go/no-go. Guide:
+  `docs/{en,vi}/features/jev-benchmark.md`. No migration, env or setup step.
 
 ### Changed
 - **Governed decisions (#511).** `POST /api/v1/ai/decisions` now requires the

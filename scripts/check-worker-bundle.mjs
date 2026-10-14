@@ -38,6 +38,10 @@ const forbidden = [
   { marker: 'ioredis', why: 'Redis client — Docker-only; also reached via the leader lock' },
   { marker: '@aws-sdk/client-s3', why: 'S3 storage adapter — Docker-only (Workers use R2)' },
   { marker: 'node_modules/meilisearch', why: 'MeiliSearch SDK — Docker-only (Workers use the fetch adapter)' },
+  {
+    marker: 'lumibase-jev-benchmark-eval',
+    why: 'Jev benchmark harness/dataset (apps/cms/eval, #513) — evaluation tooling, never part of the Worker',
+  },
 ];
 
 let bundle;
@@ -65,7 +69,7 @@ const hits = forbidden
   .filter((h) => h.count > 0);
 
 if (hits.length > 0) {
-  console.error('Worker bundle check failed — Docker-only code is in the Cloudflare bundle:\n');
+  console.error('Worker bundle check failed — code that must stay out of the Worker is in the Cloudflare bundle:\n');
   for (const { marker, why, count } of hits) {
     console.error(`- ${marker} (${count} occurrence${count === 1 ? '' : 's'})`);
     console.error(`    ${why}`);
@@ -83,5 +87,5 @@ Import types with \`import type\` where you only need the shape — those are er
 }
 
 console.log(
-  `Worker bundle OK: ${(size / 1024 / 1024).toFixed(2)} MB, none of the ${forbidden.length} Docker-only markers present.`,
+  `Worker bundle OK: ${(size / 1024 / 1024).toFixed(2)} MB, none of the ${forbidden.length} forbidden markers present.`,
 );
