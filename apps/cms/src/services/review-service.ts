@@ -17,12 +17,15 @@
 import type {
   ReviewFeedback,
   ReviewFeedbackRequest,
+  ReviewPilotMode,
   ReviewProfile,
   ReviewProfileCreateInput,
   ReviewProfileVersionInput,
   ReviewQuestion,
   ReviewRun,
   ReviewRunRequest,
+  ReviewSession,
+  ReviewSessionRequest,
   ReviewStaleReason,
 } from '@lumibase/contracts/schemas';
 import { nanoid } from 'nanoid';
@@ -52,7 +55,9 @@ export type ReviewServiceErrorCode =
   | 'REVIEW_FIELD_NOT_ALLOWED'
   | 'REVIEW_COLLECTION_MISMATCH'
   | 'REVIEW_NOT_COMPLETE'
-  | 'REVIEW_STALE';
+  | 'REVIEW_STALE'
+  | 'REVIEW_SESSION_MODE_MISMATCH'
+  | 'REVIEW_SESSION_RUN_INVALID';
 
 export const REVIEW_ERROR_STATUS: Record<ReviewServiceErrorCode, 400 | 403 | 404 | 409 | 422> = {
   VALIDATION: 400,
@@ -66,6 +71,8 @@ export const REVIEW_ERROR_STATUS: Record<ReviewServiceErrorCode, 400 | 403 | 404
   REVIEW_COLLECTION_MISMATCH: 422,
   REVIEW_NOT_COMPLETE: 409,
   REVIEW_STALE: 409,
+  REVIEW_SESSION_MODE_MISMATCH: 409,
+  REVIEW_SESSION_RUN_INVALID: 422,
 };
 
 export class ReviewServiceError extends Error {
@@ -575,5 +582,76 @@ export class ReviewService {
       principalId: row.principalId,
       createdAt: row.createdAt.toISOString(),
     }));
+  }
+
+  // ---- pilot sessions (J09, #516) ------------------------------------------
+
+  /**
+   * Records one editor session on a pilot collection. Only `user` principals
+   * may record one (403 `FORBIDDEN` otherwise). `currentMode` is the
+   * collection's rollout mode now; a session of another mode is refused so
+   * baseline and assisted samples never mix. A referenced run must be the
+   * caller's own completed run on the same collection (and item, when both
+   * are known), and every viewed question must be one it answered.
+   */
+  async recordSession(
+    request: ReviewSessionRequest,
+    principal: ReviewPrincipal,
+    currentMode: ReviewPilotMode,
+  ): Promise<ReviewSession> {
+    // Sessions are editor time. An API key or the dev principal is not an
+    // editor, so its "sessions" would count machine activity as user value.
+    if (principal.type !== 'user') {
+      throw new ReviewServiceError('FORBIDDEN', 'Only signed-in editors record review sessions.');
+    }
+    if (request.mode !== currentMode) {
+      throw new ReviewServiceError(
+        'REVIEW_SESSION_MODE_MISMATCH',
+        `This collection is in ${currentMode} mode; a ${request.mode} session is not recorded.`,
+      );
+    }
+    const viewed = request.viewedQuestions ?? [];
+    if (request.runId !== undefined) {
+      const run = await this.deps.store.getRun(this.deps.siteId, request.runId);
+      const invalid = (message: string) => new ReviewServiceError('REVIEW_SESSION_RUN_INVALID', message);
+      if (!run || run.principalId !== principal.id || run.principalType !== principal.type) {
+        throw invalid(`Review run "${request.runId}" is not one of your runs on this site.`);
+      }
+      if (run.collection !== request.collection) throw invalid('The review run belongs to another collection.');
+      if (request.itemId !== undefined && run.itemId !== null && run.itemId !== request.itemId) {
+        throw invalid('The review run belongs to another item.');
+      }
+      const answers = (run.answers as Record<string, unknown> | null) ?? {};
+      if (viewed.length > 0 && !COMPLETE.has(run.status)) throw invalid('The review run has no answers to view.');
+      const unknown = viewed.filter((key) => !(key in answers));
+      if (unknown.length > 0) throw invalid(`Questions not in this run: ${unknown.join(', ')}.`);
+    }
+
+    const row = await this.deps.store.insertSession({
+      id: this.newId(),
+      siteId: this.deps.siteId,
+      collection: request.collection,
+      itemId: request.itemId ?? null,
+      mode: request.mode,
+      runId: request.runId ?? null,
+      viewedQuestions: viewed,
+      principalType: principal.type,
+      principalId: principal.id,
+      durationMs: request.durationMs,
+      locale: request.locale ?? null,
+    });
+    return {
+      id: row.id,
+      collection: row.collection,
+      itemId: row.itemId,
+      mode: row.mode as ReviewPilotMode,
+      runId: row.runId,
+      viewedQuestions: row.viewedQuestions as string[],
+      principalType: row.principalType,
+      principalId: row.principalId,
+      durationMs: row.durationMs,
+      locale: row.locale,
+      createdAt: row.createdAt.toISOString(),
+    };
   }
 }

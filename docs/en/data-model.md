@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T00:11:35.763Z
+version: 2
+lastUpdated: 2026-10-14T15:33:47.070Z
 sourceLang: en
-contentHash: 6edecac703c795d3
-codeVerified: 2026-07-28T00:11:35.763Z
-codeVerifiedHash: 6edecac703c795d3
+contentHash: 14f47ef563b3727c
+codeVerified: 2026-10-14T15:33:47.070Z
+codeVerifiedHash: 14f47ef563b3727c
 codeVerifiedClaims: 14
 ---
 
@@ -348,6 +348,18 @@ Operational notes:
 - `agent_runs.metrics.stopReason` records completion or budget stop reasons such as `completed`, `error`, and `max_tool_calls`.
 - `agent_tool_calls.cost` stores token/cost estimates after secret masking.
 - If the same goal fails at least three runs and a runtime `QueueProvider` is available, the run service enqueues `agent-dead-letter` with the scoped run failure payload.
+
+### Draft review tables (Jev)
+
+| Table | Purpose |
+|---|---|
+| `lumibase_review_profiles` | Versioned review rubrics; rows are immutable, unique `(site_id, key, version)` |
+| `lumibase_review_runs` | One decision run of a profile on an item or snapshot, with provider, model, content hash and answers; purged after `DECISION_REVIEW_RETENTION_DAYS` |
+| `lumibase_review_feedback` | Accept/edit/reject per run, question and principal; deleted with its run |
+| `lumibase_review_sessions` | Pilot timing (#516): one editor session from opening the editor to the first save, `mode` `baseline`/`assisted`, `duration_ms`, `locale`, the viewed `run_id` and `viewed_questions`. No content. `run_id` is set null when the run is purged |
+
+All four tables have `site_id` (FK cascade) and every query is site scoped.
+Turning the draft-review pilot off deletes none of these rows.
 
 ### Content OS tables (`content-os.ts`)
 

@@ -16,6 +16,8 @@ import {
   type ReviewRunCompletion,
   type ReviewRunInsert,
   type ReviewRunRecord,
+  type ReviewSessionInsert,
+  type ReviewSessionRecord,
   type ReviewStore,
 } from '../../services/review-store';
 
@@ -23,6 +25,7 @@ export class MemoryReviewStore implements ReviewStore {
   profiles: ReviewProfileRecord[] = [];
   runs: ReviewRunRecord[] = [];
   feedback: ReviewFeedbackRecord[] = [];
+  sessions: ReviewSessionRecord[] = [];
   private clock = 0;
 
   /** The store's current time (the last stamp handed out). */
@@ -183,5 +186,24 @@ export class MemoryReviewStore implements ReviewStore {
     return this.feedback.filter(
       (f) => f.siteId === siteId && f.runId === runId && f.principalId === principalId && keys.has(f.questionKey),
     );
+  }
+
+  async insertSession(row: ReviewSessionInsert) {
+    const record: ReviewSessionRecord = {
+      id: row.id,
+      siteId: row.siteId,
+      collection: row.collection,
+      itemId: row.itemId ?? null,
+      mode: row.mode,
+      runId: row.runId ?? null,
+      viewedQuestions: row.viewedQuestions ?? [],
+      principalType: row.principalType,
+      principalId: row.principalId,
+      durationMs: row.durationMs,
+      locale: row.locale ?? null,
+      createdAt: this.stamp(),
+    };
+    this.sessions.push(record);
+    return record;
   }
 }

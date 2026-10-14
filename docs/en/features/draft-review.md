@@ -1,11 +1,11 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-10-14T09:26:12.152Z
-contentHash: e1cdbe3698ee497e
-codeVerified: 2026-10-14T09:26:12.152Z
-codeVerifiedHash: e1cdbe3698ee497e
-codeVerifiedClaims: 14
+lastUpdated: 2026-10-14T15:33:32.071Z
+contentHash: 32d37bd869afa977
+codeVerified: 2026-10-14T15:33:32.071Z
+codeVerifiedHash: 32d37bd869afa977
+codeVerifiedClaims: 16
 ---
 
 # Draft review in Studio
@@ -20,6 +20,8 @@ Code: `apps/studio/src/modules/content/draft-review-panel.tsx`, `apps/studio/src
 - **New item** (`item-create.tsx`): the panel reviews the unsaved form. Only profile fields you may both read and create are sent; the panel says which fields were not reviewed.
 
 The panel lists the active profiles for the collection. With more than one, a selector picks the profile.
+
+The panel is shown only while the collection is in the draft-review pilot in `assisted` mode (`GET /api/v1/ai/reviews/rollout`). In `baseline` mode, when the pilot is off, or when the mode cannot be read (for example without `ai:decide`), the editor has no panel and works as before. Site admins switch this under **Settings → AI decisions**; see [Draft-review pilot](./jev-draft-review-pilot.md).
 
 ## Suggestions and actions
 

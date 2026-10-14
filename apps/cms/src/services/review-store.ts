@@ -9,6 +9,7 @@ import {
   reviewFeedback,
   reviewProfiles,
   reviewRuns,
+  reviewSessions,
   type Database,
 } from '@lumibase/database';
 import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
@@ -25,6 +26,8 @@ export type ReviewRunCompletion = Pick<
 >;
 export type ReviewFeedbackRecord = typeof reviewFeedback.$inferSelect;
 export type ReviewFeedbackInsert = Omit<typeof reviewFeedback.$inferInsert, 'createdAt'>;
+export type ReviewSessionRecord = typeof reviewSessions.$inferSelect;
+export type ReviewSessionInsert = Omit<typeof reviewSessions.$inferInsert, 'createdAt'>;
 
 export interface ReviewStore {
   /** The active version of every key, optionally limited to profiles usable on `collection`. */
@@ -65,6 +68,8 @@ export interface ReviewStore {
     principalId: string,
     rows: ReviewFeedbackInsert[],
   ): Promise<ReviewFeedbackRecord[]>;
+  /** One pilot timing row (J09, #516). */
+  insertSession(row: ReviewSessionInsert): Promise<ReviewSessionRecord>;
 }
 
 /**
@@ -301,6 +306,11 @@ export class DrizzleReviewStore implements ReviewStore {
           ),
         ),
       );
+  }
+
+  async insertSession(row: ReviewSessionInsert): Promise<ReviewSessionRecord> {
+    const [inserted] = await this.db.insert(reviewSessions).values(row).returning();
+    return inserted!;
   }
 }
 

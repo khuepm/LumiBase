@@ -8,6 +8,8 @@ import { cn } from '@/lib/cn';
 import { usePermissions } from '@/lib/use-permissions';
 import { FieldsTab } from './item-detail';
 import { DraftReviewPanel } from './draft-review-panel';
+import { useReviewRollout, useReviewSession } from './use-review-pilot';
+import { useSiteLocales } from './use-site-locales';
 
 function errorMessage(err: unknown): string {
   const e = err as { body?: { errors?: Array<{ message?: string }> }; message?: string };
@@ -22,6 +24,11 @@ export function ItemCreate({ collection }: { collection: string }) {
   const perms = usePermissions();
   const canCreate = perms.can(collection, 'create');
   const [draft, setDraft] = useState<Record<string, unknown>>({});
+  // Draft-review pilot (Jev J09): panel only in assisted mode; the session
+  // from opening the form to the created draft is timed in both modes.
+  const locales = useSiteLocales();
+  const reviewMode = useReviewRollout(collection);
+  const reviewSession = useReviewSession({ collection, mode: reviewMode, locale: locales[0] });
 
   const fieldsQuery = useQuery({
     queryKey: ['fields', collection],
@@ -41,6 +48,7 @@ export function ItemCreate({ collection }: { collection: string }) {
       (await client.items(collection as never).create({ data: draft, status: 'draft' })).data as ItemRow,
     onSuccess: (item) => {
       void queryClient.invalidateQueries({ queryKey: ['items', collection] });
+      reviewSession.finish(item.id);
       navigate({ to: '/content/$collection/$id', params: { collection, id: item.id }, replace: true });
     },
   });
@@ -96,7 +104,7 @@ export function ItemCreate({ collection }: { collection: string }) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_22rem]">
+      <div className={cn('grid grid-cols-1 gap-4', reviewMode === 'assisted' && 'lg:grid-cols-[1fr_22rem]')}>
         <section className="rounded-lg border bg-background p-4">
           <FieldsTab
             fields={fields}
@@ -109,18 +117,22 @@ export function ItemCreate({ collection }: { collection: string }) {
           />
         </section>
         {/* Draft review of the unsaved form (Jev J08): only profile fields the
-            user may create are sent. Apply edits the form; nothing is saved. */}
-        <aside className="rounded-lg border bg-muted/20 p-3">
-          <DraftReviewPanel
-            collection={collection}
-            values={draft}
-            fields={fields}
-            writeAction="create"
-            perms={perms}
-            pinnedFields={[]}
-            onApply={(field, value) => setDraft((prev) => ({ ...prev, [field]: value }))}
-          />
-        </aside>
+            user may create are sent. Apply edits the form; nothing is saved.
+            Shown only while this collection is in the assisted pilot (J09). */}
+        {reviewMode === 'assisted' && (
+          <aside className="rounded-lg border bg-muted/20 p-3">
+            <DraftReviewPanel
+              collection={collection}
+              values={draft}
+              fields={fields}
+              writeAction="create"
+              perms={perms}
+              pinnedFields={[]}
+              onApply={(field, value) => setDraft((prev) => ({ ...prev, [field]: value }))}
+              onViewed={reviewSession.markViewed}
+            />
+          </aside>
+        )}
       </div>
     </div>
   );

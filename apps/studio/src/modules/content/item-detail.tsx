@@ -27,6 +27,7 @@ import { useSiteLocales } from './use-site-locales';
 import { ItemCreate } from './item-create';
 import { EditorialActions } from './editorial-actions';
 import { DraftReviewPanel } from './draft-review-panel';
+import { useReviewRollout, useReviewSession } from './use-review-pilot';
 
 type Tab = 'fields' | 'translation' | 'revisions' | 'versions' | 'raw';
 
@@ -180,6 +181,11 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
   // first other locale. Both derive from the same `locales` setting the
   // translatable-text interface uses, so lists never diverge.
   const sourceLocale = locales[0] ?? 'en';
+  // Draft-review pilot (Jev J09): the panel shows only in assisted mode; the
+  // session from opening this editor to the first save is timed in baseline
+  // and assisted mode alike.
+  const reviewMode = useReviewRollout(collection);
+  const reviewSession = useReviewSession({ collection, mode: reviewMode, locale: sourceLocale });
   useEffect(() => {
     if (targetLocale === null) {
       setTargetLocale(locales.find((l) => l !== sourceLocale) ?? sourceLocale);
@@ -225,6 +231,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
       queryClient.invalidateQueries({ queryKey: ['item', collection, id] });
       queryClient.invalidateQueries({ queryKey: ['items', collection] });
       queryClient.invalidateQueries({ queryKey: ['revisions', collection, id] });
+      reviewSession.finish(id);
       // Navigate per the save action (one-off override, else effective default).
       const action = pendingAction ?? saveAction.effective;
       setPendingAction(null);
@@ -652,20 +659,24 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
             <TabButton current={tab} value="raw" onClick={setTab}>Raw JSON</TabButton>
           </ul>
           {/* Draft review (Jev J08): suggestions only. Apply edits the draft;
-              saving and publishing stay with the buttons above. */}
-          <div className="mt-4 border-t pt-3">
-            <DraftReviewPanel
-              collection={collection}
-              itemId={id}
-              values={draft}
-              savedValues={(itemQuery.data.data ?? {}) as Record<string, unknown>}
-              fields={editable}
-              writeAction="update"
-              perms={perms}
-              pinnedFields={pinsQuery.data ?? []}
-              onApply={(field, value) => setDraft((prev) => ({ ...(prev ?? {}), [field]: value }))}
-            />
-          </div>
+              saving and publishing stay with the buttons above. Shown only
+              while this collection is in the assisted pilot (J09). */}
+          {reviewMode === 'assisted' && (
+            <div className="mt-4 border-t pt-3">
+              <DraftReviewPanel
+                collection={collection}
+                itemId={id}
+                values={draft}
+                savedValues={(itemQuery.data.data ?? {}) as Record<string, unknown>}
+                fields={editable}
+                writeAction="update"
+                perms={perms}
+                pinnedFields={pinsQuery.data ?? []}
+                onApply={(field, value) => setDraft((prev) => ({ ...(prev ?? {}), [field]: value }))}
+                onViewed={reviewSession.markViewed}
+              />
+            </div>
+          )}
           <dl className="mt-4 space-y-1 border-t pt-3 text-xs text-muted-foreground">
             <Meta label="Status" value={itemQuery.data.status} />
             <Meta label="Sort" value={String(itemQuery.data.sort ?? 0)} />

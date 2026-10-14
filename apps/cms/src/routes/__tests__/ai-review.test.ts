@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { MemoryCacheProvider } from '@lumibase/runtime';
 import type { AppEnv, AuthPrincipal } from '../../env';
-import type { DecisionSiteSettings } from '../../services/decision-governance';
+import type { DecisionReviewRollout, DecisionSiteSettings } from '../../services/decision-governance';
+import type { ReviewMetrics } from '../../services/review-metrics';
 import type { ReviewContentAccess } from '../../services/review-service';
 import { MemoryReviewStore } from '../../__tests__/helpers/memory-review-store';
 import { aiReviewRouter } from '../ai-review';
@@ -54,6 +55,24 @@ vi.mock('../../services/review-content-access', () => ({
   reviewContentAccessForRequest: () => ctx.content,
 }));
 
+// The metrics loader reads the in-memory store, scoped by site exactly like
+// the Drizzle source, so the route's site scoping is what is under test.
+vi.mock('../../services/review-metrics', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/review-metrics')>()),
+  reviewMetricsSourceFor: () => ({
+    async load(siteId: string) {
+      const s = ctx.store as MemoryReviewStore;
+      const sessions = s.sessions.filter((row) => row.siteId === siteId);
+      const runIds = new Set(sessions.map((row) => row.runId));
+      return {
+        sessions,
+        runs: s.runs.filter((row) => row.siteId === siteId),
+        feedback: s.feedback.filter((row) => row.siteId === siteId && runIds.has(row.runId)),
+      };
+    },
+  }),
+}));
+
 interface Content extends ReviewContentAccess {
   item: Record<string, unknown>;
   writable: Set<string>;
@@ -85,9 +104,14 @@ function content(): Content {
 let store: MemoryReviewStore;
 let fake: Content;
 
+/** The J09 pilot rollout: `posts` in assisted mode unless a test says otherwise. */
+function pilot(overrides: Partial<DecisionReviewRollout> = {}): DecisionReviewRollout {
+  return { enabled: true, pilotCollections: ['posts'], mode: 'assisted', ...overrides };
+}
+
 beforeEach(() => {
   ctx.grant = { allowed: true, capabilities: ['ai:decide'], controlPlaneAdmin: false };
-  ctx.settings = { enabled: true, allowedStateFields: null };
+  ctx.settings = { enabled: true, allowedStateFields: null, review: pilot() };
   ctx.audits = [];
   store = new MemoryReviewStore();
   fake = content();
@@ -102,10 +126,10 @@ afterEach(() => {
 
 const principal: AuthPrincipal = { userId: 'usr_editor', email: 'editor@example.com', roles: ['member'], raw: {} };
 
-function buildApp(): Hono<AppEnv> {
+function buildApp(auth: AuthPrincipal = principal): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
-    c.set('auth', principal);
+    c.set('auth', auth);
     c.set('siteId', 'site_1');
     c.set('requestId', 'req_1');
     c.set('db', {} as AppEnv['Variables']['db']);
@@ -265,7 +289,7 @@ describe('POST /ai/reviews', () => {
   it('returns 403 DECISION_DISABLED while the site has not opted in', async () => {
     const app = buildApp();
     await seedProfile(app);
-    ctx.settings = { enabled: false, allowedStateFields: null };
+    ctx.settings = { enabled: false, allowedStateFields: null, review: pilot() };
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
@@ -279,7 +303,7 @@ describe('POST /ai/reviews', () => {
   it('answers 429 with Retry-After once the site quota is used', async () => {
     const app = buildApp();
     await seedProfile(app);
-    ctx.settings = { enabled: true, allowedStateFields: null, requestsPerHour: 0 };
+    ctx.settings = { enabled: true, allowedStateFields: null, requestsPerHour: 0, review: pilot() };
     vi.stubGlobal('fetch', vi.fn());
 
     const res = await call(app, 'POST', '/ai/reviews', { profile: 'spam-check', collection: 'posts', itemId: 'itm_1' });
@@ -367,5 +391,274 @@ describe('runs and feedback', () => {
     const { app, runId } = await reviewedApp();
     store.runs[0]!.siteId = 'site_other';
     expect((await call(app, 'GET', `/ai/reviews/${runId}`)).status).toBe(404);
+  });
+});
+
+describe('pilot rollout (J09)', () => {
+  const reviewBody = { profile: 'spam-check', collection: 'posts', itemId: 'itm_1' };
+
+  it.each([
+    ['the pilot is off', { review: pilot({ enabled: false }) }],
+    ['the collection is not in the pilot', { review: pilot({ pilotCollections: ['pages'] }) }],
+    ['the pilot is in baseline mode', { review: pilot({ mode: 'baseline' }) }],
+    ['the review setting is absent', { review: undefined }],
+  ])('POST /ai/reviews returns 403 DECISION_DISABLED when %s, before content or the provider', async (_label, patch) => {
+    const app = buildApp();
+    await seedProfile(app);
+    ctx.settings = { enabled: true, allowedStateFields: null, ...patch };
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const read = vi.spyOn(fake, 'readItem');
+
+    const res = await call(app, 'POST', '/ai/reviews', reviewBody);
+
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { errors: { code: string }[] }).errors[0]?.code).toBe('DECISION_DISABLED');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+    expect(store.runs).toHaveLength(0);
+    expect(ctx.audits.at(-1)?.metadata).toMatchObject({ outcome: 'DECISION_DISABLED', status: 403 });
+  });
+
+  it('reports the rollout mode per collection, and off for a malformed or absent setting', async () => {
+    const app = buildApp();
+    const mode = async (collection: string) =>
+      ((await (await call(app, 'GET', `/ai/reviews/rollout?collection=${collection}`)).json()) as {
+        data: { mode: string };
+      }).data.mode;
+
+    expect(await mode('posts')).toBe('assisted');
+    expect(await mode('pages')).toBe('off');
+    ctx.settings = { enabled: false, allowedStateFields: null, review: pilot({ mode: 'baseline' }) };
+    expect(await mode('posts')).toBe('baseline');
+    // Assisted sends content to the provider, so it also needs the site opt-in.
+    ctx.settings = { enabled: false, allowedStateFields: null, review: pilot() };
+    expect(await mode('posts')).toBe('off');
+    expect((await call(app, 'GET', '/ai/reviews/rollout')).status).toBe(400);
+  });
+
+  it('turning the pilot off blocks new feedback but keeps the run and its feedback readable', async () => {
+    const app = buildApp();
+    await seedProfile(app);
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jevOk()));
+    const created = await call(app, 'POST', '/ai/reviews', reviewBody);
+    const runId = ((await created.json()) as { data: { id: string } }).data.id;
+    await call(app, 'POST', `/ai/reviews/${runId}/feedback`, { entries: [{ questionKey: 'spam', verdict: 'reject' }] });
+    expect(store.feedback).toHaveLength(1);
+
+    ctx.settings = { enabled: true, allowedStateFields: null, review: pilot({ enabled: false }) };
+    const blocked = await call(app, 'POST', `/ai/reviews/${runId}/feedback`, {
+      entries: [{ questionKey: 'spam', verdict: 'accept' }],
+    });
+    expect(blocked.status).toBe(403);
+    expect(((await blocked.json()) as { errors: { code: string }[] }).errors[0]?.code).toBe('DECISION_DISABLED');
+
+    expect((await call(app, 'GET', `/ai/reviews/${runId}`)).status).toBe(200);
+    expect(((await (await call(app, 'GET', '/ai/reviews?collection=posts&itemId=itm_1')).json()) as { data: unknown[] }).data)
+      .toHaveLength(1);
+    expect(store.runs).toHaveLength(1);
+    expect(store.feedback).toHaveLength(1);
+  });
+});
+
+describe('POST /ai/reviews/sessions (J09)', () => {
+  async function assistedRun(app: Hono<AppEnv>) {
+    await seedProfile(app);
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jevOk()));
+    const res = await call(app, 'POST', '/ai/reviews', { profile: 'spam-check', collection: 'posts', itemId: 'itm_1' });
+    return ((await res.json()) as { data: { id: string } }).data.id;
+  }
+
+  it('records an assisted session with the viewed suggestions, scoped to the site and caller', async () => {
+    const app = buildApp();
+    const runId = await assistedRun(app);
+
+    const res = await call(app, 'POST', '/ai/reviews/sessions', {
+      collection: 'posts',
+      itemId: 'itm_1',
+      mode: 'assisted',
+      runId,
+      viewedQuestions: ['spam'],
+      durationMs: 42_000,
+      locale: 'vi',
+    });
+
+    expect(res.status).toBe(201);
+    expect(store.sessions).toHaveLength(1);
+    expect(store.sessions[0]).toMatchObject({
+      siteId: 'site_1',
+      principalType: 'user',
+      principalId: 'usr_editor',
+      mode: 'assisted',
+      runId,
+      viewedQuestions: ['spam'],
+      durationMs: 42_000,
+      locale: 'vi',
+    });
+  });
+
+  it('records a baseline session without a run while the site has not opted in to decisions', async () => {
+    ctx.settings = { enabled: false, allowedStateFields: null, review: pilot({ mode: 'baseline' }) };
+    const res = await call(buildApp(), 'POST', '/ai/reviews/sessions', {
+      collection: 'posts',
+      itemId: 'itm_1',
+      mode: 'baseline',
+      durationMs: 90_000,
+    });
+    expect(res.status).toBe(201);
+    expect(store.sessions[0]).toMatchObject({ mode: 'baseline', runId: null, viewedQuestions: [] });
+  });
+
+  it.each([
+    ['an unresolved principal', { allowed: false, capabilities: [], controlPlaneAdmin: false, code: 'PRINCIPAL_UNRESOLVED' }],
+    ['a principal of another site', { allowed: false, capabilities: [], controlPlaneAdmin: false, code: 'PRINCIPAL_SITE_MISMATCH' }],
+    ['a member without ai:decide', { allowed: true, capabilities: ['items:read'], controlPlaneAdmin: false }],
+  ])('returns 403 for %s and stores nothing', async (_label, grant) => {
+    ctx.grant = grant;
+    const res = await call(buildApp(), 'POST', '/ai/reviews/sessions', {
+      collection: 'posts',
+      mode: 'assisted',
+      durationMs: 1_000,
+    });
+    expect(res.status).toBe(403);
+    expect(store.sessions).toHaveLength(0);
+  });
+
+  it.each([
+    ['an API key', { type: 'api_key', apiKeyId: 'key_1', roles: [], raw: {} } as AuthPrincipal],
+    ['the dev principal', { roles: ['admin'], raw: { dev: true } } as AuthPrincipal],
+  ])('refuses a session from %s with 403 even when it holds ai:decide', async (_label, auth) => {
+    const res = await call(buildApp(auth), 'POST', '/ai/reviews/sessions', {
+      collection: 'posts',
+      mode: 'assisted',
+      durationMs: 1_000,
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { errors: { code: string }[] }).errors[0]?.code).toBe('FORBIDDEN');
+    expect(store.sessions).toHaveLength(0);
+  });
+
+  it('returns 403 DECISION_DISABLED outside the pilot and 409 on a mode mismatch', async () => {
+    const app = buildApp();
+    const offPilot = await call(app, 'POST', '/ai/reviews/sessions', { collection: 'pages', mode: 'assisted', durationMs: 1 });
+    expect(offPilot.status).toBe(403);
+    expect(((await offPilot.json()) as { errors: { code: string }[] }).errors[0]?.code).toBe('DECISION_DISABLED');
+
+    const mismatch = await call(app, 'POST', '/ai/reviews/sessions', { collection: 'posts', mode: 'baseline', durationMs: 1 });
+    expect(mismatch.status).toBe(409);
+    expect(((await mismatch.json()) as { errors: { code: string }[] }).errors[0]?.code).toBe('REVIEW_SESSION_MODE_MISMATCH');
+    expect(store.sessions).toHaveLength(0);
+  });
+
+  it('refuses a run of another site, another caller, another item or an unanswered question with 422', async () => {
+    const app = buildApp();
+    const runId = await assistedRun(app);
+    const post = (patch: Record<string, unknown>) =>
+      call(app, 'POST', '/ai/reviews/sessions', {
+        collection: 'posts',
+        itemId: 'itm_1',
+        mode: 'assisted',
+        runId,
+        viewedQuestions: ['spam'],
+        durationMs: 1_000,
+        ...patch,
+      });
+
+    expect((await post({ viewedQuestions: ['tone'] })).status).toBe(422);
+    expect((await post({ itemId: 'itm_2' })).status).toBe(422);
+
+    store.runs[0]!.principalId = 'usr_other';
+    expect((await post({})).status).toBe(422);
+    store.runs[0]!.principalId = 'usr_editor';
+
+    store.runs[0]!.siteId = 'site_other';
+    const foreign = await post({});
+    expect(foreign.status).toBe(422);
+    expect(((await foreign.json()) as { errors: { code: string }[] }).errors[0]?.code).toBe('REVIEW_SESSION_RUN_INVALID');
+    expect(store.sessions).toHaveLength(0);
+  });
+
+  it('returns 400 for a baseline session that names a run, or an unknown field', async () => {
+    ctx.settings = { enabled: true, allowedStateFields: null, review: pilot({ mode: 'baseline' }) };
+    const app = buildApp();
+    expect(
+      (await call(app, 'POST', '/ai/reviews/sessions', { collection: 'posts', mode: 'baseline', runId: 'r1', durationMs: 1 }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await call(app, 'POST', '/ai/reviews/sessions', { collection: 'posts', mode: 'baseline', durationMs: 1, body: 'x' }))
+        .status,
+    ).toBe(400);
+  });
+});
+
+describe('GET /ai/reviews/metrics (J09)', () => {
+  it('is admin only', async () => {
+    const res = await call(buildApp(), 'GET', '/ai/reviews/metrics');
+    expect(res.status).toBe(403);
+  });
+
+  it('aggregates only this site, over viewed suggestions, and flags the small sample', async () => {
+    const app = buildApp();
+    await seedProfile(app);
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jevOk()));
+    const res = await call(app, 'POST', '/ai/reviews', { profile: 'spam-check', collection: 'posts', itemId: 'itm_1' });
+    const runId = ((await res.json()) as { data: { id: string } }).data.id;
+    await call(app, 'POST', `/ai/reviews/${runId}/feedback`, { entries: [{ questionKey: 'spam', verdict: 'accept' }] });
+    await call(app, 'POST', '/ai/reviews/sessions', {
+      collection: 'posts', itemId: 'itm_1', mode: 'assisted', runId, viewedQuestions: ['spam'], durationMs: 30_000,
+    });
+    // Another site's session must not be counted.
+    store.sessions.push({ ...store.sessions[0]!, id: 'other', siteId: 'site_other', durationMs: 1 });
+
+    ctx.grant = { allowed: true, capabilities: ['admin'], controlPlaneAdmin: true };
+    const metrics = await call(app, 'GET', '/ai/reviews/metrics?from=2025-12-01T00:00:00Z&to=2026-06-01T00:00:00Z');
+
+    expect(metrics.status).toBe(200);
+    const { data } = (await metrics.json()) as { data: ReviewMetrics };
+    expect(data.sampleCounts).toMatchObject({ assistedSessions: 1, baselineSessions: 0, viewedSuggestions: 1 });
+    expect(data.suggestions.accept).toMatchObject({ k: 1, n: 1 });
+    expect(data.timePerItem.assisted.p50Ms).toBe(30_000);
+    expect(data.insufficientSample).toBe(true);
+    expect(data.criteria.every((c) => c.status === 'insufficient_sample')).toBe(true);
+  });
+
+  it('counts nothing from an API key that runs, accepts and tries to record a session', async () => {
+    const keyApp = buildApp({ type: 'api_key', apiKeyId: 'key_1', roles: [], raw: {} });
+    await seedProfile(keyApp);
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jevOk()));
+    const res = await call(keyApp, 'POST', '/ai/reviews', { profile: 'spam-check', collection: 'posts', itemId: 'itm_1' });
+    expect(res.status).toBe(201);
+    const runId = ((await res.json()) as { data: { id: string } }).data.id;
+    const feedback = await call(keyApp, 'POST', `/ai/reviews/${runId}/feedback`, {
+      entries: [{ questionKey: 'spam', verdict: 'accept' }],
+    });
+    expect(feedback.status).toBe(201);
+    const session = await call(keyApp, 'POST', '/ai/reviews/sessions', {
+      collection: 'posts', itemId: 'itm_1', mode: 'assisted', runId, viewedQuestions: ['spam'], durationMs: 30_000,
+    });
+    expect(session.status).toBe(403);
+    // A machine session written some other way is still not user value.
+    store.sessions.push({
+      id: 'injected', siteId: 'site_1', collection: 'posts', itemId: 'itm_1', mode: 'assisted', runId,
+      viewedQuestions: ['spam'], principalType: 'api_key', principalId: 'key_1', durationMs: 30_000, locale: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    });
+
+    ctx.grant = { allowed: true, capabilities: ['admin'], controlPlaneAdmin: true };
+    const metrics = await call(buildApp(), 'GET', '/ai/reviews/metrics?from=2025-12-01T00:00:00Z&to=2026-06-01T00:00:00Z');
+    expect(metrics.status).toBe(200);
+    const { data } = (await metrics.json()) as { data: ReviewMetrics };
+    expect(data.sampleCounts).toMatchObject({ assistedSessions: 0, viewedSuggestions: 0 });
+    expect(data.suggestions.accept).toMatchObject({ k: 0, n: 0 });
+    expect(data.operations.runs).toBe(1);
+  });
+
+  it('rejects an invalid or oversized window', async () => {
+    ctx.grant = { allowed: true, capabilities: ['admin'], controlPlaneAdmin: true };
+    const app = buildApp();
+    expect((await call(app, 'GET', '/ai/reviews/metrics?from=nope')).status).toBe(400);
+    expect((await call(app, 'GET', '/ai/reviews/metrics?from=2026-02-01&to=2026-01-01')).status).toBe(400);
+    expect((await call(app, 'GET', '/ai/reviews/metrics?from=2020-01-01&to=2026-01-01')).status).toBe(400);
   });
 });

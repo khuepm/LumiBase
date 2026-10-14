@@ -621,3 +621,38 @@ export const reviewFeedback = pgTable(
     ),
   }),
 );
+// ---------------------------------------------------------------------------
+// Jev J09 (#516) — draft-review pilot timing
+// ---------------------------------------------------------------------------
+/**
+ * One editor review session on a pilot collection: from opening the editor
+ * to the first successful save. `baseline` sessions run with the review panel
+ * hidden, `assisted` sessions with it shown; the pilot compares the two.
+ * `viewed_questions` lists the suggestions of `run_id` that were rendered to
+ * the editor, so acceptance rates are computed over viewed suggestions only.
+ * No content is stored. Ids are uuidv7, supplied by the service.
+ */
+export const reviewSessions = pgTable(
+  'lumibase_review_sessions',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    collection: text('collection').notNull(),
+    itemId: text('item_id'),
+    /** `baseline` | `assisted` */
+    mode: text('mode').notNull(),
+    runId: text('run_id').references(() => reviewRuns.id, { onDelete: 'set null' }),
+    viewedQuestions: jsonb('viewed_questions').default([]).notNull(),
+    principalType: text('principal_type').notNull(),
+    principalId: text('principal_id').notNull(),
+    durationMs: integer('duration_ms').notNull(),
+    locale: text('locale'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    siteCreatedIdx: index('review_sessions_site_created_idx').on(t.siteId, t.createdAt),
+    siteRunIdx: index('review_sessions_site_run_idx').on(t.siteId, t.runId),
+  }),
+);
