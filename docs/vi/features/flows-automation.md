@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-10-14T17:01:53.510Z
+version: 3
+lastUpdated: 2026-10-14T18:09:29.331Z
 sourceLang: vi
-contentHash: df524553325e7930
-codeVerified: 2026-10-14T17:01:53.510Z
-codeVerifiedHash: df524553325e7930
+contentHash: 09cdb8faf1f6769f
+codeVerified: 2026-10-14T18:09:29.331Z
+codeVerifiedHash: 09cdb8faf1f6769f
 codeVerifiedClaims: 12
 ---
 
@@ -45,6 +45,7 @@ Khai báo trong cột `operations.type`:
 - **`item.create`** / **`item.update`** / **`item.delete`** — CRUD vào CMS data.
 - **`notify`** — push notification tới user/team.
 - **`ai:decision`** — quyết định có governance trên một item, chọn nhánh `true`/`false`/`unknown`/`error` (xem bên dưới).
+- **`ai:apply-tags`** / **`editorial:route`** — đọc một `ai:decision` phía trước và đề xuất một tag hoặc một hàng chờ duyệt cho item; mặc định là shadow (chỉ ghi lại), và một đề xuất live thành approval (xem [Tự động hoá Jev](./jev-automation.md)).
 - **`drift-scan`** — một chu kỳ reconciliation của Content OS cho một intent (`options.intentId`): quét drift theo rules của `content_intents` (tôn trọng pinned fields, time-box qua `options.timeBudgetMs`, cursor resume), rồi sinh reconciler goals trong budget `maxGoalsPerCycle`. Lên lịch một flow trigger `schedule` per intent theo cron của intent.
 
 ## Graph format

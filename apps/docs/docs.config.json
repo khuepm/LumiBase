@@ -64,7 +64,8 @@
           "features/reconciler-repair-loop",
           "features/draft-review",
           "features/jev-benchmark",
-          "features/jev-draft-review-pilot"
+          "features/jev-draft-review-pilot",
+          "features/jev-automation"
         ]
       },
       {

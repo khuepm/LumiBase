@@ -121,6 +121,35 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `aiDecisions.enabled`. Event, schedule and webhook runs carry no principal
   and are refused. Verified on the Docker/Node worker path only: Cloudflare
   Workers has no `flow-runs` consumer. No migration.
+- **Jev automation: shadow-first tagging and review-queue routing (#518).**
+  New flow operations `ai:apply-tags` and `editorial:route` read an upstream
+  `ai:decision` and record one action per flow run, node and item in
+  `lumibase_ai_automation_actions` (unique, so a redelivered job proposes
+  nothing twice). They are **shadow by default**: the proposal is recorded and
+  nothing is written. A proposal goes live only when the admin-written
+  `aiDecisions.automation` has `mode: 'live'`, a gate record (`approvedBy`,
+  `approvedAt`, `evidenceRef`) and a per-locale, per-action threshold whose
+  provider, model and profile version match the decision, and the confidence
+  is in that zone; a malformed block or any mismatch forces shadow. A live
+  proposal goes through `AISecureHarness` (`updateItem`, agent
+  `jev-automation`, `autonomyCap: 1`, the run principal's RBAC, agent
+  provenance, pinned fields, kill switch), so it always becomes an approval
+  (or is refused at L0); automation never writes on its own authority. Only
+  the target field is proposed: never `status`, deletes or schema, and the
+  `submit_review` transition is proposed only. Stale decisions, editor
+  overrides, pinned and unreadable fields are skipped and recorded. New
+  control-plane routes under `/api/v1/ai/automation` (site admin): templates
+  (`taxonomy-tagging`, `editorial-routing`) and a build endpoint that writes
+  nothing, action history with the audit chain (revision → review run →
+  action → feedback), accept/override/reject feedback, revert of an applied
+  action (refused when the field changed since), and shadow metrics
+  (precision and coverage in the auto-action zone, protocol
+  `jev-automation-v1`, `insufficientSample`/`shadowRequired`). Studio adds
+  **Flows → Create from template** (saves a draft manual flow) and
+  **Automation suggestions** in the editorial review queue. No live
+  configuration ships and no precision has been measured, so every site stays
+  in shadow. **Migration** `0021_jev_automation_actions` adds one table
+  (additive, idempotent, no backfill).
 
 ### Changed
 - **Draft review needs the pilot (#516).** The Studio draft review panel shows

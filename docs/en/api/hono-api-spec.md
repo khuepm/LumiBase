@@ -1,11 +1,11 @@
 ---
-version: 17
-lastUpdated: 2026-10-14T17:01:54.097Z
+version: 18
+lastUpdated: 2026-10-14T18:09:28.209Z
 sourceLang: en
-contentHash: aecd678bfdc5056e
-codeVerified: 2026-10-14T17:01:54.097Z
-codeVerifiedHash: aecd678bfdc5056e
-codeVerifiedClaims: 420
+contentHash: cab6992b0bc13647
+codeVerified: 2026-10-14T18:09:28.209Z
+codeVerifiedHash: cab6992b0bc13647
+codeVerifiedClaims: 436
 ---
 
 # Hono API Specification — LumiBase
@@ -761,6 +761,13 @@ Authorization: Bearer <token>
 | `GET` | `/api/v1/ai/reviews/rollout?collection=` | Draft-review pilot mode of a collection: `off`, `baseline` or `assisted` |
 | `POST` | `/api/v1/ai/reviews/sessions` | Record one editor review session on a pilot collection (timing) |
 | `GET` | `/api/v1/ai/reviews/metrics?from=&to=` | Draft-review pilot metrics (admin) |
+| `GET` | `/api/v1/ai/automation/templates` | Jev automation flow templates (admin) |
+| `POST` | `/api/v1/ai/automation/templates/:key/build` | Build a draft manual flow from a template; writes nothing (admin) |
+| `GET` | `/api/v1/ai/automation/actions` | Automation action history with its audit chain (admin) |
+| `GET` | `/api/v1/ai/automation/actions/:id` | One automation action with its audit chain (admin) |
+| `POST` | `/api/v1/ai/automation/actions/:id/feedback` | Accept / override / reject the decision behind an action (admin) |
+| `POST` | `/api/v1/ai/automation/actions/:id/revert` | Restore the value before an applied action (admin) |
+| `GET` | `/api/v1/ai/automation/metrics?from=&to=` | Shadow precision and coverage in the auto-action zone (admin) |
 
 **Chat request:**
 ```json
@@ -875,6 +882,7 @@ Each call writes one `ai_decision` audit event with the request ID, the principa
 - **Flows (#517).** A flow node `ai:decision` runs one review with a pinned `profileVersion` on one item and returns `branch`: `true`/`false`/`unknown` for a `noul` question (`noulThreshold`), the option key or `unknown` for a `choice` question (`minConfidence`, abstention), or `error`. It needs the `aiDecisions` setting to have both `enabled: true` and `flows: true`; `flows` is off by default. When the node executes, the server re-resolves the principal that started the run, checks `ai:decide` on that live grant and re-reads both switches, so a revoked grant or a later kill switch stops queued runs too. Only manual runs (`POST /flows/:id/run`) carry a principal; event, schedule and webhook runs are refused (`FORBIDDEN`). A failure (forbidden, disabled, quota, timeout, cancel, provider error) takes the node's `error` branch when one is mapped and otherwise fails the node (`onError`); it is never `true`. The review idempotency key is `flow:<flowRunId>:<nodeId>`, so re-executing a run replays the stored decision with no second provider call. See [Flows](../features/flows-automation.md).
 - **Sessions.** `POST /reviews/sessions` (`ai:decide`, signed-in users only: API keys and the dev principal get `403 FORBIDDEN`) records `{ collection, itemId?, mode, runId?, viewedQuestions?, durationMs, locale? }`: one editor session from opening the editor to the first save. The mode must match the collection's current mode (`409 REVIEW_SESSION_MODE_MISMATCH`), the collection must be in the pilot (`403 DECISION_DISABLED`), and a `runId` must be the caller's own run on the same collection and item, with `viewedQuestions` it answered (`422 REVIEW_SESSION_RUN_INVALID`). No content is stored. The run retention purge sets `run_id` to null and keeps the session.
 - **Metrics.** `GET /reviews/metrics?from=&to=` (site admin, window at most 366 days, default the last 30) returns time per item (baseline vs assisted p50/p95), accept/edit/reject/no-action rates over **viewed** suggestions only with 95% Wilson intervals, coverage, abstention, error rate, latency p50/p95, tokens per run, splits by locale, provider and profile version, sample counts (with distinct editors and items per mode), and the pre-registered criteria of protocol `jev-pilot-v1` with `insufficientSample` flags. Only sessions and verdicts of `user` principals count. Run counts are operational denominators, never user value. See [Draft-review pilot](../features/jev-draft-review-pilot.md).
+- **Automation (#518).** Flow nodes `ai:apply-tags` and `editorial:route` read an upstream `ai:decision` and record one row per flow run, node and item in `lumibase_ai_automation_actions`. They are **shadow** by default: the proposal is recorded and nothing is written. A proposal is live only when `aiDecisions.automation` has `mode: 'live'`, a `gate` (`approvedBy`, `approvedAt`, `evidenceRef`) and a threshold for the item's locale and the action whose `provider`, `model` and `profileVersion` match the decision, and the confidence is at or above its `minConfidence`; anything else (including a malformed block) is shadow. A live proposal goes through the governed harness (`updateItem`, agent `jev-automation`, `autonomyCap: 1`), so it becomes an approval or is refused at L0; automation never writes directly. Only the target field is proposed, never `status`, deletes or schema; the `submit_review` transition is proposed only. Stale decisions, decisions an editor overrode, pinned or unreadable fields are skipped and recorded. `/api/v1/ai/automation/*` is control plane (site admin). `POST /automation/actions/:id/revert` restores `previous` of an applied action through the caller's ItemService, and refuses with `409 AUTOMATION_REVERT_CONFLICT` when the field changed since. `GET /automation/metrics` reports precision and coverage in the auto-action zone with `insufficientSample` and `shadowRequired`; it switches nothing on. See [Jev automation](../features/jev-automation.md).
 
 ```json
 POST /api/v1/ai/reviews
