@@ -3769,8 +3769,11 @@ paths:
         `update` when `itemId` is also given), else 422 before any provider
         call. Content goes only into `state`; the questions come from the
         stored profile. The same `idempotencyKey` (or `Idempotency-Key`
-        header) returns the same run without a second provider call; a run
-        that ended in `error` is retried in place.
+        header) from the same principal returns the same run without a
+        second provider call; keys never cross principals. A run that ended
+        in `error`, or is still `running` five minutes after it started, is
+        retried in place and rebound to the content, revision and profile
+        version the retry actually reviewed.
       parameters:
         - { $ref: '#/components/parameters/SiteHeader' }
         - { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 8, maxLength: 128 } }
@@ -3914,7 +3917,9 @@ paths:
       summary: Record accept / edit / reject on the answers of a run
       description: >
         One row per run, question and principal; a retried submission returns
-        the stored rows and adds none. `accept` or `edit` on a stale run (or,
+        the stored rows and adds none. The first verdict is final: a
+        different verdict or `editedValue` for the same question is not
+        stored, and the response carries the stored one. `accept` or `edit` on a stale run (or,
         for snapshot runs, when `contentHash` differs from the run's) is
         refused with 409 REVIEW_STALE unless `acknowledgeStale: true`.
         `reject` is always accepted. Feedback never changes the item.

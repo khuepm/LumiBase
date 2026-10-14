@@ -1,10 +1,10 @@
 ---
-version: 13
-lastUpdated: 2026-10-11T23:27:45.575Z
+version: 14
+lastUpdated: 2026-10-13T21:52:28.876Z
 sourceLang: en
-contentHash: 4ef88116d31482da
-codeVerified: 2026-10-11T23:27:45.575Z
-codeVerifiedHash: 4ef88116d31482da
+contentHash: 63846b4c2345e273
+codeVerified: 2026-10-13T21:52:28.876Z
+codeVerifiedHash: 63846b4c2345e273
 codeVerifiedClaims: 408
 ---
 
@@ -865,8 +865,8 @@ Each call writes one `ai_decision` audit event with the request ID, the principa
 - **Reading content.** With `itemId`, the server reads the profile's fields with the caller's own row and field permissions. Fields the caller cannot read are not sent and are listed in `omittedFields`. With `snapshot` (an unsaved draft), each key must be one of the profile's fields and one the caller may read and write (`create`, or `update` when `itemId` is also given). Otherwise the request fails with `422 REVIEW_FIELD_NOT_ALLOWED` before any provider call. Content travels only in `state` and the questions come from the stored profile, so text inside the content cannot change what is asked.
 - **Provenance and staleness.** A run records the actual provider, model, `calibrated`, the profile key and version, the latest live revision, the principal, latency, usage and `contentHash` (`sha256:` of the canonical JSON of the reviewed fields). `GET /reviews/:id` recomputes the hash and revision. When either changed, the run comes back `stale: true` with `staleReason` `content_changed`, `revision_changed` or `item_unavailable`. A caller who can no longer read a field the run reviewed gets `404`. Snapshot runs are visible only to their author and admins.
 - **Abstention.** `status` is `abstained` when every `choice` answer is `other`/`unknown`, or when a confidence is below the profile's `minConfidence`.
-- **Idempotency.** The same `idempotencyKey` (body) or `Idempotency-Key` header returns the same run (`200`) with no second provider call. A run that ended in `error` is retried in place, so it never becomes a second row.
-- **Feedback.** `POST /reviews/:id/feedback` takes `entries` of `{ questionKey, verdict: accept | edit | reject, editedValue? }`. It stores one row per run, question and principal; a retried submission adds none and returns the stored rows. `accept` or `edit` on a stale run returns `409 REVIEW_STALE` unless the body says `acknowledgeStale: true`, so a review is never silently applied to a different revision. For snapshot runs, send the current draft's `contentHash` to get the same check. `reject` is always accepted.
+- **Idempotency.** Keys are scoped to the caller: the same `idempotencyKey` (body) or `Idempotency-Key` header from the same principal returns the same run (`200`) with no second provider call, while another principal using the same key gets its own run. A run that ended in `error` is retried in place, so it never becomes a second row. The retry re-reads the item and rebinds the run (content hash, revision, profile version, omitted fields) to what it actually reviewed. A run still `running` five minutes after it started (its process died) is reclaimed the same way; until then a replay returns it as `running`.
+- **Feedback.** `POST /reviews/:id/feedback` takes `entries` of `{ questionKey, verdict: accept | edit | reject, editedValue? }`. It stores one row per run, question and principal; a retried submission adds none and returns the stored rows. The first verdict is final: resubmitting a different verdict (or `editedValue`) for the same question does not overwrite it, and the response carries the stored verdict, so compare it with what you sent. `accept` or `edit` on a stale run returns `409 REVIEW_STALE` unless the body says `acknowledgeStale: true`, so a review is never silently applied to a different revision. For snapshot runs, send the current draft's `contentHash` to get the same check. `reject` is always accepted.
 - **Retention.** The hourly job deletes runs older than `DECISION_REVIEW_RETENTION_DAYS` (default 180), and their feedback with them. Profiles are kept.
 
 ```json

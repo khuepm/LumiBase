@@ -17,9 +17,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   field permissions, or validate an unsaved snapshot field by field, then ask
   the governed decision model. Runs record provider, model, `calibrated`,
   profile version, revision and a content hash, report `stale` once the item
-  changes, and are idempotent per `Idempotency-Key`. Editors record
-  accept/edit/reject feedback (one row per question and editor); accepting a
-  stale run needs `acknowledgeStale`. Suggest-only: nothing writes to items.
+  changes, and are idempotent per `Idempotency-Key` and caller (keys never
+  cross principals). A run that ended in `error`, or was left `running` for
+  five minutes, is retried in place and rebound to the content, revision and
+  profile version the retry reviewed. Editors record accept/edit/reject
+  feedback (one row per question and editor; the first verdict is final and is
+  what the response returns); accepting a stale run needs `acknowledgeStale`. Suggest-only: nothing writes to items.
   Runs and feedback are purged after `DECISION_REVIEW_RETENTION_DAYS`
   (default 180). **Migration** `0019_jev_review_profiles_runs` adds three
   tables (additive, no backfill).
