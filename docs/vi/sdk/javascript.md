@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-10-10T09:01:07.711Z
+version: 3
+lastUpdated: 2026-10-14T08:04:06.659Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6e60b18d751ffc9c
+sourceHash: 3dabd3ef7af63160
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-10T09:01:07.711Z
-codeVerifiedHash: 6e60b18d751ffc9c
-codeVerifiedClaims: 6
+codeVerified: 2026-10-14T08:04:06.659Z
+codeVerifiedHash: 3dabd3ef7af63160
+codeVerifiedClaims: 8
 ---
 
 <!-- check-parity: allow code-fences -->
@@ -285,6 +285,61 @@ try {
 
 `calibrated` là `false` khi CMS trả lời bằng `DECISION_PROVIDER=llm`. Mã lỗi có kiểu `DecisionErrorCode`; xem [đặc tả API](../api/hono-api-spec.md) để biết giới hạn và status.
 
+### Kiểm tra bản nháp
+
+Kiểm tra bản nháp chạy một review profile có phiên bản, lưu trên CMS, trên một item đã lưu hoặc một bản nháp chưa lưu. Các lệnh dưới đây gọi các endpoint `/api/v1/ai/review-profiles` và `/api/v1/ai/reviews`:
+
+- `listReviewProfiles({ collection? })` và `getReviewProfile(key, { version? })` đọc profile. Profile do admin tạo.
+- `reviewDraft(request)` kiểm tra một item (`itemId`) hoặc một bản nháp (`snapshot`).
+- `getReview(id)` và `listReviews({ collection, itemId })` đọc các lần chạy, kèm `stale` và `staleReason`.
+- `submitReviewFeedback(runId, { entries })` ghi nhận `accept`, `edit` hoặc `reject` cho từng câu hỏi.
+
+Mọi lệnh đều nhận `{ signal }` ở tham số cuối. Review chỉ gợi ý: không lệnh nào ghi vào item.
+
+```typescript
+import {
+  decisionErrorCode,
+  listReviewProfiles,
+  LumiError,
+  reviewDraft,
+  submitReviewFeedback,
+} from '@lumibase/sdk'
+
+const [profile] = await client.request(listReviewProfiles({ collection: 'posts' }))
+try {
+  const run = await client.request(
+    reviewDraft(
+      {
+        profile: profile.key,
+        collection: 'posts',
+        snapshot: { title: 'Summer sale', body: 'Buy now!!!' },
+        idempotencyKey: 'draft-42:taxonomy',
+      },
+      { signal: controller.signal },
+    ),
+  )
+  run.status     // 'success' | 'abstained' ("chưa đủ thông tin") | …
+  run.calibrated // false khi xác suất do LLM tự báo
+  run.usage      // { inputTokens: 120, outputTokens: null } — null nghĩa là không rõ, không phải 0
+
+  await client.request(
+    submitReviewFeedback(run.id, {
+      entries: [{ questionKey: 'category', verdict: 'accept' }],
+      contentHash: run.contentHash,
+    }),
+  )
+} catch (err) {
+  const code = decisionErrorCode(err) // DecisionErrorCode có kiểu, hoặc null
+  if (code === 'DECISION_QUOTA_EXCEEDED') {
+    console.warn(`retry in ${(err as LumiError).retryAfter}s`)
+  } else if (code === 'REVIEW_STALE') {
+    // nội dung đã đổi sau lần review: chạy lại, hoặc gửi acknowledgeStale: true
+  }
+}
+```
+
+Gửi lại cùng `idempotencyKey` sẽ trả về lần chạy đã lưu mà không gọi provider lần thứ hai. Lỗi dùng cùng các mã với `decide`, gồm 403 `DECISION_DISABLED`, 504 `DECISION_TIMEOUT` và 429 kèm `retryAfter`, cộng thêm các mã `REVIEW_*`: 409 `REVIEW_STALE`, 422 `REVIEW_FIELD_NOT_ALLOWED`, và 404 `REVIEW_PROFILE_NOT_FOUND` / `REVIEW_RUN_NOT_FOUND`. `decisionErrorCode(err)` trả về `null` khi request bị huỷ, lỗi mạng, hoặc gặp mã mà phiên bản SDK này chưa biết. Khi đó hãy đọc `err.body`. Ví dụ đầy đủ, biên dịch được từ public entry, nằm ở `packages/sdk/examples/draft-review.ts`.
+
 ---
 
 ## Change Feed
@@ -359,3 +414,6 @@ try {
 
 Một lần thất bại không phải JSON hoặc không có body vẫn được chuẩn hoá về cùng
 envelope đó, với code `HTTP_ERROR`.
+
+`error.retryAfter` chứa header `Retry-After` tính bằng giây, ví dụ khi gặp 429 do
+hết ngân sách của site. Giá trị là `null` khi response không gửi header này.

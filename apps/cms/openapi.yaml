@@ -3822,7 +3822,10 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '404':
-          description: REVIEW_PROFILE_NOT_FOUND or REVIEW_ITEM_NOT_FOUND
+          description: >
+            REVIEW_PROFILE_NOT_FOUND or REVIEW_ITEM_NOT_FOUND, or
+            REVIEW_RUN_NOT_FOUND when a replayed run's profile is no longer
+            stored
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

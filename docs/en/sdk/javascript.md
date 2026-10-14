@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-10-10T09:01:07.711Z
+version: 3
+lastUpdated: 2026-10-14T08:04:06.659Z
 sourceLang: en
-contentHash: 6e60b18d751ffc9c
-codeVerified: 2026-10-10T09:01:07.711Z
-codeVerifiedHash: 6e60b18d751ffc9c
-codeVerifiedClaims: 6
+contentHash: 3dabd3ef7af63160
+codeVerified: 2026-10-14T08:04:06.659Z
+codeVerifiedHash: 3dabd3ef7af63160
+codeVerifiedClaims: 8
 ---
 
 # LumiBase JavaScript SDK
@@ -280,6 +280,61 @@ try {
 
 `calibrated` is `false` when the CMS answers with `DECISION_PROVIDER=llm`. Error codes are typed as `DecisionErrorCode`; see the [API spec](../api/hono-api-spec.md) for limits and statuses.
 
+### Draft review
+
+Draft review runs a versioned review profile, stored on the CMS, against a saved item or an unsaved draft. These commands call the `/api/v1/ai/review-profiles` and `/api/v1/ai/reviews` endpoints:
+
+- `listReviewProfiles({ collection? })` and `getReviewProfile(key, { version? })` read profiles. Profiles are created by admins.
+- `reviewDraft(request)` reviews an item (`itemId`) or a draft (`snapshot`).
+- `getReview(id)` and `listReviews({ collection, itemId })` read runs, including `stale` and `staleReason`.
+- `submitReviewFeedback(runId, { entries })` records `accept`, `edit` or `reject` for each question.
+
+Every command accepts `{ signal }` as its last argument. A review only suggests: none of these calls writes to the item.
+
+```typescript
+import {
+  decisionErrorCode,
+  listReviewProfiles,
+  LumiError,
+  reviewDraft,
+  submitReviewFeedback,
+} from '@lumibase/sdk'
+
+const [profile] = await client.request(listReviewProfiles({ collection: 'posts' }))
+try {
+  const run = await client.request(
+    reviewDraft(
+      {
+        profile: profile.key,
+        collection: 'posts',
+        snapshot: { title: 'Summer sale', body: 'Buy now!!!' },
+        idempotencyKey: 'draft-42:taxonomy',
+      },
+      { signal: controller.signal },
+    ),
+  )
+  run.status     // 'success' | 'abstained' ("not enough information") | …
+  run.calibrated // false when the probabilities are self-reported by an LLM
+  run.usage      // { inputTokens: 120, outputTokens: null } — null means unknown, not zero
+
+  await client.request(
+    submitReviewFeedback(run.id, {
+      entries: [{ questionKey: 'category', verdict: 'accept' }],
+      contentHash: run.contentHash,
+    }),
+  )
+} catch (err) {
+  const code = decisionErrorCode(err) // typed DecisionErrorCode, or null
+  if (code === 'DECISION_QUOTA_EXCEEDED') {
+    console.warn(`retry in ${(err as LumiError).retryAfter}s`)
+  } else if (code === 'REVIEW_STALE') {
+    // the content changed since the review: run it again, or send acknowledgeStale: true
+  }
+}
+```
+
+Sending the same `idempotencyKey` again returns the stored run without calling the provider a second time. Errors use the same codes as `decide`. These include 403 `DECISION_DISABLED`, 504 `DECISION_TIMEOUT`, and 429 with `retryAfter`, plus the `REVIEW_*` codes: 409 `REVIEW_STALE`, 422 `REVIEW_FIELD_NOT_ALLOWED`, and 404 `REVIEW_PROFILE_NOT_FOUND` / `REVIEW_RUN_NOT_FOUND`. `decisionErrorCode(err)` returns `null` for an aborted request, a network failure, or a code this SDK version does not know. In those cases, read `err.body`. A complete example that compiles against the public entry is in `packages/sdk/examples/draft-review.ts`.
+
 ---
 
 ## Change Feed
@@ -354,3 +409,6 @@ try {
 
 A non-JSON or bodyless failure is still normalized into the same envelope, with
 code `HTTP_ERROR`.
+
+`error.retryAfter` holds the `Retry-After` header in seconds, for example on a 429
+site budget. It is `null` when the response did not send one.
