@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "@cloudflare/workers-types"],
+    "noEmit": true
+  },
+  "include": ["eval/**/*.ts", "scripts/jev-benchmark.ts"],
+  "exclude": ["node_modules", "dist", ".wrangler"]
+}
