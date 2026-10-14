@@ -113,6 +113,9 @@ export const DECISION_ERROR_CODES = [
   "REVIEW_COLLECTION_MISMATCH",
   "REVIEW_NOT_COMPLETE",
   "REVIEW_STALE",
+  // Draft-review pilot sessions (#516).
+  "REVIEW_SESSION_MODE_MISMATCH",
+  "REVIEW_SESSION_RUN_INVALID",
   "INTERNAL",
 ] as const;
 

@@ -11,6 +11,8 @@ import {
   effectiveDecisionQuota,
   estimateDecisionOutputTokens,
   parseDecisionSettings,
+  REVIEW_ROLLOUT_OFF,
+  reviewRolloutMode,
   type DecisionQuota,
   type DecisionSiteSettings,
 } from '../decision-governance';
@@ -98,7 +100,7 @@ async function counter(cache: CacheProvider, key: string): Promise<number> {
 
 describe('site settings', () => {
   it('defaults to disabled and reads malformed values as disabled', () => {
-    expect(parseDecisionSettings({})).toEqual({ enabled: false, allowedStateFields: null });
+    expect(parseDecisionSettings({})).toEqual({ enabled: false, allowedStateFields: null, review: REVIEW_ROLLOUT_OFF });
     expect(parseDecisionSettings({ enabled: 'yes' }).enabled).toBe(false);
     expect(parseDecisionSettings({ enabled: true, requestsPerHour: -1 }).enabled).toBe(false);
     expect(parseDecisionSettings(null).enabled).toBe(false);
@@ -107,7 +109,35 @@ describe('site settings', () => {
   it('keeps the opt-in, allowlist and tighter limits', () => {
     expect(
       parseDecisionSettings({ enabled: true, allowedStateFields: ['title'], requestsPerHour: 10, budgetPerDay: 500 }),
-    ).toEqual({ enabled: true, allowedStateFields: ['title'], requestsPerHour: 10, budgetPerDay: 500 });
+    ).toEqual({
+      enabled: true,
+      allowedStateFields: ['title'],
+      requestsPerHour: 10,
+      budgetPerDay: 500,
+      review: REVIEW_ROLLOUT_OFF,
+    });
+  });
+
+  it('reads the draft-review pilot rollout (J09) and fails closed on a malformed one', () => {
+    const on = parseDecisionSettings({
+      enabled: true,
+      review: { enabled: true, pilotCollections: ['posts'], mode: 'assisted' },
+    });
+    expect(on.review).toEqual({ enabled: true, pilotCollections: ['posts'], mode: 'assisted' });
+    expect(reviewRolloutMode(on, 'posts')).toBe('assisted');
+    expect(reviewRolloutMode(on, 'pages')).toBe('off');
+    // Assisted sends content, so it needs the site opt-in; baseline does not.
+    expect(reviewRolloutMode({ ...on, enabled: false }, 'posts')).toBe('off');
+    expect(reviewRolloutMode({ ...on, enabled: false, review: { ...on.review!, mode: 'baseline' } }, 'posts')).toBe('baseline');
+    // Defaults: an empty review object is off, with no collections.
+    expect(parseDecisionSettings({ enabled: true, review: {} }).review).toEqual(REVIEW_ROLLOUT_OFF);
+    // A malformed review value turns the whole setting off, never open.
+    const bad = parseDecisionSettings({ enabled: true, review: { enabled: true, pilotCollections: 'posts', mode: 'assisted' } });
+    expect(bad.enabled).toBe(false);
+    expect(reviewRolloutMode(bad, 'posts')).toBe('off');
+    expect(reviewRolloutMode(parseDecisionSettings({ enabled: true, review: { enabled: true, pilotCollections: ['posts'], mode: 'auto' } }), 'posts')).toBe('off');
+    // Absent review (older stored values) reads as off.
+    expect(reviewRolloutMode({ enabled: true, allowedStateFields: null }, 'posts')).toBe('off');
   });
 
   it('lets a site tighten but never raise the platform ceiling', () => {

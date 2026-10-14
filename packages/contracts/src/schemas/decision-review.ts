@@ -223,6 +223,71 @@ export interface ReviewFeedback {
   createdAt: string;
 }
 
+// ---------------------------------------------------------------------------
+// Pilot rollout and review sessions (Jev J09, #516)
+// ---------------------------------------------------------------------------
+
+/**
+ * `baseline`: the review panel is hidden and only editor time is measured.
+ * `assisted`: the panel is shown and reviews run.
+ */
+export const REVIEW_PILOT_MODES = ['baseline', 'assisted'] as const;
+export const ReviewPilotModeSchema = z.enum(REVIEW_PILOT_MODES);
+export type ReviewPilotMode = z.infer<typeof ReviewPilotModeSchema>;
+
+/** `GET /ai/reviews/rollout?collection=` — `off` hides the panel and records nothing. */
+export interface ReviewRollout {
+  collection: string;
+  mode: ReviewPilotMode | 'off';
+}
+
+/** Longest session accepted (24 h). Metrics exclude idle sessions separately. */
+export const REVIEW_SESSION_MAX_MS = 86_400_000;
+
+/**
+ * `POST /ai/reviews/sessions` — one editor session on a pilot collection:
+ * opening the editor until the first successful save. `runId` and
+ * `viewedQuestions` describe the suggestions the editor saw (assisted only).
+ */
+export const ReviewSessionRequestSchema = z
+  .object({
+    collection: collectionName,
+    itemId: z.string().min(1).max(128).optional(),
+    mode: ReviewPilotModeSchema,
+    runId: z.string().min(1).max(64).optional(),
+    viewedQuestions: z.array(questionKey).max(32).optional(),
+    durationMs: z.number().int().min(0).max(REVIEW_SESSION_MAX_MS),
+    /** Content locale of the item, e.g. `vi` or `en-US`. */
+    locale: z.string().regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/, 'Invalid locale').optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.mode === 'baseline' && (value.runId !== undefined || (value.viewedQuestions?.length ?? 0) > 0)) {
+      ctx.addIssue({ code: 'custom', message: 'A baseline session has no review run', path: ['runId'] });
+    }
+    if (value.runId === undefined && (value.viewedQuestions?.length ?? 0) > 0) {
+      ctx.addIssue({ code: 'custom', message: 'viewedQuestions needs runId', path: ['viewedQuestions'] });
+    }
+    if (value.viewedQuestions && new Set(value.viewedQuestions).size !== value.viewedQuestions.length) {
+      ctx.addIssue({ code: 'custom', message: 'viewedQuestions must be unique', path: ['viewedQuestions'] });
+    }
+  });
+export type ReviewSessionRequest = z.infer<typeof ReviewSessionRequestSchema>;
+
+export interface ReviewSession {
+  id: string;
+  collection: string;
+  itemId: string | null;
+  mode: ReviewPilotMode;
+  runId: string | null;
+  viewedQuestions: string[];
+  principalType: string;
+  principalId: string;
+  durationMs: number;
+  locale: string | null;
+  createdAt: string;
+}
+
 export const REVIEW_ERROR_CODES = [
   'REVIEW_PROFILE_NOT_FOUND',
   'REVIEW_PROFILE_EXISTS',
@@ -233,5 +298,7 @@ export const REVIEW_ERROR_CODES = [
   'REVIEW_COLLECTION_MISMATCH',
   'REVIEW_NOT_COMPLETE',
   'REVIEW_STALE',
+  'REVIEW_SESSION_MODE_MISMATCH',
+  'REVIEW_SESSION_RUN_INVALID',
 ] as const;
 export type ReviewErrorCode = (typeof REVIEW_ERROR_CODES)[number];

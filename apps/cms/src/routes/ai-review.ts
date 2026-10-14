@@ -10,6 +10,13 @@
  *   GET  /reviews?collection=&itemId=          ai:decide
  *   GET  /reviews/:id                          ai:decide
  *   POST /reviews/:id/feedback                 ai:decide
+ *   GET  /reviews/rollout?collection=          ai:decide   (J09 pilot mode)
+ *   POST /reviews/sessions                     ai:decide   (J09 editor timing)
+ *   GET  /reviews/metrics?from=&to=            admin       (J09 pilot metrics)
+ *
+ * The `aiDecisions.review` pilot setting gates POST /reviews, feedback and
+ * sessions per collection (403 DECISION_DISABLED when off). Turning it off
+ * never deletes runs, feedback or sessions; reads keep working.
  *
  * Reviews only suggest: no route here writes to an item.
  */
@@ -20,6 +27,8 @@ import {
   ReviewProfileKeySchema,
   ReviewProfileVersionInputSchema,
   ReviewRunRequestSchema,
+  ReviewSessionRequestSchema,
+  type ReviewRollout,
 } from '@lumibase/contracts/schemas';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { Hono, type Context } from 'hono';
@@ -30,6 +39,7 @@ import {
   authorizeDecision,
   decisionQuotaFromEnv,
   readDecisionSettings,
+  reviewRolloutMode,
   runGovernedDecision,
   writeDecisionAudit,
   type DecisionAuditContext,
@@ -38,10 +48,30 @@ import {
 } from '../services/decision-governance';
 import { principalRefFromAuth, resolveRequestCapabilities } from '../services/governed-capabilities';
 import { reviewContentAccessForRequest } from '../services/review-content-access';
+import { computeReviewMetrics, reviewMetricsSourceFor } from '../services/review-metrics';
 import { ReviewService, ReviewServiceError, type ReviewPrincipal } from '../services/review-service';
 import { reviewStoreFor } from '../services/review-store';
 
 export const aiReviewRouter = new Hono<AppEnv>();
+
+/** The site's draft-review pilot mode for `collection` (J09). Malformed settings read as `off`. */
+async function rolloutMode(c: Context<AppEnv>, collection: string) {
+  return reviewRolloutMode(await readDecisionSettings(c.get('db'), c.get('siteId')), collection);
+}
+
+function pilotDisabled(c: Context<AppEnv>, collection: string): Response {
+  return c.json(
+    {
+      errors: [
+        {
+          code: 'DECISION_DISABLED',
+          message: `Draft review is not enabled for "${collection}". A site admin adds it to the pilot under Settings → AI decisions.`,
+        },
+      ],
+    },
+    403,
+  );
+}
 
 type Gate = { principal: ReviewPrincipal } | { denied: Response };
 
@@ -209,6 +239,11 @@ aiReviewRouter.post('/reviews', async (c) => {
   const parsed = ReviewRunRequestSchema.safeParse(await body(c));
   if (!parsed.success) return validationError(c, parsed.error);
   try {
+    // Pilot rollout (J09): reviews run only on pilot collections in assisted mode.
+    if ((await rolloutMode(c, parsed.data.collection)) !== 'assisted') {
+      await writeDecisionAudit(auditContext(c), { outcome: 'DECISION_DISABLED', status: 403, startedAt: Date.now() });
+      return pilotDisabled(c, parsed.data.collection);
+    }
     const result = await service(c).runReview(parsed.data, {
       principal: g.principal,
       // Client disconnect aborts the upstream call and suppresses retries.
@@ -219,6 +254,74 @@ aiReviewRouter.post('/reviews', async (c) => {
     const { outcome } = result;
     if (outcome.retryAfterSeconds !== undefined) c.header('Retry-After', String(outcome.retryAfterSeconds));
     return c.json(outcome.body, outcome.status);
+  } catch (err) {
+    return failure(c, err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Pilot rollout, sessions and metrics (J09, #516). Registered before
+// `/reviews/:id` so the static segments win.
+// ---------------------------------------------------------------------------
+
+aiReviewRouter.get('/reviews/rollout', async (c) => {
+  const g = await gate(c, 'decide');
+  if ('denied' in g) return g.denied;
+  const collection = c.req.query('collection');
+  if (!collection || collection.length > 128) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'collection is required.' }] }, 400);
+  }
+  try {
+    const rollout: ReviewRollout = { collection, mode: await rolloutMode(c, collection) };
+    return c.json({ data: rollout });
+  } catch (err) {
+    return failure(c, err);
+  }
+});
+
+aiReviewRouter.post('/reviews/sessions', async (c) => {
+  const g = await gate(c, 'decide');
+  if ('denied' in g) return g.denied;
+  const parsed = ReviewSessionRequestSchema.safeParse(await body(c));
+  if (!parsed.success) return validationError(c, parsed.error);
+  try {
+    const mode = await rolloutMode(c, parsed.data.collection);
+    if (mode === 'off') return pilotDisabled(c, parsed.data.collection);
+    return c.json({ data: await service(c).recordSession(parsed.data, g.principal, mode) }, 201);
+  } catch (err) {
+    return failure(c, err);
+  }
+});
+
+const DAY_MS = 86_400_000;
+const MAX_METRICS_DAYS = 366;
+
+function parseInstant(raw: string | undefined): Date | undefined | null {
+  if (raw === undefined || raw === '') return undefined;
+  const at = new Date(raw);
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
+aiReviewRouter.get('/reviews/metrics', async (c) => {
+  const g = await gate(c, 'admin');
+  if ('denied' in g) return g.denied;
+  const to = parseInstant(c.req.query('to'));
+  const from = parseInstant(c.req.query('from'));
+  if (to === null || from === null) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'from and to must be ISO 8601 dates.' }] }, 400);
+  }
+  const end = to ?? new Date();
+  const start = from ?? new Date(end.getTime() - 30 * DAY_MS);
+  if (start >= end || end.getTime() - start.getTime() > MAX_METRICS_DAYS * DAY_MS) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: `from must be before to, at most ${MAX_METRICS_DAYS} days apart.` }] },
+      400,
+    );
+  }
+  try {
+    const window = { from: start, to: end };
+    const loaded = await reviewMetricsSourceFor(c.get('db')).load(c.get('siteId'), window);
+    return c.json({ data: computeReviewMetrics({ ...loaded, window }) });
   } catch (err) {
     return failure(c, err);
   }
@@ -255,6 +358,9 @@ aiReviewRouter.post('/reviews/:id/feedback', async (c) => {
   const parsed = ReviewFeedbackRequestSchema.safeParse(await body(c));
   if (!parsed.success) return validationError(c, parsed.error);
   try {
+    // New verdicts follow the pilot switch; stored runs and feedback stay readable.
+    const run = await reviewStoreFor(c.get('db')).getRun(c.get('siteId'), c.req.param('id'));
+    if (run && (await rolloutMode(c, run.collection)) !== 'assisted') return pilotDisabled(c, run.collection);
     return c.json({ data: await service(c).submitFeedback(c.req.param('id'), parsed.data, g.principal) }, 201);
   } catch (err) {
     return failure(c, err);

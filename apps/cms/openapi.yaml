@@ -3817,7 +3817,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '403':
-          description: FORBIDDEN (no `ai:decide`, or no read permission on the collection) or DECISION_DISABLED
+          description: >
+            FORBIDDEN (no `ai:decide`, or no read permission on the collection)
+            or DECISION_DISABLED (site not opted in, or the collection is not
+            in the draft-review pilot in `assisted` mode — see
+            GET /ai/reviews/rollout)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3879,6 +3883,153 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '404':
           description: REVIEW_ITEM_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/reviews/rollout:
+    get:
+      summary: Draft-review pilot mode for a collection (#516)
+      description: >
+        `off` unless the site setting `aiDecisions.review` is enabled and lists
+        the collection. `assisted` also needs `aiDecisions.enabled` (content
+        is sent to the provider); `baseline` does not. A malformed setting
+        reads as `off`. Studio hides the review panel unless the mode is
+        `assisted`.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: collection, in: query, required: true, schema: { type: string, maxLength: 128 } }
+      responses:
+        '200':
+          description: Mode
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      collection: { type: string }
+                      mode: { type: string, enum: [off, baseline, assisted] }
+        '400':
+          description: collection is required
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN (no `ai:decide` capability)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/reviews/sessions:
+    post:
+      summary: Record one editor review session on a pilot collection (#516)
+      description: >
+        One session is opening the editor until the first successful save,
+        in `baseline` (panel hidden) or `assisted` mode. No content is
+        stored. `runId` must be the caller's own run on the same collection
+        (and item when both are known) and `viewedQuestions` the questions it
+        answered that were rendered to the editor; pilot metrics count
+        verdicts over these viewed suggestions only. Site and principal come
+        from the request context.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [collection, mode, durationMs]
+              properties:
+                collection: { type: string, maxLength: 128 }
+                itemId: { type: string, maxLength: 128 }
+                mode: { type: string, enum: [baseline, assisted] }
+                runId: { type: string, description: Assisted only }
+                viewedQuestions: { type: array, maxItems: 32, items: { type: string }, description: Needs runId }
+                durationMs: { type: integer, minimum: 0, maximum: 86400000 }
+                locale: { type: string, description: 'Content locale, e.g. vi or en-US' }
+      responses:
+        '201':
+          description: Stored session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      collection: { type: string }
+                      itemId: { type: string, nullable: true }
+                      mode: { type: string, enum: [baseline, assisted] }
+                      runId: { type: string, nullable: true }
+                      viewedQuestions: { type: array, items: { type: string } }
+                      principalType: { type: string }
+                      principalId: { type: string }
+                      durationMs: { type: integer }
+                      locale: { type: string, nullable: true }
+                      createdAt: { type: string, format: date-time }
+        '400':
+          description: Validation error (also a baseline session with a run, or viewedQuestions without runId)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN (no `ai:decide`) or DECISION_DISABLED (collection not in the pilot)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: REVIEW_SESSION_MODE_MISMATCH (the collection is in the other mode now)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: >
+            REVIEW_SESSION_RUN_INVALID (run not the caller's, of another
+            collection or item, without answers, or a viewed question it did
+            not answer)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/reviews/metrics:
+    get:
+      summary: Draft-review pilot metrics (#516, admin only)
+      description: >
+        Aggregates this site's sessions, runs and feedback created in
+        [from, to): time per item (baseline vs assisted, p50/p95),
+        accept/edit/reject/no-action rates over viewed suggestions only
+        (95% Wilson intervals), coverage/abstention, error rate, latency,
+        tokens per run, splits by locale, provider and profile version, and
+        the pre-registered criteria of protocol `jev-pilot-v1` with
+        `insufficientSample` flags. Run counts are operational denominators,
+        not user value. `truncated` is true when a table hit the row limit.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time }, description: Defaults to 30 days before to }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time }, description: Defaults to now }
+      responses:
+        '200':
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '400':
+          description: Invalid dates, from not before to, or more than 366 days apart
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN (admin role required)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3965,7 +4116,10 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '403':
-          description: FORBIDDEN (no `ai:decide` capability)
+          description: >
+            FORBIDDEN (no `ai:decide` capability), or DECISION_DISABLED when the
+            run's collection is no longer in the assisted pilot. Stored
+            feedback stays readable.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

@@ -48,6 +48,12 @@ export const DECISION_SETTINGS_KEY = 'aiDecisions';
 // Site settings: opt-in, kill switch, field allowlist, tighter limits
 // ---------------------------------------------------------------------------
 
+const reviewRolloutSchema = z.object({
+  enabled: z.boolean().default(false),
+  pilotCollections: z.array(z.string().min(1).max(128)).max(100).default([]),
+  mode: z.enum(['baseline', 'assisted']).default('baseline'),
+});
+
 const siteSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   allowedStateFields: z.array(z.string().min(1).max(128)).max(256).optional(),
@@ -55,7 +61,21 @@ const siteSettingsSchema = z.object({
   maxConcurrent: z.number().int().min(1).optional(),
   // Not `tokensPerDay`: the settings read API redacts any key containing "token".
   budgetPerDay: z.number().int().min(0).optional(),
+  review: reviewRolloutSchema.optional(),
 });
+
+/**
+ * Draft-review pilot rollout (J09, #516). Off unless a site admin enables it
+ * for named collections. `baseline` hides the review panel and only measures
+ * editor time; `assisted` shows it and runs reviews. Turning it off hides and
+ * blocks the entry points; it deletes nothing.
+ */
+export interface DecisionReviewRollout {
+  enabled: boolean;
+  /** Collection names in the pilot. Empty means none. */
+  pilotCollections: string[];
+  mode: 'baseline' | 'assisted';
+}
 
 export interface DecisionSiteSettings {
   /** Opt-in to sending content to the provider. Off by default; off again is the site kill switch. */
@@ -65,16 +85,36 @@ export interface DecisionSiteSettings {
   requestsPerHour?: number;
   maxConcurrent?: number;
   budgetPerDay?: number;
+  /** Absent → the draft-review pilot is off. */
+  review?: DecisionReviewRollout;
 }
 
-const DISABLED: DecisionSiteSettings = { enabled: false, allowedStateFields: null };
+export const REVIEW_ROLLOUT_OFF: DecisionReviewRollout = { enabled: false, pilotCollections: [], mode: 'baseline' };
+
+const DISABLED: DecisionSiteSettings = { enabled: false, allowedStateFields: null, review: REVIEW_ROLLOUT_OFF };
 
 /** Parses the stored value; anything malformed reads as disabled, never as open. */
 export function parseDecisionSettings(value: unknown): DecisionSiteSettings {
   const parsed = siteSettingsSchema.safeParse(value);
   if (!parsed.success) return DISABLED;
-  const { allowedStateFields, ...rest } = parsed.data;
-  return { ...rest, allowedStateFields: allowedStateFields ?? null };
+  const { allowedStateFields, review, ...rest } = parsed.data;
+  return { ...rest, allowedStateFields: allowedStateFields ?? null, review: review ?? REVIEW_ROLLOUT_OFF };
+}
+
+/**
+ * The draft-review mode for one collection: `off` unless the pilot is enabled
+ * and lists the collection. `assisted` also needs the site's decision opt-in
+ * (`enabled`), because it sends content to the provider; `baseline` sends
+ * nothing, so it can be measured before the site opts in.
+ */
+export function reviewRolloutMode(
+  settings: DecisionSiteSettings,
+  collection: string,
+): 'off' | 'baseline' | 'assisted' {
+  const review = settings.review ?? REVIEW_ROLLOUT_OFF;
+  if (!review.enabled || !review.pilotCollections.includes(collection)) return 'off';
+  if (review.mode === 'assisted' && !settings.enabled) return 'off';
+  return review.mode;
 }
 
 export async function readDecisionSettings(db: Database, siteId: string): Promise<DecisionSiteSettings> {
