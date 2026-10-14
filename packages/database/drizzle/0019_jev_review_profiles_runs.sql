@@ -13,8 +13,9 @@
 --   it was answered against. Unique (site_id, key, version).
 -- * `lumibase_review_runs` records provenance (provider, model, calibrated,
 --   profile version, revision, content hash, principal). Unique
---   (site_id, idempotency_key) makes a retried request reuse its run instead of
---   creating a second one. Rows are purged after DECISION_REVIEW_RETENTION_DAYS.
+--   (site_id, principal_type, principal_id, idempotency_key) makes a retried
+--   request reuse its run instead of creating a second one, without letting
+--   two callers share a key. Rows are purged after DECISION_REVIEW_RETENTION_DAYS.
 -- * `lumibase_review_feedback` holds accept/edit/reject per question. Unique
 --   (site_id, run_id, question_key, principal_id) makes a retried submission a
 --   no-op. Feedback is deleted with its run (ON DELETE CASCADE).
@@ -103,7 +104,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "review_profiles_site_key_version_uq" ON "lumi
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "review_profiles_site_status_idx" ON "lumibase_review_profiles" USING btree ("site_id","status","collection");
 --> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "review_runs_site_idempotency_uq" ON "lumibase_review_runs" USING btree ("site_id","idempotency_key");
+CREATE UNIQUE INDEX IF NOT EXISTS "review_runs_site_principal_idempotency_uq" ON "lumibase_review_runs" USING btree ("site_id","principal_type","principal_id","idempotency_key");
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "review_runs_site_item_idx" ON "lumibase_review_runs" USING btree ("site_id","item_id","created_at");
 --> statement-breakpoint

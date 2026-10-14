@@ -119,11 +119,63 @@ describe.skipIf(!hasDbIntegrationUrl)('Review profiles and runs — DB integrati
       latencyMs: 5,
       errorCode: 'DECISION_UNAVAILABLE',
     });
-    const reclaimed = await store.claimRun(run(SITE_A, p.id, { idempotencyKey: key }));
-    expect(reclaimed).toMatchObject({ created: true, run: { id: first.run.id, status: 'running' } });
+    const newHash = 'sha256:' + '1'.repeat(64);
+    const reclaimed = await store.claimRun(
+      run(SITE_A, p.id, { idempotencyKey: key, contentHash: newHash, revisionId: 'rev_2', omittedFields: ['body'] }),
+    );
+    expect(reclaimed).toMatchObject({
+      created: true,
+      run: {
+        id: first.run.id,
+        status: 'running',
+        contentHash: newHash,
+        revisionId: 'rev_2',
+        omittedFields: ['body'],
+        errorCode: null,
+        latencyMs: null,
+        completedAt: null,
+      },
+    });
 
     const rows = await db.select().from(reviewRuns).where(eq(reviewRuns.idempotencyKey, key));
     expect(rows).toHaveLength(1);
+  });
+
+  it('scopes the idempotency key to the principal', async () => {
+    const p = (await store.insertFirstProfile(profile(SITE_A)))!;
+    const key = uid('key');
+    const mine = await store.claimRun(run(SITE_A, p.id, { idempotencyKey: key }));
+    await store.completeRun(SITE_A, mine.run.id, {
+      status: 'error',
+      provider: null,
+      model: null,
+      calibrated: null,
+      answers: null,
+      usage: null,
+      latencyMs: 5,
+      errorCode: 'DECISION_UNAVAILABLE',
+    });
+
+    const theirs = await store.claimRun(run(SITE_A, p.id, { idempotencyKey: key, principalId: 'usr_other' }));
+    expect(theirs.created).toBe(true);
+    expect(theirs.run.id).not.toBe(mine.run.id);
+    expect(await store.getRun(SITE_A, mine.run.id)).toMatchObject({ status: 'error', principalId: 'usr_editor' });
+  });
+
+  it('reclaims a running run only after the orphan timeout', async () => {
+    const p = (await store.insertFirstProfile(profile(SITE_A)))!;
+    const key = uid('key');
+    const first = await store.claimRun(run(SITE_A, p.id, { idempotencyKey: key }));
+    expect(await store.claimRun(run(SITE_A, p.id, { idempotencyKey: key }))).toMatchObject({ created: false });
+
+    await db
+      .update(reviewRuns)
+      .set({ createdAt: sql`now() - interval '1 hour'` })
+      .where(eq(reviewRuns.id, first.run.id));
+    expect(await store.claimRun(run(SITE_A, p.id, { idempotencyKey: key }))).toMatchObject({
+      created: true,
+      run: { id: first.run.id, status: 'running' },
+    });
   });
 
   it('stores one feedback row per run, question and principal', async () => {

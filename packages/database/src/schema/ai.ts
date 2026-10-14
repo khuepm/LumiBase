@@ -582,7 +582,13 @@ export const reviewRuns = pgTable(
     completedAt: timestamp('completed_at'),
   },
   (t) => ({
-    siteIdempotencyUq: uniqueIndex('review_runs_site_idempotency_uq').on(t.siteId, t.idempotencyKey),
+    // Scoped to the principal so two callers that pick the same key never share a run.
+    siteIdempotencyUq: uniqueIndex('review_runs_site_principal_idempotency_uq').on(
+      t.siteId,
+      t.principalType,
+      t.principalId,
+      t.idempotencyKey,
+    ),
     siteItemIdx: index('review_runs_site_item_idx').on(t.siteId, t.itemId, t.createdAt),
     createdIdx: index('review_runs_created_idx').on(t.createdAt),
   }),

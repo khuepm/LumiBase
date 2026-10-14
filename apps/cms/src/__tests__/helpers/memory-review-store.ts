@@ -1,20 +1,22 @@
 /**
  * In-memory {@link ReviewStore} for service and route tests. It mirrors the
  * database constraints the service relies on — site scoping, unique
- * (site, key, version), unique (site, idempotency_key), unique
+ * (site, key, version), unique (site, principal, idempotency_key), unique
  * (site, run, question, principal) — so idempotency and tenancy are tested
  * against the same rules. The Drizzle store is covered by the DB suite.
  */
 
-import type {
-  ReviewFeedbackInsert,
-  ReviewFeedbackRecord,
-  ReviewProfileInsert,
-  ReviewProfileRecord,
-  ReviewRunCompletion,
-  ReviewRunInsert,
-  ReviewRunRecord,
-  ReviewStore,
+import {
+  reclaimBinding,
+  REVIEW_RUN_ORPHAN_MS,
+  type ReviewFeedbackInsert,
+  type ReviewFeedbackRecord,
+  type ReviewProfileInsert,
+  type ReviewProfileRecord,
+  type ReviewRunCompletion,
+  type ReviewRunInsert,
+  type ReviewRunRecord,
+  type ReviewStore,
 } from '../../services/review-store';
 
 export class MemoryReviewStore implements ReviewStore {
@@ -23,6 +25,10 @@ export class MemoryReviewStore implements ReviewStore {
   feedback: ReviewFeedbackRecord[] = [];
   private clock = 0;
 
+  /** The store's current time (the last stamp handed out). */
+  now(): Date {
+    return new Date(Date.UTC(2026, 0, 1) + this.clock * 1000);
+  }
   private stamp(): Date {
     this.clock += 1;
     return new Date(Date.UTC(2026, 0, 1) + this.clock * 1000);
@@ -87,12 +93,18 @@ export class MemoryReviewStore implements ReviewStore {
   }
 
   async claimRun(row: ReviewRunInsert) {
-    const existing = this.runs.find((r) => r.siteId === row.siteId && r.idempotencyKey === row.idempotencyKey);
+    const existing = this.runs.find(
+      (r) =>
+        r.siteId === row.siteId &&
+        r.principalType === row.principalType &&
+        r.principalId === row.principalId &&
+        r.idempotencyKey === row.idempotencyKey,
+    );
     if (existing) {
-      if (existing.status === 'error') {
-        existing.status = 'running';
-        existing.errorCode = null;
-        existing.completedAt = null;
+      const orphaned =
+        existing.status === 'running' && existing.createdAt.getTime() < this.now().getTime() - REVIEW_RUN_ORPHAN_MS;
+      if (existing.status === 'error' || orphaned) {
+        Object.assign(existing, reclaimBinding(row), { createdAt: this.stamp() });
         return { run: existing, created: true };
       }
       return { run: existing, created: false };

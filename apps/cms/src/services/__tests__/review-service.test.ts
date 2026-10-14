@@ -373,6 +373,91 @@ describe('runReview', () => {
     expect(decide).toHaveBeenCalledTimes(2);
     expect(store.runs).toHaveLength(1);
   });
+
+  const unavailable: GovernedDecisionOutcome = {
+    result: null,
+    status: 503,
+    body: { errors: [{ code: 'DECISION_UNAVAILABLE', message: 'down' }] },
+  };
+
+  it('a retry after the item was edited binds the reclaimed run to the new content and revision', async () => {
+    const { service, decide, store, content } = await withProfile();
+    decide.mockResolvedValueOnce(unavailable);
+    const request = { profile: 'spam-check', collection: 'posts', itemId: 'itm_1', idempotencyKey: 'retry-key-3' };
+    const failed = await service.runReview(request, { principal: editor });
+
+    content.items.itm_1!.body = 'Buy now, edited';
+    content.revisions.itm_1 = 'rev_2';
+    const retried = await service.runReview(request, { principal: editor });
+
+    expect(retried).toMatchObject({ ok: true, created: true, run: { id: failed.run.id, revisionId: 'rev_2' } });
+    expect(retried.run.contentHash).toBe(await reviewContentHash({ title: 'Summer sale', body: 'Buy now, edited' }));
+    expect(retried.run.contentHash).not.toBe(failed.run.contentHash);
+    expect(decide.mock.calls[1]![0].state).toEqual({ title: 'Summer sale', body: 'Buy now, edited' });
+    expect(await service.getRun(retried.run.id, editor)).toMatchObject({ stale: false, staleReason: null });
+    expect(store.runs).toHaveLength(1);
+  });
+
+  it('a retry after a new profile version records the version it was answered with', async () => {
+    const { service, decide, store } = await withProfile();
+    decide.mockResolvedValueOnce(unavailable);
+    const request = { profile: 'spam-check', collection: 'posts', itemId: 'itm_1', idempotencyKey: 'retry-key-4' };
+    const failed = await service.runReview(request, { principal: editor });
+    expect(failed.run.profileVersion).toBe(1);
+
+    const v2 = await service.createProfileVersion('spam-check', { ...spamProfile, fields: ['title'] }, admin);
+    const retried = await service.runReview(request, { principal: editor });
+
+    expect(retried.run).toMatchObject({ id: failed.run.id, profileId: v2.id, profileVersion: 2 });
+    expect(retried.run.contentHash).toBe(await reviewContentHash({ title: 'Summer sale' }));
+    expect(store.runs[0]).toMatchObject({ profileId: v2.id, profileVersion: 2 });
+  });
+
+  it('a replay is assessed against the profile version the run used', async () => {
+    const { service, decide } = await withProfile();
+    const request = { profile: 'spam-check', collection: 'posts', itemId: 'itm_1', idempotencyKey: 'retry-key-5' };
+    await service.runReview(request, { principal: editor });
+    await service.createProfileVersion('spam-check', { ...spamProfile, fields: ['title'] }, admin);
+    const replay = await service.runReview(request, { principal: editor });
+    expect(replay).toMatchObject({ ok: true, created: false, run: { profileVersion: 1, stale: false } });
+    expect(decide).toHaveBeenCalledTimes(1);
+  });
+
+  it('the same key from another principal is a separate run and never reclaims the first one', async () => {
+    const { service, decide, store } = await withProfile();
+    decide.mockResolvedValueOnce(unavailable);
+    const request = { profile: 'spam-check', collection: 'posts', itemId: 'itm_1', idempotencyKey: 'shared-key-1' };
+    const mine = await service.runReview(request, { principal: editor });
+    const theirs = await service.runReview(request, { principal: other });
+
+    expect(theirs).toMatchObject({ ok: true, created: true });
+    expect(theirs.run.id).not.toBe(mine.run.id);
+    expect(store.runs).toHaveLength(2);
+    expect(store.runs.find((r) => r.id === mine.run.id)).toMatchObject({
+      principalId: editor.id,
+      status: 'error',
+      answers: null,
+    });
+    expect(store.runs.find((r) => r.id === theirs.run.id)).toMatchObject({ principalId: other.id, status: 'success' });
+  });
+
+  it('reclaims a run left running past the orphan timeout, but not a live one', async () => {
+    const { service, decide, store } = await withProfile();
+    const request = { profile: 'spam-check', collection: 'posts', itemId: 'itm_1', idempotencyKey: 'orphan-key-1' };
+    await service.runReview(request, { principal: editor });
+    const row = store.runs[0]!;
+    Object.assign(row, { status: 'running', answers: null, completedAt: null, createdAt: store.now() });
+
+    const live = await service.runReview(request, { principal: editor });
+    expect(live).toMatchObject({ ok: true, created: false, run: { status: 'running' } });
+    expect(decide).toHaveBeenCalledTimes(1);
+
+    row.createdAt = new Date(0);
+    const reclaimed = await service.runReview(request, { principal: editor });
+    expect(reclaimed).toMatchObject({ ok: true, created: true, run: { id: row.id, status: 'success' } });
+    expect(decide).toHaveBeenCalledTimes(2);
+    expect(store.runs).toHaveLength(1);
+  });
 });
 
 describe('staleness and feedback', () => {
@@ -433,6 +518,21 @@ describe('staleness and feedback', () => {
 
     expect(store.feedback).toHaveLength(1);
     expect(second[0]!.id).toBe(first[0]!.id);
+  });
+
+  it('a resubmitted different verdict keeps the first one and returns it', async () => {
+    const { service, runId, store } = await reviewed();
+    await service.submitFeedback(runId, { entries: [{ questionKey: 'spam', verdict: 'reject' }] }, editor);
+    const changed = await service.submitFeedback(
+      runId,
+      { entries: [{ questionKey: 'spam', verdict: 'accept' }] },
+      editor,
+    );
+
+    // Documented contract: the first verdict is final and the response carries it.
+    expect(changed[0]).toMatchObject({ verdict: 'reject' });
+    expect(store.feedback).toHaveLength(1);
+    expect(store.feedback[0]).toMatchObject({ verdict: 'reject' });
   });
 
   it('refuses feedback on questions the run did not answer', async () => {

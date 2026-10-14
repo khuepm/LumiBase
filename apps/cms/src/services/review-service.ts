@@ -401,7 +401,11 @@ export class ReviewService {
       idempotencyKey: options.idempotencyKey ?? request.idempotencyKey ?? this.newId(),
     });
     if (!created) {
-      const view = await this.assess(run, profile, options.principal, new Map());
+      // A replay reports the run as stored, so assess it against the profile
+      // version it was answered with, not the one this request resolved.
+      const runProfile =
+        run.profileId === profile.id ? profile : await store.getProfileById(siteId, run.profileId);
+      const view = runProfile ? await this.assess(run, runProfile, options.principal, new Map()) : null;
       if (!view) throw new ReviewServiceError('REVIEW_RUN_NOT_FOUND', 'Review run not found.');
       return { ok: true, run: view, created: false };
     }

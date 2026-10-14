@@ -11,7 +11,7 @@ import {
   reviewRuns,
   type Database,
 } from '@lumibase/database';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 
 export type ReviewProfileRecord = typeof reviewProfiles.$inferSelect;
 export type ReviewProfileInsert = Omit<typeof reviewProfiles.$inferInsert, 'id' | 'createdAt' | 'status'> & {
@@ -45,10 +45,14 @@ export interface ReviewStore {
     build: (version: number) => ReviewProfileInsert,
   ): Promise<ReviewProfileRecord | 'not_found' | 'conflict'>;
   /**
-   * Inserts a `running` run unless `(siteId, idempotencyKey)` exists. An
-   * existing run that ended in `error` is reclaimed (set back to `running`)
-   * so a retry can try again without a second row. `created` is true when the
-   * caller owns the run and must call the provider.
+   * Inserts a `running` run unless `(siteId, principalType, principalId,
+   * idempotencyKey)` exists, so two callers never share a key. An existing run
+   * that ended in `error`, or that is still `running` after
+   * {@link REVIEW_RUN_ORPHAN_MS} (its process died before completing it), is
+   * reclaimed in place: status and outcome are reset and every binding column
+   * (profile, content hash, revision, source, omitted fields) is rewritten
+   * from `row`, because the retry's answers are computed for `row`'s content.
+   * `created` is true when the caller owns the run and must call the provider.
    */
   claimRun(row: ReviewRunInsert): Promise<{ run: ReviewRunRecord; created: boolean }>;
   completeRun(siteId: string, id: string, completion: ReviewRunCompletion): Promise<ReviewRunRecord | null>;
@@ -61,6 +65,42 @@ export interface ReviewStore {
     principalId: string,
     rows: ReviewFeedbackInsert[],
   ): Promise<ReviewFeedbackRecord[]>;
+}
+
+/**
+ * A `running` run older than this is treated as orphaned (the process died
+ * between claim and completion) and may be reclaimed by a retry. Well above
+ * the maximum decision deadline (`DECISION_TIMEOUT_MS` is capped at 120 s), so
+ * a live call is never reclaimed.
+ */
+export const REVIEW_RUN_ORPHAN_MS = 5 * 60_000;
+
+/**
+ * The columns a reclaim rewrites: the retry's binding (what the answers will
+ * be about) plus a reset outcome. `id`, `siteId`, the principal and the
+ * idempotency key identify the row and stay.
+ */
+export function reclaimBinding(row: ReviewRunInsert) {
+  return {
+    profileId: row.profileId,
+    profileKey: row.profileKey,
+    profileVersion: row.profileVersion,
+    collection: row.collection,
+    itemId: row.itemId ?? null,
+    revisionId: row.revisionId ?? null,
+    contentHash: row.contentHash,
+    source: row.source,
+    omittedFields: row.omittedFields ?? [],
+    status: 'running',
+    provider: null,
+    model: null,
+    calibrated: null,
+    answers: null,
+    usage: null,
+    latencyMs: null,
+    errorCode: null,
+    completedAt: null,
+  } satisfies Partial<ReviewRunRecord>;
 }
 
 /** Postgres `unique_violation` (23505), possibly wrapped by drizzle. */
@@ -169,22 +209,40 @@ export class DrizzleReviewStore implements ReviewStore {
   async claimRun(row: ReviewRunInsert): Promise<{ run: ReviewRunRecord; created: boolean }> {
     const [inserted] = await this.db.insert(reviewRuns).values(row).onConflictDoNothing().returning();
     if (inserted) return { run: inserted, created: true };
-
-    const scope = and(eq(reviewRuns.siteId, row.siteId), eq(reviewRuns.idempotencyKey, row.idempotencyKey));
-    // A previous attempt that failed may be retried in place; the conditional
-    // update lets exactly one concurrent retry win it.
+    const scope = and(
+      eq(reviewRuns.siteId, row.siteId),
+      eq(reviewRuns.principalType, row.principalType),
+      eq(reviewRuns.principalId, row.principalId),
+      eq(reviewRuns.idempotencyKey, row.idempotencyKey),
+    );
+    // A failed or orphaned attempt may be retried in place; the conditional
+    // update lets exactly one concurrent retry win it. `created_at` restarts
+    // so the orphan timeout counts from this attempt. Uses the DB clock on
+    // both sides of the comparison.
     const [reclaimed] = await this.db
       .update(reviewRuns)
-      .set({ status: 'running', errorCode: null, completedAt: null })
-      .where(and(scope, eq(reviewRuns.status, 'error')))
+      .set({
+        ...reclaimBinding(row),
+        createdAt: sql`now()`,
+      })
+      .where(
+        and(
+          scope,
+          or(
+            eq(reviewRuns.status, 'error'),
+            and(
+              eq(reviewRuns.status, 'running'),
+              lt(reviewRuns.createdAt, sql`now() - (${REVIEW_RUN_ORPHAN_MS} * interval '1 millisecond')`),
+            ),
+          ),
+        ),
+      )
       .returning();
     if (reclaimed) return { run: reclaimed, created: true };
-
     const [existing] = await this.db.select().from(reviewRuns).where(scope).limit(1);
     if (!existing) throw new Error('review run vanished between insert and read');
     return { run: existing, created: false };
   }
-
   async completeRun(siteId: string, id: string, completion: ReviewRunCompletion): Promise<ReviewRunRecord | null> {
     const [row] = await this.db
       .update(reviewRuns)
