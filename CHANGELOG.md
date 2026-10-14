@@ -98,6 +98,29 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   there is no go/no-go. Guide: `docs/{en,vi}/features/jev-draft-review-pilot.md`.
   **Migration** `0020_jev_review_sessions` adds one table (additive, no
   backfill); `lumibase_review_sessions` is added to `rls-policies.sql`.
+- **Flows: explicit branches and the `ai:decision` operation (#517).** A flow
+  node may declare `branches` (branch key → next node, `null` ends the run).
+  The runner follows the branch the operation returned and never falls
+  through to `next`; a returned branch with no mapping is a run error. Legacy
+  `next`-only graphs run unchanged, and `condition` also returns
+  `branch: 'true' | 'false'` next to `pass`. The new `ai:decision` operation
+  runs one review with a pinned profile version on one item and returns
+  `true`/`false`/`unknown` (noul threshold), a choice key or `unknown` (minimum
+  confidence, abstention), or `error`. Forbidden, disabled, quota, timeout,
+  cancel and provider failures take the `error` branch when mapped and fail the
+  node otherwise; they are never `true`. At execution time the worker
+  re-resolves the principal of the manual run, checks `ai:decide` and re-reads
+  the site switches, so a revoked grant or a later kill switch stops queued
+  runs. Re-executing a run replays the stored decision (key
+  `flow:<runId>:<nodeId>`) with no second provider call; nodes after a decision
+  must be idempotent, because the runner has no step-level resume. A cancelled
+  or timed-out run now starts no further node. Studio adds an **AI Decision**
+  palette block with true/false/unknown/error handles, and run history shows
+  each decision, the branch taken and an explicit unknown state. **Off by
+  default:** it needs the new `aiDecisions.flows: true` as well as
+  `aiDecisions.enabled`. Event, schedule and webhook runs carry no principal
+  and are refused. Verified on the Docker/Node worker path only: Cloudflare
+  Workers has no `flow-runs` consumer. No migration.
 
 ### Changed
 - **Draft review needs the pilot (#516).** The Studio draft review panel shows

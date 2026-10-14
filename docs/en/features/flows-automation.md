@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T12:59:56.000Z
+version: 2
+lastUpdated: 2026-10-14T17:01:53.510Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: a7d2f855ee399c09
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: df524553325e7930
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-10-14T17:01:53.510Z
+codeVerifiedHash: df524553325e7930
+codeVerifiedClaims: 12
 ---
 
 # Flows / Operations Engine
@@ -35,7 +38,7 @@ Flow status: `active` / `inactive` / `draft`. Run status: `pending` / `running` 
 
 Declared in the `operations.type` column:
 
-- **`condition`** — branch based on an expression; the output controls `next` or `onError`.
+- **`condition`** — compare a path with a value; the output `{ pass, branch: 'true' | 'false' }` drives `branches` (when the node has them) or `next`.
 - **`transform`** — transform the payload with JSONata.
 - **`http`** — call an external API (axios/fetch).
 - **`mail`** — send email via Resend/SMTP.
@@ -44,6 +47,7 @@ Declared in the `operations.type` column:
 - **`run-extension`** — call a mounted extension.
 - **`item.create`** / **`item.update`** / **`item.delete`** — CRUD against CMS data.
 - **`notify`** — push a notification to a user/team.
+- **`ai:decision`** — a governed decision about one item that picks the `true`/`false`/`unknown`/`error` branch (see below).
 - **`drift-scan`** — one Content OS reconciliation cycle for an intent (`options.intentId`): scans for drift per the `content_intents` rules (respecting pinned fields, time-boxed via `options.timeBudgetMs`, with cursor resume), then generates reconciler goals within the `maxGoalsPerCycle` budget. Schedule one `schedule`-triggered flow per intent following the intent's cron.
 
 ## Graph format
@@ -68,6 +72,49 @@ The `flows.graph` column stores the graph as:
 
 `key` references `operations.key` (unique per flow). The `next` edge is for the success path, `onError` for the failure path.
 
+## Explicit branches and `ai:decision` (#517)
+
+A node may declare `branches`: a map from the branch key its operation returns to the next node. `null` ends the run on that branch.
+
+```json
+{
+  "id": "decide",
+  "key": "ai:decision",
+  "options": { "profileKey": "moderation", "profileVersion": 3, "collection": "posts", "questionKey": "spam", "noulThreshold": 0.8 },
+  "branches": { "true": "hold", "false": "publish", "unknown": "queue-review", "error": "notify-admin" }
+}
+```
+
+Runner rules:
+
+- A node with `branches` follows the `branch` its operation returned and never falls through to `next`. A returned branch missing from `branches` is a run error (`Unmapped branch "<key>" at node <id>`). An operation that returns no `branch` is also an error.
+- Legacy `next`-only graphs run as before. `condition` additionally returns `branch: 'true' | 'false'` (and keeps `pass`).
+- A cancelled or timed-out run starts no further node.
+- `validateGraph` checks branch targets, branch keys and cycles through branches. An `active` flow with an `ai:decision` node that has no `branches` is refused (`GRAPH_BRANCHES_REQUIRED`).
+
+The `ai:decision` operation makes one governed decision about one saved item:
+
+| Option | Meaning |
+|--------|---------|
+| `profileKey`, `profileVersion` | Review profile and pinned version (required; the active version is never used implicitly) |
+| `collection`, `itemId` | The item to decide on; without `itemId` it uses `input.itemId` |
+| `questionKey` | The profile question that decides the branch |
+| `noulThreshold` | `noul` questions: `true` when ≥ t, `false` when ≤ 1 − t, otherwise `unknown` |
+| `minConfidence` | `choice` questions: below it, or when the model abstains (`other`/`unknown`), the branch is `unknown` |
+
+The output stored in the node's step: `{ branch, runId, replayed, decision, errorCode? }`. `runId` is the review run (provenance). `score` questions cannot drive a branch.
+
+Governance, checked when the node executes, not when the run was queued:
+
+- **Switches.** Needs the `aiDecisions` setting to have both `enabled: true` and `flows: true`. `flows` is off by default (Phase C). The site kill switch (`enabled: false`) stops flows too.
+- **Principal.** Only manual runs (`POST /api/v1/flows/:id/run`) carry a principal: a reference to the caller, with no capability snapshot. The worker re-resolves that principal, checks `ai:decide` on the live grant, and reads content with that person's own row and field permissions. Event, schedule and webhook runs have no one to decide for, so they are refused (`FORBIDDEN`) rather than run with system rights.
+- **A failure is never `true`.** Forbidden, disabled, quota, timeout, cancel, provider errors and a missing profile or item take the `error` branch when it is mapped; otherwise the node fails and the runner follows `onError`.
+- **Idempotency.** The review run key is `flow:<flowRunId>:<nodeId>`, per principal. Re-executing the same flow run (a redelivered job) replays the stored decision with no second provider call. If the content changed since then, the replay returns `unknown` (`stale`). A review run that ended in `error` is retried.
+- **Downstream nodes.** The runner has no step-level resume: re-executing a run starts it over. The decision node itself is idempotent, but the nodes after it (http, mail, deploy…) must be idempotent themselves.
+- **Runtime.** Verified on the Docker/Node worker path (`serve.ts` registers the `flow-runs` consumer). Cloudflare Workers has no `flow-runs` consumer yet, so parity for asynchronous runs on Workers is not claimed.
+
+Studio: the palette has an **AI Decision** block with four branch handles (true/false/unknown/error, plus the option keys listed in `choices`). Run history shows each decision: the branch taken, the value, the threshold, the model, the review run, and an explicit `unknown` or error state.
+
 ## API endpoints
 
 ```
@@ -87,7 +134,7 @@ Service runner: `apps/cms/src/services/flow-service.ts` — `runFlow(graph, inpu
 LumiBase Studio provides a visual interface for drag-and-drop editing of workflows as a graph (`@xyflow/react`):
 - **List view**: At `/automation/flows`, shows all existing flows with their trigger info, activity status (draft, active, inactive), and links to edit or trigger a Test Run.
 - **Visual Canvas**: Supports drawing the graph with Next edges (a solid indigo directional line) and Error edges (a dashed red line).
-- **Operation Palette**: A quick-pick panel of function blocks in the left column; double-click or press the `+` button to add a block: Condition (If), Transform (JS), HTTP Request, Send Mail, Log, Sleep, Run Extension, Database CRUD.
+- **Operation Palette**: A quick-pick panel of function blocks in the left column; double-click or press the `+` button to add a block: Condition (If), Transform (JS), HTTP Request, Send Mail, Log, Sleep, Run Extension, Database CRUD, AI Decision.
 - **Node Config Panel**: The detailed configuration column on the right automatically shows a form when any node in the graph is selected (e.g. edit the Transform's JS script, choose the Method and URL for HTTP, configure To/Subject for Mail, or set the Sleep delay).
 - **Save & Test Run**: A button to save the graph directly to the API and test the flow in place.
 
