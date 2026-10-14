@@ -14,6 +14,7 @@ import cron, { type ScheduledTask } from 'node-cron';
 import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
+import { runScheduledReviewRunPurge } from './services/review-run-retention';
 import { bootstrapNodeObservability } from './observability/node';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPressureLimiter } from './pressure-limiter';
@@ -210,6 +211,7 @@ async function main() {
       async () => {
         await runScheduledRotation(rotatorDb);
         void runScheduledRefreshTokenPrune(rotatorDb);
+        void runScheduledReviewRunPurge(rotatorDb, process.env.DECISION_REVIEW_RETENTION_DAYS);
       },
       lockOpts,
     ),

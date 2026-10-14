@@ -45,6 +45,87 @@ components:
                 type: array
                 items: { type: string }
               trace: { type: object, additionalProperties: true }
+    ReviewProfileInput:
+      type: object
+      required: [fields]
+      description: Give `questions`, a `preset`, or both.
+      properties:
+        collection: { type: string, nullable: true, description: Collection name; null = any collection }
+        fields:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9_]{0,63}$' }
+        preset: { type: string, enum: [taxonomy, brand-voice, brief-alignment] }
+        presetOptions:
+          type: object
+          properties:
+            categories: { type: array, items: { type: string }, minItems: 1, maxItems: 200 }
+            voice: { type: string, maxLength: 4000 }
+        questions:
+          type: object
+          description: Same question shapes as POST /ai/decisions (1-32).
+          additionalProperties: { type: object }
+        sourceField: { type: string, nullable: true, description: Must be one of fields }
+        minConfidence: { type: number, minimum: 0, maximum: 1, nullable: true }
+    ReviewProfile:
+      type: object
+      properties:
+        id: { type: string }
+        key: { type: string }
+        version: { type: integer }
+        status: { type: string, enum: [active, archived] }
+        collection: { type: string, nullable: true }
+        preset: { type: string, nullable: true, enum: [taxonomy, brand-voice, brief-alignment, null] }
+        fields: { type: array, items: { type: string } }
+        questions: { type: object, additionalProperties: { type: object } }
+        sourceField: { type: string, nullable: true }
+        minConfidence: { type: number, nullable: true }
+        note: { type: string, nullable: true, description: 'e.g. "no source — not a fact-check"' }
+        createdBy: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    ReviewRun:
+      type: object
+      properties:
+        id: { type: string, description: uuidv7 }
+        profileId: { type: string }
+        profileKey: { type: string }
+        profileVersion: { type: integer }
+        collection: { type: string }
+        itemId: { type: string, nullable: true }
+        revisionId: { type: string, nullable: true, description: Latest live revision when the item was read }
+        contentHash: { type: string, description: 'sha256:<hex> of the canonical JSON of the reviewed fields' }
+        source: { type: string, enum: [item, snapshot] }
+        omittedFields: { type: array, items: { type: string }, description: Profile fields the caller could not read; not sent }
+        status: { type: string, enum: [running, success, abstained, error] }
+        provider: { type: string, nullable: true }
+        model: { type: string, nullable: true }
+        calibrated: { type: boolean, nullable: true }
+        answers: { type: object, nullable: true, additionalProperties: { type: object } }
+        usage:
+          type: object
+          nullable: true
+          properties:
+            inputTokens: { type: integer, nullable: true }
+            outputTokens: { type: integer, nullable: true }
+        latencyMs: { type: integer, nullable: true }
+        errorCode: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
+        stale: { type: boolean }
+        staleReason: { type: string, nullable: true, enum: [content_changed, revision_changed, item_unavailable, null] }
+        note: { type: string, nullable: true }
+    ReviewFeedback:
+      type: object
+      properties:
+        id: { type: string }
+        runId: { type: string }
+        questionKey: { type: string }
+        verdict: { type: string, enum: [accept, edit, reject] }
+        editedValue: {}
+        principalType: { type: string }
+        principalId: { type: string }
+        createdAt: { type: string, format: date-time }
     AuthMe:
       type: object
       properties:
@@ -3523,6 +3604,375 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '499':
           description: The client closed the request; the upstream call was aborted (DECISION_CANCELLED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/review-profiles:
+    get:
+      summary: List the active review profiles (#512)
+      description: >
+        The active version of every draft review profile of the site. Needs
+        `ai:decide`. With `collection`, only profiles bound to that collection
+        or to any collection.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: collection, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: Profiles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/ReviewProfile' } }
+        '403':
+          description: FORBIDDEN (no `ai:decide` capability)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      summary: Create version 1 of a review profile (admin)
+      description: >
+        Admin only. Give `questions` (same shapes as POST /ai/decisions), a
+        `preset` (`taxonomy` needs `presetOptions.categories`; `brand-voice`
+        takes `presetOptions.voice`; `brief-alignment` compares with
+        `sourceField`, and without it only checks coherence and stores the
+        note "no source — not a fact-check"), or both (custom questions are
+        merged after the preset's, 32 at most).
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [key]
+                  properties:
+                    key: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$' }
+                - { $ref: '#/components/schemas/ReviewProfileInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewProfile' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: REVIEW_PROFILE_EXISTS (publish a new version instead)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/review-profiles/{key}:
+    get:
+      summary: Get a review profile, the active version or a given one
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: key, in: path, required: true, schema: { type: string } }
+        - { name: version, in: query, required: false, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewProfile' }
+        '400':
+          description: Validation error (version is not a positive integer)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN (no `ai:decide` capability)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: REVIEW_PROFILE_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/review-profiles/{key}/versions:
+    post:
+      summary: Publish the next version of a review profile (admin)
+      description: >
+        Profiles are immutable. This inserts version + 1 with the full body and
+        archives the previous active version in one transaction. Runs keep
+        pointing at the version they were answered against.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: key, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewProfileInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewProfile' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: REVIEW_PROFILE_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: REVIEW_PROFILE_CONFLICT (another version was published at the same time; retry)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/reviews:
+    post:
+      summary: Review an item or an unsaved draft with a profile (#512)
+      description: >
+        Suggest-only: nothing is written to the item. Needs `ai:decide`, then
+        runs the governed decision path of POST /ai/decisions (site opt-in,
+        field allowlist, input budget, quota, `ai_decision` audit event).
+        With `itemId` the server reads the profile's fields with the caller's
+        row/field permissions; unreadable fields are not sent and are listed
+        in `omittedFields`. With `snapshot` (an unsaved draft) every key must
+        be a profile field the caller may read and write (`create`, or
+        `update` when `itemId` is also given), else 422 before any provider
+        call. Content goes only into `state`; the questions come from the
+        stored profile. The same `idempotencyKey` (or `Idempotency-Key`
+        header) from the same principal returns the same run without a
+        second provider call; keys never cross principals. A run that ended
+        in `error`, or is still `running` five minutes after it started, is
+        retried in place and rebound to the content, revision and profile
+        version the retry actually reviewed.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 8, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profile, collection]
+              properties:
+                profile: { type: string }
+                profileVersion: { type: integer, minimum: 1, description: Defaults to the active version }
+                collection: { type: string }
+                itemId: { type: string }
+                snapshot: { type: object, additionalProperties: true }
+                idempotencyKey: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        '200':
+          description: Replay of an existing run with the same idempotency key
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewRun' }
+        '201':
+          description: >
+            Run completed: `status` is `success`, or `abstained` when every
+            choice answer is `other`/`unknown` or a confidence is below the
+            profile's `minConfidence`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewRun' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN (no `ai:decide`, or no read permission on the collection) or DECISION_DISABLED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: REVIEW_PROFILE_NOT_FOUND or REVIEW_ITEM_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: >
+            REVIEW_FIELD_NOT_ALLOWED (snapshot field not in the profile or not
+            readable and writable, or no readable field at all),
+            REVIEW_COLLECTION_MISMATCH, or the decision 422 codes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Decision rate limit or site budget (see POST /ai/decisions)
+          headers:
+            Retry-After:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        default:
+          description: Any other POST /ai/decisions error (413, 499, 502, 503, 504)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    get:
+      summary: List the review runs of an item (newest first, 50 at most)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: collection, in: query, required: true, schema: { type: string } }
+        - { name: itemId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: >
+            Runs the caller may see: item runs whose reviewed fields the caller
+            can read now, and snapshot runs the caller created (admins see all)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/ReviewRun' } }
+        '400':
+          description: collection and itemId are required
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: REVIEW_ITEM_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/reviews/{id}:
+    get:
+      summary: Get a review run with its staleness
+      description: >
+        For item runs `stale` compares the current content hash of the reviewed
+        fields and the latest revision with the run (`content_changed`,
+        `revision_changed`, `item_unavailable`). Snapshot runs report
+        `stale: false`; a changed draft is detected on feedback via
+        `contentHash`.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Run
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewRun' }
+        '403':
+          description: FORBIDDEN (no `ai:decide` capability)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: REVIEW_RUN_NOT_FOUND (also when the caller cannot read the fields it reviewed)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/reviews/{id}/feedback:
+    post:
+      summary: Record accept / edit / reject on the answers of a run
+      description: >
+        One row per run, question and principal; a retried submission returns
+        the stored rows and adds none. The first verdict is final: a
+        different verdict or `editedValue` for the same question is not
+        stored, and the response carries the stored one. `accept` or `edit` on a stale run (or,
+        for snapshot runs, when `contentHash` differs from the run's) is
+        refused with 409 REVIEW_STALE unless `acknowledgeStale: true`.
+        `reject` is always accepted. Feedback never changes the item.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries]
+              properties:
+                entries:
+                  type: array
+                  minItems: 1
+                  maxItems: 32
+                  items:
+                    type: object
+                    required: [questionKey, verdict]
+                    properties:
+                      questionKey: { type: string }
+                      verdict: { type: string, enum: [accept, edit, reject] }
+                      editedValue: { description: Required for edit }
+                acknowledgeStale: { type: boolean }
+                contentHash: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+      responses:
+        '201':
+          description: Stored feedback
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/ReviewFeedback' } }
+        '400':
+          description: Validation error (also a question the run did not answer)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN (no `ai:decide` capability)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: REVIEW_RUN_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: REVIEW_STALE, or REVIEW_NOT_COMPLETE (the run has no answers)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 9
-lastUpdated: 2026-10-10T19:24:06.697Z
+version: 10
+lastUpdated: 2026-10-11T23:27:46.581Z
 sourceLang: en
 translatedFrom: en
-sourceHash: e160d1a40ce2647d
+sourceHash: 2467802388e8c9ae
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-10T19:24:06.697Z
-codeVerifiedHash: e160d1a40ce2647d
+codeVerified: 2026-10-11T23:27:46.581Z
+codeVerifiedHash: 2467802388e8c9ae
 codeVerifiedClaims: 74
 ---
 
@@ -200,6 +200,7 @@ Phục vụ `POST /api/v1/ai/decisions`: trả về câu trả lời có kiểu 
 | `DECISION_SITE_REQUESTS_PER_HOUR` | ✗ | Mức trần của nền tảng cho số decision được nhận mỗi site mỗi giờ (mặc định `600`, khoảng 0–1000000). Vượt mức → `429 DECISION_QUOTA_EXCEEDED`. |
 | `DECISION_SITE_MAX_CONCURRENT` | ✗ | Mức trần của nền tảng cho số decision đang chạy cùng lúc mỗi site (mặc định `4`, khoảng 1–1000). Vượt mức → `429 DECISION_CONCURRENCY_LIMITED`. |
 | `DECISION_SITE_TOKENS_PER_DAY` | ✗ | Mức trần của nền tảng cho số token ước lượng mỗi site mỗi ngày UTC, tính cả mọi lần gọi (mặc định `2000000`, khoảng 0–1000000000). |
+| `DECISION_REVIEW_RETENTION_DAYS` | ✗ | Số ngày giữ một lần review bản nháp và feedback của nó trước khi job chạy mỗi giờ xoá (mặc định `180`, khoảng 1–3650; rỗng hoặc sai → mặc định). Review profile được giữ lại. |
 
 Giá trị không hợp lệ ở tám biến này sẽ bị bỏ qua kèm cảnh báo và dùng giá trị mặc định. Site có thể siết ba mức trần `DECISION_SITE_*` qua setting `aiDecisions`, nhưng không thể nâng lên. Decision cũng bị tắt với một site cho tới khi site admin opt-in ở setting đó (xem [API spec → Governance](../api/hono-api-spec.md)).
 

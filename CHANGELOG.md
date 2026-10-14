@@ -9,6 +9,24 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Added
+- **Draft review profiles and runs (#512).** Versioned review profiles
+  (`/api/v1/ai/review-profiles`, admin-managed, immutable versions; presets
+  `taxonomy`, `brand-voice`, `brief-alignment`) and item-bound review runs
+  (`POST /api/v1/ai/reviews`) that read the item with the caller's own row and
+  field permissions, or validate an unsaved snapshot field by field, then ask
+  the governed decision model. Runs record provider, model, `calibrated`,
+  profile version, revision and a content hash, report `stale` once the item
+  changes, and are idempotent per `Idempotency-Key` and caller (keys never
+  cross principals). A run that ended in `error`, or was left `running` for
+  five minutes, is retried in place and rebound to the content, revision and
+  profile version the retry reviewed. Editors record accept/edit/reject
+  feedback (one row per question and editor; the first verdict is final and is
+  what the response returns); accepting a stale run needs `acknowledgeStale`. Suggest-only: nothing writes to items.
+  Runs and feedback are purged after `DECISION_REVIEW_RETENTION_DAYS`
+  (default 180). **Migration** `0019_jev_review_profiles_runs` adds three
+  tables (additive, no backfill).
+
 ### Changed
 - **Governed decisions (#511).** `POST /api/v1/ai/decisions` now requires the
   `ai:decide` capability (a policy permission `create` on

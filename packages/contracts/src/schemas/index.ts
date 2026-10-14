@@ -163,6 +163,39 @@ export {
 } from './upload-policy';
 
 export { TM_DEFAULT_THRESHOLD } from './translation';
+export {
+  REVIEW_PRESETS,
+  REVIEW_RUN_STATUSES,
+  REVIEW_VERDICTS,
+  REVIEW_STALE_REASONS,
+  REVIEW_ERROR_CODES,
+  ReviewPresetSchema,
+  ReviewVerdictSchema,
+  ReviewFieldNameSchema,
+  ReviewProfileKeySchema,
+  ReviewQuestionSchema,
+  ReviewQuestionsSchema,
+  ReviewPresetOptionsSchema,
+  ReviewProfileCreateInputSchema,
+  ReviewProfileVersionInputSchema,
+  ReviewRunRequestSchema,
+  ReviewFeedbackEntrySchema,
+  ReviewFeedbackRequestSchema,
+  type ReviewPreset,
+  type ReviewPresetOptions,
+  type ReviewRunStatus,
+  type ReviewVerdict,
+  type ReviewStaleReason,
+  type ReviewQuestion,
+  type ReviewProfileCreateInput,
+  type ReviewProfileVersionInput,
+  type ReviewRunRequest,
+  type ReviewFeedbackRequest,
+  type ReviewProfile,
+  type ReviewRun,
+  type ReviewFeedback,
+  type ReviewErrorCode,
+} from './decision-review';
 
 export {
   GIT_PROVIDERS,

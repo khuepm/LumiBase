@@ -1,10 +1,10 @@
 ---
-version: 9
-lastUpdated: 2026-10-10T19:24:06.697Z
+version: 10
+lastUpdated: 2026-10-11T23:27:46.581Z
 sourceLang: en
-contentHash: e160d1a40ce2647d
-codeVerified: 2026-10-10T19:24:06.697Z
-codeVerifiedHash: e160d1a40ce2647d
+contentHash: 2467802388e8c9ae
+codeVerified: 2026-10-11T23:27:46.581Z
+codeVerifiedHash: 2467802388e8c9ae
 codeVerifiedClaims: 74
 ---
 
@@ -194,6 +194,7 @@ Backs `POST /api/v1/ai/decisions`: typed `noul` / `choice` / `score` answers wit
 | `DECISION_SITE_REQUESTS_PER_HOUR` | ✗ | Platform ceiling on admitted decisions per site per clock hour (default `600`, range 0–1000000). Over it → `429 DECISION_QUOTA_EXCEEDED`. |
 | `DECISION_SITE_MAX_CONCURRENT` | ✗ | Platform ceiling on decisions in flight per site (default `4`, range 1–1000). Over it → `429 DECISION_CONCURRENCY_LIMITED`. |
 | `DECISION_SITE_TOKENS_PER_DAY` | ✗ | Platform ceiling on estimated tokens per site per UTC day, every attempt included (default `2000000`, range 0–1000000000). |
+| `DECISION_REVIEW_RETENTION_DAYS` | ✗ | Days a draft review run and its feedback are kept before the hourly purge deletes them (default `180`, range 1–3650; empty or invalid → default). Review profiles are kept. |
 
 Invalid values in these eight variables are ignored with a warning and the default applies. A site can tighten the three `DECISION_SITE_*` ceilings, never raise them, through its `aiDecisions` setting. Decisions are also off for a site until a site admin opts in there (see [API spec → Governance](../api/hono-api-spec.md)).
 
