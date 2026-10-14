@@ -26,6 +26,18 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   Runs and feedback are purged after `DECISION_REVIEW_RETENTION_DAYS`
   (default 180). **Migration** `0019_jev_review_profiles_runs` adds three
   tables (additive, no backfill).
+- **SDK: typed draft review (#514).** `@lumibase/sdk` adds
+  `listReviewProfiles`, `getReviewProfile`, `reviewDraft`, `getReview`,
+  `listReviews` and `submitReviewFeedback`. Each takes `{ signal }` and has
+  types for profiles, runs (`status`, `stale`/`staleReason`, `calibrated`,
+  nullable `usage`) and feedback. `DecisionErrorCode` gains the `REVIEW_*`
+  codes. The new `decisionErrorCode(err)` helper reads the typed code off a
+  `LumiError`. `LumiError.retryAfter` exposes `Retry-After` in seconds, or
+  `null` when the response has none. Every change is additive: existing exports
+  and the `LumiError(status, body)` constructor are unchanged. The SDK keeps
+  zero runtime dependencies. A type-equality test against
+  `@lumibase/contracts`, a devDependency only, fails the SDK typecheck if the
+  mirrored types drift.
 
 ### Changed
 - **Governed decisions (#511).** `POST /api/v1/ai/decisions` now requires the

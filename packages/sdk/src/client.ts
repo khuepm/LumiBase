@@ -65,13 +65,31 @@ export interface LumiErrorBody {
 }
 
 export class LumiError extends Error {
+  /**
+   * Seconds the server asked the caller to wait (`Retry-After`), or `null`
+   * when the response carried none — e.g. a 429 site budget or rate limit.
+   */
+  public readonly retryAfter: number | null;
+
   constructor(
     public status: number,
     public body: LumiErrorBody | any,
+    headers?: Headers,
   ) {
     super(body?.errors?.[0]?.message ?? `LumiBase ${status}`);
     this.name = "LumiError";
+    this.retryAfter = parseRetryAfter(headers?.get("retry-after") ?? null);
   }
+}
+
+/** `Retry-After` as delta-seconds or an HTTP-date, normalised to whole seconds. */
+function parseRetryAfter(value: string | null): number | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  const at = Date.parse(trimmed);
+  if (Number.isNaN(at)) return null;
+  return Math.max(0, Math.ceil((at - Date.now()) / 1000));
 }
 
 function parseResponseBody(text: string): unknown {
@@ -210,7 +228,7 @@ export function createLumiClient<TSchema extends DefaultSchema = DefaultSchema>(
           /* ignore */
         }
       }
-      throw new LumiError(res.status, toErrorBody(res.status, body));
+      throw new LumiError(res.status, toErrorBody(res.status, body), res.headers);
     }
     return body as LumiResponse<T>;
   }
