@@ -355,6 +355,48 @@ describe('the decision is the stored review run, about this item', () => {
     expect(approvalSeq).toBe(0);
   });
 
+  describe('the cut on the step is held to the ai:decision range', () => {
+    const SPAM_ROUTE = { ...ROUTE_OPTIONS, queues: { true: 'spam-review', false: 'publish-desk' } };
+
+    async function decideSpam(): Promise<AiDecisionOutput> {
+      h.upstream.answers.spam = { type: 'noul', noul: 0.4 };
+      const node: FlowNode = { ...DECIDE_NODE, branches: { true: 'act', false: 'act', unknown: 'act', error: 'act' } };
+      const ctx: FlowRunContext = { input: { itemId: 'itm_1', locale: 'vi' }, steps: {}, env: envFor() };
+      const opts = { profileKey: PROFILE_KEY, profileVersion: 1, collection: 'posts', questionKey: 'spam', noulThreshold: 0.8 };
+      return runAiDecisionNode(ctx, opts, node, h.runtime);
+    }
+
+    beforeEach(() =>
+      setAutomation(liveAutomation({ thresholds: { vi: { route: { ...THRESHOLD, questionKey: 'spam', minConfidence: 0.6 } } } })),
+    );
+
+    it('the real noul decision between the cuts stays unknown', async () => {
+      const decision = await decideSpam();
+      expect(decision.branch).toBe('unknown');
+      const out = await runAutomationNode('route', automationCtx(decision), SPAM_ROUTE, ROUTE_NODE, runtime);
+      expect(out).toMatchObject({ mode: 'shadow', status: 'skipped', reason: 'decision_unknown' });
+      expect(approvalSeq).toBe(0);
+    });
+
+    it('a forged noul cut below 0.5 cannot turn a leaning-false decision into true', async () => {
+      const decision = await decideSpam();
+      // Real run id, value and confidence; only the branch and the cut differ.
+      const forged: AiDecisionOutput = { ...decision, branch: 'true', decision: { ...decision.decision!, threshold: 0.3 } };
+      const out = await runAutomationNode('route', automationCtx(forged), SPAM_ROUTE, ROUTE_NODE, runtime);
+      expect(out).toMatchObject({ mode: 'shadow', status: 'skipped', reason: 'decision_mismatch' });
+      expect(rowOf(out)).toMatchObject({ proposed: null, confidence: null, inZone: false });
+      expect(approvalSeq).toBe(0);
+      expect(writes).toHaveLength(0);
+    });
+
+    it.each([[-0.1], [1.5], [Number.NaN], ['0.8']])('a choice cut of %s is refused', async (cut) => {
+      const decision = await decide();
+      const forged = { ...decision, decision: { ...decision.decision!, threshold: cut } } as unknown as AiDecisionOutput;
+      expect(await tag(forged)).toMatchObject({ status: 'skipped', reason: 'decision_mismatch' });
+      expect(approvalSeq).toBe(0);
+    });
+  });
+
   it('stores the confidence, provider and model of the run', async () => {
     const out = await tag();
     expect(rowOf(out)).toMatchObject({ confidence: 0.9, provider: 'typesafe', model: 'jev-1.13', profileKey: PROFILE_KEY });

@@ -133,8 +133,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   decision, and the confidence is in that zone; a malformed block or any
   mismatch forces shadow. The decision's value and confidence are read from
   the stored review run, which must be about the item the node acts on; a
-  step output that disagrees with the run, or a run about another item, is
-  skipped and recorded. A live
+  step output that disagrees with the run, a cut outside the `ai:decision`
+  option range, or a run about another item, is skipped and recorded. A live
   proposal goes through `AISecureHarness` (`updateItem`, agent
   `jev-automation`, `autonomyCap: 1`, the run principal's RBAC, agent
   provenance, pinned fields, kill switch), so it always becomes an approval

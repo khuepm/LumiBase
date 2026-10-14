@@ -326,6 +326,16 @@ function decisionConfidence(questionType: 'noul' | 'choice', value: number | str
   return null;
 }
 
+/**
+ * The cut range `ai:decision` accepts for its options (`noulThreshold`
+ * 0.5–1, `minConfidence` 0–1). With a noul cut ≥ 0.5 the winning side always
+ * has a noul confidence ≥ 0.5, so the branch and `decisionConfidence` agree.
+ */
+function cutInRange(questionType: 'noul' | 'choice', cut: unknown): boolean {
+  if (typeof cut !== 'number' || !Number.isFinite(cut)) return false;
+  return questionType === 'noul' ? cut >= 0.5 && cut <= 1 : cut >= 0 && cut <= 1;
+}
+
 function sameJson(a: unknown, b: unknown): boolean {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
@@ -510,6 +520,12 @@ export async function runAutomationNode(
   if (!answer || (answer.type !== 'choice' && answer.type !== 'noul')) {
     return finish('skipped', 'decision_incomplete', chain);
   }
+  if (answer.type !== record.questionType) return finish('skipped', 'decision_mismatch', chain);
+  // The cut still comes from the step (the node cannot read the graph), so
+  // hold it to the range `ai:decision` accepts. A noul cut below 0.5 would
+  // let `true` win for a noul that leans false, and the stored confidence
+  // would then belong to the losing side.
+  if (!cutInRange(answer.type, record.threshold)) return finish('skipped', 'decision_mismatch', chain);
   const derived = decisionBranch(answer, {
     noulThreshold: record.threshold,
     minConfidence: record.threshold,
@@ -517,7 +533,6 @@ export async function runAutomationNode(
     stale: false,
   });
   if (
-    answer.type !== record.questionType ||
     derived.branch !== decision.branch ||
     derived.value !== record.value ||
     derived.confidence !== record.confidence

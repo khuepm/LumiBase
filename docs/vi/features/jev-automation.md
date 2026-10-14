@@ -1,13 +1,13 @@
 ---
-version: 3
+version: 4
 sourceLang: en
-lastUpdated: 2026-10-14T19:12:34.020Z
+lastUpdated: 2026-10-14T19:38:25.127Z
 translatedFrom: en
-sourceHash: 30def0af1533c49c
+sourceHash: 05745a79dc39d3b3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T19:12:34.020Z
-codeVerifiedHash: 30def0af1533c49c
+codeVerified: 2026-10-14T19:38:25.127Z
+codeVerifiedHash: 05745a79dc39d3b3
 codeVerifiedClaims: 14
 ---
 
@@ -49,7 +49,7 @@ Trước khi đề xuất, mỗi node resolve lại principal của run và đ�
 
 - quyết định bị thiếu, thất bại (`decision_error`) hoặc từ chối trả lời (`decision_unknown`);
 - review run nói về một collection hoặc item khác với cái node đang tác động (`decision_item_mismatch`; dòng khi đó không lưu revision hay hash);
-- output của bước không khớp với câu trả lời hoặc profile của review run (`decision_mismatch`);
+- output của bước không khớp với câu trả lời hoặc profile của review run, hoặc ngưỡng cắt của nó nằm ngoài khoảng mà `ai:decision` chấp nhận (`noulThreshold` 0.5–1, `minConfidence` 0–1) (`decision_mismatch`);
 - review run đã stale: content hash hoặc revision mới nhất của item đã đổi kể từ quyết định (`stale:content_changed`, `stale:revision_changed`);
 - một biên tập viên đã override quyết định bằng feedback `edit` hoặc `reject` (`human_override`);
 - field đích bị con người ghim (`pinned`) hoặc principal không đọc được nó (`field_not_readable`).

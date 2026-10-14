@@ -1,10 +1,10 @@
 ---
-version: 3
+version: 4
 sourceLang: en
-lastUpdated: 2026-10-14T19:12:34.020Z
-contentHash: 30def0af1533c49c
-codeVerified: 2026-10-14T19:12:34.020Z
-codeVerifiedHash: 30def0af1533c49c
+lastUpdated: 2026-10-14T19:38:25.127Z
+contentHash: 05745a79dc39d3b3
+codeVerified: 2026-10-14T19:38:25.127Z
+codeVerifiedHash: 05745a79dc39d3b3
 codeVerifiedClaims: 14
 ---
 
@@ -46,7 +46,7 @@ Before proposing, each node re-resolves the run's principal and re-reads `aiDeci
 
 - the decision is missing, failed (`decision_error`) or abstained (`decision_unknown`);
 - the review run is about another collection or item than the node acts on (`decision_item_mismatch`; the row then stores no revision or hash);
-- the step output disagrees with the review run's answer or profile (`decision_mismatch`);
+- the step output disagrees with the review run's answer or profile, or its cut is outside the range `ai:decision` accepts (`noulThreshold` 0.5–1, `minConfidence` 0–1) (`decision_mismatch`);
 - the review run is stale: the item's content hash or latest revision changed since the decision (`stale:content_changed`, `stale:revision_changed`);
 - an editor already overrode the decision with feedback `edit` or `reject` (`human_override`);
 - the target field is pinned by a human (`pinned`) or the principal cannot read it (`field_not_readable`).
