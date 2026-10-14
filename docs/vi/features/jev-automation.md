@@ -1,13 +1,13 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-10-14T18:09:27.562Z
+lastUpdated: 2026-10-14T19:12:34.020Z
 translatedFrom: en
-sourceHash: a1fd6c1beeafa545
+sourceHash: 30def0af1533c49c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T18:09:27.562Z
-codeVerifiedHash: a1fd6c1beeafa545
+codeVerified: 2026-10-14T19:12:34.020Z
+codeVerifiedHash: 30def0af1533c49c
 codeVerifiedClaims: 14
 ---
 
@@ -45,9 +45,11 @@ Mỗi khoá choice (hoặc `true`/`false` với noul) và `unknown` đều dẫn
 
 Một quyết định `unknown` chỉ đề xuất `manualQueue`, và đề xuất đó không bao giờ live.
 
-Trước khi đề xuất, mỗi node resolve lại principal của run và đọc lại `aiDecisions.enabled` và `aiDecisions.flows`. Sau đó nó **bỏ qua và ghi lại** (status `skipped`) khi:
+Trước khi đề xuất, mỗi node resolve lại principal của run và đọc lại `aiDecisions.enabled` và `aiDecisions.flows`. Nó đọc quyết định từ review run đã lưu: output của bước phía trước chỉ nêu run và câu hỏi, còn giá trị, độ tin cậy, provider, model và profile của nó phải khớp với run. Sau đó nó **bỏ qua và ghi lại** (status `skipped`) khi:
 
 - quyết định bị thiếu, thất bại (`decision_error`) hoặc từ chối trả lời (`decision_unknown`);
+- review run nói về một collection hoặc item khác với cái node đang tác động (`decision_item_mismatch`; dòng khi đó không lưu revision hay hash);
+- output của bước không khớp với câu trả lời hoặc profile của review run (`decision_mismatch`);
 - review run đã stale: content hash hoặc revision mới nhất của item đã đổi kể từ quyết định (`stale:content_changed`, `stale:revision_changed`);
 - một biên tập viên đã override quyết định bằng feedback `edit` hoặc `reject` (`human_override`);
 - field đích bị con người ghim (`pinned`) hoặc principal không đọc được nó (`field_not_readable`).
@@ -65,7 +67,16 @@ Setting `aiDecisions` (do site admin ghi qua `POST /api/v1/settings`) chứa kh�
   "automation": {
     "mode": "live",
     "thresholds": {
-      "vi": { "tag": { "provider": "typesafe", "model": "jev-1.13", "profileVersion": 3, "minConfidence": 0.85 } }
+      "vi": {
+        "tag": {
+          "provider": "typesafe",
+          "model": "jev-1.13",
+          "profileKey": "taxonomy",
+          "profileVersion": 3,
+          "questionKey": "category",
+          "minConfidence": 0.85
+        }
+      }
     },
     "gate": { "approvedBy": "usr_admin", "approvedAt": "2026-11-01T09:00:00Z", "evidenceRef": "eval/jev-benchmark/reports/v1/live/report.heldout.json" }
   }
@@ -80,10 +91,10 @@ Một đề xuất chỉ live khi mọi điều sau đều đúng; nếu không 
 | `mode` là `live` | `mode_shadow` |
 | `gate` có `approvedBy`, `approvedAt` và `evidenceRef` | `gate_missing` |
 | item có locale (`options.locale` hoặc `input.locale`) với một ngưỡng cho hành động | `locale_unknown`, `threshold_missing` |
-| `provider`, `model` và `profileVersion` của ngưỡng khớp quyết định | `provider_mismatch`, `model_mismatch`, `profile_version_mismatch` |
+| `provider`, `model`, `profileKey`, `profileVersion` và `questionKey` của ngưỡng khớp quyết định | `provider_mismatch`, `model_mismatch`, `profile_mismatch`, `profile_version_mismatch`, `question_mismatch` |
 | độ tin cậy của quyết định ít nhất bằng `minConfidence` | `below_threshold` |
 
-Lấy `minConfidence` từ ngưỡng đã đóng băng của split tune J06 cho cùng provider, model và phiên bản profile. Các dòng shadow dùng cùng ngưỡng đó để đánh dấu `inZone`, nên shadow đo đúng vùng mà một lần chuyển sang live sẽ tác động.
+Một ngưỡng nêu đúng quyết định mà nó được đo cho. Phiên bản profile được đánh số theo từng khoá profile, nên chỉ `profileVersion` không xác định được một profile; một ngưỡng thiếu `profileKey` và `questionKey` không parse được và được đọc là `settings_malformed`. Lấy `minConfidence` từ ngưỡng đã đóng băng của split tune J06 cho cùng provider, model, profile và câu hỏi. Các dòng shadow chỉ là `inZone` theo một ngưỡng được đo cho chính quyết định của chúng, nên shadow đo đúng vùng mà một lần chuyển sang live sẽ tác động.
 
 ## Ghi live có quản trị
 
@@ -106,7 +117,9 @@ Dòng chuyển thành `pending_approval` kèm id của approval. Khi một ngư�
 
 ## Hàng chờ duyệt
 
-Hàng chờ duyệt biên tập trong Studio liệt kê các dòng tự động hoá của collection dưới mục **Automation suggestions**: tag hoặc hàng chờ được đề xuất, chế độ và trạng thái, độ tin cậy và việc nó có nằm trong vùng tự động hay không. **Accept**, **Override** (nhập giá trị đúng; lưu thành `edit`) và **Reject** gửi `POST /api/v1/ai/automation/actions/:id/feedback`. Chúng chỉ ghi feedback; không có gì được áp dụng từ hàng chờ. Một quyết định mà item đã đổi kể từ đó sẽ hỏi lại trước khi ghi (`acknowledgeStale`).
+Hàng chờ duyệt biên tập trong Studio liệt kê các dòng tự động hoá của collection dưới mục **Automation suggestions**: tag hoặc hàng chờ được đề xuất, chế độ và trạng thái, độ tin cậy và việc nó có nằm trong vùng tự động hay không. **Accept**, **Override** (nhập tag hoặc hàng chờ đúng; lưu thành `edit`) và **Reject** gửi `POST /api/v1/ai/automation/actions/:id/feedback`. Chúng chỉ ghi feedback; không có gì được áp dụng từ hàng chờ. Một quyết định mà item đã đổi kể từ đó sẽ hỏi lại trước khi ghi (`acknowledgeStale`).
+
+Feedback thuộc về quyết định (review run và câu hỏi), và một quyết định có thể cấp cho cả một node tag lẫn một node phân luồng. Vì vậy một override được lưu theo từ vựng của quyết định: CMS ánh xạ tag hoặc hàng chờ ngược về khoá choice (hoặc `true`/`false` với noul) qua `tagMap` hoặc `queues` của node, hoặc coi nó là một khoá choice khi nó không được ánh xạ. Một giá trị mà quyết định không thể nhận bị từ chối với `422 AUTOMATION_OVERRIDE_UNMAPPED`, và thông báo liệt kê các giá trị dùng được.
 
 ## Chuỗi kiểm toán
 
@@ -118,13 +131,13 @@ revision đầu vào (`revision_id`, `content_hash`) → review run (`review_run
 
 ## Số liệu shadow
 
-`GET /api/v1/ai/automation/metrics?from=&to=` (site admin, khoảng tối đa 366 ngày, mặc định 30 ngày gần nhất) báo, theo hành động, locale, provider, model và phiên bản profile:
+`GET /api/v1/ai/automation/metrics?from=&to=` (site admin, khoảng tối đa 366 ngày, mặc định 30 ngày gần nhất) báo, theo hành động, locale, provider, model, profile (khoá và phiên bản) và câu hỏi:
 
-- **precision** trên các đề xuất trong vùng có phán quyết từ một người dùng đã đăng nhập: `accept`, hoặc override thành cùng giá trị, là đúng; `reject` hoặc override thành giá trị khác là sai;
+- **precision** trên các đề xuất trong vùng có phán quyết từ một người dùng đã đăng nhập: `accept`, hoặc override thành cùng giá trị của quyết định, là đúng; `reject` hoặc override thành giá trị khác là sai;
 - **coverage**: đề xuất trong vùng trên số item đã có quyết định (đề xuất cộng các lần từ chối trả lời);
 - khoảng Wilson 95%, ngưỡng đã dùng và số mẫu.
 
-Protocol `jev-automation-v1` yêu cầu ít nhất 30 đề xuất trong vùng đã được duyệt cho mỗi split và 100 tổng cộng. Dưới mức đó một split là `insufficientSample` và `shadowRequired` vẫn là `true`. Các dòng từ một model hoặc phiên bản profile mà ngưỡng không được đo cho bị loại (`excludedMismatch`). Số liệu không bao giờ bật gì cả; chuyển sang live là một quyết định riêng của admin được ghi trong `gate`.
+Protocol `jev-automation-v1` yêu cầu ít nhất 30 đề xuất trong vùng đã được duyệt cho mỗi split và 100 tổng cộng. Dưới mức đó một split là `insufficientSample` và `shadowRequired` vẫn là `true`. Các dòng từ một provider, model, profile hoặc câu hỏi mà ngưỡng không được đo cho bị loại (`excludedMismatch`), nên các profile trùng số phiên bản không bao giờ bị gộp chung. Số liệu không bao giờ bật gì cả; chuyển sang live là một quyết định riêng của admin được ghi trong `gate`.
 
 ## Quyền truy cập và đa tenant
 

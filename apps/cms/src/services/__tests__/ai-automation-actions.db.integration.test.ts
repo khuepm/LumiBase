@@ -184,7 +184,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Automation actions — DB integration', (
         itemId,
         mode: 'live',
         status: 'pending',
-        proposed: { field: 'tags', value: ['featured', 'news'], target: 'news' },
+        proposed: { field: 'tags', value: ['featured', 'news'], target: 'news', choice: 'news', targets: {} },
         previous: { field: 'tags', value: ['featured'] },
       }),
     );

@@ -4262,8 +4262,10 @@ paths:
       summary: Accept, override or reject the decision behind an action (#518, admin only)
       description: >
         Stored as review feedback on the action's review run and question
-        (one verdict per principal). An override is `edit` with `editedValue`.
-        Applies nothing.
+        (one verdict per principal). An override is `edit` with `editedValue`:
+        the tag or queue the editor wants, mapped back to the decision's value
+        (choice key, or `true`/`false` for a noul) through the node's `tagMap`
+        / `queues`; that decision value is what is stored. Applies nothing.
       parameters:
         - { $ref: '#/components/parameters/SiteHeader' }
         - { name: id, in: path, required: true, schema: { type: string } }
@@ -4307,6 +4309,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: AUTOMATION_OVERRIDE_UNMAPPED (the override is not a value the decision can take)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /ai/automation/actions/{id}/revert:
     post:
@@ -4346,7 +4353,7 @@ paths:
     get:
       summary: Shadow precision and coverage in the auto-action zone (#518, admin only)
       description: >
-        Per action/locale/provider/model/profile-version split: precision over
+        Per action/locale/provider/model/profile/question split: precision over
         in-zone proposals with a signed-in user's verdict and coverage of the
         zone (95% Wilson intervals), evaluated against the current
         `aiDecisions.automation.thresholds`. `insufficientSample` and

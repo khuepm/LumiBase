@@ -28,6 +28,11 @@
  * editorial state transition is proposed only; a human performs it from the
  * review queue.
  *
+ * The decision's facts come from the stored review run, never from the
+ * upstream step output alone: a run about another collection or item
+ * (`decision_item_mismatch`) or a step that disagrees with the run's answer
+ * or profile (`decision_mismatch`) is skipped.
+ *
  * Skipped and recorded (nothing proposed): a stale decision (the item's
  * content hash or latest revision changed since the review run), a decision
  * a human already overrode (feedback `edit` / `reject`), a pinned or
@@ -47,11 +52,12 @@ import { z } from 'zod';
 import {
   AUTOMATION_AGENT,
   AUTOMATION_AUTONOMY_CAP,
-  automationThreshold,
   inAutoActionZone,
+  matchingThreshold,
   parseAutomationSettings,
   resolveAutomationMode,
   type AutomationAction,
+  type AutomationDecisionFacts,
   type AutomationMode,
 } from './ai-automation';
 import {
@@ -61,6 +67,7 @@ import {
 } from './ai-automation-store';
 import type { HarnessExecutionResult } from './ai-harness';
 import { flowDecisionsEnabled, type DecisionSiteSettings } from './decision-governance';
+import type { DecisionAnswer } from './decision-provider';
 import {
   canTransition,
   editorialStateFromStatus,
@@ -68,7 +75,7 @@ import {
   type ItemStatus,
 } from './editorial-service';
 import type { AuthenticatedPrincipalRef } from './effective-capability-service';
-import { aiDecisionRuntimeFromEnv, type AiDecisionOutput, type AiDecisionRecord } from './flow-ai-decision';
+import { aiDecisionRuntimeFromEnv, decisionBranch, type AiDecisionOutput } from './flow-ai-decision';
 import type { FlowNode, FlowRunContext } from './flow-service';
 import type { GovernedCapabilityResolution } from './governed-capabilities';
 import { itemServiceForPrincipal } from './item-service-factory';
@@ -95,6 +102,10 @@ export type AutomationSkipReason =
   | 'decision_error'
   | 'decision_unknown'
   | 'decision_incomplete'
+  /** The review run is about another collection or item than the node acts on. */
+  | 'decision_item_mismatch'
+  /** The upstream step output disagrees with the stored review run. */
+  | 'decision_mismatch'
   | 'stale'
   | 'human_override'
   | 'field_not_readable'
@@ -309,9 +320,9 @@ function decisionOutputOf(value: unknown): AiDecisionOutput | null {
 }
 
 /** Confidence of the decision: the choice confidence, or the noul side that won. */
-function decisionConfidence(decision: AiDecisionRecord): number | null {
-  if (decision.questionType === 'choice') return decision.confidence;
-  if (typeof decision.value === 'number') return decision.value >= 0.5 ? decision.value : 1 - decision.value;
+function decisionConfidence(questionType: 'noul' | 'choice', value: number | string, confidence: number | null): number | null {
+  if (questionType === 'choice') return confidence;
+  if (typeof value === 'number') return value >= 0.5 ? value : 1 - value;
   return null;
 }
 
@@ -347,11 +358,19 @@ function toOutput(row: AutomationActionRecord, replayed: boolean): AutomationNod
 // Operation
 // ---------------------------------------------------------------------------
 
-interface Proposal {
+export interface AutomationProposal {
   field: string;
   value: unknown;
-  /** Tag added / queue chosen. */
+  /** Tag added / queue chosen (the action's vocabulary). */
   target: string;
+  /**
+   * The decision behind it in the decision's vocabulary: the choice key, or
+   * the noul branch (`true` / `false`). Feedback and metrics compare this,
+   * so a tag node and a route node fed by one decision score one edit alike.
+   */
+  choice: string;
+  /** The node's mapping from decision value to target (`tagMap` / `queues`); identity when absent. */
+  targets: Record<string, string>;
   transition?: 'submit_review' | null;
   transitionAllowed?: boolean;
 }
@@ -410,6 +429,10 @@ export async function runAutomationNode(
     admin: grant.controlPlaneAdmin,
   };
 
+  // The step output only says WHICH run and question to look at. Flow steps
+  // are writable by upstream nodes (`transform` merges into them), so the
+  // decision's facts — value, confidence, provider, model, profile — are read
+  // from the stored review run below and the step must agree with it.
   const decision = decisionOutputOf(ctx.steps[options.decisionNode ?? 'previous']);
   const record = decision?.decision ?? null;
   const base = {
@@ -427,7 +450,8 @@ export async function runAutomationNode(
     model: record?.model ?? null,
     profileKey: record?.profileKey ?? null,
     profileVersion: record?.profileVersion ?? null,
-    confidence: record ? decisionConfidence(record) : null,
+    // Set from the review run once the step is checked against it.
+    confidence: null as number | null,
     principalType: principal.type,
     principalId: principalId(principal),
   };
@@ -435,7 +459,7 @@ export async function runAutomationNode(
   const finish = async (
     status: string,
     reason: string | null,
-    extra: { proposed?: Proposal | null; previous?: unknown; revisionId?: string | null; contentHash?: string | null; inZone?: boolean } = {},
+    extra: { proposed?: AutomationProposal | null; previous?: unknown; revisionId?: string | null; contentHash?: string | null; inZone?: boolean } = {},
   ): Promise<AutomationNodeOutput> => {
     const { row, created } = await runtime.store.claim({
       ...base,
@@ -468,10 +492,45 @@ export async function runAutomationNode(
     if ((err as { code?: string }).code === 'REVIEW_RUN_NOT_FOUND') return finish('skipped', 'decision_missing');
     throw err;
   }
+  // The decision must be about the item this node acts on. Otherwise its
+  // freshness, revision and hash describe another item: record nothing of it.
+  if (run.collection !== options.collection || run.itemId !== itemId) {
+    return finish('skipped', 'decision_item_mismatch');
+  }
   const chain = { revisionId: run.revisionId, contentHash: run.contentHash };
+  if (run.profileKey !== record.profileKey || run.profileVersion !== record.profileVersion) {
+    return finish('skipped', 'decision_mismatch', chain);
+  }
   if (run.status !== 'success' && run.status !== 'abstained') return finish('skipped', 'decision_incomplete', chain);
   // 2. Freshness: never act on content that changed since the decision.
   if (run.stale) return finish('skipped', `stale:${run.staleReason ?? 'content_changed'}`, chain);
+
+  // The answer as stored on the run, mapped with the decision node's cut.
+  const answer = (run.answers as Record<string, DecisionAnswer> | null)?.[record.questionKey];
+  if (!answer || (answer.type !== 'choice' && answer.type !== 'noul')) {
+    return finish('skipped', 'decision_incomplete', chain);
+  }
+  const derived = decisionBranch(answer, {
+    noulThreshold: record.threshold,
+    minConfidence: record.threshold,
+    abstained: run.status === 'abstained',
+    stale: false,
+  });
+  if (
+    answer.type !== record.questionType ||
+    derived.branch !== decision.branch ||
+    derived.value !== record.value ||
+    derived.confidence !== record.confidence
+  ) {
+    return finish('skipped', 'decision_mismatch', chain);
+  }
+  Object.assign(base, {
+    provider: run.provider,
+    model: run.model,
+    profileKey: run.profileKey,
+    profileVersion: run.profileVersion,
+    confidence: decisionConfidence(answer.type, derived.value, derived.confidence),
+  });
 
   // 3. A human already overrode this decision.
   const feedback = await runtime.store.feedbackForRuns(runtime.siteId, [run.id]);
@@ -484,22 +543,25 @@ export async function runAutomationNode(
   if (!target.readable) return finish('skipped', 'field_not_readable', chain);
   if (target.pinnedFields.includes(field)) return finish('skipped', 'pinned', { ...chain, previous: target.value });
 
-  // 5. The proposal.
-  const branch = decision.branch;
-  let proposal: Proposal | null = null;
+  // 5. The proposal, from the run's answer.
+  const branch = derived.branch;
+  let proposal: AutomationProposal | null = null;
   if (action === 'tag') {
     const current = target.value === undefined || target.value === null ? [] : target.value;
     if (!Array.isArray(current) || current.some((v) => typeof v !== 'string')) {
       return finish('skipped', 'field_not_tags', { ...chain, previous: target.value });
     }
     if (branch === 'unknown') return finish('skipped', 'decision_unknown', { ...chain, previous: target.value });
-    const tag = options.tagMap?.[String(record.value)] ?? String(record.value);
+    const choice = String(derived.value);
+    const targets = options.tagMap ?? {};
+    const tag = targets[choice] ?? choice;
     const next = current.includes(tag) ? current : [...current, tag];
-    proposal = { field, value: next, target: tag };
+    proposal = { field, value: next, target: tag, choice, targets };
   } else {
-    const queue = branch === 'unknown' ? options.manualQueue : (options.queues?.[branch] ?? (record.questionType === 'choice' ? String(record.value) : undefined));
+    const targets = options.queues ?? {};
+    const queue = branch === 'unknown' ? options.manualQueue : (targets[branch] ?? (answer.type === 'choice' ? String(derived.value) : undefined));
     if (!queue) return finish('skipped', branch === 'unknown' ? 'decision_unknown' : 'no_route', { ...chain, previous: target.value });
-    proposal = { field, value: queue, target: queue };
+    proposal = { field, value: queue, target: queue, choice: branch, targets };
     if (options.submitForReview) {
       const allowed = canTransition(target.editorialState, 'submit_review');
       proposal.transition = allowed ? 'submit_review' : null;
@@ -516,15 +578,17 @@ export async function runAutomationNode(
   }
 
   // 6. Shadow or live.
-  const facts = {
+  const facts: AutomationDecisionFacts = {
     action,
     locale,
     provider: run.provider,
     model: run.model,
+    profileKey: run.profileKey,
     profileVersion: run.profileVersion,
+    questionKey: record.questionKey,
   };
-  const threshold = automationThreshold(automation, facts);
-  const inZone = inAutoActionZone(base.confidence, threshold);
+  // Only a threshold measured for this exact decision places it in the zone.
+  const inZone = inAutoActionZone(base.confidence, matchingThreshold(automation, facts));
   const resolution = resolveAutomationMode(automation, facts);
   if (resolution.mode !== 'live' || !inZone) {
     const reason = resolution.mode === 'live' ? 'below_threshold' : resolution.reason;
@@ -641,7 +705,7 @@ export async function revertAutomationAction(
       409,
     );
   }
-  const proposed = row.proposed as Proposal | null;
+  const proposed = row.proposed as AutomationProposal | null;
   const previous = row.previous as { field: string; value: unknown } | null;
   if (!proposed || !previous) {
     throw new AutomationRevertError('AUTOMATION_NOT_APPLIED', 'This action has no recorded previous value.', 409);

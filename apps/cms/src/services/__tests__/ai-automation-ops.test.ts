@@ -44,7 +44,14 @@ let frozen: boolean;
 let approvalSeq: number;
 
 const GATE = { approvedBy: 'usr_admin', approvedAt: '2026-10-01T00:00:00Z', evidenceRef: 'eval/jev-benchmark/reports/v1/live/report.heldout.json' };
-const THRESHOLD = { provider: 'typesafe', model: 'jev-1.13', profileVersion: 1, minConfidence: 0.8 };
+const THRESHOLD = {
+  provider: 'typesafe',
+  model: 'jev-1.13',
+  profileKey: PROFILE_KEY,
+  profileVersion: 1,
+  questionKey: 'category',
+  minConfidence: 0.8,
+};
 const liveAutomation = (overrides: Record<string, unknown> = {}) => ({
   mode: 'live',
   thresholds: { vi: { tag: THRESHOLD, route: THRESHOLD } },
@@ -160,7 +167,7 @@ describe('shadow is the default and never mutates', () => {
     expect(item.data['tags']).toEqual(['featured']);
     expect(rowOf(out)).toMatchObject({
       action: 'tag',
-      proposed: { field: 'tags', value: ['featured', 'tin-tuc'], target: 'tin-tuc' },
+      proposed: { field: 'tags', value: ['featured', 'tin-tuc'], target: 'tin-tuc', choice: 'news', targets: { news: 'tin-tuc' } },
       previous: { field: 'tags', value: ['featured'] },
       confidence: 0.9,
       locale: 'vi',
@@ -183,12 +190,22 @@ describe('live without a full gate is forced to shadow', () => {
     ['model mismatch', liveAutomation({ thresholds: { vi: { tag: { ...THRESHOLD, model: 'jev-2' } } } }), 'model_mismatch'],
     ['provider mismatch', liveAutomation({ thresholds: { vi: { tag: { ...THRESHOLD, provider: 'openrouter' } } } }), 'provider_mismatch'],
     ['profile version mismatch', liveAutomation({ thresholds: { vi: { tag: { ...THRESHOLD, profileVersion: 2 } } } }), 'profile_version_mismatch'],
+    // Versions are numbered per profile key: v1 of another profile is not this one.
+    ['profile key mismatch', liveAutomation({ thresholds: { vi: { tag: { ...THRESHOLD, profileKey: 'taxonomy' } } } }), 'profile_mismatch'],
+    ['question mismatch', liveAutomation({ thresholds: { vi: { tag: { ...THRESHOLD, questionKey: 'section' } } } }), 'question_mismatch'],
+    ['threshold without profile identity', liveAutomation({ thresholds: { vi: { tag: { provider: 'typesafe', model: 'jev-1.13', profileVersion: 1, minConfidence: 0.8 } } } }), 'settings_malformed'],
   ])('%s', async (_name, automation, reason) => {
     setAutomation(automation);
     const out = await tag();
     expect(out).toMatchObject({ mode: 'shadow', status: 'recorded', reason });
     expect(writes).toHaveLength(0);
     expect(approvalSeq).toBe(0);
+  });
+
+  it('a threshold measured for another profile does not place the proposal in the zone', async () => {
+    setAutomation({ mode: 'shadow', thresholds: { vi: { tag: { ...THRESHOLD, profileKey: 'taxonomy' } } } });
+    const out = await tag();
+    expect(rowOf(out)).toMatchObject({ mode: 'shadow', status: 'recorded', inZone: false });
   });
 
   it('below the threshold stays shadow even with a full gate', async () => {
@@ -297,6 +314,53 @@ describe('humans win: pins, overrides and stale content', () => {
   });
 });
 
+describe('the decision is the stored review run, about this item', () => {
+  beforeEach(() => setAutomation(liveAutomation()));
+
+  it('a decision about another item is skipped and records none of its evidence', async () => {
+    const decision = await decide();
+    const out = await runAutomationNode('tag', automationCtx(decision), { ...TAG_OPTIONS, itemId: 'itm_2' }, TAG_NODE, runtime);
+    expect(out).toMatchObject({ mode: 'shadow', status: 'skipped', reason: 'decision_item_mismatch' });
+    expect(rowOf(out)).toMatchObject({ itemId: 'itm_2', revisionId: null, contentHash: null, proposed: null });
+    expect(approvalSeq).toBe(0);
+  });
+
+  it('a decision about another collection is skipped', async () => {
+    const decision = await decide();
+    const out = await runAutomationNode('tag', automationCtx(decision), { ...TAG_OPTIONS, collection: 'pages' }, TAG_NODE, runtime);
+    expect(out).toMatchObject({ status: 'skipped', reason: 'decision_item_mismatch' });
+    expect(approvalSeq).toBe(0);
+  });
+
+  it('a rewritten step output (value and confidence) is refused, the run answer stands', async () => {
+    const decision = await decide();
+    expect(decision.decision).toMatchObject({ value: 'news', confidence: 0.9 });
+    // An upstream node rewrites the step (as `transform` can) but keeps the real run id.
+    const forged: AiDecisionOutput = {
+      ...decision,
+      branch: 'promo',
+      decision: { ...decision.decision!, value: 'promo', confidence: 0.99 },
+    };
+    const out = await tag(forged);
+    expect(out).toMatchObject({ mode: 'shadow', status: 'skipped', reason: 'decision_mismatch' });
+    expect(rowOf(out)).toMatchObject({ proposed: null, confidence: null });
+    expect(approvalSeq).toBe(0);
+    expect(writes).toHaveLength(0);
+  });
+
+  it('a step that claims another profile version than the run is refused', async () => {
+    const decision = await decide();
+    const forged: AiDecisionOutput = { ...decision, decision: { ...decision.decision!, profileVersion: 2 } };
+    expect(await tag(forged)).toMatchObject({ status: 'skipped', reason: 'decision_mismatch' });
+    expect(approvalSeq).toBe(0);
+  });
+
+  it('stores the confidence, provider and model of the run', async () => {
+    const out = await tag();
+    expect(rowOf(out)).toMatchObject({ confidence: 0.9, provider: 'typesafe', model: 'jev-1.13', profileKey: PROFILE_KEY });
+  });
+});
+
 describe('idempotency', () => {
   it('a redelivered job finds its row and proposes nothing twice', async () => {
     setAutomation(liveAutomation());
@@ -373,6 +437,8 @@ describe('routing', () => {
       field: 'review_queue',
       value: 'newsdesk',
       target: 'newsdesk',
+      choice: 'news',
+      targets: { news: 'newsdesk', promo: 'ads-review' },
       transition: 'submit_review',
       transitionAllowed: true,
     });

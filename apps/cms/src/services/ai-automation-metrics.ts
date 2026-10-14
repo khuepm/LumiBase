@@ -7,15 +7,17 @@
  * zone cover?
  *
  *   precision  over in-zone proposals an editor gave a verdict on: `accept`,
- *              or `edit` to the same value, counts as right; `reject` or an
- *              `edit` to another value counts as wrong.
+ *              or `edit` to the same decision value (choice key / noul
+ *              branch, not the tag or queue name), counts as right; `reject`
+ *              or an `edit` to another value counts as wrong.
  *   coverage   in-zone proposals / decided items (proposals + abstentions).
  *
  * Only verdicts from signed-in users count (as in the J09 pilot): an API key
  * that accepts its own proposals adds no evidence. Zones are evaluated against
- * the CURRENT thresholds, and only for rows whose provider, model and profile
- * version match the threshold, so a precision is always about the setup the
- * threshold was measured for.
+ * the CURRENT thresholds, and only for rows whose provider, model, profile
+ * (key and version) and question match the threshold, so a precision is
+ * always about the setup the threshold was measured for. Splits use the same
+ * identity, so profiles that share a version number are never pooled.
  *
  * Below the pre-registered minimum a split is flagged `insufficientSample`
  * and `shadowRequired` stays true. The metrics never switch anything on: going
@@ -24,6 +26,8 @@
 
 import {
   AUTOMATION_ACTIONS,
+  automationThreshold,
+  thresholdMismatch,
   type AutomationAction,
   type AutomationSettings,
   type AutomationThreshold,
@@ -51,7 +55,9 @@ export interface AutomationSplitMetrics {
   locale: string | null;
   provider: string | null;
   model: string | null;
+  profileKey: string | null;
   profileVersion: number | null;
+  questionKey: string | null;
   threshold: number | null;
   /** Proposals plus `decision_unknown` abstentions. */
   decided: number;
@@ -68,7 +74,7 @@ export interface AutomationMetrics {
   window: { from: string; to: string };
   /** Rows by status, including skips, for context. */
   statusCounts: Record<string, number>;
-  /** Rows whose provider/model/profile version do not match the configured threshold. */
+  /** Rows whose provider/model/profile/question do not match the configured threshold. */
   excludedMismatch: number;
   splits: AutomationSplitMetrics[];
   overall: { reviewedInZone: number; precision: Rate; coverage: Rate; insufficientSample: boolean };
@@ -83,20 +89,18 @@ export const AUTOMATION_METRICS_NOTE =
   'Precision and coverage are measured in shadow. They do not switch automation on; going live is a separate admin decision with a gate record.';
 
 interface ProposalValue {
-  target?: unknown;
+  /** The decision value in the decision's vocabulary (choice key or noul branch). */
+  choice?: unknown;
 }
 
 function thresholdFor(
   settings: AutomationSettings,
   row: AutomationActionRecord,
 ): { threshold: AutomationThreshold | null; mismatch: boolean } {
-  const threshold = row.locale ? (settings.thresholds[row.locale]?.[row.action as AutomationAction] ?? null) : null;
+  const threshold = automationThreshold(settings, { action: row.action as AutomationAction, locale: row.locale });
   if (!threshold) return { threshold: null, mismatch: false };
-  const matches =
-    threshold.provider === row.provider &&
-    threshold.model === row.model &&
-    threshold.profileVersion === row.profileVersion;
-  return { threshold: matches ? threshold : null, mismatch: !matches };
+  const mismatch = thresholdMismatch(threshold, row) !== null;
+  return { threshold: mismatch ? null : threshold, mismatch };
 }
 
 /** Latest verdict per (run, question) from signed-in users. */
@@ -115,8 +119,12 @@ function verdictCorrect(entry: AutomationFeedbackRecord, row: AutomationActionRe
   if (entry.verdict === 'accept') return true;
   if (entry.verdict === 'reject') return false;
   if (entry.verdict === 'edit') {
-    const target = (row.proposed as ProposalValue | null)?.target;
-    return JSON.stringify(entry.editedValue ?? null) === JSON.stringify(target ?? null);
+    // Feedback is per decision (run, question), shared by every action fed by
+    // it, so an override is compared in the decision's vocabulary, never in a
+    // tag or queue name.
+    const choice = (row.proposed as ProposalValue | null)?.choice;
+    if (typeof choice !== 'string') return null;
+    return entry.editedValue === choice;
   }
   return null;
 }
@@ -148,7 +156,9 @@ export function computeAutomationMetrics(input: {
       excludedMismatch += 1;
       continue;
     }
-    const key = [row.action, row.locale, row.provider, row.model, row.profileVersion].join('\u0000');
+    const key = [row.action, row.locale, row.provider, row.model, row.profileKey, row.profileVersion, row.questionKey].join(
+      '\u0000',
+    );
     let acc = splits.get(key);
     if (!acc) {
       acc = {
@@ -156,7 +166,9 @@ export function computeAutomationMetrics(input: {
         locale: row.locale,
         provider: row.provider,
         model: row.model,
+        profileKey: row.profileKey,
         profileVersion: row.profileVersion,
+        questionKey: row.questionKey,
         threshold: threshold?.minConfidence ?? null,
         decided: 0,
         proposals: 0,

@@ -9,7 +9,8 @@
  *   - a gate record names who approved going live, when, and the evidence
  *     (`gate.approvedBy`, `gate.approvedAt`, `gate.evidenceRef`);
  *   - a threshold exists for the item's locale and the action, and its
- *     provider, model and profile version match the decision that was made;
+ *     provider, model, profile key, profile version and question match the
+ *     decision that was made;
  *   - the decision's confidence is at or above that threshold (the
  *     auto-action zone).
  *
@@ -38,11 +39,19 @@ export type AutomationAction = (typeof AUTOMATION_ACTIONS)[number];
 
 export type AutomationMode = 'shadow' | 'live';
 
+/**
+ * A threshold names the exact decision it was measured for. Profile versions
+ * are numbered per profile key (unique on site, key, version), so
+ * `profileVersion` alone does not identify a profile: the key and the
+ * question are part of the identity too.
+ */
 const thresholdSchema = z
   .object({
     provider: z.string().min(1).max(128),
     model: z.string().min(1).max(256),
+    profileKey: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, 'profileKey must be a review profile key'),
     profileVersion: z.number().int().positive(),
+    questionKey: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'questionKey must be a profile question key'),
     minConfidence: z.number().min(0).max(1),
   })
   .strict();
@@ -101,14 +110,18 @@ export type AutomationModeReason =
   | 'threshold_missing'
   | 'provider_mismatch'
   | 'model_mismatch'
-  | 'profile_version_mismatch';
+  | 'profile_mismatch'
+  | 'profile_version_mismatch'
+  | 'question_mismatch';
 
 export interface AutomationDecisionFacts {
   action: AutomationAction;
   locale: string | null;
   provider: string | null;
   model: string | null;
-  profileVersion: number;
+  profileKey: string | null;
+  profileVersion: number | null;
+  questionKey: string | null;
 }
 
 export interface AutomationModeResolution {
@@ -118,18 +131,40 @@ export interface AutomationModeResolution {
   threshold: AutomationThreshold | null;
 }
 
-/**
- * The threshold configured for `facts`, ignoring whether it matches the
- * decision's provider/model/profile. Used to place a shadow proposal in or
- * out of the auto-action zone, so shadow metrics measure exactly the zone a
- * live switch would act in.
- */
+/** The threshold configured for the locale and action, whatever decision it was measured for. */
 export function automationThreshold(
   settings: AutomationSettings,
   facts: Pick<AutomationDecisionFacts, 'action' | 'locale'>,
 ): AutomationThreshold | null {
   if (!facts.locale) return null;
   return settings.thresholds[facts.locale]?.[facts.action] ?? null;
+}
+
+/**
+ * Why `threshold` does not apply to the decision in `facts`, or null when it
+ * was measured for exactly this provider, model, profile (key and version)
+ * and question.
+ */
+export function thresholdMismatch(
+  threshold: AutomationThreshold,
+  facts: Pick<AutomationDecisionFacts, 'provider' | 'model' | 'profileKey' | 'profileVersion' | 'questionKey'>,
+): AutomationModeReason | null {
+  if (threshold.provider !== facts.provider) return 'provider_mismatch';
+  if (threshold.model !== facts.model) return 'model_mismatch';
+  if (threshold.profileKey !== facts.profileKey) return 'profile_mismatch';
+  if (threshold.profileVersion !== facts.profileVersion) return 'profile_version_mismatch';
+  if (threshold.questionKey !== facts.questionKey) return 'question_mismatch';
+  return null;
+}
+
+/**
+ * The threshold that applies to `facts`: configured for the locale and action
+ * AND measured for this exact decision. Shadow rows use it to mark `inZone`,
+ * so shadow measures exactly the zone a live switch would act in.
+ */
+export function matchingThreshold(settings: AutomationSettings, facts: AutomationDecisionFacts): AutomationThreshold | null {
+  const threshold = automationThreshold(settings, facts);
+  return threshold && thresholdMismatch(threshold, facts) === null ? threshold : null;
 }
 
 /** Pure: shadow unless every live condition holds. */
@@ -141,9 +176,8 @@ export function resolveAutomationMode(settings: AutomationSettings, facts: Autom
   if (!settings.gate) return shadow('gate_missing');
   if (!facts.locale) return shadow('locale_unknown');
   if (!threshold) return shadow('threshold_missing');
-  if (threshold.provider !== facts.provider) return shadow('provider_mismatch');
-  if (threshold.model !== facts.model) return shadow('model_mismatch');
-  if (threshold.profileVersion !== facts.profileVersion) return shadow('profile_version_mismatch');
+  const mismatch = thresholdMismatch(threshold, facts);
+  if (mismatch) return shadow(mismatch);
   return { mode: 'live', reason: 'live', threshold };
 }
 

@@ -1,10 +1,10 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-10-14T18:09:27.562Z
-contentHash: a1fd6c1beeafa545
-codeVerified: 2026-10-14T18:09:27.562Z
-codeVerifiedHash: a1fd6c1beeafa545
+lastUpdated: 2026-10-14T19:12:34.020Z
+contentHash: 30def0af1533c49c
+codeVerified: 2026-10-14T19:12:34.020Z
+codeVerifiedHash: 30def0af1533c49c
 codeVerifiedClaims: 14
 ---
 
@@ -42,9 +42,11 @@ Each choice key (or `true`/`false` for a noul) and `unknown` lead to the action 
 
 An `unknown` decision only ever suggests `manualQueue`, and that suggestion is never live.
 
-Before proposing, each node re-resolves the run's principal and re-reads `aiDecisions.enabled` and `aiDecisions.flows`. Then it **skips and records** (status `skipped`) when:
+Before proposing, each node re-resolves the run's principal and re-reads `aiDecisions.enabled` and `aiDecisions.flows`. It reads the decision from the stored review run: the upstream step output only names the run and the question, and its value, confidence, provider, model and profile must agree with the run. Then it **skips and records** (status `skipped`) when:
 
 - the decision is missing, failed (`decision_error`) or abstained (`decision_unknown`);
+- the review run is about another collection or item than the node acts on (`decision_item_mismatch`; the row then stores no revision or hash);
+- the step output disagrees with the review run's answer or profile (`decision_mismatch`);
 - the review run is stale: the item's content hash or latest revision changed since the decision (`stale:content_changed`, `stale:revision_changed`);
 - an editor already overrode the decision with feedback `edit` or `reject` (`human_override`);
 - the target field is pinned by a human (`pinned`) or the principal cannot read it (`field_not_readable`).
@@ -62,7 +64,16 @@ The `aiDecisions` setting (written by a site admin through `POST /api/v1/setting
   "automation": {
     "mode": "live",
     "thresholds": {
-      "vi": { "tag": { "provider": "typesafe", "model": "jev-1.13", "profileVersion": 3, "minConfidence": 0.85 } }
+      "vi": {
+        "tag": {
+          "provider": "typesafe",
+          "model": "jev-1.13",
+          "profileKey": "taxonomy",
+          "profileVersion": 3,
+          "questionKey": "category",
+          "minConfidence": 0.85
+        }
+      }
     },
     "gate": { "approvedBy": "usr_admin", "approvedAt": "2026-11-01T09:00:00Z", "evidenceRef": "eval/jev-benchmark/reports/v1/live/report.heldout.json" }
   }
@@ -77,10 +88,10 @@ A proposal is live only when all of these hold; otherwise it is shadow and `reas
 | `mode` is `live` | `mode_shadow` |
 | `gate` has `approvedBy`, `approvedAt` and `evidenceRef` | `gate_missing` |
 | the item has a locale (`options.locale` or `input.locale`) with a threshold for the action | `locale_unknown`, `threshold_missing` |
-| the threshold's `provider`, `model` and `profileVersion` match the decision | `provider_mismatch`, `model_mismatch`, `profile_version_mismatch` |
+| the threshold's `provider`, `model`, `profileKey`, `profileVersion` and `questionKey` match the decision | `provider_mismatch`, `model_mismatch`, `profile_mismatch`, `profile_version_mismatch`, `question_mismatch` |
 | the decision's confidence is at least `minConfidence` | `below_threshold` |
 
-Take `minConfidence` from the frozen thresholds of the J06 tune split for the same provider, model and profile version. Shadow rows use the same thresholds to mark `inZone`, so shadow measures exactly the zone a live switch would act in.
+A threshold names the exact decision it was measured for. Profile versions are numbered per profile key, so `profileVersion` alone does not identify a profile; a threshold without `profileKey` and `questionKey` does not parse and reads as `settings_malformed`. Take `minConfidence` from the frozen thresholds of the J06 tune split for the same provider, model, profile and question. Shadow rows are `inZone` only against a threshold measured for their decision, so shadow measures exactly the zone a live switch would act in.
 
 ## Live writes are governed
 
@@ -103,7 +114,9 @@ The row becomes `pending_approval` with the approval id. When a human approves i
 
 ## Review queue
 
-The editorial review queue in Studio lists the collection's automation rows under **Automation suggestions**: the proposed tag or queue, the mode and status, the confidence and whether it is in the auto-action zone. **Accept**, **Override** (enter the correct value; stored as `edit`) and **Reject** post `POST /api/v1/ai/automation/actions/:id/feedback`. They record feedback only; nothing is applied from the queue. A decision whose item changed since asks before recording (`acknowledgeStale`).
+The editorial review queue in Studio lists the collection's automation rows under **Automation suggestions**: the proposed tag or queue, the mode and status, the confidence and whether it is in the auto-action zone. **Accept**, **Override** (enter the correct tag or queue; stored as `edit`) and **Reject** post `POST /api/v1/ai/automation/actions/:id/feedback`. They record feedback only; nothing is applied from the queue. A decision whose item changed since asks before recording (`acknowledgeStale`).
+
+Feedback belongs to the decision (review run and question), and one decision can feed both a tag and a route node. So an override is stored in the decision's vocabulary: the CMS maps the tag or queue back to the choice key (or `true`/`false` for a noul) through the node's `tagMap` or `queues`, or takes it as a choice key when it is not mapped. A value the decision cannot take is refused with `422 AUTOMATION_OVERRIDE_UNMAPPED`, and the message lists the values that can be used.
 
 ## Audit chain
 
@@ -115,13 +128,13 @@ input revision (`revision_id`, `content_hash`) → review run (`review_run_id`, 
 
 ## Shadow metrics
 
-`GET /api/v1/ai/automation/metrics?from=&to=` (site admin, window at most 366 days, default the last 30) reports, per action, locale, provider, model and profile version:
+`GET /api/v1/ai/automation/metrics?from=&to=` (site admin, window at most 366 days, default the last 30) reports, per action, locale, provider, model, profile (key and version) and question:
 
-- **precision** over in-zone proposals with a verdict from a signed-in user: `accept`, or an override to the same value, is right; `reject` or an override to another value is wrong;
+- **precision** over in-zone proposals with a verdict from a signed-in user: `accept`, or an override to the same decision value, is right; `reject` or an override to another value is wrong;
 - **coverage**: in-zone proposals over decided items (proposals plus abstentions);
 - 95% Wilson intervals, the threshold used and sample counts.
 
-Protocol `jev-automation-v1` requires at least 30 reviewed in-zone proposals per split and 100 overall. Below that a split is `insufficientSample` and `shadowRequired` stays `true`. Rows from a model or profile version the threshold was not measured for are excluded (`excludedMismatch`). The metrics never switch anything on; going live is a separate admin decision recorded in `gate`.
+Protocol `jev-automation-v1` requires at least 30 reviewed in-zone proposals per split and 100 overall. Below that a split is `insufficientSample` and `shadowRequired` stays `true`. Rows from a provider, model, profile or question the threshold was not measured for are excluded (`excludedMismatch`), so profiles that share a version number are never pooled. The metrics never switch anything on; going live is a separate admin decision recorded in `gate`.
 
 ## Access and multi-tenancy
 

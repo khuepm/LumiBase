@@ -129,8 +129,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   nothing is written. A proposal goes live only when the admin-written
   `aiDecisions.automation` has `mode: 'live'`, a gate record (`approvedBy`,
   `approvedAt`, `evidenceRef`) and a per-locale, per-action threshold whose
-  provider, model and profile version match the decision, and the confidence
-  is in that zone; a malformed block or any mismatch forces shadow. A live
+  provider, model, profile key, profile version and question match the
+  decision, and the confidence is in that zone; a malformed block or any
+  mismatch forces shadow. The decision's value and confidence are read from
+  the stored review run, which must be about the item the node acts on; a
+  step output that disagrees with the run, or a run about another item, is
+  skipped and recorded. A live
   proposal goes through `AISecureHarness` (`updateItem`, agent
   `jev-automation`, `autonomyCap: 1`, the run principal's RBAC, agent
   provenance, pinned fields, kill switch), so it always becomes an approval
@@ -141,7 +145,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   control-plane routes under `/api/v1/ai/automation` (site admin): templates
   (`taxonomy-tagging`, `editorial-routing`) and a build endpoint that writes
   nothing, action history with the audit chain (revision → review run →
-  action → feedback), accept/override/reject feedback, revert of an applied
+  action → feedback), accept/override/reject feedback (an override is stored
+  as the decision's value, mapped back from the tag or queue), revert of an applied
   action (refused when the field changed since), and shadow metrics
   (precision and coverage in the auto-action zone, protocol
   `jev-automation-v1`, `insufficientSample`/`shadowRequired`). Studio adds

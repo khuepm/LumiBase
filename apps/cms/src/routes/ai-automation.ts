@@ -252,6 +252,45 @@ const feedbackBody = z
     path: ['editedValue'],
   });
 
+/**
+ * Maps an override given in the action's vocabulary (the tag or queue the
+ * editor wants) back to the decision's vocabulary (a choice key of the
+ * question, or `true` / `false` for a noul), through the node's own mapping
+ * stored on the proposal. Feedback is stored per decision and shared by every
+ * action fed by it, so it must never hold a tag or queue name.
+ */
+async function overrideInDecisionVocabulary(
+  reviews: ReviewService,
+  row: AutomationActionRecord,
+  editedValue: unknown,
+): Promise<{ ok: true; value: string } | { ok: false; message: string }> {
+  if (typeof editedValue !== 'string' || editedValue.trim().length === 0) {
+    return { ok: false, message: 'An override must name a tag or queue.' };
+  }
+  const edited = editedValue.trim();
+  if (!row.profileKey || row.profileVersion === null || !row.questionKey) {
+    return { ok: false, message: 'This action has no decision to map the override to.' };
+  }
+  const profile = await reviews.getProfile(row.profileKey, row.profileVersion);
+  const question = profile.questions[row.questionKey];
+  const allowed =
+    question?.type === 'choice' ? Object.keys(question.criteria) : question?.type === 'noul' ? ['true', 'false'] : [];
+  const targets = ((row.proposed as { targets?: Record<string, string> } | null)?.targets ?? {}) as Record<string, string>;
+  const mappedFrom = Object.keys(targets).filter((key) => targets[key] === edited && allowed.includes(key));
+  if (mappedFrom.length > 1) {
+    return { ok: false, message: `"${edited}" maps from several decision values (${mappedFrom.join(', ')}).` };
+  }
+  // A mapped target, or (unmapped) a decision value used as is.
+  const value = mappedFrom[0] ?? edited;
+  if (!allowed.includes(value)) {
+    return {
+      ok: false,
+      message: `"${edited}" is not a value this decision can take. Use one of: ${allowed.map((key) => targets[key] ?? key).join(', ')}.`,
+    };
+  }
+  return { ok: true, value };
+}
+
 aiAutomationRouter.post('/automation/actions/:id/feedback', async (c) => {
   const principal = await admin(c);
   if (!principal) return forbidden(c);
@@ -279,10 +318,18 @@ aiAutomationRouter.post('/automation/actions/:id/feedback', async (c) => {
         throw new Error('decide is not used for feedback');
       },
     });
-    const entry =
-      parsed.data.verdict === 'edit'
-        ? { questionKey: row.questionKey, verdict: 'edit' as const, editedValue: parsed.data.editedValue }
-        : { questionKey: row.questionKey, verdict: parsed.data.verdict };
+    let entry:
+      | { questionKey: string; verdict: 'edit'; editedValue: string }
+      | { questionKey: string; verdict: 'accept' | 'reject' };
+    if (parsed.data.verdict === 'edit') {
+      const mapped = await overrideInDecisionVocabulary(reviews, row, parsed.data.editedValue);
+      if (!mapped.ok) {
+        return c.json({ errors: [{ code: 'AUTOMATION_OVERRIDE_UNMAPPED', message: mapped.message }] }, 422);
+      }
+      entry = { questionKey: row.questionKey, verdict: 'edit', editedValue: mapped.value };
+    } else {
+      entry = { questionKey: row.questionKey, verdict: parsed.data.verdict };
+    }
     const saved = await reviews.submitFeedback(
       row.reviewRunId,
       { entries: [entry], ...(parsed.data.acknowledgeStale ? { acknowledgeStale: true } : {}) },

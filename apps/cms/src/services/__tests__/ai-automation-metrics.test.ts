@@ -8,7 +8,23 @@ import type { AutomationActionRecord, AutomationFeedbackRecord } from '../ai-aut
  * using the configured (J06-derived) thresholds and user feedback only.
  */
 
-const THRESHOLD = { provider: 'typesafe', model: 'jev-1.13', profileVersion: 1, minConfidence: 0.8 };
+const THRESHOLD = {
+  provider: 'typesafe',
+  model: 'jev-1.13',
+  profileKey: 'taxonomy',
+  profileVersion: 1,
+  questionKey: 'category',
+  minConfidence: 0.8,
+};
+const FACTS = {
+  action: 'tag' as const,
+  locale: 'vi',
+  provider: 'typesafe',
+  model: 'jev-1.13',
+  profileKey: 'taxonomy',
+  profileVersion: 1,
+  questionKey: 'category',
+};
 const settings = parseAutomationSettings({ automation: { mode: 'shadow', thresholds: { vi: { tag: THRESHOLD } } } });
 const window = { from: new Date('2026-10-01T00:00:00Z'), to: new Date('2026-11-01T00:00:00Z') };
 
@@ -38,7 +54,7 @@ function row(overrides: Partial<AutomationActionRecord> = {}): AutomationActionR
     profileVersion: 1,
     confidence: 0.9,
     inZone: true,
-    proposed: { field: 'tags', value: ['news'], target: 'news' },
+    proposed: { field: 'tags', value: ['news'], target: 'news', choice: 'news', targets: {} },
     applied: false,
     previous: { field: 'tags', value: [] },
     approvalId: null,
@@ -117,6 +133,52 @@ describe('precision and coverage in the auto-action zone', () => {
     expect(m.splits[0]!.proposals).toBe(1);
   });
 
+  it('never pools another profile or question that shares the version number', () => {
+    const m = computeAutomationMetrics({
+      rows: [row({ profileKey: 'moderation' }), row({ questionKey: 'section' }), row()],
+      feedback: [],
+      settings,
+      window,
+    });
+    expect(m.excludedMismatch).toBe(2);
+    expect(m.splits).toHaveLength(1);
+    expect(m.splits[0]).toMatchObject({ profileKey: 'taxonomy', questionKey: 'category', proposals: 1 });
+  });
+
+  it('splits by profile key and question when no threshold is configured', () => {
+    const m = computeAutomationMetrics({
+      rows: [row({ profileKey: 'moderation' }), row()],
+      feedback: [],
+      settings: parseAutomationSettings({}),
+      window,
+    });
+    expect(m.splits.map((s) => s.profileKey).sort()).toEqual(['moderation', 'taxonomy']);
+  });
+
+  it('scores one override alike for a tag and a route action fed by the same decision', () => {
+    const route = parseAutomationSettings({
+      automation: { mode: 'shadow', thresholds: { vi: { tag: THRESHOLD, route: THRESHOLD } } },
+    });
+    const tagRow = row({ proposed: { field: 'tags', value: ['tin-tuc'], target: 'tin-tuc', choice: 'news', targets: { news: 'tin-tuc' } } });
+    const routeRow = row({
+      reviewRunId: tagRow.reviewRunId,
+      action: 'route',
+      nodeId: 'route',
+      proposed: { field: 'review_queue', value: 'newsdesk', target: 'newsdesk', choice: 'news', targets: { news: 'newsdesk' } },
+    });
+    // The override is stored in the decision's vocabulary (a choice key).
+    const m = computeAutomationMetrics({
+      rows: [tagRow, routeRow],
+      feedback: [verdict(tagRow, 'edit', { editedValue: 'news' })],
+      settings: route,
+      window,
+    });
+    expect(m.splits.map((s) => [s.action, s.precision.k, s.precision.n])).toEqual([
+      ['tag', 1, 1],
+      ['route', 1, 1],
+    ]);
+  });
+
   it('evaluates the zone against the current thresholds, not the stored flag', () => {
     const strict = parseAutomationSettings({
       automation: { mode: 'shadow', thresholds: { vi: { tag: { ...THRESHOLD, minConfidence: 0.95 } } } },
@@ -147,7 +209,7 @@ describe('insufficient sample keeps shadow on', () => {
     expect(m.shadowRequired).toBe(false);
     // Going live is a separate admin decision: the same settings still resolve shadow.
     expect(
-      resolveAutomationMode(settings, { action: 'tag', locale: 'vi', provider: 'typesafe', model: 'jev-1.13', profileVersion: 1 }),
+      resolveAutomationMode(settings, FACTS),
     ).toMatchObject({ mode: 'shadow', reason: 'mode_shadow' });
   });
 
@@ -165,7 +227,7 @@ describe('settings parsing', () => {
       malformed: true,
     });
     const live = parseAutomationSettings({ automation: { mode: 'live', thresholds: { vi: { tag: THRESHOLD } } } });
-    expect(resolveAutomationMode(live, { action: 'tag', locale: 'vi', provider: 'typesafe', model: 'jev-1.13', profileVersion: 1 })).toMatchObject({
+    expect(resolveAutomationMode(live, FACTS)).toMatchObject({
       mode: 'shadow',
       reason: 'gate_missing',
     });

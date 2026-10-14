@@ -101,7 +101,7 @@ function action(overrides: Partial<AutomationActionInsert> = {}): AutomationActi
     profileVersion: 1,
     confidence: 0.9,
     inZone: true,
-    proposed: { field: 'tags', value: ['featured', 'news'], target: 'news' },
+    proposed: { field: 'tags', value: ['featured', 'news'], target: 'news', choice: 'news', targets: { promo: 'ads-review' } },
     previous: { field: 'tags', value: ['featured'] },
     applied: false,
     principalType: 'user',
@@ -270,6 +270,25 @@ describe('actions and the audit chain', () => {
     expect(bad.status).toBe(400);
   });
 
+  it('stores an override given as a mapped tag or queue in the decision vocabulary', async () => {
+    const { row } = await actions.claim(action());
+    const res = await app().request(`/ai/automation/actions/${row.id}/feedback`, json({ verdict: 'edit', editedValue: 'ads-review' }));
+    expect(res.status).toBe(201);
+    expect(reviews.feedback).toEqual([expect.objectContaining({ questionKey: 'category', verdict: 'edit', editedValue: 'promo' })]);
+  });
+
+  it('refuses an override that is not a value the decision can take', async () => {
+    const { row } = await actions.claim(action());
+    const res = await app().request(`/ai/automation/actions/${row.id}/feedback`, json({ verdict: 'edit', editedValue: 'newsdesk' }));
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { errors: Array<{ code: string; message: string }> };
+    expect(body.errors[0]).toMatchObject({ code: 'AUTOMATION_OVERRIDE_UNMAPPED' });
+    expect(body.errors[0]!.message).toContain('ads-review');
+    expect(reviews.feedback).toHaveLength(0);
+    const notString = await app().request(`/ai/automation/actions/${row.id}/feedback`, json({ verdict: 'edit', editedValue: 3 }));
+    expect(notString.status).toBe(422);
+  });
+
   it('refuses accept on a stale decision unless acknowledged', async () => {
     const { row } = await actions.claim(action());
     ctx.item['title'] = 'Changed';
@@ -309,7 +328,18 @@ describe('metrics', () => {
       ...ctx.settings,
       automation: {
         mode: 'shadow',
-        thresholds: { vi: { tag: { provider: 'typesafe', model: 'jev-1.13', profileVersion: 1, minConfidence: 0.8 } } },
+        thresholds: {
+          vi: {
+            tag: {
+              provider: 'typesafe',
+              model: 'jev-1.13',
+              profileKey: 'taxonomy',
+              profileVersion: 1,
+              questionKey: 'category',
+              minConfidence: 0.8,
+            },
+          },
+        },
       },
     };
     await actions.claim(action());

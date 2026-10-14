@@ -109,7 +109,7 @@ function SuggestionRow({ row, collection }: { row: AutomationActionView; collect
           </button>
           <input
             aria-label={`Override value for ${row.itemId}`}
-            placeholder="Correct value"
+            placeholder={row.action === 'tag' ? 'Correct tag' : 'Correct queue'}
             value={override}
             onChange={(e) => setOverride(e.target.value)}
           />
