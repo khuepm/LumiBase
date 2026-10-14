@@ -6,6 +6,7 @@
  *   pnpm -F @lumibase/cms bench:jev -- --provider typesafe --split tune
  *   pnpm -F @lumibase/cms bench:jev -- --provider typesafe --split heldout
  *   pnpm -F @lumibase/cms bench:jev -- --merge a.json --merge b.json --out comparison.json
+ *   pnpm -F @lumibase/cms bench:jev -- --task drift --provider mock
  *
  * Providers: `mock` (seeded oracle, no network) or a decision provider from
  * `createDecisionProvider` — `typesafe` (TYPESAFE_API_KEY), `openrouter`
@@ -15,6 +16,10 @@
  * `--split tune` derives thresholds from tune and writes them with the
  * report. `--split heldout` loads those frozen thresholds and never writes
  * any. Lives outside `src/`, so none of it is in the Worker bundle.
+ *
+ * `--task drift` (J12, #519) scores the semantic drift fixtures
+ * (`datasets/<v>/drift.*`) at the rule's fixed threshold with the same
+ * mapping the drift scan uses. It has no tune split and writes no thresholds.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -22,7 +27,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { createDecisionProvider, type DecisionProvider, type DecisionProviderEnv } from '../src/services/decision-provider';
-import { loadDataset, samplesFor, SPLITS, type Split } from '../eval/jev-benchmark/dataset';
+import { loadDataset, samplesFor, SPLITS, type BenchmarkSample, type Split } from '../eval/jev-benchmark/dataset';
+import { asRunnerSamples, loadDriftDataset, runDriftBenchmark } from '../eval/jev-benchmark/drift';
 import type { Prices } from '../eval/jev-benchmark/metrics';
 import { MOCK_MODEL, MOCK_PROVIDER, MockOracleProvider } from '../eval/jev-benchmark/mock-provider';
 import { buildProviderRun, buildReport, mergeReports, type BenchmarkReport } from '../eval/jev-benchmark/report';
@@ -41,6 +47,7 @@ const CMS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const LIVE_PROVIDERS = ['typesafe', 'openrouter', 'llm'] as const;
 
 const USAGE = `Usage:
+  bench:jev -- --task drift --provider <mock|typesafe|openrouter|llm> [--dataset v1] [--out <dir>] [--concurrency <n>]
   bench:jev -- --provider <mock|typesafe|openrouter|llm> --split <tune|heldout> [--dataset v1] [--out <dir>]
              [--thresholds <file>] [--concurrency <n>] [--price-input-per-mtok <usd>] [--price-output-per-mtok <usd>]
   bench:jev -- --merge <report.json> --merge <report.json> --out <comparison.json>`;
@@ -66,6 +73,7 @@ const { values } = parseArgs({
   // pnpm forwards a literal `--` separator.
   args: process.argv.slice(2).filter((arg) => arg !== '--'),
   options: {
+    task: { type: 'string', default: 'editorial' },
     provider: { type: 'string' },
     split: { type: 'string' },
     dataset: { type: 'string', default: 'v1' },
@@ -98,6 +106,81 @@ if (values.merge && values.merge.length > 0) {
   process.exit(0);
 }
 
+function resolveProvider(
+  name: string,
+  mockSamples: readonly BenchmarkSample[],
+  mock: { seed: number; accuracy: number; failureRate: number },
+): { provider: DecisionProvider; model: string; mode: BenchmarkMode } {
+  if (name === MOCK_PROVIDER) {
+    return { mode: 'mock', model: MOCK_MODEL, provider: new MockOracleProvider({ ...mock, samples: mockSamples }) };
+  }
+  if ((LIVE_PROVIDERS as readonly string[]).includes(name)) {
+    const env: DecisionProviderEnv = { ...(process.env as DecisionProviderEnv), DECISION_PROVIDER: name };
+    const configured = createDecisionProvider(env);
+    if (!configured) {
+      fail(
+        `Provider "${name}" is not configured. Set ${
+          name === 'typesafe' ? 'TYPESAFE_API_KEY' : name === 'openrouter' ? 'OPENROUTER_API_KEY' : 'LLM_PROVIDER and its API key'
+        }.`,
+        2,
+      );
+    }
+    return { mode: 'live', model: configured.model, provider: configured.provider };
+  }
+  return fail(`Unknown provider "${name}". Use mock, ${LIVE_PROVIDERS.join(', ')}.`);
+}
+
+if (values.task !== 'editorial' && values.task !== 'drift') fail(`--task must be editorial or drift\n${USAGE}`);
+
+if (values.task === 'drift') {
+  const name = values.provider;
+  if (!name) fail(`--provider is required\n${USAGE}`);
+  const concurrencyDrift = Number(values.concurrency);
+  if (!Number.isInteger(concurrencyDrift) || concurrencyDrift < 1 || concurrencyDrift > 16) fail('--concurrency must be an integer in 1..16');
+  let driftDataset;
+  try {
+    driftDataset = loadDriftDataset(values.dataset);
+  } catch (err) {
+    fail((err as Error).message);
+  }
+  const { manifest: driftManifest } = driftDataset;
+  const resolved = resolveProvider(name, asRunnerSamples(driftManifest, driftDataset.samples), {
+    seed: driftManifest.seed,
+    accuracy: driftManifest.protocol.mock.accuracy,
+    failureRate: driftManifest.protocol.mock.failureRate,
+  });
+  console.log(`Running ${driftDataset.samples.length} drift samples (${resolved.mode}) against ${name} / ${resolved.model} …`);
+  const { report, results } = await runDriftBenchmark({
+    dataset: driftDataset,
+    provider: resolved.provider,
+    providerName: name,
+    model: resolved.model,
+    mode: resolved.mode,
+    generatedAt: new Date().toISOString(),
+    concurrency: concurrencyDrift,
+  });
+  const dir = resolve(values.out ?? join(CMS_ROOT, 'eval/jev-benchmark/reports', driftManifest.datasetVersion, name));
+  const reportPath = join(dir, 'report.drift.json');
+  writeJson(reportPath, report);
+  writeFileSync(
+    join(dir, 'results.drift.jsonl'),
+    results.map((r) => JSON.stringify({
+      id: r.id,
+      locale: r.locale,
+      latencyMs: Math.round(r.latencyMs),
+      error: r.error,
+      model: r.response?.model ?? null,
+      answers: r.response?.answers ?? null,
+    })).join('\n') + '\n',
+  );
+  for (const [locale, metrics] of Object.entries(report.locales)) {
+    if (!metrics) continue;
+    console.log(`  ${locale}: ${metrics.samples} samples, ${metrics.outcomes.drift} drift / ${metrics.outcomes.clean} clean / ${metrics.outcomes.unevaluated} unevaluated`);
+  }
+  console.log(`Drift report (${resolved.mode}, dataset ${driftManifest.datasetVersion}, rubric ${driftManifest.rubricVersion}) → ${reportPath}`);
+  process.exit(0);
+}
+
 const providerName = values.provider;
 if (!providerName) fail(`--provider is required\n${USAGE}`);
 if (!values.split || !(SPLITS as readonly string[]).includes(values.split)) fail(`--split must be tune or heldout\n${USAGE}`);
@@ -122,35 +205,11 @@ if (rubricVersion !== manifest.profile.rubricVersion) {
 
 const samples = samplesFor(dataset.samples, split);
 
-let provider: DecisionProvider;
-let model: string;
-let mode: BenchmarkMode;
-if (providerName === MOCK_PROVIDER) {
-  mode = 'mock';
-  model = MOCK_MODEL;
-  provider = new MockOracleProvider({
-    seed: manifest.seed,
-    accuracy: manifest.protocol.mock.accuracy,
-    failureRate: manifest.protocol.mock.failureRate,
-    samples,
-  });
-} else if ((LIVE_PROVIDERS as readonly string[]).includes(providerName)) {
-  mode = 'live';
-  const env: DecisionProviderEnv = { ...(process.env as DecisionProviderEnv), DECISION_PROVIDER: providerName };
-  const configured = createDecisionProvider(env);
-  if (!configured) {
-    fail(
-      `Provider "${providerName}" is not configured. Set ${
-        providerName === 'typesafe' ? 'TYPESAFE_API_KEY' : providerName === 'openrouter' ? 'OPENROUTER_API_KEY' : 'LLM_PROVIDER and its API key'
-      }.`,
-      2,
-    );
-  }
-  provider = configured.provider;
-  model = configured.model;
-} else {
-  fail(`Unknown provider "${providerName}". Use mock, ${LIVE_PROVIDERS.join(', ')}.`);
-}
+const { provider, model, mode } = resolveProvider(providerName, samples, {
+  seed: manifest.seed,
+  accuracy: manifest.protocol.mock.accuracy,
+  failureRate: manifest.protocol.mock.failureRate,
+});
 
 const identity: ThresholdIdentity = {
   mode,

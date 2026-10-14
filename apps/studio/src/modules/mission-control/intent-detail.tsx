@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { cn } from '@/lib/cn';
 import { missionControlApi, type ContentIntent } from './api';
 import { MissionControlLayout, useAdminBase, useMissionControlBase } from './layout';
+import { isSemanticDrift, SemanticDriftDetail, semanticRuleLabel } from './semantic-drift-detail';
 import { IntentStatusBadge } from './slo-table';
 
 /**
@@ -365,6 +366,8 @@ function IntentDetailBody({ intentId }: { intentId: string }) {
           <h3 className="mb-2 text-sm font-semibold">Drifts</h3>
           {driftsQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading drifts…</p>
+          ) : driftsQuery.isError ? (
+            <p className="text-sm text-destructive">Could not load drifts.</p>
           ) : drifts.length === 0 ? (
             <p className="text-sm text-muted-foreground">No drift detected — content meets the SLO.</p>
           ) : (
@@ -382,14 +385,21 @@ function IntentDetailBody({ intentId }: { intentId: string }) {
                           ? 'bg-emerald-100 text-emerald-800'
                           : drift.status === 'stale'
                             ? 'bg-muted text-muted-foreground'
-                            : 'bg-amber-100 text-amber-800',
+                            : drift.status === 'unevaluated'
+                              ? 'bg-sky-100 text-sky-900'
+                              : 'bg-amber-100 text-amber-800',
                       )}
                     >
                       {drift.status}
                     </span>
                     <code className="rounded bg-muted px-1">{drift.ruleType}</code>
-                    {drift.ruleKey && drift.ruleKey !== drift.ruleType && (
-                      <span className="text-muted-foreground">{drift.ruleKey}</span>
+                    {isSemanticDrift(drift) ? (
+                      <span className="font-mono text-muted-foreground">{semanticRuleLabel(drift)}</span>
+                    ) : (
+                      drift.ruleKey &&
+                      drift.ruleKey !== drift.ruleType && (
+                        <span className="text-muted-foreground">{drift.ruleKey}</span>
+                      )
                     )}
                   </span>
                   <Link
@@ -398,6 +408,7 @@ function IntentDetailBody({ intentId }: { intentId: string }) {
                   >
                     Open item →
                   </Link>
+                  {isSemanticDrift(drift) && <SemanticDriftDetail drift={drift} />}
                 </li>
               ))}
             </ul>

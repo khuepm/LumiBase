@@ -6,8 +6,10 @@ import {
   items,
   type Database,
 } from '@lumibase/database';
-import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
 import type { IntentRule } from './intent-service';
+import type { SemanticDriftRuntime, SemanticScanResult } from './semantic-drift-scan';
+import type { SemanticRule } from './semantic-drift';
 
 /**
  * DriftService — scans a collection against its intent's rules and records
@@ -17,6 +19,11 @@ import type { IntentRule } from './intent-service';
  * fingerprint behaviour are property-testable. Scans are time-boxed: when
  * the budget runs out mid-pass the cursor is persisted on the intent and the
  * next cycle resumes from it (Req 6.5).
+ *
+ * Semantic rules (J12, #519) are not evaluated here: they run in a separate,
+ * budgeted pass with its own cursor (`semantic-drift-scan.ts`). The two
+ * passes never touch each other's rows — the deterministic diff only sees
+ * non-semantic rows, so it cannot resolve a semantic drift it never judged.
  */
 
 // ---------------------------------------------------------------------------
@@ -196,6 +203,9 @@ export function evaluateRules(
         }
         break;
       }
+      case 'semantic':
+        // Judged by a review profile in the semantic pass, not here.
+        break;
       case 'glossary_compliance': {
         const terms = context.forbiddenTerms ?? [];
         if (terms.length === 0) break;
@@ -226,10 +236,17 @@ export function evaluateRules(
  * Diffs detected fingerprints against existing drift rows for the scanned
  * items. Open/assigned drifts are never duplicated (Property 4); violations
  * that disappeared are resolved; previously resolved ones reopen.
+ *
+ * `unevaluated` (J12, #519) lists fingerprints whose evaluation this pass was
+ * inconclusive (provider outage, unknown). They are never resolved: an
+ * uncertain answer is not evidence that the drift went away. A row whose
+ * status is `unevaluated` reopens when the violation is detected and
+ * resolves when a later conclusive pass no longer finds it.
  */
 export function diffDrifts(
   existing: ReadonlyMap<string, { status: string }>,
   detected: ReadonlySet<string>,
+  unevaluated: ReadonlySet<string> = new Set(),
 ): { toOpen: string[]; toReopen: string[]; toResolve: string[] } {
   const toOpen: string[] = [];
   const toReopen: string[] = [];
@@ -239,13 +256,14 @@ export function diffDrifts(
     const row = existing.get(fingerprint);
     if (!row) {
       toOpen.push(fingerprint);
-    } else if (row.status === 'resolved' || row.status === 'stale') {
+    } else if (row.status === 'resolved' || row.status === 'stale' || row.status === 'unevaluated') {
       toReopen.push(fingerprint);
     }
     // open/assigned: already tracked — never duplicated.
   }
   for (const [fingerprint, row] of existing) {
-    if (!detected.has(fingerprint) && (row.status === 'open' || row.status === 'assigned')) {
+    if (detected.has(fingerprint) || unevaluated.has(fingerprint)) continue;
+    if (row.status === 'open' || row.status === 'assigned' || row.status === 'unevaluated') {
       toResolve.push(fingerprint);
     }
   }
@@ -260,6 +278,10 @@ export interface DriftScanOptions {
   /** Wall-clock budget for one scan invocation (Req 6.5). */
   timeBudgetMs?: number;
   batchSize?: number;
+  /** Items the semantic pass may judge this invocation (J12). Default 25, max 500. */
+  maxSemanticItems?: number;
+  /** Wall-clock budget of the semantic pass. Defaults to `timeBudgetMs`. */
+  semanticTimeBudgetMs?: number;
 }
 
 export interface DriftScanResult {
@@ -270,6 +292,8 @@ export interface DriftScanResult {
   /** False when the time budget expired mid-pass; cursor persisted. */
   completed: boolean;
   cursor: string | null;
+  /** Present when the intent has semantic rules (J12). Its own budget and cursor. */
+  semantic?: SemanticScanResult;
 }
 
 export class DriftServiceError extends Error {
@@ -282,6 +306,11 @@ export class DriftServiceError extends Error {
 export interface DriftServiceDeps {
   db: Database;
   siteId: string;
+  /**
+   * The decision path for semantic rules (J12). Absent → the semantic pass
+   * reports `unavailable` and changes nothing.
+   */
+  semantic?: SemanticDriftRuntime | null;
 }
 
 export class DriftService {
@@ -376,6 +405,21 @@ export class DriftService {
       .set({ scanCursor: result.cursor, updatedAt: new Date() })
       .where(and(eq(contentIntents.siteId, this.deps.siteId), eq(contentIntents.id, intentId)));
 
+    const semanticRules = rules.filter((rule): rule is SemanticRule & IntentRule => rule.type === 'semantic');
+    if (semanticRules.length > 0) {
+      const { runSemanticPass, semanticDriftStoreFor } = await import('./semantic-drift-scan');
+      result.semantic = await runSemanticPass({
+        siteId: this.deps.siteId,
+        intent: { id: intent.id, collection: intent.collection, semanticScanCursor: intent.semanticScanCursor ?? null },
+        collectionId: collection.id,
+        rules: semanticRules,
+        store: semanticDriftStoreFor(this.deps.db, this.deps.siteId),
+        runtime: this.deps.semantic,
+        maxItems: options.maxSemanticItems,
+        deadline: Date.now() + (options.semanticTimeBudgetMs ?? timeBudgetMs),
+      });
+    }
+
     return result;
   }
 
@@ -423,6 +467,8 @@ export class DriftService {
           eq(contentDrifts.siteId, this.deps.siteId),
           eq(contentDrifts.intentId, intentId),
           inArray(contentDrifts.itemId, itemIds),
+          // Semantic rows belong to the semantic pass (J12).
+          ne(contentDrifts.ruleType, 'semantic'),
         ),
       );
     const existing = new Map(existingRows.map((row) => [row.fingerprint, { status: row.status }]));

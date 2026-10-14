@@ -15,7 +15,12 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import type { AppEnv } from '../env';
 import { ItemServiceError, type ItemService } from './item-service';
-import { itemServiceForPrincipal, itemServiceForRequest, permissionServiceForRequest } from './item-service-factory';
+import {
+  itemServiceForPrincipal,
+  itemServiceForRequest,
+  itemServiceForSystem,
+  permissionServiceForRequest,
+} from './item-service-factory';
 import { applyFieldMask, type MagicContext } from './permission-dsl';
 import { PermissionService, type CompiledPermission } from './permission-service';
 import { ReviewServiceError, type ReviewContentAccess } from './review-service';
@@ -23,6 +28,16 @@ import { SchemaService } from './schema-service';
 
 function visibleFields(known: string[], perm: CompiledPermission): Set<string> {
   return new Set(perm.fields.length === 1 && perm.fields[0] === '*' ? known : applyFieldMask(known, perm.fields));
+}
+
+async function latestRevisionId(db: Database, siteId: string, itemId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: revisions.id })
+    .from(revisions)
+    .where(and(eq(revisions.siteId, siteId), eq(revisions.itemId, itemId), eq(revisions.staged, false)))
+    .orderBy(desc(revisions.createdAt))
+    .limit(1);
+  return row?.id ?? null;
 }
 
 interface ContentAccessDeps {
@@ -81,15 +96,7 @@ function reviewContentAccess({ db, siteId, permissions, items, schema }: Content
       return keys.filter((key) => !readable.has(key) || !writable.has(key));
     },
 
-    async latestRevisionId(itemId) {
-      const [row] = await db
-        .select({ id: revisions.id })
-        .from(revisions)
-        .where(and(eq(revisions.siteId, siteId), eq(revisions.itemId, itemId), eq(revisions.staged, false)))
-        .orderBy(desc(revisions.createdAt))
-        .limit(1);
-      return row?.id ?? null;
-    },
+    latestRevisionId: (itemId) => latestRevisionId(db, siteId, itemId),
   };
 }
 
@@ -103,6 +110,57 @@ export function reviewContentAccessForRequest(c: Context<AppEnv>): ReviewContent
     items: () => itemServiceForRequest(c),
     schema: new SchemaService({ db, siteId, cache: c.get('runtime').cache }),
   });
+}
+
+/**
+ * Content access for the semantic drift pass (J12, #519). There is no caller
+ * to scope by: the scan is a site job, so it reads through
+ * `itemServiceForSystem(…, 'semantic-drift-scan')` (site scope, decryption,
+ * soft-delete) and narrows the read itself. Only `include` is ever read:
+ * the rule's fields minus the item's pinned fields, plus the context field.
+ * Every other profile field is reported as omitted and never sent. Snapshot
+ * reviews are not part of a scan, so every snapshot field is refused.
+ */
+export function reviewContentAccessForDriftScan(deps: {
+  db: Database;
+  siteId: string;
+  include: readonly string[];
+  cache?: CacheProvider;
+  keys?: KeyProvider;
+  encryptionKey?: string;
+}): ReviewContentAccess {
+  const { db, siteId } = deps;
+  const include = new Set(deps.include);
+  const items = () =>
+    itemServiceForSystem(
+      { db, siteId, cache: deps.cache, keyProvider: deps.keys, encryptionKey: deps.encryptionKey },
+      'semantic-drift-scan',
+    );
+  return {
+    async readItem(collection, itemId, fields) {
+      const readable = fields.filter((field) => include.has(field));
+      const omittedFields = fields.filter((field) => !include.has(field));
+      let row: Record<string, unknown>;
+      try {
+        row = (await items().detail(collection, itemId, readable.length > 0 ? readable : ['id'])) as Record<
+          string,
+          unknown
+        >;
+      } catch (error) {
+        if (error instanceof ItemServiceError && error.status === 404) {
+          throw new ReviewServiceError('REVIEW_ITEM_NOT_FOUND', `Item "${itemId}" not found.`);
+        }
+        throw error;
+      }
+      const values: Record<string, unknown> = {};
+      for (const field of readable) if (row[field] !== undefined) values[field] = row[field];
+      return { values, omittedFields };
+    },
+    async deniedSnapshotFields(_collection, keys) {
+      return [...keys];
+    },
+    latestRevisionId: (itemId) => latestRevisionId(db, siteId, itemId),
+  };
 }
 
 /**

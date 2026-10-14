@@ -9,6 +9,7 @@
  * be registered via `registerHandler()` (used by extensions).
  */
 
+import type { CacheProvider, KeyProvider } from '@lumibase/runtime';
 import { validateOutboundUrl } from './ssrf-guard';
 
 export interface FlowNode {
@@ -78,7 +79,10 @@ const OPERATION_DOCS: Record<string, { description: string; options?: Record<str
   },
   sleep: { description: 'Pause the flow', options: { ms: 'number — milliseconds (max 60000)' } },
   mail: { description: 'Send an email notification', options: { to: 'string', subject: 'string' } },
-  'drift-scan': { description: 'Scan one intent for content drift and open reconciler goals', options: { intentId: 'string' } },
+  'drift-scan': {
+    description: 'Scan one intent for content drift and open reconciler goals',
+    options: { intentId: 'string', maxSemanticItems: 'number' },
+  },
   'trust-promote-check': { description: 'Check trust score for autonomy promotion' },
   'deploy:trigger': {
     description: 'Trigger a deployment target',
@@ -271,8 +275,20 @@ registerHandler('drift-scan', async (ctx, options) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const deps = { db: db as any, siteId };
 
-  const scan = await new DriftService(deps).scanIntent(intentId, {
+  // Semantic rules (J12) need the decision path: cache (quota), keys and the
+  // provider config. Manual runs carry them; event/schedule runs do not yet,
+  // so their semantic pass reports `unavailable` and changes nothing.
+  const { semanticDriftRuntimeFromEnv } = await import('./semantic-drift-scan');
+  const semantic = semanticDriftRuntimeFromEnv({
+    ...deps,
+    cache: ctx.env['cache'] as CacheProvider | undefined,
+    keys: ctx.env['keys'] as KeyProvider | undefined,
+    processEnv: (ctx.env['processEnv'] ?? undefined) as Record<string, string | undefined> | undefined,
+  });
+  const maxSemanticItems = Number(options['maxSemanticItems']);
+  const scan = await new DriftService({ ...deps, semantic }).scanIntent(intentId, {
     timeBudgetMs: Math.min(60_000, Number(options['timeBudgetMs'] ?? 10_000)),
+    ...(Number.isFinite(maxSemanticItems) && maxSemanticItems > 0 ? { maxSemanticItems } : {}),
   });
   const reconcile = await new ReconcilerService(deps).reconcileIntent(intentId);
   return { scan, reconcile };

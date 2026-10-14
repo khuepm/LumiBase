@@ -7,6 +7,9 @@ import { missionControlApi, type ContentIntent } from './api';
  * SLO health table (content-os-ui task 3.2/6.1; Req 2.4, 5.1).
  * Health = share of an intent's detected drifts that are resolved. A
  * collection with open drifts is out of SLO; no drifts means healthy.
+ * `unevaluated` drifts (semantic rules that could not be judged, J12) are
+ * neither healthy nor open: they are left out of the health ratio and shown
+ * as a separate count, so an outage never reads as a clean intent.
  * Shared by the dashboard summary and the intents page — rows link to the
  * intent detail when `linkBase` is given.
  */
@@ -16,6 +19,8 @@ export interface SloRow {
   open: number;
   total: number;
   health: number;
+  /** Semantic drift rows that could not be judged (J12). Not in `total`. */
+  unevaluated: number;
 }
 
 export function useSloRows(): { rows: SloRow[]; isLoading: boolean } {
@@ -33,12 +38,14 @@ export function useSloRows(): { rows: SloRow[]; isLoading: boolean } {
   const rows = intents.map((intent, i): SloRow => {
     const drifts = driftQueries[i]?.data ?? [];
     const open = drifts.filter((d) => d.status === 'open' || d.status === 'assigned').length;
-    const total = drifts.length;
+    const unevaluated = drifts.filter((d) => d.status === 'unevaluated').length;
+    const total = drifts.length - unevaluated;
     return {
       intent,
       open,
       total,
       health: total === 0 ? 100 : Math.round(((total - open) / total) * 100),
+      unevaluated,
     };
   });
 
@@ -98,7 +105,7 @@ export function SloTable({ rows, linkBase }: { rows: SloRow[]; linkBase?: string
         </tr>
       </thead>
       <tbody>
-        {rows.map(({ intent, open, health }) => (
+        {rows.map(({ intent, open, health, unevaluated }) => (
           <tr key={intent.id} className="border-b last:border-0">
             <td className="py-2 font-medium">
               {linkBase ? (
@@ -115,7 +122,14 @@ export function SloTable({ rows, linkBase }: { rows: SloRow[]; linkBase?: string
             <td>
               <IntentStatusBadge status={intent.status} />
             </td>
-            <td>{open}</td>
+            <td>
+              {open}
+              {unevaluated > 0 && (
+                <span className="ml-1 rounded-full bg-sky-100 px-1.5 py-0.5 text-xs text-sky-900">
+                  {unevaluated} not evaluated
+                </span>
+              )}
+            </td>
             <td>
               <HealthBar health={health} />
             </td>
