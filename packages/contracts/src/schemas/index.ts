@@ -235,6 +235,7 @@ export {
   type FeEdge,
   type GraphError,
   type GraphErrorCode,
+  type ValidateGraphOptions,
 } from './flow-graph';
 
 export {

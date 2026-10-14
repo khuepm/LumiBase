@@ -18,6 +18,7 @@ import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { AppEnv } from '../env';
 import { listOperations } from '../services/flow-service';
+import { principalRefFromAuth } from '../services/effective-capability-service';
 import { flowSchema, graphErrorsForSave, cronCheckForSave, createFlowRecord, FlowSaveError } from '../services/flow-management';
 import {
   createPendingRun,
@@ -231,6 +232,9 @@ flowsRouter.post('/:id/run', async (c) => {
 
   const input = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   const run = await createPendingRun(db, { siteId, flowId: id, input });
+  // A reference to the caller, from trusted auth middleware (never the body).
+  // `ai:decision` re-resolves it when the node executes (J10, #517).
+  const principal = principalRefFromAuth(c.get('auth'), siteId);
 
   if (runtime.queue) {
     await runtime.queue.enqueue(FLOW_RUNS_QUEUE, 'flow:run', {
@@ -239,6 +243,7 @@ flowsRouter.post('/:id/run', async (c) => {
       runId: run.id,
       flowId: id,
       input,
+      principal,
     });
     return c.json({ data: { runId: run.id, status: 'pending' } }, 202);
   }
@@ -251,6 +256,7 @@ flowsRouter.post('/:id/run', async (c) => {
     input,
     runtime.keys,
     c.env as unknown as Record<string, string | undefined>,
+    { principal, cache: runtime.cache },
   );
   return c.json({ data: { runId: run.id, ...result } });
 });

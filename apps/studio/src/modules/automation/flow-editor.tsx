@@ -41,6 +41,7 @@ import {
   Radar,
   History,
   AlertTriangle,
+  Sparkles,
 } from 'lucide-react';
 import { getActiveToken, getActiveSite } from '@/lib/api';
 import { flowNodeTypes } from './flow-node-types';
@@ -86,6 +87,7 @@ const OP_PRESENTATION: Record<string, { label: string; icon: typeof Globe; color
   'deploy:status': { label: 'Deploy Status', icon: Radar, color: 'text-teal-600 bg-teal-500/10' },
   'drift-scan': { label: 'Drift Scan', icon: Radar, color: 'text-cyan-600 bg-cyan-500/10' },
   'trust-promote-check': { label: 'Trust Check', icon: Puzzle, color: 'text-rose-500 bg-rose-500/10' },
+  'ai:decision': { label: 'AI Decision', icon: Sparkles, color: 'text-fuchsia-500 bg-fuchsia-500/10' },
 };
 
 function flowsApi(path: string, init?: RequestInit) {
@@ -112,7 +114,7 @@ function rfTypeFor(key: string): string {
 }
 
 /** Canonical (or legacy ReactFlow-shaped) stored graph → canvas state. */
-function graphToCanvas(graph: Record<string, unknown>): { nodes: Node[]; edges: Edge[] } {
+export function graphToCanvas(graph: Record<string, unknown>): { nodes: Node[]; edges: Edge[] } {
   // Legacy editor saves stored raw ReactFlow `{ nodes, edges }`; keep loading them.
   if (Array.isArray(graph.edges)) {
     const legacyNodes = (graph.nodes as Node[]).map((n) => ({
@@ -127,38 +129,96 @@ function graphToCanvas(graph: Record<string, unknown>): { nodes: Node[]; edges: 
     id: n.id,
     type: rfTypeFor(String(n.data?.key ?? '')),
     position: n.position ?? { x: 0, y: 0 },
-    data: { key: n.data?.key, options: n.data?.options ?? {} },
+    data: {
+      key: n.data?.key,
+      options: n.data?.options ?? {},
+      // Branches mapped to "end of run" have no edge to draw; keep them on the node.
+      ...(n.data?.endBranches ? { endBranches: n.data.endBranches } : {}),
+    },
   }));
-  const edges: Edge[] = fe.edges.map((e, i) => ({
-    id: `edge_${e.source}_${e.target}_${i}`,
-    source: e.source,
-    target: e.target,
-    type: 'smoothstep',
-    data: { branch: e.type ?? 'next' },
-    style: e.type === 'onError' ? { stroke: '#ef4444', strokeDasharray: '5,5' } : { stroke: '#6366f1' },
-  }));
+  const edges: Edge[] = fe.edges.map((e, i) =>
+    e.type === 'branch' && e.branch
+      ? branchEdge(`edge_${e.source}_${e.target}_${i}`, e.source, e.target, e.branch)
+      : {
+        id: `edge_${e.source}_${e.target}_${i}`,
+        source: e.source,
+        target: e.target,
+        type: 'smoothstep',
+        data: { branch: e.type ?? 'next' },
+        style: e.type === 'onError' ? { stroke: '#ef4444', strokeDasharray: '5,5' } : { stroke: '#6366f1' },
+      },
+  );
   return { nodes, edges };
 }
 
+const BRANCH_STROKE: Record<string, string> = {
+  true: '#10b981',
+  false: '#f43f5e',
+  unknown: '#f59e0b',
+  error: '#64748b',
+};
+
+/** An explicit-branch edge (J10, #517): leaves the handle named after the branch. */
+function branchEdge(id: string, source: string, target: string, branchKey: string): Edge {
+  return {
+    id,
+    source,
+    target,
+    sourceHandle: branchKey,
+    type: 'smoothstep',
+    label: branchKey,
+    data: { branch: 'branch', branchKey },
+    style: { stroke: BRANCH_STROKE[branchKey] ?? '#d946ef' },
+  };
+}
+
 /** Canvas state → canonical graph via the shared converter. */
-function canvasToCanonical(nodes: Node[], edges: Edge[]): FlowGraph {
+export function canvasToCanonical(nodes: Node[], edges: Edge[]): FlowGraph {
   const fe: FeGraph = {
-    nodes: nodes.map((n) => ({
-      id: n.id,
-      data: {
-        key: String((n.data as { key?: string }).key ?? n.type ?? ''),
-        options: ((n.data as { options?: Record<string, unknown> }).options ?? {}) as Record<string, unknown>,
-      },
-      position: n.position,
-    })),
-    edges: edges.map((e) => ({
-      source: e.source,
-      target: e.target,
-      type: (e.data as { branch?: 'next' | 'onError' } | undefined)?.branch === 'onError' ? 'onError' : 'next',
-    })),
+    nodes: nodes.map((n) => {
+      const data = n.data as { key?: string; options?: Record<string, unknown>; endBranches?: string[] };
+      return {
+        id: n.id,
+        data: {
+          key: String(data.key ?? n.type ?? ''),
+          options: (data.options ?? {}) as Record<string, unknown>,
+          ...(data.endBranches?.length ? { endBranches: data.endBranches } : {}),
+        },
+        position: n.position,
+      };
+    }),
+    edges: edges.map((e) => {
+      const data = e.data as { branch?: 'next' | 'onError' | 'branch'; branchKey?: string } | undefined;
+      if (data?.branch === 'branch' && data.branchKey) {
+        return { source: e.source, target: e.target, type: 'branch' as const, branch: data.branchKey };
+      }
+      return { source: e.source, target: e.target, type: data?.branch === 'onError' ? ('onError' as const) : ('next' as const) };
+    }),
   };
   return feToCanonical(fe);
 }
+
+/**
+ * Edge for a new connection. From an `ai:decision` node the handle names the
+ * branch; elsewhere the existing next/onError mapping applies.
+ */
+export function edgeForConnection(params: Connection, sourceKey: string, now = Date.now()): Edge {
+  const id = `edge_${params.source}_${params.target}_${now}`;
+  if (sourceKey === 'ai:decision' && params.sourceHandle) {
+    return branchEdge(id, params.source, params.target, params.sourceHandle);
+  }
+  const branch = params.sourceHandle === 'no' ? 'onError' : 'next';
+  return {
+    ...params,
+    id,
+    type: 'smoothstep',
+    data: { branch },
+    style: branch === 'onError' ? { stroke: '#ef4444', strokeDasharray: '5,5' } : { stroke: '#6366f1' },
+  };
+}
+
+/** Operations that only make sense through explicit branches; the server enforces the same list. */
+export const BRANCHING_OPERATIONS = ['ai:decision'];
 
 export function FlowEditor() {
   const { id } = useParams({ strict: false });
@@ -219,7 +279,7 @@ export function FlowEditor() {
   // Validate on save; inline errors mark the offending nodes (Req 5.3).
   const validate = useCallback((): GraphError[] => {
     const canonical = canvasToCanonical(nodes, edges);
-    const result = validateGraph(canonical, knownKeys);
+    const result = validateGraph(canonical, knownKeys, { branchingKeys: BRANCHING_OPERATIONS });
     setGraphErrors(result.errors);
     return result.errors;
   }, [nodes, edges, knownKeys]);
@@ -280,17 +340,20 @@ export function FlowEditor() {
 
   const onConnect = useCallback(
     (params: Connection) => {
-      const branch = params.sourceHandle === 'no' ? 'onError' : 'next';
-      const edge: Edge = {
-        ...params,
-        id: `edge_${params.source}_${params.target}_${Date.now()}`,
-        type: 'smoothstep',
-        data: { branch },
-        style: branch === 'onError' ? { stroke: '#ef4444', strokeDasharray: '5,5' } : { stroke: '#6366f1' },
-      };
-      setEdges((eds) => addEdge(edge, eds));
+      const source = nodes.find((n) => n.id === params.source);
+      const sourceKey = String((source?.data as { key?: string } | undefined)?.key ?? '');
+      const edge = edgeForConnection(params, sourceKey);
+      // One edge per branch: a new connection from the same handle replaces the old one.
+      setEdges((eds) =>
+        addEdge(
+          edge,
+          (edge.data as { branch?: string }).branch === 'branch'
+            ? eds.filter((e) => !(e.source === params.source && e.sourceHandle === params.sourceHandle))
+            : eds,
+        ),
+      );
     },
-    [setEdges],
+    [nodes, setEdges],
   );
 
   const deleteNode = useCallback(
@@ -313,12 +376,12 @@ export function FlowEditor() {
         nds.map((n) =>
           n.id === selectedNodeId
             ? {
-                ...n,
-                data: {
-                  ...n.data,
-                  options: { ...((n.data as { options?: Record<string, unknown> }).options ?? {}), [field]: val },
-                },
-              }
+              ...n,
+              data: {
+                ...n.data,
+                options: { ...((n.data as { options?: Record<string, unknown> }).options ?? {}), [field]: val },
+              },
+            }
             : n,
         ),
       );
@@ -594,9 +657,8 @@ export function FlowEditor() {
             <button
               type="button"
               onClick={() => setSidebarTab('config')}
-              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${
-                sidebarTab === 'config' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/50'
-              }`}
+              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${sidebarTab === 'config' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/50'
+                }`}
             >
               <Settings className="h-3.5 w-3.5" /> Configure
             </button>
@@ -604,9 +666,8 @@ export function FlowEditor() {
               <button
                 type="button"
                 onClick={() => setSidebarTab('runs')}
-                className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${
-                  sidebarTab === 'runs' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/50'
-                }`}
+                className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${sidebarTab === 'runs' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/50'
+                  }`}
               >
                 <History className="h-3.5 w-3.5" /> Runs
               </button>
@@ -721,8 +782,59 @@ export function FlowEditor() {
                   <OptionInput label="Intent id" value={selectedOptions.intentId} onChange={(v) => updateOption('intentId', v)} mono />
                 )}
 
+                {selectedKey === 'ai:decision' && (
+                  <>
+                    <p className="rounded-md border border-fuchsia-500/30 bg-fuchsia-500/5 p-2 text-[10px] text-muted-foreground">
+                      Connect each branch handle (true / false / unknown / error). A failure takes
+                      <span className="font-mono"> error</span>, never <span className="font-mono">true</span>. Runs only in
+                      manual runs, for a caller with <span className="font-mono">ai:decide</span>, when the site enables
+                      <span className="font-mono"> aiDecisions.flows</span>.
+                    </p>
+                    <OptionInput label="Profile key" value={selectedOptions.profileKey} onChange={(v) => updateOption('profileKey', v)} mono />
+                    <OptionInput
+                      label="Profile version (pinned)"
+                      value={selectedOptions.profileVersion}
+                      onChange={(v) => updateOption('profileVersion', v === '' ? undefined : Number(v))}
+                      type="number"
+                    />
+                    <OptionInput label="Collection" value={selectedOptions.collection} onChange={(v) => updateOption('collection', v)} mono />
+                    <OptionInput
+                      label="Item id"
+                      hint="Empty = input.itemId of the run"
+                      value={selectedOptions.itemId}
+                      onChange={(v) => updateOption('itemId', v === '' ? undefined : v)}
+                      mono
+                    />
+                    <OptionInput label="Question key" value={selectedOptions.questionKey} onChange={(v) => updateOption('questionKey', v)} mono />
+                    <OptionInput
+                      label="Yes/no threshold (0.5–1)"
+                      hint="Yes/no questions: true at or above it, false at or below 1 − it, otherwise unknown"
+                      value={selectedOptions.noulThreshold}
+                      onChange={(v) => updateOption('noulThreshold', v === '' ? undefined : Number(v))}
+                      type="number"
+                    />
+                    <OptionInput
+                      label="Minimum confidence (0–1)"
+                      hint="Choice questions: below it the branch is unknown"
+                      value={selectedOptions.minConfidence}
+                      onChange={(v) => updateOption('minConfidence', v === '' ? undefined : Number(v))}
+                      type="number"
+                    />
+                    <OptionInput
+                      label="Choice branches"
+                      hint="Comma-separated option keys to draw as extra handles"
+                      value={Array.isArray(selectedOptions.choices) ? (selectedOptions.choices as string[]).join(', ') : ''}
+                      onChange={(v) => {
+                        const choices = v.split(',').map((s) => s.trim()).filter(Boolean);
+                        updateOption('choices', choices.length > 0 ? choices : undefined);
+                      }}
+                      mono
+                    />
+                  </>
+                )}
+
                 {/* Generic fallback: raw options editor + registry hints */}
-                {!['condition', 'transform', 'http', 'mail', 'log', 'sleep', 'deploy:trigger', 'deploy:status', 'drift-scan'].includes(selectedKey) && (
+                {!['condition', 'transform', 'http', 'mail', 'log', 'sleep', 'deploy:trigger', 'deploy:status', 'drift-scan', 'ai:decision'].includes(selectedKey) && (
                   <>
                     <OptionJson
                       label="Options (JSON)"
@@ -821,9 +933,8 @@ function OptionJson({
         }}
         rows={6}
         aria-label={label}
-        className={`w-full rounded-md border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-mono resize-y ${
-          invalid ? 'border-rose-400' : ''
-        }`}
+        className={`w-full rounded-md border bg-background px-3 py-2 text-xs outline-none focus:border-primary font-mono resize-y ${invalid ? 'border-rose-400' : ''
+          }`}
       />
       {invalid && <p className="text-[10px] text-rose-500 mt-1">Invalid JSON — not applied yet.</p>}
     </div>

@@ -8,6 +8,7 @@ import {
   Clock,
   Puzzle,
   Database,
+  Sparkles,
 } from 'lucide-react';
 
 // Common node wrapper with glassmorphism and smooth borders
@@ -28,9 +29,8 @@ function NodeWrapper({
 }) {
   return (
     <div
-      className={`min-w-[180px] border bg-background/90 p-3 shadow-md backdrop-blur-sm transition-all duration-200 ${shapeClass} ${
-        selected ? 'ring-2 ring-primary border-primary/50 scale-[1.02]' : 'hover:border-primary/30'
-      }`}
+      className={`min-w-[180px] border bg-background/90 p-3 shadow-md backdrop-blur-sm transition-all duration-200 ${shapeClass} ${selected ? 'ring-2 ring-primary border-primary/50 scale-[1.02]' : 'hover:border-primary/30'
+        }`}
     >
       <div className="flex items-center gap-2 border-b pb-1.5 mb-2">
         <div className={`flex h-7 w-7 items-center justify-center rounded-lg border ${colorClass}`}>
@@ -47,7 +47,7 @@ export function ConditionNode({ data, selected }: { data: any; selected?: boolea
   return (
     <div className="relative">
       <Handle type="target" position={Position.Left} className="w-2.5 h-2.5 bg-primary" />
-      
+
       {/* Diamond-like layout styling */}
       <NodeWrapper
         title="Condition"
@@ -60,7 +60,7 @@ export function ConditionNode({ data, selected }: { data: any; selected?: boolea
           {data.expression || 'if (data.status === "active")'}
         </div>
       </NodeWrapper>
-      
+
       {/* Yes and No handles */}
       <Handle
         type="source"
@@ -70,7 +70,7 @@ export function ConditionNode({ data, selected }: { data: any; selected?: boolea
         style={{ right: -4 }}
       />
       <span className="absolute right-2 top-[12px] text-[8px] font-bold text-emerald-600">YES</span>
-      
+
       <Handle
         type="source"
         position={Position.Right}
@@ -247,8 +247,79 @@ export function GenericOpNode({ data, selected }: { data: any; selected?: boolea
   );
 }
 
+/** Branches every `ai:decision` node offers (J10, #517). Choice keys come on top. */
+export const AI_DECISION_BRANCHES = ['true', 'false', 'unknown', 'error'] as const;
+
+const BRANCH_COLOR: Record<string, string> = {
+  true: 'bg-emerald-500',
+  false: 'bg-rose-500',
+  unknown: 'bg-amber-500',
+  error: 'bg-slate-500',
+};
+
+/** Branch handles of an `ai:decision` node: the four fixed ones plus any listed choice keys. */
+export function aiDecisionBranchKeys(options: Record<string, unknown> | undefined): string[] {
+  const choices = Array.isArray(options?.choices)
+    ? (options!.choices as unknown[]).filter((c): c is string => typeof c === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(c))
+    : [];
+  return [...new Set([...choices, ...AI_DECISION_BRANCHES])];
+}
+
+/**
+ * Governed AI decision (J10, #517). Each branch is its own source handle; the
+ * runner follows only the branch the decision returned, and a failure takes
+ * `error` — it never reads as `true`.
+ */
+export function AiDecisionNode({ data, selected }: { data: any; selected?: boolean }) {
+  const options = (data?.options ?? {}) as Record<string, unknown>;
+  const keys = aiDecisionBranchKeys(options);
+  return (
+    <div className="relative" style={{ minHeight: 24 + keys.length * 18 }}>
+      <Handle type="target" position={Position.Left} className="w-2.5 h-2.5 bg-primary" />
+      <NodeWrapper
+        title="AI Decision"
+        icon={Sparkles}
+        colorClass="bg-fuchsia-500/10 text-fuchsia-500 border-fuchsia-500/20"
+        selected={selected}
+      >
+        <div className="flex flex-col gap-0.5 pr-12">
+          <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[150px]">
+            {options.profileKey ? `${String(options.profileKey)}@v${String(options.profileVersion ?? '?')}` : 'Select profile…'}
+          </span>
+          <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[150px]">
+            {options.questionKey ? String(options.questionKey) : 'question'}
+          </span>
+        </div>
+      </NodeWrapper>
+      {keys.map((key, i) => {
+        // Spread the handles over the lower part of the node, below the title.
+        const top = 30 + (i * 60) / Math.max(keys.length - 1, 1);
+        return (
+          <div key={key}>
+            <Handle
+              type="source"
+              position={Position.Right}
+              id={key}
+              aria-label={`${key} branch`}
+              className={`w-2.5 h-2.5 ${BRANCH_COLOR[key] ?? 'bg-fuchsia-500'}`}
+              style={{ right: -4, top: `${top}%` }}
+            />
+            <span
+              className="absolute right-2 text-[8px] font-bold uppercase text-muted-foreground"
+              style={{ top: `calc(${top}% - 6px)` }}
+            >
+              {key}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export const flowNodeTypes = {
   genericOp: GenericOpNode,
+  'ai:decision': AiDecisionNode,
   condition: ConditionNode,
   transform: TransformNode,
   http: HttpNode,
