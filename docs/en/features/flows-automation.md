@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-10-14T17:01:53.510Z
+version: 3
+lastUpdated: 2026-10-14T18:09:29.331Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: df524553325e7930
+sourceHash: 09cdb8faf1f6769f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T17:01:53.510Z
-codeVerifiedHash: df524553325e7930
+codeVerified: 2026-10-14T18:09:29.331Z
+codeVerifiedHash: 09cdb8faf1f6769f
 codeVerifiedClaims: 12
 ---
 
@@ -48,6 +48,7 @@ Declared in the `operations.type` column:
 - **`item.create`** / **`item.update`** / **`item.delete`** — CRUD against CMS data.
 - **`notify`** — push a notification to a user/team.
 - **`ai:decision`** — a governed decision about one item that picks the `true`/`false`/`unknown`/`error` branch (see below).
+- **`ai:apply-tags`** / **`editorial:route`** — read an upstream `ai:decision` and propose a tag or a review queue for the item; shadow by default (recorded only), and a live proposal becomes an approval (see [Jev automation](./jev-automation.md)).
 - **`drift-scan`** — one Content OS reconciliation cycle for an intent (`options.intentId`): scans for drift per the `content_intents` rules (respecting pinned fields, time-boxed via `options.timeBudgetMs`, with cursor resume), then generates reconciler goals within the `maxGoalsPerCycle` budget. Schedule one `schedule`-triggered flow per intent following the intent's cron.
 
 ## Graph format

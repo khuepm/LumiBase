@@ -148,6 +148,13 @@
       "when": 1789000500000,
       "tag": "0020_jev_review_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1789000600000,
+      "tag": "0021_jev_automation_actions",
+      "breakpoints": true
     }
   ]
 }

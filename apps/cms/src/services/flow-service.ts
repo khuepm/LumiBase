@@ -98,6 +98,32 @@ const OPERATION_DOCS: Record<string, { description: string; options?: Record<str
       minConfidence: "number 0–1 — choice questions: below it the branch is 'unknown'",
     },
   },
+  'ai:apply-tags': {
+    description:
+      'Propose adding the decided category to a tags field. Shadow by default (records only); live needs aiDecisions.automation with a gate and matching thresholds, and still becomes an approval (L1 cap).',
+    options: {
+      decisionNode: 'string — step id of the ai:decision node (defaults to the previous step)',
+      collection: 'string — collection of the item',
+      itemId: 'string — item id (defaults to input.itemId)',
+      tagField: 'string — array-of-strings field to add the tag to',
+      tagMap: 'object — choice key → tag (unmapped keys use the choice key)',
+      locale: 'string — item locale for the threshold (defaults to input.locale)',
+    },
+  },
+  'editorial:route': {
+    description:
+      'Propose a review queue for the item from a decision. Shadow by default; live needs the automation gate and becomes an approval (L1 cap). Never publishes; the submit_review transition is proposed only.',
+    options: {
+      decisionNode: 'string — step id of the ai:decision node (defaults to the previous step)',
+      collection: 'string — collection of the item',
+      itemId: 'string — item id (defaults to input.itemId)',
+      queueField: 'string — field that holds the queue name',
+      queues: "object — decision branch → queue name",
+      manualQueue: "string — queue suggested when the decision is 'unknown' (never live)",
+      submitForReview: 'boolean — propose the submit_review transition when the editorial state allows it',
+      locale: 'string — item locale for the threshold (defaults to input.locale)',
+    },
+  },
 };
 
 export interface OperationInfo {
@@ -331,6 +357,17 @@ registerHandler('ai:decision', async (ctx, options, node) => {
   // load the review/decision stack until a flow uses it.
   const { runAiDecisionNode } = await import('./flow-ai-decision');
   return runAiDecisionNode(ctx, options, node);
+});
+
+registerHandler('ai:apply-tags', async (ctx, options, node) => {
+  // Jev J11 (#518): shadow-first metadata automation, lazy like ai:decision.
+  const { runAutomationNode } = await import('./ai-automation-ops');
+  return runAutomationNode('tag', ctx, options, node);
+});
+
+registerHandler('editorial:route', async (ctx, options, node) => {
+  const { runAutomationNode } = await import('./ai-automation-ops');
+  return runAutomationNode('route', ctx, options, node);
 });
 
 // ---------------------------------------------------------------------------

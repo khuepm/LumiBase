@@ -9,6 +9,9 @@ const CONTROL_PLANE_PATHS = [
   '/api/v1/api-keys',
   '/api/v1/admin',
   '/api/v1/agent',
+  // Jev metadata automation (J11, #518): templates, live/shadow action history,
+  // revert and shadow metrics. Admin-only; the router also gates each route.
+  '/api/v1/ai/automation',
   '/api/v1/cdc',
   '/api/v1/flows',
   // Git integration: manage repo connections, OAuth, and GitOps sync (creates

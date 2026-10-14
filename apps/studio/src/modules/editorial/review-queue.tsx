@@ -3,6 +3,7 @@ import { useParams } from '@tanstack/react-router';
 import { useState } from 'react';
 import { getApiClient } from '@/lib/api';
 import { usePermissions } from '@/lib/use-permissions';
+import { AutomationSuggestions } from './automation-suggestions';
 
 /**
  * Editorial review queue (regulated-content-readiness task 8.5; Req 10.2-10.4).
@@ -107,6 +108,7 @@ export function ReviewQueue({ collection }: ReviewQueueProps) {
         onChange={(e) => setReason(e.target.value)}
         style={{ width: '100%', marginTop: 12 }}
       />
+      <AutomationSuggestions collection={collection} />
     </section>
   );
 }

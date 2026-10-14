@@ -656,3 +656,73 @@ export const reviewSessions = pgTable(
     siteRunIdx: index('review_sessions_site_run_idx').on(t.siteId, t.runId),
   }),
 );
+
+// ---------------------------------------------------------------------------
+// Jev J11 (#518) — shadow-first tagging and review-queue routing
+// ---------------------------------------------------------------------------
+
+/**
+ * One metadata action proposed by a Flows automation node (`ai:apply-tags`,
+ * `editorial:route`) for one item in one flow run. `shadow` rows record the
+ * proposal only; `live` rows went through the governed harness, capped at L1,
+ * so the write waits for a human approval (`approval_id`). The audit chain is
+ * by id: `revision_id` (input revision) → `review_run_id` (decision) → this row
+ * → `lumibase_review_feedback` (run id + question key). Ids are uuidv7.
+ * Unique per (site, flow run, node, item), so a redelivered job never records
+ * or proposes twice.
+ */
+export const aiAutomationActions = pgTable(
+  'lumibase_ai_automation_actions',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    flowRunId: text('flow_run_id').notNull(),
+    nodeId: text('node_id').notNull(),
+    reviewRunId: text('review_run_id').references(() => reviewRuns.id, { onDelete: 'set null' }),
+    collection: text('collection').notNull(),
+    itemId: text('item_id').notNull(),
+    revisionId: text('revision_id'),
+    contentHash: text('content_hash'),
+    /** `tag` | `route` */
+    action: text('action').notNull(),
+    /** `shadow` | `live` */
+    mode: text('mode').notNull(),
+    /** `pending` | `recorded` | `skipped` | `noop` | `pending_approval` | `applied` | `denied` | `rejected` | `reverted` */
+    status: text('status').notNull(),
+    /** Why the action was skipped, forced to shadow, or denied. */
+    reason: text('reason'),
+    questionKey: text('question_key'),
+    locale: text('locale'),
+    provider: text('provider'),
+    model: text('model'),
+    profileKey: text('profile_key'),
+    profileVersion: integer('profile_version'),
+    confidence: real('confidence'),
+    /** Confidence at or above the locale/action threshold (the auto-action zone). */
+    inZone: boolean('in_zone').default(false).notNull(),
+    proposed: jsonb('proposed'),
+    applied: boolean('applied').default(false).notNull(),
+    previous: jsonb('previous'),
+    /** `lumibase_agent_approvals.id` of a live proposal. */
+    approvalId: text('approval_id'),
+    agentRunId: text('agent_run_id'),
+    principalType: text('principal_type').notNull(),
+    principalId: text('principal_id').notNull(),
+    revertedAt: timestamp('reverted_at'),
+    revertedBy: text('reverted_by'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteRunNodeItemUq: uniqueIndex('ai_automation_actions_site_run_node_item_uq').on(
+      t.siteId,
+      t.flowRunId,
+      t.nodeId,
+      t.itemId,
+    ),
+    siteCreatedIdx: index('ai_automation_actions_site_created_idx').on(t.siteId, t.createdAt),
+    siteItemIdx: index('ai_automation_actions_site_item_idx').on(t.siteId, t.collection, t.itemId),
+  }),
+);

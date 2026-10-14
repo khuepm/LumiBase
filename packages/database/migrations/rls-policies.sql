@@ -64,7 +64,9 @@ DECLARE
     -- Flow engine (visual-flow-builder + high-load async runs).
     'lumibase_flows', 'lumibase_flow_runs',
     -- Draft-review pilot timing (Jev J09, site-isolated; no cross-site job reads it).
-    'lumibase_review_sessions'
+    'lumibase_review_sessions',
+    -- Jev automation actions (J11, site-isolated; every read/write is per site, no cross-site job).
+    'lumibase_ai_automation_actions'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-10-14T15:33:47.070Z
+version: 3
+lastUpdated: 2026-10-14T18:09:29.087Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 14f47ef563b3727c
+sourceHash: 27c9fe433f616444
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T15:33:47.070Z
-codeVerifiedHash: 14f47ef563b3727c
+codeVerified: 2026-10-14T18:09:29.087Z
+codeVerifiedHash: 27c9fe433f616444
 codeVerifiedClaims: 14
 ---
 
@@ -360,8 +360,9 @@ Ghi chú vận hành:
 | `lumibase_review_runs` | Một lần chạy decision của profile trên item hoặc snapshot, kèm provider, model, content hash và câu trả lời; bị xoá sau `DECISION_REVIEW_RETENTION_DAYS` |
 | `lumibase_review_feedback` | Accept/edit/reject theo run, câu hỏi và principal; bị xoá cùng run |
 | `lumibase_review_sessions` | Đo thời gian pilot (#516): một phiên biên tập từ lúc mở trình soạn thảo tới lần lưu đầu tiên, `mode` `baseline`/`assisted`, `duration_ms`, `locale`, `run_id` đã xem và `viewed_questions`. Không lưu nội dung. `run_id` được set null khi run bị xoá |
+| `lumibase_ai_automation_actions` | Tự động hoá Jev (#518): một hành động metadata (`tag` / `route`) cho mỗi flow run, node và item, unique `(site_id, flow_run_id, node_id, item_id)`. `mode` `shadow`/`live`, `status`, `reason`, `proposed`, `previous`, `applied`, `approval_id`, `reverted_at`, cùng các id của chuỗi `revision_id`, `review_run_id` và `content_hash`. `review_run_id` được set null khi run bị xoá |
 
-Cả bốn bảng đều có `site_id` (FK cascade) và mọi truy vấn đều theo site.
+Cả năm bảng đều có `site_id` (FK cascade) và mọi truy vấn đều theo site.
 Tắt pilot kiểm tra bản nháp không xoá dòng nào trong các bảng này.
 
 ### Các bảng Content OS (`content-os.ts`)
