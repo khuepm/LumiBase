@@ -8,7 +8,7 @@
  * sends its usual bearer + `X-Lumi-Site` headers.
  */
 
-import type { LumiClient } from "../client";
+import { LumiError, type LumiClient, type LumiErrorBody } from "../client";
 
 /** Free-form payload: plain text or structured data. */
 export type DecisionPayload = string | Record<string, unknown> | unknown[];
@@ -78,26 +78,58 @@ export interface DecisionResult {
   usage: { inputTokens: number | null; outputTokens: number | null };
 }
 
-/** `errors[0].code` values `POST /ai/decisions` returns, carried on `LumiError.body`. */
-export type DecisionErrorCode =
-  | "VALIDATION"
-  | "FORBIDDEN"
-  | "DECISION_DISABLED"
-  | "DECISION_FIELD_NOT_ALLOWED"
-  | "DECISION_QUOTA_EXCEEDED"
-  | "DECISION_CONCURRENCY_LIMITED"
-  | "DECISION_QUOTA_UNAVAILABLE"
-  | "DECISION_NOT_CONFIGURED"
-  | "DECISION_AUTH"
-  | "DECISION_VALIDATION"
-  | "DECISION_RATE_LIMITED"
-  | "DECISION_UNAVAILABLE"
-  | "DECISION_UPSTREAM"
-  | "DECISION_PARSE_FAILED"
-  | "DECISION_TIMEOUT"
-  | "DECISION_CANCELLED"
-  | "DECISION_INPUT_TOO_LARGE"
-  | "INTERNAL";
+/**
+ * Every `errors[0].code` the decision and draft review endpoints return
+ * (`POST /ai/decisions`, `/ai/review-profiles*`, `/ai/reviews*`), carried on
+ * `LumiError.body`. Read it with {@link decisionErrorCode}.
+ */
+export const DECISION_ERROR_CODES = [
+  "VALIDATION",
+  "FORBIDDEN",
+  // Governance (#511): checked before the provider is called.
+  "DECISION_DISABLED",
+  "DECISION_FIELD_NOT_ALLOWED",
+  "DECISION_QUOTA_EXCEEDED",
+  "DECISION_CONCURRENCY_LIMITED",
+  "DECISION_QUOTA_UNAVAILABLE",
+  // Provider and limits (#504, #509).
+  "DECISION_NOT_CONFIGURED",
+  "DECISION_AUTH",
+  "DECISION_VALIDATION",
+  "DECISION_RATE_LIMITED",
+  "DECISION_UNAVAILABLE",
+  "DECISION_UPSTREAM",
+  "DECISION_PARSE_FAILED",
+  "DECISION_TIMEOUT",
+  "DECISION_CANCELLED",
+  "DECISION_INPUT_TOO_LARGE",
+  // Draft review (#512).
+  "REVIEW_PROFILE_NOT_FOUND",
+  "REVIEW_PROFILE_EXISTS",
+  "REVIEW_PROFILE_CONFLICT",
+  "REVIEW_ITEM_NOT_FOUND",
+  "REVIEW_RUN_NOT_FOUND",
+  "REVIEW_FIELD_NOT_ALLOWED",
+  "REVIEW_COLLECTION_MISMATCH",
+  "REVIEW_NOT_COMPLETE",
+  "REVIEW_STALE",
+  "INTERNAL",
+] as const;
+
+export type DecisionErrorCode = (typeof DECISION_ERROR_CODES)[number];
+
+const KNOWN_CODES: ReadonlySet<string> = new Set(DECISION_ERROR_CODES);
+
+/**
+ * The typed `errors[0].code` of a rejected decision or review call, or `null`
+ * when `err` is not a `LumiError` with a known code (network failure, abort,
+ * or a code this SDK version does not know — read `err.body` for those).
+ */
+export function decisionErrorCode(err: unknown): DecisionErrorCode | null {
+  if (!(err instanceof LumiError)) return null;
+  const code: unknown = (err.body as LumiErrorBody | undefined)?.errors?.[0]?.code;
+  return typeof code === "string" && KNOWN_CODES.has(code) ? (code as DecisionErrorCode) : null;
+}
 
 export interface DecideOptions {
   /**

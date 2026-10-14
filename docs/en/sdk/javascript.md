@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-10-10T09:01:07.711Z
+version: 4
+lastUpdated: 2026-10-14T08:31:19.846Z
 sourceLang: en
-contentHash: 6e60b18d751ffc9c
-codeVerified: 2026-10-10T09:01:07.711Z
-codeVerifiedHash: 6e60b18d751ffc9c
-codeVerifiedClaims: 6
+contentHash: 5ebfd117cea73c0d
+codeVerified: 2026-10-14T08:31:19.846Z
+codeVerifiedHash: 5ebfd117cea73c0d
+codeVerifiedClaims: 8
 ---
 
 # LumiBase JavaScript SDK
@@ -280,6 +280,71 @@ try {
 
 `calibrated` is `false` when the CMS answers with `DECISION_PROVIDER=llm`. Error codes are typed as `DecisionErrorCode`; see the [API spec](../api/hono-api-spec.md) for limits and statuses.
 
+### Draft review
+
+Draft review runs a versioned review profile, stored on the CMS, against a saved item or an unsaved draft. These commands call the `/api/v1/ai/review-profiles` and `/api/v1/ai/reviews` endpoints:
+
+- `listReviewProfiles({ collection? })` and `getReviewProfile(key, { version? })` read profiles. Profiles are created by admins.
+- `reviewDraft(request)` reviews an item (`itemId`) or a draft (`snapshot`).
+- `getReview(id)` and `listReviews({ collection, itemId })` read runs, including `stale` and `staleReason`.
+- `submitReviewFeedback(runId, { entries })` records `accept`, `edit` or `reject` for each question.
+- `reviewContentHash(values)` computes the `sha256:<hex>` content hash of a draft the way the CMS does. It uses WebCrypto and makes no request.
+
+Every command accepts `{ signal }` as its last argument. A review only suggests: none of these calls writes to the item.
+
+```typescript
+import {
+  decisionErrorCode,
+  listReviewProfiles,
+  LumiError,
+  reviewContentHash,
+  reviewDraft,
+  submitReviewFeedback,
+} from '@lumibase/sdk'
+
+const [profile] = await client.request(listReviewProfiles({ collection: 'posts' }))
+const draft = { title: 'Summer sale', body: 'Buy now!!!' }
+try {
+  const hash = await reviewContentHash(draft) // 'sha256:<64 hex>', same as the CMS computes
+  const run = await client.request(
+    reviewDraft(
+      {
+        profile: profile.key,
+        profileVersion: profile.version,
+        collection: 'posts',
+        snapshot: draft,
+        // changes with the draft and the profile version; at most 116 chars
+        idempotencyKey: `${profile.key}@${profile.version}:${hash.slice(7, 47)}`,
+      },
+      { signal: controller.signal },
+    ),
+  )
+  run.status     // 'success' | 'abstained' ("not enough information") | …
+  run.calibrated // false when the probabilities are self-reported by an LLM
+  run.usage      // { inputTokens: 120, outputTokens: null } — null means unknown, not zero
+
+  // Later, when the editor accepts: hash the draft as it is at that moment.
+  await client.request(
+    submitReviewFeedback(run.id, {
+      entries: [{ questionKey: 'category', verdict: 'accept' }],
+      contentHash: await reviewContentHash(currentDraft),
+    }),
+  )
+} catch (err) {
+  const code = decisionErrorCode(err) // typed DecisionErrorCode, or null
+  if (code === 'DECISION_QUOTA_EXCEEDED') {
+    console.warn(`retry in ${(err as LumiError).retryAfter}s`)
+  } else if (code === 'REVIEW_STALE') {
+    // the draft changed since the review: review the current draft (new hash, new key),
+    // or send acknowledgeStale: true
+  }
+}
+```
+
+The CMS cannot re-read an unsaved draft. For a snapshot run it detects a changed draft only by comparing the `contentHash` you send on feedback with the hash it reviewed. Compute that value with `reviewContentHash` over the same fields you sent as `snapshot`, at the moment of the verdict. Sending `run.contentHash` back always matches, so it turns the check off. Item runs need no hash: the CMS re-reads the item and reports `stale`.
+
+Sending the same `idempotencyKey` again returns the stored run without calling the provider a second time. The CMS looks the run up by site, caller and key only, and does not compare the content. A key that stays the same after the draft changes therefore returns the review of the old draft. Build the key from the content hash and the profile version, as above, and never use a fixed id. For an item run, also change the key once `getReview` reports `stale`. Keys are 8–128 characters. Errors use the same codes as `decide`. These include 403 `DECISION_DISABLED`, 504 `DECISION_TIMEOUT`, and 429 with `retryAfter`, plus the `REVIEW_*` codes: 409 `REVIEW_STALE`, 422 `REVIEW_FIELD_NOT_ALLOWED`, and 404 `REVIEW_PROFILE_NOT_FOUND` / `REVIEW_RUN_NOT_FOUND`. `decisionErrorCode(err)` returns `null` for an aborted request, a network failure, or a code this SDK version does not know. In those cases, read `err.body`. A complete example that compiles against the public entry is in `packages/sdk/examples/draft-review.ts`.
+
 ---
 
 ## Change Feed
@@ -354,3 +419,6 @@ try {
 
 A non-JSON or bodyless failure is still normalized into the same envelope, with
 code `HTTP_ERROR`.
+
+`error.retryAfter` holds the `Retry-After` header in seconds, for example on a 429
+site budget. It is `null` when the response did not send one.
