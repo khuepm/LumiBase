@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 14
-lastUpdated: 2026-10-14T15:33:32.232Z
+version: 15
+lastUpdated: 2026-10-14T16:17:51.262Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5579b5ef1bc6bb82
+sourceHash: fb19ff8a16e96a6a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T15:33:32.232Z
-codeVerifiedHash: 5579b5ef1bc6bb82
+codeVerified: 2026-10-14T16:17:51.262Z
+codeVerifiedHash: fb19ff8a16e96a6a
 codeVerifiedClaims: 418
 ---
 
@@ -763,8 +763,8 @@ Mỗi lần gọi ghi một audit event `ai_decision` gồm request ID, principa
 - **Feedback.** `POST /reviews/:id/feedback` nhận `entries` dạng `{ questionKey, verdict: accept | edit | reject, editedValue? }`. Mỗi run, câu hỏi và principal chỉ có một dòng; gửi lại không thêm dòng nào và trả về các dòng đã lưu. Verdict đầu tiên là cuối cùng: gửi lại verdict (hoặc `editedValue`) khác cho cùng câu hỏi không ghi đè, và response chứa verdict đã lưu, nên hãy so sánh với giá trị bạn đã gửi. `accept` hoặc `edit` trên run đã stale trả `409 REVIEW_STALE` trừ khi body có `acknowledgeStale: true`, nên review không bao giờ được âm thầm áp vào một revision khác. Với run từ snapshot, gửi `contentHash` của bản nháp hiện tại để có cùng kiểm tra. `reject` luôn được chấp nhận.
 - **Thời hạn lưu.** Job chạy mỗi giờ xoá các run cũ hơn `DECISION_REVIEW_RETENTION_DAYS` (mặc định 180), feedback bị xoá theo. Profile được giữ lại.
 - **Rollout pilot (#516).** Setting `aiDecisions` có object `review`: `{ enabled, pilotCollections, mode: 'baseline' | 'assisted' }`. Thiếu hoặc sai định dạng thì coi là tắt. `POST /reviews` và feedback mới cần collection nằm trong pilot ở chế độ `assisted` (chế độ này cũng cần `aiDecisions.enabled`); nếu không thì trả `403 DECISION_DISABLED` trước khi đọc nội dung. `GET /reviews/rollout?collection=` báo chế độ hiện tại (`ai:decide`). Tắt pilot không xoá gì: run, feedback và session vẫn đọc được.
-- **Session.** `POST /reviews/sessions` (`ai:decide`) ghi `{ collection, itemId?, mode, runId?, viewedQuestions?, durationMs, locale? }`: một phiên biên tập từ lúc mở trình soạn thảo tới lần lưu đầu tiên. Chế độ phải khớp chế độ hiện tại của collection (`409 REVIEW_SESSION_MODE_MISMATCH`), collection phải nằm trong pilot (`403 DECISION_DISABLED`), và `runId` phải là run của chính người gọi trên cùng collection và item, với `viewedQuestions` là các câu nó đã trả lời (`422 REVIEW_SESSION_RUN_INVALID`). Không lưu nội dung. Job xoá run theo thời hạn lưu set `run_id` về null và giữ session.
-- **Số liệu.** `GET /reviews/metrics?from=&to=` (site admin, khoảng tối đa 366 ngày, mặc định 30 ngày gần nhất) trả thời gian mỗi item (baseline so với assisted, p50/p95), tỷ lệ accept/edit/reject/không phản hồi chỉ trên các gợi ý **đã được xem** kèm khoảng Wilson 95%, coverage, abstention, tỷ lệ lỗi, latency p50/p95, token mỗi run, tách theo locale, provider và phiên bản profile, số mẫu, và các tiêu chí đăng ký trước của protocol `jev-pilot-v1` kèm cờ `insufficientSample`. Số run chỉ là mẫu số vận hành, không bao giờ là giá trị người dùng. Xem [Pilot kiểm tra bản nháp](../features/jev-draft-review-pilot.md).
+- **Session.** `POST /reviews/sessions` (`ai:decide`, chỉ người dùng đã đăng nhập: API key và dev principal nhận `403 FORBIDDEN`) ghi `{ collection, itemId?, mode, runId?, viewedQuestions?, durationMs, locale? }`: một phiên biên tập từ lúc mở trình soạn thảo tới lần lưu đầu tiên. Chế độ phải khớp chế độ hiện tại của collection (`409 REVIEW_SESSION_MODE_MISMATCH`), collection phải nằm trong pilot (`403 DECISION_DISABLED`), và `runId` phải là run của chính người gọi trên cùng collection và item, với `viewedQuestions` là các câu nó đã trả lời (`422 REVIEW_SESSION_RUN_INVALID`). Không lưu nội dung. Job xoá run theo thời hạn lưu set `run_id` về null và giữ session.
+- **Số liệu.** `GET /reviews/metrics?from=&to=` (site admin, khoảng tối đa 366 ngày, mặc định 30 ngày gần nhất) trả thời gian mỗi item (baseline so với assisted, p50/p95), tỷ lệ accept/edit/reject/không phản hồi chỉ trên các gợi ý **đã được xem** kèm khoảng Wilson 95%, coverage, abstention, tỷ lệ lỗi, latency p50/p95, token mỗi run, tách theo locale, provider và phiên bản profile, số mẫu (kèm số biên tập viên và item khác nhau mỗi chế độ), và các tiêu chí đăng ký trước của protocol `jev-pilot-v1` kèm cờ `insufficientSample`. Chỉ phiên và phán quyết của principal `user` được tính. Số run chỉ là mẫu số vận hành, không bao giờ là giá trị người dùng. Xem [Pilot kiểm tra bản nháp](../features/jev-draft-review-pilot.md).
 
 ```json
 POST /api/v1/ai/reviews

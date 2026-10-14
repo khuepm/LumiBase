@@ -1,10 +1,10 @@
 ---
-version: 15
-lastUpdated: 2026-10-14T15:33:32.232Z
+version: 16
+lastUpdated: 2026-10-14T16:17:51.262Z
 sourceLang: en
-contentHash: 5579b5ef1bc6bb82
-codeVerified: 2026-10-14T15:33:32.232Z
-codeVerifiedHash: 5579b5ef1bc6bb82
+contentHash: fb19ff8a16e96a6a
+codeVerified: 2026-10-14T16:17:51.262Z
+codeVerifiedHash: fb19ff8a16e96a6a
 codeVerifiedClaims: 418
 ---
 
@@ -872,8 +872,8 @@ Each call writes one `ai_decision` audit event with the request ID, the principa
 - **Feedback.** `POST /reviews/:id/feedback` takes `entries` of `{ questionKey, verdict: accept | edit | reject, editedValue? }`. It stores one row per run, question and principal; a retried submission adds none and returns the stored rows. The first verdict is final: resubmitting a different verdict (or `editedValue`) for the same question does not overwrite it, and the response carries the stored verdict, so compare it with what you sent. `accept` or `edit` on a stale run returns `409 REVIEW_STALE` unless the body says `acknowledgeStale: true`, so a review is never silently applied to a different revision. For snapshot runs, send the current draft's `contentHash` to get the same check. `reject` is always accepted.
 - **Retention.** The hourly job deletes runs older than `DECISION_REVIEW_RETENTION_DAYS` (default 180), and their feedback with them. Profiles are kept.
 - **Pilot rollout (#516).** The `aiDecisions` setting has a `review` object: `{ enabled, pilotCollections, mode: 'baseline' | 'assisted' }`. It is off when absent or malformed. `POST /reviews` and new feedback need the collection in the pilot in `assisted` mode (which also needs `aiDecisions.enabled`); otherwise they return `403 DECISION_DISABLED` before any content is read. `GET /reviews/rollout?collection=` reports the mode (`ai:decide`). Turning the pilot off deletes nothing: runs, feedback and sessions stay readable.
-- **Sessions.** `POST /reviews/sessions` (`ai:decide`) records `{ collection, itemId?, mode, runId?, viewedQuestions?, durationMs, locale? }`: one editor session from opening the editor to the first save. The mode must match the collection's current mode (`409 REVIEW_SESSION_MODE_MISMATCH`), the collection must be in the pilot (`403 DECISION_DISABLED`), and a `runId` must be the caller's own run on the same collection and item, with `viewedQuestions` it answered (`422 REVIEW_SESSION_RUN_INVALID`). No content is stored. The run retention purge sets `run_id` to null and keeps the session.
-- **Metrics.** `GET /reviews/metrics?from=&to=` (site admin, window at most 366 days, default the last 30) returns time per item (baseline vs assisted p50/p95), accept/edit/reject/no-action rates over **viewed** suggestions only with 95% Wilson intervals, coverage, abstention, error rate, latency p50/p95, tokens per run, splits by locale, provider and profile version, sample counts, and the pre-registered criteria of protocol `jev-pilot-v1` with `insufficientSample` flags. Run counts are operational denominators, never user value. See [Draft-review pilot](../features/jev-draft-review-pilot.md).
+- **Sessions.** `POST /reviews/sessions` (`ai:decide`, signed-in users only: API keys and the dev principal get `403 FORBIDDEN`) records `{ collection, itemId?, mode, runId?, viewedQuestions?, durationMs, locale? }`: one editor session from opening the editor to the first save. The mode must match the collection's current mode (`409 REVIEW_SESSION_MODE_MISMATCH`), the collection must be in the pilot (`403 DECISION_DISABLED`), and a `runId` must be the caller's own run on the same collection and item, with `viewedQuestions` it answered (`422 REVIEW_SESSION_RUN_INVALID`). No content is stored. The run retention purge sets `run_id` to null and keeps the session.
+- **Metrics.** `GET /reviews/metrics?from=&to=` (site admin, window at most 366 days, default the last 30) returns time per item (baseline vs assisted p50/p95), accept/edit/reject/no-action rates over **viewed** suggestions only with 95% Wilson intervals, coverage, abstention, error rate, latency p50/p95, tokens per run, splits by locale, provider and profile version, sample counts (with distinct editors and items per mode), and the pre-registered criteria of protocol `jev-pilot-v1` with `insufficientSample` flags. Only sessions and verdicts of `user` principals count. Run counts are operational denominators, never user value. See [Draft-review pilot](../features/jev-draft-review-pilot.md).
 
 ```json
 POST /api/v1/ai/reviews

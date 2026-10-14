@@ -1,11 +1,11 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-10-14T15:33:31.838Z
-contentHash: 42d43e1d7b2f7a7f
-codeVerified: 2026-10-14T15:33:31.838Z
-codeVerifiedHash: 42d43e1d7b2f7a7f
-codeVerifiedClaims: 28
+lastUpdated: 2026-10-14T16:17:50.688Z
+contentHash: 84389437c23c0c9c
+codeVerified: 2026-10-14T16:17:50.688Z
+codeVerifiedHash: 84389437c23c0c9c
+codeVerifiedClaims: 30
 ---
 
 # Draft-review pilot (Jev)
@@ -30,7 +30,7 @@ The criteria, minimum samples and acceptable error below are fixed **before** da
 | Each split (locale, provider, profile version) | 30 |
 | Suggestions checked by a human adjudicator | 50 |
 
-**Acceptable error.** A rate is conclusive only when its 95% Wilson interval has a half-width of at most 0.10. A rate passes only when the whole interval is on the right side of the threshold. When the point estimate meets the threshold but the interval does not, the status is `inconclusive`.
+**Acceptable error.** A rate is conclusive only when its 95% Wilson interval has a half-width of at most 0.10. A rate passes only when the whole interval is on the right side of the threshold. When the point estimate meets the threshold but the interval does not, the status is `inconclusive`. `time_reduction` and `latency_p95` have no interval: they pass or fail on a point estimate (the ratio of two medians, and the p95). Treat a `time_reduction` ratio close to 0.80 as unresolved, not as a clear pass or fail. Adding an interval would be a new protocol version.
 
 **Success criteria.** All must pass.
 
@@ -49,9 +49,11 @@ The criteria, minimum samples and acceptable error below are fixed **before** da
 
 - **Session.** One editor session runs from opening the editor (a saved item or the new-item form) to the first successful save, on a pilot collection. Later saves in the same open editor are not new sessions. Sessions longer than two hours count as idle: they are excluded from time metrics and reported as `idleSessionsExcluded`.
 - **Time per item.** p50, p95 and mean of session duration, baseline and assisted separately, and the ratio of the two medians.
+- **Editors only.** Only signed-in users count. `POST /api/v1/ai/reviews/sessions` refuses API keys and the dev principal with `403 FORBIDDEN`. The metrics also drop any session or verdict that does not come from a user, so an integration key that runs and accepts reviews adds no editor time and no viewed suggestions.
 - **Viewed suggestions.** The suggestions of a run that the Studio rendered to the editor in an assisted session (`viewedQuestions`). Accept, edit, reject and no-action rates are computed over viewed suggestions only, and only the viewing editor's own verdict counts. Feedback sent without a viewing session, for example straight through the API, is not counted.
 - **Operations.** Coverage (completed runs that did not abstain), abstention, error rate, latency p50/p95, and tokens per run where the provider reported both counts.
 - **Splits.** By content locale, by provider and by profile version (`key@vN`), each with its own sample count and flag.
+- **Sample concentration.** `sampleCounts.distinctEditors` and `sampleCounts.distinctItems` give the number of different editors and items behind each mode's sessions. Each new-item form counts as its own item. The minimums count sessions, so check these numbers before you treat a minimum as met.
 
 API calls and run counts are never reported as user value. They appear only as denominators for coverage, errors and latency.
 
@@ -59,7 +61,7 @@ API calls and run counts are never reported as user value. They appear only as d
 
 1. **Profile.** A site admin creates a review profile for the collection (`POST /api/v1/ai/review-profiles`, see [draft review](./draft-review.md)).
 2. **People.** Grant the pilot editors the `ai:decide` capability (`create` on the `lumibase_ai_decisions` permission collection). Editors without it see the plain editor and record no sessions.
-3. **Baseline.** In Studio, **Settings → AI decisions**: turn on **Run the draft-review pilot**, choose the collections and keep the mode **Baseline**. No content is sent anywhere in this phase, so the site does not need to opt in to the provider yet. Collect at least 100 sessions.
+3. **Baseline.** In Studio, **Settings → AI decisions**: turn on **Run the draft-review pilot**, choose the collections (at most 100) and keep the mode **Baseline**. No content is sent anywhere in this phase, so the site does not need to opt in to the provider yet. Collect at least 100 sessions.
 4. **Assisted.** Turn on **Send content to the decision provider**, switch the mode to **Assisted** and save. Collect at least 100 assisted sessions. Keep the same collections, editors and kind of work as in the baseline.
 5. **Adjudication.** A person who did not author the content checks a random sample of at least 50 viewed suggestions and records `{ "sampled": 50, "errors": 3, "adjudicators": 1 }` in a JSON file. The system does not collect this.
 6. **Report.** A site admin exports the metrics and builds the report:
@@ -77,7 +79,8 @@ The report is written to `apps/cms/eval/jev-pilot/reports/` as JSON and Markdown
 | Action | Needs |
 |---|---|
 | Change the pilot or the kill switch (`POST /api/v1/settings`, key `aiDecisions`) | site admin |
-| Read the pilot mode, record a session, run a review, give feedback | `ai:decide` |
+| Read the pilot mode, run a review, give feedback | `ai:decide` |
+| Record a session | `ai:decide`, as a signed-in user (not an API key) |
 | Read the metrics (`GET /api/v1/ai/reviews/metrics`) | site admin |
 
 ## Data sent to the provider
@@ -95,7 +98,7 @@ The report is written to `apps/cms/eval/jev-pilot/reports/` as JSON and Markdown
 
 ## Rollback and disable
 
-- **Kill switch.** **Settings → AI decisions → Turn everything off** sets `aiDecisions.enabled` and `aiDecisions.review.enabled` to `false` in one write. The collection list and mode are kept, so turning the pilot back on is one step.
+- **Kill switch.** **Settings → AI decisions → Turn everything off** sets `aiDecisions.enabled` and `aiDecisions.review.enabled` to `false` in one write. The stored collection list and mode are kept, so turning the pilot back on is one step. Unsaved edits on the page are discarded, not saved.
 - **API equivalent.** Read the current value with `GET /api/v1/settings/aiDecisions`, then `POST /api/v1/settings` with `{ "key": "aiDecisions", "value": { ...current, "enabled": false, "review": { ...current.review, "enabled": false } } }`.
 - **Effect.** The panel disappears and the editor works as before. `POST /api/v1/ai/reviews`, new feedback and new sessions return `403 DECISION_DISABLED`. In-flight Studio requests fail with the same code.
 - **Nothing is deleted.** Drafts, items, runs, feedback, sessions and audit events stay. Run history (`GET /api/v1/ai/reviews?collection=&itemId=`, `GET /api/v1/ai/reviews/:id`) and the metrics stay readable.
@@ -117,3 +120,5 @@ The rollout and session calls go through `getApiClient()`, so they use `getApiBa
 - Baseline and assisted are compared as groups, not paired per item or editor. Keep the editors and kind of work stable across the phases.
 - A session records the last run the editor saw. Feedback on an earlier run in the same session is not counted.
 - Adjudication is recorded by hand outside the system.
+- Sessions are reported by the editor's client. A signed-in user could post them straight to the API, and they are not de-duplicated per editor or item, so one editor reopening the same item many times still adds sessions. Check the distinct editor and item counts. The human adjudication step is still required before `go`.
+- `time_reduction` is a point estimate with no interval (see Acceptable error).

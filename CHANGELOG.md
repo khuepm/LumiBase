@@ -89,7 +89,10 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   assisted p50/p95), accept/edit/reject rates over viewed suggestions only,
   coverage, errors, latency, tokens per run, splits by locale, provider and
   profile version, and the pre-registered criteria of protocol `jev-pilot-v1`
-  with `insufficientSample` flags. API calls are never counted as user value.
+  with `insufficientSample` flags and distinct editor/item counts. API calls
+  are never counted as user value: only signed-in users record sessions (API
+  keys and the dev principal get `403`), and metrics drop non-user sessions and
+  verdicts. The page caps the pilot at 100 collections, the server limit.
   `pnpm -F @lumibase/cms pilot:report` turns the metrics into a versioned
   report. **No pilot data yet**: the committed report is an empty template and
   there is no go/no-go. Guide: `docs/{en,vi}/features/jev-draft-review-pilot.md`.
