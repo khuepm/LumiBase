@@ -155,8 +155,22 @@ function lumiError(status: number, code: string, retryAfter?: string): LumiError
 }
 
 /** Routes the editor's ambient calls; `reviews` / `feedback` handle the review endpoints. */
-function routes(handlers: { profiles?: () => Promise<unknown>; reviews?: Route; feedback?: Route } = {}): void {
+function routes(
+  handlers: {
+    profiles?: () => Promise<unknown>;
+    reviews?: Route;
+    feedback?: Route;
+    /** J09 pilot mode for `posts`; `error` makes the rollout call fail (e.g. no ai:decide). */
+    rollout?: 'off' | 'baseline' | 'assisted' | 'error';
+  } = {},
+): void {
   route = async (path, init) => {
+    // The J09 pilot: unless a test says otherwise, `posts` is in assisted mode.
+    if (path.startsWith('/api/v1/ai/reviews/rollout')) {
+      if (handlers.rollout === 'error') throw lumiError(403, 'FORBIDDEN');
+      return { data: { collection: 'posts', mode: handlers.rollout ?? 'assisted' } };
+    }
+    if (path === '/api/v1/ai/reviews/sessions') return { data: {} };
     if (path.startsWith('/api/v1/ai/review-profiles')) {
       return handlers.profiles ? handlers.profiles() : { data: [PROFILE] };
     }
@@ -518,6 +532,95 @@ describe('explicit states, never a pass', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Review draft' }));
     expect(await screen.findByText('Not enough information')).toBeInTheDocument();
     expect(screen.getByText(/Not enough information for a confident suggestion/)).toBeInTheDocument();
+  });
+});
+
+// Runs before the Vietnamese suite, whose `initReactI18next` makes the VI
+// instance the global react-i18next default for the rest of the file.
+describe('draft-review pilot rollout (J09)', () => {
+  async function editAndSave() {
+    const title = (await screen.findAllByRole('textbox'))[0]!;
+    fireEvent.change(title, { target: { value: 'Hello again' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save & stay' }));
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
+  }
+
+  it.each(['off', 'error'] as const)(
+    'with the pilot %s, hides the panel and the editor still saves, recording no session',
+    async (rollout) => {
+      patch.mockResolvedValue({ data: ITEM });
+      routes({ rollout });
+      renderPage();
+
+      await editAndSave();
+
+      expect(patch).toHaveBeenCalledWith('item_1', {
+        data: { title: 'Hello again', body: 'World', category: '' },
+        publishAt: null,
+        unpublishAt: null,
+      });
+      expect(screen.queryByTestId('draft-review-panel')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Review draft' })).toBeNull();
+      expect(calls(/^\/api\/v1\/ai\/review-profiles/)).toHaveLength(0);
+      expect(calls('/api/v1/ai/reviews/sessions')).toHaveLength(0);
+    },
+  );
+
+  it('in baseline mode hides the panel and times the session to the first save', async () => {
+    patch.mockResolvedValue({ data: ITEM });
+    routes({ rollout: 'baseline' });
+    renderPage();
+    await waitFor(() => expect(calls(/\/api\/v1\/ai\/reviews\/rollout/)).toHaveLength(1));
+
+    await editAndSave();
+
+    expect(screen.queryByTestId('draft-review-panel')).toBeNull();
+    await waitFor(() => expect(calls('/api/v1/ai/reviews/sessions')).toHaveLength(1));
+    const session = bodyOf(calls('/api/v1/ai/reviews/sessions')[0]);
+    expect(session).toMatchObject({ collection: 'posts', itemId: 'item_1', mode: 'baseline' });
+    expect(session).not.toHaveProperty('runId');
+    expect(typeof session.durationMs).toBe('number');
+
+    // One session per open editor: a second save records nothing more.
+    fireEvent.change(screen.getAllByRole('textbox')[0]!, { target: { value: 'Third' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save & stay' }));
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(2));
+    expect(calls('/api/v1/ai/reviews/sessions')).toHaveLength(1);
+  });
+
+  it('in assisted mode records the run and the suggestions the editor saw', async () => {
+    patch.mockResolvedValue({ data: ITEM });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review draft' }));
+    expect(await screen.findByText('Suggested: sport')).toBeInTheDocument();
+    await editAndSave();
+
+    await waitFor(() => expect(calls('/api/v1/ai/reviews/sessions')).toHaveLength(1));
+    expect(bodyOf(calls('/api/v1/ai/reviews/sessions')[0])).toMatchObject({
+      collection: 'posts',
+      itemId: 'item_1',
+      mode: 'assisted',
+      runId: 'run_1',
+      viewedQuestions: ['category', 'tone_match', 'needs_review'],
+    });
+  });
+
+  it('a failed session write does not fail the save', async () => {
+    patch.mockResolvedValue({ data: ITEM });
+    routes({ rollout: 'baseline' });
+    const base = route;
+    route = async (path, init) => {
+      if (path === '/api/v1/ai/reviews/sessions') throw lumiError(503, 'INTERNAL');
+      return base(path, init);
+    };
+    renderPage();
+    await waitFor(() => expect(calls(/\/api\/v1\/ai\/reviews\/rollout/)).toHaveLength(1));
+
+    await editAndSave();
+
+    await waitFor(() => expect(calls('/api/v1/ai/reviews/sessions')).toHaveLength(1));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 

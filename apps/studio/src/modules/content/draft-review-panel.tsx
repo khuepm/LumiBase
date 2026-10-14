@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Check, Pencil, RefreshCw, Sparkles, X } from 'lucide-react';
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   listReviewProfiles,
   type DecisionAnswer,
@@ -58,6 +58,8 @@ export interface DraftReviewPanelProps {
   pinnedFields: string[];
   /** Sets one field of the draft. Not a save. */
   onApply: (field: string, value: unknown) => void;
+  /** A run's suggestions were rendered (pilot metrics count viewed suggestions only). */
+  onViewed?: (runId: string, questionKeys: string[]) => void;
 }
 
 const ABSTAIN_CHOICES = new Set(['other', 'unknown']);
@@ -152,6 +154,7 @@ function ProfileReview({
   perms,
   pinnedFields,
   onApply,
+  onViewed,
   profile,
   t,
 }: DraftReviewPanelProps & { profile: ReviewProfile; t: DraftReviewT }) {
@@ -176,6 +179,17 @@ function ProfileReview({
   const review = useDraftReview({ collection, profile, target });
   const { state } = review;
   const loading = state.status === 'loading';
+
+  // Report each run once, when its suggestions are first shown.
+  const shownRun = state.status === 'success' || state.status === 'abstained' ? state.run : null;
+  const onViewedRef = useRef(onViewed);
+  onViewedRef.current = onViewed;
+  useEffect(() => {
+    if (!shownRun) return;
+    const keys = Object.keys(profile.questions).filter((key) => shownRun.answers?.[key] !== undefined);
+    onViewedRef.current?.(shownRun.id, keys);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per run id
+  }, [shownRun?.id]);
 
   return (
     <div className="space-y-2">
