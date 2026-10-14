@@ -4134,6 +4134,247 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /ai/automation/templates:
+    get:
+      summary: Jev automation flow templates (#518, admin only)
+      description: >
+        Taxonomy tagging and editorial queue routing templates, each with its
+        parameters and an example draft flow. Control plane.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '200':
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '403':
+          description: FORBIDDEN or CONTROL_PLANE_FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/automation/templates/{key}/build:
+    post:
+      summary: Build a draft manual flow from a template (#518, admin only)
+      description: >
+        Validates the parameters and returns a draft, manual-trigger flow body
+        for POST /flows. Writes nothing.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: key, in: path, required: true, schema: { type: string, enum: [taxonomy-tagging, editorial-routing] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Draft flow
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '400':
+          description: VALIDATION (invalid or reserved parameters)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN or CONTROL_PLANE_FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: AUTOMATION_TEMPLATE_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/automation/actions:
+    get:
+      summary: Automation action history (#518, admin only)
+      description: >
+        Shadow and live actions of this site, newest first, each with its
+        audit chain by id (revision, review run, flow run, approval, feedback).
+        Live rows are reconciled with their approval (approved → applied).
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: collection, in: query, required: false, schema: { type: string } }
+        - { name: itemId, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string } }
+        - { name: mode, in: query, required: false, schema: { type: string, enum: [shadow, live] } }
+        - { name: action, in: query, required: false, schema: { type: string, enum: [tag, route] } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        '200':
+          description: Actions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { type: object, additionalProperties: true } }
+        '400':
+          description: VALIDATION
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN or CONTROL_PLANE_FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/automation/actions/{id}:
+    get:
+      summary: One automation action with its audit chain (#518, admin only)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Action
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '403':
+          description: FORBIDDEN or CONTROL_PLANE_FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: AUTOMATION_ACTION_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/automation/actions/{id}/feedback:
+    post:
+      summary: Accept, override or reject the decision behind an action (#518, admin only)
+      description: >
+        Stored as review feedback on the action's review run and question
+        (one verdict per principal). An override is `edit` with `editedValue`.
+        Applies nothing.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [verdict]
+              properties:
+                verdict: { type: string, enum: [accept, edit, reject] }
+                editedValue: { description: Required for edit }
+                acknowledgeStale: { type: boolean }
+      responses:
+        '201':
+          description: Feedback
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '400':
+          description: VALIDATION
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN or CONTROL_PLANE_FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: AUTOMATION_ACTION_NOT_FOUND or REVIEW_RUN_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: AUTOMATION_NO_DECISION, REVIEW_NOT_COMPLETE or REVIEW_STALE
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/automation/actions/{id}/revert:
+    post:
+      summary: Restore the value before an applied action (#518, admin only)
+      description: >
+        Writes `previous` back through the caller's ItemService. Refused when
+        the field no longer holds what the action wrote (a later edit wins).
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Reverted action
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '403':
+          description: FORBIDDEN or CONTROL_PLANE_FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: AUTOMATION_ACTION_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: AUTOMATION_NOT_APPLIED, AUTOMATION_ALREADY_REVERTED or AUTOMATION_REVERT_CONFLICT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/automation/metrics:
+    get:
+      summary: Shadow precision and coverage in the auto-action zone (#518, admin only)
+      description: >
+        Per action/locale/provider/model/profile-version split: precision over
+        in-zone proposals with a signed-in user's verdict and coverage of the
+        zone (95% Wilson intervals), evaluated against the current
+        `aiDecisions.automation.thresholds`. `insufficientSample` and
+        `shadowRequired` follow protocol `jev-automation-v1`. Switches nothing on.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '400':
+          description: Invalid dates, from not before to, or more than 366 days apart
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN or CONTROL_PLANE_FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /ai/suggest-field:
     post:
       summary: Suggest field type and interface for a given field name + context

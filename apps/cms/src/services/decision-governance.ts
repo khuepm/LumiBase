@@ -63,6 +63,9 @@ const siteSettingsSchema = z.object({
   budgetPerDay: z.number().int().min(0).optional(),
   review: reviewRolloutSchema.optional(),
   flows: z.boolean().default(false),
+  // Parsed separately by `parseAutomationSettings` (J11, #518) so a malformed
+  // automation block forces shadow mode instead of switching decisions off.
+  automation: z.unknown().optional(),
 });
 
 /**
@@ -94,6 +97,12 @@ export interface DecisionSiteSettings {
    * stays off by default until the Phase B gate passes.
    */
   flows?: boolean;
+  /**
+   * Flows metadata automation (J11, #518), raw. Read it with
+   * `parseAutomationSettings` (`ai-automation.ts`): anything malformed, a
+   * missing gate or missing thresholds means `shadow`.
+   */
+  automation?: unknown;
 }
 
 export const REVIEW_ROLLOUT_OFF: DecisionReviewRollout = { enabled: false, pilotCollections: [], mode: 'baseline' };

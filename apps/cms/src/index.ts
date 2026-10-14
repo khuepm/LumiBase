@@ -85,6 +85,7 @@ import { webhooksRouter } from './routes/webhooks';
 import { testAuthRouter } from './routes/test-auth';
 import { aiRouter } from './routes/ai';
 import { aiReviewRouter } from './routes/ai-review';
+import { aiAutomationRouter } from './routes/ai-automation';
 import { agentRouter } from './routes/agent';
 import { intentsRouter } from './routes/intents';
 import { mcpRouter } from './routes/mcp';
@@ -331,6 +332,8 @@ api.route('/scim-tokens', scimAdminRouter);
 api.route('/ai', aiRouter);
 // Draft review profiles, runs and feedback (Jev J05, #512). Disjoint leaf paths.
 api.route('/ai', aiReviewRouter);
+// Jev metadata automation (J11, #518): control plane, admin-only. Disjoint leaf paths.
+api.route('/ai', aiAutomationRouter);
 api.route('/agent/intents', intentsRouter);
 api.route('/agent', agentRouter);
 // MCP server (content-os task 4; Req 4.1). Same authenticated chain as the

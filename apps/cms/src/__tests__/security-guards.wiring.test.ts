@@ -131,6 +131,7 @@ describe('security guard wiring — control-plane path coverage', () => {
     '/api/v1/api-keys',
     '/api/v1/admin',
     '/api/v1/agent',
+    '/api/v1/ai/automation',
     '/api/v1/cdc',
     '/api/v1/flows',
     '/api/v1/integrations/git',
@@ -145,6 +146,9 @@ describe('security guard wiring — control-plane path coverage', () => {
 
   it('does not classify the content surface as control-plane', () => {
     expect(isControlPlanePath('/api/v1/items/posts')).toBe(false);
+    // Draft review stays content plane (ai:decide), only automation is control plane.
+    expect(isControlPlanePath('/api/v1/ai/reviews')).toBe(false);
+    expect(isControlPlanePath('/api/v1/ai/automationx')).toBe(false);
   });
 });
 
