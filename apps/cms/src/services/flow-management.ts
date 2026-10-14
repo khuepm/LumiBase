@@ -20,11 +20,16 @@ export const flowSchema = z.object({
           options: z.record(z.string(), z.unknown()).optional(),
           next: z.string().nullable().optional(),
           onError: z.string().nullable().optional(),
+          // Explicit branches (J10, #517): branch key → node id, null ends the run.
+          branches: z.record(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), z.string().nullable()).optional(),
         }),
       )
       .default([]),
   }),
 });
+
+/** Operations whose result only means something through explicit branches. */
+export const BRANCHING_OPERATIONS = ['ai:decision'];
 
 /**
  * Graph gate (visual-flow-builder Req 5.2): an `active` flow must have a
@@ -33,7 +38,7 @@ export const flowSchema = z.object({
  */
 export function graphErrorsForSave(status: string | undefined, graph: SharedFlowGraph | undefined) {
   if (status !== 'active' || !graph) return null;
-  const result = validateGraph(graph, listOperations().map((o) => o.key));
+  const result = validateGraph(graph, listOperations().map((o) => o.key), { branchingKeys: BRANCHING_OPERATIONS });
   return result.ok ? null : result.errors;
 }
 

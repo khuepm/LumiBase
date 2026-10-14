@@ -1,21 +1,23 @@
 /**
- * Request-scoped content access for draft review (Jev J05, #512).
+ * Caller-scoped content access for draft review (Jev J05, #512).
  *
- * Reads go through `itemServiceForRequest`, so row rules, field masks,
- * decryption and site scope are exactly what the caller's own token gets on
- * `/items`. Field-level visibility is computed from the same compiled
+ * Reads go through an ItemService bound to the caller (`itemServiceForRequest`
+ * on a request, `itemServiceForPrincipal` in a worker), so row rules, field
+ * masks, decryption and site scope are exactly what the caller's own token
+ * gets on `/items`. Field-level visibility is computed from the same compiled
  * permission (`PermissionService.canAccess` + `applyFieldMask`) so a masked
  * field is reported as omitted instead of silently reading as empty.
  */
 
-import { revisions } from '@lumibase/database';
+import { revisions, type Database } from '@lumibase/database';
+import type { CacheProvider, KeyProvider } from '@lumibase/runtime';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import type { AppEnv } from '../env';
-import { ItemServiceError } from './item-service';
-import { itemServiceForRequest, permissionServiceForRequest } from './item-service-factory';
-import { applyFieldMask } from './permission-dsl';
-import type { CompiledPermission } from './permission-service';
+import { ItemServiceError, type ItemService } from './item-service';
+import { itemServiceForPrincipal, itemServiceForRequest, permissionServiceForRequest } from './item-service-factory';
+import { applyFieldMask, type MagicContext } from './permission-dsl';
+import { PermissionService, type CompiledPermission } from './permission-service';
 import { ReviewServiceError, type ReviewContentAccess } from './review-service';
 import { SchemaService } from './schema-service';
 
@@ -23,12 +25,16 @@ function visibleFields(known: string[], perm: CompiledPermission): Set<string> {
   return new Set(perm.fields.length === 1 && perm.fields[0] === '*' ? known : applyFieldMask(known, perm.fields));
 }
 
-export function reviewContentAccessForRequest(c: Context<AppEnv>): ReviewContentAccess {
-  const db = c.get('db');
-  const siteId = c.get('siteId');
-  const permissions = permissionServiceForRequest(c);
-  const schema = new SchemaService({ db, siteId, cache: c.get('runtime').cache });
+interface ContentAccessDeps {
+  db: Database;
+  siteId: string;
+  permissions: PermissionService;
+  /** A caller-bound ItemService, built lazily per read. */
+  items: () => ItemService;
+  schema: SchemaService;
+}
 
+function reviewContentAccess({ db, siteId, permissions, items, schema }: ContentAccessDeps): ReviewContentAccess {
   const knownFields = async (collection: string): Promise<string[]> => {
     const compiled = await schema.getCompiled(collection);
     if (!compiled) throw new ReviewServiceError('REVIEW_ITEM_NOT_FOUND', `Collection "${collection}" not found.`);
@@ -46,7 +52,7 @@ export function reviewContentAccessForRequest(c: Context<AppEnv>): ReviewContent
 
       let row: Record<string, unknown>;
       try {
-        row = (await itemServiceForRequest(c).detail(
+        row = (await items().detail(
           collection,
           itemId,
           readableFields.length > 0 ? readableFields : ['id'],
@@ -85,4 +91,51 @@ export function reviewContentAccessForRequest(c: Context<AppEnv>): ReviewContent
       return row?.id ?? null;
     },
   };
+}
+
+export function reviewContentAccessForRequest(c: Context<AppEnv>): ReviewContentAccess {
+  const db = c.get('db');
+  const siteId = c.get('siteId');
+  return reviewContentAccess({
+    db,
+    siteId,
+    permissions: permissionServiceForRequest(c),
+    items: () => itemServiceForRequest(c),
+    schema: new SchemaService({ db, siteId, cache: c.get('runtime').cache }),
+  });
+}
+
+/**
+ * The same access for a principal re-resolved off the request path (a Flows
+ * worker, J10 #517). `permissionContext` comes from `EffectiveCapabilityService`
+ * at execution time, so a role change or revoked key since the run was queued
+ * is honoured; the site comes from that context, never from the job payload.
+ */
+export function reviewContentAccessForPrincipal(deps: {
+  db: Database;
+  permissionContext: MagicContext;
+  cache?: CacheProvider;
+  keys?: KeyProvider;
+  encryptionKey?: string;
+}): ReviewContentAccess {
+  const { db, permissionContext, cache } = deps;
+  const siteId = permissionContext.siteId;
+  return reviewContentAccess({
+    db,
+    siteId,
+    permissions: new PermissionService({ db, cache, ctx: permissionContext }),
+    items: () =>
+      itemServiceForPrincipal(
+        {
+          db,
+          siteId,
+          cache,
+          userId: permissionContext.userId ?? null,
+          keyProvider: deps.keys,
+          encryptionKey: deps.encryptionKey,
+        },
+        permissionContext,
+      ),
+    schema: new SchemaService({ db, siteId, cache }),
+  });
 }

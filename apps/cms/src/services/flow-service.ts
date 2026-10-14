@@ -18,6 +18,12 @@ export interface FlowNode {
   options?: Record<string, unknown>;
   next?: string | null;
   onError?: string | null;
+  /**
+   * Explicit branches (J10, #517): branch key → next node id, `null` ends the
+   * run. When set, the runner follows the `branch` the operation returned
+   * instead of `next`; a returned branch with no entry is a run error.
+   */
+  branches?: Record<string, string | null>;
 }
 
 export interface FlowGraph {
@@ -32,9 +38,16 @@ export interface FlowRunContext {
   env: Record<string, unknown>;
 }
 
+/**
+ * `node` is the node being executed. Most handlers ignore it; a branching
+ * operation reads `node.branches` (to know whether an `error` branch is
+ * mapped) and `node.id` (for a per-node idempotency key).
+ */
 export type OperationHandler = (
   ctx: FlowRunContext,
   options: Record<string, unknown>,
+  /** Always passed by `runFlow`; optional so direct callers and older handlers keep compiling. */
+  node?: FlowNode,
 ) => Promise<unknown>;
 
 const handlers = new Map<string, OperationHandler>();
@@ -55,7 +68,7 @@ export function getHandler(key: string): OperationHandler | undefined {
 const OPERATION_DOCS: Record<string, { description: string; options?: Record<string, string> }> = {
   log: { description: 'Log a message', options: { message: 'string' } },
   condition: {
-    description: 'Compare a context path against a value; the result carries { pass }',
+    description: "Compare a context path against a value; the result carries { pass, branch: 'true' | 'false' }",
     options: { path: "string — e.g. 'input.event.action'", operator: "'==' | '!=' | '>' | '<' | 'contains'", value: 'any' },
   },
   transform: { description: 'Merge fixed fields into the previous step output', options: { set: 'object — fields to set' } },
@@ -72,6 +85,19 @@ const OPERATION_DOCS: Record<string, { description: string; options?: Record<str
     options: { targetId: 'string — deployment target id', coalesceWindowMs: 'number — reuse a deploy created within this window' },
   },
   'deploy:status': { description: 'Fetch latest deployment status', options: { targetId: 'string — deployment target id' } },
+  'ai:decision': {
+    description:
+      "Governed AI decision on one item with a pinned review profile version; branches 'true' | 'false' | 'unknown' | 'error' (or a choice key). Needs aiDecisions.flows and ai:decide.",
+    options: {
+      profileKey: 'string — review profile key',
+      profileVersion: 'number — pinned profile version (required)',
+      collection: 'string — collection of the item',
+      itemId: 'string — item id (defaults to input.itemId)',
+      questionKey: 'string — profile question that decides the branch',
+      noulThreshold: "number 0.5–1 — noul questions: 'true' when ≥ t, 'false' when ≤ 1 − t, else 'unknown'",
+      minConfidence: "number 0–1 — choice questions: below it the branch is 'unknown'",
+    },
+  },
 };
 
 export interface OperationInfo {
@@ -123,7 +149,9 @@ registerHandler('condition', async (ctx, options) => {
       pass = false;
   }
 
-  return { pass, actual };
+  // `branch` drives a node with explicit branches; `pass` stays for graphs
+  // that read it (legacy `next`-only graphs ignore `branch`).
+  return { pass, branch: pass ? 'true' : 'false', actual };
 });
 
 registerHandler('transform', async (ctx, options) => {
@@ -297,6 +325,14 @@ registerHandler('deploy:status', async (ctx, options) => {
   return { deploymentId, status: row?.status ?? 'unknown' };
 });
 
+registerHandler('ai:decision', async (ctx, options, node) => {
+  // Jev J10 (#517): a governed decision that picks the next branch. The
+  // module is lazy-imported like drift-scan so the generic engine does not
+  // load the review/decision stack until a flow uses it.
+  const { runAiDecisionNode } = await import('./flow-ai-decision');
+  return runAiDecisionNode(ctx, options, node);
+});
+
 // ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------
@@ -307,6 +343,13 @@ export interface FlowRunResult {
   error?: string;
 }
 
+/** The `branch` an operation returned, or null when it returned none. */
+function branchOf(output: unknown): string | null {
+  if (!output || typeof output !== 'object') return null;
+  const branch = (output as { branch?: unknown }).branch;
+  return typeof branch === 'string' && branch.length > 0 ? branch : null;
+}
+
 export async function runFlow(graph: FlowGraph, input: Record<string, unknown>, env: Record<string, unknown> = {}): Promise<FlowRunResult> {
   const nodesById = new Map(graph.nodes.map((n) => [n.id, n]));
   const entry = graph.entry ?? graph.nodes[0]?.id;
@@ -315,8 +358,14 @@ export async function runFlow(graph: FlowGraph, input: Record<string, unknown>, 
   const ctx: FlowRunContext = { input, steps: {}, env };
   let cursor: string | null = entry;
   const visited = new Set<string>();
+  const signal = env['_signal'] as AbortSignal | undefined;
 
   while (cursor) {
+    // A cancelled or timed-out run starts no further node, so no downstream
+    // side effect runs after the caller gave up (J10, #517).
+    if (signal?.aborted) {
+      return { status: 'error', steps: ctx.steps, error: `Flow cancelled before node ${cursor}` };
+    }
     if (visited.has(cursor)) {
       return { status: 'error', steps: ctx.steps, error: `Cycle detected at node ${cursor}` };
     }
@@ -329,10 +378,28 @@ export async function runFlow(graph: FlowGraph, input: Record<string, unknown>, 
     if (!handler) return { status: 'error', steps: ctx.steps, error: `Unknown operation: ${node.key}` };
 
     try {
-      const output = await handler(ctx, node.options ?? {});
+      const output = await handler(ctx, node.options ?? {}, node);
       ctx.steps[node.id] = output;
       ctx.steps['previous'] = output;
-      cursor = node.next ?? null;
+      const branches = node.branches;
+      if (branches && Object.keys(branches).length > 0) {
+        // Explicit branches never fall through to `next`: a missing or
+        // unmapped branch ends the run as an error instead of guessing.
+        const branch = branchOf(output);
+        if (branch === null) {
+          return {
+            status: 'error',
+            steps: ctx.steps,
+            error: `Node ${node.id} has branches but operation ${node.key} returned no branch`,
+          };
+        }
+        if (!Object.prototype.hasOwnProperty.call(branches, branch)) {
+          return { status: 'error', steps: ctx.steps, error: `Unmapped branch "${branch}" at node ${node.id}` };
+        }
+        cursor = branches[branch] ?? null;
+      } else {
+        cursor = node.next ?? null;
+      }
     } catch (err) {
       ctx.steps[node.id] = { error: err instanceof Error ? err.message : String(err) };
       cursor = node.onError ?? null;

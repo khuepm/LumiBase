@@ -62,6 +62,7 @@ const siteSettingsSchema = z.object({
   // Not `tokensPerDay`: the settings read API redacts any key containing "token".
   budgetPerDay: z.number().int().min(0).optional(),
   review: reviewRolloutSchema.optional(),
+  flows: z.boolean().default(false),
 });
 
 /**
@@ -87,11 +88,27 @@ export interface DecisionSiteSettings {
   budgetPerDay?: number;
   /** Absent → the draft-review pilot is off. */
   review?: DecisionReviewRollout;
+  /**
+   * Flows `ai:decision` nodes (J10, #517). Off unless a site admin sets it;
+   * it also needs `enabled`, so the site kill switch stops flows too. Phase C
+   * stays off by default until the Phase B gate passes.
+   */
+  flows?: boolean;
 }
 
 export const REVIEW_ROLLOUT_OFF: DecisionReviewRollout = { enabled: false, pilotCollections: [], mode: 'baseline' };
 
-const DISABLED: DecisionSiteSettings = { enabled: false, allowedStateFields: null, review: REVIEW_ROLLOUT_OFF };
+const DISABLED: DecisionSiteSettings = {
+  enabled: false,
+  allowedStateFields: null,
+  review: REVIEW_ROLLOUT_OFF,
+  flows: false,
+};
+
+/** Whether Flows `ai:decision` nodes may run on this site: both the opt-in and the flows flag. */
+export function flowDecisionsEnabled(settings: DecisionSiteSettings): boolean {
+  return settings.enabled && settings.flows === true;
+}
 
 /** Parses the stored value; anything malformed reads as disabled, never as open. */
 export function parseDecisionSettings(value: unknown): DecisionSiteSettings {

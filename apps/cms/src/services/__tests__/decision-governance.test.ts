@@ -100,7 +100,7 @@ async function counter(cache: CacheProvider, key: string): Promise<number> {
 
 describe('site settings', () => {
   it('defaults to disabled and reads malformed values as disabled', () => {
-    expect(parseDecisionSettings({})).toEqual({ enabled: false, allowedStateFields: null, review: REVIEW_ROLLOUT_OFF });
+    expect(parseDecisionSettings({})).toEqual({ enabled: false, allowedStateFields: null, review: REVIEW_ROLLOUT_OFF, flows: false });
     expect(parseDecisionSettings({ enabled: 'yes' }).enabled).toBe(false);
     expect(parseDecisionSettings({ enabled: true, requestsPerHour: -1 }).enabled).toBe(false);
     expect(parseDecisionSettings(null).enabled).toBe(false);
@@ -115,6 +115,8 @@ describe('site settings', () => {
       requestsPerHour: 10,
       budgetPerDay: 500,
       review: REVIEW_ROLLOUT_OFF,
+      // Flows decisions (J10) stay off unless set explicitly.
+      flows: false,
     });
   });
 
