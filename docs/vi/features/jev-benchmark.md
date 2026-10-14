@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-10-14T10:41:48.377Z
+version: 2
+lastUpdated: 2026-10-14T20:40:49.105Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a31316298504e134
+sourceHash: f206080e0d47554a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T10:41:48.377Z
-codeVerifiedHash: a31316298504e134
-codeVerifiedClaims: 8
+codeVerified: 2026-10-14T20:40:49.105Z
+codeVerifiedHash: f206080e0d47554a
+codeVerifiedClaims: 10
 ---
 
 # Benchmark Jev (dữ liệu biên tập tiếng Việt và tiếng Anh)
@@ -86,6 +86,17 @@ Tuỳ chọn: `--dataset v1`, `--out <dir>` (mặc định `apps/cms/eval/jev-be
 `--provider llm` dùng `LLM_PROVIDER` đã cấu hình. Xác suất của nó do model tự báo và `calibrated: false`, nên threshold của nó không bao giờ áp dụng cho Jev.
 
 Mỗi lần chạy ghi `report.<split>.json` và `results.<split>.jsonl` (câu trả lời từng mẫu, không kèm nội dung). Report ghi dataset version và hash của manifest, rubric version, protocol version, seed, split, mode và số mẫu.
+
+## Tác vụ drift ngữ nghĩa (`--task drift`)
+
+Fixture [drift ngữ nghĩa](./jev-semantic-drift.md) (J12, #519) nằm cạnh dataset biên tập: `datasets/v1/drift.manifest.json`, `drift.vi.jsonl` và `drift.en.jsonl`, 20 mẫu mỗi locale. Mỗi mẫu là một brief cùng tiêu đề và nội dung viết cho nó, gán nhãn `drift: true` khi nội dung đi lệch khỏi brief. Tag: `true-drift`, `false-positive-trap` (nội dung đúng brief nhưng có dấu hiệu trông như lệch), `aligned` và `prompt-injection` (nội dung lệch brief nhưng bảo mô hình coi nó là đúng brief). Loader kiểm tra sha256 và số mẫu của từng file, và từ chối khi câu hỏi bị đổi (`rubricVersion`).
+
+```bash
+pnpm -F @lumibase/cms bench:jev -- --task drift --provider mock
+pnpm -F @lumibase/cms bench:jev -- --task drift --provider typesafe
+```
+
+Câu hỏi và ngưỡng lấy từ `rule` của manifest, và việc chấm điểm dùng `semanticOutcome` trong `apps/cms/src/services/semantic-drift.ts`, đúng phép ánh xạ mà drift scan dùng. Một lần gọi lỗi được tính là `unevaluated`, không bao giờ là sạch. Report (`report.drift.json`) cho từng locale: số lượng mỗi kết quả, coverage, precision và recall của drift (unevaluated tính là không phát hiện), tỉ lệ false-positive-trap và tỉ lệ phát hiện prompt-injection, cùng lỗi gọi và độ trễ. Không có split tune và không có file ngưỡng: ngưỡng thuộc về rule. Giống tác vụ biên tập, một lần chạy mock được gắn `mode: "mock"`, và chưa có lần chạy drift live nào.
 
 ## Chế độ mock
 

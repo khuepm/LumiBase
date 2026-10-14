@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-10-14T18:09:29.087Z
+version: 4
+lastUpdated: 2026-10-14T20:40:49.231Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 27c9fe433f616444
+sourceHash: c5bba152b46601c5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T18:09:29.087Z
-codeVerifiedHash: 27c9fe433f616444
+codeVerified: 2026-10-14T20:40:49.231Z
+codeVerifiedHash: c5bba152b46601c5
 codeVerifiedClaims: 14
 ---
 
@@ -369,8 +369,8 @@ Tắt pilot kiểm tra bản nháp không xoá dòng nào trong các bảng này
 
 | Collection | Mục đích |
 |---|---|
-| `content_intents` | Trạng thái mong muốn được khai báo (SLO) theo collection: rule, cron schedule, budget, mức autonomy tối đa, maintenance window |
-| `content_drifts` | Vi phạm rule đã phát hiện; unique `(siteId, fingerprint)` dedupe việc phát hiện giữa các lần scan |
+| `content_intents` | Trạng thái mong muốn được khai báo (SLO) theo collection: rule, cron schedule, budget, mức autonomy tối đa, maintenance window. `scan_cursor` để tiếp tục scan xác định; `semantic_scan_cursor` (migration 0022, J12) để tiếp tục [pass ngữ nghĩa](./features/jev-semantic-drift.md) có budget riêng |
+| `content_drifts` | Vi phạm rule đã phát hiện; unique `(siteId, fingerprint)` dedupe việc phát hiện giữa các lần scan. `status` là `open`/`assigned`/`resolved`/`stale`, hoặc `unevaluated` cho một rule ngữ nghĩa không đánh giá được (cột text thường, không có CHECK constraint). Hàng ngữ nghĩa dùng `rule_type = 'semantic'` và `rule_key = <key>@v<version>:<profileVersion>:<contentHash>` |
 | `agent_autonomy_grants` | Mức tin cậy đã đạt được theo (site, agentRole, capability): level 0–4, evidence, expiry |
 | `agent_incidents` | Bằng chứng để hạ cấp và nguồn cho exception inbox (`veto`, `eval_fail`, `load_guard`, …) |
 | `agent_freezes` | Kill-switch freeze (scope `site`/`role`); `liftedAt IS NULL` = đang active; đồng thời là audit trail |

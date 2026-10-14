@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 18
-lastUpdated: 2026-10-14T19:12:35.646Z
+version: 19
+lastUpdated: 2026-10-14T20:40:49.439Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 97848d02e83a6c2d
+sourceHash: 9166c8266a49c02f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T19:12:35.646Z
-codeVerifiedHash: 97848d02e83a6c2d
+codeVerified: 2026-10-14T20:40:49.439Z
+codeVerifiedHash: 9166c8266a49c02f
 codeVerifiedClaims: 436
 ---
 
@@ -803,7 +803,7 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Các phiên bản, bản nháp, `/compile` (NL→đánh giá), `:id/dry-run`, `:id/activate` |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Dừng ở 4 phạm vi (`run/intent/role/site`); việc đóng đóng băng cần `agents:freeze` |
 | `*` | `/api/v1/agent/intents[...]` | CRUD ý định nội dung, `:id/pause|resume|scan|drifts`, `/compile` |
-| `POST` | `/api/v1/intents/:id/scan` | Một chu kỳ reconcile: `{ scan, reconcile, dispatch }`. `dispatch` đẩy mỗi reconciler goal tiến một bước (draft → promote → verify) và báo `dispatched/completed/skipped/blocked` cùng `queueUnavailable` trên runtime không có queue adapter. Xem [vòng sửa của reconciler](../features/reconciler-repair-loop.md) |
+| `POST` | `/api/v1/intents/:id/scan` | Một chu kỳ reconcile: `{ scan, reconcile, dispatch }`. `dispatch` đẩy mỗi reconciler goal tiến một bước (draft → promote → verify) và báo `dispatched/completed/skipped/blocked` cùng `queueUnavailable` trên runtime không có queue adapter. Xem [vòng sửa của reconciler](../features/reconciler-repair-loop.md). Khi intent có rule `semantic`, `scan.semantic` báo pass ngữ nghĩa có budget riêng (`status` `ran`/`off`/`unavailable`, các số đếm, `completed`, `cursor`); xem [drift ngữ nghĩa](../features/jev-semantic-drift.md) |
 | `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp` |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Ghim Law Zero: liệt kê / giải phóng |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Chỉ mục llms.txt công khai mỗi site |

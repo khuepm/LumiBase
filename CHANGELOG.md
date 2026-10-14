@@ -155,6 +155,31 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   configuration ships and no precision has been measured, so every site stays
   in shadow. **Migration** `0021_jev_automation_actions` adds one table
   (additive, idempotent, no backfill).
+- **Content Intents: semantic drift rules (#519).** An intent rule of type
+  `semantic` (`key`, `version`, `profileKey`, `profileVersion`, `questionKey`,
+  `threshold`, optional `fields`, `contextSource` `intent` or `field:<name>`)
+  is judged by one `noul` question of a pinned review profile version through
+  the governed decision path. The drift scan runs these rules in a separate
+  pass after the deterministic ones, with its own item budget
+  (`maxSemanticItems`, default 25) and cursor, as the system principal: only
+  the rule's fields minus pinned fields, plus the context field, are read and
+  sent. The fingerprint includes the rule version, profile version and content
+  hash, so a retry on unchanged content replays the stored run (no provider
+  call, no duplicate drift or goal) and a rubric, intent or content change is
+  re-evaluated. A provider outage, an answer between the thresholds or a
+  missing profile records the new drift status `unevaluated`, which never
+  resolves earlier drift and never creates a goal; the deterministic pass no
+  longer touches semantic rows. Open semantic drift becomes a reconciler
+  review goal carrying the run id, model and profile version, and the
+  dispatcher blocks it as `HUMAN_REVIEW_REQUIRED` (no repair skill, nothing
+  edited). Mission Control shows the rule and profile versions, model,
+  revision and the uncertainty state, and the SLO health ratio leaves
+  unevaluated rows out. The benchmark gains `--task drift` with 40 synthetic
+  VI/EN fixtures (true drift, false-positive traps, prompt injection); only
+  mock runs exist. **Off by default:** it needs `aiDecisions.drift: true` as
+  well as `aiDecisions.enabled`. **Migration** `0022_semantic_drift_cursor`
+  adds one nullable column (additive, idempotent, no backfill). Event and
+  schedule Flows runs report the semantic pass as `unavailable`.
 
 ### Changed
 - **Draft review needs the pilot (#516).** The Studio draft review panel shows
