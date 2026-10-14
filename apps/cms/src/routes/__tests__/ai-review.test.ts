@@ -126,10 +126,10 @@ afterEach(() => {
 
 const principal: AuthPrincipal = { userId: 'usr_editor', email: 'editor@example.com', roles: ['member'], raw: {} };
 
-function buildApp(): Hono<AppEnv> {
+function buildApp(auth: AuthPrincipal = principal): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
-    c.set('auth', principal);
+    c.set('auth', auth);
     c.set('siteId', 'site_1');
     c.set('requestId', 'req_1');
     c.set('db', {} as AppEnv['Variables']['db']);
@@ -524,6 +524,20 @@ describe('POST /ai/reviews/sessions (J09)', () => {
     expect(store.sessions).toHaveLength(0);
   });
 
+  it.each([
+    ['an API key', { type: 'api_key', apiKeyId: 'key_1', roles: [], raw: {} } as AuthPrincipal],
+    ['the dev principal', { roles: ['admin'], raw: { dev: true } } as AuthPrincipal],
+  ])('refuses a session from %s with 403 even when it holds ai:decide', async (_label, auth) => {
+    const res = await call(buildApp(auth), 'POST', '/ai/reviews/sessions', {
+      collection: 'posts',
+      mode: 'assisted',
+      durationMs: 1_000,
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { errors: { code: string }[] }).errors[0]?.code).toBe('FORBIDDEN');
+    expect(store.sessions).toHaveLength(0);
+  });
+
   it('returns 403 DECISION_DISABLED outside the pilot and 409 on a mode mismatch', async () => {
     const app = buildApp();
     const offPilot = await call(app, 'POST', '/ai/reviews/sessions', { collection: 'pages', mode: 'assisted', durationMs: 1 });
@@ -607,6 +621,37 @@ describe('GET /ai/reviews/metrics (J09)', () => {
     expect(data.timePerItem.assisted.p50Ms).toBe(30_000);
     expect(data.insufficientSample).toBe(true);
     expect(data.criteria.every((c) => c.status === 'insufficient_sample')).toBe(true);
+  });
+
+  it('counts nothing from an API key that runs, accepts and tries to record a session', async () => {
+    const keyApp = buildApp({ type: 'api_key', apiKeyId: 'key_1', roles: [], raw: {} });
+    await seedProfile(keyApp);
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jevOk()));
+    const res = await call(keyApp, 'POST', '/ai/reviews', { profile: 'spam-check', collection: 'posts', itemId: 'itm_1' });
+    expect(res.status).toBe(201);
+    const runId = ((await res.json()) as { data: { id: string } }).data.id;
+    const feedback = await call(keyApp, 'POST', `/ai/reviews/${runId}/feedback`, {
+      entries: [{ questionKey: 'spam', verdict: 'accept' }],
+    });
+    expect(feedback.status).toBe(201);
+    const session = await call(keyApp, 'POST', '/ai/reviews/sessions', {
+      collection: 'posts', itemId: 'itm_1', mode: 'assisted', runId, viewedQuestions: ['spam'], durationMs: 30_000,
+    });
+    expect(session.status).toBe(403);
+    // A machine session written some other way is still not user value.
+    store.sessions.push({
+      id: 'injected', siteId: 'site_1', collection: 'posts', itemId: 'itm_1', mode: 'assisted', runId,
+      viewedQuestions: ['spam'], principalType: 'api_key', principalId: 'key_1', durationMs: 30_000, locale: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    });
+
+    ctx.grant = { allowed: true, capabilities: ['admin'], controlPlaneAdmin: true };
+    const metrics = await call(buildApp(), 'GET', '/ai/reviews/metrics?from=2025-12-01T00:00:00Z&to=2026-06-01T00:00:00Z');
+    expect(metrics.status).toBe(200);
+    const { data } = (await metrics.json()) as { data: ReviewMetrics };
+    expect(data.sampleCounts).toMatchObject({ assistedSessions: 0, viewedSuggestions: 0 });
+    expect(data.suggestions.accept).toMatchObject({ k: 0, n: 0 });
+    expect(data.operations.runs).toBe(1);
   });
 
   it('rejects an invalid or oversized window', async () => {

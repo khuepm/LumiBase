@@ -11,6 +11,11 @@
  *     `run_id` + `viewed_questions`). Feedback sent for a suggestion nobody
  *     was shown — e.g. straight through the API — is not counted.
  *
+ * Only signed-in users (`principal_type = 'user'`) count. The sessions
+ * endpoint refuses API keys and the dev principal, and the loader and the
+ * aggregation drop any non-user session or verdict as a second line, so an
+ * integration key that runs, accepts and "views" reviews adds no user value.
+ *
  * Run and API-call counts appear only as operational denominators (coverage,
  * errors, latency, tokens). They are never reported as user value.
  *
@@ -128,10 +133,13 @@ function mean(values: readonly number[]): number | null {
 
 export interface MetricsSession {
   mode: string;
+  collection: string;
+  itemId: string | null;
   durationMs: number;
   locale: string | null;
   runId: string | null;
   viewedQuestions: unknown;
+  principalType: string;
   principalId: string;
 }
 
@@ -149,6 +157,7 @@ export interface MetricsFeedback {
   runId: string;
   questionKey: string;
   verdict: string;
+  principalType: string;
   principalId: string;
 }
 
@@ -246,6 +255,13 @@ export interface ReviewMetrics {
     idleSessionsExcluded: number;
     viewedSuggestions: number;
     completedRuns: number;
+    /**
+     * Distinct editors and items behind the non-idle sessions of each mode.
+     * Sessions are self-reported and not de-duplicated, so a sample that meets
+     * the minimum through a few editors or items is visible here.
+     */
+    distinctEditors: { baseline: number; assisted: number };
+    distinctItems: { baseline: number; assisted: number };
   };
   minimums: (typeof PILOT_PROTOCOL)['minimums'];
   /** True while any pre-registered minimum is unmet. */
@@ -266,6 +282,23 @@ export interface ReviewMetrics {
 // ---------------------------------------------------------------------------
 
 const UNKNOWN = 'unknown';
+const USER = 'user';
+
+function distinctEditors(rows: readonly MetricsSession[], mode: string): number {
+  return new Set(rows.filter((s) => s.mode === mode).map((s) => s.principalId)).size;
+}
+
+/** Distinct (collection, item) pairs; each session on a create form (no item yet) is its own item. */
+function distinctItems(rows: readonly MetricsSession[], mode: string): number {
+  const items = new Set<string>();
+  let creates = 0;
+  for (const s of rows) {
+    if (s.mode !== mode) continue;
+    if (s.itemId === null) creates += 1;
+    else items.add(`${s.collection}\u0000${s.itemId}`);
+  }
+  return items.size + creates;
+}
 
 function timeStats(durations: readonly number[], minimum: number): TimeStats {
   return {
@@ -424,18 +457,23 @@ export function computeReviewMetrics(input: ReviewMetricsInput): ReviewMetrics {
   for (const run of input.referencedRuns ?? []) runsById.set(run.id, run);
   for (const run of input.runs) runsById.set(run.id, run);
 
-  const active = input.sessions.filter((s) => s.durationMs <= PILOT_PROTOCOL.idleSessionMs);
-  const idle = input.sessions.length - active.length;
+  // Only signed-in editors are user value (the loader filters too).
+  const sessions = input.sessions.filter((s) => s.principalType === USER);
+  const active = sessions.filter((s) => s.durationMs <= PILOT_PROTOCOL.idleSessionMs);
+  const idle = sessions.length - active.length;
   const durations = (mode: string, rows: readonly MetricsSession[] = active) =>
     rows.filter((s) => s.mode === mode).map((s) => s.durationMs);
 
   // Viewed suggestions: assisted sessions' (run, question) pairs, deduplicated,
   // each matched only to the verdict of the editor who viewed it.
   const verdicts = new Map<string, string>();
-  for (const f of input.feedback) verdicts.set(`${f.runId}\u0000${f.questionKey}\u0000${f.principalId}`, f.verdict);
+  for (const f of input.feedback) {
+    if (f.principalType !== USER) continue;
+    verdicts.set(`${f.runId}\u0000${f.questionKey}\u0000${f.principalId}`, f.verdict);
+  }
   const seen = new Set<string>();
   const viewed: ViewedSuggestion[] = [];
-  for (const session of input.sessions) {
+  for (const session of sessions) {
     if (session.mode !== 'assisted' || !session.runId || !Array.isArray(session.viewedQuestions)) continue;
     for (const questionKey of session.viewedQuestions) {
       if (typeof questionKey !== 'string') continue;
@@ -505,6 +543,8 @@ export function computeReviewMetrics(input: ReviewMetricsInput): ReviewMetrics {
       idleSessionsExcluded: idle,
       viewedSuggestions: viewed.length,
       completedRuns,
+      distinctEditors: { baseline: distinctEditors(active, 'baseline'), assisted: distinctEditors(active, 'assisted') },
+      distinctItems: { baseline: distinctItems(active, 'baseline'), assisted: distinctItems(active, 'assisted') },
     },
     minimums: PILOT_PROTOCOL.minimums,
     insufficientSample:
@@ -566,6 +606,9 @@ export class DrizzleReviewMetricsSource implements ReviewMetricsSource {
     const sessions = await this.db
       .select({
         mode: reviewSessions.mode,
+        collection: reviewSessions.collection,
+        itemId: reviewSessions.itemId,
+        principalType: reviewSessions.principalType,
         durationMs: reviewSessions.durationMs,
         locale: reviewSessions.locale,
         runId: reviewSessions.runId,
@@ -576,6 +619,7 @@ export class DrizzleReviewMetricsSource implements ReviewMetricsSource {
       .where(
         and(
           eq(reviewSessions.siteId, siteId),
+          eq(reviewSessions.principalType, USER),
           gte(reviewSessions.createdAt, window.from),
           lt(reviewSessions.createdAt, window.to),
         ),
@@ -607,10 +651,17 @@ export class DrizzleReviewMetricsSource implements ReviewMetricsSource {
             runId: reviewFeedback.runId,
             questionKey: reviewFeedback.questionKey,
             verdict: reviewFeedback.verdict,
+            principalType: reviewFeedback.principalType,
             principalId: reviewFeedback.principalId,
           })
           .from(reviewFeedback)
-          .where(and(eq(reviewFeedback.siteId, siteId), inArray(reviewFeedback.runId, ids)))),
+          .where(
+            and(
+              eq(reviewFeedback.siteId, siteId),
+              eq(reviewFeedback.principalType, USER),
+              inArray(reviewFeedback.runId, ids),
+            ),
+          )),
       );
     }
     return {

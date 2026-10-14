@@ -36,7 +36,7 @@ const client = {
 
 vi.mock('@/lib/api', () => ({ getApiClient: () => client }));
 
-import { AiDecisionsSettingsPage } from '../ai-decisions-settings';
+import { AiDecisionsSettingsPage, MAX_PILOT_COLLECTIONS } from '../ai-decisions-settings';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -114,6 +114,47 @@ describe('AI decisions settings', () => {
     expect(await screen.findByText(/Existing reviews, feedback and sessions are kept/)).toBeInTheDocument();
   });
 
+  it('the kill switch saves the stored list and mode, not unsaved edits', async () => {
+    stored = { ...stored, review: { enabled: true, pilotCollections: ['posts'], mode: 'assisted' } };
+    renderPage();
+    await screen.findByTestId('ai-decisions-status');
+    // Unsaved: untick Posts, tick Pages, switch to baseline.
+    fireEvent.click(screen.getByLabelText('Posts'));
+    fireEvent.click(screen.getByLabelText('Pages'));
+    fireEvent.change(screen.getByLabelText('Mode'), { target: { value: 'baseline' } });
+    fireEvent.click(screen.getByRole('button', { name: /Turn everything off/ }));
+    await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+    expect(set).toHaveBeenCalledWith('aiDecisions', {
+      enabled: false,
+      allowedStateFields: ['title', 'body'],
+      requestsPerHour: 50,
+      review: { enabled: false, pilotCollections: ['posts'], mode: 'assisted' },
+    });
+    await waitFor(() => expect(screen.getByLabelText('Posts')).toBeChecked());
+    expect(screen.getByLabelText('Pages')).not.toBeChecked();
+  });
+  it('caps the pilot at the server limit of 100 collections', async () => {
+    const hundred = Array.from({ length: MAX_PILOT_COLLECTIONS }, (_, i) => `c${i}`);
+    stored = { ...stored, review: { enabled: true, pilotCollections: hundred, mode: 'baseline' } };
+    renderPage();
+    await screen.findByTestId('ai-decisions-status');
+    expect(screen.getByLabelText('Posts')).toBeDisabled();
+    fireEvent.click(screen.getByLabelText('Posts'));
+    expect(screen.getByLabelText('Posts')).not.toBeChecked();
+    expect(screen.getByText(/at most 100 collections/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+    expect((set.mock.calls[0]![1] as { review: { pilotCollections: string[] } }).review.pilotCollections).toHaveLength(100);
+  });
+  it('refuses to save a stored list over the cap, which the server would read as decisions off', async () => {
+    const tooMany = Array.from({ length: MAX_PILOT_COLLECTIONS + 1 }, (_, i) => `c${i}`);
+    stored = { ...stored, review: { enabled: true, pilotCollections: tooMany, mode: 'baseline' } };
+    renderPage();
+    await screen.findByTestId('ai-decisions-status');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Choose at most 100 pilot collections.');
+    expect(set).not.toHaveBeenCalled();
+  });
   it('starts from everything off when the setting does not exist', async () => {
     stored = null;
     renderPage();

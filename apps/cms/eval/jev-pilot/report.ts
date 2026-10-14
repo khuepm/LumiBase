@@ -107,7 +107,9 @@ const LIMITATIONS = [
   'Sessions measure editor time from opening the editor to the first save; time spent elsewhere is not seen.',
   'Baseline and assisted samples are compared as groups, not paired per item or editor.',
   'Accept/edit/reject rates count only suggestions rendered to the editor; feedback sent without a viewing session is excluded.',
-  'Run and API-call counts are operational denominators, not user value.',
+  'Run and API-call counts are operational denominators, not user value. Only signed-in users record sessions; API-key and dev-principal sessions and verdicts are excluded.',
+  'Sessions are reported by the editor client and not de-duplicated per editor or item; check the distinct editor and item counts before reading a minimum as met.',
+  'time_reduction compares two medians as a point estimate, with no confidence interval; treat a ratio near the threshold as unresolved.',
   'Provider probabilities are not correctness probabilities unless the provider is calibrated on this data.',
 ];
 
@@ -190,6 +192,8 @@ export function renderPilotReportMarkdown(report: PilotReport): string {
     `| Viewed suggestions | ${report.sampleCounts.viewedSuggestions} | ${report.minimums.viewedSuggestions} |`,
     `| Completed runs | ${report.sampleCounts.completedRuns} | ${report.minimums.completedRuns} |`,
     `| Idle sessions excluded | ${report.sampleCounts.idleSessionsExcluded} | — |`,
+    `| Distinct editors (baseline / assisted) | ${report.sampleCounts.distinctEditors.baseline} / ${report.sampleCounts.distinctEditors.assisted} | — |`,
+    `| Distinct items (baseline / assisted) | ${report.sampleCounts.distinctItems.baseline} / ${report.sampleCounts.distinctItems.assisted} | — |`,
     '',
     '## Criteria',
     '',

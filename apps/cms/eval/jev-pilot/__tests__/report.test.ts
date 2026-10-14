@@ -18,12 +18,22 @@ function passingMetrics() {
     latencyMs: 1_500,
     usage: { inputTokens: 10, outputTokens: 2 },
   }));
-  const base: MetricsSession = { mode: 'baseline', durationMs: 100_000, locale: 'vi', runId: null, viewedQuestions: [], principalId: 'u' };
+  const base: MetricsSession = {
+    mode: 'baseline',
+    collection: 'posts',
+    itemId: 'itm_1',
+    durationMs: 100_000,
+    locale: 'vi',
+    runId: null,
+    viewedQuestions: [],
+    principalType: 'user',
+    principalId: 'u',
+  };
   const sessions: MetricsSession[] = [
     ...Array.from({ length: n }, () => base),
     ...runs.map((r) => ({ ...base, mode: 'assisted', durationMs: 60_000, runId: r.id, viewedQuestions: ['category'] })),
   ];
-  const feedback = runs.map((r) => ({ runId: r.id, questionKey: 'category', verdict: 'accept', principalId: 'u' }));
+  const feedback = runs.map((r) => ({ runId: r.id, questionKey: 'category', verdict: 'accept', principalType: 'user', principalId: 'u' }));
   return computeReviewMetrics({ sessions, runs, feedback, window, now });
 }
 
@@ -37,9 +47,15 @@ describe('pilot report', () => {
       idleSessionsExcluded: 0,
       viewedSuggestions: 0,
       completedRuns: 0,
+      distinctEditors: { baseline: 0, assisted: 0 },
+      distinctItems: { baseline: 0, assisted: 0 },
     });
     expect(report.criteria.every((c) => c.status === 'insufficient_sample' && c.observed === null)).toBe(true);
-    expect(renderPilotReportMarkdown(report)).toContain('Template — no measured results');
+    const markdown = renderPilotReportMarkdown(report);
+    expect(markdown).toContain('Template — no measured results');
+    expect(markdown).toContain('| Distinct editors (baseline / assisted) | 0 / 0 | — |');
+    expect(report.limitations.join('\n')).toMatch(/point estimate/);
+    expect(report.limitations.join('\n')).toMatch(/not de-duplicated/);
   });
 
   it('never decides go without human adjudication, even when every metric passes', () => {

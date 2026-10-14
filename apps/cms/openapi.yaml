@@ -3932,8 +3932,8 @@ paths:
         stored. `runId` must be the caller's own run on the same collection
         (and item when both are known) and `viewedQuestions` the questions it
         answered that were rendered to the editor; pilot metrics count
-        verdicts over these viewed suggestions only. Site and principal come
-        from the request context.
+        verdicts over these viewed suggestions only. Only signed-in users
+        record sessions. Site and principal come from the request context.
       parameters:
         - { $ref: '#/components/parameters/SiteHeader' }
       requestBody:
@@ -3980,7 +3980,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '403':
-          description: FORBIDDEN (no `ai:decide`) or DECISION_DISABLED (collection not in the pilot)
+          description: FORBIDDEN (no `ai:decide`, or not a signed-in user — API keys and the dev principal record no sessions) or DECISION_DISABLED (collection not in the pilot)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

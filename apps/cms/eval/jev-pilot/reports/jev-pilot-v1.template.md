@@ -3,8 +3,8 @@
 > **Template — no measured results.** Every value below is empty until real pilot data is supplied.
 
 - Report version: 1
-- Generated: 2026-10-14T15:26:17.924Z
-- Window: 2026-09-14T15:26:17.924Z → 2026-10-14T15:26:17.924Z
+- Generated: 2026-10-14T16:10:07.358Z
+- Window: 2026-09-14T16:10:07.358Z → 2026-10-14T16:10:07.358Z
 - Decision: **insufficient_data** — Template: no pilot data was supplied.
 
 ## Sample counts
@@ -16,6 +16,8 @@
 | Viewed suggestions | 0 | 100 |
 | Completed runs | 0 | 100 |
 | Idle sessions excluded | 0 | — |
+| Distinct editors (baseline / assisted) | 0 / 0 | — |
+| Distinct items (baseline / assisted) | 0 / 0 | — |
 
 ## Criteria
 
@@ -33,5 +35,7 @@
 - Sessions measure editor time from opening the editor to the first save; time spent elsewhere is not seen.
 - Baseline and assisted samples are compared as groups, not paired per item or editor.
 - Accept/edit/reject rates count only suggestions rendered to the editor; feedback sent without a viewing session is excluded.
-- Run and API-call counts are operational denominators, not user value.
+- Run and API-call counts are operational denominators, not user value. Only signed-in users record sessions; API-key and dev-principal sessions and verdicts are excluded.
+- Sessions are reported by the editor client and not de-duplicated per editor or item; check the distinct editor and item counts before reading a minimum as met.
+- time_reduction compares two medians as a point estimate, with no confidence interval; treat a ratio near the threshold as unresolved.
 - Provider probabilities are not correctness probabilities unless the provider is calibrated on this data.

@@ -3,17 +3,25 @@
   "reportVersion": 1,
   "protocolVersion": "jev-pilot-v1",
   "status": "template",
-  "generatedAt": "2026-10-14T15:26:17.924Z",
+  "generatedAt": "2026-10-14T16:10:07.358Z",
   "window": {
-    "from": "2026-09-14T15:26:17.924Z",
-    "to": "2026-10-14T15:26:17.924Z"
+    "from": "2026-09-14T16:10:07.358Z",
+    "to": "2026-10-14T16:10:07.358Z"
   },
   "sampleCounts": {
     "baselineSessions": 0,
     "assistedSessions": 0,
     "idleSessionsExcluded": 0,
     "viewedSuggestions": 0,
-    "completedRuns": 0
+    "completedRuns": 0,
+    "distinctEditors": {
+      "baseline": 0,
+      "assisted": 0
+    },
+    "distinctItems": {
+      "baseline": 0,
+      "assisted": 0
+    }
   },
   "minimums": {
     "sessionsPerMode": 100,
@@ -80,7 +88,9 @@
     "Sessions measure editor time from opening the editor to the first save; time spent elsewhere is not seen.",
     "Baseline and assisted samples are compared as groups, not paired per item or editor.",
     "Accept/edit/reject rates count only suggestions rendered to the editor; feedback sent without a viewing session is excluded.",
-    "Run and API-call counts are operational denominators, not user value.",
+    "Run and API-call counts are operational denominators, not user value. Only signed-in users record sessions; API-key and dev-principal sessions and verdicts are excluded.",
+    "Sessions are reported by the editor client and not de-duplicated per editor or item; check the distinct editor and item counts before reading a minimum as met.",
+    "time_reduction compares two medians as a point estimate, with no confidence interval; treat a ratio near the threshold as unresolved.",
     "Provider probabilities are not correctness probabilities unless the provider is calibrated on this data."
   ],
   "metrics": null

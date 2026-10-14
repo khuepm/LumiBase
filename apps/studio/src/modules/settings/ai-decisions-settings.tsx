@@ -18,6 +18,13 @@ import { getApiClient } from '@/lib/api';
 
 export const AI_DECISIONS_KEY = 'aiDecisions';
 
+/**
+ * The server caps `review.pilotCollections` at 100. A longer list makes the
+ * whole `aiDecisions` value malformed, which reads as "decisions off", so the
+ * page refuses it instead of saving a value that silently disables the site.
+ */
+export const MAX_PILOT_COLLECTIONS = 100;
+
 type PilotMode = 'baseline' | 'assisted';
 
 interface Stored {
@@ -112,26 +119,34 @@ export function AiDecisionsSettingsPage() {
       setError('Choose at least one pilot collection, or turn the pilot off.');
       return;
     }
+    if (form.pilotCollections.length > MAX_PILOT_COLLECTIONS) {
+      setError(`Choose at most ${MAX_PILOT_COLLECTIONS} pilot collections.`);
+      return;
+    }
     setError(null);
     saveMutation.mutate({ next: form, message: 'Settings saved.' });
   };
 
+  // Built from the stored value, not the form: unsaved collection or mode
+  // edits are discarded, so the stored list and mode are kept as they were.
   const onKillSwitch = () => {
     setSaved(null);
     setError(null);
     saveMutation.mutate({
-      next: { ...form, enabled: false, pilotEnabled: false },
+      next: { ...formFrom(settingQuery.data ?? null), enabled: false, pilotEnabled: false },
       message: 'Decisions and the pilot are off. Existing reviews, feedback and sessions are kept.',
     });
   };
 
   const toggleCollection = (name: string) =>
-    setForm((prev) => ({
-      ...prev,
-      pilotCollections: prev.pilotCollections.includes(name)
-        ? prev.pilotCollections.filter((c) => c !== name)
-        : [...prev.pilotCollections, name],
-    }));
+    setForm((prev) => {
+      if (prev.pilotCollections.includes(name)) {
+        return { ...prev, pilotCollections: prev.pilotCollections.filter((c) => c !== name) };
+      }
+      if (prev.pilotCollections.length >= MAX_PILOT_COLLECTIONS) return prev;
+      return { ...prev, pilotCollections: [...prev.pilotCollections, name] };
+    });
+  const atCap = form.pilotCollections.length >= MAX_PILOT_COLLECTIONS;
 
   const active = settingQuery.data ? formFrom(settingQuery.data) : formFrom(null);
 
@@ -214,7 +229,14 @@ export function AiDecisionsSettingsPage() {
             </div>
 
             <fieldset>
-              <legend className="text-xs font-medium text-muted-foreground">Pilot collections</legend>
+              <legend className="text-xs font-medium text-muted-foreground">
+                Pilot collections ({form.pilotCollections.length}/{MAX_PILOT_COLLECTIONS})
+              </legend>
+              {atCap && (
+                <p className="text-xs text-muted-foreground">
+                  The pilot takes at most {MAX_PILOT_COLLECTIONS} collections. Untick one to add another.
+                </p>
+              )}
               {collectionsQuery.isError ? (
                 <p className="text-xs text-destructive">Could not load collections.</p>
               ) : collections.length === 0 ? (
@@ -226,6 +248,7 @@ export function AiDecisionsSettingsPage() {
                       <input
                         type="checkbox"
                         checked={form.pilotCollections.includes(c.name)}
+                        disabled={atCap && !form.pilotCollections.includes(c.name)}
                         onChange={() => toggleCollection(c.name)}
                       />
                       {c.label ?? c.name}

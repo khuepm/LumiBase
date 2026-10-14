@@ -20,10 +20,13 @@ const window = { from: new Date('2026-10-01T00:00:00Z'), to: new Date('2026-11-0
 function session(overrides: Partial<MetricsSession> = {}): MetricsSession {
   return {
     mode: 'baseline',
+    collection: 'posts',
+    itemId: 'itm_1',
     durationMs: 60_000,
     locale: 'vi',
     runId: null,
     viewedQuestions: [],
+    principalType: 'user',
     principalId: 'usr_a',
     ...overrides,
   };
@@ -90,12 +93,12 @@ describe('viewed-only suggestion rates', () => {
       session({ mode: 'assisted', runId: 'r2', viewedQuestions: ['category'], principalId: 'usr_b' }),
     ];
     const feedback: MetricsFeedback[] = [
-      { runId: 'r1', questionKey: 'category', verdict: 'accept', principalId: 'usr_a' },
-      { runId: 'r1', questionKey: 'tone', verdict: 'edit', principalId: 'usr_a' },
+      { runId: 'r1', questionKey: 'category', verdict: 'accept', principalType: 'user', principalId: 'usr_a' },
+      { runId: 'r1', questionKey: 'tone', verdict: 'edit', principalType: 'user', principalId: 'usr_a' },
       // Not viewed in any session (e.g. sent straight to the API): ignored.
-      { runId: 'r1', questionKey: 'needs_review', verdict: 'reject', principalId: 'usr_a' },
+      { runId: 'r1', questionKey: 'needs_review', verdict: 'reject', principalType: 'user', principalId: 'usr_a' },
       // Another principal's verdict on usr_b's viewed suggestion: ignored.
-      { runId: 'r2', questionKey: 'category', verdict: 'reject', principalId: 'usr_x' },
+      { runId: 'r2', questionKey: 'category', verdict: 'reject', principalType: 'user', principalId: 'usr_x' },
     ];
 
     const m = metrics({ sessions, runs, feedback });
@@ -109,7 +112,7 @@ describe('viewed-only suggestion rates', () => {
 
   it('ignores runs and feedback with no viewing session: API activity is not user value', () => {
     const runs = Array.from({ length: 500 }, (_, i) => run(`r${i}`));
-    const feedback = runs.map((r) => ({ runId: r.id, questionKey: 'category', verdict: 'accept', principalId: 'usr_a' }));
+    const feedback = runs.map((r) => ({ runId: r.id, questionKey: 'category', verdict: 'accept', principalType: 'user', principalId: 'usr_a' }));
 
     const m = metrics({ runs, feedback });
 
@@ -120,6 +123,51 @@ describe('viewed-only suggestion rates', () => {
     expect(m.criteria.find((c) => c.id === 'rejection_rate')?.status).toBe('insufficient_sample');
     expect(m.criteria.find((c) => c.id === 'time_reduction')?.status).toBe('insufficient_sample');
     expect(m.note).toMatch(/not|only/);
+  });
+});
+
+describe('only signed-in editors are user value', () => {
+  it('drops API-key and dev sessions and verdicts from time and suggestion metrics', () => {
+    const runs = [run('r1'), run('r2')];
+    const sessions = [
+      // An integration key that ran, "viewed" and accepted its own review.
+      session({ mode: 'assisted', runId: 'r1', viewedQuestions: ['category'], principalType: 'api_key', principalId: 'key_1' }),
+      session({ mode: 'baseline', principalType: 'dev', principalId: 'dev' }),
+      session({ mode: 'assisted', runId: 'r2', viewedQuestions: ['category'], principalId: 'usr_a' }),
+    ];
+    const feedback: MetricsFeedback[] = [
+      { runId: 'r1', questionKey: 'category', verdict: 'accept', principalType: 'api_key', principalId: 'key_1' },
+      // Same id as the editor, other principal type: not the editor's verdict.
+      { runId: 'r2', questionKey: 'category', verdict: 'accept', principalType: 'api_key', principalId: 'usr_a' },
+    ];
+
+    const m = metrics({ sessions, runs, feedback });
+
+    expect(m.sampleCounts).toMatchObject({ assistedSessions: 1, baselineSessions: 0, viewedSuggestions: 1 });
+    expect(m.suggestions.accept).toMatchObject({ k: 0, n: 1 });
+    expect(m.suggestions.noAction).toMatchObject({ k: 1, n: 1 });
+    // Runs stay operational denominators.
+    expect(m.operations.runs).toBe(2);
+  });
+});
+
+describe('sample concentration', () => {
+  it('reports distinct editors and items per mode, so one editor repeating an item is visible', () => {
+    const repeated = Array.from({ length: 5 }, () => session({ principalId: 'usr_a', itemId: 'itm_1' }));
+    const m = metrics({
+      sessions: [
+        ...repeated,
+        session({ principalId: 'usr_b', itemId: 'itm_2' }),
+        session({ mode: 'assisted', principalId: 'usr_a', itemId: null }),
+        session({ mode: 'assisted', principalId: 'usr_a', itemId: null }),
+        session({ mode: 'assisted', principalId: 'usr_a', collection: 'pages', itemId: 'itm_1' }),
+        // Idle sessions do not count towards concentration either.
+        session({ principalId: 'usr_c', itemId: 'itm_9', durationMs: PILOT_PROTOCOL.idleSessionMs + 1 }),
+      ],
+    });
+    expect(m.sampleCounts.baselineSessions).toBe(6);
+    expect(m.sampleCounts.distinctEditors).toEqual({ baseline: 2, assisted: 1 });
+    expect(m.sampleCounts.distinctItems).toEqual({ baseline: 2, assisted: 3 });
   });
 });
 
@@ -158,7 +206,7 @@ describe('splits', () => {
     const m = metrics({
       sessions,
       runs,
-      feedback: [{ runId: 'r2', questionKey: 'category', verdict: 'reject', principalId: 'usr_a' }],
+      feedback: [{ runId: 'r2', questionKey: 'category', verdict: 'reject', principalType: 'user', principalId: 'usr_a' }],
     });
 
     expect(Object.keys(m.splits.byLocale).sort()).toEqual(['en', 'unknown', 'vi']);
@@ -196,6 +244,7 @@ describe('pre-registered criteria', () => {
       runId: r.id,
       questionKey: 'category',
       verdict: i < rejects ? 'reject' : 'accept',
+      principalType: 'user',
       principalId: 'usr_a',
     }));
     return metrics({ sessions, runs, feedback });

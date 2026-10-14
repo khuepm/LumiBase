@@ -587,7 +587,8 @@ export class ReviewService {
   // ---- pilot sessions (J09, #516) ------------------------------------------
 
   /**
-   * Records one editor session on a pilot collection. `currentMode` is the
+   * Records one editor session on a pilot collection. Only `user` principals
+   * may record one (403 `FORBIDDEN` otherwise). `currentMode` is the
    * collection's rollout mode now; a session of another mode is refused so
    * baseline and assisted samples never mix. A referenced run must be the
    * caller's own completed run on the same collection (and item, when both
@@ -598,6 +599,11 @@ export class ReviewService {
     principal: ReviewPrincipal,
     currentMode: ReviewPilotMode,
   ): Promise<ReviewSession> {
+    // Sessions are editor time. An API key or the dev principal is not an
+    // editor, so its "sessions" would count machine activity as user value.
+    if (principal.type !== 'user') {
+      throw new ReviewServiceError('FORBIDDEN', 'Only signed-in editors record review sessions.');
+    }
     if (request.mode !== currentMode) {
       throw new ReviewServiceError(
         'REVIEW_SESSION_MODE_MISMATCH',

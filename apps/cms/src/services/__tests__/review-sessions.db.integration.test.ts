@@ -156,6 +156,42 @@ describe.skipIf(!hasDbIntegrationUrl)('Review pilot sessions — DB integration'
     expect(m.splits.byLocale.vi?.sampleCount).toBe(1);
   });
 
+  it('does not load API-key sessions or verdicts as user value', async () => {
+    const { runId } = await seedAssisted(SITE_A);
+    await db.insert(reviewFeedback).values({
+      id: uid('fb'),
+      siteId: SITE_A,
+      runId,
+      questionKey: 'spam',
+      verdict: 'accept',
+      editedValue: null,
+      principalType: 'api_key',
+      principalId: 'key_1',
+    });
+    await store.insertSession({
+      id: uid('rs'),
+      siteId: SITE_A,
+      collection: 'posts',
+      itemId: 'itm_1',
+      mode: 'assisted',
+      runId,
+      viewedQuestions: ['spam'],
+      principalType: 'api_key',
+      principalId: 'key_1',
+      durationMs: 1_000,
+      locale: 'en',
+    });
+
+    const loaded = await new DrizzleReviewMetricsSource(db).load(SITE_A, window());
+    expect(loaded.sessions.map((s) => s.principalType)).toEqual(['user']);
+    expect(loaded.feedback.map((f) => f.principalType)).toEqual(['user']);
+    expect(computeReviewMetrics({ ...loaded, window: window() }).sampleCounts).toMatchObject({
+      assistedSessions: 1,
+      viewedSuggestions: 1,
+      distinctEditors: { baseline: 0, assisted: 1 },
+    });
+  });
+
   it('turning the pilot off, or the kill switch, deletes no run, feedback or session', async () => {
     await seedAssisted(SITE_A);
     await writeSetting(SITE_A, { enabled: true, review: { enabled: true, pilotCollections: ['posts'], mode: 'assisted' } });
