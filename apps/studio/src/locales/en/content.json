@@ -1,0 +1,69 @@
+{
+  "draftReview": {
+    "title": "Draft review",
+    "description": "Suggestions only. Nothing changes until you apply a suggestion, and nothing is saved or published until you save the draft yourself.",
+    "profile": "Review profile",
+    "loadingProfiles": "Loading review profiles…",
+    "run": "Review draft",
+    "runAgain": "Run again",
+    "cancel": "Cancel review",
+    "loading": "Reviewing…",
+    "unsaved": "Reviewing your unsaved changes.",
+    "emptyDraft": "Fill in at least one reviewed field first: {{fields}}.",
+    "notReviewed": "Not reviewed (no access): {{fields}}",
+    "source": "Answered by {{provider}} · {{model}}",
+    "calibrated": "Calibrated (provider claim)",
+    "notCalibrated": "Not calibrated",
+    "states": {
+      "disabled": "Draft review is turned off for this site.",
+      "unconfigured": "Draft review is not set up for this collection yet.",
+      "stale": "The draft changed after this review. Run it again before applying suggestions.",
+      "abstained": "Not enough information for a confident suggestion. You can record feedback or choose a value yourself."
+    },
+    "errors": {
+      "forbidden": "You do not have permission to run draft reviews.",
+      "quota": "The site's review budget is used up. Nothing was checked.",
+      "quotaRetry": "The site's review budget is used up. Nothing was checked. Try again in {{seconds}} s.",
+      "timeout": "The review timed out. Nothing was checked.",
+      "unavailable": "The review provider is unavailable right now. Nothing was checked.",
+      "fieldNotAllowed": "Some reviewed fields are outside this profile or your permissions. Nothing was checked.",
+      "tooLarge": "The draft is too large to review. Nothing was checked.",
+      "notFound": "The item or review profile no longer exists.",
+      "failed": "The review failed. Nothing was checked.",
+      "feedback": "Your feedback was not recorded, so nothing was changed. Try again."
+    },
+    "answer": {
+      "suggested": "Suggested: {{value}}",
+      "notEnoughInfo": "Not enough information",
+      "noneFits": "None of the categories fits",
+      "confidence": "Confidence {{percent}}%",
+      "probability": "{{percent}}%",
+      "likelyLevel": "Most likely: {{level}}",
+      "yes": "Yes",
+      "no": "No",
+      "noulLikely": "{{label}} — {{percent}}%",
+      "appliesTo": "Applies to field {{field}}",
+      "feedbackOnly": "Feedback only — this suggestion does not change a field.",
+      "readOnly": "Read-only: you cannot change {{field}}.",
+      "pinned": "Pinned: {{field}} is locked by a human edit.",
+      "levels": "Levels"
+    },
+    "actions": {
+      "accept": "Accept",
+      "acceptAria": "Accept the suggestion for {{question}}",
+      "edit": "Edit",
+      "editAria": "Choose a different value for {{question}}",
+      "reject": "Reject",
+      "rejectAria": "Reject the suggestion for {{question}}",
+      "editLabel": "Your value for {{question}}",
+      "confirmEdit": "Confirm",
+      "cancelEdit": "Cancel"
+    },
+    "verdict": {
+      "accept": "Accepted",
+      "edit": "Edited",
+      "reject": "Rejected",
+      "applied": "Applied to {{field}}. Save the draft to keep it."
+    }
+  }
+}

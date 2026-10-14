@@ -26,6 +26,7 @@ import { translatableFields, tmLearnEntries } from './translatable-fields';
 import { useSiteLocales } from './use-site-locales';
 import { ItemCreate } from './item-create';
 import { EditorialActions } from './editorial-actions';
+import { DraftReviewPanel } from './draft-review-panel';
 
 type Tab = 'fields' | 'translation' | 'revisions' | 'versions' | 'raw';
 
@@ -650,6 +651,21 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
             <TabButton current={tab} value="versions" onClick={setTab}>Versions</TabButton>
             <TabButton current={tab} value="raw" onClick={setTab}>Raw JSON</TabButton>
           </ul>
+          {/* Draft review (Jev J08): suggestions only. Apply edits the draft;
+              saving and publishing stay with the buttons above. */}
+          <div className="mt-4 border-t pt-3">
+            <DraftReviewPanel
+              collection={collection}
+              itemId={id}
+              values={draft}
+              savedValues={(itemQuery.data.data ?? {}) as Record<string, unknown>}
+              fields={editable}
+              writeAction="update"
+              perms={perms}
+              pinnedFields={pinsQuery.data ?? []}
+              onApply={(field, value) => setDraft((prev) => ({ ...(prev ?? {}), [field]: value }))}
+            />
+          </div>
           <dl className="mt-4 space-y-1 border-t pt-3 text-xs text-muted-foreground">
             <Meta label="Status" value={itemQuery.data.status} />
             <Meta label="Sort" value={String(itemQuery.data.sort ?? 0)} />

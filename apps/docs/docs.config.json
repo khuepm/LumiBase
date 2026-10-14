@@ -61,7 +61,8 @@
           "features/typegen",
           "features/extensions-system",
           "features/websockets-realtime",
-          "features/reconciler-repair-loop"
+          "features/reconciler-repair-loop",
+          "features/draft-review"
         ]
       },
       {

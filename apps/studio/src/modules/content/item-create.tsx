@@ -7,6 +7,7 @@ import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { usePermissions } from '@/lib/use-permissions';
 import { FieldsTab } from './item-detail';
+import { DraftReviewPanel } from './draft-review-panel';
 
 function errorMessage(err: unknown): string {
   const e = err as { body?: { errors?: Array<{ message?: string }> }; message?: string };
@@ -95,17 +96,32 @@ export function ItemCreate({ collection }: { collection: string }) {
         </div>
       )}
 
-      <section className="rounded-lg border bg-background p-4">
-        <FieldsTab
-          fields={fields}
-          value={draft}
-          onChange={setDraft}
-          collection={collection}
-          perms={perms}
-          pinnedFields={[]}
-          writeAction="create"
-        />
-      </section>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_22rem]">
+        <section className="rounded-lg border bg-background p-4">
+          <FieldsTab
+            fields={fields}
+            value={draft}
+            onChange={setDraft}
+            collection={collection}
+            perms={perms}
+            pinnedFields={[]}
+            writeAction="create"
+          />
+        </section>
+        {/* Draft review of the unsaved form (Jev J08): only profile fields the
+            user may create are sent. Apply edits the form; nothing is saved. */}
+        <aside className="rounded-lg border bg-muted/20 p-3">
+          <DraftReviewPanel
+            collection={collection}
+            values={draft}
+            fields={fields}
+            writeAction="create"
+            perms={perms}
+            pinnedFields={[]}
+            onApply={(field, value) => setDraft((prev) => ({ ...prev, [field]: value }))}
+          />
+        </aside>
+      </div>
     </div>
   );
 }

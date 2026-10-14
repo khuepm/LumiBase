@@ -45,6 +45,23 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   that maps it exhaustively (a `Record<DecisionErrorCode, …>`, or a `switch`
   with a `never` check) stops compiling until it handles the new codes.
   Runtime behaviour is unchanged.
+- **Studio: draft review in the editor (#515).** The item editor and the
+  new-item form get a **Draft review** panel that runs a site review profile on
+  the content being edited and lists one suggestion per question: the suggested
+  category, each criterion level with its probability, "not enough
+  information", and the provider/model with a calibrated badge. No rationale is
+  shown (Jev returns none). Accept / Edit / Reject record feedback; for a
+  `choice` question whose key is a collection field, Accept and Edit also set
+  that field in the draft, only after the feedback is stored. Nothing is saved
+  or published by the panel: the existing Save and editorial actions are
+  unchanged. Pinned and non-writable fields are read-only. A change to the
+  reviewed content after a review started makes the result stale (Accept/Edit
+  disabled, "Run again"), as does a 409 `REVIEW_STALE`. Failures map to explicit
+  states (turned off, not set up, no permission, budget used up with
+  `Retry-After`, timed out, provider unavailable) and never read as a pass;
+  Cancel and leaving the editor abort the request. Copy ships in EN and VI.
+  Guide: `docs/{en,vi}/features/draft-review.md`. No migration, env or setup
+  step.
 
 ### Changed
 - **Governed decisions (#511).** `POST /api/v1/ai/decisions` now requires the
