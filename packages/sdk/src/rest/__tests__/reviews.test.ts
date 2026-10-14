@@ -7,6 +7,7 @@ import {
   getReviewProfile,
   listReviewProfiles,
   listReviews,
+  reviewContentHash,
   reviewDraft,
   submitReviewFeedback,
   type ReviewFeedback,
@@ -329,5 +330,33 @@ describe("review commands — cancellation", () => {
 
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     expect(seen).toEqual([controller.signal]);
+  });
+});
+
+describe("reviewContentHash", () => {
+  // Golden vectors: sha256 of the canonical JSON shown, computed outside the
+  // SDK. The CMS parity test (apps/cms review-content-hash-parity.test.ts)
+  // checks the same function against the CMS implementation.
+  it("hashes the canonical JSON with sorted keys as sha256:<64 hex>", async () => {
+    // canonical: {"body":"Buy now","title":"Summer sale"}
+    expect(await reviewContentHash({ title: "Summer sale", body: "Buy now" })).toBe(
+      "sha256:dbd96269d4c50a771d17e24fe5acdeadb99c2acc9ac80d1a4bc91c2cbb0434ad",
+    );
+  });
+
+  it("sorts nested keys, keeps array order, serialises dates, drops undefined and encodes UTF-8", async () => {
+    // canonical: {"a":[1,{"x":"Tiêu đề","y":null}],"d":"2026-01-02T03:04:05.000Z"}
+    expect(
+      await reviewContentHash({
+        d: new Date("2026-01-02T03:04:05.000Z"),
+        skipped: undefined,
+        a: [1, { y: null, x: "Tiêu đề", gone: undefined }],
+      }),
+    ).toBe("sha256:82407fdb9cc560a3cc345ef4696d5873d7f18f58f80f4c36408ad09d34ec3af6");
+  });
+
+  it("changes when the draft changes", async () => {
+    const reviewed = await reviewContentHash({ title: "Summer sale", body: "Buy now" });
+    expect(await reviewContentHash({ title: "Summer sale", body: "Buy now!" })).not.toBe(reviewed);
   });
 });

@@ -13,22 +13,34 @@ import {
   decisionErrorCode,
   listReviewProfiles,
   LumiError,
+  reviewContentHash,
   reviewDraft,
   submitReviewFeedback,
+  type LumiClient,
   type ReviewRun,
 } from "@lumibase/sdk";
 
+type PostDraft = { title: string; body: string };
+
+export function cmsClient(token: string): LumiClient {
+  return createLumiClient({ url: "https://cms.example.com", siteId: "site_1", token });
+}
+
+/** Review the draft as it is now. `null` when there is nothing to show. */
 export async function reviewPostDraft(
-  token: string,
-  draft: { title: string; body: string },
+  client: LumiClient,
+  draft: PostDraft,
   signal?: AbortSignal,
 ): Promise<ReviewRun | null> {
-  const client = createLumiClient({ url: "https://cms.example.com", siteId: "site_1", token });
-
   const [profile] = await client.request(listReviewProfiles({ collection: "posts" }, { signal }));
   if (!profile) return null; // no review profile configured for this collection
 
   try {
+    // The CMS replays a run by (site, principal, idempotencyKey) and ignores the
+    // content, so the key has to change whenever the draft or the profile
+    // version does. 40 hex chars keep it under the 128-char limit for any
+    // profile key.
+    const hash = await reviewContentHash(draft);
     const run = await client.request(
       reviewDraft(
         {
@@ -36,8 +48,8 @@ export async function reviewPostDraft(
           profileVersion: profile.version,
           collection: "posts",
           snapshot: draft,
-          // Retrying with the same key returns the same run, no second provider call.
-          idempotencyKey: `draft:${profile.key}@${profile.version}:${draft.title}`,
+          // Retrying the same draft returns the same run, no second provider call.
+          idempotencyKey: `${profile.key}@${profile.version}:${hash.slice("sha256:".length, "sha256:".length + 40)}`,
         },
         { signal },
       ),
@@ -49,30 +61,46 @@ export async function reviewPostDraft(
       // `calibrated: false` means the probabilities are self-reported by an LLM.
       console.log(answer.choice, answer.confidence, run.calibrated ? "calibrated" : "uncalibrated");
     }
+    return run;
+  } catch (err) {
+    return handleReviewError(err);
+  }
+}
 
+/**
+ * The editor accepts the suggested category. `currentDraft` is the draft as
+ * the editor sees it at click time, which may differ from the reviewed one.
+ * Returns `false` when the draft changed since the review.
+ */
+export async function acceptCategory(client: LumiClient, run: ReviewRun, currentDraft: PostDraft): Promise<boolean> {
+  try {
     await client.request(
       submitReviewFeedback(run.id, {
         entries: [{ questionKey: "category", verdict: "accept" }],
-        // Snapshot runs: the hash of the draft the editor sees now.
-        contentHash: run.contentHash,
+        // The CMS cannot re-read an unsaved draft, so it compares this hash with
+        // the one it reviewed. Sending `run.contentHash` back would always match.
+        contentHash: await reviewContentHash(currentDraft),
       }),
     );
-    return run;
+    return true;
   } catch (err) {
-    switch (decisionErrorCode(err)) {
-      case "DECISION_DISABLED":
-        return null; // the site has not opted in: hide the review action
-      case "DECISION_QUOTA_EXCEEDED":
-      case "DECISION_CONCURRENCY_LIMITED":
-        console.warn(`Try again in ${(err as LumiError).retryAfter ?? 60}s`);
-        return null;
-      case "DECISION_TIMEOUT":
-      case "DECISION_UNAVAILABLE":
-        return null; // the provider did not answer; never treat it as "passed"
-      case "REVIEW_STALE":
-        return null; // the draft changed: run the review again
-      default:
-        throw err;
-    }
+    if (decisionErrorCode(err) === "REVIEW_STALE") return false; // review the current draft again
+    throw err;
+  }
+}
+
+function handleReviewError(err: unknown): null {
+  switch (decisionErrorCode(err)) {
+    case "DECISION_DISABLED":
+      return null; // the site has not opted in: hide the review action
+    case "DECISION_QUOTA_EXCEEDED":
+    case "DECISION_CONCURRENCY_LIMITED":
+      console.warn(`Try again in ${(err as LumiError).retryAfter ?? 60}s`);
+      return null;
+    case "DECISION_TIMEOUT":
+    case "DECISION_UNAVAILABLE":
+      return null; // the provider did not answer; never treat it as "passed"
+    default:
+      throw err;
   }
 }

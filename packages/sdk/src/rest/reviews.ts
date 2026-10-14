@@ -56,7 +56,12 @@ export interface ReviewRunRequest {
   itemId?: string;
   /** Unsaved field values. Every key must be a profile field the caller may read and write. */
   snapshot?: Record<string, unknown>;
-  /** 8–128 chars. Same key from the same principal → same run, no second provider call. */
+  /**
+   * 8–128 chars. Same key from the same principal → the stored run, no second
+   * provider call, whatever the content now is. The key must therefore change
+   * when the content or profile version does: build it from
+   * {@link reviewContentHash} and the profile version, never from a fixed id.
+   */
   idempotencyKey?: string;
 }
 
@@ -107,7 +112,12 @@ export interface ReviewFeedbackRequest {
   entries: ReviewFeedbackEntry[];
   /** Accept/edit on a stale run is refused (409 `REVIEW_STALE`) unless this is `true`. */
   acknowledgeStale?: boolean;
-  /** Snapshot runs: `sha256:<hex>` of the draft the editor sees now, to detect a changed draft. */
+  /**
+   * Snapshot runs: {@link reviewContentHash} of the draft the editor sees now.
+   * A value other than `run.contentHash` makes accept/edit fail with 409
+   * `REVIEW_STALE`. Without it (or with `run.contentHash` itself) a changed
+   * draft is not detected, because the CMS cannot re-read an unsaved draft.
+   */
   contentHash?: string;
 }
 
@@ -126,6 +136,37 @@ export interface ReviewFeedback {
 export interface ReviewRequestOptions {
   /** Aborts the HTTP request; the promise rejects with the fetch `AbortError`. */
   signal?: AbortSignal;
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort()) out[key] = canonicalize((value as Record<string, unknown>)[key]);
+    return out;
+  }
+  return value;
+}
+
+/**
+ * `sha256:<64 hex>` of the canonical JSON (sorted keys, dates serialised,
+ * `undefined` dropped) of `values`, computed exactly as the CMS computes
+ * `ReviewRun.contentHash`. Uses WebCrypto (`crypto.subtle`), so it runs in
+ * browsers, Node 18+ and Workers.
+ *
+ * Use it on the draft the editor sees now:
+ * - pass it as `contentHash` to {@link submitReviewFeedback} on a snapshot run,
+ *   so the CMS answers 409 `REVIEW_STALE` when the draft changed after the
+ *   review. Sending the run's own `contentHash` back disables that check;
+ * - build the `idempotencyKey` of {@link reviewDraft} from it, so a changed
+ *   draft gets a new run instead of a replay of the old one.
+ *
+ * For a snapshot run, hash the same fields you sent as `snapshot`.
+ */
+export async function reviewContentHash(values: Record<string, unknown>): Promise<string> {
+  const canonical = JSON.stringify(canonicalize(JSON.parse(JSON.stringify(values ?? null))));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical)));
+  return `sha256:${Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
 
 const BASE = "/api/v1/ai";
