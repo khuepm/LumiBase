@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-10-14T08:04:06.659Z
+version: 4
+lastUpdated: 2026-10-14T08:31:19.846Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3dabd3ef7af63160
+sourceHash: 5ebfd117cea73c0d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T08:04:06.659Z
-codeVerifiedHash: 3dabd3ef7af63160
+codeVerified: 2026-10-14T08:31:19.846Z
+codeVerifiedHash: 5ebfd117cea73c0d
 codeVerifiedClaims: 8
 ---
 
@@ -293,6 +293,7 @@ Kiểm tra bản nháp chạy một review profile có phiên bản, lưu trên 
 - `reviewDraft(request)` kiểm tra một item (`itemId`) hoặc một bản nháp (`snapshot`).
 - `getReview(id)` và `listReviews({ collection, itemId })` đọc các lần chạy, kèm `stale` và `staleReason`.
 - `submitReviewFeedback(runId, { entries })` ghi nhận `accept`, `edit` hoặc `reject` cho từng câu hỏi.
+- `reviewContentHash(values)` tính content hash `sha256:<hex>` của một bản nháp theo đúng cách CMS tính. Hàm dùng WebCrypto và không gửi request nào.
 
 Mọi lệnh đều nhận `{ signal }` ở tham số cuối. Review chỉ gợi ý: không lệnh nào ghi vào item.
 
@@ -301,19 +302,24 @@ import {
   decisionErrorCode,
   listReviewProfiles,
   LumiError,
+  reviewContentHash,
   reviewDraft,
   submitReviewFeedback,
 } from '@lumibase/sdk'
 
 const [profile] = await client.request(listReviewProfiles({ collection: 'posts' }))
+const draft = { title: 'Summer sale', body: 'Buy now!!!' }
 try {
+  const hash = await reviewContentHash(draft) // 'sha256:<64 hex>', giống hệt cách CMS tính
   const run = await client.request(
     reviewDraft(
       {
         profile: profile.key,
+        profileVersion: profile.version,
         collection: 'posts',
-        snapshot: { title: 'Summer sale', body: 'Buy now!!!' },
-        idempotencyKey: 'draft-42:taxonomy',
+        snapshot: draft,
+        // đổi theo bản nháp và phiên bản profile; tối đa 116 ký tự
+        idempotencyKey: `${profile.key}@${profile.version}:${hash.slice(7, 47)}`,
       },
       { signal: controller.signal },
     ),
@@ -322,10 +328,11 @@ try {
   run.calibrated // false khi xác suất do LLM tự báo
   run.usage      // { inputTokens: 120, outputTokens: null } — null nghĩa là không rõ, không phải 0
 
+  // Sau đó, khi biên tập viên chấp nhận: hash bản nháp đúng như lúc đó.
   await client.request(
     submitReviewFeedback(run.id, {
       entries: [{ questionKey: 'category', verdict: 'accept' }],
-      contentHash: run.contentHash,
+      contentHash: await reviewContentHash(currentDraft),
     }),
   )
 } catch (err) {
@@ -333,12 +340,15 @@ try {
   if (code === 'DECISION_QUOTA_EXCEEDED') {
     console.warn(`retry in ${(err as LumiError).retryAfter}s`)
   } else if (code === 'REVIEW_STALE') {
-    // nội dung đã đổi sau lần review: chạy lại, hoặc gửi acknowledgeStale: true
+    // bản nháp đã đổi sau lần review: review bản nháp hiện tại (hash mới, key mới),
+    // hoặc gửi acknowledgeStale: true
   }
 }
 ```
 
-Gửi lại cùng `idempotencyKey` sẽ trả về lần chạy đã lưu mà không gọi provider lần thứ hai. Lỗi dùng cùng các mã với `decide`, gồm 403 `DECISION_DISABLED`, 504 `DECISION_TIMEOUT` và 429 kèm `retryAfter`, cộng thêm các mã `REVIEW_*`: 409 `REVIEW_STALE`, 422 `REVIEW_FIELD_NOT_ALLOWED`, và 404 `REVIEW_PROFILE_NOT_FOUND` / `REVIEW_RUN_NOT_FOUND`. `decisionErrorCode(err)` trả về `null` khi request bị huỷ, lỗi mạng, hoặc gặp mã mà phiên bản SDK này chưa biết. Khi đó hãy đọc `err.body`. Ví dụ đầy đủ, biên dịch được từ public entry, nằm ở `packages/sdk/examples/draft-review.ts`.
+CMS không đọc lại được một bản nháp chưa lưu. Với lần chạy snapshot, CMS chỉ phát hiện bản nháp đã đổi bằng cách so `contentHash` bạn gửi kèm feedback với hash nó đã review. Hãy tính giá trị đó bằng `reviewContentHash` trên đúng các field đã gửi trong `snapshot`, tại thời điểm ra quyết định. Gửi lại `run.contentHash` thì luôn khớp, nghĩa là tắt phép kiểm này. Lần chạy trên item không cần hash: CMS đọc lại item và báo `stale`.
+
+Gửi lại cùng `idempotencyKey` sẽ trả về lần chạy đã lưu mà không gọi provider lần thứ hai. CMS tìm lần chạy chỉ theo site, người gọi và key, không so nội dung. Vì vậy một key giữ nguyên sau khi bản nháp đổi sẽ trả về kết quả review của bản nháp cũ. Hãy dựng key từ content hash và phiên bản profile như ví dụ trên, đừng bao giờ dùng một id cố định. Với lần chạy trên item, cũng đổi key khi `getReview` báo `stale`. Key dài 8–128 ký tự. Lỗi dùng cùng các mã với `decide`, gồm 403 `DECISION_DISABLED`, 504 `DECISION_TIMEOUT` và 429 kèm `retryAfter`, cộng thêm các mã `REVIEW_*`: 409 `REVIEW_STALE`, 422 `REVIEW_FIELD_NOT_ALLOWED`, và 404 `REVIEW_PROFILE_NOT_FOUND` / `REVIEW_RUN_NOT_FOUND`. `decisionErrorCode(err)` trả về `null` khi request bị huỷ, lỗi mạng, hoặc gặp mã mà phiên bản SDK này chưa biết. Khi đó hãy đọc `err.body`. Ví dụ đầy đủ, biên dịch được từ public entry, nằm ở `packages/sdk/examples/draft-review.ts`.
 
 ---
 

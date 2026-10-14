@@ -30,14 +30,21 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `listReviewProfiles`, `getReviewProfile`, `reviewDraft`, `getReview`,
   `listReviews` and `submitReviewFeedback`. Each takes `{ signal }` and has
   types for profiles, runs (`status`, `stale`/`staleReason`, `calibrated`,
-  nullable `usage`) and feedback. `DecisionErrorCode` gains the `REVIEW_*`
-  codes. The new `decisionErrorCode(err)` helper reads the typed code off a
-  `LumiError`. `LumiError.retryAfter` exposes `Retry-After` in seconds, or
-  `null` when the response has none. Every change is additive: existing exports
-  and the `LumiError(status, body)` constructor are unchanged. The SDK keeps
-  zero runtime dependencies. A type-equality test against
-  `@lumibase/contracts`, a devDependency only, fails the SDK typecheck if the
-  mirrored types drift.
+  nullable `usage`) and feedback. `reviewContentHash(values)` computes the
+  same `sha256:<hex>` content hash as the CMS (WebCrypto, no request), so a
+  client can send the hash of the draft it shows now with snapshot feedback
+  (a changed draft then gets 409 `REVIEW_STALE`) and derive idempotency keys
+  that change with the content. A parity test checks it against the CMS
+  implementation. The new `decisionErrorCode(err)` helper reads the typed code
+  off a `LumiError`. `LumiError.retryAfter` exposes `Retry-After` in seconds,
+  or `null` when the response has none. Existing exports and the
+  `LumiError(status, body)` constructor are unchanged. The SDK keeps zero
+  runtime dependencies. A type-equality test against `@lumibase/contracts`, a
+  devDependency only, fails the SDK typecheck if the mirrored types drift.
+  **Type-level note:** `DecisionErrorCode` gains 9 `REVIEW_*` members. Code
+  that maps it exhaustively (a `Record<DecisionErrorCode, …>`, or a `switch`
+  with a `never` check) stops compiling until it handles the new codes.
+  Runtime behaviour is unchanged.
 
 ### Changed
 - **Governed decisions (#511).** `POST /api/v1/ai/decisions` now requires the
