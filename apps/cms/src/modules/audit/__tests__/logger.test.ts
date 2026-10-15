@@ -267,7 +267,7 @@ describe('AuditLogger.write — success (Req 15.1, 15.2)', () => {
     expect(errorSink).not.toHaveBeenCalled();
   });
 
-  it('assigns a uuidv7 id on the synchronous insert, like the queue path (B111)', async () => {
+  it('assigns a uuidv7 id on the synchronous insert, like the queue path (B143)', async () => {
     const { db, rows } = makeFakeDb();
 
     await new AuditLogger({ db }).write({ event: 'login_success' });

@@ -303,6 +303,41 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   keys. API rate-limit windows and decision quotas on Cloudflare now reset on
   their own window instead of every flush. Existing DOs add the `expires_at`
   column on wake; no wrangler migration.
+- **LLM decision errors are classified like Jev's, and never leak upstream
+  bodies (#510).** The LLM adapters now raise `LLMHttpError` (with the
+  status), `LLMNetworkError` (fetch rejected without an abort) or
+  `LLMResponseError` (2xx body unusable), keeping their original messages, so
+  `/ai/chat` and the Copilot are unchanged. With `DECISION_PROVIDER=llm`,
+  `POST /api/v1/ai/decisions` maps them to the same codes as Jev
+  (`DECISION_AUTH`, `DECISION_VALIDATION`, `DECISION_RATE_LIMITED`,
+  `DECISION_UNAVAILABLE`, `DECISION_PARSE_FAILED`, `DECISION_UPSTREAM`) instead
+  of `500 INTERNAL`, with fixed messages; any other error (a custom provider's
+  `TypeError` included) is `DECISION_UPSTREAM`, not a network failure. Jev error
+  messages no longer carry the upstream body either, so it is never logged.
+- **LLM decisions get a per-request output budget (#510).** The answer size is
+  estimated from the questions and checked against
+  `DECISION_LLM_MAX_OUTPUT_TOKENS` (default 4096) before the call (`413`, before
+  any quota is reserved), so a schema-valid 32-question request is no longer
+  truncated by the fixed 1024 cap into `502 DECISION_PARSE_FAILED`. Gemini/Vertex
+  get `DECISION_LLM_THINKING_TOKENS` (default 1024) of headroom, and their usage
+  now includes `thoughtsTokenCount`. Governance reserves the cap actually sent
+  upstream. Copilot calls keep sending 1024. Both variables are optional.
+- **Decision quota fails closed on non-finite counter values (#511).** A counter
+  backend that answers without a numeric value (for example a Durable Object
+  reply with no `value`) now returns `503 DECISION_QUOTA_UNAVAILABLE` instead of
+  admitting the request.
+- Synchronous audit-log inserts now use uuidv7 ids, like the queue path. Older
+  rows keep their `nanoid` ids; audit cursors accept both.
+- `Retry-After` is exposed through CORS (`Access-Control-Expose-Headers`), so
+  cross-origin Studio, the desktop shell and browser SDK callers can read the
+  decision `429` hint.
+- The Studio policy editor lists the AI decision permission ("AI usage → AI
+  decisions", `lumibase_ai_decisions` → `create`), so site admins can grant
+  `ai:decide` without the API.
+- The Definition of Done §2c gains a line: request/worker paths that call a
+  paid AI decision provider go through `authorizeDecision` +
+  `runGovernedDecision`, locked by `decision-governance.wiring.test.ts`. No
+  migration and no upgrade step for any of the entries above.
 - **P2 queue recovery and governed write parity (B93, B87).** Queue submission
   failures settle only unclaimed runs, preserve masked tasks for explicit retries,
   and expire stale queued runs across origins. Flow, extension and CDC skills now
