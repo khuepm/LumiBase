@@ -209,6 +209,15 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
 
 ### Fixed
+- **An approved Jev automation write re-checks the field (#518, B119).**
+  `updateItem` accepts an optional `expect` precondition (field → value the
+  item must still hold); the harness re-reads those fields when the update
+  runs, including after an approval, and refuses with
+  `ITEM_PRECONDITION_FAILED` before writing. Jev automation sends the value
+  each proposal was computed from, so a human edit made while the proposal
+  waited is kept: the approval is settled `failed` with that reason and the
+  automation row reads `denied` / `stale_at_approval`. Additive for every
+  other caller; no migration.
 - **RLS backstop for draft review profiles, runs and feedback (#516, B114).**
   `lumibase_review_profiles`, `lumibase_review_runs` and
   `lumibase_review_feedback` are added to the `site_isolation` list in

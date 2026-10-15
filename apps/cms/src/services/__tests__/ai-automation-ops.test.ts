@@ -543,6 +543,29 @@ describe('reversal', () => {
     expect(rowOf(live).status).toBe('rejected');
   });
 
+  it('sends the value it was computed from as the precondition, and a refused approval is denied stale_at_approval (B119)', async () => {
+    setAutomation(liveAutomation());
+    const proposed: GovernedWriteInput[] = [];
+    const inner = runtime.governedWrite;
+    runtime.governedWrite = async (...args) => {
+      proposed.push(args[3]);
+      return inner(...args);
+    };
+    const out = await tag();
+    expect(proposed).toEqual([expect.objectContaining({ data: { tags: ['featured', 'tin-tuc'] }, expect: { tags: ['featured'] } })]);
+    // The harness settled the approval failed because the field changed.
+    actions.approvals.set(out.approvalId!, 'failed');
+    actions.approvalReasons.set(out.approvalId!, 'ITEM_PRECONDITION_FAILED: tags changed since this update was proposed; nothing was written.');
+    expect(await reconcileAutomationAction(actions, rowOf(out))).toMatchObject({ status: 'denied', reason: 'stale_at_approval', applied: false });
+  });
+
+  it('any other failed approval is denied approval_failed', async () => {
+    setAutomation(liveAutomation());
+    const out = await tag();
+    actions.approvals.set(out.approvalId!, 'failed');
+    expect(await reconcileAutomationAction(actions, rowOf(out))).toMatchObject({ status: 'denied', reason: 'approval_failed' });
+  });
+
   it('puts the row back to applied when the restoring write fails', async () => {
     const out = await appliedAction();
     const failing = { ...deps(), writeField: async () => { throw new Error('write failed'); } };

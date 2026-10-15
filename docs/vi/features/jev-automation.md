@@ -1,13 +1,13 @@
 ---
-version: 4
+version: 5
 sourceLang: en
-lastUpdated: 2026-10-14T19:38:25.127Z
+lastUpdated: 2026-10-15T17:37:47.969Z
 translatedFrom: en
-sourceHash: 05745a79dc39d3b3
+sourceHash: 0595b49e534ff11f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T19:38:25.127Z
-codeVerifiedHash: 05745a79dc39d3b3
+codeVerified: 2026-10-15T17:37:47.969Z
+codeVerifiedHash: 0595b49e534ff11f
 codeVerifiedClaims: 14
 ---
 
@@ -107,6 +107,8 @@ Một đề xuất live gọi `AISecureHarness.execute('updateItem')` với:
 
 Dòng chuyển thành `pending_approval` kèm id của approval. Khi một người duyệt trong Mission Control, harness thực hiện lần ghi với quyền đã resolve lại của người yêu cầu; dòng khi đó được đọc là `applied`. Approval bị từ chối được đọc là `rejected`.
 
+Đề xuất còn mang một điều kiện tiên quyết `expect` trên `updateItem`: field và giá trị mà đề xuất được tính từ đó. Harness kiểm lại điều kiện này khi lần ghi đã được duyệt chạy. Nếu một người đã đổi field đó ở giữa, không có gì được ghi, approval được chốt `failed` với lý do `ITEM_PRECONDITION_FAILED`, và dòng được đọc là `denied` với lý do `stale_at_approval`. Lần sửa của người đó được giữ. Chạy lại flow để có đề xuất mới.
+
 ## Hoàn tác
 
 `POST /api/v1/ai/automation/actions/:id/revert` (site admin) khôi phục `previous` qua ItemService của người gọi. Nó từ chối với:
@@ -149,6 +151,5 @@ Protocol `jev-automation-v1` yêu cầu ít nhất 30 đề xuất trong vùng �
 
 - **Chưa có precision đo được.** Chưa có dữ liệu thật, nên mọi site vẫn ở shadow.
 - **Chỉ run thủ công.** Trigger theo event và lịch không mang principal, nên các node từ chối chúng.
-- **Approval không được kiểm lại độ stale.** Quyết định được kiểm khi đề xuất được tạo; nếu item đổi trước khi một người duyệt, approval sẽ ghi giá trị đã đề xuất. Hãy xem kỹ approval, hoặc hoàn tác sau đó.
 - **Một lần giao bị crash vẫn ở `pending`.** Một dòng live được giữ chỗ trước lời gọi harness; nếu tiến trình chết ở giữa, lần giao lại tìm thấy dòng đó và không đề xuất gì. Chạy lại flow để đề xuất lần nữa.
 - **Chuyển trạng thái `submit_review` chỉ được đề xuất, không được thực hiện.** Người duyệt gửi item đi duyệt.

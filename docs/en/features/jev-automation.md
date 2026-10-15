@@ -1,10 +1,10 @@
 ---
-version: 4
+version: 5
 sourceLang: en
-lastUpdated: 2026-10-14T19:38:25.127Z
-contentHash: 05745a79dc39d3b3
-codeVerified: 2026-10-14T19:38:25.127Z
-codeVerifiedHash: 05745a79dc39d3b3
+lastUpdated: 2026-10-15T17:37:47.969Z
+contentHash: 0595b49e534ff11f
+codeVerified: 2026-10-15T17:37:47.969Z
+codeVerifiedHash: 0595b49e534ff11f
 codeVerifiedClaims: 14
 ---
 
@@ -104,6 +104,8 @@ A live proposal calls `AISecureHarness.execute('updateItem')` with:
 
 The row becomes `pending_approval` with the approval id. When a human approves in Mission Control, the harness performs the write under the requester's re-resolved rights; the row then reads as `applied`. A rejected approval reads as `rejected`.
 
+The proposal also carries an `expect` precondition on `updateItem`: the field and the value the proposal was computed from. The harness re-checks it when the approved write runs. If a human changed the field in between, nothing is written, the approval is settled `failed` with `ITEM_PRECONDITION_FAILED` as its reason, and the row reads as `denied` with reason `stale_at_approval`. The human's edit is kept. Run the flow again for a new proposal.
+
 ## Revert
 
 `POST /api/v1/ai/automation/actions/:id/revert` (site admin) restores `previous` through the caller's ItemService. It refuses with:
@@ -146,6 +148,5 @@ Protocol `jev-automation-v1` requires at least 30 reviewed in-zone proposals per
 
 - **No measured precision yet.** There is no real data, so every site stays in shadow.
 - **Manual runs only.** Event and schedule triggers carry no principal, so the nodes refuse them.
-- **An approval is not re-checked for staleness.** The decision is checked when the proposal is made; if the item changes before a human approves, the approval writes the proposed value. Review the approval, or revert afterwards.
 - **A crashed delivery stays `pending`.** A live row is claimed before the harness call; if the process dies in between, a redelivery finds the row and proposes nothing. Re-run the flow to propose again.
 - **The `submit_review` transition is proposed, not performed.** A reviewer submits the item for review.

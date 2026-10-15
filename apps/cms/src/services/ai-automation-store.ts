@@ -55,8 +55,8 @@ export interface AutomationActionStore {
   list(siteId: string, filter: AutomationActionFilter): Promise<AutomationActionRecord[]>;
   /** Feedback on the decisions behind these review runs (the last link of the audit chain). */
   feedbackForRuns(siteId: string, runIds: readonly string[]): Promise<AutomationFeedbackRecord[]>;
-  /** Status of the agent approval a live proposal parked, or null when unknown. */
-  approvalStatus(siteId: string, approvalId: string): Promise<string | null>;
+  /** Status (and decision reason) of the agent approval a live proposal parked, or null when unknown. */
+  approvalStatus(siteId: string, approvalId: string): Promise<{ status: string; reason: string | null } | null>;
   /** Sets `reverted` once: only an applied, not yet reverted row changes. */
   markReverted(siteId: string, id: string, by: string, at: Date): Promise<AutomationActionRecord | null>;
 }
@@ -150,13 +150,13 @@ export class DrizzleAutomationActionStore implements AutomationActionStore {
     }));
   }
 
-  async approvalStatus(siteId: string, approvalId: string): Promise<string | null> {
+  async approvalStatus(siteId: string, approvalId: string): Promise<{ status: string; reason: string | null } | null> {
     const [row] = await this.db
-      .select({ status: agentApprovals.status })
+      .select({ status: agentApprovals.status, reason: agentApprovals.decisionReason })
       .from(agentApprovals)
       .where(and(eq(agentApprovals.siteId, siteId), eq(agentApprovals.id, approvalId)))
       .limit(1);
-    return row?.status ?? null;
+    return row ? { status: row.status, reason: row.reason ?? null } : null;
   }
 
   async markReverted(siteId: string, id: string, by: string, at: Date): Promise<AutomationActionRecord | null> {

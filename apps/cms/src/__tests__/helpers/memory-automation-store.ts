@@ -16,6 +16,8 @@ import type { MemoryReviewStore } from './memory-review-store';
 export class MemoryAutomationActionStore implements AutomationActionStore {
   rows: AutomationActionRecord[] = [];
   approvals = new Map<string, string>();
+  /** Decision reason per approval id (e.g. an ITEM_PRECONDITION_FAILED settlement). */
+  approvalReasons = new Map<string, string>();
   private clock = 0;
 
   constructor(private readonly reviews?: MemoryReviewStore) {}
@@ -102,7 +104,8 @@ export class MemoryAutomationActionStore implements AutomationActionStore {
   }
 
   async approvalStatus(_siteId: string, approvalId: string) {
-    return this.approvals.get(approvalId) ?? null;
+    const status = this.approvals.get(approvalId);
+    return status === undefined ? null : { status, reason: this.approvalReasons.get(approvalId) ?? null };
   }
 
   async markReverted(siteId: string, id: string, by: string, at: Date) {

@@ -175,6 +175,12 @@ export interface GovernedWriteInput {
   collection: string;
   itemId: string;
   data: Record<string, unknown>;
+  /**
+   * field → the value the proposal was computed from. The harness re-checks it
+   * when the write runs, including after an approval (B119), and refuses with
+   * ITEM_PRECONDITION_FAILED if a human changed the field in between.
+   */
+  expect: Record<string, unknown>;
   title: string;
 }
 
@@ -282,7 +288,7 @@ export function automationRuntimeFromEnv(env: Record<string, unknown>): Automati
       const harness = new AISecureHarness({ db, siteId, itemService: itemService(permissionContext), keys, cache });
       return harness.execute(
         'updateItem',
-        { collection: input.collection, id: input.itemId, data: input.data },
+        { collection: input.collection, id: input.itemId, data: input.data, expect: input.expect },
         grant.capabilities,
         input.title,
         // The run's principal is the requester: an approver later re-resolves
@@ -631,6 +637,7 @@ export async function runAutomationNode(
       collection: options.collection,
       itemId,
       data: { [field]: proposal.value },
+      expect: { [field]: target.value ?? null },
       title: `Jev automation: ${operation} ${options.collection}/${itemId}`,
     });
   } catch (err) {
@@ -656,17 +663,23 @@ export async function runAutomationNode(
 /**
  * Brings a live row up to date with its approval: `approved` (the harness sets
  * it only after the write succeeded) → `applied`; `rejected` → `rejected`;
- * `failed` → `denied`. Other rows are returned unchanged.
+ * `failed` → `denied` (`stale_at_approval` when the harness refused because
+ * the field changed after the proposal, B119; `approval_failed` otherwise).
+ * Other rows are returned unchanged.
  */
 export async function reconcileAutomationAction(
   store: AutomationActionStore,
   row: AutomationActionRecord,
 ): Promise<AutomationActionRecord> {
   if (row.status !== 'pending_approval' || !row.approvalId) return row;
-  const status = await store.approvalStatus(row.siteId, row.approvalId);
+  const approval = await store.approvalStatus(row.siteId, row.approvalId);
+  const status = approval?.status;
   if (status === 'approved') return (await store.update(row.siteId, row.id, { status: 'applied', applied: true })) ?? row;
   if (status === 'rejected') return (await store.update(row.siteId, row.id, { status: 'rejected' })) ?? row;
-  if (status === 'failed') return (await store.update(row.siteId, row.id, { status: 'denied', reason: 'approval_failed' })) ?? row;
+  if (status === 'failed') {
+    const reason = approval?.reason?.startsWith('ITEM_PRECONDITION_FAILED') ? 'stale_at_approval' : 'approval_failed';
+    return (await store.update(row.siteId, row.id, { status: 'denied', reason })) ?? row;
+  }
   return row;
 }
 
