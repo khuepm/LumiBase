@@ -212,13 +212,25 @@ export function assertThresholdsNotFrozen(path: string, reportDirs: readonly str
     if (!existsSync(dir)) continue;
     for (const name of readdirSync(dir)) {
       if (!/^report\.heldout.*\.json$/.test(name)) continue;
-      let report: { runs?: Array<{ thresholds?: { sha256?: unknown } }> };
+      // A held-out report that cannot be read is treated as frozen (fail
+      // closed): a corrupted or hand-edited report must not switch the guard
+      // off. Repair or move the report, or use a new --out directory.
+      let runs: unknown[] | null = null;
       try {
-        report = JSON.parse(readFileSync(join(dir, name), 'utf8')) as typeof report;
+        const parsed = JSON.parse(readFileSync(join(dir, name), 'utf8')) as { runs?: unknown };
+        if (Array.isArray(parsed?.runs)) runs = parsed.runs;
       } catch {
-        continue;
+        runs = null;
       }
-      if ((report.runs ?? []).some((run) => run.thresholds?.sha256 === sha)) {
+      if (runs === null) {
+        throw new LeakageError(
+          `Thresholds at ${path} may be frozen: the held-out report ${join(dir, name)} cannot be read. `
+            + 'Repair or move that report, or use a new --out directory for a new protocol run.',
+        );
+      }
+      const usedBy = (run: unknown) =>
+        typeof run === 'object' && run !== null && (run as { thresholds?: { sha256?: unknown } }).thresholds?.sha256 === sha;
+      if (runs.some(usedBy)) {
         throw new LeakageError(
           `Thresholds at ${path} are frozen: ${join(dir, name)} was scored with them. `
             + 'Re-tuning now would let held-out results shape the thresholds. Use a new --out directory for a new protocol run.',

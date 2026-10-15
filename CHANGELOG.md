@@ -221,7 +221,9 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `mode`, `split`, dataset, rubric, protocol, seed, sample counts, runs)
   before the mode check, so a hand-edited report without `mode` is refused.
   A tune run refuses (exit 2) to overwrite a `thresholds.json` that a
-  held-out report in the same output was scored with. A source-scan test
+  held-out report in the same output was scored with. A `report.heldout*.json`
+  that cannot be read also counts as frozen (exit 2), so a corrupted or
+  hand-edited report no longer switches the guard off. A source-scan test
   keeps every module under `apps/cms/eval/` out of the CMS runtime.
 - **Mission Control SLO card no longer reads a partly evaluated intent as
   healthy (#519).** An active intent with a resolved row and `unevaluated`

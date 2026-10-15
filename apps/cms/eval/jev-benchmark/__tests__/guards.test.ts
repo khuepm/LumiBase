@@ -12,6 +12,7 @@ import { runSamples, type SampleResult } from '../runner';
 import {
   LeakageError,
   assertThresholdsMatch,
+  assertThresholdsNotFrozen,
   deriveThresholds,
   loadFrozenThresholds,
   writeThresholds,
@@ -95,6 +96,23 @@ describe('leakage guard', () => {
     expect(() => assertThresholdsMatch(file, { ...identity, provider: 'typesafe' })).toThrow(/provider/);
     expect(() => assertThresholdsMatch(file, { ...identity, rubricVersion: 'sha256:ffffffffffffffff' })).toThrow(/rubricVersion/);
     expect(() => loadFrozenThresholds(join(tmp(), 'missing.json'))).toThrow(/Run the tune split first/);
+  });
+
+  it('an unreadable held-out report keeps the thresholds frozen (fail closed)', () => {
+    const dir = tmp();
+    const path = join(dir, 'thresholds.json');
+    writeThresholds(path, deriveThresholds(manifest, identity, tuneResults), 'tune');
+    expect(() => assertThresholdsNotFrozen(path, [dir])).not.toThrow();
+
+    // A report scored with other thresholds does not freeze this file.
+    writeFileSync(join(dir, 'report.heldout.json'), JSON.stringify({ runs: [{ thresholds: { sha256: 'other' } }] }));
+    expect(() => assertThresholdsNotFrozen(path, [dir])).not.toThrow();
+
+    for (const broken of ['{ not json', JSON.stringify({ runs: 'nope' }), JSON.stringify(null), '']) {
+      writeFileSync(join(dir, 'report.heldout.json'), broken);
+      expect(() => assertThresholdsNotFrozen(path, [dir])).toThrow(LeakageError);
+      expect(() => assertThresholdsNotFrozen(path, [dir])).toThrow(/cannot be read/);
+    }
   });
 });
 
