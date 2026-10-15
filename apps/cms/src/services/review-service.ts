@@ -111,7 +111,8 @@ export interface ReviewContentAccess {
 }
 
 export interface ReviewPrincipal {
-  type: 'user' | 'api_key' | 'dev';
+  /** `system`: the semantic drift scan (J12, #519); no person is behind it. */
+  type: 'user' | 'api_key' | 'dev' | 'system';
   id: string;
   /** Control-plane admin: may manage profiles and see every run of the site. */
   admin: boolean;

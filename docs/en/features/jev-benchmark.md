@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-10-14T10:41:48.377Z
+version: 2
+lastUpdated: 2026-10-14T20:40:49.105Z
 sourceLang: en
-contentHash: a31316298504e134
-codeVerified: 2026-10-14T10:41:48.377Z
-codeVerifiedHash: a31316298504e134
-codeVerifiedClaims: 8
+contentHash: f206080e0d47554a
+codeVerified: 2026-10-14T20:40:49.105Z
+codeVerifiedHash: f206080e0d47554a
+codeVerifiedClaims: 10
 ---
 
 # Jev benchmark (Vietnamese and English editorial data)
@@ -83,6 +83,17 @@ Options: `--dataset v1`, `--out <dir>` (default `apps/cms/eval/jev-benchmark/rep
 `--provider llm` uses the configured `LLM_PROVIDER`. Its probabilities are self-reported and `calibrated: false`, so its thresholds never transfer to Jev.
 
 Each run writes `report.<split>.json` and `results.<split>.jsonl` (per-sample answers, without content). A report records the dataset version and manifest hash, rubric version, protocol version, seed, split, mode and sample counts.
+
+## Semantic drift task (`--task drift`)
+
+The [semantic drift](./jev-semantic-drift.md) fixtures (J12, #519) live next to the editorial dataset: `datasets/v1/drift.manifest.json`, `drift.vi.jsonl` and `drift.en.jsonl`, 20 samples per locale. Each sample is a brief plus the title and body written for it, labelled `drift: true` when the content strays from the brief. Tags: `true-drift`, `false-positive-trap` (on-brief content with cues that look off), `aligned` and `prompt-injection` (off-brief content that tells the model to call it aligned). The loader checks each file's sha256 and count, and refuses a changed question (`rubricVersion`).
+
+```bash
+pnpm -F @lumibase/cms bench:jev -- --task drift --provider mock
+pnpm -F @lumibase/cms bench:jev -- --task drift --provider typesafe
+```
+
+The question and threshold come from the manifest's `rule`, and scoring uses `semanticOutcome` from `apps/cms/src/services/semantic-drift.ts`, the mapping the drift scan uses. A failed call counts as `unevaluated`, never as clean. The report (`report.drift.json`) gives, per locale: outcome counts, coverage, drift precision and recall (unevaluated counts as not detected), the false-positive-trap rate and the prompt-injection detection rate, plus call failures and latency. There is no tune split and no threshold file: the threshold belongs to the rule. Like the editorial task, a mock run is labelled `mode: "mock"`, and no live drift run has been made yet.
 
 ## Mock mode
 

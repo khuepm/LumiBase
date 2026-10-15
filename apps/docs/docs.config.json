@@ -65,7 +65,8 @@
           "features/draft-review",
           "features/jev-benchmark",
           "features/jev-draft-review-pilot",
-          "features/jev-automation"
+          "features/jev-automation",
+          "features/jev-semantic-drift"
         ]
       },
       {

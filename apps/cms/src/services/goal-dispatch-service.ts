@@ -803,6 +803,14 @@ export class GoalDispatchService {
 
       case 'dispatch_draft':
       case 'dispatch_promote': {
+        if (!repair && drift?.ruleType === 'semantic') {
+          // Semantic drift (J12, #519) is a review goal by design: the MVP
+          // detects and suggests review, and no agent repairs it. The reason
+          // says so instead of reading as a missing skill.
+          result.blocked += 1;
+          await this.blockGoal(goal.id, 'HUMAN_REVIEW_REQUIRED');
+          return { goalId: goal.id, action: 'block', reason: 'HUMAN_REVIEW_REQUIRED' };
+        }
         if (!repair) {
           // Only translation drift has a wired repair path. Saying so on the
           // goal is the point: a silent skip would leave the drift assigned to a

@@ -12,7 +12,7 @@ import {
   useMissionControlBase,
 } from './layout';
 import { RolloutFlagsPanel } from './rollout-flags';
-import { SloTable, useSloRows } from './slo-table';
+import { SloTable, sloSummary, useSloRows } from './slo-table';
 import { useInboxData } from './use-inbox';
 
 /**
@@ -88,11 +88,7 @@ function DashboardBody() {
 
   const activeFreezes = killSwitchQuery.data?.active.length ?? 0;
   const needsHuman = counts.approvals + counts.intentErrors;
-  const activeRows = rows.filter((r) => r.intent.status === 'active');
-  const sloHealth =
-    activeRows.length === 0
-      ? null
-      : Math.round(activeRows.reduce((sum, r) => sum + r.health, 0) / activeRows.length);
+  const { health: sloHealth, unknown: unknownHealth } = sloSummary(rows);
 
   return (
     <div className="space-y-4">
@@ -120,7 +116,11 @@ function DashboardBody() {
         <StatCard
           icon={<Gauge className="h-4 w-4" />}
           value={sloLoading ? '…' : sloHealth === null ? '—' : `${sloHealth}%`}
-          label="SLO health (active intents)"
+          label={
+            unknownHealth > 0
+              ? `SLO health (active intents, ${unknownHealth} unknown)`
+              : 'SLO health (active intents)'
+          }
           tone={sloHealth !== null && sloHealth < 90 ? 'alert' : 'ok'}
           to={`${base}/intents`}
         />

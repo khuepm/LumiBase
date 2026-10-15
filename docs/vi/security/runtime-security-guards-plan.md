@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 2
-lastUpdated: 2026-09-01T19:24:40.830Z
+version: 3
+lastUpdated: 2026-10-14T20:40:50.164Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a549172ced3a3d26
+sourceHash: de43a5f3879ebf93
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-01T19:24:40.830Z
-codeVerifiedHash: a549172ced3a3d26
-codeVerifiedClaims: 34
+codeVerified: 2026-10-14T20:40:50.164Z
+codeVerifiedHash: de43a5f3879ebf93
+codeVerifiedClaims: 36
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -138,7 +138,7 @@ Mọi khởi tạo `ItemService` đi qua hai helper tường minh trong
   `permissionCtx` áp cuối cùng nên `overrides` không thể vô tình gỡ enforcement.
 - **`itemServiceForSystem(deps, reason)`** — dùng cho flow hệ thống/nền. Bắt buộc
   truyền `SystemContextReason` (`'scheduler'` | `'background-worker'` |
-  `'compliance-erasure'`) để tác giả phải **nêu lý do** tại sao fail-open an toàn.
+  `'compliance-erasure'` | `'semantic-drift-scan'`) để tác giả phải **nêu lý do** tại sao fail-open an toàn.
 
 Test hồi quy `apps/cms/src/__tests__/item-service-rbac-context.test.ts` quét source
 và **fail CI** nếu có `new ItemService(...)` trực tiếp ngoài factory (trừ allowlist
@@ -157,6 +157,7 @@ và **fail CI** nếu có `new ItemService(...)` trực tiếp ngoài factory (t
 | `services/veto-commit-worker.ts` | system `background-worker` | commit sau khi veto window đã chốt quyết định human |
 | `services/agent-run-worker.ts` | system `background-worker` | governed agent run — HITL/autonomy gate ở harness, không phải RBAC user |
 | `services/erasure-service.ts` | system `compliance-erasure` | erasure/SAR gated admin + dual-control ở tầng service |
+| `services/review-content-access.ts` (`reviewContentAccessForDriftScan`) | system `semantic-drift-scan` | pass drift ngữ nghĩa (J12): chỉ đọc các field của rule trừ field đã ghim, không ghi item nào; việc gửi nội dung bị chặn bởi `aiDecisions.enabled` + `aiDecisions.drift` |
 
 ### Checklist khi thêm ItemService mới
 

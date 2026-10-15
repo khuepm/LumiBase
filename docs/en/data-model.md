@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-10-14T18:09:29.087Z
+version: 4
+lastUpdated: 2026-10-14T20:40:49.231Z
 sourceLang: en
-contentHash: 27c9fe433f616444
-codeVerified: 2026-10-14T18:09:29.087Z
-codeVerifiedHash: 27c9fe433f616444
+contentHash: c5bba152b46601c5
+codeVerified: 2026-10-14T20:40:49.231Z
+codeVerifiedHash: c5bba152b46601c5
 codeVerifiedClaims: 14
 ---
 
@@ -366,8 +366,8 @@ Turning the draft-review pilot off deletes none of these rows.
 
 | Collection | Purpose |
 |---|---|
-| `content_intents` | Declared desired state (SLO) per collection: rules, cron schedule, budget, autonomy cap, maintenance window |
-| `content_drifts` | Detected rule violations; unique `(siteId, fingerprint)` dedupes detection across scans |
+| `content_intents` | Declared desired state (SLO) per collection: rules, cron schedule, budget, autonomy cap, maintenance window. `scan_cursor` resumes the deterministic scan; `semantic_scan_cursor` (migration 0022, J12) resumes the separately budgeted [semantic pass](./features/jev-semantic-drift.md) |
+| `content_drifts` | Detected rule violations; unique `(siteId, fingerprint)` dedupes detection across scans. `status` is `open`/`assigned`/`resolved`/`stale`, or `unevaluated` for a semantic rule that could not be judged (plain text column, no CHECK constraint). Semantic rows use `rule_type = 'semantic'` and `rule_key = <key>@v<version>:<profileVersion>:<contentHash>` |
 | `agent_autonomy_grants` | Earned trust per (site, agentRole, capability): level 0–4, evidence, expiry |
 | `agent_incidents` | Demotion evidence and exception-inbox feed (`veto`, `eval_fail`, `load_guard`, …) |
 | `agent_freezes` | Kill-switch freezes (scope `site`/`role`); `liftedAt IS NULL` = active; doubles as audit trail |

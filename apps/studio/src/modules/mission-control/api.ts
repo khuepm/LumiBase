@@ -94,7 +94,15 @@ export interface ContentDrift {
   itemId: string;
   ruleType: string;
   ruleKey: string;
+  /** `open` | `assigned` | `resolved` | `stale` | `unevaluated` (semantic rules, J12). */
   status: string;
+  /**
+   * What the scan recorded. For semantic drift: rule/ruleVersion,
+   * profileKey/profileVersion, questionKey, threshold, contentHash,
+   * revisionId, runId, provider, model, calibrated, noul and, when
+   * unevaluated, the reason code.
+   */
+  detail?: Record<string, unknown>;
 }
 
 export interface ConstitutionVersion {

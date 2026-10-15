@@ -63,6 +63,7 @@ const siteSettingsSchema = z.object({
   budgetPerDay: z.number().int().min(0).optional(),
   review: reviewRolloutSchema.optional(),
   flows: z.boolean().default(false),
+  drift: z.boolean().default(false),
   // Parsed separately by `parseAutomationSettings` (J11, #518) so a malformed
   // automation block forces shadow mode instead of switching decisions off.
   automation: z.unknown().optional(),
@@ -103,6 +104,13 @@ export interface DecisionSiteSettings {
    * missing gate or missing thresholds means `shadow`.
    */
   automation?: unknown;
+  /**
+   * Semantic drift scans of Content Intents (J12, #519). Off unless a site
+   * admin sets it; it also needs `enabled`, so the site kill switch stops the
+   * semantic pass too. While off, semantic rules are not evaluated and their
+   * existing drift rows are left exactly as they are.
+   */
+  drift?: boolean;
 }
 
 export const REVIEW_ROLLOUT_OFF: DecisionReviewRollout = { enabled: false, pilotCollections: [], mode: 'baseline' };
@@ -112,11 +120,17 @@ const DISABLED: DecisionSiteSettings = {
   allowedStateFields: null,
   review: REVIEW_ROLLOUT_OFF,
   flows: false,
+  drift: false,
 };
 
 /** Whether Flows `ai:decision` nodes may run on this site: both the opt-in and the flows flag. */
 export function flowDecisionsEnabled(settings: DecisionSiteSettings): boolean {
   return settings.enabled && settings.flows === true;
+}
+
+/** Whether the drift scan may evaluate semantic rules on this site: both the opt-in and the drift flag. */
+export function driftDecisionsEnabled(settings: DecisionSiteSettings): boolean {
+  return settings.enabled && settings.drift === true;
 }
 
 /** Parses the stored value; anything malformed reads as disabled, never as open. */
