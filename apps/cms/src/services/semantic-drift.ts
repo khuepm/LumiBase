@@ -89,3 +89,26 @@ export function semanticRuleKey(rule: Pick<SemanticRule, 'key' | 'version' | 'pr
 export function semanticRuleKeyMatches(ruleKey: string, key: string): boolean {
   return ruleKey.startsWith(`${key}@`);
 }
+
+/**
+ * What a semantic rule asks, apart from its key, version, profile version and
+ * threshold: which profile, which question, which context and which fields.
+ * Canonical (fields sorted), so equal definitions give equal strings.
+ *
+ * Two uses: `IntentService.update` refuses to change it under an unchanged
+ * `version` (the fingerprint would not change, so the old answer would stand
+ * for the new rule), and the review idempotency key includes it, so a rule
+ * deleted and re-added with another profile never replays the old run.
+ * `profileVersion` is already in the fingerprint; `threshold` is applied to
+ * the stored answer at every pass, so neither needs a version bump.
+ */
+export function semanticRuleIdentity(
+  rule: Pick<SemanticRule, 'profileKey' | 'questionKey' | 'contextSource' | 'fields'>,
+): string {
+  return JSON.stringify([
+    rule.profileKey,
+    rule.questionKey,
+    rule.contextSource,
+    rule.fields ? [...rule.fields].sort() : null,
+  ]);
+}

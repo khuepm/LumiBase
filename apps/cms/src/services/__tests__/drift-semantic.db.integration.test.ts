@@ -17,6 +17,7 @@ import { DECISION_SETTINGS_KEY, readDecisionSettings, type GovernedDecisionOutco
 import { DriftService } from '../drift-service';
 import { CONTENT_OS_SETTINGS_KEY } from '../feature-flags';
 import { GoalDispatchService } from '../goal-dispatch-service';
+import { IntentService } from '../intent-service';
 import { ReconcilerService } from '../reconciler-service';
 import { reviewContentAccessForDriftScan } from '../review-content-access';
 import { ReviewService } from '../review-service';
@@ -225,6 +226,39 @@ describe.skipIf(!hasDbIntegrationUrl)('Semantic drift — DB integration', () =>
     const pinnedItem = states.find((state) => state['title'] === 'Ten crypto tips')!;
     expect(pinnedItem).toEqual({ brief: 'Home composting guide', title: 'Ten crypto tips' });
     expect(states.find((state) => state['title'] === 'Second')).toHaveProperty('body', 'y');
+  });
+
+  it('removing every semantic rule resolves its rows without a semantic pass, on this site only', async () => {
+    await new DriftService({ db, siteId: SITE, semantic: runtime(SITE) }).scanIntent(a.intentId);
+    await new DriftService({ db, siteId: OTHER, semantic: runtime(OTHER) }).scanIntent(b.intentId);
+    await db
+      .update(contentIntents)
+      .set({ rules: [{ type: 'required_fields', fields: ['summary'] }] })
+      .where(eq(contentIntents.id, a.intentId));
+    decide.mockClear();
+
+    // Not even the semantic runtime is needed: no judgement is involved.
+    const scan = await new DriftService({ db, siteId: SITE }).scanIntent(a.intentId);
+    expect(scan.semantic).toBeUndefined();
+    expect(scan.semanticOrphansResolved).toBe(1);
+    expect(decide).not.toHaveBeenCalled();
+    expect((await drifts(SITE)).find((r) => r.ruleType === 'semantic')!.status).toBe('resolved');
+    // The deterministic drift and the other tenant are untouched.
+    expect((await drifts(SITE)).find((r) => r.ruleType === 'required_fields')!.status).toBe('open');
+    expect((await drifts(OTHER)).find((r) => r.ruleType === 'semantic')!.status).toBe('open');
+
+    // A kept semantic rule keeps its rows.
+    const again = await new DriftService({ db, siteId: OTHER }).scanIntent(b.intentId);
+    expect(again.semanticOrphansResolved).toBeUndefined();
+    expect((await drifts(OTHER)).find((r) => r.ruleType === 'semantic')!.status).toBe('open');
+  });
+
+  it('IntentService refuses a semantic rule edit without a version bump', async () => {
+    const intents = new IntentService({ db, siteId: SITE });
+    const rule = { type: 'semantic' as const, key: 'off-brief', version: 1, profileKey: 'brand', profileVersion: 1, questionKey: 'off_brief', threshold: 0.8, fields: ['title', 'body'], contextSource: 'field:brief' };
+    await expect(intents.update(a.intentId, { rules: [rule] })).rejects.toMatchObject({ code: 'SEMANTIC_RULE_VERSION_REQUIRED', status: 422 });
+    const updated = await intents.update(a.intentId, { rules: [{ ...rule, version: 2 }] });
+    expect(updated.rules).toEqual([{ ...rule, version: 2 }]);
   });
 
   it('a disabled site sends nothing', async () => {

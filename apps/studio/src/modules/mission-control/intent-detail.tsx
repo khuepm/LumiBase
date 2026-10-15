@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn';
 import { missionControlApi, type ContentIntent } from './api';
 import { MissionControlLayout, useAdminBase, useMissionControlBase } from './layout';
 import { isSemanticDrift, SemanticDriftDetail, semanticRuleLabel } from './semantic-drift-detail';
-import { IntentStatusBadge } from './slo-table';
+import { hasSemanticRules, IntentStatusBadge } from './slo-table';
 
 /**
  * Intent detail (content-os-ui task 6.2; Req 5.2-5.5): what the intent
@@ -369,7 +369,17 @@ function IntentDetailBody({ intentId }: { intentId: string }) {
           ) : driftsQuery.isError ? (
             <p className="text-sm text-destructive">Could not load drifts.</p>
           ) : drifts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No drift detected — content meets the SLO.</p>
+            hasSemanticRules(intent) ? (
+              // A clean semantic answer and a semantic pass that did not run
+              // (aiDecisions.drift off, or unavailable) both leave no row, so an
+              // empty list is not evidence that the semantic rules pass (J12).
+              <p className="text-sm text-muted-foreground">
+                No drift recorded. This does not show that the semantic rules pass: they leave no row
+                when they are judged clean, and also when the semantic pass is off or unavailable.
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">No drift detected — content meets the SLO.</p>
+            )
           ) : (
             <ul className="space-y-1">
               {drifts.map((drift) => (

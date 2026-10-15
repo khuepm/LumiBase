@@ -4,7 +4,7 @@ import { MemoryReviewStore } from '../../__tests__/helpers/memory-review-store';
 import { parseDecisionSettings, type GovernedDecisionOutcome } from '../decision-governance';
 import type { DecisionRequest } from '../decision-provider';
 import { diffDrifts, driftFingerprint, evaluateRules, type DriftItemView } from '../drift-service';
-import { intentInputSchema, type IntentRule } from '../intent-service';
+import { assertSemanticVersionBumps, intentInputSchema, type IntentRule } from '../intent-service';
 import { planReconciliation, semanticGoalProvenance, type ReconcilableDrift } from '../reconciler-service';
 import { ReviewService, ReviewServiceError, type ReviewContentAccess, type ReviewPrincipal } from '../review-service';
 import { semanticOutcome, semanticRuleKey, type SemanticRule } from '../semantic-drift';
@@ -66,6 +66,16 @@ class MemoryDriftStore implements SemanticDriftStore {
   }
   async resolve(fingerprints: readonly string[]) {
     for (const row of this.rows) if (fingerprints.includes(row.fingerprint)) row.status = 'resolved';
+  }
+  async resolveOrphans(_intentId: string, liveKeys: readonly string[]) {
+    let resolved = 0;
+    for (const row of this.rows) {
+      if (!['open', 'assigned', 'unevaluated'].includes(row.status)) continue;
+      if (liveKeys.includes(row.ruleKey.split('@')[0]!)) continue;
+      row.status = 'resolved';
+      resolved += 1;
+    }
+    return resolved;
   }
   async saveCursor(_intentId: string, cursor: string | null) {
     this.cursor = cursor;
@@ -291,6 +301,28 @@ describe('semantic rule schema', () => {
     const result = intentInputSchema.safeParse({ ...base, rules: [RULE, { ...RULE, version: 2 }] });
     expect(result.success).toBe(false);
   });
+
+  it.each([
+    ['another profile', { profileKey: 'brand' }],
+    ['another question', { questionKey: 'off_brand' }],
+    ['another context', { contextSource: 'intent' }],
+    ['other fields', { fields: ['title'] }],
+  ])('an update to %s needs a version bump', (_label, patch) => {
+    const edited = { ...RULE, ...patch } as IntentRule;
+    expect(() => assertSemanticVersionBumps([RULE], [edited])).toThrow(
+      expect.objectContaining({ code: 'SEMANTIC_RULE_VERSION_REQUIRED', status: 422 }),
+    );
+    expect(() => assertSemanticVersionBumps([RULE], [{ ...edited, version: 2 } as IntentRule])).not.toThrow();
+  });
+
+  it('allows edits the fingerprint or the pass already account for, and new rules', () => {
+    // profileVersion is in the fingerprint; the threshold is applied at every pass.
+    expect(() => assertSemanticVersionBumps([RULE], [{ ...RULE, profileVersion: 2, threshold: 0.9 } as IntentRule])).not.toThrow();
+    // Field order does not change the definition.
+    expect(() => assertSemanticVersionBumps([RULE], [{ ...RULE, fields: ['body', 'title'] } as IntentRule])).not.toThrow();
+    expect(() => assertSemanticVersionBumps([RULE], [{ ...RULE, key: 'other', profileKey: 'brand' } as IntentRule])).not.toThrow();
+    expect(() => assertSemanticVersionBumps(null, [RULE as IntentRule])).not.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -469,6 +501,40 @@ describe('semantic pass', () => {
     expect(retry).toMatchObject({ drift: 1, opened: 0, reopened: 0, resolved: 0 });
     expect(ctx.store.rows).toHaveLength(1);
     expect(planReconciliation(ctx.store.rows.map(toReconcilable), 10).selected).toHaveLength(0);
+  });
+
+  it('a rule re-pointed at another profile never replays the old profile run', async () => {
+    const ctx = await setup();
+    await pass(ctx);
+    await ctx.runtime.review([], 'test').service.createProfile(
+      ReviewProfileCreateInputSchema.parse({
+        key: 'brand',
+        collection: 'articles',
+        fields: ['brief', 'title', 'body'],
+        questions: { off_brief: { type: 'noul', instructions: 'Is it off brand?', criteria: { true: 'off brand', false: 'on brand' } } },
+      }),
+      admin,
+    );
+    // Same key, version and profile version: only the definition differs
+    // (IntentService refuses that edit; a delete + re-add can still get here).
+    ctx.world.answer = () => ok(0.05);
+    const result = await pass(ctx, { rules: [{ ...RULE, profileKey: 'brand' }] });
+    expect(ctx.decide).toHaveBeenCalledTimes(2);
+    expect(ctx.reviewStore.runs.map((run) => run.profileKey).sort()).toEqual(['brand', 'brief']);
+    expect(result).toMatchObject({ clean: 1, resolved: 1 });
+  });
+
+  it('switching drift decisions off mid-pass stops at the next item and keeps the cursor', async () => {
+    const ctx = await setup({ items: [{ id: 'itm_1' }, { id: 'itm_2' }, { id: 'itm_3' }] });
+    for (const id of Object.keys(ctx.world.content)) ctx.world.content[id]!['title'] = `Title ${id}`;
+    ctx.world.answer = () => {
+      ctx.world.settings = { enabled: true, drift: false };
+      return ok(0.95);
+    };
+    const result = await pass(ctx);
+    expect(ctx.decide).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: 'ran', items: 1, completed: false, cursor: 'itm_1' });
+    expect(ctx.store.cursor).toBe('itm_1');
   });
 
   it('a failed review is retried on the next pass, still under the same fingerprint', async () => {

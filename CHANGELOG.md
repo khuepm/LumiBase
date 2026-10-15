@@ -173,8 +173,14 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   review goal carrying the run id, model and profile version, and the
   dispatcher blocks it as `HUMAN_REVIEW_REQUIRED` (no repair skill, nothing
   edited). Mission Control shows the rule and profile versions, model,
-  revision and the uncertainty state, and the SLO health ratio leaves
-  unevaluated rows out. The benchmark gains `--task drift` with 40 synthetic
+  revision and the uncertainty state. The SLO health ratio leaves unevaluated
+  rows out and reads `unknown` (not 100 %) when nothing conclusive backs it
+  (every row unevaluated, drifts failed to load, or a semantic intent with no
+  row); the dashboard card averages only known health. Changing a stored
+  semantic rule's profile, question, context or fields without a `version`
+  bump returns `422 SEMANTIC_RULE_VERSION_REQUIRED`. Rows of removed semantic
+  rules resolve on the next scan (`semanticOrphansResolved`), and switching
+  `aiDecisions.drift` off stops a running pass at the next item. The benchmark gains `--task drift` with 40 synthetic
   VI/EN fixtures (true drift, false-positive traps, prompt injection); only
   mock runs exist. **Off by default:** it needs `aiDecisions.drift: true` as
   well as `aiDecisions.enabled`. **Migration** `0022_semantic_drift_cursor`

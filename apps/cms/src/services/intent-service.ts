@@ -3,6 +3,7 @@ import { contentIntents, type Database } from '@lumibase/database';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ConfiguredLLM } from './llm-provider';
+import { semanticRuleIdentity } from './semantic-drift';
 
 /**
  * IntentService — CRUD and natural-language compilation for content intents
@@ -127,6 +128,33 @@ export class IntentServiceError extends Error {
   }
 }
 
+/**
+ * A semantic rule's drift fingerprint is `<key>@v<version>:<profileVersion>:<contentHash>`
+ * (J12, #519). Changing which profile, question, context or fields the rule
+ * uses without bumping `version` would keep the fingerprint, so the answer
+ * given under the old definition would stand for the new one. Such an edit is
+ * refused; a version bump (or a new key) is a new evaluation.
+ */
+export function assertSemanticVersionBumps(stored: unknown, next: readonly IntentRule[]): void {
+  const previous = new Map<string, Extract<IntentRule, { type: 'semantic' }>>();
+  for (const rule of Array.isArray(stored) ? stored : []) {
+    const parsed = ruleSchema.safeParse(rule);
+    if (parsed.success && parsed.data.type === 'semantic') previous.set(parsed.data.key, parsed.data);
+  }
+  for (const rule of next) {
+    if (rule.type !== 'semantic') continue;
+    const before = previous.get(rule.key);
+    if (!before || before.version !== rule.version) continue;
+    if (semanticRuleIdentity(before) !== semanticRuleIdentity(rule)) {
+      throw new IntentServiceError(
+        'SEMANTIC_RULE_VERSION_REQUIRED',
+        `Semantic rule "${rule.key}" changed its profile, question, context or fields; bump its version (currently ${rule.version}).`,
+        422,
+      );
+    }
+  }
+}
+
 export interface IntentServiceDeps {
   db: Database;
   siteId: string;
@@ -179,8 +207,9 @@ export class IntentService {
   }
 
   async update(id: string, input: Partial<IntentInput>) {
-    await this.get(id);
+    const current = await this.get(id);
     const parsed = patchSchema(intentInputSchema).parse(input);
+    if (parsed.rules !== undefined) assertSemanticVersionBumps(current.rules, parsed.rules);
     const [intent] = await this.deps.db
       .update(contentIntents)
       .set({

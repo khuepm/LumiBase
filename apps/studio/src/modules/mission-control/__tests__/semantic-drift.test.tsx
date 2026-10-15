@@ -41,7 +41,7 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 import { IntentDetailPage } from '../intent-detail';
-import { SloTable, useSloRows } from '../slo-table';
+import { SloTable, sloSummary, useSloRows, type SloRow } from '../slo-table';
 
 function renderWithClient(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -213,5 +213,81 @@ describe('SloTable — unevaluated drift', () => {
     // One conclusive row and it is open → 0 %. Counting the unknown row as
     // "not open" would have shown 50 %, i.e. read the outage as half-clean.
     expect(screen.getByText('0%')).toBeInTheDocument();
+  });
+
+  it('shows unknown health, never 100 %, when every drift row is unevaluated', async () => {
+    // E.g. the provider was down on the first scan after enabling drift.
+    api.drifts.mockResolvedValue([UNEVALUATED]);
+    renderWithClient(<SloHarness />);
+
+    expect(await screen.findByText('1 not evaluated')).toBeInTheDocument();
+    expect(screen.getByText('unknown')).toBeInTheDocument();
+    expect(screen.queryByText('100%')).toBeNull();
+  });
+
+  it('shows unknown health for a semantic intent with no drift row at all', async () => {
+    // The semantic pass off (default) or unavailable records nothing.
+    api.drifts.mockResolvedValue([]);
+    renderWithClient(<SloHarness />);
+
+    expect(await screen.findByText('unknown')).toBeInTheDocument();
+    expect(screen.queryByText('100%')).toBeNull();
+  });
+
+  it('shows unknown health when the drifts fail to load', async () => {
+    api.intents.mockResolvedValue([{ ...INTENT, rules: [{ type: 'required_fields', fields: ['summary'] }] }]);
+    api.drifts.mockRejectedValue(new Error('boom'));
+    renderWithClient(<SloHarness />);
+
+    expect(await screen.findByText('unknown')).toBeInTheDocument();
+    expect(screen.queryByText('100%')).toBeNull();
+  });
+
+  it('keeps a deterministic intent with no drift at 100 %, as before', async () => {
+    api.intents.mockResolvedValue([{ ...INTENT, rules: [{ type: 'required_fields', fields: ['summary'] }] }]);
+    api.drifts.mockResolvedValue([]);
+    renderWithClient(<SloHarness />);
+
+    expect(await screen.findByText('100%')).toBeInTheDocument();
+  });
+});
+
+describe('sloSummary — dashboard SLO health card', () => {
+  const row = (health: number | null, status = 'active'): SloRow => ({
+    intent: { ...INTENT, status },
+    open: 0,
+    total: 0,
+    health,
+    unevaluated: 0,
+  });
+
+  it('leaves unknown intents out of the mean and counts them', () => {
+    expect(sloSummary([row(50), row(null), row(null)])).toEqual({ health: 50, unknown: 2 });
+  });
+
+  it('is unknown, not healthy, when no active intent has a known health', () => {
+    expect(sloSummary([row(null)])).toEqual({ health: null, unknown: 1 });
+  });
+
+  it('ignores paused intents', () => {
+    expect(sloSummary([row(100), row(null, 'paused'), row(0, 'paused')])).toEqual({ health: 100, unknown: 0 });
+  });
+});
+
+describe('IntentDetailPage — no drift rows', () => {
+  it('does not claim a semantic intent meets the SLO when nothing was recorded', async () => {
+    api.drifts.mockResolvedValue([]);
+    renderWithClient(<IntentDetailPage />);
+
+    expect(await screen.findByText(/does not show that the semantic rules pass/i)).toBeInTheDocument();
+    expect(screen.queryByText(/content meets the slo/i)).toBeNull();
+  });
+
+  it('keeps the clean message for an intent without semantic rules', async () => {
+    api.intents.mockResolvedValue([{ ...INTENT, rules: [{ type: 'required_fields', fields: ['summary'] }] }]);
+    api.drifts.mockResolvedValue([]);
+    renderWithClient(<IntentDetailPage />);
+
+    expect(await screen.findByText(/content meets the slo/i)).toBeInTheDocument();
   });
 });

@@ -294,6 +294,8 @@ export interface DriftScanResult {
   cursor: string | null;
   /** Present when the intent has semantic rules (J12). Its own budget and cursor. */
   semantic?: SemanticScanResult;
+  /** Semantic drift rows of removed semantic rules resolved by this scan (J12). Present when > 0. */
+  semanticOrphansResolved?: number;
 }
 
 export class DriftServiceError extends Error {
@@ -406,14 +408,23 @@ export class DriftService {
       .where(and(eq(contentIntents.siteId, this.deps.siteId), eq(contentIntents.id, intentId)));
 
     const semanticRules = rules.filter((rule): rule is SemanticRule & IntentRule => rule.type === 'semantic');
+    const { runSemanticPass, semanticDriftStoreFor } = await import('./semantic-drift-scan');
+    const semanticStore = semanticDriftStoreFor(this.deps.db, this.deps.siteId);
+    // Rows of semantic rules the intent no longer declares (J12): the author
+    // removed the rule, so they resolve without any judgement — also when the
+    // intent has no semantic rule left and the pass does not run at all.
+    const orphansResolved = await semanticStore.resolveOrphans(
+      intent.id,
+      semanticRules.map((rule) => rule.key),
+    );
+    if (orphansResolved > 0) result.semanticOrphansResolved = orphansResolved;
     if (semanticRules.length > 0) {
-      const { runSemanticPass, semanticDriftStoreFor } = await import('./semantic-drift-scan');
       result.semantic = await runSemanticPass({
         siteId: this.deps.siteId,
         intent: { id: intent.id, collection: intent.collection, semanticScanCursor: intent.semanticScanCursor ?? null },
         collectionId: collection.id,
         rules: semanticRules,
-        store: semanticDriftStoreFor(this.deps.db, this.deps.siteId),
+        store: semanticStore,
         runtime: this.deps.semantic,
         maxItems: options.maxSemanticItems,
         deadline: Date.now() + (options.semanticTimeBudgetMs ?? timeBudgetMs),

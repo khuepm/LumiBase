@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-10-14T20:40:48.443Z
+version: 2
+lastUpdated: 2026-10-15T03:01:46.702Z
 sourceLang: en
-contentHash: 0ff39e9481d93a0e
-codeVerified: 2026-10-14T20:40:48.443Z
-codeVerifiedHash: 0ff39e9481d93a0e
+contentHash: 5248b59a020fe5ae
+codeVerified: 2026-10-15T03:01:46.702Z
+codeVerifiedHash: 5248b59a020fe5ae
 codeVerifiedClaims: 12
 ---
 
@@ -32,7 +32,7 @@ The feature only detects and suggests a review. It never edits content or publis
 }
 ```
 
-- `key` identifies the rule across versions and must be unique among the intent's semantic rules. Bump `version` whenever the rule's meaning changes.
+- `key` identifies the rule across versions and must be unique among the intent's semantic rules. Bump `version` whenever the rule's meaning changes. An intent update that changes `profileKey`, `questionKey`, `contextSource` or `fields` of a stored rule without bumping its `version` is refused with `422 SEMANTIC_RULE_VERSION_REQUIRED` (`assertSemanticVersionBumps`), because the fingerprint would stay the same and the old answer would stand for the new rule. `profileVersion` and `threshold` may change without a bump: the profile version is in the fingerprint, and the threshold is applied to the stored answer on every pass.
 - `profileKey` + `profileVersion` pin one review profile version, and `questionKey` names a `noul` question in it. The question asks whether the item drifts. A question of another type makes every evaluation `unevaluated` (`question_not_noul`).
 - `threshold` (0.5–1): `noul ≥ threshold` is drift, `1 − noul ≥ threshold` is clean, anything in between is `unevaluated` (`between_thresholds`).
 - `fields` are the fields judged (default: the profile's fields). Only fields that are also profile fields are read.
@@ -48,7 +48,7 @@ A site admin sets both flags in the `aiDecisions` setting:
 { "enabled": true, "drift": true }
 ```
 
-`enabled` is the site's opt-in to sending content to the provider, and turning it off is the kill switch. `drift` turns on only the semantic pass. While either flag is off, the scan reports `semantic.status: "off"`, sends nothing, and leaves every semantic drift row exactly as it was. Studio has no form for `drift` yet, so set it through the settings API. The other keys of `aiDecisions` (for example the draft-review pilot written by Studio) are kept.
+`enabled` is the site's opt-in to sending content to the provider, and turning it off is the kill switch. `drift` turns on only the semantic pass. While either flag is off, the scan reports `semantic.status: "off"`, sends nothing, and leaves every semantic drift row exactly as it was. Every provider call re-reads both flags, and the pass checks `drift` again before each item, so switching `drift` off stops a running pass at the next item and keeps the cursor. Studio has no form for `drift` yet, so set it through the settings API. The other keys of `aiDecisions` (for example the draft-review pilot written by Studio) are kept.
 
 ## How a scan runs
 
@@ -63,8 +63,9 @@ A site admin sets both flags in the `aiDecisions` setting:
 
 A semantic drift row's `rule_key` is `<key>@v<version>:<profileVersion>:<contentHash>`, and its fingerprint is `intentId:itemId:semantic:<rule_key>`. The content hash is the J05 review hash of exactly what was sent.
 
-- **Retry.** Unchanged content gives the same fingerprint and the same review idempotency key. The stored run is replayed with no second provider call, and no second drift or goal is opened. A run that ended in an error is retried in place.
+- **Retry.** Unchanged content gives the same fingerprint and the same review idempotency key. The stored run is replayed with no second provider call, and no second drift or goal is opened. A run that ended in an error is retried in place. The idempotency key also covers the rule's definition (profile, question, context and fields), so a rule deleted and re-added with another profile under the same key and version gets a new review run instead of the old profile's answer.
 - **Invalidation.** A new rule version, a new profile version or changed content gives a new fingerprint. The new state is evaluated, and the old row resolves once that evaluation is conclusive.
+- **Removed rules.** Rows of a semantic rule the intent no longer declares resolve on the next scan without any judgement, also when no semantic rule is left and the pass does not run. The scan result reports them as `semanticOrphansResolved`.
 
 ## Uncertainty
 
@@ -82,7 +83,7 @@ Open semantic drift becomes a goal through the existing `ReconcilerService.recon
 
 ## Mission Control
 
-The intent detail lists semantic drift with the rule key and version, the profile and version, the question, the model, the answer and threshold, the revision, the content hash and the review run, all from what the scan recorded. An `unevaluated` row shows its reason code and says the earlier drift is kept. The decision model returns no rationale, so none is shown. The SLO table leaves `unevaluated` rows out of the health ratio and shows them as a separate "not evaluated" count.
+The intent detail lists semantic drift with the rule key and version, the profile and version, the question, the model, the answer and threshold, the revision, the content hash and the review run, all from what the scan recorded. An `unevaluated` row shows its reason code and says the earlier drift is kept. The decision model returns no rationale, so none is shown. The SLO table leaves `unevaluated` rows out of the health ratio and shows them as a separate "not evaluated" count. Health reads `unknown`, not 100 %, when nothing conclusive backs it: the drifts failed to load, every row is `unevaluated`, or the intent has semantic rules and no conclusive row. A clean semantic answer and a pass that was off or unavailable both leave no row, so an empty list cannot tell them apart. The dashboard's SLO health card averages only intents with a known health and counts the unknown ones in its label. For an intent with semantic rules and no drift row, the intent detail says the empty list does not show that the semantic rules pass, instead of "content meets the SLO".
 
 ## Multi-tenancy
 

@@ -28,7 +28,7 @@
 
 import { contentDrifts, contentIntents, items, type Database } from '@lumibase/database';
 import { formatSafeError } from '@lumibase/contracts/utils';
-import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import type { CacheProvider, KeyProvider } from '@lumibase/runtime';
 import {
   decisionQuotaFromEnv,
@@ -52,6 +52,7 @@ import { reviewStoreFor } from './review-store';
 import {
   semanticContextField,
   semanticOutcome,
+  semanticRuleIdentity,
   semanticRuleKey,
   semanticRuleKeyMatches,
   type SemanticRule,
@@ -106,6 +107,13 @@ export interface SemanticDriftStore {
   /** Keeps an `unevaluated` row and records the latest attempt. */
   updateDetail(fingerprint: string, detail: Record<string, unknown>): Promise<void>;
   resolve(fingerprints: readonly string[]): Promise<void>;
+  /**
+   * Resolves open/assigned/unevaluated semantic rows of the intent whose rule
+   * key is none of `liveKeys` (the rule was removed). No judgement is
+   * involved, so this runs whether or not the semantic pass may run.
+   * Returns how many rows it resolved.
+   */
+  resolveOrphans(intentId: string, liveKeys: readonly string[]): Promise<number>;
   saveCursor(intentId: string, cursor: string | null): Promise<void>;
 }
 
@@ -173,6 +181,23 @@ export function semanticDriftStoreFor(db: Database, siteId: string): SemanticDri
         .set({ status: 'resolved', resolvedAt: new Date(), updatedAt: new Date() })
         .where(and(site, inArray(contentDrifts.fingerprint, [...fingerprints])));
     },
+    async resolveOrphans(intentId, liveKeys) {
+      const rows = await db
+        .update(contentDrifts)
+        .set({ status: 'resolved', resolvedAt: new Date(), updatedAt: new Date() })
+        .where(
+          and(
+            site,
+            eq(contentDrifts.intentId, intentId),
+            eq(contentDrifts.ruleType, 'semantic'),
+            inArray(contentDrifts.status, ['open', 'assigned', 'unevaluated']),
+            // The rule key is `<key>@v…`; keys cannot contain "@".
+            liveKeys.length > 0 ? notInArray(sql`split_part(${contentDrifts.ruleKey}, '@', 1)`, [...liveKeys]) : undefined,
+          ),
+        )
+        .returning({ id: contentDrifts.id });
+      return rows.length;
+    },
     async saveCursor(intentId, cursor) {
       await db
         .update(contentIntents)
@@ -218,8 +243,13 @@ export function semanticDriftRuntimeFromEnv(deps: {
           runGovernedDecision(
             async () => ({
               configured: createDecisionProvider(providerEnv),
-              // Re-read at call time: the kill switch applies up to the provider call.
-              settings: await readDecisionSettings(db, siteId),
+              // Re-read at call time: the kill switch applies up to the provider
+              // call, and so does `aiDecisions.drift` — turning it off alone
+              // denies the call (DECISION_DISABLED) like the site switch does.
+              settings: await readDecisionSettings(db, siteId).then((settings) => ({
+                ...settings,
+                enabled: driftDecisionsEnabled(settings),
+              })),
               quota: decisionQuotaFromEnv(providerEnv),
               cache,
               siteId,
@@ -258,7 +288,10 @@ export interface SemanticScanResult {
   opened: number;
   reopened: number;
   resolved: number;
-  /** False when the item budget or the deadline stopped the pass; `cursor` resumes it. */
+  /**
+   * False when the item budget, the deadline or drift decisions being
+   * switched off mid-pass stopped it; `cursor` resumes it.
+   */
   completed: boolean;
   cursor: string | null;
 }
@@ -407,7 +440,12 @@ export async function runSemanticPass(input: SemanticPassInput): Promise<Semanti
     try {
       review = await service.runReview(
         { profile: rule.profileKey, profileVersion: rule.profileVersion, collection: input.intent.collection, itemId: item.id },
-        { principal: SEMANTIC_DRIFT_PRINCIPAL, idempotencyKey: `drift:${(await sha256Hex(fingerprint)).slice(0, 48)}` },
+        {
+          principal: SEMANTIC_DRIFT_PRINCIPAL,
+          // The definition is part of the key: a rule re-added with another
+          // profile under the same key and version is a new review run.
+          idempotencyKey: `drift:${(await sha256Hex(`${fingerprint}|${semanticRuleIdentity(rule)}`)).slice(0, 48)}`,
+        },
       );
     } catch (error) {
       if (error instanceof ReviewServiceError) return unevaluated(error.code);
@@ -458,6 +496,14 @@ export async function runSemanticPass(input: SemanticPassInput): Promise<Semanti
       if (now() >= input.deadline) {
         budgetHit = true;
         break;
+      }
+      // Switching drift decisions off stops a running pass at the next item;
+      // the cursor keeps the place for when it is switched back on.
+      if (visited > 0 || result.items > 0) {
+        if (!driftDecisionsEnabled(await runtime.readSettings())) {
+          budgetHit = true;
+          break;
+        }
       }
       visited += 1;
       for (const rule of input.rules) {
