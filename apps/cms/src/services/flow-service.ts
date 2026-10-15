@@ -161,9 +161,20 @@ registerHandler('condition', async (ctx, options) => {
   const expected = options['value'];
   const op = String(options['operator'] ?? '==');
 
-  const actual = path.split('.').reduce<unknown>(
-    (acc, key) => (acc && typeof acc === 'object' ? (acc as Record<string, unknown>)[key] : undefined),
-    ctx as unknown as Record<string, unknown>,
+  // Graph authors may inspect data, never trusted runtime dependencies (env).
+  // Resolve against a separate data view, and never traverse prototypes.
+  const segments = path.split('.');
+  if (
+    !['input', 'steps'].includes(segments[0] ?? '') ||
+    segments.some((key) => !key || ['__proto__', 'constructor', 'prototype'].includes(key))
+  ) {
+    throw new Error('Condition path must reference input or steps without prototype access');
+  }
+  const actual = segments.reduce<unknown>(
+    (acc, key) => (acc && typeof acc === 'object' && Object.prototype.hasOwnProperty.call(acc, key)
+      ? (acc as Record<string, unknown>)[key]
+      : undefined),
+    { input: ctx.input, steps: ctx.steps },
   );
 
   let pass = false;
