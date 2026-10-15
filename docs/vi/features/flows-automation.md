@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-10-15T17:52:31.981Z
+version: 6
+lastUpdated: 2026-10-15T17:59:11.981Z
 sourceLang: vi
-contentHash: ce52d133155305dc
-codeVerified: 2026-10-15T17:52:31.981Z
-codeVerifiedHash: ce52d133155305dc
+contentHash: eb9e8ac74c4dda2e
+codeVerified: 2026-10-15T17:59:11.981Z
+codeVerifiedHash: eb9e8ac74c4dda2e
 codeVerifiedClaims: 12
 translatedFrom: en
 sourceHash: a3fe5733ba13b42f
@@ -108,7 +108,7 @@ Output lưu vào step của node: `{ branch, runId, replayed, decision, errorCod
 
 Governance, kiểm tra lúc node chạy chứ không phải lúc run vào hàng đợi:
 
-- **Bật/tắt.** Cần setting `aiDecisions` có cả `enabled: true` lẫn `flows: true`. `flows` mặc định tắt (Phase C). Kill switch của site (`enabled: false`) cũng dừng flows.
+- **Bật/tắt.** Cần setting `aiDecisions` có cả `enabled: true` lẫn `flows: true`. `flows` mặc định tắt (Phase C). Kill switch của site (`enabled: false`) cũng dừng flows. Site admin bật/tắt `flows` trong Studio ở **Settings → AI decisions** (**Allow decisions in Flows**), hoặc qua settings API.
 - **Principal.** Chỉ run thủ công (`POST /api/v1/flows/:id/run`) mang principal: một tham chiếu tới người gọi, không có snapshot quyền. Worker resolve lại principal đó, kiểm `ai:decide` trên grant hiện hành và đọc nội dung với quyền row/field của chính người đó. Run từ event, schedule và webhook không có ai để quyết định thay, nên bị từ chối (`FORBIDDEN`) chứ không chạy với quyền system.
 - **Lỗi không bao giờ là `true`.** Forbidden, disabled, quota, timeout, cancel, lỗi provider, profile hoặc item không tồn tại đều đi vào nhánh `error` nếu nhánh đó được nối; nếu không thì node thất bại và runner đi theo `onError`.
 - **Idempotency.** Key của review run là `flow:<flowRunId>:<nodeId>`, theo từng principal. Chạy lại cùng một flow run (job bị giao lại) sẽ replay quyết định đã lưu mà không gọi provider lần hai. Nếu nội dung đã đổi từ lần đó, replay trả `unknown` (`stale`). Review run kết thúc bằng `error` được thử lại.

@@ -1,13 +1,13 @@
 ---
-version: 6
+version: 7
 sourceLang: en
-lastUpdated: 2026-10-15T17:43:33.309Z
+lastUpdated: 2026-10-15T17:59:12.399Z
 translatedFrom: en
-sourceHash: c060dab1a6b367eb
+sourceHash: 286a5c51bfd98adb
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T17:43:33.309Z
-codeVerifiedHash: c060dab1a6b367eb
+codeVerified: 2026-10-15T17:59:12.399Z
+codeVerifiedHash: 286a5c51bfd98adb
 codeVerifiedClaims: 14
 ---
 
@@ -58,7 +58,7 @@ Một đề xuất không thay đổi gì là `noop`.
 
 ## Chế độ
 
-Setting `aiDecisions` (do site admin ghi qua `POST /api/v1/settings`) chứa khối tự động hoá:
+Setting `aiDecisions` (do site admin ghi qua `POST /api/v1/settings`) chứa khối tự động hoá. Trang **Settings → AI decisions** của Studio hiển thị khối này ở chế độ chỉ đọc (chế độ đã cấu hình, có bản ghi gate hay không, số ngưỡng theo từng locale; khối không đọc được sẽ hiện là shadow) và có nút **Return to shadow**, đặt `mode: 'shadow'` và giữ nguyên các ngưỡng cùng gate. Studio không bao giờ bật tự động hoá sang live: gate phải trỏ tới một report đã đo, nên việc đó vẫn là một lần ghi qua settings API.
 
 ```json
 {

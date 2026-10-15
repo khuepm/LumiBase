@@ -10,6 +10,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Added
+- **Studio: Flows, semantic drift and automation status in Settings → AI
+  decisions (#518, #519).** Site admins switch `aiDecisions.flows` and
+  `aiDecisions.drift` there. Jev automation is shown read-only (configured
+  mode, gate record present, thresholds per locale; an unreadable block shows
+  as shadow) with a **Return to shadow** action that keeps the thresholds and
+  gate. Studio still never turns automation live. Other `aiDecisions` keys are
+  kept as stored; an absent `flows`/`drift` flag stays absent until set.
 - **Draft review profiles and runs (#512).** Versioned review profiles
   (`/api/v1/ai/review-profiles`, admin-managed, immutable versions; presets
   `taxonomy`, `brand-voice`, `brief-alignment`) and item-bound review runs

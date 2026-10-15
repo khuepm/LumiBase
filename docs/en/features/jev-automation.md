@@ -1,10 +1,10 @@
 ---
-version: 6
+version: 7
 sourceLang: en
-lastUpdated: 2026-10-15T17:43:33.309Z
-contentHash: c060dab1a6b367eb
-codeVerified: 2026-10-15T17:43:33.309Z
-codeVerifiedHash: c060dab1a6b367eb
+lastUpdated: 2026-10-15T17:59:12.399Z
+contentHash: 286a5c51bfd98adb
+codeVerified: 2026-10-15T17:59:12.399Z
+codeVerifiedHash: 286a5c51bfd98adb
 codeVerifiedClaims: 14
 ---
 
@@ -55,7 +55,7 @@ A proposal that changes nothing is `noop`.
 
 ## Mode
 
-The `aiDecisions` setting (written by a site admin through `POST /api/v1/settings`) holds the automation block:
+The `aiDecisions` setting (written by a site admin through `POST /api/v1/settings`) holds the automation block. Studio's **Settings → AI decisions** page shows it read-only (configured mode, whether a gate record exists, the number of thresholds per locale; a block it cannot read shows as shadow) and offers **Return to shadow**, which sets `mode: 'shadow'` and keeps the thresholds and the gate. Studio never turns automation live: the gate must cite a measured report, so that stays a settings-API write.
 
 ```json
 {

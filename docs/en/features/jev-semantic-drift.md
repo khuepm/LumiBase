@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-10-15T17:51:42.717Z
+version: 4
+lastUpdated: 2026-10-15T17:59:12.175Z
 sourceLang: en
-contentHash: 514ba90e2727b174
-codeVerified: 2026-10-15T17:51:42.717Z
-codeVerifiedHash: 514ba90e2727b174
+contentHash: b9ac6bc9de722ed9
+codeVerified: 2026-10-15T17:59:12.175Z
+codeVerifiedHash: b9ac6bc9de722ed9
 codeVerifiedClaims: 12
 ---
 
@@ -48,7 +48,7 @@ A site admin sets both flags in the `aiDecisions` setting:
 { "enabled": true, "drift": true }
 ```
 
-`enabled` is the site's opt-in to sending content to the provider, and turning it off is the kill switch. `drift` turns on only the semantic pass. While either flag is off, the scan reports `semantic.status: "off"`, sends nothing, and leaves every semantic drift row exactly as it was. Every provider call re-reads both flags, and the pass checks `drift` again before each item, so switching `drift` off stops a running pass at the next item and keeps the cursor. Studio has no form for `drift` yet, so set it through the settings API. The other keys of `aiDecisions` (for example the draft-review pilot written by Studio) are kept.
+`enabled` is the site's opt-in to sending content to the provider, and turning it off is the kill switch. `drift` turns on only the semantic pass. While either flag is off, the scan reports `semantic.status: "off"`, sends nothing, and leaves every semantic drift row exactly as it was. Every provider call re-reads both flags, and the pass checks `drift` again before each item, so switching `drift` off stops a running pass at the next item and keeps the cursor. A site admin switches `drift` in Studio under **Settings → AI decisions** (**Evaluate semantic drift rules**), or through the settings API. The other keys of `aiDecisions` (for example the draft-review pilot written by Studio) are kept.
 
 ## How a scan runs
 
@@ -96,4 +96,3 @@ The intent detail lists semantic drift with the rule key and version, the profil
 - No live benchmark yet, so no measured drift precision, recall or false-positive rate.
 - Event and schedule Flows runs carry no cache or provider configuration, so their semantic pass reports `unavailable`. Manual Flows runs and `POST /api/v1/intents/:id/scan` run it.
 - Tested with unit tests and a Postgres integration suite, not on a deployed Cloudflare Worker.
-- No Studio toggle for `aiDecisions.drift`.

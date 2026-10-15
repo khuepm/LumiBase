@@ -181,4 +181,68 @@ describe('AI decisions settings', () => {
     expect(router).toContain('adminPathAiDecisionsSettingsRoute,');
     expect(layout).toContain("{ id: 'ai-decisions', label: 'AI decisions', to: '/settings/ai-decisions' }");
   });
+
+  it('switches Flows decisions and semantic drift and keeps every other key', async () => {
+    stored = { ...stored, automation: { mode: 'shadow', thresholds: {} } };
+    renderPage();
+    expect(await screen.findByTestId('ai-decisions-status')).toHaveTextContent('Flows decisions off. Semantic drift off.');
+    fireEvent.click(screen.getByLabelText(/Allow decisions in Flows/));
+    fireEvent.click(screen.getByLabelText(/Evaluate semantic drift rules/));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+    expect(set).toHaveBeenCalledWith('aiDecisions', {
+      enabled: true,
+      allowedStateFields: ['title', 'body'],
+      requestsPerHour: 50,
+      review: { enabled: false, pilotCollections: [], mode: 'baseline' },
+      automation: { mode: 'shadow', thresholds: {} },
+      flows: true,
+      drift: true,
+    });
+  });
+
+  it('the kill switch leaves the stored flows and drift flags as they were (enabled off stops both)', async () => {
+    stored = { ...stored, flows: true, drift: true };
+    renderPage();
+    await screen.findByTestId('ai-decisions-status');
+    fireEvent.click(screen.getByRole('button', { name: /Turn everything off/ }));
+    await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+    expect(set).toHaveBeenCalledWith('aiDecisions', expect.objectContaining({ enabled: false, flows: true, drift: true }));
+  });
+
+  it('shows live automation read-only and returns it to shadow, keeping thresholds and the gate', async () => {
+    const thresholds = {
+      vi: { tag: { provider: 'typesafe', model: 'jev', profileKey: 'taxonomy', profileVersion: 1, questionKey: 'category', minConfidence: 0.8 } },
+    };
+    const gate = { approvedBy: 'usr_admin', approvedAt: '2026-11-01T09:00:00Z', evidenceRef: 'eval/report.heldout.json' };
+    stored = { ...stored, flows: true, automation: { mode: 'live', thresholds, gate } };
+    renderPage();
+    expect(await screen.findByTestId('ai-automation-status')).toHaveTextContent('Configured mode: live.');
+    expect(screen.getByText(/Gate record: present\. Thresholds: vi: 1\./)).toBeInTheDocument();
+    // There is no control that turns automation live.
+    expect(screen.queryByRole('button', { name: /go live|turn on automation/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Return to shadow' }));
+    await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+    expect(set).toHaveBeenCalledWith('aiDecisions', {
+      enabled: true,
+      allowedStateFields: ['title', 'body'],
+      requestsPerHour: 50,
+      review: { enabled: false, pilotCollections: [], mode: 'baseline' },
+      flows: true,
+      automation: { mode: 'shadow', thresholds, gate },
+    });
+    expect(await screen.findByText(/Automation is back in shadow/)).toBeInTheDocument();
+  });
+
+  it.each([
+    ['not an object', 'live'],
+    ['an unknown key', { mode: 'live', force: true }],
+    ['a bad gate', { mode: 'live', gate: { approvedBy: 'x' } }],
+  ])('reads malformed automation (%s) as shadow and offers no return-to-shadow', async (_label, automation) => {
+    stored = { ...stored, automation };
+    renderPage();
+    expect(await screen.findByTestId('ai-automation-status')).toHaveTextContent('cannot be read, so nothing is written');
+    expect(screen.queryByRole('button', { name: 'Return to shadow' })).toBeNull();
+  });
 });

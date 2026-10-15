@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-10-15T17:51:42.717Z
+version: 4
+lastUpdated: 2026-10-15T17:59:12.175Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 514ba90e2727b174
+sourceHash: b9ac6bc9de722ed9
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T17:51:42.717Z
-codeVerifiedHash: 514ba90e2727b174
+codeVerified: 2026-10-15T17:59:12.175Z
+codeVerifiedHash: b9ac6bc9de722ed9
 codeVerifiedClaims: 12
 ---
 
@@ -51,7 +51,7 @@ Admin site đặt cả hai cờ trong setting `aiDecisions`:
 { "enabled": true, "drift": true }
 ```
 
-`enabled` là việc site đồng ý gửi nội dung tới provider, và tắt nó là kill switch. `drift` chỉ bật pass ngữ nghĩa. Khi một trong hai cờ tắt, scan báo `semantic.status: "off"`, không gửi gì, và giữ nguyên mọi hàng drift ngữ nghĩa. Mỗi lần gọi provider đều đọc lại cả hai cờ, và pass kiểm lại `drift` trước mỗi item, nên tắt `drift` sẽ dừng pass đang chạy ở item kế tiếp và giữ cursor. Studio chưa có form cho `drift`, nên hãy đặt qua settings API. Các key khác của `aiDecisions` (ví dụ pilot kiểm tra bản nháp do Studio ghi) được giữ nguyên.
+`enabled` là việc site đồng ý gửi nội dung tới provider, và tắt nó là kill switch. `drift` chỉ bật pass ngữ nghĩa. Khi một trong hai cờ tắt, scan báo `semantic.status: "off"`, không gửi gì, và giữ nguyên mọi hàng drift ngữ nghĩa. Mỗi lần gọi provider đều đọc lại cả hai cờ, và pass kiểm lại `drift` trước mỗi item, nên tắt `drift` sẽ dừng pass đang chạy ở item kế tiếp và giữ cursor. Site admin bật/tắt `drift` trong Studio ở **Settings → AI decisions** (**Evaluate semantic drift rules**), hoặc qua settings API. Các key khác của `aiDecisions` (ví dụ pilot kiểm tra bản nháp do Studio ghi) được giữ nguyên.
 
 ## Một lần scan chạy thế nào
 
@@ -99,4 +99,3 @@ Trang chi tiết intent liệt kê drift ngữ nghĩa kèm key và phiên bản 
 - Chưa có benchmark live, nên chưa có số đo precision, recall hay tỉ lệ false-positive của drift.
 - Lần chạy Flows theo event và theo lịch không mang cache hay cấu hình provider, nên pass ngữ nghĩa của chúng báo `unavailable`. Lần chạy Flows thủ công và `POST /api/v1/intents/:id/scan` thì chạy được.
 - Đã kiểm bằng unit test và một bộ integration trên Postgres, chưa chạy trên một Cloudflare Worker đã deploy.
-- Studio chưa có công tắc cho `aiDecisions.drift`.
