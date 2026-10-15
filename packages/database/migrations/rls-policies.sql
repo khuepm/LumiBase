@@ -11,27 +11,64 @@
 --      policies target those names.
 --   2. The Postgres role used by Hyperdrive must NOT be a superuser.
 --      Use a dedicated `lumibase_app` role with GRANT on all tables.
---   3. Declare the custom setting in postgresql.conf or via ALTER DATABASE:
---        ALTER DATABASE lumibase SET "app.site_id" = '';
+--   3. The custom setting `app.site_id` gets a safe default ('') on the
+--      current database; this file sets it itself (no hardcoded db name).
 --
--- How to apply:
---   psql $DATABASE_URL -f packages/database/migrations/rls-policies.sql
+-- How to apply (as the database OWNER or a superuser, never the app role):
+--   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \
+--     -f packages/database/migrations/rls-policies.sql
+--
+--   `pnpm db:migrate` does NOT apply this file. Re-apply it after every
+--   upgrade. It is idempotent and converges from any earlier version of this
+--   file (including the restrictive-only one, see B125 below).
+--
+-- Verify (expect exactly 2 rows per table: one PERMISSIVE, one RESTRICTIVE):
+--   SELECT tablename, policyname, permissive FROM pg_policies
+--    WHERE policyname IN ('site_isolation', 'site_isolation_permit')
+--    ORDER BY 1, 2;
+--
+-- Why two policies per table (B125):
+--   Postgres shows a non-BYPASSRLS role NO rows unless at least one PERMISSIVE
+--   policy passes; RESTRICTIVE policies only narrow what permissive ones allow.
+--   An earlier version of this file created only RESTRICTIVE policies, so the
+--   app role it requires saw and wrote nothing on every listed table.
+--   Each table now gets:
+--     - site_isolation         RESTRICTIVE  site_id = app_site_id()
+--     - site_isolation_permit  PERMISSIVE   site_id = app_site_id()
+--   The effective rule is "(permit OR any other permissive) AND site_isolation".
+--   The restrictive half means no extra permissive policy (for example a
+--   `USING (true)` workaround added for B125) can widen access; the permissive
+--   half carries the same predicate rather than `USING (true)`, so dropping
+--   site_isolation still fails closed. With app.site_id unset or empty,
+--   app_site_id() is NULL, `site_id = NULL` is never true: zero rows visible,
+--   and every INSERT/UPDATE fails WITH CHECK.
 -- =============================================================================
 
--- Ensure the app.site_id setting exists with a safe default.
-ALTER DATABASE lumibase SET "app.site_id" = '';
+-- Ensure the app.site_id setting exists with a safe default on the current
+-- database (current_database() so the file applies under any database name).
+DO $$
+BEGIN
+  EXECUTE format('ALTER DATABASE %I SET %I = %L', current_database(), 'app.site_id', '');
+END $$;
 
 -- =============================================================================
 -- Helper function — returns the current site_id from session config.
 -- Returns NULL (not empty string) when unset so IS NULL checks work.
+--
+-- SECURITY INVOKER with a pinned search_path (B128): the function needs no
+-- elevated rights, and a definer-rights function without a pinned
+-- search_path lets a caller shadow current_setting() and run code as the owner
+-- (CVE-2018-1058 pattern).
 -- =============================================================================
 CREATE OR REPLACE FUNCTION app_site_id() RETURNS text
-  LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  LANGUAGE sql STABLE SECURITY INVOKER
+  SET search_path = pg_catalog, pg_temp
+  AS $$
     SELECT NULLIF(current_setting('app.site_id', true), '');
   $$;
 
 -- =============================================================================
--- Macro: enable RLS on a table and create USING policy.
+-- Macro: enable RLS on a table and create the policy pair.
 -- We use a DO block to keep things DRY.
 -- =============================================================================
 
@@ -79,16 +116,28 @@ BEGIN
     -- Force RLS even for table owner (defence-in-depth).
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', tbl);
 
-    -- Drop existing policy if re-running migration.
+    -- Drop existing policies if re-running migration (also converges from the
+    -- restrictive-only version of this file).
     EXECUTE format('DROP POLICY IF EXISTS site_isolation ON %I', tbl);
+    EXECUTE format('DROP POLICY IF EXISTS site_isolation_permit ON %I', tbl);
 
-    -- Read isolation: rows visible only when site_id matches session var.
+    -- RESTRICTIVE: ANDs with every other policy, so no permissive policy an
+    -- operator adds (e.g. a USING (true) workaround for B125) can widen access.
     -- app_site_id() returning NULL → no rows visible (fail-safe).
     -- Use a distinct dollar-quote tag (dollar-pol-dollar) so it does not clash
     -- with the outer DO block; nested identical tags are a syntax error.
     EXECUTE format($pol$
       CREATE POLICY site_isolation ON %I
-        AS RESTRICTIVE
+        AS RESTRICTIVE FOR ALL TO PUBLIC
+        USING (site_id = app_site_id())
+        WITH CHECK (site_id = app_site_id())
+    $pol$, tbl);
+
+    -- PERMISSIVE: Postgres shows NO rows unless at least one permissive policy
+    -- passes (B125). Same predicate, so dropping site_isolation still fails closed.
+    EXECUTE format($pol$
+      CREATE POLICY site_isolation_permit ON %I
+        AS PERMISSIVE FOR ALL TO PUBLIC
         USING (site_id = app_site_id())
         WITH CHECK (site_id = app_site_id())
     $pol$, tbl);
@@ -97,10 +146,18 @@ END $$;
 
 -- =============================================================================
 -- Tables with nullable site_id (extensions can be global) — special policy.
+-- Global rows (site_id IS NULL) are visible and writable even with no scope
+-- set, by design: the marketplace reads and publishes global extensions.
+-- Site rows are only visible under their own scope.
 -- =============================================================================
 DROP POLICY IF EXISTS site_isolation ON lumibase_extensions;
+DROP POLICY IF EXISTS site_isolation_permit ON lumibase_extensions;
 CREATE POLICY site_isolation ON lumibase_extensions
-  AS RESTRICTIVE
+  AS RESTRICTIVE FOR ALL TO PUBLIC
+  USING (site_id IS NULL OR site_id = app_site_id())
+  WITH CHECK (site_id IS NULL OR site_id = app_site_id());
+CREATE POLICY site_isolation_permit ON lumibase_extensions
+  AS PERMISSIVE FOR ALL TO PUBLIC
   USING (site_id IS NULL OR site_id = app_site_id())
   WITH CHECK (site_id IS NULL OR site_id = app_site_id());
 
@@ -116,5 +173,7 @@ ALTER TABLE lumibase_role_policies DISABLE ROW LEVEL SECURITY;
 -- lumibase_sites, lumibase_users: intentionally excluded from site-scoped RLS.
 
 COMMENT ON FUNCTION app_site_id IS
-  'Returns the current request site_id from SET LOCAL app.site_id.
-   Used by all RLS policies for site-level row isolation.';
+  'Returns the current request site_id from SET LOCAL app.site_id (NULL when
+   unset or empty). SECURITY INVOKER with a pinned search_path. Used by the
+   site_isolation (RESTRICTIVE) and site_isolation_permit (PERMISSIVE) RLS
+   policies for site-level row isolation.';

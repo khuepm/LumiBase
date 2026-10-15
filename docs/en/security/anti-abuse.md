@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-09-07T15:23:17.206Z
+version: 3
+lastUpdated: 2026-10-15T22:27:47.620Z
 sourceLang: en
-contentHash: 6029fc9470a0c3a9
-codeVerified: 2026-09-10T02:17:10.994Z
-codeVerifiedHash: 6029fc9470a0c3a9
+contentHash: 781cd60c0c80bbdb
+codeVerified: 2026-10-15T22:27:47.620Z
+codeVerifiedHash: 781cd60c0c80bbdb
 codeVerifiedClaims: 72
 ---
 
@@ -152,9 +152,19 @@ its own role check still cannot be reached by a non-admin.
 **Best practice:** do not rely only on application-level `site_id` filters —
 enforce isolation in the database so a missing `.where()` cannot leak data.
 
-- `packages/database/migrations/rls-policies.sql` applies RESTRICTIVE
-  row-level-security policies (`site_id = app_site_id()`) with `WITH CHECK` on
-  writes. The request binds `SET LOCAL app.site_id` per request.
+- `packages/database/migrations/rls-policies.sql` gives every scoped table a
+  pair of row-level-security policies with the same predicate
+  (`site_id = app_site_id()`) and `WITH CHECK` on writes: `site_isolation`
+  (RESTRICTIVE) and `site_isolation_permit` (PERMISSIVE). Postgres shows a
+  role without BYPASSRLS no rows unless a permissive policy passes; the
+  restrictive half stops any other permissive policy from widening access.
+  With `app.site_id` unset or empty, no row is visible and every write fails.
+  The request binds `SET LOCAL app.site_id` per request.
+- Apply the file as the database owner (not the app role), and re-apply it
+  after every upgrade: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1
+  --single-transaction -f packages/database/migrations/rls-policies.sql`.
+  `pnpm db:migrate` does not apply it. Before B125 the file created only
+  restrictive policies, so the non-superuser app role saw and wrote nothing.
 - The application layer additionally scopes every query by `siteId`
   (`CLAUDE.md` non-negotiable rule #2) — defense-in-depth on top of RLS.
 - See **[idor-testing.md](./idor-testing.md)** for the cross-tenant (IDOR) test

@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:05:49.466Z
+version: 3
+lastUpdated: 2026-10-15T22:27:48.731Z
 sourceLang: en
-contentHash: 8213b15617869cfe
-codeVerified: 2026-08-02T19:05:54.545Z
-codeVerifiedHash: 8213b15617869cfe
-codeVerifiedClaims: 26
+contentHash: 641f834b11c530ea
+codeVerified: 2026-10-15T22:27:48.731Z
+codeVerifiedHash: 641f834b11c530ea
+codeVerifiedClaims: 28
 ---
 
 # LumiBase Production Deployment Checklist
@@ -175,7 +175,24 @@ pnpm -F @lumibase/database migrate
 
 ### Database Security
 
-- [ ] Row Level Security (RLS) enabled
+- [ ] Row Level Security (RLS) enabled: apply `packages/database/migrations/rls-policies.sql` as the database owner (not the app role). `pnpm db:migrate` does not apply it; re-apply after every upgrade.
+  ```bash
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \
+    -f packages/database/migrations/rls-policies.sql
+  ```
+- [ ] RLS policies verified: the query below returns 2 rows per table (`site_isolation` RESTRICTIVE, `site_isolation_permit` PERMISSIVE).
+  ```sql
+  SELECT tablename, policyname, permissive FROM pg_policies
+   WHERE policyname IN ('site_isolation', 'site_isolation_permit')
+   ORDER BY 1, 2;
+  ```
+- [ ] RLS smoke test as the app role: the count is > 0 for a site that has settings, and 0 when `app.site_id` is not set.
+  ```sql
+  BEGIN;
+  SELECT set_config('app.site_id', '<site id>', true);
+  SELECT count(*) FROM lumibase_settings;
+  COMMIT;
+  ```
 - [ ] No public schema access
 - [ ] Audit logging enabled
 - [ ] Backup schedule configured

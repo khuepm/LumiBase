@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-09-01T19:24:40.610Z
+version: 4
+lastUpdated: 2026-10-15T22:27:48.154Z
 sourceLang: en
-contentHash: 11243114e1f63c3b
-codeVerified: 2026-09-01T19:24:40.610Z
-codeVerifiedHash: 11243114e1f63c3b
+contentHash: 80197960d1b052a3
+codeVerified: 2026-10-15T22:27:48.154Z
+codeVerifiedHash: 80197960d1b052a3
 codeVerifiedClaims: 52
 ---
 
@@ -64,8 +64,9 @@ after the remediations in this changeset (see [Remediations](#remediations-appli
   `:642-651`); `scopeSite` is used pervasively across services.
 - **Postgres RLS backstop, fail-closed** — `middleware/rls.ts:35-81` sets
   `app.site_id` per request and returns `503 RLS_UNAVAILABLE` if the scope
-  can't be set (`:54-76`). RESTRICTIVE policies in
-  `packages/database/migrations/rls-policies.sql`.
+  can't be set (`:54-76`). A RESTRICTIVE + PERMISSIVE policy pair per table in
+  `packages/database/migrations/rls-policies.sql` (since B125; before that the
+  file had only restrictive policies, so a non-superuser role saw 0 rows).
 - **Membership binding prevents tenant hopping** — `middleware/site-membership.ts:86-98`
   requires a `user_sites` row for the requested site, else `403 TENANT_FORBIDDEN`;
   API keys are site-matched in `withAuth` (`middleware/auth.ts:276-282`).

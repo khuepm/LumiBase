@@ -2,6 +2,38 @@
 
 Append-only history of automated EN ⇄ VI documentation syncs. Each run records language detection, preserved content and translation actions so no source content is silently lost.
 
+## 2026-10-15T22:39:13.764Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 157
+
+Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-15T22:28:26.680Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 157
+
+Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-15T22:27:57.279Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 157
+
+Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-15T22:25:27.195Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 157
+
+Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
 ## 2026-10-15T22:00:06.041Z — mode `preserve-only` (effective `preserve-only`)
 
 Engine: `claude` · API key: absent · files scanned: 157

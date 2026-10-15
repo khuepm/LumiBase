@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 3
-lastUpdated: 2026-09-01T19:24:40.610Z
+version: 4
+lastUpdated: 2026-10-15T22:27:48.154Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 11243114e1f63c3b
+sourceHash: 80197960d1b052a3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-01T19:24:40.610Z
-codeVerifiedHash: 11243114e1f63c3b
+codeVerified: 2026-10-15T22:27:48.154Z
+codeVerifiedHash: 80197960d1b052a3
 codeVerifiedClaims: 52
 ---
 
@@ -70,8 +70,9 @@ sau các lần khắc phục trong changeset này (xem [Khắc phục](#các-kh�
   `:642-651`); `scopeSite` được dùng khắp các service.
 - **Postgres RLS làm lớp chốt, fail-closed** — `middleware/rls.ts:35-81` set
   `app.site_id` theo từng request và trả `503 RLS_UNAVAILABLE` nếu không set được
-  scope (`:54-76`). Các policy RESTRICTIVE nằm ở
-  `packages/database/migrations/rls-policies.sql`.
+  scope (`:54-76`). Mỗi bảng có một cặp policy RESTRICTIVE + PERMISSIVE trong
+  `packages/database/migrations/rls-policies.sql` (từ B125; trước đó file chỉ có
+  policy restrictive nên role non-superuser thấy 0 dòng).
 - **Ràng buộc membership ngăn việc nhảy tenant** — `middleware/site-membership.ts:86-98`
   yêu cầu có một row `user_sites` cho site được yêu cầu, nếu không thì
   `403 TENANT_FORBIDDEN`; API key được khớp theo site trong `withAuth`

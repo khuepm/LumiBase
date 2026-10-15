@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-10-15T17:21:53.913Z
+version: 6
+lastUpdated: 2026-10-15T22:27:48.531Z
 sourceLang: en
-contentHash: 59c8ffce4075b992
-codeVerified: 2026-10-15T17:21:53.913Z
-codeVerifiedHash: 59c8ffce4075b992
+contentHash: 3eecec4234c1cbaf
+codeVerified: 2026-10-15T22:27:48.531Z
+codeVerifiedHash: 3eecec4234c1cbaf
 codeVerifiedClaims: 18
 ---
 
@@ -528,3 +528,4 @@ AAD-bound to `{ siteId, integrationId, field }`); plaintext is never stored.
 - An index on `(siteId, …)` is mandatory on every domain table.
 - Apply the Drizzle `scopeSite(siteId)` helper at the repository layer.
 - Postgres RLS is enabled through the `withRls()` middleware (`apps/cms/src/middleware/rls.ts`) — it sets a session variable for defence in depth.
+- The policies live in `packages/database/migrations/rls-policies.sql`. The operator applies that file by hand; `pnpm db:migrate` does not. Each listed table gets two policies with the same predicate: `site_isolation` (RESTRICTIVE) and `site_isolation_permit` (PERMISSIVE). The exception is `lumibase_extensions`, whose global rows (`site_id IS NULL`) stay visible. With `app.site_id` unset, no row of a scoped table is visible.

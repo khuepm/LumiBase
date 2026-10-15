@@ -1,15 +1,18 @@
 ---
-version: 2
-lastUpdated: 2026-07-27T23:50:23.218Z
+version: 4
+lastUpdated: 2026-10-15T22:28:25.017Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 00f15e0eb7ed5ea0
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-27T23:50:23.218Z
-codeVerifiedHash: 00f15e0eb7ed5ea0
-codeVerifiedClaims: 6
+sourceHash: 140c0adb805aad56
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-10-15T22:28:25.017Z
+codeVerifiedHash: 140c0adb805aad56
+codeVerifiedClaims: 8
 ---
+
+<!-- check-parity: allow code-fences -->
+<!-- Recorded by stamp-pair --allow-structure-drift on 2026-10-15T22:27:56.523Z. See commit history for rationale. -->
 
 # Cloudflare Access & Custom JWT Authentication
 
@@ -141,9 +144,14 @@ LumiBase enforces strict multi-tenancy at the database layer, using Hono's `with
    ```sql
    SELECT set_config('app.site_id', '<siteId>', true);
    ```
-3. **RLS policy**: every subsequent query (via Drizzle ORM) is filtered automatically by Postgres according to:
+3. **RLS policy**: every subsequent query (via Drizzle ORM) is filtered automatically by Postgres through the policy pair that `packages/database/migrations/rls-policies.sql` creates on each table:
    ```sql
-   CREATE POLICY tenant_isolation_policy ON <table_name>
-   FOR ALL USING (site_id = current_setting('app.site_id'));
+   CREATE POLICY site_isolation ON <table_name>
+     AS RESTRICTIVE FOR ALL TO PUBLIC
+     USING (site_id = app_site_id()) WITH CHECK (site_id = app_site_id());
+   CREATE POLICY site_isolation_permit ON <table_name>
+     AS PERMISSIVE FOR ALL TO PUBLIC
+     USING (site_id = app_site_id()) WITH CHECK (site_id = app_site_id());
    ```
+   `app_site_id()` returns `NULLIF(current_setting('app.site_id', true), '')`, so with no scope set no row is visible and every write is refused.
    *This means a user or admin of one site cannot read or write another site's data at all — even if some code is buggy and omits its WHERE clause.*
