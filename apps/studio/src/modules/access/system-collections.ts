@@ -1,4 +1,4 @@
-export type AccessCollectionGroupId = 'content' | 'schema' | 'access' | 'extension' | 'sensitive';
+export type AccessCollectionGroupId = 'content' | 'schema' | 'access' | 'extension' | 'ai' | 'sensitive';
 
 export type AccessCollectionOption = {
   name: string;
@@ -41,17 +41,26 @@ const EXTENSION_ACCESS_TARGETS = [
   'extension_endpoints',
   'extension_operations',
 ] as const;
+/** Pseudo-collections gating paid AI usage (#511: `lumibase_ai_decisions` → `create`). */
+const AI_COLLECTIONS = ['lumibase_ai_decisions'] as const;
 
 const SYSTEM_CONTRACT_COLLECTIONS = [
   ...SCHEMA_COLLECTIONS,
   ...ACCESS_COLLECTIONS,
   ...EXTENSION_ACCESS_TARGETS,
+  ...AI_COLLECTIONS,
   ...SENSITIVE_COLLECTIONS,
 ] as const;
+
+/** Display labels for system pseudo-collections whose name is not self-explanatory. */
+const SYSTEM_LABELS: Record<string, string> = {
+  lumibase_ai_decisions: 'AI decisions',
+};
 
 const SCHEMA_SET = new Set<string>(SCHEMA_COLLECTIONS);
 const ACCESS_SET = new Set<string>(ACCESS_COLLECTIONS);
 const EXTENSION_SET = new Set<string>(EXTENSION_ACCESS_TARGETS);
+const AI_SET = new Set<string>(AI_COLLECTIONS);
 const SENSITIVE_SET = new Set<string>(SENSITIVE_COLLECTIONS);
 const SYSTEM_CONTRACT_SET = new Set<string>(SYSTEM_CONTRACT_COLLECTIONS);
 
@@ -76,6 +85,11 @@ export const ACCESS_COLLECTION_GROUPS: Record<AccessCollectionGroupId, Omit<Acce
     label: 'Extension access',
     hint: 'Extension install/configure grants, module visibility, endpoints, and operations.',
   },
+  ai: {
+    id: 'ai',
+    label: 'AI usage',
+    hint: 'Use of paid AI decision providers.',
+  },
   sensitive: {
     id: 'sensitive',
     label: 'Sensitive system',
@@ -97,6 +111,7 @@ export function buildAccessCollectionGroups(
     schema: [],
     access: [],
     extension: [],
+    ai: [],
     sensitive: [],
   };
 
@@ -108,13 +123,13 @@ export function buildAccessCollectionGroups(
     grouped[group].push({
       name,
       group,
-      label: name,
+      label: SYSTEM_LABELS[name] ?? name,
       sensitive,
       fromSystemContract: SYSTEM_CONTRACT_SET.has(name),
     });
   }
 
-  return (['content', 'schema', 'access', 'extension', 'sensitive'] as const)
+  return (['content', 'schema', 'access', 'extension', 'ai', 'sensitive'] as const)
     .map((id) => ({ ...ACCESS_COLLECTION_GROUPS[id], options: grouped[id] }))
     .filter((group) => group.options.length > 0);
 }
@@ -125,6 +140,7 @@ export function firstCollectionOption(groups: AccessCollectionGroup[]): string {
 
 function collectionGroupFor(name: string): AccessCollectionGroupId {
   if (SENSITIVE_SET.has(name)) return 'sensitive';
+  if (AI_SET.has(name)) return 'ai';
   if (EXTENSION_SET.has(name)) return 'extension';
   if (ACCESS_SET.has(name)) return 'access';
   if (SCHEMA_SET.has(name)) return 'schema';

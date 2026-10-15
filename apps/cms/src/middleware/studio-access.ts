@@ -157,7 +157,7 @@ declare module '../env' {
   }
 }
 
-function isStudioAccessPath(path: string): boolean {
+export function isStudioAccessPath(path: string): boolean {
   return STUDIO_ACCESS_PATH_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }
 

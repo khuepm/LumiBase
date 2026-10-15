@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
-import { MemoryCacheProvider } from '@lumibase/runtime';
+import { CloudflareCacheProvider, MemoryCacheProvider, type CacheProvider } from '@lumibase/runtime';
 import type { AppEnv, AuthPrincipal } from '../../env';
 import type { DecisionSiteSettings } from '../../services/decision-governance';
 import { aiRouter, decisionRequestSchema } from '../ai';
@@ -58,7 +58,7 @@ const principal: AuthPrincipal = {
   raw: {},
 };
 
-function buildApp(cache = new MemoryCacheProvider()): Hono<AppEnv> {
+function buildApp(cache: CacheProvider = new MemoryCacheProvider()): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
     c.set('auth', principal);
@@ -473,5 +473,109 @@ describe('POST /ai/decisions — governance (#511)', () => {
     expect(res.status).toBe(503);
     expect(gov.audits[0]?.metadata).toMatchObject({ outcome: 'DECISION_UNAVAILABLE', status: 503, attempts: 1 });
     expect(gov.audits[0]?.metadata?.chargedTokens).toBeGreaterThan(0);
+  });
+});
+
+describe('POST /ai/decisions — LLM provider through governance (#510 J03)', () => {
+  const llmEnv = { DECISION_PROVIDER: 'llm', LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'llm-key' };
+  const SENTINEL = 'SENTINEL_UPSTREAM_BODY';
+
+  function errorLogs(spy: ReturnType<typeof vi.spyOn>): string {
+    return JSON.stringify(spy.mock.calls);
+  }
+
+  it('returns 413 when the answer cannot fit the output cap, without calling the LLM or reserving quota', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const cache = new MemoryCacheProvider();
+    const increment = vi.spyOn(cache, 'increment');
+    const criteria = Object.fromEntries(Array.from({ length: 120 }, (_, i) => [`option_${i}`, null]));
+
+    const res = await post(
+      { state: 'x', questions: { q: { type: 'choice', instructions: 'Pick one', criteria } } },
+      { ...llmEnv, DECISION_LLM_MAX_OUTPUT_TOKENS: '256' },
+      buildApp(cache),
+    );
+
+    expect(res.status).toBe(413);
+    const json = (await res.json()) as { errors: { code: string }[] };
+    expect(json.errors[0]?.code).toBe('DECISION_INPUT_TOO_LARGE');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(increment).not.toHaveBeenCalled();
+    expect(gov.audits[0]?.metadata).toMatchObject({ outcome: 'DECISION_INPUT_TOO_LARGE', status: 413 });
+  });
+
+  it('maps an unreachable LLM (fetch TypeError) to 503 DECISION_UNAVAILABLE, not 500', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+
+    const res = await post(validBody, llmEnv);
+
+    expect(res.status).toBe(503);
+    const json = (await res.json()) as { errors: { code: string }[] };
+    expect(json.errors[0]?.code).toBe('DECISION_UNAVAILABLE');
+    expect(gov.audits[0]?.metadata).toMatchObject({ outcome: 'DECISION_UNAVAILABLE', status: 503, attempts: 1 });
+  });
+
+  it('maps a non-JSON 2xx body to 502 DECISION_PARSE_FAILED', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('not json', { status: 200, headers: { 'content-type': 'text/plain' } })),
+    );
+
+    const res = await post(validBody, llmEnv);
+
+    expect(res.status).toBe(502);
+    const json = (await res.json()) as { errors: { code: string }[] };
+    expect(json.errors[0]?.code).toBe('DECISION_PARSE_FAILED');
+  });
+
+  it('maps an LLM HTTP 500 to 502 DECISION_UPSTREAM and never leaks the upstream body', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(SENTINEL, { status: 500 })));
+
+    const res = await post(validBody, llmEnv);
+
+    expect(res.status).toBe(502);
+    const text = await res.text();
+    expect(text).toContain('DECISION_UPSTREAM');
+    expect(text).not.toContain(SENTINEL);
+    expect(JSON.stringify(gov.audits)).not.toContain(SENTINEL);
+    expect(errorLogs(errorSpy)).not.toContain(SENTINEL);
+  });
+
+  it('never logs the Jev upstream body either', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(SENTINEL, { status: 422 })));
+
+    const res = await post(validBody, typesafeEnv);
+
+    expect(res.status).toBe(422);
+    expect(errorSpy).toHaveBeenCalled();
+    expect(errorLogs(errorSpy)).not.toContain(SENTINEL);
+    expect(await res.text()).not.toContain(SENTINEL);
+  });
+});
+
+describe('POST /ai/decisions — non-finite counters fail closed (#511)', () => {
+  it('returns 503 DECISION_QUOTA_UNAVAILABLE when the Durable Object answers without a value', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const kv = { get: async () => null, put: async () => {}, delete: async () => {} };
+    const counterNs = {
+      idFromName: (name: string) => name,
+      get: () => ({ fetch: async () => new Response('{}') }),
+    };
+    const cache = new CloudflareCacheProvider(kv as never, counterNs as never);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await post(validBody, typesafeEnv, buildApp(cache));
+
+    expect(res.status).toBe(503);
+    const json = (await res.json()) as { errors: { code: string }[] };
+    expect(json.errors[0]?.code).toBe('DECISION_QUOTA_UNAVAILABLE');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

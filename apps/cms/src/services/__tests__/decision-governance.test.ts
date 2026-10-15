@@ -384,3 +384,121 @@ describe('audit helpers', () => {
     ).not.toBe(version);
   });
 });
+
+describe('output allowance (#510 J03 on #511)', () => {
+  it('reserves the provider allowance instead of the governance estimate', async () => {
+    // Holds the reservation open until the counter has been read.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const provider = configured(async (_req, options) => {
+      options?.onAttempt?.();
+      await gate;
+      return answer({ inputTokens: null, outputTokens: null });
+    });
+    provider.outputAllowance = () => 5_000;
+    const { svc, cache } = service(provider);
+    const pending = svc.decide(request);
+    await vi.waitFor(() => expect(provider.provider.decide).toHaveBeenCalledTimes(1));
+    expect(await counter(cache, tokensKey)).toBe((inputTokens + 5_000) * 3);
+    release();
+    const result = await pending;
+    expect(result.accounting.reservedTokens).toBe((inputTokens + 5_000) * 3);
+    // Unknown usage is charged at the allowance, never as free.
+    expect(result.accounting.chargedTokens).toBe(inputTokens + 5_000);
+  });
+
+  it('returns the output 413 before reserving or calling the provider', async () => {
+    const provider = configured(async () => answer({ inputTokens: 1, outputTokens: 1 }));
+    provider.outputAllowance = () => {
+      throw new DecisionProviderError('DECISION_INPUT_TOO_LARGE', 'answer too large');
+    };
+    const { svc, cache } = service(provider);
+    const result = await svc.decide(request);
+    expect(!result.ok && (result.error as DecisionProviderError).code).toBe('DECISION_INPUT_TOO_LARGE');
+    expect(provider.provider.decide).not.toHaveBeenCalled();
+    expect(await counter(cache, requestsKey)).toBe(0);
+    expect(await counter(cache, tokensKey)).toBe(0);
+  });
+});
+
+describe('non-finite quota counters fail closed (#511)', () => {
+  it.each([
+    ['undefined', undefined],
+    ['NaN', Number.NaN],
+    ['the string "7"', '7'],
+    ['Infinity', Number.POSITIVE_INFINITY],
+  ])(
+    'refuses when the counter resolves %s',
+    async (_label, bad) => {
+      const provider = configured(async () => answer({ inputTokens: 1, outputTokens: 1 }));
+      const cache = new MemoryCacheProvider();
+      cache.increment = async () => bad as unknown as number;
+      const { svc } = service(provider, { cache });
+      const result = await svc.decide(request);
+      expect(!result.ok && (result.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_UNAVAILABLE');
+      expect(provider.provider.decide).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rolls back the keys already taken, not the garbage one', async () => {
+    const provider = configured(async () => answer({ inputTokens: 1, outputTokens: 1 }));
+    const cache = new MemoryCacheProvider();
+    const increment = cache.increment.bind(cache);
+    cache.increment = async (key, by, options) =>
+      key.includes(':run:') ? Number.NaN : increment(key, by, options);
+    const { svc } = service(provider, { cache });
+    const result = await svc.decide(request);
+    expect(!result.ok && (result.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_UNAVAILABLE');
+    expect(await counter(cache, requestsKey)).toBe(0);
+    expect(await counter(cache, tokensKey)).toBe(0);
+    expect(provider.provider.decide).not.toHaveBeenCalled();
+  });
+});
+
+describe('two-site isolation (#511, DoD §2b)', () => {
+  it("exhausting site A's hourly quota leaves site B admitted, on one shared counter backend", async () => {
+    const cache = new MemoryCacheProvider();
+    const increment = cache.increment.bind(cache);
+    const keys: string[] = [];
+    cache.increment = async (key, by, options) => {
+      keys.push(key);
+      return increment(key, by, options);
+    };
+    const at = () => Date.UTC(2026, 9, 10, 8, 30);
+    const make = (siteId: string) => {
+      const provider = configured(async (_req, options) => {
+        options?.onAttempt?.();
+        return answer({ inputTokens: 1, outputTokens: 1 });
+      });
+      return {
+        provider,
+        svc: new DecisionGovernanceService({
+          configured: provider,
+          settings: enabled,
+          quota: { ...DEFAULT_DECISION_QUOTA, requestsPerHour: 1 },
+          cache,
+          siteId,
+          now: at,
+        }),
+      };
+    };
+    const a = make('site_1');
+    const b = make('site_2');
+
+    expect((await a.svc.decide(request)).ok).toBe(true);
+    const denied = await a.svc.decide(request);
+    expect(!denied.ok && (denied.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_EXCEEDED');
+    expect(a.provider.provider.decide).toHaveBeenCalledTimes(1);
+
+    expect((await b.svc.decide(request)).ok).toBe(true);
+    expect(b.provider.provider.decide).toHaveBeenCalledTimes(1);
+
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys.every((key) => key.startsWith('dq:site_1:') || key.startsWith('dq:site_2:'))).toBe(true);
+    expect(keys.some((key) => key.startsWith('dq:site_2:'))).toBe(true);
+    expect(await counter(cache, requestsKey)).toBe(1);
+    expect(await counter(cache, requestsKey.replace('site_1', 'site_2'))).toBe(1);
+  });
+});
