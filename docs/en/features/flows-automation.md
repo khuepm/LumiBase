@@ -1,14 +1,15 @@
 ---
-version: 3
-lastUpdated: 2026-10-14T18:09:29.331Z
+version: 5
+lastUpdated: 2026-10-15T17:52:31.981Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 09cdb8faf1f6769f
+sourceHash: ce52d133155305dc
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T18:09:29.331Z
-codeVerifiedHash: 09cdb8faf1f6769f
+codeVerified: 2026-10-15T17:52:31.981Z
+codeVerifiedHash: ce52d133155305dc
 codeVerifiedClaims: 12
+contentHash: a3fe5733ba13b42f
 ---
 
 # Flows / Operations Engine
@@ -100,7 +101,7 @@ The `ai:decision` operation makes one governed decision about one saved item:
 | `profileKey`, `profileVersion` | Review profile and pinned version (required; the active version is never used implicitly) |
 | `collection`, `itemId` | The item to decide on; without `itemId` it uses `input.itemId` |
 | `questionKey` | The profile question that decides the branch |
-| `noulThreshold` | `noul` questions: `true` when ≥ t, `false` when ≤ 1 − t, otherwise `unknown` |
+| `noulThreshold` | `noul` questions: `true` when ≥ t, `false` when ≤ 1 − t, otherwise `unknown`. With t = 0.5 an answer of exactly 0.5 meets both and is `unknown` (`between_thresholds`) |
 | `minConfidence` | `choice` questions: below it, or when the model abstains (`other`/`unknown`), the branch is `unknown` |
 
 The output stored in the node's step: `{ branch, runId, replayed, decision, errorCode? }`. `runId` is the review run (provenance). `score` questions cannot drive a branch.

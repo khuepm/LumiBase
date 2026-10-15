@@ -1,11 +1,15 @@
 ---
-version: 3
-lastUpdated: 2026-10-14T18:09:29.331Z
+version: 5
+lastUpdated: 2026-10-15T17:52:31.981Z
 sourceLang: vi
-contentHash: 09cdb8faf1f6769f
-codeVerified: 2026-10-14T18:09:29.331Z
-codeVerifiedHash: 09cdb8faf1f6769f
+contentHash: ce52d133155305dc
+codeVerified: 2026-10-15T17:52:31.981Z
+codeVerifiedHash: ce52d133155305dc
 codeVerifiedClaims: 12
+translatedFrom: en
+sourceHash: a3fe5733ba13b42f
+mtEngine: manual
+syncStatus: human-translated
 ---
 
 # Flows / Operations Engine
@@ -97,7 +101,7 @@ Operation `ai:decision` đưa ra một quyết định có governance trên mộ
 | `profileKey`, `profileVersion` | Review profile và version cố định (bắt buộc; không bao giờ dùng ngầm version đang active) |
 | `collection`, `itemId` | Item cần quyết định; thiếu `itemId` thì lấy `input.itemId` |
 | `questionKey` | Câu hỏi của profile quyết định nhánh |
-| `noulThreshold` | Câu hỏi `noul`: `true` khi ≥ t, `false` khi ≤ 1 − t, còn lại `unknown` |
+| `noulThreshold` | Câu hỏi `noul`: `true` khi ≥ t, `false` khi ≤ 1 − t, còn lại `unknown`. Với t = 0.5, câu trả lời đúng bằng 0.5 thoả cả hai phía và là `unknown` (`between_thresholds`) |
 | `minConfidence` | Câu hỏi `choice`: dưới ngưỡng này, hoặc khi model abstain (`other`/`unknown`), nhánh là `unknown` |
 
 Output lưu vào step của node: `{ branch, runId, replayed, decision, errorCode? }`. `runId` là review run (provenance). Câu hỏi `score` không quyết định nhánh được.

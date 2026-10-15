@@ -69,6 +69,9 @@ export function semanticOutcome(noul: number | null | undefined, threshold: numb
   if (typeof noul !== 'number' || !Number.isFinite(noul) || noul < 0 || noul > 1) {
     return { kind: 'unevaluated', reason: 'no_answer', noul: null };
   }
+  // A 50/50 answer at the lowest allowed threshold (0.5) meets both sides: it
+  // judges nothing, so it is unevaluated, never drift (same rule as J10).
+  if (noul >= threshold && 1 - noul >= threshold) return { kind: 'unevaluated', reason: 'between_thresholds', noul };
   if (noul >= threshold) return { kind: 'drift', noul };
   if (1 - noul >= threshold) return { kind: 'clean', noul };
   return { kind: 'unevaluated', reason: 'between_thresholds', noul };

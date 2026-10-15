@@ -209,6 +209,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
 
 ### Fixed
+- **A 50/50 noul is unknown, not `true` (#518, J10 follow-up).** With
+  `noulThreshold: 0.5` (the lowest allowed), an answer of exactly 0.5 met
+  both sides and took the `true` branch, which Jev automation then acted on.
+  `ai:decision` now returns `unknown` (`between_thresholds`) and the J12
+  semantic drift pass records `unevaluated` for the same tie. Stored flows
+  with 0.5 stay valid. Also adds a DB integration test for the worker-path
+  content access that decides which fields reach the provider.
 - **Orphaned live automation claims are settled (#518, B120).** A live Jev
   automation row claimed `pending` by a process that died before the harness
   call linked an approval stayed `pending` forever. A redelivery more than

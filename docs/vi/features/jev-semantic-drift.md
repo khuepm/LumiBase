@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-10-15T03:01:46.702Z
+version: 3
+lastUpdated: 2026-10-15T17:51:42.717Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5248b59a020fe5ae
+sourceHash: 514ba90e2727b174
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T03:01:46.702Z
-codeVerifiedHash: 5248b59a020fe5ae
+codeVerified: 2026-10-15T17:51:42.717Z
+codeVerifiedHash: 514ba90e2727b174
 codeVerifiedClaims: 12
 ---
 
@@ -37,7 +37,7 @@ Tính năng chỉ phát hiện và đề xuất review. Nó không bao giờ s�
 
 - `key` định danh rule qua các phiên bản và phải là duy nhất giữa các rule ngữ nghĩa của intent. Tăng `version` mỗi khi ý nghĩa của rule thay đổi. Một lần cập nhật intent đổi `profileKey`, `questionKey`, `contextSource` hoặc `fields` của một rule đã lưu mà không tăng `version` sẽ bị từ chối với `422 SEMANTIC_RULE_VERSION_REQUIRED` (`assertSemanticVersionBumps`), vì fingerprint giữ nguyên và câu trả lời cũ sẽ được dùng cho rule mới. `profileVersion` và `threshold` đổi được mà không cần tăng: phiên bản profile nằm trong fingerprint, còn ngưỡng được áp lên câu trả lời đã lưu ở mỗi pass.
 - `profileKey` + `profileVersion` ghim một phiên bản review profile, và `questionKey` chỉ một câu hỏi `noul` trong đó. Câu hỏi hỏi item có drift hay không. Câu hỏi kiểu khác làm mọi lần đánh giá thành `unevaluated` (`question_not_noul`).
-- `threshold` (0.5–1): `noul ≥ threshold` là drift, `1 − noul ≥ threshold` là sạch, còn lại ở giữa là `unevaluated` (`between_thresholds`).
+- `threshold` (0.5–1): `noul ≥ threshold` là drift, `1 − noul ≥ threshold` là sạch, còn lại ở giữa là `unevaluated` (`between_thresholds`). Với threshold 0.5, câu trả lời đúng bằng 0.5 thoả cả hai phía nên cũng là `unevaluated`.
 - `fields` là các field được đánh giá (mặc định: field của profile). Chỉ field đồng thời là field của profile mới được đọc.
 - `contextSource`: `intent` nghĩa là tiêu chí của profile là toàn bộ tham chiếu. `field:<name>` gửi thêm field đó của item (một brief, một dàn ý) làm tham chiếu. Field đó phải là field của profile, và nếu nó rỗng thì lần đánh giá là `unevaluated` (`context_missing`).
 

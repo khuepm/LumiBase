@@ -378,6 +378,18 @@ describe('the decision is the stored review run, about this item', () => {
       expect(approvalSeq).toBe(0);
     });
 
+    it('a 50/50 noul at the 0.5 cut is unknown, so nothing is routed as true', async () => {
+      h.upstream.answers.spam = { type: 'noul', noul: 0.5 };
+      const node: FlowNode = { ...DECIDE_NODE, branches: { true: 'act', false: 'act', unknown: 'act', error: 'act' } };
+      const ctx: FlowRunContext = { input: { itemId: 'itm_1', locale: 'vi' }, steps: {}, env: envFor() };
+      const opts = { profileKey: PROFILE_KEY, profileVersion: 1, collection: 'posts', questionKey: 'spam', noulThreshold: 0.5 };
+      const decision = await runAiDecisionNode(ctx, opts, node, h.runtime);
+      expect(decision.branch).toBe('unknown');
+      const out = await runAutomationNode('route', automationCtx(decision), SPAM_ROUTE, ROUTE_NODE, runtime);
+      expect(out).toMatchObject({ status: 'skipped', reason: 'decision_unknown' });
+      expect(rowOf(out).proposed).not.toMatchObject({ value: 'spam-review' });
+      expect(approvalSeq).toBe(0);
+    });
     it('a forged noul cut below 0.5 cannot turn a leaning-false decision into true', async () => {
       const decision = await decideSpam();
       // Real run id, value and confidence; only the branch and the cut differ.

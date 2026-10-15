@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-10-15T03:01:46.702Z
+version: 3
+lastUpdated: 2026-10-15T17:51:42.717Z
 sourceLang: en
-contentHash: 5248b59a020fe5ae
-codeVerified: 2026-10-15T03:01:46.702Z
-codeVerifiedHash: 5248b59a020fe5ae
+contentHash: 514ba90e2727b174
+codeVerified: 2026-10-15T17:51:42.717Z
+codeVerifiedHash: 514ba90e2727b174
 codeVerifiedClaims: 12
 ---
 
@@ -34,7 +34,7 @@ The feature only detects and suggests a review. It never edits content or publis
 
 - `key` identifies the rule across versions and must be unique among the intent's semantic rules. Bump `version` whenever the rule's meaning changes. An intent update that changes `profileKey`, `questionKey`, `contextSource` or `fields` of a stored rule without bumping its `version` is refused with `422 SEMANTIC_RULE_VERSION_REQUIRED` (`assertSemanticVersionBumps`), because the fingerprint would stay the same and the old answer would stand for the new rule. `profileVersion` and `threshold` may change without a bump: the profile version is in the fingerprint, and the threshold is applied to the stored answer on every pass.
 - `profileKey` + `profileVersion` pin one review profile version, and `questionKey` names a `noul` question in it. The question asks whether the item drifts. A question of another type makes every evaluation `unevaluated` (`question_not_noul`).
-- `threshold` (0.5–1): `noul ≥ threshold` is drift, `1 − noul ≥ threshold` is clean, anything in between is `unevaluated` (`between_thresholds`).
+- `threshold` (0.5–1): `noul ≥ threshold` is drift, `1 − noul ≥ threshold` is clean, anything in between is `unevaluated` (`between_thresholds`). With a threshold of 0.5, an answer of exactly 0.5 meets both sides and is `unevaluated` too.
 - `fields` are the fields judged (default: the profile's fields). Only fields that are also profile fields are read.
 - `contextSource`: `intent` means the profile's criteria are the whole reference. `field:<name>` also sends that item field (a brief, an outline) as the reference. The field must be a profile field, and an empty one makes the evaluation `unevaluated` (`context_missing`).
 

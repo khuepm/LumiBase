@@ -335,6 +335,10 @@ describe('semantic outcome', () => {
     expect(semanticOutcome(0.2, 0.8).kind).toBe('clean');
     expect(semanticOutcome(0.5, 0.8)).toEqual({ kind: 'unevaluated', reason: 'between_thresholds', noul: 0.5 });
     expect(semanticOutcome(null, 0.8)).toEqual({ kind: 'unevaluated', reason: 'no_answer', noul: null });
+    // A 50/50 answer at the lowest threshold judges nothing.
+    expect(semanticOutcome(0.5, 0.5)).toEqual({ kind: 'unevaluated', reason: 'between_thresholds', noul: 0.5 });
+    expect(semanticOutcome(0.51, 0.5).kind).toBe('drift');
+    expect(semanticOutcome(0.49, 0.5).kind).toBe('clean');
     expect(semanticOutcome(Number.NaN, 0.8).kind).toBe('unevaluated');
   });
 

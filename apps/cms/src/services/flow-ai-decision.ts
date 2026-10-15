@@ -220,6 +220,9 @@ export function decisionBranch(
     const t = options.noulThreshold!;
     const value = answer.noul;
     if (options.stale) return { branch: 'unknown', value, confidence: null, unknownReason: 'stale' };
+    // A 50/50 answer with the lowest allowed threshold (0.5) meets both
+    // sides; it is not evidence for either, so it is unknown, never `true`.
+    if (value >= t && 1 - value >= t) return { branch: 'unknown', value, confidence: null, unknownReason: 'between_thresholds' };
     if (value >= t) return { branch: 'true', value, confidence: null, unknownReason: null };
     // `1 - value >= t`, not `value <= 1 - t`: with t = 0.8, 1 - t is 0.19999…, so 0.2 would miss.
     if (1 - value >= t) return { branch: 'false', value, confidence: null, unknownReason: null };
