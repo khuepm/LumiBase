@@ -41,7 +41,7 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 import { IntentDetailPage } from '../intent-detail';
-import { SloTable, sloSummary, useSloRows, type SloRow } from '../slo-table';
+import { SloTable, sloHealthCard, sloSummary, useSloRows, type SloRow } from '../slo-table';
 
 function renderWithClient(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -262,15 +262,42 @@ describe('sloSummary — dashboard SLO health card', () => {
   });
 
   it('leaves unknown intents out of the mean and counts them', () => {
-    expect(sloSummary([row(50), row(null), row(null)])).toEqual({ health: 50, unknown: 2 });
+    expect(sloSummary([row(50), row(null), row(null)])).toEqual({ health: 50, unknown: 2, partial: 0 });
   });
 
   it('is unknown, not healthy, when no active intent has a known health', () => {
-    expect(sloSummary([row(null)])).toEqual({ health: null, unknown: 1 });
+    expect(sloSummary([row(null)])).toEqual({ health: null, unknown: 1, partial: 0 });
   });
 
   it('ignores paused intents', () => {
-    expect(sloSummary([row(100), row(null, 'paused'), row(0, 'paused')])).toEqual({ health: 100, unknown: 0 });
+    expect(sloSummary([row(100), row(null, 'paused'), row(0, 'paused')])).toEqual({ health: 100, unknown: 0, partial: 0 });
+  });
+
+  function CardHarness() {
+    const { rows } = useSloRows();
+    const card = sloHealthCard(sloSummary(rows));
+    return (
+      <p data-testid="card" data-tone={card.tone}>
+        {card.value} {card.label}
+      </p>
+    );
+  }
+
+  it('an intent with a resolved row and unevaluated rows is flagged as partly evaluated, not plainly 100 %', async () => {
+    // The J12 review probe: [resolved, unevaluated, unevaluated] read as 100 %, tone ok.
+    api.drifts.mockResolvedValue([{ ...OPEN, id: 'd_res', status: 'resolved' }, UNEVALUATED, { ...UNEVALUATED, id: 'd_unev2' }]);
+    renderWithClient(<CardHarness />);
+    const card = await screen.findByText(/partly not evaluated/);
+    expect(card).toHaveTextContent('100% SLO health (active intents, 1 partly not evaluated)');
+    expect(screen.getByTestId('card')).toHaveAttribute('data-tone', 'alert');
+  });
+
+  it('a fully evaluated healthy intent keeps the plain label and ok tone', async () => {
+    api.intents.mockResolvedValue([{ ...INTENT, rules: [{ type: 'required_fields', fields: ['summary'] }] }]);
+    api.drifts.mockResolvedValue([{ ...DETERMINISTIC, status: 'resolved' }]);
+    renderWithClient(<CardHarness />);
+    expect(await screen.findByText('100% SLO health (active intents)')).toBeInTheDocument();
+    expect(screen.getByTestId('card')).toHaveAttribute('data-tone', 'ok');
   });
 });
 

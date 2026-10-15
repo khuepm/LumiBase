@@ -22,7 +22,8 @@ import { ReconcilerService } from '../reconciler-service';
 import { reviewContentAccessForDriftScan } from '../review-content-access';
 import { ReviewService } from '../review-service';
 import { reviewStoreFor } from '../review-store';
-import type { SemanticDriftRuntime } from '../semantic-drift-scan';
+import { MemoryCacheProvider } from '@lumibase/runtime';
+import { semanticDriftRuntimeFromEnv, type SemanticDriftRuntime } from '../semantic-drift-scan';
 
 /**
  * Semantic drift against Postgres (Jev J12, #519): migration 0022, the REAL
@@ -268,5 +269,28 @@ describe.skipIf(!hasDbIntegrationUrl)('Semantic drift — DB integration', () =>
     expect(decide).not.toHaveBeenCalled();
     expect((await drifts(SITE)).filter((r) => r.ruleType === 'semantic')).toHaveLength(0);
     expect(b.intentId).not.toBe(a.intentId);
+  });
+
+  it('the drift switch is re-read at the provider call: switched off after the pass read, the call is refused and nothing resolves', async () => {
+    await new DriftService({ db, siteId: SITE, semantic: runtime(SITE) }).scanIntent(a.intentId);
+    await db.update(items).set({ data: { brief: 'Home composting guide', title: 'Ten crypto tips (3)', body: 'Buy now!!', summary: '' } }).where(eq(items.id, a.itemId));
+
+    // The REAL runtime (provider config present, no network is reached).
+    const real = semanticDriftRuntimeFromEnv({
+      db,
+      siteId: SITE,
+      cache: new MemoryCacheProvider(),
+      processEnv: { DECISION_PROVIDER: 'typesafe', TYPESAFE_API_KEY: 'stub-not-a-key', TYPESAFE_BASE_URL: 'http://127.0.0.1:9/v1' },
+    })!;
+    // The pass reads `drift: true`; an admin then switches it off before the call.
+    const snapshot = await real.readSettings();
+    expect(snapshot).toMatchObject({ enabled: true, drift: true });
+    await db.update(settings).set({ value: { enabled: true, drift: false } }).where(and(eq(settings.siteId, SITE), eq(settings.key, DECISION_SETTINGS_KEY)));
+    const scan = await new DriftService({ db, siteId: SITE, semantic: { ...real, readSettings: async () => snapshot } }).scanIntent(a.intentId);
+
+    expect(scan.semantic).toMatchObject({ status: 'ran', unevaluated: 1, resolved: 0, drift: 0 });
+    const rows = (await drifts(SITE)).filter((r) => r.ruleType === 'semantic');
+    expect(rows.map((r) => r.status).sort()).toEqual(['open', 'unevaluated']);
+    expect(rows.find((r) => r.status === 'unevaluated')!.detail).toMatchObject({ reason: 'DECISION_DISABLED' });
   });
 });

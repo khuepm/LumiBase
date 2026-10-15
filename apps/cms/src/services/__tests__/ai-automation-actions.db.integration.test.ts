@@ -121,6 +121,37 @@ describe.skipIf(!hasDbIntegrationUrl)('Automation actions — DB integration', (
     expect(rows).toHaveLength(3);
   });
 
+  it('a live row orphaned past the window is settled denied/orphaned on redelivery; a fresh one is left alone (B120)', async () => {
+    const live = (overrides: Partial<AutomationActionInsert> = {}) =>
+      action(SITE_A, { mode: 'live', status: 'pending', ...overrides });
+    const { row: stuck } = await store.claim(live({ flowRunId: 'flow_run_old' }));
+    await db
+      .update(aiAutomationActions)
+      .set({ createdAt: sql`now() - interval '10 minutes'` })
+      .where(eq(aiAutomationActions.id, stuck.id));
+    const { row: fresh } = await store.claim(live({ flowRunId: 'flow_run_new' }));
+    const { row: parked } = await store.claim(live({ flowRunId: 'flow_run_parked' }));
+    await db
+      .update(aiAutomationActions)
+      .set({ createdAt: sql`now() - interval '10 minutes'`, approvalId: 'apr_linked' })
+      .where(eq(aiAutomationActions.id, parked.id));
+
+    expect(await store.claim(live({ flowRunId: 'flow_run_old' }))).toMatchObject({
+      created: false,
+      row: { id: stuck.id, status: 'denied', reason: 'orphaned' },
+    });
+    // Within the window, or already linked to an approval: unchanged.
+    expect(await store.claim(live({ flowRunId: 'flow_run_new' }))).toMatchObject({ created: false, row: { id: fresh.id, status: 'pending' } });
+    expect(await store.claim(live({ flowRunId: 'flow_run_parked' }))).toMatchObject({
+      created: false,
+      row: { id: parked.id, status: 'pending', approvalId: 'apr_linked' },
+    });
+    // Another site's identical key is never touched.
+    const { row: other } = await store.claim(action(SITE_B, { mode: 'live', status: 'pending', flowRunId: 'flow_run_old' }));
+    await db.update(aiAutomationActions).set({ createdAt: sql`now() - interval '10 minutes'` }).where(eq(aiAutomationActions.id, other.id));
+    expect((await store.get(SITE_B, other.id))?.status).toBe('pending');
+  });
+
   it('every store query is site scoped', async () => {
     const a = await store.claim(action(SITE_A));
     expect(await store.get(SITE_B, a.row.id)).toBeNull();
@@ -192,6 +223,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Automation actions — DB integration', (
       collection: 'posts',
       itemId,
       data: { tags: ['featured', 'news'] },
+      expect: { tags: ['featured'] },
       title: 'automation IT',
     });
     expect(result.status, result.message ?? '').toBe('pending_approval');
@@ -237,5 +269,47 @@ describe.skipIf(!hasDbIntegrationUrl)('Automation actions — DB integration', (
     );
     expect(await tagsNow()).toEqual(['featured']);
     expect((await store.get(SITE_A, row.id))?.status).toBe('reverted');
+  });
+
+  it('an approval that runs after a human changed the field writes nothing (B119)', async () => {
+    await db.insert(agentAutonomyGrants).values({ siteId: SITE_A, agentRole: AUTOMATION_AGENT, capability: 'items:update', level: 3 });
+    const ref = { type: 'user' as const, siteId: SITE_A, userId: ADMIN };
+    const runtime = automationRuntimeFromEnv({ db, siteId: SITE_A, runId: 'flow_run_1', principal: ref });
+    const grant = await runtime.resolveGrant(ref);
+    const { row } = await store.claim(
+      action(SITE_A, {
+        itemId,
+        mode: 'live',
+        status: 'pending',
+        proposed: { field: 'tags', value: ['featured', 'news'], target: 'news', choice: 'news', targets: {} },
+        previous: { field: 'tags', value: ['featured'] },
+      }),
+    );
+    const result = await runtime.governedWrite(grant.permissionContext!, grant, ref, {
+      collection: 'posts',
+      itemId,
+      data: { tags: ['featured', 'news'] },
+      expect: { tags: ['featured'] },
+      title: 'automation IT',
+    });
+    expect(result.status, result.message ?? '').toBe('pending_approval');
+    await store.update(SITE_A, row.id, { status: 'pending_approval', approvalId: result.agentApprovalId! });
+
+    // A human edits the tags while the proposal waits for approval.
+    const admin = await resolvePrincipalCapabilities(new EffectiveCapabilityService({ db, siteId: SITE_A }), ref);
+    const human = itemServiceForPrincipal({ db, siteId: SITE_A }, admin.permissionContext!);
+    await human.patch('posts', itemId, { data: { tags: ['opinion'] } });
+
+    const harness = new AISecureHarness({ db, siteId: SITE_A, itemService: itemServiceForPrincipal({ db, siteId: SITE_A }, admin.permissionContext!) });
+    const executed = await harness.executeApproved(result.approvalId!, ADMIN, admin.capabilities);
+    expect(executed).toMatchObject({ status: 'denied', code: 'ITEM_PRECONDITION_FAILED' });
+    const tags = ((await db.select().from(items).where(eq(items.id, itemId)))[0]!.data as Record<string, unknown>)['tags'];
+    expect(tags, "the human's edit is kept").toEqual(['opinion']);
+
+    const [approval] = await db.select().from(agentApprovals).where(eq(agentApprovals.id, result.agentApprovalId!));
+    expect(approval?.status).toBe('failed');
+    expect(approval?.decisionReason).toMatch(/^ITEM_PRECONDITION_FAILED: tags changed since this update was proposed/);
+    const reconciled = await reconcileAutomationAction(store, (await store.get(SITE_A, row.id))!);
+    expect(reconciled).toMatchObject({ status: 'denied', reason: 'stale_at_approval', applied: false });
   });
 });

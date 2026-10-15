@@ -118,7 +118,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Review profiles and runs — DB integrati
       usage: null,
       latencyMs: 5,
       errorCode: 'DECISION_UNAVAILABLE',
-    });
+    }, first.run.createdAt);
     const newHash = 'sha256:' + '1'.repeat(64);
     const reclaimed = await store.claimRun(
       run(SITE_A, p.id, { idempotencyKey: key, contentHash: newHash, revisionId: 'rev_2', omittedFields: ['body'] }),
@@ -154,7 +154,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Review profiles and runs — DB integrati
       usage: null,
       latencyMs: 5,
       errorCode: 'DECISION_UNAVAILABLE',
-    });
+    }, mine.run.createdAt);
 
     const theirs = await store.claimRun(run(SITE_A, p.id, { idempotencyKey: key, principalId: 'usr_other' }));
     expect(theirs.created).toBe(true);
@@ -175,6 +175,36 @@ describe.skipIf(!hasDbIntegrationUrl)('Review profiles and runs — DB integrati
     expect(await store.claimRun(run(SITE_A, p.id, { idempotencyKey: key }))).toMatchObject({
       created: true,
       run: { id: first.run.id, status: 'running' },
+    });
+  });
+
+  it('a completion from a claim that was reclaimed writes nothing (late process after the orphan timeout)', async () => {
+    const p = (await store.insertFirstProfile(profile(SITE_A)))!;
+    const key = uid('key');
+    const first = await store.claimRun(run(SITE_A, p.id, { idempotencyKey: key }));
+    await db
+      .update(reviewRuns)
+      .set({ createdAt: sql`now() - interval '1 hour'` })
+      .where(eq(reviewRuns.id, first.run.id));
+    const [orphaned] = await db.select().from(reviewRuns).where(eq(reviewRuns.id, first.run.id));
+    const newHash = 'sha256:' + '2'.repeat(64);
+    const retry = await store.claimRun(run(SITE_A, p.id, { idempotencyKey: key, contentHash: newHash }));
+    expect(retry).toMatchObject({ created: true, run: { id: first.run.id, status: 'running', contentHash: newHash } });
+
+    const answer = (noul: number) => ({
+      status: 'success', provider: 'typesafe', model: 'jev', calibrated: true,
+      answers: { spam: { type: 'noul', noul } }, usage: null, latencyMs: 1, errorCode: null,
+    });
+    // The orphaned attempt finishes while the retry is still running: refused.
+    expect(await store.completeRun(SITE_A, first.run.id, answer(0.1), orphaned!.createdAt)).toBeNull();
+    // The retry completes under its own claim.
+    expect(await store.completeRun(SITE_A, first.run.id, answer(0.9), retry.run.createdAt)).toMatchObject({ status: 'success' });
+    // A second completion of the same claim is refused too: the run is no longer running.
+    expect(await store.completeRun(SITE_A, first.run.id, answer(0.5), retry.run.createdAt)).toBeNull();
+    expect(await store.getRun(SITE_A, first.run.id)).toMatchObject({
+      status: 'success',
+      contentHash: newHash,
+      answers: { spam: { type: 'noul', noul: 0.9 } },
     });
   });
 
@@ -210,7 +240,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Review profiles and runs — DB integrati
     expect(await store.listRuns(SITE_B, { collection: 'posts', itemId: 'itm_1', limit: 10 })).toEqual([]);
     expect(await store.completeRun(SITE_B, r.id, {
       status: 'success', provider: 'x', model: 'x', calibrated: true, answers: {}, usage: null, latencyMs: 1, errorCode: null,
-    })).toBeNull();
+    }, r.createdAt)).toBeNull();
     // The same key on another site is its own version 1.
     expect((await store.insertFirstProfile(profile(SITE_B)))?.version).toBe(1);
   });

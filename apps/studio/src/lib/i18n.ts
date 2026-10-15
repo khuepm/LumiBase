@@ -18,7 +18,9 @@ export async function initI18n() {
     .use(initReactI18next)
     .init({
       fallbackLng: 'en',
-      lng: 'en', // Can be derived from local storage or settings later
+      // Before sign-in. Once a session exists, `SiteLanguageSync` (mounted in
+      // the admin layout) switches to the user's or the site's language.
+      lng: 'en',
       ns: ['ui', CONTENT_NS],
       defaultNS: 'ui',
       interpolation: {

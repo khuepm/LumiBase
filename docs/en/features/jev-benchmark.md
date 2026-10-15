@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-10-14T20:40:49.105Z
+version: 4
+lastUpdated: 2026-10-15T19:21:10.592Z
 sourceLang: en
-contentHash: f206080e0d47554a
-codeVerified: 2026-10-14T20:40:49.105Z
-codeVerifiedHash: f206080e0d47554a
-codeVerifiedClaims: 10
+contentHash: b83d6e09fb1ce7f9
+codeVerified: 2026-10-15T19:21:10.592Z
+codeVerifiedHash: b83d6e09fb1ce7f9
+codeVerifiedClaims: 12
 ---
 
 # Jev benchmark (Vietnamese and English editorial data)
@@ -46,7 +46,9 @@ The manifest pins `profile.rubricVersion`, the same fingerprint as `decisionRubr
    - `route` (question `needs_review`): symmetric cut on P(true), `true` at `p >= t`, `false` at `p <= 1 - t`, abstain in between.
    - The target is 0.9 selective precision for both actions in protocol version 1. When the grid cannot reach it, the threshold is `null` with status `target-not-reached`.
 2. **Held-out.** Run the `heldout` split. It loads the frozen `thresholds.json` and checks it was derived for the same mode, provider, model, dataset, rubric and protocol. It never writes thresholds (`writeThresholds` throws `LeakageError`).
-3. **Compare.** Merge per-provider held-out reports into one comparison.
+3. **Compare.** Merge per-provider held-out reports into one comparison. Each file given to `--merge` is validated first (`parseBenchmarkReport`: report schema, generator, `mode`, `split`, dataset, rubric, protocol, seed, sample counts, runs); a hand-edited file without `mode`, for example, is refused with exit code 1 instead of slipping past the mode check.
+
+Once a held-out report was scored with a `thresholds.json`, a later tune run refuses to overwrite it (exit code 2, `assertThresholdsNotFrozen`): re-tuning after seeing held-out numbers would let them shape the thresholds. There is no override. A `report.heldout*.json` that cannot be read (corrupted or hand-edited) counts as frozen too, so a broken report never switches the guard off; repair or move it. A new protocol run uses a new `--out` directory. A source-scan test (`apps/cms/src/__tests__/eval-not-in-runtime.wiring.test.ts`) keeps every module under `apps/cms/eval/` out of the CMS runtime, beyond what the bundle marker check covers.
 
 A threshold is a cut on the provider's reported score, chosen for an acceptable error rate. It does not turn that score into a probability of being right.
 

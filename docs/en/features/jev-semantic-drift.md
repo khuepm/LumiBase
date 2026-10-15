@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-10-15T03:01:46.702Z
+version: 6
+lastUpdated: 2026-10-15T18:13:43.858Z
 sourceLang: en
-contentHash: 5248b59a020fe5ae
-codeVerified: 2026-10-15T03:01:46.702Z
-codeVerifiedHash: 5248b59a020fe5ae
-codeVerifiedClaims: 12
+contentHash: 89692a826174d607
+codeVerified: 2026-10-15T18:13:43.858Z
+codeVerifiedHash: 89692a826174d607
+codeVerifiedClaims: 14
 ---
 
 # Jev semantic drift for Content Intents
@@ -34,7 +34,7 @@ The feature only detects and suggests a review. It never edits content or publis
 
 - `key` identifies the rule across versions and must be unique among the intent's semantic rules. Bump `version` whenever the rule's meaning changes. An intent update that changes `profileKey`, `questionKey`, `contextSource` or `fields` of a stored rule without bumping its `version` is refused with `422 SEMANTIC_RULE_VERSION_REQUIRED` (`assertSemanticVersionBumps`), because the fingerprint would stay the same and the old answer would stand for the new rule. `profileVersion` and `threshold` may change without a bump: the profile version is in the fingerprint, and the threshold is applied to the stored answer on every pass.
 - `profileKey` + `profileVersion` pin one review profile version, and `questionKey` names a `noul` question in it. The question asks whether the item drifts. A question of another type makes every evaluation `unevaluated` (`question_not_noul`).
-- `threshold` (0.5–1): `noul ≥ threshold` is drift, `1 − noul ≥ threshold` is clean, anything in between is `unevaluated` (`between_thresholds`).
+- `threshold` (0.5–1): `noul ≥ threshold` is drift, `1 − noul ≥ threshold` is clean, anything in between is `unevaluated` (`between_thresholds`). With a threshold of 0.5, an answer of exactly 0.5 meets both sides and is `unevaluated` too.
 - `fields` are the fields judged (default: the profile's fields). Only fields that are also profile fields are read.
 - `contextSource`: `intent` means the profile's criteria are the whole reference. `field:<name>` also sends that item field (a brief, an outline) as the reference. The field must be a profile field, and an empty one makes the evaluation `unevaluated` (`context_missing`).
 
@@ -48,7 +48,7 @@ A site admin sets both flags in the `aiDecisions` setting:
 { "enabled": true, "drift": true }
 ```
 
-`enabled` is the site's opt-in to sending content to the provider, and turning it off is the kill switch. `drift` turns on only the semantic pass. While either flag is off, the scan reports `semantic.status: "off"`, sends nothing, and leaves every semantic drift row exactly as it was. Every provider call re-reads both flags, and the pass checks `drift` again before each item, so switching `drift` off stops a running pass at the next item and keeps the cursor. Studio has no form for `drift` yet, so set it through the settings API. The other keys of `aiDecisions` (for example the draft-review pilot written by Studio) are kept.
+`enabled` is the site's opt-in to sending content to the provider, and turning it off is the kill switch. `drift` turns on only the semantic pass. While either flag is off, the scan reports `semantic.status: "off"`, sends nothing, and leaves every semantic drift row exactly as it was. Every provider call re-reads both flags, and the pass checks `drift` again before each item, so switching `drift` off stops a running pass at the next item and keeps the cursor. A site admin switches `drift` in Studio under **Settings → AI decisions** (**Evaluate semantic drift rules**), or through the settings API. The other keys of `aiDecisions` (for example the draft-review pilot written by Studio) are kept.
 
 ## How a scan runs
 
@@ -75,7 +75,7 @@ A provider outage, quota or timeout error, an answer between the thresholds, a m
 - never creates a goal (the reconciler only takes `open` drift);
 - reopens as `open` when a later pass detects the drift, and resolves when a later conclusive pass does not.
 
-The deterministic pass ignores semantic rows, so a scan without the decision path (the dispatcher's verify scan, or event/schedule Flows runs) never resolves semantic drift.
+The deterministic pass ignores semantic rows, so a scan without the decision path (the dispatcher's verify scan) never resolves semantic drift.
 
 ## Goals
 
@@ -83,7 +83,7 @@ Open semantic drift becomes a goal through the existing `ReconcilerService.recon
 
 ## Mission Control
 
-The intent detail lists semantic drift with the rule key and version, the profile and version, the question, the model, the answer and threshold, the revision, the content hash and the review run, all from what the scan recorded. An `unevaluated` row shows its reason code and says the earlier drift is kept. The decision model returns no rationale, so none is shown. The SLO table leaves `unevaluated` rows out of the health ratio and shows them as a separate "not evaluated" count. Health reads `unknown`, not 100 %, when nothing conclusive backs it: the drifts failed to load, every row is `unevaluated`, or the intent has semantic rules and no conclusive row. A clean semantic answer and a pass that was off or unavailable both leave no row, so an empty list cannot tell them apart. The dashboard's SLO health card averages only intents with a known health and counts the unknown ones in its label. For an intent with semantic rules and no drift row, the intent detail says the empty list does not show that the semantic rules pass, instead of "content meets the SLO".
+The intent detail lists semantic drift with the rule key and version, the profile and version, the question, the model, the answer and threshold, the revision, the content hash and the review run, all from what the scan recorded. An `unevaluated` row shows its reason code and says the earlier drift is kept. The decision model returns no rationale, so none is shown. The SLO table leaves `unevaluated` rows out of the health ratio and shows them as a separate "not evaluated" count. Health reads `unknown`, not 100 %, when nothing conclusive backs it: the drifts failed to load, every row is `unevaluated`, or the intent has semantic rules and no conclusive row. A clean semantic answer and a pass that was off or unavailable both leave no row, so an empty list cannot tell them apart. The dashboard's SLO health card averages only intents with a known health and counts the unknown ones in its label. An intent whose health is known but which also has `unevaluated` rows (its health covers only the judged rows) is counted as "partly not evaluated" in the label, and the card is flagged even at 100 %. For an intent with semantic rules and no drift row, the intent detail says the empty list does not show that the semantic rules pass, instead of "content meets the SLO".
 
 ## Multi-tenancy
 
@@ -94,6 +94,5 @@ The intent detail lists semantic drift with the rule key and version, the profil
 ## Limitations
 
 - No live benchmark yet, so no measured drift precision, recall or false-positive rate.
-- Event and schedule Flows runs carry no cache or provider configuration, so their semantic pass reports `unavailable`. Manual Flows runs and `POST /api/v1/intents/:id/scan` run it.
+- Event and schedule Flows runs get the same cache and provider configuration as manual runs on the Docker/Node worker (`registerFlowEventWorker` in `serve.ts`), so a scheduled `drift-scan` runs the semantic pass there; it is still gated by `aiDecisions.enabled` and `aiDecisions.drift`. Cloudflare Workers has no `flow-events` consumer yet (backlog B118), so event and schedule flows do not run there at all.
 - Tested with unit tests and a Postgres integration suite, not on a deployed Cloudflare Worker.
-- No Studio toggle for `aiDecisions.drift`.

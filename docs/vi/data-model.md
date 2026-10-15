@@ -1,14 +1,14 @@
 ---
-version: 4
-lastUpdated: 2026-10-14T20:40:49.231Z
+version: 5
+lastUpdated: 2026-10-15T17:21:53.913Z
 sourceLang: en
 translatedFrom: en
-sourceHash: c5bba152b46601c5
+sourceHash: 59c8ffce4075b992
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T20:40:49.231Z
-codeVerifiedHash: c5bba152b46601c5
-codeVerifiedClaims: 14
+codeVerified: 2026-10-15T17:21:53.913Z
+codeVerifiedHash: 59c8ffce4075b992
+codeVerifiedClaims: 18
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -362,7 +362,7 @@ Ghi chú vận hành:
 | `lumibase_review_sessions` | Đo thời gian pilot (#516): một phiên biên tập từ lúc mở trình soạn thảo tới lần lưu đầu tiên, `mode` `baseline`/`assisted`, `duration_ms`, `locale`, `run_id` đã xem và `viewed_questions`. Không lưu nội dung. `run_id` được set null khi run bị xoá |
 | `lumibase_ai_automation_actions` | Tự động hoá Jev (#518): một hành động metadata (`tag` / `route`) cho mỗi flow run, node và item, unique `(site_id, flow_run_id, node_id, item_id)`. `mode` `shadow`/`live`, `status`, `reason`, `proposed`, `previous`, `applied`, `approval_id`, `reverted_at`, cùng các id của chuỗi `revision_id`, `review_run_id` và `content_hash`. `review_run_id` được set null khi run bị xoá |
 
-Cả năm bảng đều có `site_id` (FK cascade) và mọi truy vấn đều theo site.
+Cả năm bảng đều có `site_id` (FK cascade) và mọi truy vấn đều theo site. Cả năm bảng cũng nằm trong danh sách RLS `site_isolation` của `packages/database/migrations/rls-policies.sql`. Việc xoá theo thời hạn lưu trữ của `lumibase_review_runs` chạy lần lượt theo từng site, mỗi site một transaction có set `app.site_id` (`apps/cms/src/services/review-run-retention.ts`), nên vẫn xoá được trên database đã áp các policy đó.
 Tắt pilot kiểm tra bản nháp không xoá dòng nào trong các bảng này.
 
 ### Các bảng Content OS (`content-os.ts`)

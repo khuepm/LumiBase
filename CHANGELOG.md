@@ -10,6 +10,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Added
+- **Studio: Flows, semantic drift and automation status in Settings → AI
+  decisions (#518, #519).** Site admins switch `aiDecisions.flows` and
+  `aiDecisions.drift` there. Jev automation is shown read-only (configured
+  mode, gate record present, thresholds per locale; an unreadable block shows
+  as shadow) with a **Return to shadow** action that keeps the thresholds and
+  gate. Studio still never turns automation live. Other `aiDecisions` keys are
+  kept as stored; an absent `flows`/`drift` flag stays absent until set.
 - **Draft review profiles and runs (#512).** Versioned review profiles
   (`/api/v1/ai/review-profiles`, admin-managed, immutable versions; presets
   `taxonomy`, `brand-voice`, `brief-alignment`) and item-bound review runs
@@ -209,6 +216,78 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
 
 ### Fixed
+- **Benchmark CLI: validated merges and frozen thresholds across runs (#513).**
+  `bench:jev --merge` now validates each report file (schema, generator,
+  `mode`, `split`, dataset, rubric, protocol, seed, sample counts, runs)
+  before the mode check, so a hand-edited report without `mode` is refused.
+  A tune run refuses (exit 2) to overwrite a `thresholds.json` that a
+  held-out report in the same output was scored with. A `report.heldout*.json`
+  that cannot be read also counts as frozen (exit 2), so a corrupted or
+  hand-edited report no longer switches the guard off. A source-scan test
+  keeps every module under `apps/cms/eval/` out of the CMS runtime.
+- **Mission Control SLO card no longer reads a partly evaluated intent as
+  healthy (#519).** An active intent with a resolved row and `unevaluated`
+  rows showed 100 % with an ok tone. The card now counts such intents as
+  "partly not evaluated" in its label and is flagged. Adds a DB integration
+  test that the `aiDecisions.drift` switch is re-read at the provider call
+  (switched off mid-pass: `DECISION_DISABLED`, recorded `unevaluated`,
+  nothing resolved).
+- **Scheduled and event Flows get the decision runtime (#519, B121).** The
+  Docker/Node `flow-events` worker now passes the cache and process env to
+  each run, like the manual-run worker, so a scheduled `drift-scan` runs its
+  semantic pass instead of reporting `unavailable` (still gated by
+  `aiDecisions.enabled` + `aiDecisions.drift`). `ai:decision` still refuses
+  event/schedule runs (no principal). A source-scan tripwire requires every
+  `registerFlow*Worker` in `serve.ts` to receive `cache`, `env` and `keys`.
+  Cloudflare Workers still has no `flow-events` consumer (B118).
+- **A 50/50 noul is unknown, not `true` (#518, J10 follow-up).** With
+  `noulThreshold: 0.5` (the lowest allowed), an answer of exactly 0.5 met
+  both sides and took the `true` branch, which Jev automation then acted on.
+  `ai:decision` now returns `unknown` (`between_thresholds`) and the J12
+  semantic drift pass records `unevaluated` for the same tie. Stored flows
+  with 0.5 stay valid. Also adds a DB integration test for the worker-path
+  content access that decides which fields reach the provider.
+- **Orphaned live automation claims are settled (#518, B120).** A live Jev
+  automation row claimed `pending` by a process that died before the harness
+  call linked an approval stayed `pending` forever. A redelivery more than
+  five minutes later now settles it `denied` with reason `orphaned` (DB clock,
+  conditional update) and still proposes nothing. No migration.
+- **An approved Jev automation write re-checks the field (#518, B119).**
+  `updateItem` accepts an optional `expect` precondition (field → value the
+  item must still hold); the harness re-reads those fields when the update
+  runs, including after an approval, and refuses with
+  `ITEM_PRECONDITION_FAILED` before writing. Jev automation sends the value
+  each proposal was computed from, so a human edit made while the proposal
+  waited is kept: the approval is settled `failed` with that reason and the
+  automation row reads `denied` / `stale_at_approval`. Additive for every
+  other caller; no migration.
+- **RLS backstop for draft review profiles, runs and feedback (#516, B114).**
+  `lumibase_review_profiles`, `lumibase_review_runs` and
+  `lumibase_review_feedback` are added to the `site_isolation` list in
+  `packages/database/migrations/rls-policies.sql`, and the review-run
+  retention purge now deletes site by site inside a transaction that sets
+  `app.site_id`, so it keeps working where the policies are applied.
+  Operators who applied `rls-policies.sql` re-run it (it is idempotent); no
+  schema migration.
+- **A late review completion no longer overwrites a reclaimed run (#515,
+  #516).** A review call that outlived the five-minute orphan timeout could
+  still complete the run after a retry had reclaimed it, writing answers about
+  the old content over the retry's binding (draft staleness and pilot metrics
+  read that run). `completeRun` now writes only while the attempt's claim
+  holds (`status = 'running'` and the claim's `created_at`); the late call
+  returns the run as stored. No migration.
+- **Draft review keeps the stored verdict on a feedback retry (#515).** When a
+  feedback request failed after the CMS had stored it, a retry with a
+  different action applied the new value to the draft while the CMS kept the
+  first verdict. The panel now reads the stored row, shows "Earlier feedback
+  was already recorded" and does not change the field. Applying a choice that
+  is also a reviewed field now says why the rest of the run went stale.
+- **Studio renders in the user's or the site's language (#515, B112).** The
+  Studio i18n instance started in English and never switched, so the
+  Vietnamese draft review copy only rendered in tests. After sign-in the
+  Studio now uses the user's `language` preference, else the site's default
+  language (Settings → Site), else English; `vi-VN` selects `vi`, other
+  languages fall back. The browser language is not used. No migration.
 - **Cloudflare counters expire (#511).** The `PageviewCounter` Durable Object
   now honours the `increment` TTL (window armed on create, like Redis `EXPIRE NX`)
   and prunes expired rows, and the 5-minute pageview flush drains only `pv`

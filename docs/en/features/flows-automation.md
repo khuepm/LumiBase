@@ -1,14 +1,15 @@
 ---
-version: 3
-lastUpdated: 2026-10-14T18:09:29.331Z
+version: 6
+lastUpdated: 2026-10-15T17:59:11.981Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 09cdb8faf1f6769f
+sourceHash: eb9e8ac74c4dda2e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T18:09:29.331Z
-codeVerifiedHash: 09cdb8faf1f6769f
+codeVerified: 2026-10-15T17:59:11.981Z
+codeVerifiedHash: eb9e8ac74c4dda2e
 codeVerifiedClaims: 12
+contentHash: a3fe5733ba13b42f
 ---
 
 # Flows / Operations Engine
@@ -100,14 +101,14 @@ The `ai:decision` operation makes one governed decision about one saved item:
 | `profileKey`, `profileVersion` | Review profile and pinned version (required; the active version is never used implicitly) |
 | `collection`, `itemId` | The item to decide on; without `itemId` it uses `input.itemId` |
 | `questionKey` | The profile question that decides the branch |
-| `noulThreshold` | `noul` questions: `true` when ≥ t, `false` when ≤ 1 − t, otherwise `unknown` |
+| `noulThreshold` | `noul` questions: `true` when ≥ t, `false` when ≤ 1 − t, otherwise `unknown`. With t = 0.5 an answer of exactly 0.5 meets both and is `unknown` (`between_thresholds`) |
 | `minConfidence` | `choice` questions: below it, or when the model abstains (`other`/`unknown`), the branch is `unknown` |
 
 The output stored in the node's step: `{ branch, runId, replayed, decision, errorCode? }`. `runId` is the review run (provenance). `score` questions cannot drive a branch.
 
 Governance, checked when the node executes, not when the run was queued:
 
-- **Switches.** Needs the `aiDecisions` setting to have both `enabled: true` and `flows: true`. `flows` is off by default (Phase C). The site kill switch (`enabled: false`) stops flows too.
+- **Switches.** Needs the `aiDecisions` setting to have both `enabled: true` and `flows: true`. `flows` is off by default (Phase C). The site kill switch (`enabled: false`) stops flows too. A site admin switches `flows` in Studio under **Settings → AI decisions** (**Allow decisions in Flows**), or through the settings API.
 - **Principal.** Only manual runs (`POST /api/v1/flows/:id/run`) carry a principal: a reference to the caller, with no capability snapshot. The worker re-resolves that principal, checks `ai:decide` on the live grant, and reads content with that person's own row and field permissions. Event, schedule and webhook runs have no one to decide for, so they are refused (`FORBIDDEN`) rather than run with system rights.
 - **A failure is never `true`.** Forbidden, disabled, quota, timeout, cancel, provider errors and a missing profile or item take the `error` branch when it is mapped; otherwise the node fails and the runner follows `onError`.
 - **Idempotency.** The review run key is `flow:<flowRunId>:<nodeId>`, per principal. Re-executing the same flow run (a redelivered job) replays the stored decision with no second provider call. If the content changed since then, the replay returns `unknown` (`stale`). A review run that ended in `error` is retried.

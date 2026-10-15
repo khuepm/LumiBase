@@ -27,6 +27,7 @@ const params = { collection: 'posts', id: 'item_1' };
 
 let bundle: Record<string, unknown> = { admin: true, byKey: {} };
 let pins: string[] = [];
+let siteConfig: Record<string, unknown> = {};
 
 const client = {
   rawRequest,
@@ -37,6 +38,7 @@ const client = {
     getCollection: async () => ({ data: { meta: { editorialWorkflow: false } } }),
   },
   settings: { get: async () => ({ data: null }) },
+  site: { get: async () => ({ data: siteConfig }) },
   permissions: { me: async () => ({ data: bundle }) },
   roles: { list: async () => ({ data: [] }) },
   tm: { upsert: vi.fn() },
@@ -50,7 +52,7 @@ const client = {
   }),
 };
 
-vi.mock('@/lib/api', () => ({ getApiClient: () => client }));
+vi.mock('@/lib/api', () => ({ getApiClient: () => client, hasActiveToken: () => true }));
 vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined }));
 vi.mock('@/hooks/use-presence', () => ({ useCoEditors: () => ({ coEditors: [], connected: false }) }));
 vi.mock('@tanstack/react-router', () => ({
@@ -62,6 +64,7 @@ vi.mock('@tanstack/react-router', () => ({
 import { ItemDetailPage } from '../item-detail';
 import { DraftReviewPanel } from '../draft-review-panel';
 import { registerContentBundles } from '../draft-review-i18n';
+import { SiteLanguageSync } from '@/components/site-language';
 
 function field(name: string, sortOrder: number): FieldResource {
   return { id: `f_${name}`, name, type: 'string', interface: 'input', sortOrder } as unknown as FieldResource;
@@ -162,6 +165,8 @@ function routes(
     feedback?: Route;
     /** J09 pilot mode for `posts`; `error` makes the rollout call fail (e.g. no ai:decide). */
     rollout?: 'off' | 'baseline' | 'assisted' | 'error';
+    /** `GET /api/v1/me/preferences` (the user's language preference, B112). */
+    preferences?: Record<string, unknown>;
   } = {},
 ): void {
   route = async (path, init) => {
@@ -171,6 +176,7 @@ function routes(
       return { data: { collection: 'posts', mode: handlers.rollout ?? 'assisted' } };
     }
     if (path === '/api/v1/ai/reviews/sessions') return { data: {} };
+    if (path === '/api/v1/me/preferences') return { data: handlers.preferences ?? {} };
     if (path.startsWith('/api/v1/ai/review-profiles')) {
       return handlers.profiles ? handlers.profiles() : { data: [PROFILE] };
     }
@@ -249,6 +255,7 @@ const suggestion = (key: string) => within(screen.getByTestId(`suggestion-${key}
 beforeEach(() => {
   bundle = { admin: true, byKey: {} };
   pins = [];
+  siteConfig = {};
   params.id = 'item_1';
   routes();
 });
@@ -342,6 +349,68 @@ describe('draft review in the item editor', () => {
     expect(screen.getByRole('button', { name: 'Accept the suggestion for Category' })).toBeDisabled();
   });
 
+  it('reviews a saved item with unsaved changes as a snapshot of the item, and says so', async () => {
+    renderPanel({ values: { ...ITEM.data, title: 'Hello, edited' } });
+
+    expect(await screen.findByText('Reviewing your unsaved changes.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Review draft' }));
+    await waitFor(() => expect(calls('/api/v1/ai/reviews')).toHaveLength(1));
+    const review = bodyOf(calls('/api/v1/ai/reviews')[0]);
+    expect(review).toMatchObject({ itemId: 'item_1', snapshot: { title: 'Hello, edited', body: 'World' } });
+  });
+
+  it('keeps the stored verdict when a retry follows a feedback write the CMS already stored', async () => {
+    // First attempt: the CMS stored `accept`, then the response was lost (503).
+    // The retry sends `edit`; the CMS keeps the first verdict and returns it.
+    const onApply = vi.fn();
+    let attempt = 0;
+    const stored = { id: 'fb_1', runId: 'run_1', questionKey: 'category', verdict: 'accept', editedValue: null, principalType: 'user', principalId: 'u1', createdAt: '2026-01-01T00:00:02Z' };
+    routes({
+      feedback: async () => {
+        attempt += 1;
+        if (attempt === 1) throw lumiError(503, 'INTERNAL');
+        return { data: [stored] };
+      },
+    });
+    renderPanel({ onApply });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review draft' }));
+    await screen.findByText('Suggested: sport');
+    fireEvent.click(suggestion('category').getByRole('button', { name: 'Accept the suggestion for Category' }));
+    expect(await suggestion('category').findByRole('alert')).toHaveTextContent('Your feedback was not recorded');
+    expect(onApply).not.toHaveBeenCalled();
+
+    fireEvent.click(suggestion('category').getByRole('button', { name: 'Choose a different value for Category' }));
+    fireEvent.change(suggestion('category').getByLabelText('Your value for Category'), { target: { value: 'news' } });
+    fireEvent.click(suggestion('category').getByRole('button', { name: 'Confirm' }));
+
+    expect(await suggestion('category').findByText('Earlier feedback was already recorded (Accepted), so nothing was changed.')).toBeInTheDocument();
+    expect(bodyOf(calls(/\/feedback$/)[1])).toEqual({ entries: [{ questionKey: 'category', verdict: 'edit', editedValue: 'news' }] });
+    // The draft is not changed to a value the stored feedback does not describe.
+    expect(onApply).not.toHaveBeenCalled();
+    expect(suggestion('category').getByRole('button', { name: 'Accept the suggestion for Category' })).toBeDisabled();
+  });
+
+  it('says why the rest of the run went stale when applying a suggestion changed a reviewed field', async () => {
+    patch.mockResolvedValue({ data: ITEM });
+    routes({ profiles: async () => ({ data: [{ ...PROFILE, fields: ['title', 'body', 'category'] }] }) });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review draft' }));
+    await screen.findByText('Suggested: sport');
+    fireEvent.click(suggestion('category').getByRole('button', { name: 'Accept the suggestion for Category' }));
+    await waitFor(() => expect(screen.getAllByRole('textbox')[2]).toHaveValue('sport'));
+
+    expect(
+      await screen.findByText('Applying a suggestion changed a reviewed field, so the other suggestions are out of date. Run the review again to use them.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/The draft changed after this review/)).toBeNull();
+    expect(suggestion('tone_match').getByRole('button', { name: 'Choose a different value for Tone match' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Run again' })).toBeEnabled();
+    // Nothing was saved by the review.
+    expect(patch).not.toHaveBeenCalled();
+  });
+
   it('sends the current draft hash with snapshot feedback', async () => {
     const onApply = vi.fn();
     routes({ reviews: async () => ({ data: reviewRun({ itemId: null, revisionId: null, source: 'snapshot' }) }) });
@@ -420,6 +489,17 @@ describe('fields the editor may not change', () => {
     expect(onApply).not.toHaveBeenCalled();
     // One verdict per run and question.
     expect(screen.getByRole('button', { name: 'Accept the suggestion for Category' })).toBeDisabled();
+  });
+
+  it('abstained with a real choice: Accept of the field value stays disabled, feedback-only suggestions do not', async () => {
+    routes({ reviews: async () => ({ data: reviewRun({ status: 'abstained' }) }) });
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Review draft' }));
+    expect(await screen.findByText('Suggested: sport')).toBeInTheDocument();
+    expect(screen.getByText(/Not enough information for a confident suggestion/)).toBeInTheDocument();
+    expect(suggestion('category').getByRole('button', { name: 'Accept the suggestion for Category' })).toBeDisabled();
+    expect(suggestion('category').getByRole('button', { name: 'Choose a different value for Category' })).toBeEnabled();
+    expect(suggestion('needs_review').getByRole('button', { name: 'Accept the suggestion for Needs review' })).toBeEnabled();
   });
 });
 
@@ -635,6 +715,60 @@ describe('Vietnamese', () => {
     expect(await screen.findByText('Gợi ý: sport')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Chấp nhận gợi ý cho Category' })).toBeEnabled();
     expect(screen.getByText('Đã hiệu chỉnh (theo nhà cung cấp)')).toBeInTheDocument();
+  });
+
+  // B112: the Studio used to start in English and never switch, so the VI
+  // copy above only rendered in tests. The admin layout now mounts
+  // `SiteLanguageSync`, which picks the user's or the site's language.
+  async function englishInstance() {
+    const i18n = i18next.createInstance();
+    await i18n.use(initReactI18next).init({ lng: 'en', fallbackLng: 'en', resources: {}, interpolation: { escapeValue: false } });
+    registerContentBundles(i18n);
+    return i18n;
+  }
+
+  function renderWithLanguageSync(i18n: typeof i18next) {
+    return render(
+      wrap(
+        <>
+          <SiteLanguageSync />
+          <DraftReviewPanel
+            collection="posts"
+            itemId="item_1"
+            values={ITEM.data}
+            savedValues={ITEM.data}
+            fields={FIELDS}
+            writeAction="update"
+            perms={perms()}
+            pinnedFields={[]}
+            onApply={vi.fn()}
+          />
+        </>,
+        i18n,
+      ),
+    );
+  }
+
+  it('switches to the site default language (Settings → Site) after sign-in', async () => {
+    siteConfig = { defaultLanguage: 'vi' };
+    const i18n = await englishInstance();
+    renderWithLanguageSync(i18n);
+
+    expect(await screen.findByRole('button', { name: 'Kiểm tra bản nháp' })).toBeInTheDocument();
+    expect(i18n.language).toBe('vi');
+    expect(document.documentElement.lang).toBe('vi');
+  });
+
+  it("prefers the user's language over the site default", async () => {
+    siteConfig = { defaultLanguage: 'vi' };
+    routes({ preferences: { language: 'en' } });
+    const i18n = await englishInstance();
+    renderWithLanguageSync(i18n);
+
+    expect(await screen.findByRole('button', { name: 'Review draft' })).toBeInTheDocument();
+    await waitFor(() => expect(calls('/api/v1/me/preferences')).toHaveLength(1));
+    expect(i18n.language).toBe('en');
+    expect(screen.queryByRole('button', { name: 'Kiểm tra bản nháp' })).toBeNull();
   });
 
   it('ships the same keys in EN and VI', async () => {

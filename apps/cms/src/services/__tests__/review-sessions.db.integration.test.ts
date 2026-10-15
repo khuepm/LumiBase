@@ -69,7 +69,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Review pilot sessions — DB integration'
       usage: { inputTokens: 40, outputTokens: 3 },
       latencyMs: 800,
       errorCode: null,
-    });
+    }, r.createdAt);
     await store.insertFeedback(siteId, r.id, 'usr_editor', [
       {
         id: uid('fb'),

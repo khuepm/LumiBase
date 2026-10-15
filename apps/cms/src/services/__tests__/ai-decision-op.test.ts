@@ -260,6 +260,13 @@ describe('branch mapping', () => {
     expect(decisionBranch(noul(0.21), base).branch).toBe('unknown');
   });
 
+  it('a 50/50 noul at the lowest threshold is unknown, not true', () => {
+    const half = { ...base, noulThreshold: 0.5 };
+    expect(decisionBranch(noul(0.5), half)).toMatchObject({ branch: 'unknown', unknownReason: 'between_thresholds' });
+    expect(decisionBranch(noul(0.51), half).branch).toBe('true');
+    expect(decisionBranch(noul(0.49), half).branch).toBe('false');
+  });
+
   it('choice abstention, reserved keys and low confidence are unknown', () => {
     expect(decisionBranch(choice('news'), base).branch).toBe('news');
     expect(decisionBranch(choice('other'), base).branch).toBe('unknown');

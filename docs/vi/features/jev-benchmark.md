@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-10-14T20:40:49.105Z
+version: 4
+lastUpdated: 2026-10-15T19:21:10.592Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f206080e0d47554a
+sourceHash: b83d6e09fb1ce7f9
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T20:40:49.105Z
-codeVerifiedHash: f206080e0d47554a
-codeVerifiedClaims: 10
+codeVerified: 2026-10-15T19:21:10.592Z
+codeVerifiedHash: b83d6e09fb1ce7f9
+codeVerifiedClaims: 12
 ---
 
 # Benchmark Jev (dữ liệu biên tập tiếng Việt và tiếng Anh)
@@ -49,7 +49,9 @@ Manifest ghim `profile.rubricVersion`, cùng fingerprint với `decisionRubricVe
    - `route` (câu hỏi `needs_review`): cắt đối xứng trên P(true), `true` khi `p >= t`, `false` khi `p <= 1 - t`, abstain ở giữa.
    - Target là selective precision 0.9 cho cả hai action trong protocol version 1. Khi lưới không đạt được, threshold là `null` với status `target-not-reached`.
 2. **Held-out.** Chạy split `heldout`. Nó nạp `thresholds.json` đã đóng băng và kiểm tra file được tạo cho đúng mode, provider, model, dataset, rubric và protocol. Nó không bao giờ ghi threshold (`writeThresholds` ném `LeakageError`).
-3. **So sánh.** Gộp các report held-out của từng provider thành một bảng so sánh.
+3. **So sánh.** Gộp các report held-out của từng provider thành một bảng so sánh. Mỗi file đưa vào `--merge` được kiểm tra trước (`parseBenchmarkReport`: schema report, generator, `mode`, `split`, dataset, rubric, protocol, seed, số mẫu, runs); ví dụ một file sửa tay bị thiếu `mode` sẽ bị từ chối với exit code 1 thay vì lọt qua bước kiểm tra mode.
+
+Khi một report held-out đã được chấm bằng một `thresholds.json`, lần chạy tune sau đó từ chối ghi đè file đó (exit code 2, `assertThresholdsNotFrozen`): tune lại sau khi đã thấy số held-out sẽ để chính các số đó định hình threshold. Không có cờ override. Một `report.heldout*.json` không đọc được (bị hỏng hoặc bị sửa tay) cũng được coi là đã đóng băng, nên report hỏng không bao giờ tắt được hàng rào này; hãy sửa hoặc chuyển report đó đi. Một lần chạy protocol mới dùng thư mục `--out` mới. Một test quét source (`apps/cms/src/__tests__/eval-not-in-runtime.wiring.test.ts`) giữ mọi module dưới `apps/cms/eval/` nằm ngoài runtime của CMS, rộng hơn phạm vi mà bước kiểm tra bundle marker bao phủ.
 
 Threshold là ngưỡng cắt trên điểm mà provider báo, được chọn theo tỷ lệ sai chấp nhận được. Nó không biến điểm đó thành xác suất trả lời đúng.
 

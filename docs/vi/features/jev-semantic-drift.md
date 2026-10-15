@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-10-15T03:01:46.702Z
+version: 6
+lastUpdated: 2026-10-15T18:13:43.858Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5248b59a020fe5ae
+sourceHash: 89692a826174d607
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T03:01:46.702Z
-codeVerifiedHash: 5248b59a020fe5ae
-codeVerifiedClaims: 12
+codeVerified: 2026-10-15T18:13:43.858Z
+codeVerifiedHash: 89692a826174d607
+codeVerifiedClaims: 14
 ---
 
 # Drift ngữ nghĩa Jev cho Content Intent
@@ -37,7 +37,7 @@ Tính năng chỉ phát hiện và đề xuất review. Nó không bao giờ s�
 
 - `key` định danh rule qua các phiên bản và phải là duy nhất giữa các rule ngữ nghĩa của intent. Tăng `version` mỗi khi ý nghĩa của rule thay đổi. Một lần cập nhật intent đổi `profileKey`, `questionKey`, `contextSource` hoặc `fields` của một rule đã lưu mà không tăng `version` sẽ bị từ chối với `422 SEMANTIC_RULE_VERSION_REQUIRED` (`assertSemanticVersionBumps`), vì fingerprint giữ nguyên và câu trả lời cũ sẽ được dùng cho rule mới. `profileVersion` và `threshold` đổi được mà không cần tăng: phiên bản profile nằm trong fingerprint, còn ngưỡng được áp lên câu trả lời đã lưu ở mỗi pass.
 - `profileKey` + `profileVersion` ghim một phiên bản review profile, và `questionKey` chỉ một câu hỏi `noul` trong đó. Câu hỏi hỏi item có drift hay không. Câu hỏi kiểu khác làm mọi lần đánh giá thành `unevaluated` (`question_not_noul`).
-- `threshold` (0.5–1): `noul ≥ threshold` là drift, `1 − noul ≥ threshold` là sạch, còn lại ở giữa là `unevaluated` (`between_thresholds`).
+- `threshold` (0.5–1): `noul ≥ threshold` là drift, `1 − noul ≥ threshold` là sạch, còn lại ở giữa là `unevaluated` (`between_thresholds`). Với threshold 0.5, câu trả lời đúng bằng 0.5 thoả cả hai phía nên cũng là `unevaluated`.
 - `fields` là các field được đánh giá (mặc định: field của profile). Chỉ field đồng thời là field của profile mới được đọc.
 - `contextSource`: `intent` nghĩa là tiêu chí của profile là toàn bộ tham chiếu. `field:<name>` gửi thêm field đó của item (một brief, một dàn ý) làm tham chiếu. Field đó phải là field của profile, và nếu nó rỗng thì lần đánh giá là `unevaluated` (`context_missing`).
 
@@ -51,7 +51,7 @@ Admin site đặt cả hai cờ trong setting `aiDecisions`:
 { "enabled": true, "drift": true }
 ```
 
-`enabled` là việc site đồng ý gửi nội dung tới provider, và tắt nó là kill switch. `drift` chỉ bật pass ngữ nghĩa. Khi một trong hai cờ tắt, scan báo `semantic.status: "off"`, không gửi gì, và giữ nguyên mọi hàng drift ngữ nghĩa. Mỗi lần gọi provider đều đọc lại cả hai cờ, và pass kiểm lại `drift` trước mỗi item, nên tắt `drift` sẽ dừng pass đang chạy ở item kế tiếp và giữ cursor. Studio chưa có form cho `drift`, nên hãy đặt qua settings API. Các key khác của `aiDecisions` (ví dụ pilot kiểm tra bản nháp do Studio ghi) được giữ nguyên.
+`enabled` là việc site đồng ý gửi nội dung tới provider, và tắt nó là kill switch. `drift` chỉ bật pass ngữ nghĩa. Khi một trong hai cờ tắt, scan báo `semantic.status: "off"`, không gửi gì, và giữ nguyên mọi hàng drift ngữ nghĩa. Mỗi lần gọi provider đều đọc lại cả hai cờ, và pass kiểm lại `drift` trước mỗi item, nên tắt `drift` sẽ dừng pass đang chạy ở item kế tiếp và giữ cursor. Site admin bật/tắt `drift` trong Studio ở **Settings → AI decisions** (**Evaluate semantic drift rules**), hoặc qua settings API. Các key khác của `aiDecisions` (ví dụ pilot kiểm tra bản nháp do Studio ghi) được giữ nguyên.
 
 ## Một lần scan chạy thế nào
 
@@ -78,7 +78,7 @@ Provider gián đoạn, lỗi quota hay timeout, câu trả lời nằm giữa h
 - không bao giờ tạo goal (reconciler chỉ nhận drift `open`);
 - mở lại thành `open` khi một pass sau phát hiện drift, và được resolve khi một pass sau có kết luận và không còn thấy drift.
 
-Pass xác định bỏ qua các hàng ngữ nghĩa, nên một lần scan không có đường decision (scan verify của dispatcher, hoặc lần chạy Flows theo event/lịch) không bao giờ resolve drift ngữ nghĩa.
+Pass xác định bỏ qua các hàng ngữ nghĩa, nên một lần scan không có đường decision (scan verify của dispatcher) không bao giờ resolve drift ngữ nghĩa.
 
 ## Goal
 
@@ -86,7 +86,7 @@ Drift ngữ nghĩa đang mở thành goal qua `ReconcilerService.reconcileIntent
 
 ## Mission Control
 
-Trang chi tiết intent liệt kê drift ngữ nghĩa kèm key và phiên bản rule, profile và phiên bản, câu hỏi, model, câu trả lời và ngưỡng, revision, content hash và review run, tất cả lấy từ những gì scan đã ghi. Một hàng `unevaluated` hiện mã lý do của nó và nói rằng drift cũ được giữ lại. Mô hình decision không trả về lời giải thích nào, nên không hiện lời giải thích nào. Bảng SLO bỏ các hàng `unevaluated` ra khỏi tỉ lệ health và hiện chúng thành một số đếm "not evaluated" riêng. Health hiện `unknown`, không phải 100 %, khi không có gì có kết luận đứng sau nó: drift không tải được, mọi hàng đều `unevaluated`, hoặc intent có rule ngữ nghĩa mà không có hàng nào có kết luận. Một câu trả lời ngữ nghĩa sạch và một pass bị tắt hay không khả dụng đều không để lại hàng nào, nên danh sách rỗng không phân biệt được hai trường hợp đó. Thẻ SLO health trên dashboard chỉ lấy trung bình các intent có health đã biết và đếm các intent chưa biết health trong nhãn. Với intent có rule ngữ nghĩa mà không có hàng drift nào, trang chi tiết intent nói rằng danh sách rỗng không cho thấy các rule ngữ nghĩa đạt, thay vì "content meets the SLO".
+Trang chi tiết intent liệt kê drift ngữ nghĩa kèm key và phiên bản rule, profile và phiên bản, câu hỏi, model, câu trả lời và ngưỡng, revision, content hash và review run, tất cả lấy từ những gì scan đã ghi. Một hàng `unevaluated` hiện mã lý do của nó và nói rằng drift cũ được giữ lại. Mô hình decision không trả về lời giải thích nào, nên không hiện lời giải thích nào. Bảng SLO bỏ các hàng `unevaluated` ra khỏi tỉ lệ health và hiện chúng thành một số đếm "not evaluated" riêng. Health hiện `unknown`, không phải 100 %, khi không có gì có kết luận đứng sau nó: drift không tải được, mọi hàng đều `unevaluated`, hoặc intent có rule ngữ nghĩa mà không có hàng nào có kết luận. Một câu trả lời ngữ nghĩa sạch và một pass bị tắt hay không khả dụng đều không để lại hàng nào, nên danh sách rỗng không phân biệt được hai trường hợp đó. Thẻ SLO health trên dashboard chỉ lấy trung bình các intent có health đã biết và đếm các intent chưa biết health trong nhãn. Một intent có health đã biết nhưng cũng có hàng `unevaluated` (health của nó chỉ tính các hàng đã được đánh giá) được đếm là "partly not evaluated" trong nhãn, và thẻ được đánh dấu cảnh báo kể cả khi đạt 100 %. Với intent có rule ngữ nghĩa mà không có hàng drift nào, trang chi tiết intent nói rằng danh sách rỗng không cho thấy các rule ngữ nghĩa đạt, thay vì "content meets the SLO".
 
 ## Multi-tenancy
 
@@ -97,6 +97,5 @@ Trang chi tiết intent liệt kê drift ngữ nghĩa kèm key và phiên bản 
 ## Giới hạn
 
 - Chưa có benchmark live, nên chưa có số đo precision, recall hay tỉ lệ false-positive của drift.
-- Lần chạy Flows theo event và theo lịch không mang cache hay cấu hình provider, nên pass ngữ nghĩa của chúng báo `unavailable`. Lần chạy Flows thủ công và `POST /api/v1/intents/:id/scan` thì chạy được.
+- Trên worker Docker/Node, lần chạy Flows theo event và theo lịch nhận cùng cache và cấu hình provider như lần chạy thủ công (`registerFlowEventWorker` trong `serve.ts`), nên một `drift-scan` theo lịch chạy pass ngữ nghĩa ở đó; nó vẫn bị chặn bởi `aiDecisions.enabled` và `aiDecisions.drift`. Cloudflare Workers chưa có consumer `flow-events` (backlog B118), nên flow theo event và theo lịch hoàn toàn không chạy ở đó.
 - Đã kiểm bằng unit test và một bộ integration trên Postgres, chưa chạy trên một Cloudflare Worker đã deploy.
-- Studio chưa có công tắc cho `aiDecisions.drift`.

@@ -283,6 +283,9 @@ function primaryDangerousCapability(
 function isStageableItemPatch(skillName: string, args: Record<string, unknown>): boolean {
   return (
     skillName === 'updateItem' &&
+    // A precondition is checked by the handler; the veto-window commit path
+    // does not run it, so a guarded patch is never staged.
+    args['expect'] === undefined &&
     typeof args['collection'] === 'string' &&
     typeof args['id'] === 'string' &&
     typeof args['data'] === 'object' &&
@@ -693,6 +696,20 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         const id = args['id'] as string;
         const data = (args['data'] as Record<string, unknown>) ?? {};
         const status = args['status'] as string | undefined;
+        const expected = args['expect'] as Record<string, unknown> | undefined;
+        if (expected && Object.keys(expected).length > 0) {
+          // Checked when the update runs, not when it was requested: an
+          // approval may execute long after the proposal (B119).
+          const current = (await itemServiceRef.detail(collection, id, Object.keys(expected))) as Record<string, unknown>;
+          const changed = Object.keys(expected).filter(
+            (field) => canonicalValue(current?.[field]) !== canonicalValue(expected[field]),
+          );
+          if (changed.length > 0) {
+            throw new ItemPreconditionFailedError(
+              `${changed.join(', ')} changed since this update was proposed; nothing was written.`,
+            );
+          }
+        }
         const result = await itemServiceRef.patch(collection, id, { data, ...(status ? { status } : {}) });
         return { updated: true, item: result };
       },
@@ -2221,6 +2238,36 @@ function rebindable<T extends object>(initial: T): Rebindable<T> {
   };
 }
 
+/**
+ * `updateItem` refused because a field no longer holds the value its
+ * `expect` precondition names. Thrown before any write, so an approval that
+ * fails this way is settled `failed` with a reason that says nothing was
+ * written (not the generic "side effect unknown").
+ */
+export class ItemPreconditionFailedError extends Error {
+  readonly code = 'ITEM_PRECONDITION_FAILED' as const;
+  constructor(message: string) {
+    super(message);
+    this.name = 'ItemPreconditionFailedError';
+  }
+}
+
+/** JSON with sorted object keys; `undefined` reads as `null` (an absent field). */
+function canonicalValue(value: unknown): string {
+  const sort = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(sort);
+    if (v && typeof v === 'object') {
+      return Object.fromEntries(
+        Object.keys(v as Record<string, unknown>)
+          .sort()
+          .map((k) => [k, sort((v as Record<string, unknown>)[k])]),
+      );
+    }
+    return v === undefined ? null : v;
+  };
+  return JSON.stringify(sort(value));
+}
+
 class ServiceTouchTracker {
   private touched = false;
 
@@ -2984,6 +3031,9 @@ export class AISecureHarness {
 
       return { success: true, data: result };
     } catch (err: unknown) {
+      if (err instanceof ItemPreconditionFailedError) {
+        return { success: false, error: `${err.code}: ${err.message}`, code: err.code };
+      }
       const message = err instanceof Error ? err.message : 'Unknown execution error';
       return { success: false, error: message };
     } finally {
@@ -3521,8 +3571,9 @@ export class AISecureHarness {
 
     // The skill failed. Whether the approval is retryable depends on how far
     // it got: see settleFailedClaim.
+    const precondition = result.code === 'ITEM_PRECONDITION_FAILED';
     const outcome = existingAgentApproval
-      ? await this.settleFailedClaim(existingAgentApproval.id, result.error)
+      ? await this.settleFailedClaim(existingAgentApproval.id, result.error, { precondition })
       : 'pending';
     await this.runService.finishToolCall(toolCallId, {
       status: 'failed',
@@ -3533,9 +3584,12 @@ export class AISecureHarness {
     await this.runService.failRun(run.runId, result.error);
     return {
       status: 'denied',
+      ...(result.code ? { code: result.code } : {}),
       message:
         outcome === 'failed'
-          ? `${result.error} (approval marked failed: the action may have partially run; reopen it after verifying)`
+          ? precondition
+            ? `${result.error} (approval marked failed: the content changed since the proposal)`
+            : `${result.error} (approval marked failed: the action may have partially run; reopen it after verifying)`
           : result.error,
       runId: run.runId,
       toolCallId,
@@ -3565,7 +3619,24 @@ export class AISecureHarness {
   private async settleFailedClaim(
     agentApprovalId: string,
     reason: string,
+    options: { precondition?: boolean } = {},
   ): Promise<'pending' | 'failed'> {
+    // A failed precondition (B119) is terminal but known-safe: the handler
+    // refused before writing. Re-offering it would fail the same way, so it
+    // is settled `failed` with a reason that says so.
+    if (options.precondition) {
+      await this.db
+        .update(agentApprovals)
+        .set({ status: 'failed', decidedAt: new Date(), decisionReason: reason.slice(0, 1000) })
+        .where(
+          and(
+            eq(agentApprovals.id, agentApprovalId),
+            eq(agentApprovals.siteId, this.siteId),
+            eq(agentApprovals.status, 'deciding'),
+          ),
+        );
+      return 'failed';
+    }
     if (!this.serviceTouch.wasTouched) {
       await this.releaseClaim(agentApprovalId);
       return 'pending';

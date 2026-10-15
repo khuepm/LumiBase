@@ -1,17 +1,18 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadDataset, samplesFor } from '../dataset';
 import { MOCK_MODEL, MockOracleProvider } from '../mock-provider';
-import { MOCK_NOTE, ReportMergeError, buildProviderRun, buildReport, mergeReports, type BenchmarkReport } from '../report';
+import { MOCK_NOTE, ReportMergeError, buildProviderRun, buildReport, mergeReports, parseBenchmarkReport, type BenchmarkReport } from '../report';
 import { benchmarkRubricVersion, buildBenchmarkQuestions } from '../rubric';
 import { runSamples, type SampleResult } from '../runner';
 import {
   LeakageError,
   assertThresholdsMatch,
+  assertThresholdsNotFrozen,
   deriveThresholds,
   loadFrozenThresholds,
   writeThresholds,
@@ -96,6 +97,23 @@ describe('leakage guard', () => {
     expect(() => assertThresholdsMatch(file, { ...identity, rubricVersion: 'sha256:ffffffffffffffff' })).toThrow(/rubricVersion/);
     expect(() => loadFrozenThresholds(join(tmp(), 'missing.json'))).toThrow(/Run the tune split first/);
   });
+
+  it('an unreadable held-out report keeps the thresholds frozen (fail closed)', () => {
+    const dir = tmp();
+    const path = join(dir, 'thresholds.json');
+    writeThresholds(path, deriveThresholds(manifest, identity, tuneResults), 'tune');
+    expect(() => assertThresholdsNotFrozen(path, [dir])).not.toThrow();
+
+    // A report scored with other thresholds does not freeze this file.
+    writeFileSync(join(dir, 'report.heldout.json'), JSON.stringify({ runs: [{ thresholds: { sha256: 'other' } }] }));
+    expect(() => assertThresholdsNotFrozen(path, [dir])).not.toThrow();
+
+    for (const broken of ['{ not json', JSON.stringify({ runs: 'nope' }), JSON.stringify(null), '']) {
+      writeFileSync(join(dir, 'report.heldout.json'), broken);
+      expect(() => assertThresholdsNotFrozen(path, [dir])).toThrow(LeakageError);
+      expect(() => assertThresholdsNotFrozen(path, [dir])).toThrow(/cannot be read/);
+    }
+  });
 });
 
 function reportFor(results: SampleResult[], split: 'tune' | 'heldout', overrides: Partial<ThresholdIdentity> = {}): BenchmarkReport {
@@ -166,6 +184,36 @@ describe('reports', () => {
   });
 });
 
+describe('report files given to --merge', () => {
+  const withoutMode = (r: BenchmarkReport) => {
+    const { mode: _mode, ...rest } = r;
+    return rest;
+  };
+
+  it('a generated report parses unchanged', () => {
+    const report = reportFor(heldoutResults, 'heldout');
+    expect(parseBenchmarkReport(JSON.parse(JSON.stringify(report)))).toEqual(report);
+  });
+
+  it.each([
+    ['without mode', (r: BenchmarkReport) => withoutMode(r)],
+    ['with an unknown mode', (r: BenchmarkReport) => ({ ...r, mode: 'x' })],
+    ['from another generator', (r: BenchmarkReport) => ({ ...r, generator: 'hand-written' })],
+    ['without runs', (r: BenchmarkReport) => ({ ...r, runs: [] })],
+    ['that is not an object', () => 'report'],
+  ])('a file %s is refused', (_label, mutate) => {
+    expect(() => parseBenchmarkReport(mutate(reportFor(heldoutResults, 'heldout')), 'a.json')).toThrow(ReportMergeError);
+  });
+
+  it('two hand-edited files without mode no longer pass the mode check together', () => {
+    const live = withoutMode(reportFor(heldoutResults, 'heldout', { mode: 'live', provider: 'typesafe', model: 'jev' }));
+    const mock = withoutMode(reportFor(heldoutResults, 'heldout'));
+    // Unvalidated, both read mode `undefined` and merge as one "mode".
+    expect(() => mergeReports([live, mock] as unknown as BenchmarkReport[], 'now')).not.toThrow();
+    expect(() => [live, mock].map((r) => parseBenchmarkReport(r))).toThrow(/mode/);
+  });
+});
+
 describe('bench:jev CLI', () => {
   const tsx = join(CMS_ROOT, 'node_modules/.bin/tsx');
   const script = join(CMS_ROOT, 'scripts/jev-benchmark.ts');
@@ -188,6 +236,33 @@ describe('bench:jev CLI', () => {
     expect(report).toMatchObject({ mode: 'mock', split: 'heldout', sampleCounts: { total: 120 } });
     expect(report.runs[0]!.thresholds.source).toBe('frozen-from-tune');
   }, 60_000);
+
+  it('refuses a tune run that would overwrite thresholds a held-out run was scored with', () => {
+    const out = tmp();
+    expect(run('--provider', 'mock', '--split', 'tune', '--out', out).status).toBe(0);
+    expect(run('--provider', 'mock', '--split', 'heldout', '--out', out).status).toBe(0);
+    const frozen = readFileSync(join(out, 'thresholds.json'), 'utf8');
+    const again = run('--provider', 'mock', '--split', 'tune', '--out', out);
+    expect(again.status).toBe(2);
+    expect(again.stderr).toMatch(/frozen/);
+    expect(readFileSync(join(out, 'thresholds.json'), 'utf8')).toBe(frozen);
+    // A new protocol run is a new directory.
+    expect(run('--provider', 'mock', '--split', 'tune', '--out', tmp()).status).toBe(0);
+  }, 90_000);
+
+  it('--merge refuses a hand-edited report without mode', () => {
+    const out = tmp();
+    expect(run('--provider', 'mock', '--split', 'tune', '--out', out).status).toBe(0);
+    expect(run('--provider', 'mock', '--split', 'heldout', '--out', out).status).toBe(0);
+    const report = JSON.parse(readFileSync(join(out, 'report.heldout.json'), 'utf8')) as Record<string, unknown>;
+    delete report['mode'];
+    const edited = join(out, 'edited.json');
+    writeFileSync(edited, JSON.stringify(report));
+    const merged = run('--merge', edited, '--merge', join(out, 'report.heldout.json'), '--out', join(out, 'cmp.json'));
+    expect(merged.status).toBe(1);
+    expect(merged.stderr).toMatch(/edited\.json is not a bench:jev report: mode/);
+    expect(existsSync(join(out, 'cmp.json'))).toBe(false);
+  }, 90_000);
 
   it('a live provider without a key fails before any call', () => {
     const result = spawnSync(tsx, [script, '--provider', 'typesafe', '--split', 'tune', '--out', tmp()], {

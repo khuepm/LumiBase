@@ -345,9 +345,11 @@ async function main() {
   // the flow and records the run. Without it, event flows never fire.
   const { registerFlowEventWorker } = await import('./services/flow-dispatch');
   registerFlowEventWorker({
+    cache: runtime.cache,
     db: rotatorDb,
     queue: runtime.queue,
     keys: runtime.keys,
+    env: process.env as Record<string, string | undefined>,
   });
 
   // ── Manual flow runs + AI chat async (high-load task 17) ────────────────

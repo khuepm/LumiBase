@@ -1,13 +1,13 @@
 ---
-version: 4
+version: 8
 sourceLang: en
-lastUpdated: 2026-10-14T19:38:25.127Z
+lastUpdated: 2026-10-15T19:22:12.818Z
 translatedFrom: en
-sourceHash: 05745a79dc39d3b3
+sourceHash: 9169c4051130c9d5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T19:38:25.127Z
-codeVerifiedHash: 05745a79dc39d3b3
+codeVerified: 2026-10-15T19:22:12.818Z
+codeVerifiedHash: 9169c4051130c9d5
 codeVerifiedClaims: 14
 ---
 
@@ -58,7 +58,7 @@ Một đề xuất không thay đổi gì là `noop`.
 
 ## Chế độ
 
-Setting `aiDecisions` (do site admin ghi qua `POST /api/v1/settings`) chứa khối tự động hoá:
+Setting `aiDecisions` (do site admin ghi qua `POST /api/v1/settings`) chứa khối tự động hoá. Trang **Settings → AI decisions** của Studio hiển thị khối này ở chế độ chỉ đọc (chế độ đã cấu hình, có bản ghi gate hay không, số ngưỡng theo từng locale; khối không đọc được sẽ hiện là shadow) và có nút **Return to shadow**, đặt `mode: 'shadow'` và giữ nguyên các ngưỡng cùng gate. Studio không bao giờ bật tự động hoá sang live: gate phải trỏ tới một report đã đo, nên việc đó vẫn là một lần ghi qua settings API.
 
 ```json
 {
@@ -107,6 +107,8 @@ Một đề xuất live gọi `AISecureHarness.execute('updateItem')` với:
 
 Dòng chuyển thành `pending_approval` kèm id của approval. Khi một người duyệt trong Mission Control, harness thực hiện lần ghi với quyền đã resolve lại của người yêu cầu; dòng khi đó được đọc là `applied`. Approval bị từ chối được đọc là `rejected`.
 
+Đề xuất còn mang một điều kiện tiên quyết `expect` trên `updateItem`: field và giá trị mà đề xuất được tính từ đó. Harness kiểm lại điều kiện này khi lần ghi đã được duyệt chạy. Nếu một người đã đổi field đó ở giữa, không có gì được ghi, approval được chốt `failed` với lý do `ITEM_PRECONDITION_FAILED`, và dòng được đọc là `denied` với lý do `stale_at_approval`. Lần sửa của người đó được giữ. Chạy lại flow để có đề xuất mới.
+
 ## Hoàn tác
 
 `POST /api/v1/ai/automation/actions/:id/revert` (site admin) khôi phục `previous` qua ItemService của người gọi. Nó từ chối với:
@@ -149,6 +151,6 @@ Protocol `jev-automation-v1` yêu cầu ít nhất 30 đề xuất trong vùng �
 
 - **Chưa có precision đo được.** Chưa có dữ liệu thật, nên mọi site vẫn ở shadow.
 - **Chỉ run thủ công.** Trigger theo event và lịch không mang principal, nên các node từ chối chúng.
-- **Approval không được kiểm lại độ stale.** Quyết định được kiểm khi đề xuất được tạo; nếu item đổi trước khi một người duyệt, approval sẽ ghi giá trị đã đề xuất. Hãy xem kỹ approval, hoặc hoàn tác sau đó.
-- **Một lần giao bị crash vẫn ở `pending`.** Một dòng live được giữ chỗ trước lời gọi harness; nếu tiến trình chết ở giữa, lần giao lại tìm thấy dòng đó và không đề xuất gì. Chạy lại flow để đề xuất lần nữa.
+- **Chỉ chạy trên Docker/Node.** Run thủ công của flow được thực thi bởi worker `flow-runs` trên Docker/Node. Cloudflare Workers chưa có consumer `flow-runs` hay `flow-events` (backlog B118), nên flow tự động hoá Jev không chạy trên bản triển khai Workers.
+- **Một lần giao bị crash không được đề xuất lại.** Một dòng live được giữ chỗ trước lời gọi harness. Nếu tiến trình chết ở giữa, dòng vẫn ở `pending` và không có approval. Lần giao lại trong vòng năm phút để nguyên dòng đó; sau năm phút nó chốt dòng thành `denied` với lý do `orphaned` và không đề xuất gì, vì tiến trình đã chết có thể đã tạo một approval mà chưa kịp liên kết. Chạy lại flow để đề xuất lần nữa.
 - **Chuyển trạng thái `submit_review` chỉ được đề xuất, không được thực hiện.** Người duyệt gửi item đi duyệt.

@@ -276,8 +276,9 @@ registerHandler('drift-scan', async (ctx, options) => {
   const deps = { db: db as any, siteId };
 
   // Semantic rules (J12) need the decision path: cache (quota), keys and the
-  // provider config. Manual runs carry them; event/schedule runs do not yet,
-  // so their semantic pass reports `unavailable` and changes nothing.
+  // provider config. Manual runs and the Docker/Node event/schedule worker
+  // (B121) carry them; a runner without them reports the semantic pass
+  // `unavailable` and changes nothing.
   const { semanticDriftRuntimeFromEnv } = await import('./semantic-drift-scan');
   const semantic = semanticDriftRuntimeFromEnv({
     ...deps,

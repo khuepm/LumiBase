@@ -31,11 +31,12 @@ import { loadDataset, samplesFor, SPLITS, type BenchmarkSample, type Split } fro
 import { asRunnerSamples, loadDriftDataset, runDriftBenchmark } from '../eval/jev-benchmark/drift';
 import type { Prices } from '../eval/jev-benchmark/metrics';
 import { MOCK_MODEL, MOCK_PROVIDER, MockOracleProvider } from '../eval/jev-benchmark/mock-provider';
-import { buildProviderRun, buildReport, mergeReports, type BenchmarkReport } from '../eval/jev-benchmark/report';
+import { buildProviderRun, buildReport, mergeReports, parseBenchmarkReport } from '../eval/jev-benchmark/report';
 import { benchmarkRubricVersion, buildBenchmarkQuestions } from '../eval/jev-benchmark/rubric';
 import { runSamples } from '../eval/jev-benchmark/runner';
 import {
   assertThresholdsMatch,
+  assertThresholdsNotFrozen,
   deriveThresholds,
   loadFrozenThresholds,
   writeThresholds,
@@ -95,7 +96,13 @@ if (values.help) {
 
 if (values.merge && values.merge.length > 0) {
   if (!values.out) fail('--merge needs --out <file>');
-  const reports = values.merge.map((file) => JSON.parse(readFileSync(resolve(file), 'utf8')) as BenchmarkReport);
+  const reports = (() => {
+    try {
+      return values.merge!.map((file) => parseBenchmarkReport(JSON.parse(readFileSync(resolve(file), 'utf8')), file));
+    } catch (err) {
+      return fail((err as Error).message);
+    }
+  })();
   try {
     const merged = mergeReports(reports, new Date().toISOString());
     writeJson(resolve(values.out), merged);
@@ -226,6 +233,14 @@ const thresholdsPath = resolve(values.thresholds ?? join(outDir, 'thresholds.jso
 
 // Held-out: load and check the frozen thresholds BEFORE spending any call.
 const frozen = split === 'heldout' ? loadFrozenThresholdsOrFail(thresholdsPath, identity) : null;
+// Tune: refuse to overwrite thresholds a held-out report was already scored with.
+if (split === 'tune') {
+  try {
+    assertThresholdsNotFrozen(thresholdsPath, [outDir, dirname(thresholdsPath)]);
+  } catch (err) {
+    fail((err as Error).message, 2);
+  }
+}
 
 function loadFrozenThresholdsOrFail(path: string, expected: ThresholdIdentity) {
   try {

@@ -1,11 +1,11 @@
 ---
-version: 3
+version: 5
 sourceLang: en
-lastUpdated: 2026-10-14T15:33:32.071Z
-contentHash: 32d37bd869afa977
-codeVerified: 2026-10-14T15:33:32.071Z
-codeVerifiedHash: 32d37bd869afa977
-codeVerifiedClaims: 16
+lastUpdated: 2026-10-15T17:06:40.300Z
+contentHash: b8be829eacd43b1c
+codeVerified: 2026-10-15T17:06:40.300Z
+codeVerifiedHash: b8be829eacd43b1c
+codeVerifiedClaims: 22
 ---
 
 # Draft review in Studio
@@ -43,11 +43,15 @@ Every suggestion has three actions. Each records one verdict per run and questio
 
 The value is applied only after the CMS has stored the feedback. Applying changes the draft in the editor, nothing else. You keep the result with the usual **Save** button, and publishing still needs the editorial actions and their permissions.
 
+The CMS keeps the first verdict per run and question. If a feedback request failed after the CMS had stored it and you then choose a different action, the CMS returns the earlier verdict: the panel shows **Earlier feedback was already recorded**, and the field is not changed, so the draft and the stored feedback stay in step.
+
 A suggestion for a **pinned** field, or for a field you may not write, is shown read-only: Accept and Edit are disabled and Reject stays available. Score and noul questions never change a field; their Accept and Edit record feedback only.
 
 ## Stale results
 
 When a review starts, the panel keeps the canonical JSON of the reviewed content (the same form the CMS hashes). If that content changes before or after the answer arrives, the result becomes **stale**: Accept and Edit are disabled and the button reads **Run again**. A 409 `REVIEW_STALE` from the CMS (for example after the item was saved by someone else) leads to the same state. A stale result never overwrites newer edits.
+
+A profile may review the same field that a `choice` question fills in (for example `category` is in the profile's `fields` and is also a question). Accepting or editing that suggestion changes the reviewed content, so the rest of the run is stale on purpose: the other answers may depend on that field. The panel then says that applying a suggestion made the other suggestions out of date. Run the review again to use them.
 
 For unsaved drafts, feedback carries the hash of the draft as you see it now, so the CMS can refuse a verdict about content that changed.
 
@@ -79,3 +83,11 @@ Calls go through `getApiClient()`, so they use `getApiBaseUrl()` and the token s
 ## Language
 
 The panel copy ships in `apps/studio/src/locales/en/content.json` and `apps/studio/src/locales/vi/content.json` and follows the active i18next language.
+
+The Studio picks the language after sign-in (`apps/studio/src/components/site-language.tsx`, `apps/studio/src/lib/ui-language.ts`):
+
+1. your own preference, the `language` key of `GET /api/v1/me/preferences`;
+2. otherwise the site's default language (Settings → Site, `defaultLanguage`);
+3. otherwise English.
+
+Only English (`en`) and Vietnamese (`vi`) ship; a regional tag such as `vi-VN` selects `vi`, and any other language falls through to the next source. The browser language is not used. Before sign-in the Studio shows English. Most other Studio pages are not translated yet, so they stay in English whatever the language.

@@ -160,7 +160,7 @@ beforeEach(async () => {
     usage: null,
     latencyMs: 10,
     errorCode: null,
-  });
+  }, run.createdAt);
   runId = run.id;
 });
 

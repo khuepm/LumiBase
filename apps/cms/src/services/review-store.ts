@@ -12,7 +12,7 @@ import {
   reviewSessions,
   type Database,
 } from '@lumibase/database';
-import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, lte, or, sql } from 'drizzle-orm';
 
 export type ReviewProfileRecord = typeof reviewProfiles.$inferSelect;
 export type ReviewProfileInsert = Omit<typeof reviewProfiles.$inferInsert, 'id' | 'createdAt' | 'status'> & {
@@ -58,7 +58,19 @@ export interface ReviewStore {
    * `created` is true when the caller owns the run and must call the provider.
    */
   claimRun(row: ReviewRunInsert): Promise<{ run: ReviewRunRecord; created: boolean }>;
-  completeRun(siteId: string, id: string, completion: ReviewRunCompletion): Promise<ReviewRunRecord | null>;
+  /**
+   * Stores the outcome of the attempt that claimed the run at `claimedAt`
+   * (the `createdAt` {@link claimRun} returned). Writes only while that claim
+   * still holds: the run is `running` and was not reclaimed since. A process
+   * that outlived {@link REVIEW_RUN_ORPHAN_MS} and lost its claim to a retry
+   * gets `null` and must not overwrite the retry's binding with its answers.
+   */
+  completeRun(
+    siteId: string,
+    id: string,
+    completion: ReviewRunCompletion,
+    claimedAt: Date,
+  ): Promise<ReviewRunRecord | null>;
   getRun(siteId: string, id: string): Promise<ReviewRunRecord | null>;
   listRuns(siteId: string, filter: { collection: string; itemId: string; limit: number }): Promise<ReviewRunRecord[]>;
   /** ON CONFLICT DO NOTHING; then returns the stored rows for the run, principal and question keys. */
@@ -116,6 +128,17 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /** The store routes use. A function (not `new`) so route tests can swap in an in-memory store. */
+/**
+ * `created_at` is the claim token. Postgres keeps microseconds and a JS
+ * `Date` keeps milliseconds, so match within ±1 ms rather than exactly. A
+ * reclaim restarts `created_at` at least {@link REVIEW_RUN_ORPHAN_MS} later,
+ * so the window can never match a newer claim.
+ */
+function claimWindow(claimedAt: Date) {
+  const t = claimedAt.getTime();
+  return [gte(reviewRuns.createdAt, new Date(t - 1)), lte(reviewRuns.createdAt, new Date(t + 1))];
+}
+
 export function reviewStoreFor(db: Database): ReviewStore {
   return new DrizzleReviewStore(db);
 }
@@ -248,11 +271,23 @@ export class DrizzleReviewStore implements ReviewStore {
     if (!existing) throw new Error('review run vanished between insert and read');
     return { run: existing, created: false };
   }
-  async completeRun(siteId: string, id: string, completion: ReviewRunCompletion): Promise<ReviewRunRecord | null> {
+  async completeRun(
+    siteId: string,
+    id: string,
+    completion: ReviewRunCompletion,
+    claimedAt: Date,
+  ): Promise<ReviewRunRecord | null> {
     const [row] = await this.db
       .update(reviewRuns)
       .set({ ...completion, completedAt: new Date() })
-      .where(and(eq(reviewRuns.siteId, siteId), eq(reviewRuns.id, id)))
+      .where(
+        and(
+          eq(reviewRuns.siteId, siteId),
+          eq(reviewRuns.id, id),
+          eq(reviewRuns.status, 'running'),
+          ...claimWindow(claimedAt),
+        ),
+      )
       .returning();
     return row ?? null;
   }

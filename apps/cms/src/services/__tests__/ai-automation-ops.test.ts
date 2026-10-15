@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   decisionHarness,
   editorRef,
@@ -378,6 +378,18 @@ describe('the decision is the stored review run, about this item', () => {
       expect(approvalSeq).toBe(0);
     });
 
+    it('a 50/50 noul at the 0.5 cut is unknown, so nothing is routed as true', async () => {
+      h.upstream.answers.spam = { type: 'noul', noul: 0.5 };
+      const node: FlowNode = { ...DECIDE_NODE, branches: { true: 'act', false: 'act', unknown: 'act', error: 'act' } };
+      const ctx: FlowRunContext = { input: { itemId: 'itm_1', locale: 'vi' }, steps: {}, env: envFor() };
+      const opts = { profileKey: PROFILE_KEY, profileVersion: 1, collection: 'posts', questionKey: 'spam', noulThreshold: 0.5 };
+      const decision = await runAiDecisionNode(ctx, opts, node, h.runtime);
+      expect(decision.branch).toBe('unknown');
+      const out = await runAutomationNode('route', automationCtx(decision), SPAM_ROUTE, ROUTE_NODE, runtime);
+      expect(out).toMatchObject({ status: 'skipped', reason: 'decision_unknown' });
+      expect(rowOf(out).proposed).not.toMatchObject({ value: 'spam-review' });
+      expect(approvalSeq).toBe(0);
+    });
     it('a forged noul cut below 0.5 cannot turn a leaning-false decision into true', async () => {
       const decision = await decideSpam();
       // Real run id, value and confidence; only the branch and the cut differ.
@@ -412,6 +424,34 @@ describe('idempotency', () => {
     expect(first).toMatchObject({ status: 'pending_approval', replayed: false });
     expect(again).toMatchObject({ actionId: first.actionId, status: 'pending_approval', replayed: true });
     expect(approvalSeq).toBe(1);
+    expect(actions.rows).toHaveLength(1);
+  });
+
+  it('a delivery that died between claim and harness is settled orphaned, never proposed again (B120)', async () => {
+    setAutomation(liveAutomation());
+    const decision = await decide();
+    let calls = 0;
+    const inner = runtime.governedWrite;
+    // The first delivery claims the row, then its process dies inside the harness call.
+    runtime.governedWrite = async () => {
+      calls += 1;
+      return new Promise<never>(() => {});
+    };
+    void tag(decision);
+    await vi.waitFor(() => expect(calls).toBe(1));
+    expect(actions.rows[0]).toMatchObject({ status: 'pending', approvalId: null });
+
+    // A redelivery inside the orphan window leaves the live claim alone.
+    runtime.governedWrite = inner;
+    expect(await tag(decision)).toMatchObject({ status: 'pending', replayed: true });
+
+    // Past the window it is settled once, and nothing is proposed again.
+    const claimedAt = actions.rows[0]!.createdAt.getTime();
+    actions.now = () => new Date(claimedAt + 6 * 60_000);
+    expect(await tag(decision)).toMatchObject({ status: 'denied', reason: 'orphaned', replayed: true });
+    expect(await tag(decision)).toMatchObject({ status: 'denied', reason: 'orphaned', replayed: true });
+    expect(calls).toBe(1);
+    expect(approvalSeq).toBe(0);
     expect(actions.rows).toHaveLength(1);
   });
 
@@ -541,6 +581,29 @@ describe('reversal', () => {
     actions.approvals.set(live.approvalId!, 'rejected');
     await expect(revertAutomationAction(deps(), live.actionId, 'usr_admin')).rejects.toMatchObject({ code: 'AUTOMATION_NOT_APPLIED' });
     expect(rowOf(live).status).toBe('rejected');
+  });
+
+  it('sends the value it was computed from as the precondition, and a refused approval is denied stale_at_approval (B119)', async () => {
+    setAutomation(liveAutomation());
+    const proposed: GovernedWriteInput[] = [];
+    const inner = runtime.governedWrite;
+    runtime.governedWrite = async (...args) => {
+      proposed.push(args[3]);
+      return inner(...args);
+    };
+    const out = await tag();
+    expect(proposed).toEqual([expect.objectContaining({ data: { tags: ['featured', 'tin-tuc'] }, expect: { tags: ['featured'] } })]);
+    // The harness settled the approval failed because the field changed.
+    actions.approvals.set(out.approvalId!, 'failed');
+    actions.approvalReasons.set(out.approvalId!, 'ITEM_PRECONDITION_FAILED: tags changed since this update was proposed; nothing was written.');
+    expect(await reconcileAutomationAction(actions, rowOf(out))).toMatchObject({ status: 'denied', reason: 'stale_at_approval', applied: false });
+  });
+
+  it('any other failed approval is denied approval_failed', async () => {
+    setAutomation(liveAutomation());
+    const out = await tag();
+    actions.approvals.set(out.approvalId!, 'failed');
+    expect(await reconcileAutomationAction(actions, rowOf(out))).toMatchObject({ status: 'denied', reason: 'approval_failed' });
   });
 
   it('puts the row back to applied when the restoring write fails', async () => {

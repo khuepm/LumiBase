@@ -127,6 +127,10 @@ export const AgentToolSchemas = {
       id,
       data: record,
       status: z.enum(['draft', 'published', 'archived']).optional(),
+      // Precondition: field → the value the item must still hold when the
+      // update runs (also when it runs after an approval). Any difference
+      // refuses the update with ITEM_PRECONDITION_FAILED before it writes.
+      expect: z.record(slug, z.unknown()).optional(),
     })
     .strict(),
   deleteItem: z.object({ collection: slug, id }).strict(),
