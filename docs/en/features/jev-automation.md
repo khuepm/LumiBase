@@ -1,10 +1,10 @@
 ---
-version: 7
+version: 8
 sourceLang: en
-lastUpdated: 2026-10-15T17:59:12.399Z
-contentHash: 286a5c51bfd98adb
-codeVerified: 2026-10-15T17:59:12.399Z
-codeVerifiedHash: 286a5c51bfd98adb
+lastUpdated: 2026-10-15T19:22:12.818Z
+contentHash: 9169c4051130c9d5
+codeVerified: 2026-10-15T19:22:12.818Z
+codeVerifiedHash: 9169c4051130c9d5
 codeVerifiedClaims: 14
 ---
 
@@ -148,5 +148,6 @@ Protocol `jev-automation-v1` requires at least 30 reviewed in-zone proposals per
 
 - **No measured precision yet.** There is no real data, so every site stays in shadow.
 - **Manual runs only.** Event and schedule triggers carry no principal, so the nodes refuse them.
+- **Docker/Node only.** Manual flow runs execute on the Docker/Node `flow-runs` worker. Cloudflare Workers has no `flow-runs` or `flow-events` consumer yet (backlog B118), so Jev automation flows do not run on a Workers deployment.
 - **A crashed delivery is not proposed again.** A live row is claimed before the harness call. If the process dies in between, the row stays `pending` with no approval. A redelivery within five minutes leaves it alone; after that it settles the row `denied` with reason `orphaned` and proposes nothing, because the dead process may already have parked an approval it did not link. Re-run the flow to propose again.
 - **The `submit_review` transition is proposed, not performed.** A reviewer submits the item for review.

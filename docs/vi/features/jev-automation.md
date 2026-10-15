@@ -1,13 +1,13 @@
 ---
-version: 7
+version: 8
 sourceLang: en
-lastUpdated: 2026-10-15T17:59:12.399Z
+lastUpdated: 2026-10-15T19:22:12.818Z
 translatedFrom: en
-sourceHash: 286a5c51bfd98adb
+sourceHash: 9169c4051130c9d5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T17:59:12.399Z
-codeVerifiedHash: 286a5c51bfd98adb
+codeVerified: 2026-10-15T19:22:12.818Z
+codeVerifiedHash: 9169c4051130c9d5
 codeVerifiedClaims: 14
 ---
 
@@ -151,5 +151,6 @@ Protocol `jev-automation-v1` yêu cầu ít nhất 30 đề xuất trong vùng �
 
 - **Chưa có precision đo được.** Chưa có dữ liệu thật, nên mọi site vẫn ở shadow.
 - **Chỉ run thủ công.** Trigger theo event và lịch không mang principal, nên các node từ chối chúng.
+- **Chỉ chạy trên Docker/Node.** Run thủ công của flow được thực thi bởi worker `flow-runs` trên Docker/Node. Cloudflare Workers chưa có consumer `flow-runs` hay `flow-events` (backlog B118), nên flow tự động hoá Jev không chạy trên bản triển khai Workers.
 - **Một lần giao bị crash không được đề xuất lại.** Một dòng live được giữ chỗ trước lời gọi harness. Nếu tiến trình chết ở giữa, dòng vẫn ở `pending` và không có approval. Lần giao lại trong vòng năm phút để nguyên dòng đó; sau năm phút nó chốt dòng thành `denied` với lý do `orphaned` và không đề xuất gì, vì tiến trình đã chết có thể đã tạo một approval mà chưa kịp liên kết. Chạy lại flow để đề xuất lần nữa.
 - **Chuyển trạng thái `submit_review` chỉ được đề xuất, không được thực hiện.** Người duyệt gửi item đi duyệt.
