@@ -1,14 +1,14 @@
 ---
-version: 4
-lastUpdated: 2026-10-15T17:59:12.175Z
+version: 5
+lastUpdated: 2026-10-15T18:05:44.510Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b9ac6bc9de722ed9
+sourceHash: d22f26a398f28890
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T17:59:12.175Z
-codeVerifiedHash: b9ac6bc9de722ed9
-codeVerifiedClaims: 12
+codeVerified: 2026-10-15T18:05:44.510Z
+codeVerifiedHash: d22f26a398f28890
+codeVerifiedClaims: 14
 ---
 
 # Drift ngữ nghĩa Jev cho Content Intent
@@ -78,7 +78,7 @@ Provider gián đoạn, lỗi quota hay timeout, câu trả lời nằm giữa h
 - không bao giờ tạo goal (reconciler chỉ nhận drift `open`);
 - mở lại thành `open` khi một pass sau phát hiện drift, và được resolve khi một pass sau có kết luận và không còn thấy drift.
 
-Pass xác định bỏ qua các hàng ngữ nghĩa, nên một lần scan không có đường decision (scan verify của dispatcher, hoặc lần chạy Flows theo event/lịch) không bao giờ resolve drift ngữ nghĩa.
+Pass xác định bỏ qua các hàng ngữ nghĩa, nên một lần scan không có đường decision (scan verify của dispatcher) không bao giờ resolve drift ngữ nghĩa.
 
 ## Goal
 
@@ -97,5 +97,5 @@ Trang chi tiết intent liệt kê drift ngữ nghĩa kèm key và phiên bản 
 ## Giới hạn
 
 - Chưa có benchmark live, nên chưa có số đo precision, recall hay tỉ lệ false-positive của drift.
-- Lần chạy Flows theo event và theo lịch không mang cache hay cấu hình provider, nên pass ngữ nghĩa của chúng báo `unavailable`. Lần chạy Flows thủ công và `POST /api/v1/intents/:id/scan` thì chạy được.
+- Trên worker Docker/Node, lần chạy Flows theo event và theo lịch nhận cùng cache và cấu hình provider như lần chạy thủ công (`registerFlowEventWorker` trong `serve.ts`), nên một `drift-scan` theo lịch chạy pass ngữ nghĩa ở đó; nó vẫn bị chặn bởi `aiDecisions.enabled` và `aiDecisions.drift`. Cloudflare Workers chưa có consumer `flow-events` (backlog B118), nên flow theo event và theo lịch hoàn toàn không chạy ở đó.
 - Đã kiểm bằng unit test và một bộ integration trên Postgres, chưa chạy trên một Cloudflare Worker đã deploy.

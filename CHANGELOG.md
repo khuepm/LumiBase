@@ -216,6 +216,14 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
 
 ### Fixed
+- **Scheduled and event Flows get the decision runtime (#519, B121).** The
+  Docker/Node `flow-events` worker now passes the cache and process env to
+  each run, like the manual-run worker, so a scheduled `drift-scan` runs its
+  semantic pass instead of reporting `unavailable` (still gated by
+  `aiDecisions.enabled` + `aiDecisions.drift`). `ai:decision` still refuses
+  event/schedule runs (no principal). A source-scan tripwire requires every
+  `registerFlow*Worker` in `serve.ts` to receive `cache`, `env` and `keys`.
+  Cloudflare Workers still has no `flow-events` consumer (B118).
 - **A 50/50 noul is unknown, not `true` (#518, J10 follow-up).** With
   `noulThreshold: 0.5` (the lowest allowed), an answer of exactly 0.5 met
   both sides and took the `true` branch, which Jev automation then acted on.

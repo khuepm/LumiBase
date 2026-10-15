@@ -1,11 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-10-15T17:59:12.175Z
+version: 5
+lastUpdated: 2026-10-15T18:05:44.510Z
 sourceLang: en
-contentHash: b9ac6bc9de722ed9
-codeVerified: 2026-10-15T17:59:12.175Z
-codeVerifiedHash: b9ac6bc9de722ed9
-codeVerifiedClaims: 12
+contentHash: d22f26a398f28890
+codeVerified: 2026-10-15T18:05:44.510Z
+codeVerifiedHash: d22f26a398f28890
+codeVerifiedClaims: 14
 ---
 
 # Jev semantic drift for Content Intents
@@ -75,7 +75,7 @@ A provider outage, quota or timeout error, an answer between the thresholds, a m
 - never creates a goal (the reconciler only takes `open` drift);
 - reopens as `open` when a later pass detects the drift, and resolves when a later conclusive pass does not.
 
-The deterministic pass ignores semantic rows, so a scan without the decision path (the dispatcher's verify scan, or event/schedule Flows runs) never resolves semantic drift.
+The deterministic pass ignores semantic rows, so a scan without the decision path (the dispatcher's verify scan) never resolves semantic drift.
 
 ## Goals
 
@@ -94,5 +94,5 @@ The intent detail lists semantic drift with the rule key and version, the profil
 ## Limitations
 
 - No live benchmark yet, so no measured drift precision, recall or false-positive rate.
-- Event and schedule Flows runs carry no cache or provider configuration, so their semantic pass reports `unavailable`. Manual Flows runs and `POST /api/v1/intents/:id/scan` run it.
+- Event and schedule Flows runs get the same cache and provider configuration as manual runs on the Docker/Node worker (`registerFlowEventWorker` in `serve.ts`), so a scheduled `drift-scan` runs the semantic pass there; it is still gated by `aiDecisions.enabled` and `aiDecisions.drift`. Cloudflare Workers has no `flow-events` consumer yet (backlog B118), so event and schedule flows do not run there at all.
 - Tested with unit tests and a Postgres integration suite, not on a deployed Cloudflare Worker.
