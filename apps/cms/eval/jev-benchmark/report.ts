@@ -8,10 +8,11 @@
  * a `mock` report with a `live` one.
  */
 
-import { BENCHMARK_BUNDLE_MARKER, countBy, type DatasetManifest, type Locale, type Split } from './dataset';
+import { z } from 'zod';
+import { BENCHMARK_BUNDLE_MARKER, SPLITS, countBy, type DatasetManifest, type Locale, type Split } from './dataset';
 import { CALIBRATION_NOTE, summarizeCalls, type CallSummary, type Prices, type QuestionMetrics, type Rate } from './metrics';
 import { callRecords, type SampleResult } from './runner';
-import { evaluateAction, thresholdFor, type BenchmarkMode, type ThresholdFile } from './thresholds';
+import { BENCHMARK_MODES, evaluateAction, thresholdFor, type BenchmarkMode, type ThresholdFile } from './thresholds';
 
 export const MOCK_NOTE =
   'mode: mock. Answers come from a seeded oracle over the gold labels; these numbers test the harness, not any model.';
@@ -170,6 +171,38 @@ export class ReportMergeError extends Error {
     super(message);
     this.name = 'ReportMergeError';
   }
+}
+
+/**
+ * The envelope every check in `mergeReports` reads. A file passed to
+ * `--merge` is parsed against it first, so a hand-edited report that drops
+ * `mode` (or names another generator) is refused instead of slipping past the
+ * mode check as `undefined`. Run bodies are kept as they are.
+ */
+const reportEnvelopeSchema = z.looseObject({
+  schema: z.literal('lumibase.jev-benchmark.report/v1'),
+  generator: z.literal(BENCHMARK_BUNDLE_MARKER),
+  mode: z.enum(BENCHMARK_MODES),
+  split: z.enum(SPLITS),
+  generatedAt: z.string(),
+  dataset: z.looseObject({ version: z.string().min(1), manifestSha256: z.string().min(1), provenance: z.unknown() }),
+  rubric: z.looseObject({ version: z.string().min(1) }),
+  protocol: z.looseObject({ version: z.union([z.string(), z.number()]) }),
+  seed: z.number(),
+  sampleCounts: z.looseObject({ total: z.number().int().nonnegative() }),
+  runs: z.array(z.looseObject({ provider: z.string().min(1), model: z.string().min(1) })).min(1),
+  notes: z.array(z.string()),
+});
+
+/** Validates a report read from disk. Throws ReportMergeError naming the source and the first problem. */
+export function parseBenchmarkReport(value: unknown, source = 'report'): BenchmarkReport {
+  const parsed = reportEnvelopeSchema.safeParse(value);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const where = issue?.path.length ? issue.path.join('.') : '(root)';
+    throw new ReportMergeError(`${source} is not a bench:jev report: ${where}: ${issue?.message ?? 'invalid'}.`);
+  }
+  return parsed.data as unknown as BenchmarkReport;
 }
 
 /**

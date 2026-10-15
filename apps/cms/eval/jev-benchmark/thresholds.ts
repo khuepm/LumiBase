@@ -6,6 +6,10 @@
  *   - A `heldout` run loads the frozen file with `loadFrozenThresholds` and
  *     checks it was derived for the same mode, provider, model, dataset,
  *     rubric and protocol (`assertThresholdsMatch`). It never writes one.
+ *   - Once a held-out report used a thresholds file, a later tune run may not
+ *     overwrite it (`assertThresholdsNotFrozen`): re-tuning after seeing
+ *     held-out numbers would leak them into the thresholds across runs. A
+ *     new protocol run uses a new `--out` directory.
  *
  * A threshold is the lowest grid value whose selective precision on `tune`
  * reaches the action's target with at least `minCoveredSamples` decided
@@ -14,8 +18,8 @@
  * being right.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { BENCHMARK_BUNDLE_MARKER, LOCALES, SPLITS, sha256Hex, type DatasetManifest, type Locale, type Split } from './dataset';
 import { evaluateChoice, evaluateNoul, type QuestionMetrics } from './metrics';
@@ -194,6 +198,34 @@ export function loadFrozenThresholds(path: string): { file: ThresholdFile; sha25
     throw new Error(`No frozen thresholds at ${path}. Run the tune split first (--split tune) for the same provider.`);
   }
   return { file: parseThresholds(text), sha256: sha256Hex(text) };
+}
+
+/**
+ * Throws LeakageError when the thresholds file at `path` was already used by a
+ * held-out report (`report.heldout*.json` in one of `reportDirs` whose run
+ * records the file's sha256). Called before a tune run spends any call.
+ */
+export function assertThresholdsNotFrozen(path: string, reportDirs: readonly string[]): void {
+  if (!existsSync(path)) return;
+  const sha = sha256Hex(readFileSync(path, 'utf8'));
+  for (const dir of new Set(reportDirs)) {
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir)) {
+      if (!/^report\.heldout.*\.json$/.test(name)) continue;
+      let report: { runs?: Array<{ thresholds?: { sha256?: unknown } }> };
+      try {
+        report = JSON.parse(readFileSync(join(dir, name), 'utf8')) as typeof report;
+      } catch {
+        continue;
+      }
+      if ((report.runs ?? []).some((run) => run.thresholds?.sha256 === sha)) {
+        throw new LeakageError(
+          `Thresholds at ${path} are frozen: ${join(dir, name)} was scored with them. `
+            + 'Re-tuning now would let held-out results shape the thresholds. Use a new --out directory for a new protocol run.',
+        );
+      }
+    }
+  }
 }
 
 /** Throws when the frozen thresholds were derived for a different setup. */

@@ -216,6 +216,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
 
 ### Fixed
+- **Benchmark CLI: validated merges and frozen thresholds across runs (#513).**
+  `bench:jev --merge` now validates each report file (schema, generator,
+  `mode`, `split`, dataset, rubric, protocol, seed, sample counts, runs)
+  before the mode check, so a hand-edited report without `mode` is refused.
+  A tune run refuses (exit 2) to overwrite a `thresholds.json` that a
+  held-out report in the same output was scored with. A source-scan test
+  keeps every module under `apps/cms/eval/` out of the CMS runtime.
 - **Mission Control SLO card no longer reads a partly evaluated intent as
   healthy (#519).** An active intent with a resolved row and `unevaluated`
   rows showed 100 % with an ok tone. The card now counts such intents as
