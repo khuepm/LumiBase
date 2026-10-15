@@ -209,6 +209,14 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
 
 ### Fixed
+- **RLS backstop for draft review profiles, runs and feedback (#516, B114).**
+  `lumibase_review_profiles`, `lumibase_review_runs` and
+  `lumibase_review_feedback` are added to the `site_isolation` list in
+  `packages/database/migrations/rls-policies.sql`, and the review-run
+  retention purge now deletes site by site inside a transaction that sets
+  `app.site_id`, so it keeps working where the policies are applied.
+  Operators who applied `rls-policies.sql` re-run it (it is idempotent); no
+  schema migration.
 - **A late review completion no longer overwrites a reclaimed run (#515,
   #516).** A review call that outlived the five-minute orphan timeout could
   still complete the run after a retry had reclaimed it, writing answers about

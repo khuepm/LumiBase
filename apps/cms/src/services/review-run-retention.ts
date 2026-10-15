@@ -4,10 +4,18 @@
  * job (Node cron in `serve.ts`, Cron Trigger in `cloudflare.ts`) deletes runs
  * older than `DECISION_REVIEW_RETENTION_DAYS` (default 180). Feedback is
  * deleted with its run by the foreign key cascade. Profiles are kept.
+ *
+ * The review tables are under the `site_isolation` RLS policy
+ * (`packages/database/migrations/rls-policies.sql`), so a DELETE without
+ * `app.site_id` would remove nothing on a deployment that applied it. The
+ * purge therefore runs one transaction per site with that site's scope set
+ * (`runSiteTransaction`), and every DELETE also filters by `site_id`.
+ * `lumibase_sites` itself is not under RLS, so listing sites works unscoped.
  */
 
-import { reviewRuns, type Database } from '@lumibase/database';
-import { lt } from 'drizzle-orm';
+import { reviewRuns, sites, type Database } from '@lumibase/database';
+import { and, eq, lt } from 'drizzle-orm';
+import { runSiteTransaction } from './rls-transaction';
 
 export const DEFAULT_REVIEW_RETENTION_DAYS = 180;
 const MIN_DAYS = 1;
@@ -22,14 +30,24 @@ export function resolveReviewRetentionDays(value: string | undefined): number {
   return days >= MIN_DAYS && days <= MAX_DAYS ? days : DEFAULT_REVIEW_RETENTION_DAYS;
 }
 
-/** Deletes runs created before `now - days` on every site. Returns the number of runs deleted. */
+/**
+ * Deletes runs created before `now - days`, site by site, each in its own
+ * RLS-scoped transaction. Returns the number of runs deleted.
+ */
 export async function purgeExpiredReviewRuns(db: Database, now: Date, days: number): Promise<number> {
   const cutoff = new Date(now.getTime() - days * DAY_MS);
-  const deleted = await db
-    .delete(reviewRuns)
-    .where(lt(reviewRuns.createdAt, cutoff))
-    .returning({ id: reviewRuns.id });
-  return deleted.length;
+  const siteRows = await db.select({ id: sites.id }).from(sites);
+  let total = 0;
+  for (const { id: siteId } of siteRows) {
+    const deleted = await runSiteTransaction(db, siteId, (tx) =>
+      tx
+        .delete(reviewRuns)
+        .where(and(eq(reviewRuns.siteId, siteId), lt(reviewRuns.createdAt, cutoff)))
+        .returning({ id: reviewRuns.id }),
+    );
+    total += deleted.length;
+  }
+  return total;
 }
 
 /** Scheduled wrapper. NEVER throws: a cron tick must not surface a runtime error. */

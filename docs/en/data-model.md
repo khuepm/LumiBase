@@ -1,11 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-10-14T20:40:49.231Z
+version: 5
+lastUpdated: 2026-10-15T17:21:53.913Z
 sourceLang: en
-contentHash: c5bba152b46601c5
-codeVerified: 2026-10-14T20:40:49.231Z
-codeVerifiedHash: c5bba152b46601c5
-codeVerifiedClaims: 14
+contentHash: 59c8ffce4075b992
+codeVerified: 2026-10-15T17:21:53.913Z
+codeVerifiedHash: 59c8ffce4075b992
+codeVerifiedClaims: 18
 ---
 
 # Data Model (Drizzle / Postgres)
@@ -359,7 +359,7 @@ Operational notes:
 | `lumibase_review_sessions` | Pilot timing (#516): one editor session from opening the editor to the first save, `mode` `baseline`/`assisted`, `duration_ms`, `locale`, the viewed `run_id` and `viewed_questions`. No content. `run_id` is set null when the run is purged |
 | `lumibase_ai_automation_actions` | Jev automation (#518): one metadata action (`tag` / `route`) per flow run, node and item, unique `(site_id, flow_run_id, node_id, item_id)`. `mode` `shadow`/`live`, `status`, `reason`, `proposed`, `previous`, `applied`, `approval_id`, `reverted_at`, plus the chain ids `revision_id`, `review_run_id` and `content_hash`. `review_run_id` is set null when the run is purged |
 
-All five tables have `site_id` (FK cascade) and every query is site scoped.
+All five tables have `site_id` (FK cascade) and every query is site scoped. All five are also in the `site_isolation` RLS list of `packages/database/migrations/rls-policies.sql`. The retention purge of `lumibase_review_runs` runs site by site, each in a transaction that sets `app.site_id` (`apps/cms/src/services/review-run-retention.ts`), so it keeps deleting on a database where those policies are applied.
 Turning the draft-review pilot off deletes none of these rows.
 
 ### Content OS tables (`content-os.ts`)
