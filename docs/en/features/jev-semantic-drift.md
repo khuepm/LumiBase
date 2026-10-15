@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-10-15T18:05:44.510Z
+version: 6
+lastUpdated: 2026-10-15T18:13:43.858Z
 sourceLang: en
-contentHash: d22f26a398f28890
-codeVerified: 2026-10-15T18:05:44.510Z
-codeVerifiedHash: d22f26a398f28890
+contentHash: 89692a826174d607
+codeVerified: 2026-10-15T18:13:43.858Z
+codeVerifiedHash: 89692a826174d607
 codeVerifiedClaims: 14
 ---
 
@@ -83,7 +83,7 @@ Open semantic drift becomes a goal through the existing `ReconcilerService.recon
 
 ## Mission Control
 
-The intent detail lists semantic drift with the rule key and version, the profile and version, the question, the model, the answer and threshold, the revision, the content hash and the review run, all from what the scan recorded. An `unevaluated` row shows its reason code and says the earlier drift is kept. The decision model returns no rationale, so none is shown. The SLO table leaves `unevaluated` rows out of the health ratio and shows them as a separate "not evaluated" count. Health reads `unknown`, not 100 %, when nothing conclusive backs it: the drifts failed to load, every row is `unevaluated`, or the intent has semantic rules and no conclusive row. A clean semantic answer and a pass that was off or unavailable both leave no row, so an empty list cannot tell them apart. The dashboard's SLO health card averages only intents with a known health and counts the unknown ones in its label. For an intent with semantic rules and no drift row, the intent detail says the empty list does not show that the semantic rules pass, instead of "content meets the SLO".
+The intent detail lists semantic drift with the rule key and version, the profile and version, the question, the model, the answer and threshold, the revision, the content hash and the review run, all from what the scan recorded. An `unevaluated` row shows its reason code and says the earlier drift is kept. The decision model returns no rationale, so none is shown. The SLO table leaves `unevaluated` rows out of the health ratio and shows them as a separate "not evaluated" count. Health reads `unknown`, not 100 %, when nothing conclusive backs it: the drifts failed to load, every row is `unevaluated`, or the intent has semantic rules and no conclusive row. A clean semantic answer and a pass that was off or unavailable both leave no row, so an empty list cannot tell them apart. The dashboard's SLO health card averages only intents with a known health and counts the unknown ones in its label. An intent whose health is known but which also has `unevaluated` rows (its health covers only the judged rows) is counted as "partly not evaluated" in the label, and the card is flagged even at 100 %. For an intent with semantic rules and no drift row, the intent detail says the empty list does not show that the semantic rules pass, instead of "content meets the SLO".
 
 ## Multi-tenancy
 

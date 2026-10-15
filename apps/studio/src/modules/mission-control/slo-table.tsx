@@ -65,14 +65,34 @@ export function useSloRows(): { rows: SloRow[]; isLoading: boolean } {
  * The dashboard's SLO health: the mean health of active intents. Intents
  * whose health is unknown (J12: nothing conclusive backs it) stay out of the
  * mean and are counted in `unknown`, so they never lift it toward green.
- * `health` is null when no active intent has a known health.
+ * `health` is null when no active intent has a known health. `partial`
+ * counts active intents whose health is known but which also have
+ * `unevaluated` rows: their health covers only the rows that were judged.
  */
-export function sloSummary(rows: readonly SloRow[]): { health: number | null; unknown: number } {
+export function sloSummary(rows: readonly SloRow[]): { health: number | null; unknown: number; partial: number } {
   const active = rows.filter((row) => row.intent.status === 'active');
   const known = active.flatMap((row) => (row.health === null ? [] : [row.health]));
   return {
     health: known.length === 0 ? null : Math.round(known.reduce((sum, health) => sum + health, 0) / known.length),
     unknown: active.length - known.length,
+    partial: active.filter((row) => row.health !== null && row.unevaluated > 0).length,
+  };
+}
+
+/**
+ * Label and tone of the dashboard's SLO health card. An intent that is only
+ * partly evaluated never makes the card read as plainly healthy: it is
+ * counted in the label and the card is flagged, even at 100 %.
+ */
+export function sloHealthCard(summary: ReturnType<typeof sloSummary>): { value: string; label: string; tone: 'alert' | 'ok' } {
+  const notes = [
+    ...(summary.unknown > 0 ? [`${summary.unknown} unknown`] : []),
+    ...(summary.partial > 0 ? [`${summary.partial} partly not evaluated`] : []),
+  ];
+  return {
+    value: summary.health === null ? '—' : `${summary.health}%`,
+    label: notes.length > 0 ? `SLO health (active intents, ${notes.join(', ')})` : 'SLO health (active intents)',
+    tone: (summary.health !== null && summary.health < 90) || summary.partial > 0 ? 'alert' : 'ok',
   };
 }
 

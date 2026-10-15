@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-10-15T18:05:44.510Z
+version: 6
+lastUpdated: 2026-10-15T18:13:43.858Z
 sourceLang: en
 translatedFrom: en
-sourceHash: d22f26a398f28890
+sourceHash: 89692a826174d607
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T18:05:44.510Z
-codeVerifiedHash: d22f26a398f28890
+codeVerified: 2026-10-15T18:13:43.858Z
+codeVerifiedHash: 89692a826174d607
 codeVerifiedClaims: 14
 ---
 
@@ -86,7 +86,7 @@ Drift ngữ nghĩa đang mở thành goal qua `ReconcilerService.reconcileIntent
 
 ## Mission Control
 
-Trang chi tiết intent liệt kê drift ngữ nghĩa kèm key và phiên bản rule, profile và phiên bản, câu hỏi, model, câu trả lời và ngưỡng, revision, content hash và review run, tất cả lấy từ những gì scan đã ghi. Một hàng `unevaluated` hiện mã lý do của nó và nói rằng drift cũ được giữ lại. Mô hình decision không trả về lời giải thích nào, nên không hiện lời giải thích nào. Bảng SLO bỏ các hàng `unevaluated` ra khỏi tỉ lệ health và hiện chúng thành một số đếm "not evaluated" riêng. Health hiện `unknown`, không phải 100 %, khi không có gì có kết luận đứng sau nó: drift không tải được, mọi hàng đều `unevaluated`, hoặc intent có rule ngữ nghĩa mà không có hàng nào có kết luận. Một câu trả lời ngữ nghĩa sạch và một pass bị tắt hay không khả dụng đều không để lại hàng nào, nên danh sách rỗng không phân biệt được hai trường hợp đó. Thẻ SLO health trên dashboard chỉ lấy trung bình các intent có health đã biết và đếm các intent chưa biết health trong nhãn. Với intent có rule ngữ nghĩa mà không có hàng drift nào, trang chi tiết intent nói rằng danh sách rỗng không cho thấy các rule ngữ nghĩa đạt, thay vì "content meets the SLO".
+Trang chi tiết intent liệt kê drift ngữ nghĩa kèm key và phiên bản rule, profile và phiên bản, câu hỏi, model, câu trả lời và ngưỡng, revision, content hash và review run, tất cả lấy từ những gì scan đã ghi. Một hàng `unevaluated` hiện mã lý do của nó và nói rằng drift cũ được giữ lại. Mô hình decision không trả về lời giải thích nào, nên không hiện lời giải thích nào. Bảng SLO bỏ các hàng `unevaluated` ra khỏi tỉ lệ health và hiện chúng thành một số đếm "not evaluated" riêng. Health hiện `unknown`, không phải 100 %, khi không có gì có kết luận đứng sau nó: drift không tải được, mọi hàng đều `unevaluated`, hoặc intent có rule ngữ nghĩa mà không có hàng nào có kết luận. Một câu trả lời ngữ nghĩa sạch và một pass bị tắt hay không khả dụng đều không để lại hàng nào, nên danh sách rỗng không phân biệt được hai trường hợp đó. Thẻ SLO health trên dashboard chỉ lấy trung bình các intent có health đã biết và đếm các intent chưa biết health trong nhãn. Một intent có health đã biết nhưng cũng có hàng `unevaluated` (health của nó chỉ tính các hàng đã được đánh giá) được đếm là "partly not evaluated" trong nhãn, và thẻ được đánh dấu cảnh báo kể cả khi đạt 100 %. Với intent có rule ngữ nghĩa mà không có hàng drift nào, trang chi tiết intent nói rằng danh sách rỗng không cho thấy các rule ngữ nghĩa đạt, thay vì "content meets the SLO".
 
 ## Multi-tenancy
 

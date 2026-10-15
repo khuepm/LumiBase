@@ -216,6 +216,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
 
 ### Fixed
+- **Mission Control SLO card no longer reads a partly evaluated intent as
+  healthy (#519).** An active intent with a resolved row and `unevaluated`
+  rows showed 100 % with an ok tone. The card now counts such intents as
+  "partly not evaluated" in its label and is flagged. Adds a DB integration
+  test that the `aiDecisions.drift` switch is re-read at the provider call
+  (switched off mid-pass: `DECISION_DISABLED`, recorded `unevaluated`,
+  nothing resolved).
 - **Scheduled and event Flows get the decision runtime (#519, B121).** The
   Docker/Node `flow-events` worker now passes the cache and process env to
   each run, like the manual-run worker, so a scheduled `drift-scan` runs its
