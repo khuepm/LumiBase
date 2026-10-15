@@ -1,13 +1,13 @@
 ---
-version: 4
+version: 5
 sourceLang: en
-lastUpdated: 2026-10-15T17:00:42.580Z
+lastUpdated: 2026-10-15T17:06:40.300Z
 translatedFrom: en
-sourceHash: c95fceb2497cf0a4
+sourceHash: b8be829eacd43b1c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T17:00:42.580Z
-codeVerifiedHash: c95fceb2497cf0a4
+codeVerified: 2026-10-15T17:06:40.300Z
+codeVerifiedHash: b8be829eacd43b1c
 codeVerifiedClaims: 22
 ---
 
@@ -46,11 +46,15 @@ Mỗi gợi ý có ba thao tác. Mỗi thao tác ghi một phán quyết cho m�
 
 Giá trị chỉ được áp dụng sau khi CMS đã lưu phản hồi. Áp dụng chỉ thay đổi bản nháp trong trình soạn thảo, không gì khác. Bạn giữ kết quả bằng nút **Save** quen thuộc, và xuất bản vẫn cần các thao tác biên tập cùng quyền của chúng.
 
+CMS giữ phán quyết đầu tiên cho mỗi lượt chạy và câu hỏi. Nếu một request phản hồi bị lỗi sau khi CMS đã lưu nó và bạn chọn một thao tác khác, CMS trả về phán quyết trước đó: panel hiển thị **Phản hồi trước đó đã được ghi nhận** và không thay đổi trường, để bản nháp và phản hồi đã lưu luôn khớp nhau.
+
 Gợi ý cho một trường **đã ghim**, hoặc cho trường bạn không được ghi, được hiển thị ở chế độ chỉ đọc: Chấp nhận và Sửa bị vô hiệu hoá, Từ chối vẫn dùng được. Câu hỏi score và noul không bao giờ thay đổi trường; Chấp nhận và Sửa của chúng chỉ ghi nhận phản hồi.
 
 ## Kết quả lỗi thời
 
 Khi một lượt kiểm tra bắt đầu, panel giữ JSON chuẩn hoá của nội dung được kiểm tra (đúng dạng CMS dùng để băm). Nếu nội dung đó thay đổi trước hoặc sau khi câu trả lời về, kết quả trở thành **lỗi thời**: Chấp nhận và Sửa bị vô hiệu hoá và nút đổi thành **Chạy lại**. Lỗi 409 `REVIEW_STALE` từ CMS (ví dụ sau khi người khác đã lưu mục) dẫn tới cùng trạng thái. Kết quả lỗi thời không bao giờ ghi đè chỉnh sửa mới hơn.
+
+Một hồ sơ có thể kiểm tra chính trường mà một câu hỏi `choice` điền vào (ví dụ `category` nằm trong `fields` của hồ sơ và cũng là một câu hỏi). Chấp nhận hoặc sửa gợi ý đó làm thay đổi nội dung được kiểm tra, nên phần còn lại của lượt chạy cố ý trở thành lỗi thời: các câu trả lời khác có thể phụ thuộc vào trường đó. Khi đó panel nói rằng việc áp dụng một gợi ý đã làm các gợi ý còn lại lỗi thời. Hãy chạy lại để dùng chúng.
 
 Với bản nháp chưa lưu, phản hồi kèm mã băm của bản nháp như bạn đang thấy, để CMS có thể từ chối một phán quyết về nội dung đã thay đổi.
 

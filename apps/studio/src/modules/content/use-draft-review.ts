@@ -13,6 +13,7 @@ import {
 // whose backward-compatible `request` is `rawRequest` and would treat the
 // command as a path.
 import { getApiClient } from '@/lib/api';
+import { jsonEqual } from '@/lib/json-equal';
 import { canonicalReviewJson, draftReviewHash } from './draft-review-hash';
 
 /**
@@ -63,6 +64,12 @@ export interface DraftReviewTarget {
 export interface DraftReviewFeedbackState {
   verdict: ReviewVerdict;
   status: 'pending' | 'saved' | 'error';
+  /**
+   * The CMS already held a different verdict for this run and question (the
+   * first verdict is final). `verdict` is the stored one, and nothing was
+   * applied to the draft.
+   */
+  earlier?: boolean;
 }
 
 /** Maps a decision/review error code (and HTTP status when there is none) to a panel state. */
@@ -240,6 +247,12 @@ export function useDraftReview({
    * when the CMS stored it — the caller applies a value after that, never
    * before. A changed draft, or 409 `REVIEW_STALE`, turns the panel stale and
    * resolves `false` without recording anything.
+   *
+   * The first verdict per run and question is final on the server, and a
+   * repeat returns the stored row. So when a retry follows a request that the
+   * CMS stored but the client never saw succeed, the response may carry an
+   * earlier, different verdict: the panel then shows the stored verdict and
+   * resolves `false`, so the field and the recorded feedback stay in step.
    */
   const submitFeedback = useCallback(
     async (questionKey: string, verdict: ReviewVerdict, editedValue?: unknown): Promise<boolean> => {
@@ -257,10 +270,15 @@ export function useDraftReview({
       try {
         const contentHash =
           reviewRun.source === 'snapshot' ? await draftReviewHash(targetRef.current.projected) : undefined;
-        await submitReviewFeedback(reviewRun.id, {
+        const stored = await submitReviewFeedback(reviewRun.id, {
           entries: [{ questionKey, verdict, ...(verdict === 'edit' ? { editedValue } : {}) }],
           ...(contentHash ? { contentHash } : {}),
         })(getApiClient());
+        const row = Array.isArray(stored) ? stored.find((r) => r.questionKey === questionKey) : undefined;
+        if (row && (row.verdict !== verdict || (verdict === 'edit' && !jsonEqual(row.editedValue, editedValue)))) {
+          setFeedback((prev) => ({ ...prev, [key]: { verdict: row.verdict, status: 'saved', earlier: true } }));
+          return false;
+        }
         setFeedback((prev) => ({ ...prev, [key]: { verdict, status: 'saved' } }));
         return true;
       } catch (err) {

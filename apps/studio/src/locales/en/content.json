@@ -18,6 +18,7 @@
       "disabled": "Draft review is turned off for this site.",
       "unconfigured": "Draft review is not set up for this collection yet.",
       "stale": "The draft changed after this review. Run it again before applying suggestions.",
+      "staleAfterApply": "Applying a suggestion changed a reviewed field, so the other suggestions are out of date. Run the review again to use them.",
       "abstained": "Not enough information for a confident suggestion. You can record feedback or choose a value yourself."
     },
     "errors": {
@@ -63,7 +64,8 @@
       "accept": "Accepted",
       "edit": "Edited",
       "reject": "Rejected",
-      "applied": "Applied to {{field}}. Save the draft to keep it."
+      "applied": "Applied to {{field}}. Save the draft to keep it.",
+      "earlier": "Earlier feedback was already recorded ({{verdict}}), so nothing was changed."
     }
   }
 }

@@ -18,6 +18,7 @@
       "disabled": "Kiểm tra bản nháp đang tắt cho site này.",
       "unconfigured": "Bộ sưu tập này chưa được thiết lập kiểm tra bản nháp.",
       "stale": "Bản nháp đã thay đổi sau lần kiểm tra này. Hãy chạy lại trước khi áp dụng gợi ý.",
+      "staleAfterApply": "Việc áp dụng một gợi ý đã làm thay đổi một trường được kiểm tra, nên các gợi ý còn lại đã lỗi thời. Hãy chạy lại để dùng chúng.",
       "abstained": "Chưa đủ thông tin để gợi ý chắc chắn. Bạn vẫn có thể ghi nhận phản hồi hoặc tự chọn giá trị."
     },
     "errors": {
@@ -63,7 +64,8 @@
       "accept": "Đã chấp nhận",
       "edit": "Đã sửa",
       "reject": "Đã từ chối",
-      "applied": "Đã áp dụng vào {{field}}. Hãy lưu bản nháp để giữ thay đổi."
+      "applied": "Đã áp dụng vào {{field}}. Hãy lưu bản nháp để giữ thay đổi.",
+      "earlier": "Phản hồi trước đó đã được ghi nhận ({{verdict}}), nên không có gì thay đổi."
     }
   }
 }

@@ -349,6 +349,68 @@ describe('draft review in the item editor', () => {
     expect(screen.getByRole('button', { name: 'Accept the suggestion for Category' })).toBeDisabled();
   });
 
+  it('reviews a saved item with unsaved changes as a snapshot of the item, and says so', async () => {
+    renderPanel({ values: { ...ITEM.data, title: 'Hello, edited' } });
+
+    expect(await screen.findByText('Reviewing your unsaved changes.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Review draft' }));
+    await waitFor(() => expect(calls('/api/v1/ai/reviews')).toHaveLength(1));
+    const review = bodyOf(calls('/api/v1/ai/reviews')[0]);
+    expect(review).toMatchObject({ itemId: 'item_1', snapshot: { title: 'Hello, edited', body: 'World' } });
+  });
+
+  it('keeps the stored verdict when a retry follows a feedback write the CMS already stored', async () => {
+    // First attempt: the CMS stored `accept`, then the response was lost (503).
+    // The retry sends `edit`; the CMS keeps the first verdict and returns it.
+    const onApply = vi.fn();
+    let attempt = 0;
+    const stored = { id: 'fb_1', runId: 'run_1', questionKey: 'category', verdict: 'accept', editedValue: null, principalType: 'user', principalId: 'u1', createdAt: '2026-01-01T00:00:02Z' };
+    routes({
+      feedback: async () => {
+        attempt += 1;
+        if (attempt === 1) throw lumiError(503, 'INTERNAL');
+        return { data: [stored] };
+      },
+    });
+    renderPanel({ onApply });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review draft' }));
+    await screen.findByText('Suggested: sport');
+    fireEvent.click(suggestion('category').getByRole('button', { name: 'Accept the suggestion for Category' }));
+    expect(await suggestion('category').findByRole('alert')).toHaveTextContent('Your feedback was not recorded');
+    expect(onApply).not.toHaveBeenCalled();
+
+    fireEvent.click(suggestion('category').getByRole('button', { name: 'Choose a different value for Category' }));
+    fireEvent.change(suggestion('category').getByLabelText('Your value for Category'), { target: { value: 'news' } });
+    fireEvent.click(suggestion('category').getByRole('button', { name: 'Confirm' }));
+
+    expect(await suggestion('category').findByText('Earlier feedback was already recorded (Accepted), so nothing was changed.')).toBeInTheDocument();
+    expect(bodyOf(calls(/\/feedback$/)[1])).toEqual({ entries: [{ questionKey: 'category', verdict: 'edit', editedValue: 'news' }] });
+    // The draft is not changed to a value the stored feedback does not describe.
+    expect(onApply).not.toHaveBeenCalled();
+    expect(suggestion('category').getByRole('button', { name: 'Accept the suggestion for Category' })).toBeDisabled();
+  });
+
+  it('says why the rest of the run went stale when applying a suggestion changed a reviewed field', async () => {
+    patch.mockResolvedValue({ data: ITEM });
+    routes({ profiles: async () => ({ data: [{ ...PROFILE, fields: ['title', 'body', 'category'] }] }) });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review draft' }));
+    await screen.findByText('Suggested: sport');
+    fireEvent.click(suggestion('category').getByRole('button', { name: 'Accept the suggestion for Category' }));
+    await waitFor(() => expect(screen.getAllByRole('textbox')[2]).toHaveValue('sport'));
+
+    expect(
+      await screen.findByText('Applying a suggestion changed a reviewed field, so the other suggestions are out of date. Run the review again to use them.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/The draft changed after this review/)).toBeNull();
+    expect(suggestion('tone_match').getByRole('button', { name: 'Choose a different value for Tone match' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Run again' })).toBeEnabled();
+    // Nothing was saved by the review.
+    expect(patch).not.toHaveBeenCalled();
+  });
+
   it('sends the current draft hash with snapshot feedback', async () => {
     const onApply = vi.fn();
     routes({ reviews: async () => ({ data: reviewRun({ itemId: null, revisionId: null, source: 'snapshot' }) }) });
@@ -427,6 +489,17 @@ describe('fields the editor may not change', () => {
     expect(onApply).not.toHaveBeenCalled();
     // One verdict per run and question.
     expect(screen.getByRole('button', { name: 'Accept the suggestion for Category' })).toBeDisabled();
+  });
+
+  it('abstained with a real choice: Accept of the field value stays disabled, feedback-only suggestions do not', async () => {
+    routes({ reviews: async () => ({ data: reviewRun({ status: 'abstained' }) }) });
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Review draft' }));
+    expect(await screen.findByText('Suggested: sport')).toBeInTheDocument();
+    expect(screen.getByText(/Not enough information for a confident suggestion/)).toBeInTheDocument();
+    expect(suggestion('category').getByRole('button', { name: 'Accept the suggestion for Category' })).toBeDisabled();
+    expect(suggestion('category').getByRole('button', { name: 'Choose a different value for Category' })).toBeEnabled();
+    expect(suggestion('needs_review').getByRole('button', { name: 'Accept the suggestion for Needs review' })).toBeEnabled();
   });
 });
 

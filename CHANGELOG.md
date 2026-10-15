@@ -209,6 +209,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
 
 ### Fixed
+- **Draft review keeps the stored verdict on a feedback retry (#515).** When a
+  feedback request failed after the CMS had stored it, a retry with a
+  different action applied the new value to the draft while the CMS kept the
+  first verdict. The panel now reads the stored row, shows "Earlier feedback
+  was already recorded" and does not change the field. Applying a choice that
+  is also a reviewed field now says why the rest of the run went stale.
 - **Studio renders in the user's or the site's language (#515, B112).** The
   Studio i18n instance started in English and never switched, so the
   Vietnamese draft review copy only rendered in tests. After sign-in the

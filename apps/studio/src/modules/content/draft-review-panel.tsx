@@ -180,6 +180,12 @@ function ProfileReview({
   const { state } = review;
   const loading = state.status === 'loading';
 
+  // Applying a choice whose key is also a reviewed field changes the reviewed
+  // content, so the rest of that run is stale by design (the other answers
+  // may depend on that field). Remember which run it was, to say why.
+  const [appliedRunId, setAppliedRunId] = useState<string | null>(null);
+  const staleAfterApply = state.status === 'stale' && state.run !== null && state.run.id === appliedRunId;
+
   // Report each run once, when its suggestions are first shown.
   const shownRun = state.status === 'success' || state.status === 'abstained' ? state.run : null;
   const onViewedRef = useRef(onViewed);
@@ -225,7 +231,7 @@ function ProfileReview({
         )}
       </div>
 
-      <StateMessage t={t} state={state} />
+      <StateMessage t={t} state={state} staleAfterApply={staleAfterApply} />
 
       {(state.status === 'success' || state.status === 'abstained' || (state.status === 'stale' && state.run)) && (
         <RunResult
@@ -239,8 +245,12 @@ function ProfileReview({
           pinnedFields={pinnedFields}
           feedbackFor={review.feedbackFor}
           onVerdict={async (key, verdict, value, targetField) => {
+            const reviewRun = state.status === 'success' || state.status === 'abstained' ? state.run : null;
             const recorded = await review.submitFeedback(key, verdict, value);
-            if (recorded && targetField && value !== undefined) onApply(targetField, value);
+            if (recorded && targetField && value !== undefined) {
+              if (reviewRun && profile.fields.includes(targetField)) setAppliedRunId(reviewRun.id);
+              onApply(targetField, value);
+            }
           }}
         />
       )}
@@ -248,14 +258,22 @@ function ProfileReview({
   );
 }
 
-function StateMessage({ t, state }: { t: DraftReviewT; state: DraftReviewState }) {
+function StateMessage({
+  t,
+  state,
+  staleAfterApply = false,
+}: {
+  t: DraftReviewT;
+  state: DraftReviewState;
+  staleAfterApply?: boolean;
+}) {
   switch (state.status) {
     case 'disabled':
       return <Notice tone="muted" text={t('states.disabled')} />;
     case 'unconfigured':
       return <Notice tone="muted" text={t('states.unconfigured')} />;
     case 'stale':
-      return <Notice tone="warning" text={t('states.stale')} />;
+      return <Notice tone="warning" text={t(staleAfterApply ? 'states.staleAfterApply' : 'states.stale')} />;
     case 'abstained':
       return <Notice tone="warning" text={t('states.abstained')} />;
     case 'error': {
@@ -571,7 +589,12 @@ function Suggestion({
         </div>
       )}
 
-      {feedback?.status === 'saved' && (
+      {feedback?.status === 'saved' && feedback.earlier && (
+        <p role="status" className="mt-1 text-[11px] text-amber-800">
+          {t('verdict.earlier', { verdict: t(`verdict.${feedback.verdict}`) })}
+        </p>
+      )}
+      {feedback?.status === 'saved' && !feedback.earlier && (
         <p role="status" className="mt-1 text-[11px] text-emerald-700">
           {t(`verdict.${feedback.verdict}`)}
           {feedback.verdict !== 'reject' && targetField && (feedback.verdict === 'edit' || acceptValue !== null)
