@@ -14,6 +14,7 @@ import cron, { type ScheduledTask } from 'node-cron';
 import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
+import { runScheduledReviewRunPurge } from './services/review-run-retention';
 import { bootstrapNodeObservability } from './observability/node';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPressureLimiter } from './pressure-limiter';
@@ -210,6 +211,7 @@ async function main() {
       async () => {
         await runScheduledRotation(rotatorDb);
         void runScheduledRefreshTokenPrune(rotatorDb);
+        void runScheduledReviewRunPurge(rotatorDb, process.env.DECISION_REVIEW_RETENTION_DAYS);
       },
       lockOpts,
     ),
@@ -343,9 +345,11 @@ async function main() {
   // the flow and records the run. Without it, event flows never fire.
   const { registerFlowEventWorker } = await import('./services/flow-dispatch');
   registerFlowEventWorker({
+    cache: runtime.cache,
     db: rotatorDb,
     queue: runtime.queue,
     keys: runtime.keys,
+    env: process.env as Record<string, string | undefined>,
   });
 
   // ── Manual flow runs + AI chat async (high-load task 17) ────────────────

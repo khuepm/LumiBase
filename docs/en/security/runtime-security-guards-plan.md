@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-09-01T19:24:40.830Z
+version: 3
+lastUpdated: 2026-10-14T20:40:50.164Z
 sourceLang: en
-contentHash: a549172ced3a3d26
-codeVerified: 2026-09-01T19:24:40.830Z
-codeVerifiedHash: a549172ced3a3d26
-codeVerifiedClaims: 34
+contentHash: de43a5f3879ebf93
+codeVerified: 2026-10-14T20:40:50.164Z
+codeVerifiedHash: de43a5f3879ebf93
+codeVerifiedClaims: 36
 ---
 
 # Task/Plan: Runtime security guards for LumiBase
@@ -162,7 +162,7 @@ Every `ItemService` construction goes through two explicit helpers in
   `overrides` cannot accidentally drop enforcement.
 - **`itemServiceForSystem(deps, reason)`** — used for system/background flows. It
   requires a `SystemContextReason` (`'scheduler'` | `'background-worker'` |
-  `'compliance-erasure'`) so the author must **state why** the fail-open posture
+  `'compliance-erasure'` | `'semantic-drift-scan'`) so the author must **state why** the fail-open posture
   is safe.
 
 The regression test `apps/cms/src/__tests__/item-service-rbac-context.test.ts`
@@ -183,6 +183,7 @@ re-introduce a fail-open path without a reviewer noticing.
 | `services/veto-commit-worker.ts` | system `background-worker` | commit after the veto window locked in the human decision |
 | `services/agent-run-worker.ts` | system `background-worker` | governed agent run — HITL/autonomy gated in the harness, not per-user RBAC |
 | `services/erasure-service.ts` | system `compliance-erasure` | erasure/SAR gated by admin + dual-control at the service layer |
+| `services/review-content-access.ts` (`reviewContentAccessForDriftScan`) | system `semantic-drift-scan` | semantic drift pass (J12): reads only the rule's fields minus pinned fields, writes no item; sending content is gated by `aiDecisions.enabled` + `aiDecisions.drift` |
 
 ### Checklist when adding a new ItemService
 

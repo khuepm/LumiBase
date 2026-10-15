@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Play, Workflow, Plus, Edit } from 'lucide-react';
+import { Activity, Play, Workflow, Plus, Edit, LayoutTemplate } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
+import { useState } from 'react';
 import { getActiveSite, getActiveToken } from '@/lib/api';
+import { CreateFromTemplate } from './create-from-template';
 
 interface FlowRow {
   id: string;
@@ -39,6 +41,7 @@ export function FlowsListPage() {
   });
 
   const flows = flowsQuery.data ?? [];
+  const [showTemplates, setShowTemplates] = useState(false);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
@@ -50,13 +53,25 @@ export function FlowsListPage() {
             webhooks, schedules or manual runs.
           </p>
         </div>
-        <Link
-          to="/automation/flows/new"
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
-        >
-          <Plus className="h-4 w-4" /> Create Flow
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-expanded={showTemplates}
+            onClick={() => setShowTemplates((open) => !open)}
+            className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium"
+          >
+            <LayoutTemplate className="h-4 w-4" /> Create from template
+          </button>
+          <Link
+            to="/automation/flows/new"
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
+          >
+            <Plus className="h-4 w-4" /> Create Flow
+          </Link>
+        </div>
       </header>
+
+      {showTemplates && <CreateFromTemplate onCreated={() => setShowTemplates(false)} />}
 
       <div className="grid gap-3">
         {flowsQuery.isLoading && <div className="text-muted-foreground">Loading flows…</div>}

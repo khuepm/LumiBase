@@ -408,6 +408,7 @@
     "properties": [
       "collection",
       "data",
+      "expect",
       "id",
       "status"
     ],

@@ -5,6 +5,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -498,5 +499,230 @@ export const agentMemory = pgTable(
   (t) => ({
     siteScopeIdx: index('agent_memory_site_scope_idx').on(t.siteId, t.scope, t.scopeId),
     siteSourceIdx: index('agent_memory_site_source_idx').on(t.siteId, t.sourceType, t.sourceId),
+  }),
+);
+// ---------------------------------------------------------------------------
+// Jev J05 (#512) — versioned review profiles and item-bound decision runs
+// ---------------------------------------------------------------------------
+/**
+ * A review profile: which fields a draft review reads and which Decision
+ * questions it asks. Rows are immutable — an edit inserts `version + 1` and
+ * archives the previous row — so a run always points at the exact rubric it
+ * was answered against. `collection` is the collection name (null = any).
+ */
+export const reviewProfiles = pgTable(
+  'lumibase_review_profiles',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    collection: text('collection'),
+    key: text('key').notNull(),
+    version: integer('version').notNull(),
+    /** `active` | `archived` */
+    status: text('status').default('active').notNull(),
+    /** `taxonomy` | `brand-voice` | `brief-alignment` | null (custom). */
+    preset: text('preset'),
+    /** Top-level field names the review reads. */
+    fields: jsonb('fields').default([]).notNull(),
+    /** Decision questions keyed by question key. */
+    questions: jsonb('questions').default({}).notNull(),
+    sourceField: text('source_field'),
+    /** Below this confidence a run is `abstained`. */
+    minConfidence: real('min_confidence'),
+    /** Caveat shown with results, e.g. "no source — not a fact-check". */
+    note: text('note'),
+    createdBy: text('created_by'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    siteKeyVersionUq: uniqueIndex('review_profiles_site_key_version_uq').on(t.siteId, t.key, t.version),
+    siteStatusIdx: index('review_profiles_site_status_idx').on(t.siteId, t.status, t.collection),
+  }),
+);
+/**
+ * One decision run of a profile against one item revision (or an unsaved
+ * snapshot). Ids are uuidv7, supplied by the service. `content_hash` is the
+ * sha256 of the canonical projected fields, so a later edit is detectable.
+ */
+export const reviewRuns = pgTable(
+  'lumibase_review_runs',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    profileId: text('profile_id')
+      .notNull()
+      .references(() => reviewProfiles.id, { onDelete: 'cascade' }),
+    profileKey: text('profile_key').notNull(),
+    profileVersion: integer('profile_version').notNull(),
+    collection: text('collection').notNull(),
+    itemId: text('item_id'),
+    revisionId: text('revision_id'),
+    contentHash: text('content_hash').notNull(),
+    /** `item` | `snapshot` */
+    source: text('source').notNull(),
+    /** Fields of the profile the caller could not read; never sent. */
+    omittedFields: jsonb('omitted_fields').default([]).notNull(),
+    principalType: text('principal_type').notNull(),
+    principalId: text('principal_id').notNull(),
+    /** `running` | `success` | `abstained` | `error` */
+    status: text('status').notNull(),
+    provider: text('provider'),
+    model: text('model'),
+    calibrated: boolean('calibrated'),
+    answers: jsonb('answers'),
+    usage: jsonb('usage'),
+    latencyMs: integer('latency_ms'),
+    errorCode: text('error_code'),
+    idempotencyKey: text('idempotency_key').notNull(),
+    createdAt: createdAt(),
+    completedAt: timestamp('completed_at'),
+  },
+  (t) => ({
+    // Scoped to the principal so two callers that pick the same key never share a run.
+    siteIdempotencyUq: uniqueIndex('review_runs_site_principal_idempotency_uq').on(
+      t.siteId,
+      t.principalType,
+      t.principalId,
+      t.idempotencyKey,
+    ),
+    siteItemIdx: index('review_runs_site_item_idx').on(t.siteId, t.itemId, t.createdAt),
+    createdIdx: index('review_runs_created_idx').on(t.createdAt),
+  }),
+);
+/** Editor verdict on one answer of a run. One row per principal and question. */
+export const reviewFeedback = pgTable(
+  'lumibase_review_feedback',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    runId: text('run_id')
+      .notNull()
+      .references(() => reviewRuns.id, { onDelete: 'cascade' }),
+    questionKey: text('question_key').notNull(),
+    /** `accept` | `edit` | `reject` */
+    verdict: text('verdict').notNull(),
+    editedValue: jsonb('edited_value'),
+    principalType: text('principal_type').notNull(),
+    principalId: text('principal_id').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    runQuestionPrincipalUq: uniqueIndex('review_feedback_run_question_principal_uq').on(
+      t.siteId,
+      t.runId,
+      t.questionKey,
+      t.principalId,
+    ),
+  }),
+);
+// ---------------------------------------------------------------------------
+// Jev J09 (#516) — draft-review pilot timing
+// ---------------------------------------------------------------------------
+/**
+ * One editor review session on a pilot collection: from opening the editor
+ * to the first successful save. `baseline` sessions run with the review panel
+ * hidden, `assisted` sessions with it shown; the pilot compares the two.
+ * `viewed_questions` lists the suggestions of `run_id` that were rendered to
+ * the editor, so acceptance rates are computed over viewed suggestions only.
+ * No content is stored. Ids are uuidv7, supplied by the service.
+ */
+export const reviewSessions = pgTable(
+  'lumibase_review_sessions',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    collection: text('collection').notNull(),
+    itemId: text('item_id'),
+    /** `baseline` | `assisted` */
+    mode: text('mode').notNull(),
+    runId: text('run_id').references(() => reviewRuns.id, { onDelete: 'set null' }),
+    viewedQuestions: jsonb('viewed_questions').default([]).notNull(),
+    principalType: text('principal_type').notNull(),
+    principalId: text('principal_id').notNull(),
+    durationMs: integer('duration_ms').notNull(),
+    locale: text('locale'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    siteCreatedIdx: index('review_sessions_site_created_idx').on(t.siteId, t.createdAt),
+    siteRunIdx: index('review_sessions_site_run_idx').on(t.siteId, t.runId),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Jev J11 (#518) — shadow-first tagging and review-queue routing
+// ---------------------------------------------------------------------------
+
+/**
+ * One metadata action proposed by a Flows automation node (`ai:apply-tags`,
+ * `editorial:route`) for one item in one flow run. `shadow` rows record the
+ * proposal only; `live` rows went through the governed harness, capped at L1,
+ * so the write waits for a human approval (`approval_id`). The audit chain is
+ * by id: `revision_id` (input revision) → `review_run_id` (decision) → this row
+ * → `lumibase_review_feedback` (run id + question key). Ids are uuidv7.
+ * Unique per (site, flow run, node, item), so a redelivered job never records
+ * or proposes twice.
+ */
+export const aiAutomationActions = pgTable(
+  'lumibase_ai_automation_actions',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    flowRunId: text('flow_run_id').notNull(),
+    nodeId: text('node_id').notNull(),
+    reviewRunId: text('review_run_id').references(() => reviewRuns.id, { onDelete: 'set null' }),
+    collection: text('collection').notNull(),
+    itemId: text('item_id').notNull(),
+    revisionId: text('revision_id'),
+    contentHash: text('content_hash'),
+    /** `tag` | `route` */
+    action: text('action').notNull(),
+    /** `shadow` | `live` */
+    mode: text('mode').notNull(),
+    /** `pending` | `recorded` | `skipped` | `noop` | `pending_approval` | `applied` | `denied` | `rejected` | `reverted` */
+    status: text('status').notNull(),
+    /** Why the action was skipped, forced to shadow, or denied. */
+    reason: text('reason'),
+    questionKey: text('question_key'),
+    locale: text('locale'),
+    provider: text('provider'),
+    model: text('model'),
+    profileKey: text('profile_key'),
+    profileVersion: integer('profile_version'),
+    confidence: real('confidence'),
+    /** Confidence at or above the locale/action threshold (the auto-action zone). */
+    inZone: boolean('in_zone').default(false).notNull(),
+    proposed: jsonb('proposed'),
+    applied: boolean('applied').default(false).notNull(),
+    previous: jsonb('previous'),
+    /** `lumibase_agent_approvals.id` of a live proposal. */
+    approvalId: text('approval_id'),
+    agentRunId: text('agent_run_id'),
+    principalType: text('principal_type').notNull(),
+    principalId: text('principal_id').notNull(),
+    revertedAt: timestamp('reverted_at'),
+    revertedBy: text('reverted_by'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteRunNodeItemUq: uniqueIndex('ai_automation_actions_site_run_node_item_uq').on(
+      t.siteId,
+      t.flowRunId,
+      t.nodeId,
+      t.itemId,
+    ),
+    siteCreatedIdx: index('ai_automation_actions_site_created_idx').on(t.siteId, t.createdAt),
+    siteItemIdx: index('ai_automation_actions_site_item_idx').on(t.siteId, t.collection, t.itemId),
   }),
 );

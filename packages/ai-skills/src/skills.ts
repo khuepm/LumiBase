@@ -160,6 +160,11 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
           type: 'object',
           description: 'The partial JSON payload containing updated values.',
         },
+        expect: {
+          type: 'object',
+          description:
+            'Optional precondition: field name → the value the item must still hold. If any field differs when the update runs (including after an approval), nothing is written and the update fails with ITEM_PRECONDITION_FAILED.',
+        },
       },
       required: ['collection', 'id', 'data'],
     },

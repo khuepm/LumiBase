@@ -61,7 +61,12 @@
           "features/typegen",
           "features/extensions-system",
           "features/websockets-realtime",
-          "features/reconciler-repair-loop"
+          "features/reconciler-repair-loop",
+          "features/draft-review",
+          "features/jev-benchmark",
+          "features/jev-draft-review-pilot",
+          "features/jev-automation",
+          "features/jev-semantic-drift"
         ]
       },
       {

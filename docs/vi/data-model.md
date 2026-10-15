@@ -1,15 +1,18 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T00:11:35.763Z
+version: 5
+lastUpdated: 2026-10-15T17:21:53.913Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6edecac703c795d3
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T00:11:35.763Z
-codeVerifiedHash: 6edecac703c795d3
-codeVerifiedClaims: 14
+sourceHash: 59c8ffce4075b992
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-10-15T17:21:53.913Z
+codeVerifiedHash: 59c8ffce4075b992
+codeVerifiedClaims: 18
 ---
+
+<!-- check-parity: allow inline-code -->
+<!-- Recorded by stamp-pair --allow-structure-drift on 2026-10-14T15:33:47.070Z. See commit history for rationale. -->
 
 # Data Model (Drizzle / Postgres)
 
@@ -349,12 +352,25 @@ Ghi chú vận hành:
 - `agent_tool_calls.cost` lưu token/cost estimate sau khi đã mask secret.
 - Nếu cùng một goal fail ít nhất ba run và runtime có `QueueProvider`, run service enqueue `agent-dead-letter` với payload thất bại theo tenant.
 
+### Các bảng kiểm tra bản nháp (Jev)
+
+| Bảng | Mục đích |
+|---|---|
+| `lumibase_review_profiles` | Rubric kiểm tra có phiên bản; các dòng là bất biến, unique `(site_id, key, version)` |
+| `lumibase_review_runs` | Một lần chạy decision của profile trên item hoặc snapshot, kèm provider, model, content hash và câu trả lời; bị xoá sau `DECISION_REVIEW_RETENTION_DAYS` |
+| `lumibase_review_feedback` | Accept/edit/reject theo run, câu hỏi và principal; bị xoá cùng run |
+| `lumibase_review_sessions` | Đo thời gian pilot (#516): một phiên biên tập từ lúc mở trình soạn thảo tới lần lưu đầu tiên, `mode` `baseline`/`assisted`, `duration_ms`, `locale`, `run_id` đã xem và `viewed_questions`. Không lưu nội dung. `run_id` được set null khi run bị xoá |
+| `lumibase_ai_automation_actions` | Tự động hoá Jev (#518): một hành động metadata (`tag` / `route`) cho mỗi flow run, node và item, unique `(site_id, flow_run_id, node_id, item_id)`. `mode` `shadow`/`live`, `status`, `reason`, `proposed`, `previous`, `applied`, `approval_id`, `reverted_at`, cùng các id của chuỗi `revision_id`, `review_run_id` và `content_hash`. `review_run_id` được set null khi run bị xoá |
+
+Cả năm bảng đều có `site_id` (FK cascade) và mọi truy vấn đều theo site. Cả năm bảng cũng nằm trong danh sách RLS `site_isolation` của `packages/database/migrations/rls-policies.sql`. Việc xoá theo thời hạn lưu trữ của `lumibase_review_runs` chạy lần lượt theo từng site, mỗi site một transaction có set `app.site_id` (`apps/cms/src/services/review-run-retention.ts`), nên vẫn xoá được trên database đã áp các policy đó.
+Tắt pilot kiểm tra bản nháp không xoá dòng nào trong các bảng này.
+
 ### Các bảng Content OS (`content-os.ts`)
 
 | Collection | Mục đích |
 |---|---|
-| `content_intents` | Trạng thái mong muốn được khai báo (SLO) theo collection: rule, cron schedule, budget, mức autonomy tối đa, maintenance window |
-| `content_drifts` | Vi phạm rule đã phát hiện; unique `(siteId, fingerprint)` dedupe việc phát hiện giữa các lần scan |
+| `content_intents` | Trạng thái mong muốn được khai báo (SLO) theo collection: rule, cron schedule, budget, mức autonomy tối đa, maintenance window. `scan_cursor` để tiếp tục scan xác định; `semantic_scan_cursor` (migration 0022, J12) để tiếp tục [pass ngữ nghĩa](./features/jev-semantic-drift.md) có budget riêng |
+| `content_drifts` | Vi phạm rule đã phát hiện; unique `(siteId, fingerprint)` dedupe việc phát hiện giữa các lần scan. `status` là `open`/`assigned`/`resolved`/`stale`, hoặc `unevaluated` cho một rule ngữ nghĩa không đánh giá được (cột text thường, không có CHECK constraint). Hàng ngữ nghĩa dùng `rule_type = 'semantic'` và `rule_key = <key>@v<version>:<profileVersion>:<contentHash>` |
 | `agent_autonomy_grants` | Mức tin cậy đã đạt được theo (site, agentRole, capability): level 0–4, evidence, expiry |
 | `agent_incidents` | Bằng chứng để hạ cấp và nguồn cho exception inbox (`veto`, `eval_fail`, `load_guard`, …) |
 | `agent_freezes` | Kill-switch freeze (scope `site`/`role`); `liftedAt IS NULL` = đang active; đồng thời là audit trail |

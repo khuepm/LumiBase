@@ -18,7 +18,9 @@ export default defineConfig({
     // Hundreds of concurrent imports can otherwise exhaust memory/worker startup.
     maxWorkers: 4,
     testTimeout: 15_000,
-    include: ['src/**/*.{test,spec}.ts', 'src/**/*.property.test.ts'],
+    // `eval/` holds the Jev benchmark harness (#513); it is outside `src/`
+    // so it never reaches the Worker bundle, but its tests still run here.
+    include: ['src/**/*.{test,spec}.ts', 'src/**/*.property.test.ts', 'eval/**/*.test.ts'],
     // One file at a time only when a real DB is shared across suites.
     fileParallelism: !hasDatabase,
   },

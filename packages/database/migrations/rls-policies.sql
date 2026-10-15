@@ -62,7 +62,15 @@ DECLARE
     'lumibase_git_integrations', 'lumibase_git_pull_requests', 'lumibase_git_ci_runs',
     'lumibase_git_webhook_events', 'lumibase_git_preview_envs', 'lumibase_git_provenance',
     -- Flow engine (visual-flow-builder + high-load async runs).
-    'lumibase_flows', 'lumibase_flow_runs'
+    'lumibase_flows', 'lumibase_flow_runs',
+    -- Draft review profiles, runs and feedback (Jev J05, site-isolated). The
+    -- retention purge (apps/cms/src/services/review-run-retention.ts) runs one
+    -- transaction per site with app.site_id set, so it still deletes here.
+    'lumibase_review_profiles', 'lumibase_review_runs', 'lumibase_review_feedback',
+    -- Draft-review pilot timing (Jev J09, site-isolated; no cross-site job reads it).
+    'lumibase_review_sessions',
+    -- Jev automation actions (J11, site-isolated; every read/write is per site, no cross-site job).
+    'lumibase_ai_automation_actions'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

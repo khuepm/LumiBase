@@ -1,0 +1,71 @@
+{
+  "draftReview": {
+    "title": "Kiểm tra bản nháp",
+    "description": "Chỉ là gợi ý. Không có gì thay đổi cho tới khi bạn áp dụng một gợi ý, và không có gì được lưu hay xuất bản cho tới khi bạn tự lưu bản nháp.",
+    "profile": "Hồ sơ kiểm tra",
+    "loadingProfiles": "Đang tải hồ sơ kiểm tra…",
+    "run": "Kiểm tra bản nháp",
+    "runAgain": "Chạy lại",
+    "cancel": "Huỷ kiểm tra",
+    "loading": "Đang kiểm tra…",
+    "unsaved": "Đang kiểm tra các thay đổi chưa lưu của bạn.",
+    "emptyDraft": "Hãy điền ít nhất một trường được kiểm tra trước: {{fields}}.",
+    "notReviewed": "Không kiểm tra (không có quyền): {{fields}}",
+    "source": "Trả lời bởi {{provider}} · {{model}}",
+    "calibrated": "Đã hiệu chỉnh (theo nhà cung cấp)",
+    "notCalibrated": "Chưa hiệu chỉnh",
+    "states": {
+      "disabled": "Kiểm tra bản nháp đang tắt cho site này.",
+      "unconfigured": "Bộ sưu tập này chưa được thiết lập kiểm tra bản nháp.",
+      "stale": "Bản nháp đã thay đổi sau lần kiểm tra này. Hãy chạy lại trước khi áp dụng gợi ý.",
+      "staleAfterApply": "Việc áp dụng một gợi ý đã làm thay đổi một trường được kiểm tra, nên các gợi ý còn lại đã lỗi thời. Hãy chạy lại để dùng chúng.",
+      "abstained": "Chưa đủ thông tin để gợi ý chắc chắn. Bạn vẫn có thể ghi nhận phản hồi hoặc tự chọn giá trị."
+    },
+    "errors": {
+      "forbidden": "Bạn không có quyền chạy kiểm tra bản nháp.",
+      "quota": "Ngân sách kiểm tra của site đã hết. Chưa có gì được kiểm tra.",
+      "quotaRetry": "Ngân sách kiểm tra của site đã hết. Chưa có gì được kiểm tra. Thử lại sau {{seconds}} giây.",
+      "timeout": "Kiểm tra bị quá thời gian. Chưa có gì được kiểm tra.",
+      "unavailable": "Nhà cung cấp kiểm tra hiện không khả dụng. Chưa có gì được kiểm tra.",
+      "fieldNotAllowed": "Một số trường được kiểm tra nằm ngoài hồ sơ này hoặc ngoài quyền của bạn. Chưa có gì được kiểm tra.",
+      "tooLarge": "Bản nháp quá lớn để kiểm tra. Chưa có gì được kiểm tra.",
+      "notFound": "Mục nội dung hoặc hồ sơ kiểm tra không còn tồn tại.",
+      "failed": "Kiểm tra thất bại. Chưa có gì được kiểm tra.",
+      "feedback": "Phản hồi của bạn chưa được ghi nhận nên chưa có gì thay đổi. Hãy thử lại."
+    },
+    "answer": {
+      "suggested": "Gợi ý: {{value}}",
+      "notEnoughInfo": "Chưa đủ thông tin",
+      "noneFits": "Không chuyên mục nào phù hợp",
+      "confidence": "Độ tin cậy {{percent}}%",
+      "probability": "{{percent}}%",
+      "likelyLevel": "Khả năng cao nhất: {{level}}",
+      "yes": "Có",
+      "no": "Không",
+      "noulLikely": "{{label}} — {{percent}}%",
+      "appliesTo": "Áp dụng cho trường {{field}}",
+      "feedbackOnly": "Chỉ ghi nhận phản hồi — gợi ý này không thay đổi trường nào.",
+      "readOnly": "Chỉ đọc: bạn không thể thay đổi {{field}}.",
+      "pinned": "Đã ghim: {{field}} bị khoá bởi một chỉnh sửa của người.",
+      "levels": "Các mức"
+    },
+    "actions": {
+      "accept": "Chấp nhận",
+      "acceptAria": "Chấp nhận gợi ý cho {{question}}",
+      "edit": "Sửa",
+      "editAria": "Chọn giá trị khác cho {{question}}",
+      "reject": "Từ chối",
+      "rejectAria": "Từ chối gợi ý cho {{question}}",
+      "editLabel": "Giá trị của bạn cho {{question}}",
+      "confirmEdit": "Xác nhận",
+      "cancelEdit": "Huỷ"
+    },
+    "verdict": {
+      "accept": "Đã chấp nhận",
+      "edit": "Đã sửa",
+      "reject": "Đã từ chối",
+      "applied": "Đã áp dụng vào {{field}}. Hãy lưu bản nháp để giữ thay đổi.",
+      "earlier": "Phản hồi trước đó đã được ghi nhận ({{verdict}}), nên không có gì thay đổi."
+    }
+  }
+}

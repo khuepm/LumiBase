@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 10
-lastUpdated: 2026-10-10T10:34:35.843Z
+version: 22
+lastUpdated: 2026-10-15T17:37:48.226Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 72370d45ee2454a6
+sourceHash: 01f214f866e04a3e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-10T10:34:35.843Z
-codeVerifiedHash: 72370d45ee2454a6
-codeVerifiedClaims: 386
+codeVerified: 2026-10-15T17:37:48.226Z
+codeVerifiedHash: 01f214f866e04a3e
+codeVerifiedClaims: 436
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -641,6 +641,24 @@ Authorization: Bearer <token>
 | `GET` | `/api/v1/ai/conversations/:id/messages` | Lấy danh sách tin nhắn trong một hội thoại |
 | `DELETE` | `/api/v1/ai/conversations/:id` | Xóa một hội thoại |
 | `POST` | `/api/v1/ai/decisions` | Hỏi decision model (TypeSafe Jev hoặc tương đương) các câu hỏi có kiểu |
+| `GET` | `/api/v1/ai/review-profiles` | Liệt kê các review profile đang hoạt động (`?collection=`) |
+| `GET` | `/api/v1/ai/review-profiles/:key` | Lấy một review profile (`?version=` cho phiên bản cũ) |
+| `POST` | `/api/v1/ai/review-profiles` | Tạo phiên bản 1 của một review profile (admin) |
+| `POST` | `/api/v1/ai/review-profiles/:key/versions` | Phát hành phiên bản tiếp theo của một review profile (admin) |
+| `POST` | `/api/v1/ai/reviews` | Review một item hoặc bản nháp chưa lưu theo một profile (chỉ đề xuất) |
+| `GET` | `/api/v1/ai/reviews?collection=&itemId=` | Liệt kê các lần review của một item |
+| `GET` | `/api/v1/ai/reviews/:id` | Lấy một lần review kèm trạng thái stale |
+| `POST` | `/api/v1/ai/reviews/:id/feedback` | Ghi nhận accept / edit / reject cho câu trả lời của một lần review |
+| `GET` | `/api/v1/ai/reviews/rollout?collection=` | Chế độ pilot kiểm tra bản nháp của một collection: `off`, `baseline` hoặc `assisted` |
+| `POST` | `/api/v1/ai/reviews/sessions` | Ghi một phiên kiểm tra của biên tập viên trên collection pilot (đo thời gian) |
+| `GET` | `/api/v1/ai/reviews/metrics?from=&to=` | Số liệu pilot kiểm tra bản nháp (admin) |
+| `GET` | `/api/v1/ai/automation/templates` | Template flow tự động hoá Jev (admin) |
+| `POST` | `/api/v1/ai/automation/templates/:key/build` | Dựng flow thủ công dạng nháp từ template; không ghi gì (admin) |
+| `GET` | `/api/v1/ai/automation/actions` | Lịch sử hành động tự động hoá kèm chuỗi kiểm toán (admin) |
+| `GET` | `/api/v1/ai/automation/actions/:id` | Một hành động tự động hoá kèm chuỗi kiểm toán (admin) |
+| `POST` | `/api/v1/ai/automation/actions/:id/feedback` | Accept / override / reject quyết định đằng sau một hành động (admin) |
+| `POST` | `/api/v1/ai/automation/actions/:id/revert` | Khôi phục giá trị trước một hành động đã áp dụng (admin) |
+| `GET` | `/api/v1/ai/automation/metrics?from=&to=` | Precision và coverage ở chế độ shadow trong vùng tự động (admin) |
 
 **Request chat:**
 ```json
@@ -714,7 +732,7 @@ Authorization: Bearer <token>
 }
 ```
 
-Lỗi: `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (vượt budget byte hoặc token; message chỉ nêu kích thước), `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream quá tải hoặc không kết nối được), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (client đã đóng request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
+Lỗi: `403 FORBIDDEN` (không có `ai:decide`), `403 DECISION_DISABLED`, `422 DECISION_FIELD_NOT_ALLOWED`, `429 DECISION_QUOTA_EXCEEDED` / `DECISION_CONCURRENCY_LIMITED`, `503 DECISION_QUOTA_UNAVAILABLE` (xem phần Governance bên dưới), `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (vượt budget byte hoặc token; message chỉ nêu kích thước), `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream quá tải hoặc không kết nối được), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (client đã đóng request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
 
 Deadline và retry: mỗi decision có một deadline tổng (`DECISION_TIMEOUT_MS`, mặc định 20 giây) bao gồm mọi lần retry và thời gian chờ backoff, và mỗi lần gọi upstream có timeout riêng (`DECISION_ATTEMPT_TIMEOUT_MS`, mặc định 8 giây, không vượt phần còn lại của deadline). Chỉ `429`/`503`/`529`, lỗi mạng và timeout của một lần gọi mới được retry, tối đa `DECISION_MAX_RETRIES` lần (mặc định 2), với exponential backoff có full jitter và tôn trọng `Retry-After`. Lần chờ nào sẽ vượt deadline thì không bắt đầu. Lỗi auth, validation và parse không bao giờ được retry. Khi client ngắt kết nối, lần gọi upstream đang chạy bị huỷ và không retry nữa. Provider `llm` bị giới hạn bởi cùng deadline và budget nhưng chỉ gọi một lần; deadline và việc client ngắt kết nối sẽ huỷ request LLM đó.
 
@@ -723,6 +741,46 @@ Số token là ước lượng, không phải tokenizer của provider: khoảng
 CMS kiểm tra câu trả lời upstream trước khi trả về: giá trị bắt buộc phải hữu hạn và nằm trong miền hợp lệ, phân phối Choice/Score phải có đúng các phương án/mức đã khai báo và có tổng bằng 1 với sai số tuyệt đối tối đa `1e-6`, Score phải nằm trong `0..N-1`. Câu trả lời thiếu hoặc sai định dạng trả `502 DECISION_PARSE_FAILED`; giá trị không bị ép miền hoặc gán mặc định thành quyết định. Choice/Score bắt buộc có confidence, không suy ra từ xác suất của phương án thắng. Provider LLM áp dụng cùng validation.
 
 **`DECISION_PROVIDER=llm`** là provider tương đương do bạn chọn qua cấu hình; nó **không** phải cơ chế tự động chuyển khi lỗi (failover), và không có gì tự chuyển sang nó khi Jev lỗi. Nó gọi `LLM_PROVIDER` ở chế độ decision có cấu trúc: system prompt riêng cho decision, không có skill của Copilot và không cho tool calling. Câu trả lời Score từ LLM là mức kỳ vọng có trọng số `Σ i·p(i)` tính từ xác suất các mức đã được kiểm tra, cùng thang `0..N-1` với Jev và không làm tròn; mức mà model tự nêu bị bỏ qua, nên cùng một phân phối cho cùng một score trên mọi adapter. Vì xác suất không được hiệu chuẩn, không dùng nguyên ngưỡng đã chỉnh cho Jev cho `llm`. Câu trả lời chỉ có tool call hoặc không phải JSON sẽ lỗi `502 DECISION_PARSE_FAILED`.
+
+**Governance (#511).** Mọi cổng dưới đây chạy trước khi gọi provider, theo đúng thứ tự này; request bị chặn ở một cổng thì không bao giờ tới provider:
+
+1. **Capability `ai:decide`.** Cấp bằng permission `create` của policy trên collection dành riêng `lumibase_ai_decisions`; site admin đã có sẵn. Permission này không cấp thêm quyền nào khác (không có `items:write`). Không có → `403 FORBIDDEN`. Caller ẩn danh, member không có capability và principal của site khác đều bị từ chối ở bước này.
+2. **Đã cấu hình provider** → nếu chưa thì `503 DECISION_NOT_CONFIGURED`.
+3. **Site opt-in.** Site chỉ gửi nội dung tới provider sau khi site admin lưu setting `aiDecisions` với `enabled: true` (`POST /api/v1/settings`). Mặc định là tắt, và giá trị sai định dạng được coi là tắt. Đặt lại `false` (hoặc xoá key) là kill switch theo site: request kế tiếp nhận `403 DECISION_DISABLED`. Chỉ các endpoint decision, draft review và node Flows `ai:decision` đọc setting này, nên việc soạn thảo, publish và chat Copilot không bị ảnh hưởng. Bỏ đặt `DECISION_PROVIDER` là công tắc cho toàn nền tảng.
+4. **Danh sách field được phép.** Khi đặt `allowedStateFields`, `state` phải là object và mọi key cấp đầu đều nằm trong danh sách; nếu không thì `422 DECISION_FIELD_NOT_ALLOWED`.
+5. **Budget đầu vào** → `413 DECISION_INPUT_TOO_LARGE` (ở trên).
+6. **Quota theo site**, hạch toán atomic bằng counter của runtime (Redis `INCRBY` trên Docker, Durable Object `PageviewCounter` theo site trên Cloudflare): số decision được nhận mỗi giờ, số decision đang chạy, và số token ước lượng mỗi ngày UTC. Lượng token giữ chỗ là trường hợp xấu nhất, tính cả mọi lần retry: (input ước lượng + output ước lượng) × (`DECISION_MAX_RETRIES` + 1). Khi provider trả lời, site bị tính usage đã báo cộng với ước lượng cho mỗi lần gọi lỗi trước đó, phần còn lại được hoàn. Số token không biết được tính theo ước lượng, không bao giờ coi là miễn phí. Timeout hoặc lỗi sau khi đã gửi request thì tính theo từng lần gọi; request chưa tới provider được hoàn toàn bộ. Nếu sẽ vượt giới hạn → `429 DECISION_QUOTA_EXCEEDED` hoặc `429 DECISION_CONCURRENCY_LIMITED` kèm `Retry-After`. Request mà riêng lượng giữ chỗ xấu nhất đã vượt budget token cả ngày thì không bao giờ được nhận, nên `429 DECISION_QUOTA_EXCEEDED` của nó không kèm `Retry-After`. Nếu backend counter không hoạt động, request bị chặn (fail closed) với `503 DECISION_QUOTA_UNAVAILABLE`.
+
+Setting `aiDecisions` của site có thể siết các mức trần của nền tảng, nhưng không thể nâng lên:
+
+```json
+{ "key": "aiDecisions", "value": { "enabled": true, "allowedStateFields": ["title", "body"], "requestsPerHour": 100, "maxConcurrent": 2, "budgetPerDay": 200000 } }
+```
+
+Mỗi lần gọi ghi một audit event `ai_decision` gồm request ID, principal (loại và ID), provider, model, dấu vân tay rubric (`sha256:` của questions, nên cùng rubric thì cùng version), loại câu hỏi, outcome, HTTP status, latency, usage đã báo, số lần gọi, và số token đã giữ chỗ và đã tính. Event không bao giờ ghi `state`, instructions, criteria, câu trả lời, email của người gọi hay IP của client. Audit tuân theo thời hạn lưu của audit log (`LUMIBASE_AUDIT_RETENTION_DAYS`, mặc định 90 ngày). `POST /ai/decisions` không lưu nội dung decision. Các lần review bản nháp (bên dưới) lưu câu trả lời, không bao giờ lưu nội dung được review. Việc provider giữ lại gì do điều khoản của chính provider quy định.
+
+**Review bản nháp (#512).** Review profile là một rubric có phiên bản: các field cấp cao nhất mà review đọc và các câu hỏi Decision mà nó hỏi (cùng dạng như trên). Một lần review (run) áp một phiên bản profile lên một item, hoặc lên một bản nháp chưa lưu, qua đường đi có governance ở trên (nên capability `ai:decide`, opt-in của site, allowlist field, các budget và audit event `ai_decision` đều áp dụng), rồi lưu câu trả lời cùng provenance. Review chỉ đề xuất: không endpoint nào ở đây thay đổi item.
+
+- **Profile.** Đọc cần `ai:decide`; tạo và tạo phiên bản cần site admin. Các dòng là bất biến: `POST /review-profiles/:key/versions` thêm phiên bản + 1 và archive phiên bản đang hoạt động trước đó trong cùng một transaction, nên một run luôn trỏ tới đúng bộ câu hỏi đã được trả lời. Profile có thể gắn với một `collection` (collection khác nhận `422 REVIEW_COLLECTION_MISMATCH`) và có thể đặt `minConfidence`.
+- **Preset.** `taxonomy` là một câu `choice` trên `presetOptions.categories` cộng thêm `other` và `unknown`. `brand-voice` chấm độ khớp giọng điệu và độ rõ ràng theo rubric 5 mức nguyên tử (so với `presetOptions.voice`) và thêm cờ `needs_review`. `brief-alignment` đối chiếu nội dung với `sourceField` (brief hoặc nguồn do biên tập viên cung cấp). Không có `sourceField` thì nó chỉ kiểm tra tính nhất quán nội tại và profile lưu ghi chú `no source — not a fact-check`. Không preset nào tuyên bố kiểm chứng sự thật.
+- **Đọc nội dung.** Với `itemId`, server đọc các field của profile bằng chính quyền row và field của người gọi. Field mà người gọi không đọc được sẽ không được gửi đi và được liệt kê trong `omittedFields`. Với `snapshot` (bản nháp chưa lưu), mỗi key phải là một field của profile và là field người gọi được đọc và ghi (`create`, hoặc `update` khi có cả `itemId`). Nếu không, request lỗi `422 REVIEW_FIELD_NOT_ALLOWED` trước mọi lần gọi provider. Nội dung chỉ đi trong `state` và câu hỏi lấy từ profile đã lưu, nên văn bản bên trong nội dung không thể thay đổi điều được hỏi.
+- **Provenance và stale.** Một run ghi provider, model thực tế, `calibrated`, key và phiên bản profile, revision live mới nhất, principal, latency, usage và `contentHash` (`sha256:` của JSON chuẩn hoá của các field được review). `GET /reviews/:id` tính lại hash và revision. Khi một trong hai thay đổi, run trả về `stale: true` kèm `staleReason` là `content_changed`, `revision_changed` hoặc `item_unavailable`. Người gọi không còn đọc được một field mà run đã review sẽ nhận `404`. Run từ snapshot chỉ hiển thị cho người tạo và admin.
+- **Abstain.** `status` là `abstained` khi mọi câu trả lời `choice` là `other`/`unknown`, hoặc khi có confidence thấp hơn `minConfidence` của profile.
+- **Idempotency.** Key được giới hạn theo người gọi: cùng `idempotencyKey` (body) hoặc header `Idempotency-Key` từ cùng principal trả về cùng run (`200`) mà không gọi provider lần hai, còn principal khác dùng cùng key sẽ có run riêng. Run kết thúc bằng `error` được thử lại tại chỗ, nên không bao giờ thành dòng thứ hai. Lần thử lại đọc lại item và gắn lại run (content hash, revision, phiên bản profile, các trường bị bỏ qua) với đúng nội dung đã được review. Run vẫn `running` sau năm phút kể từ khi bắt đầu (tiến trình đã chết) cũng được lấy lại như vậy; trước thời điểm đó, replay trả về run ở trạng thái `running`. Nếu lần gọi ban đầu vẫn hoàn tất sau đó, câu trả lời của nó bị bỏ: run chỉ được hoàn tất bởi lần thử đang giữ claim hiện tại, nên response của lần gọi trễ là run như đang lưu.
+- **Feedback.** `POST /reviews/:id/feedback` nhận `entries` dạng `{ questionKey, verdict: accept | edit | reject, editedValue? }`. Mỗi run, câu hỏi và principal chỉ có một dòng; gửi lại không thêm dòng nào và trả về các dòng đã lưu. Verdict đầu tiên là cuối cùng: gửi lại verdict (hoặc `editedValue`) khác cho cùng câu hỏi không ghi đè, và response chứa verdict đã lưu, nên hãy so sánh với giá trị bạn đã gửi. `accept` hoặc `edit` trên run đã stale trả `409 REVIEW_STALE` trừ khi body có `acknowledgeStale: true`, nên review không bao giờ được âm thầm áp vào một revision khác. Với run từ snapshot, gửi `contentHash` của bản nháp hiện tại để có cùng kiểm tra. `reject` luôn được chấp nhận.
+- **Thời hạn lưu.** Job chạy mỗi giờ xoá các run cũ hơn `DECISION_REVIEW_RETENTION_DAYS` (mặc định 180), feedback bị xoá theo. Profile được giữ lại.
+- **Rollout pilot (#516).** Setting `aiDecisions` có object `review`: `{ enabled, pilotCollections, mode: 'baseline' | 'assisted' }`. Thiếu hoặc sai định dạng thì coi là tắt. `POST /reviews` và feedback mới cần collection nằm trong pilot ở chế độ `assisted` (chế độ này cũng cần `aiDecisions.enabled`); nếu không thì trả `403 DECISION_DISABLED` trước khi đọc nội dung. `GET /reviews/rollout?collection=` báo chế độ hiện tại (`ai:decide`). Tắt pilot không xoá gì: run, feedback và session vẫn đọc được.
+- **Flows (#517).** Node flow `ai:decision` chạy một review với `profileVersion` cố định trên một item và trả `branch`: `true`/`false`/`unknown` cho câu hỏi `noul` (`noulThreshold`), key của lựa chọn hoặc `unknown` cho câu hỏi `choice` (`minConfidence`, abstention), hoặc `error`. Node cần setting `aiDecisions` có cả `enabled: true` lẫn `flows: true`; `flows` mặc định tắt. Khi node chạy, server resolve lại principal đã khởi chạy run, kiểm `ai:decide` trên grant hiện hành và đọc lại cả hai công tắc, nên grant bị thu hồi hay kill switch bật sau đó cũng dừng các run đang trong hàng đợi. Chỉ run thủ công (`POST /flows/:id/run`) mang principal; run từ event, schedule và webhook bị từ chối (`FORBIDDEN`). Lỗi (forbidden, disabled, quota, timeout, cancel, lỗi provider) đi vào nhánh `error` của node nếu nhánh đó được nối, nếu không thì node thất bại (`onError`); không bao giờ thành `true`. Idempotency key của review là `flow:<flowRunId>:<nodeId>`, nên chạy lại cùng một run sẽ replay quyết định đã lưu mà không gọi provider lần hai. Xem [Flows](../features/flows-automation.md).
+- **Session.** `POST /reviews/sessions` (`ai:decide`, chỉ người dùng đã đăng nhập: API key và dev principal nhận `403 FORBIDDEN`) ghi `{ collection, itemId?, mode, runId?, viewedQuestions?, durationMs, locale? }`: một phiên biên tập từ lúc mở trình soạn thảo tới lần lưu đầu tiên. Chế độ phải khớp chế độ hiện tại của collection (`409 REVIEW_SESSION_MODE_MISMATCH`), collection phải nằm trong pilot (`403 DECISION_DISABLED`), và `runId` phải là run của chính người gọi trên cùng collection và item, với `viewedQuestions` là các câu nó đã trả lời (`422 REVIEW_SESSION_RUN_INVALID`). Không lưu nội dung. Job xoá run theo thời hạn lưu set `run_id` về null và giữ session.
+- **Số liệu.** `GET /reviews/metrics?from=&to=` (site admin, khoảng tối đa 366 ngày, mặc định 30 ngày gần nhất) trả thời gian mỗi item (baseline so với assisted, p50/p95), tỷ lệ accept/edit/reject/không phản hồi chỉ trên các gợi ý **đã được xem** kèm khoảng Wilson 95%, coverage, abstention, tỷ lệ lỗi, latency p50/p95, token mỗi run, tách theo locale, provider và phiên bản profile, số mẫu (kèm số biên tập viên và item khác nhau mỗi chế độ), và các tiêu chí đăng ký trước của protocol `jev-pilot-v1` kèm cờ `insufficientSample`. Chỉ phiên và phán quyết của principal `user` được tính. Số run chỉ là mẫu số vận hành, không bao giờ là giá trị người dùng. Xem [Pilot kiểm tra bản nháp](../features/jev-draft-review-pilot.md).
+- **Tự động hoá (#518).** Node flow `ai:apply-tags` và `editorial:route` đọc một `ai:decision` phía trước và ghi một dòng cho mỗi flow run, node và item vào `lumibase_ai_automation_actions`. Mặc định là **shadow**: đề xuất được ghi lại và không ghi gì vào item. Một đề xuất chỉ live khi `aiDecisions.automation` có `mode: 'live'`, một `gate` (`approvedBy`, `approvedAt`, `evidenceRef`) và một ngưỡng cho locale của item và hành động, với `provider`, `model`, `profileKey`, `profileVersion` và `questionKey` khớp quyết định (đọc từ review run đã lưu, run này phải nói về đúng item của node), và độ tin cậy đạt `minConfidence` của ngưỡng đó; mọi trường hợp khác (kể cả khối cấu hình sai định dạng) là shadow. Đề xuất live đi qua harness có quản trị (`updateItem`, agent `jev-automation`, `autonomyCap: 1`), nên nó thành một approval hoặc bị từ chối ở L0; tự động hoá không bao giờ ghi trực tiếp. Lời gọi `updateItem` mang `expect: { <field>: <giá trị mà đề xuất được tính từ đó> }`, harness kiểm lại khi lần ghi đã duyệt chạy; field mà một người đã đổi ở giữa làm approval thất bại với `ITEM_PRECONDITION_FAILED` và không có gì được ghi (dòng `denied`, lý do `stale_at_approval`). `expect` là tham số tuỳ chọn của `updateItem` cho mọi caller. Chỉ field đích được đề xuất, không bao giờ `status`, xoá hay schema; chuyển trạng thái `submit_review` chỉ được đề xuất. Quyết định stale, quyết định biên tập viên đã override, field bị ghim hoặc không đọc được đều bị bỏ qua và được ghi lại. `/api/v1/ai/automation/*` là control plane (site admin). `POST /automation/actions/:id/revert` khôi phục `previous` của một hành động đã áp dụng qua ItemService của người gọi, và từ chối bằng `409 AUTOMATION_REVERT_CONFLICT` khi field đã đổi sau đó. `GET /automation/metrics` báo precision và coverage trong vùng tự động kèm `insufficientSample` và `shadowRequired`; nó không bật gì cả. Xem [Tự động hoá Jev](../features/jev-automation.md).
+
+```json
+POST /api/v1/ai/reviews
+{ "profile": "spam-check", "collection": "posts", "itemId": "itm_1", "idempotencyKey": "review-itm_1-0001" }
+```
+
+Lỗi: `403 FORBIDDEN`, `404 REVIEW_PROFILE_NOT_FOUND` / `REVIEW_ITEM_NOT_FOUND` / `REVIEW_RUN_NOT_FOUND`, `409 REVIEW_PROFILE_EXISTS` / `REVIEW_PROFILE_CONFLICT` / `REVIEW_STALE` / `REVIEW_NOT_COMPLETE`, `422 REVIEW_FIELD_NOT_ALLOWED` / `REVIEW_COLLECTION_MISMATCH` / `REVIEW_SESSION_RUN_INVALID`, `409 REVIEW_SESSION_MODE_MISMATCH`, `400 VALIDATION`, cùng mọi lỗi decision ở trên.
 
 ### Agent API (Content OS)
 
@@ -745,7 +803,7 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Các phiên bản, bản nháp, `/compile` (NL→đánh giá), `:id/dry-run`, `:id/activate` |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Dừng ở 4 phạm vi (`run/intent/role/site`); việc đóng đóng băng cần `agents:freeze` |
 | `*` | `/api/v1/agent/intents[...]` | CRUD ý định nội dung, `:id/pause|resume|scan|drifts`, `/compile` |
-| `POST` | `/api/v1/intents/:id/scan` | Một chu kỳ reconcile: `{ scan, reconcile, dispatch }`. `dispatch` đẩy mỗi reconciler goal tiến một bước (draft → promote → verify) và báo `dispatched/completed/skipped/blocked` cùng `queueUnavailable` trên runtime không có queue adapter. Xem [vòng sửa của reconciler](../features/reconciler-repair-loop.md) |
+| `POST` | `/api/v1/intents/:id/scan` | Một chu kỳ reconcile: `{ scan, reconcile, dispatch }`. `dispatch` đẩy mỗi reconciler goal tiến một bước (draft → promote → verify) và báo `dispatched/completed/skipped/blocked` cùng `queueUnavailable` trên runtime không có queue adapter. Xem [vòng sửa của reconciler](../features/reconciler-repair-loop.md). Khi intent có rule `semantic`, `scan.semantic` báo pass ngữ nghĩa có budget riêng (`status` `ran`/`off`/`unavailable`, các số đếm, `completed`, `cursor`), và `scan.semanticOrphansResolved` đếm các hàng của rule ngữ nghĩa bị gỡ mà scan đã resolve. Cập nhật intent làm một rule ngữ nghĩa đã lưu đổi profile, câu hỏi, context hoặc fields mà không tăng `version` trả về `422 SEMANTIC_RULE_VERSION_REQUIRED`; xem [drift ngữ nghĩa](../features/jev-semantic-drift.md) |
 | `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp` |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Ghim Law Zero: liệt kê / giải phóng |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Chỉ mục llms.txt công khai mỗi site |
