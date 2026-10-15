@@ -121,6 +121,37 @@ describe.skipIf(!hasDbIntegrationUrl)('Automation actions — DB integration', (
     expect(rows).toHaveLength(3);
   });
 
+  it('a live row orphaned past the window is settled denied/orphaned on redelivery; a fresh one is left alone (B120)', async () => {
+    const live = (overrides: Partial<AutomationActionInsert> = {}) =>
+      action(SITE_A, { mode: 'live', status: 'pending', ...overrides });
+    const { row: stuck } = await store.claim(live({ flowRunId: 'flow_run_old' }));
+    await db
+      .update(aiAutomationActions)
+      .set({ createdAt: sql`now() - interval '10 minutes'` })
+      .where(eq(aiAutomationActions.id, stuck.id));
+    const { row: fresh } = await store.claim(live({ flowRunId: 'flow_run_new' }));
+    const { row: parked } = await store.claim(live({ flowRunId: 'flow_run_parked' }));
+    await db
+      .update(aiAutomationActions)
+      .set({ createdAt: sql`now() - interval '10 minutes'`, approvalId: 'apr_linked' })
+      .where(eq(aiAutomationActions.id, parked.id));
+
+    expect(await store.claim(live({ flowRunId: 'flow_run_old' }))).toMatchObject({
+      created: false,
+      row: { id: stuck.id, status: 'denied', reason: 'orphaned' },
+    });
+    // Within the window, or already linked to an approval: unchanged.
+    expect(await store.claim(live({ flowRunId: 'flow_run_new' }))).toMatchObject({ created: false, row: { id: fresh.id, status: 'pending' } });
+    expect(await store.claim(live({ flowRunId: 'flow_run_parked' }))).toMatchObject({
+      created: false,
+      row: { id: parked.id, status: 'pending', approvalId: 'apr_linked' },
+    });
+    // Another site's identical key is never touched.
+    const { row: other } = await store.claim(action(SITE_B, { mode: 'live', status: 'pending', flowRunId: 'flow_run_old' }));
+    await db.update(aiAutomationActions).set({ createdAt: sql`now() - interval '10 minutes'` }).where(eq(aiAutomationActions.id, other.id));
+    expect((await store.get(SITE_B, other.id))?.status).toBe('pending');
+  });
+
   it('every store query is site scoped', async () => {
     const a = await store.claim(action(SITE_A));
     expect(await store.get(SITE_B, a.row.id)).toBeNull();

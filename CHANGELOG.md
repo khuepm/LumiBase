@@ -209,6 +209,11 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
 
 ### Fixed
+- **Orphaned live automation claims are settled (#518, B120).** A live Jev
+  automation row claimed `pending` by a process that died before the harness
+  call linked an approval stayed `pending` forever. A redelivery more than
+  five minutes later now settles it `denied` with reason `orphaned` (DB clock,
+  conditional update) and still proposes nothing. No migration.
 - **An approved Jev automation write re-checks the field (#518, B119).**
   `updateItem` accepts an optional `expect` precondition (field → value the
   item must still hold); the harness re-reads those fields when the update

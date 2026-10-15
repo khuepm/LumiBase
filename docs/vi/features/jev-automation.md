@@ -1,13 +1,13 @@
 ---
-version: 5
+version: 6
 sourceLang: en
-lastUpdated: 2026-10-15T17:37:47.969Z
+lastUpdated: 2026-10-15T17:43:33.309Z
 translatedFrom: en
-sourceHash: 0595b49e534ff11f
+sourceHash: c060dab1a6b367eb
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T17:37:47.969Z
-codeVerifiedHash: 0595b49e534ff11f
+codeVerified: 2026-10-15T17:43:33.309Z
+codeVerifiedHash: c060dab1a6b367eb
 codeVerifiedClaims: 14
 ---
 
@@ -151,5 +151,5 @@ Protocol `jev-automation-v1` yêu cầu ít nhất 30 đề xuất trong vùng �
 
 - **Chưa có precision đo được.** Chưa có dữ liệu thật, nên mọi site vẫn ở shadow.
 - **Chỉ run thủ công.** Trigger theo event và lịch không mang principal, nên các node từ chối chúng.
-- **Một lần giao bị crash vẫn ở `pending`.** Một dòng live được giữ chỗ trước lời gọi harness; nếu tiến trình chết ở giữa, lần giao lại tìm thấy dòng đó và không đề xuất gì. Chạy lại flow để đề xuất lần nữa.
+- **Một lần giao bị crash không được đề xuất lại.** Một dòng live được giữ chỗ trước lời gọi harness. Nếu tiến trình chết ở giữa, dòng vẫn ở `pending` và không có approval. Lần giao lại trong vòng năm phút để nguyên dòng đó; sau năm phút nó chốt dòng thành `denied` với lý do `orphaned` và không đề xuất gì, vì tiến trình đã chết có thể đã tạo một approval mà chưa kịp liên kết. Chạy lại flow để đề xuất lần nữa.
 - **Chuyển trạng thái `submit_review` chỉ được đề xuất, không được thực hiện.** Người duyệt gửi item đi duyệt.

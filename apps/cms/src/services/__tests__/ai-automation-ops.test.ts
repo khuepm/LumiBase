@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   decisionHarness,
   editorRef,
@@ -412,6 +412,34 @@ describe('idempotency', () => {
     expect(first).toMatchObject({ status: 'pending_approval', replayed: false });
     expect(again).toMatchObject({ actionId: first.actionId, status: 'pending_approval', replayed: true });
     expect(approvalSeq).toBe(1);
+    expect(actions.rows).toHaveLength(1);
+  });
+
+  it('a delivery that died between claim and harness is settled orphaned, never proposed again (B120)', async () => {
+    setAutomation(liveAutomation());
+    const decision = await decide();
+    let calls = 0;
+    const inner = runtime.governedWrite;
+    // The first delivery claims the row, then its process dies inside the harness call.
+    runtime.governedWrite = async () => {
+      calls += 1;
+      return new Promise<never>(() => {});
+    };
+    void tag(decision);
+    await vi.waitFor(() => expect(calls).toBe(1));
+    expect(actions.rows[0]).toMatchObject({ status: 'pending', approvalId: null });
+
+    // A redelivery inside the orphan window leaves the live claim alone.
+    runtime.governedWrite = inner;
+    expect(await tag(decision)).toMatchObject({ status: 'pending', replayed: true });
+
+    // Past the window it is settled once, and nothing is proposed again.
+    const claimedAt = actions.rows[0]!.createdAt.getTime();
+    actions.now = () => new Date(claimedAt + 6 * 60_000);
+    expect(await tag(decision)).toMatchObject({ status: 'denied', reason: 'orphaned', replayed: true });
+    expect(await tag(decision)).toMatchObject({ status: 'denied', reason: 'orphaned', replayed: true });
+    expect(calls).toBe(1);
+    expect(approvalSeq).toBe(0);
     expect(actions.rows).toHaveLength(1);
   });
 

@@ -11,6 +11,7 @@ import type {
   AutomationActionStore,
   AutomationFeedbackRecord,
 } from '../../services/ai-automation-store';
+import { AUTOMATION_ORPHAN_MS } from '../../services/ai-automation-store';
 import type { MemoryReviewStore } from './memory-review-store';
 
 export class MemoryAutomationActionStore implements AutomationActionStore {
@@ -19,6 +20,8 @@ export class MemoryAutomationActionStore implements AutomationActionStore {
   /** Decision reason per approval id (e.g. an ITEM_PRECONDITION_FAILED settlement). */
   approvalReasons = new Map<string, string>();
   private clock = 0;
+  /** The store's clock; tests move it forward to age a claim past the orphan window. */
+  now: () => Date = () => new Date(Date.UTC(2026, 9, 1) + this.clock * 1000);
 
   constructor(private readonly reviews?: MemoryReviewStore) {}
 
@@ -31,7 +34,15 @@ export class MemoryAutomationActionStore implements AutomationActionStore {
     const existing = this.rows.find(
       (r) => r.siteId === row.siteId && r.flowRunId === row.flowRunId && r.nodeId === row.nodeId && r.itemId === row.itemId,
     );
-    if (existing) return { row: existing, created: false };
+    if (existing) {
+      // Same orphan rule as the Drizzle store (B120).
+      const orphaned =
+        existing.status === 'pending' &&
+        existing.approvalId === null &&
+        existing.createdAt.getTime() < this.now().getTime() - AUTOMATION_ORPHAN_MS;
+      if (orphaned) Object.assign(existing, { status: 'denied', reason: 'orphaned', updatedAt: this.now() });
+      return { row: existing, created: false };
+    }
     const at = this.stamp();
     const record: AutomationActionRecord = {
       reviewRunId: null,

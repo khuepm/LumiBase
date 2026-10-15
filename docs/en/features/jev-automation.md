@@ -1,10 +1,10 @@
 ---
-version: 5
+version: 6
 sourceLang: en
-lastUpdated: 2026-10-15T17:37:47.969Z
-contentHash: 0595b49e534ff11f
-codeVerified: 2026-10-15T17:37:47.969Z
-codeVerifiedHash: 0595b49e534ff11f
+lastUpdated: 2026-10-15T17:43:33.309Z
+contentHash: c060dab1a6b367eb
+codeVerified: 2026-10-15T17:43:33.309Z
+codeVerifiedHash: c060dab1a6b367eb
 codeVerifiedClaims: 14
 ---
 
@@ -148,5 +148,5 @@ Protocol `jev-automation-v1` requires at least 30 reviewed in-zone proposals per
 
 - **No measured precision yet.** There is no real data, so every site stays in shadow.
 - **Manual runs only.** Event and schedule triggers carry no principal, so the nodes refuse them.
-- **A crashed delivery stays `pending`.** A live row is claimed before the harness call; if the process dies in between, a redelivery finds the row and proposes nothing. Re-run the flow to propose again.
+- **A crashed delivery is not proposed again.** A live row is claimed before the harness call. If the process dies in between, the row stays `pending` with no approval. A redelivery within five minutes leaves it alone; after that it settles the row `denied` with reason `orphaned` and proposes nothing, because the dead process may already have parked an approval it did not link. Re-run the flow to propose again.
 - **The `submit_review` transition is proposed, not performed.** A reviewer submits the item for review.
