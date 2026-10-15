@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-10-09T08:37:00.422Z
+version: 4
+lastUpdated: 2026-10-13T19:46:03.541Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 302fbdb9fb9ca29a
+sourceHash: 7cbba410d113f4c5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-09T08:37:00.422Z
-codeVerifiedHash: 302fbdb9fb9ca29a
+codeVerified: 2026-10-13T19:46:03.541Z
+codeVerifiedHash: 7cbba410d113f4c5
 codeVerifiedClaims: 8
 ---
 
@@ -37,6 +37,7 @@ Trước khi deploy một profile có tên, tạo hàng đợi nếu chưa tồn
 Với production, chạy từ `apps/cms`:
 
 ```bash
+cd apps/cms
 pnpm exec wrangler queues create lumibase-agent-runs-production
 pnpm run deploy:production
 ```

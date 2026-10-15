@@ -292,6 +292,43 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - **`lumibase init` suggests the release it pins.** When the package manager
   cannot be spawned, the hint now reads `npm create lumibase@<cli version>`
   instead of `@latest`, which pointed at a different major.
+- **Six more documented commands that never ran (B69).** The guard written for
+  the `pnpm -F @lumibase/database db:migrate` family found a second one on its
+  first run: `pnpm lumibase typegen` (the root `lumibase` script is
+  `turbo run dev`, so it started two dev servers and ignored the argument),
+  `pnpm -F @lumibase/sdk typegen` (that package has build/test/typecheck/clean)
+  and a CI snippet running `pnpm typegen`, which is not a root script either.
+  All six now name what exists — `pnpm -F @lumibase/cms typegen` in the
+  monorepo, `npx lumibase types --check` for a consumer's CI — including the
+  docstring in `apps/cms/scripts/typegen.ts` the wrong form had spread from.
+  `pnpm docs:cmd:check` (`scripts/check-docs-commands.mjs`, in `check:all`) now
+  resolves every `pnpm` command in a docs code fence against the package it
+  names, and fails when the script does not exist. It tokenises options
+  (`--filter=`, `-C`, `-r`, `--if-present`, flags such as `--silent`), resolves
+  the script after `pnpm run` instead of skipping it, and follows `cd` into a
+  workspace package. On its first run it found two more commands that could not
+  work as written: `pnpm landing:build` after a `cd apps/docs` in
+  `deployment/cloudflare-pages-ci.md` (the docs deploy now uses
+  `--cwd apps/docs`, as CI does), and `pnpm run deploy:production` in
+  `features/async-agent-runs.md`, which only exists in `apps/cms` (the block now
+  starts with `cd apps/cms`).
+- **Three dead Vietnamese links, and the reason they were invisible (B67).**
+  `docs/vi/README.md`, `docs/vi/agent-setup/index.md` and `docs/vi/mcp/index.md`
+  linked `./llms.txt` and `../agent-setup/mcp-config.json`, which resolve under
+  `docs/vi/` where neither file exists. The parity checker could not see it: it
+  compared link *text*, so a VI link pointing at a missing file matched an EN
+  link pointing at a real one perfectly. It now compares the file a link
+  **resolves** to, collapsing the locale segment only when both trees have that
+  file — which also stops it flagging a legitimately different path for the same
+  target. Repo-wide parity drops from 37 problems in 30 pairs to 35 in 29. A link
+  that is dead in both locales still compares equal, as it did before: parity is
+  not a dead-link check, and reporting it as a locale mismatch would mislead.
+- **The Docker production override is documented as the local trap it is
+  (B47c).** `docs/{en,vi}/deployment/docker.md` now says to set
+  `DATABASE_SSL_MODE=disable` when trying that stack locally: the override
+  defaults to `require`, which is right for a managed database and cannot
+  connect to the compose PostgreSQL, which serves no TLS — so the CMS fails with
+  a connection error rather than a configuration one.
 ### Changed
 
 - The release Docker smoke test now fails when the image reports a version
