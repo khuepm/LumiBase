@@ -142,9 +142,10 @@ export class MemoryReviewStore implements ReviewStore {
     return { run: record, created: true };
   }
 
-  async completeRun(siteId: string, id: string, completion: ReviewRunCompletion) {
+  async completeRun(siteId: string, id: string, completion: ReviewRunCompletion, claimedAt: Date) {
     const run = this.runs.find((r) => r.siteId === siteId && r.id === id);
-    if (!run) return null;
+    // Same claim rule as the Drizzle store: only while this claim still holds.
+    if (!run || run.status !== 'running' || Math.abs(run.createdAt.getTime() - claimedAt.getTime()) > 1) return null;
     Object.assign(run, completion, { completedAt: this.stamp() });
     return run;
   }

@@ -458,6 +458,32 @@ describe('runReview', () => {
     expect(decide).toHaveBeenCalledTimes(2);
     expect(store.runs).toHaveLength(1);
   });
+
+  it('a late completion after an orphan reclaim does not overwrite the reclaimed run', async () => {
+    const { service, decide, store, content } = await withProfile();
+    const request = { profile: 'spam-check', collection: 'posts', itemId: 'itm_1', idempotencyKey: 'late-key-1' };
+    let releaseLate!: (o: GovernedDecisionOutcome) => void;
+    decide.mockImplementationOnce(() => new Promise((resolve) => (releaseLate = resolve)));
+    const late = service.runReview(request, { principal: editor });
+    await vi.waitFor(() => expect(decide).toHaveBeenCalledTimes(1));
+
+    // The first call outlives the orphan timeout; a retry on edited content
+    // reclaims the run and completes it with its own answers.
+    const row = store.runs[0]!;
+    row.createdAt = new Date(0);
+    content.items.itm_1 = { ...content.items.itm_1!, title: 'Edited after the first call' };
+    const retry = await service.runReview(request, { principal: editor });
+    expect(retry).toMatchObject({ ok: true, created: true, run: { id: row.id, status: 'success' } });
+    const retried = { contentHash: row.contentHash, answers: row.answers, completedAt: row.completedAt };
+
+    // The first call's provider answer arrives last. It must not overwrite the
+    // retry's answers with answers about the old content.
+    releaseLate(ok({ spam: { type: 'noul', noul: 0.1 } }));
+    const result = await late;
+    expect(row).toMatchObject(retried);
+    expect(row.answers).toEqual(spamYes);
+    expect(result).toMatchObject({ ok: true, run: { id: row.id, answers: spamYes } });
+  });
 });
 
 describe('staleness and feedback', () => {

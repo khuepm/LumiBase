@@ -426,6 +426,10 @@ export class ReviewService {
     const latencyMs = this.now() - startedAt;
     const result = outcome.result;
 
+    // `completeRun` writes only while this attempt's claim holds. When it did
+    // not (the call outlived the orphan timeout and a retry reclaimed the
+    // run), return the run as stored now instead of this attempt's answers.
+    const current = async () => (await store.getRun(siteId, run.id)) ?? run;
     if (result?.ok) {
       const completed = await store.completeRun(siteId, run.id, {
         status: reviewOutcomeStatus(result.data.answers, profile.minConfidence),
@@ -436,8 +440,8 @@ export class ReviewService {
         usage: result.data.usage,
         latencyMs,
         errorCode: null,
-      });
-      return { ok: true, run: toRun(completed ?? run, FRESH, profile.note), created: true };
+      }, run.createdAt);
+      return { ok: true, run: toRun(completed ?? (await current()), FRESH, profile.note), created: true };
     }
 
     const errorCode = 'errors' in outcome.body ? (outcome.body.errors[0]?.code ?? 'INTERNAL') : 'INTERNAL';
@@ -450,8 +454,8 @@ export class ReviewService {
       usage: null,
       latencyMs,
       errorCode,
-    });
-    return { ok: false, run: toRun(failed ?? run, FRESH, profile.note), outcome };
+    }, run.createdAt);
+    return { ok: false, run: toRun(failed ?? (await current()), FRESH, profile.note), outcome };
   }
 
   async getRun(id: string, principal: ReviewPrincipal): Promise<ReviewRun> {

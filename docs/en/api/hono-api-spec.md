@@ -1,10 +1,10 @@
 ---
-version: 21
-lastUpdated: 2026-10-15T03:01:48.974Z
+version: 22
+lastUpdated: 2026-10-15T17:12:48.226Z
 sourceLang: en
-contentHash: 00135ea687fb0d03
-codeVerified: 2026-10-15T03:01:48.974Z
-codeVerifiedHash: 00135ea687fb0d03
+contentHash: e872093beb26b01c
+codeVerified: 2026-10-15T17:12:48.226Z
+codeVerifiedHash: e872093beb26b01c
 codeVerifiedClaims: 436
 ---
 
@@ -875,7 +875,7 @@ Each call writes one `ai_decision` audit event with the request ID, the principa
 - **Reading content.** With `itemId`, the server reads the profile's fields with the caller's own row and field permissions. Fields the caller cannot read are not sent and are listed in `omittedFields`. With `snapshot` (an unsaved draft), each key must be one of the profile's fields and one the caller may read and write (`create`, or `update` when `itemId` is also given). Otherwise the request fails with `422 REVIEW_FIELD_NOT_ALLOWED` before any provider call. Content travels only in `state` and the questions come from the stored profile, so text inside the content cannot change what is asked.
 - **Provenance and staleness.** A run records the actual provider, model, `calibrated`, the profile key and version, the latest live revision, the principal, latency, usage and `contentHash` (`sha256:` of the canonical JSON of the reviewed fields). `GET /reviews/:id` recomputes the hash and revision. When either changed, the run comes back `stale: true` with `staleReason` `content_changed`, `revision_changed` or `item_unavailable`. A caller who can no longer read a field the run reviewed gets `404`. Snapshot runs are visible only to their author and admins.
 - **Abstention.** `status` is `abstained` when every `choice` answer is `other`/`unknown`, or when a confidence is below the profile's `minConfidence`.
-- **Idempotency.** Keys are scoped to the caller: the same `idempotencyKey` (body) or `Idempotency-Key` header from the same principal returns the same run (`200`) with no second provider call, while another principal using the same key gets its own run. A run that ended in `error` is retried in place, so it never becomes a second row. The retry re-reads the item and rebinds the run (content hash, revision, profile version, omitted fields) to what it actually reviewed. A run still `running` five minutes after it started (its process died) is reclaimed the same way; until then a replay returns it as `running`.
+- **Idempotency.** Keys are scoped to the caller: the same `idempotencyKey` (body) or `Idempotency-Key` header from the same principal returns the same run (`200`) with no second provider call, while another principal using the same key gets its own run. A run that ended in `error` is retried in place, so it never becomes a second row. The retry re-reads the item and rebinds the run (content hash, revision, profile version, omitted fields) to what it actually reviewed. A run still `running` five minutes after it started (its process died) is reclaimed the same way; until then a replay returns it as `running`. If the original call does finish after that, its answers are discarded: a run is completed only by the attempt that holds the current claim, so the response of the late call is the run as stored.
 - **Feedback.** `POST /reviews/:id/feedback` takes `entries` of `{ questionKey, verdict: accept | edit | reject, editedValue? }`. It stores one row per run, question and principal; a retried submission adds none and returns the stored rows. The first verdict is final: resubmitting a different verdict (or `editedValue`) for the same question does not overwrite it, and the response carries the stored verdict, so compare it with what you sent. `accept` or `edit` on a stale run returns `409 REVIEW_STALE` unless the body says `acknowledgeStale: true`, so a review is never silently applied to a different revision. For snapshot runs, send the current draft's `contentHash` to get the same check. `reject` is always accepted.
 - **Retention.** The hourly job deletes runs older than `DECISION_REVIEW_RETENTION_DAYS` (default 180), and their feedback with them. Profiles are kept.
 - **Pilot rollout (#516).** The `aiDecisions` setting has a `review` object: `{ enabled, pilotCollections, mode: 'baseline' | 'assisted' }`. It is off when absent or malformed. `POST /reviews` and new feedback need the collection in the pilot in `assisted` mode (which also needs `aiDecisions.enabled`); otherwise they return `403 DECISION_DISABLED` before any content is read. `GET /reviews/rollout?collection=` reports the mode (`ai:decide`). Turning the pilot off deletes nothing: runs, feedback and sessions stay readable.

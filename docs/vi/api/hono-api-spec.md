@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 20
-lastUpdated: 2026-10-15T03:01:48.974Z
+version: 21
+lastUpdated: 2026-10-15T17:12:48.226Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 00135ea687fb0d03
+sourceHash: e872093beb26b01c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T03:01:48.974Z
-codeVerifiedHash: 00135ea687fb0d03
+codeVerified: 2026-10-15T17:12:48.226Z
+codeVerifiedHash: e872093beb26b01c
 codeVerifiedClaims: 436
 ---
 
@@ -766,7 +766,7 @@ Mỗi lần gọi ghi một audit event `ai_decision` gồm request ID, principa
 - **Đọc nội dung.** Với `itemId`, server đọc các field của profile bằng chính quyền row và field của người gọi. Field mà người gọi không đọc được sẽ không được gửi đi và được liệt kê trong `omittedFields`. Với `snapshot` (bản nháp chưa lưu), mỗi key phải là một field của profile và là field người gọi được đọc và ghi (`create`, hoặc `update` khi có cả `itemId`). Nếu không, request lỗi `422 REVIEW_FIELD_NOT_ALLOWED` trước mọi lần gọi provider. Nội dung chỉ đi trong `state` và câu hỏi lấy từ profile đã lưu, nên văn bản bên trong nội dung không thể thay đổi điều được hỏi.
 - **Provenance và stale.** Một run ghi provider, model thực tế, `calibrated`, key và phiên bản profile, revision live mới nhất, principal, latency, usage và `contentHash` (`sha256:` của JSON chuẩn hoá của các field được review). `GET /reviews/:id` tính lại hash và revision. Khi một trong hai thay đổi, run trả về `stale: true` kèm `staleReason` là `content_changed`, `revision_changed` hoặc `item_unavailable`. Người gọi không còn đọc được một field mà run đã review sẽ nhận `404`. Run từ snapshot chỉ hiển thị cho người tạo và admin.
 - **Abstain.** `status` là `abstained` khi mọi câu trả lời `choice` là `other`/`unknown`, hoặc khi có confidence thấp hơn `minConfidence` của profile.
-- **Idempotency.** Key được giới hạn theo người gọi: cùng `idempotencyKey` (body) hoặc header `Idempotency-Key` từ cùng principal trả về cùng run (`200`) mà không gọi provider lần hai, còn principal khác dùng cùng key sẽ có run riêng. Run kết thúc bằng `error` được thử lại tại chỗ, nên không bao giờ thành dòng thứ hai. Lần thử lại đọc lại item và gắn lại run (content hash, revision, phiên bản profile, các trường bị bỏ qua) với đúng nội dung đã được review. Run vẫn `running` sau năm phút kể từ khi bắt đầu (tiến trình đã chết) cũng được lấy lại như vậy; trước thời điểm đó, replay trả về run ở trạng thái `running`.
+- **Idempotency.** Key được giới hạn theo người gọi: cùng `idempotencyKey` (body) hoặc header `Idempotency-Key` từ cùng principal trả về cùng run (`200`) mà không gọi provider lần hai, còn principal khác dùng cùng key sẽ có run riêng. Run kết thúc bằng `error` được thử lại tại chỗ, nên không bao giờ thành dòng thứ hai. Lần thử lại đọc lại item và gắn lại run (content hash, revision, phiên bản profile, các trường bị bỏ qua) với đúng nội dung đã được review. Run vẫn `running` sau năm phút kể từ khi bắt đầu (tiến trình đã chết) cũng được lấy lại như vậy; trước thời điểm đó, replay trả về run ở trạng thái `running`. Nếu lần gọi ban đầu vẫn hoàn tất sau đó, câu trả lời của nó bị bỏ: run chỉ được hoàn tất bởi lần thử đang giữ claim hiện tại, nên response của lần gọi trễ là run như đang lưu.
 - **Feedback.** `POST /reviews/:id/feedback` nhận `entries` dạng `{ questionKey, verdict: accept | edit | reject, editedValue? }`. Mỗi run, câu hỏi và principal chỉ có một dòng; gửi lại không thêm dòng nào và trả về các dòng đã lưu. Verdict đầu tiên là cuối cùng: gửi lại verdict (hoặc `editedValue`) khác cho cùng câu hỏi không ghi đè, và response chứa verdict đã lưu, nên hãy so sánh với giá trị bạn đã gửi. `accept` hoặc `edit` trên run đã stale trả `409 REVIEW_STALE` trừ khi body có `acknowledgeStale: true`, nên review không bao giờ được âm thầm áp vào một revision khác. Với run từ snapshot, gửi `contentHash` của bản nháp hiện tại để có cùng kiểm tra. `reject` luôn được chấp nhận.
 - **Thời hạn lưu.** Job chạy mỗi giờ xoá các run cũ hơn `DECISION_REVIEW_RETENTION_DAYS` (mặc định 180), feedback bị xoá theo. Profile được giữ lại.
 - **Rollout pilot (#516).** Setting `aiDecisions` có object `review`: `{ enabled, pilotCollections, mode: 'baseline' | 'assisted' }`. Thiếu hoặc sai định dạng thì coi là tắt. `POST /reviews` và feedback mới cần collection nằm trong pilot ở chế độ `assisted` (chế độ này cũng cần `aiDecisions.enabled`); nếu không thì trả `403 DECISION_DISABLED` trước khi đọc nội dung. `GET /reviews/rollout?collection=` báo chế độ hiện tại (`ai:decide`). Tắt pilot không xoá gì: run, feedback và session vẫn đọc được.

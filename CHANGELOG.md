@@ -209,6 +209,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
 
 ### Fixed
+- **A late review completion no longer overwrites a reclaimed run (#515,
+  #516).** A review call that outlived the five-minute orphan timeout could
+  still complete the run after a retry had reclaimed it, writing answers about
+  the old content over the retry's binding (draft staleness and pilot metrics
+  read that run). `completeRun` now writes only while the attempt's claim
+  holds (`status = 'running'` and the claim's `created_at`); the late call
+  returns the run as stored. No migration.
 - **Draft review keeps the stored verdict on a feedback retry (#515).** When a
   feedback request failed after the CMS had stored it, a retry with a
   different action applied the new value to the draft while the CMS kept the
