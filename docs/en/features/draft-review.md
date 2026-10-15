@@ -1,11 +1,11 @@
 ---
-version: 3
+version: 4
 sourceLang: en
-lastUpdated: 2026-10-14T15:33:32.071Z
-contentHash: 32d37bd869afa977
-codeVerified: 2026-10-14T15:33:32.071Z
-codeVerifiedHash: 32d37bd869afa977
-codeVerifiedClaims: 16
+lastUpdated: 2026-10-15T17:00:42.580Z
+contentHash: c95fceb2497cf0a4
+codeVerified: 2026-10-15T17:00:42.580Z
+codeVerifiedHash: c95fceb2497cf0a4
+codeVerifiedClaims: 22
 ---
 
 # Draft review in Studio
@@ -79,3 +79,11 @@ Calls go through `getApiClient()`, so they use `getApiBaseUrl()` and the token s
 ## Language
 
 The panel copy ships in `apps/studio/src/locales/en/content.json` and `apps/studio/src/locales/vi/content.json` and follows the active i18next language.
+
+The Studio picks the language after sign-in (`apps/studio/src/components/site-language.tsx`, `apps/studio/src/lib/ui-language.ts`):
+
+1. your own preference, the `language` key of `GET /api/v1/me/preferences`;
+2. otherwise the site's default language (Settings → Site, `defaultLanguage`);
+3. otherwise English.
+
+Only English (`en`) and Vietnamese (`vi`) ship; a regional tag such as `vi-VN` selects `vi`, and any other language falls through to the next source. The browser language is not used. Before sign-in the Studio shows English. Most other Studio pages are not translated yet, so they stay in English whatever the language.

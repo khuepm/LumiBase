@@ -27,6 +27,7 @@ const params = { collection: 'posts', id: 'item_1' };
 
 let bundle: Record<string, unknown> = { admin: true, byKey: {} };
 let pins: string[] = [];
+let siteConfig: Record<string, unknown> = {};
 
 const client = {
   rawRequest,
@@ -37,6 +38,7 @@ const client = {
     getCollection: async () => ({ data: { meta: { editorialWorkflow: false } } }),
   },
   settings: { get: async () => ({ data: null }) },
+  site: { get: async () => ({ data: siteConfig }) },
   permissions: { me: async () => ({ data: bundle }) },
   roles: { list: async () => ({ data: [] }) },
   tm: { upsert: vi.fn() },
@@ -50,7 +52,7 @@ const client = {
   }),
 };
 
-vi.mock('@/lib/api', () => ({ getApiClient: () => client }));
+vi.mock('@/lib/api', () => ({ getApiClient: () => client, hasActiveToken: () => true }));
 vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined }));
 vi.mock('@/hooks/use-presence', () => ({ useCoEditors: () => ({ coEditors: [], connected: false }) }));
 vi.mock('@tanstack/react-router', () => ({
@@ -62,6 +64,7 @@ vi.mock('@tanstack/react-router', () => ({
 import { ItemDetailPage } from '../item-detail';
 import { DraftReviewPanel } from '../draft-review-panel';
 import { registerContentBundles } from '../draft-review-i18n';
+import { SiteLanguageSync } from '@/components/site-language';
 
 function field(name: string, sortOrder: number): FieldResource {
   return { id: `f_${name}`, name, type: 'string', interface: 'input', sortOrder } as unknown as FieldResource;
@@ -162,6 +165,8 @@ function routes(
     feedback?: Route;
     /** J09 pilot mode for `posts`; `error` makes the rollout call fail (e.g. no ai:decide). */
     rollout?: 'off' | 'baseline' | 'assisted' | 'error';
+    /** `GET /api/v1/me/preferences` (the user's language preference, B112). */
+    preferences?: Record<string, unknown>;
   } = {},
 ): void {
   route = async (path, init) => {
@@ -171,6 +176,7 @@ function routes(
       return { data: { collection: 'posts', mode: handlers.rollout ?? 'assisted' } };
     }
     if (path === '/api/v1/ai/reviews/sessions') return { data: {} };
+    if (path === '/api/v1/me/preferences') return { data: handlers.preferences ?? {} };
     if (path.startsWith('/api/v1/ai/review-profiles')) {
       return handlers.profiles ? handlers.profiles() : { data: [PROFILE] };
     }
@@ -249,6 +255,7 @@ const suggestion = (key: string) => within(screen.getByTestId(`suggestion-${key}
 beforeEach(() => {
   bundle = { admin: true, byKey: {} };
   pins = [];
+  siteConfig = {};
   params.id = 'item_1';
   routes();
 });
@@ -635,6 +642,60 @@ describe('Vietnamese', () => {
     expect(await screen.findByText('Gợi ý: sport')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Chấp nhận gợi ý cho Category' })).toBeEnabled();
     expect(screen.getByText('Đã hiệu chỉnh (theo nhà cung cấp)')).toBeInTheDocument();
+  });
+
+  // B112: the Studio used to start in English and never switch, so the VI
+  // copy above only rendered in tests. The admin layout now mounts
+  // `SiteLanguageSync`, which picks the user's or the site's language.
+  async function englishInstance() {
+    const i18n = i18next.createInstance();
+    await i18n.use(initReactI18next).init({ lng: 'en', fallbackLng: 'en', resources: {}, interpolation: { escapeValue: false } });
+    registerContentBundles(i18n);
+    return i18n;
+  }
+
+  function renderWithLanguageSync(i18n: typeof i18next) {
+    return render(
+      wrap(
+        <>
+          <SiteLanguageSync />
+          <DraftReviewPanel
+            collection="posts"
+            itemId="item_1"
+            values={ITEM.data}
+            savedValues={ITEM.data}
+            fields={FIELDS}
+            writeAction="update"
+            perms={perms()}
+            pinnedFields={[]}
+            onApply={vi.fn()}
+          />
+        </>,
+        i18n,
+      ),
+    );
+  }
+
+  it('switches to the site default language (Settings → Site) after sign-in', async () => {
+    siteConfig = { defaultLanguage: 'vi' };
+    const i18n = await englishInstance();
+    renderWithLanguageSync(i18n);
+
+    expect(await screen.findByRole('button', { name: 'Kiểm tra bản nháp' })).toBeInTheDocument();
+    expect(i18n.language).toBe('vi');
+    expect(document.documentElement.lang).toBe('vi');
+  });
+
+  it("prefers the user's language over the site default", async () => {
+    siteConfig = { defaultLanguage: 'vi' };
+    routes({ preferences: { language: 'en' } });
+    const i18n = await englishInstance();
+    renderWithLanguageSync(i18n);
+
+    expect(await screen.findByRole('button', { name: 'Review draft' })).toBeInTheDocument();
+    await waitFor(() => expect(calls('/api/v1/me/preferences')).toHaveLength(1));
+    expect(i18n.language).toBe('en');
+    expect(screen.queryByRole('button', { name: 'Kiểm tra bản nháp' })).toBeNull();
   });
 
   it('ships the same keys in EN and VI', async () => {

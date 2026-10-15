@@ -1,14 +1,14 @@
 ---
-version: 3
+version: 4
 sourceLang: en
-lastUpdated: 2026-10-14T15:33:32.071Z
+lastUpdated: 2026-10-15T17:00:42.580Z
 translatedFrom: en
-sourceHash: 32d37bd869afa977
+sourceHash: c95fceb2497cf0a4
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T15:33:32.071Z
-codeVerifiedHash: 32d37bd869afa977
-codeVerifiedClaims: 16
+codeVerified: 2026-10-15T17:00:42.580Z
+codeVerifiedHash: c95fceb2497cf0a4
+codeVerifiedClaims: 22
 ---
 
 # Kiểm tra bản nháp trong Studio
@@ -82,3 +82,11 @@ Các lời gọi đi qua `getApiClient()`, nên dùng `getApiBaseUrl()` và toke
 ## Ngôn ngữ
 
 Nội dung chữ của panel đi kèm trong `apps/studio/src/locales/en/content.json` và `apps/studio/src/locales/vi/content.json` và theo ngôn ngữ i18next đang hoạt động.
+
+Studio chọn ngôn ngữ sau khi đăng nhập (`apps/studio/src/components/site-language.tsx`, `apps/studio/src/lib/ui-language.ts`):
+
+1. tuỳ chọn của chính bạn, key `language` của `GET /api/v1/me/preferences`;
+2. nếu không có, ngôn ngữ mặc định của site (Settings → Site, `defaultLanguage`);
+3. nếu không có nữa, tiếng Anh.
+
+Chỉ có tiếng Anh (`en`) và tiếng Việt (`vi`); tag theo vùng như `vi-VN` sẽ chọn `vi`, còn ngôn ngữ khác thì chuyển sang nguồn kế tiếp. Studio không dùng ngôn ngữ của trình duyệt. Trước khi đăng nhập, Studio hiển thị tiếng Anh. Phần lớn các trang Studio khác chưa được dịch nên vẫn hiện tiếng Anh dù chọn ngôn ngữ nào.

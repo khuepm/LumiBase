@@ -209,6 +209,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
 
 ### Fixed
+- **Studio renders in the user's or the site's language (#515, B112).** The
+  Studio i18n instance started in English and never switched, so the
+  Vietnamese draft review copy only rendered in tests. After sign-in the
+  Studio now uses the user's `language` preference, else the site's default
+  language (Settings → Site), else English; `vi-VN` selects `vi`, other
+  languages fall back. The browser language is not used. No migration.
 - **Cloudflare counters expire (#511).** The `PageviewCounter` Durable Object
   now honours the `increment` TTL (window armed on create, like Redis `EXPIRE NX`)
   and prunes expired rows, and the 5-minute pageview flush drains only `pv`
