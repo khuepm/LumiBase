@@ -1,11 +1,11 @@
 ---
-version: 6
-lastUpdated: 2026-10-15T17:59:11.981Z
+version: 7
+lastUpdated: 2026-10-15T22:44:20.342Z
 sourceLang: vi
-contentHash: eb9e8ac74c4dda2e
-codeVerified: 2026-10-15T17:59:11.981Z
-codeVerifiedHash: eb9e8ac74c4dda2e
-codeVerifiedClaims: 12
+contentHash: fa7cc4b0208971d5
+codeVerified: 2026-10-15T22:44:20.342Z
+codeVerifiedHash: fa7cc4b0208971d5
+codeVerifiedClaims: 16
 translatedFrom: en
 sourceHash: a3fe5733ba13b42f
 mtEngine: manual
@@ -113,9 +113,42 @@ Governance, kiểm tra lúc node chạy chứ không phải lúc run vào hàng 
 - **Lỗi không bao giờ là `true`.** Forbidden, disabled, quota, timeout, cancel, lỗi provider, profile hoặc item không tồn tại đều đi vào nhánh `error` nếu nhánh đó được nối; nếu không thì node thất bại và runner đi theo `onError`.
 - **Idempotency.** Key của review run là `flow:<flowRunId>:<nodeId>`, theo từng principal. Chạy lại cùng một flow run (job bị giao lại) sẽ replay quyết định đã lưu mà không gọi provider lần hai. Nếu nội dung đã đổi từ lần đó, replay trả `unknown` (`stale`). Review run kết thúc bằng `error` được thử lại.
 - **Node phía sau.** Runner không resume theo từng bước: chạy lại một run là chạy lại từ đầu. Bản thân node quyết định là idempotent, nhưng các node phía sau nó (http, mail, deploy…) phải tự idempotent.
-- **Runtime.** Đã kiểm tra trên đường worker Docker/Node (`serve.ts` đăng ký consumer `flow-runs`). Cloudflare Workers chưa có consumer cho `flow-runs`, nên chưa khẳng định parity cho run bất đồng bộ trên Workers.
+- **Runtime.** Docker/Node và Cloudflare Workers chạy cùng đoạn xử lý. Trên Docker/Node, `serve.ts` đăng ký consumer `flow-runs` và `flow-events`; trên Workers, queue handler `processCloudflareQueue` gọi cùng `registerFlowRunsWorker` / `registerFlowEventWorker` (`apps/cms/src/cloudflare-flow-queue.ts`) với cùng cache, key provider và env của provider. Trước khi backlog B118 được sửa, Workers không có consumer cho `flow-runs`, nên parity cho run bất đồng bộ trên Workers chưa được khẳng định. Nay nó được kiểm bằng unit test trên handler của Workers và một lần chạy `wrangler dev` cục bộ, chưa chạy trên một Worker đã deploy. Các lưu ý về idempotency ở trên áp dụng như nhau trên cả hai runtime. Xem [Cloudflare Workers: queue của Flows](#cloudflare-workers-queue-của-flows).
 
 Studio: palette có khối **AI Decision** với bốn handle nhánh (true/false/unknown/error, cộng các key lựa chọn khai trong `choices`). Run history hiện từng quyết định: nhánh đã đi, giá trị, ngưỡng, model, review run, và trạng thái `unknown` hoặc lỗi được ghi rõ.
+
+## Cloudflare Workers: queue của Flows
+
+Trên Cloudflare Workers, Flows dùng hai queue có producer và consumer riêng trong mọi profile của `apps/cms/wrangler.toml` (B118):
+
+| Profile | `flow-runs` (run thủ công, AI chat bất đồng bộ) | `flow-events` (run theo event và theo lịch) |
+|---|---|---|
+| Local/default | `lumibase-flow-runs-local` | `lumibase-flow-events-local` |
+| staging | `lumibase-flow-runs-staging` | `lumibase-flow-events-staging` |
+| production | `lumibase-flow-runs-production` | `lumibase-flow-events-production` |
+| dev | `lumibase-flow-runs-dev` | `lumibase-flow-events-dev` |
+| demo | `lumibase-flow-runs-demo` | `lumibase-flow-events-demo` |
+
+- Binding là `FLOW_RUNS_QUEUE` và `FLOW_EVENTS_QUEUE`. Mỗi consumer có một dead-letter queue cùng tên kèm hậu tố `-dlq`.
+- `max_retries = 2`, tức tối đa 3 lần giao, bằng mặc định `attempts: 3` của BullMQ trên Docker. Message lỗi được thử lại sau 30 giây, hết lượt thì vào DLQ.
+- Giao ít nhất một lần (at-least-once): một job theo event hoặc theo lịch được giao lại sẽ ghi một run mới, nên các node phía sau phải idempotent. Run thủ công dùng lại `runId` của nó.
+- Worker định tuyến theo tên queue: `lumibase-<logical>-<profile>` → `agent-runs`, `flow-runs` hoặc `flow-events`. Nếu đổi tên queue, giữ nguyên phần logical. Queue không khớp tên nào không có consumer; message của nó được thử lại rồi vào DLQ.
+- Cron `* * * * *` của Worker quét các flow theo lịch đã đến hạn và đưa chúng vào `flow-events`, giống cron `flow-schedule` trên Docker. `next_run_at` chỉ được đẩy tới khi flow vẫn còn đến hạn, nên các lần quét chồng nhau đưa mỗi flow vào queue đúng một lần (B128).
+- Thiếu binding: nếu runtime không có `FLOW_RUNS_QUEUE`, `POST /api/v1/flows/:id/run` chạy inline với `LUMIBASE_FLOW_SYNC_TIMEOUT` (trước đây nó trả 500 và để lại một run `pending`), còn `Prefer: respond-async` của AI chat rơi về đường đồng bộ. Không có `FLOW_EVENTS_QUEUE` thì flow theo event không được đưa vào queue, và lần quét theo lịch không tiêu thụ slot nào.
+
+Tạo các queue này trước khi deploy phiên bản này lên một profile có tên: consumer trỏ tới một queue chưa tồn tại làm deploy thất bại. Cloudflare tự tạo DLQ còn thiếu ([Data location](https://developers.cloudflare.com/queues/configuration/data-location/)), nhưng tạo sẵn giúp bạn theo dõi nó.
+
+```bash
+cd apps/cms
+for profile in staging production dev demo; do
+  for q in flow-runs flow-events; do
+    pnpm exec wrangler queues create "lumibase-$q-$profile"
+    pnpm exec wrangler queues create "lumibase-$q-$profile-dlq"
+  done
+done
+```
+
+`wrangler dev` cục bộ mô phỏng queue, nên không cần tạo gì.
 
 ## API endpoints
 

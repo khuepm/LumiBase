@@ -50,8 +50,13 @@ describe('nextCronRun', () => {
   });
 });
 
-function makeDb(dueFlows: Record<string, unknown>[]) {
+/**
+ * `advanced` is what the conditional UPDATE … RETURNING reports per flow:
+ * `true` (default) = this sweep advanced it; `false` = another sweep did first.
+ */
+function makeDb(dueFlows: Record<string, unknown>[], advanced: (id: string) => boolean = () => true) {
   const updates: Record<string, unknown>[] = [];
+  let call = 0;
   const db = {
     select() {
       const b: Record<string, unknown> = { from: () => b, where: () => Promise.resolve(dueFlows) };
@@ -61,7 +66,12 @@ function makeDb(dueFlows: Record<string, unknown>[]) {
       return {
         set(set: Record<string, unknown>) {
           updates.push(set);
-          return { where: () => Promise.resolve(undefined) };
+          const flow = dueFlows[call++] as { id: string };
+          return {
+            where: () => ({
+              returning: () => Promise.resolve(advanced(flow.id) ? [{ id: flow.id }] : []),
+            }),
+          };
         },
       };
     },
@@ -100,5 +110,31 @@ describe('runDueScheduledFlows (Req 2.1)', () => {
     const { db, updates } = makeDb([{ id: 'f1', siteId: 's1', triggerOptions: { cron: '* * * * *' } }]);
     expect(await runDueScheduledFlows({ db }, NOW)).toBe(0);
     expect(updates).toHaveLength(0);
+  });
+
+  it('does not consume schedule slots when the runtime has no flow-events queue (B118)', async () => {
+    const { db, updates } = makeDb([{ id: 'f1', siteId: 's1', triggerOptions: { cron: '* * * * *' } }]);
+    const enqueue = vi.fn();
+    const supportsQueue = vi.fn((name: string) => name !== FLOW_EVENTS_QUEUE);
+    const queue = { enqueue, process: vi.fn(), getStatus: vi.fn(), supportsQueue };
+    expect(await runDueScheduledFlows({ db, queue }, NOW)).toBe(0);
+    expect(supportsQueue).toHaveBeenCalledWith(FLOW_EVENTS_QUEUE);
+    expect(updates).toHaveLength(0);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('enqueues only the flows this sweep advanced; a concurrent sweep won the rest (B128)', async () => {
+    const { db } = makeDb(
+      [
+        { id: 'won', siteId: 's1', triggerOptions: { cron: '* * * * *' } },
+        { id: 'lost', siteId: 's1', triggerOptions: { cron: '* * * * *' } },
+      ],
+      (id) => id === 'won',
+    );
+    const enqueue = vi.fn().mockResolvedValue('job_1');
+    const queue = { enqueue, process: vi.fn(), getStatus: vi.fn(), supportsQueue: () => true };
+    expect(await runDueScheduledFlows({ db, queue }, NOW)).toBe(1);
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(enqueue.mock.calls[0]![2]).toMatchObject({ flowId: 'won' });
   });
 });

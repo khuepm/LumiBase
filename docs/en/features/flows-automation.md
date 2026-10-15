@@ -1,14 +1,14 @@
 ---
-version: 6
-lastUpdated: 2026-10-15T17:59:11.981Z
+version: 7
+lastUpdated: 2026-10-15T22:44:20.342Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: eb9e8ac74c4dda2e
+sourceHash: fa7cc4b0208971d5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T17:59:11.981Z
-codeVerifiedHash: eb9e8ac74c4dda2e
-codeVerifiedClaims: 12
+codeVerified: 2026-10-15T22:44:20.342Z
+codeVerifiedHash: fa7cc4b0208971d5
+codeVerifiedClaims: 16
 contentHash: a3fe5733ba13b42f
 ---
 
@@ -113,9 +113,42 @@ Governance, checked when the node executes, not when the run was queued:
 - **A failure is never `true`.** Forbidden, disabled, quota, timeout, cancel, provider errors and a missing profile or item take the `error` branch when it is mapped; otherwise the node fails and the runner follows `onError`.
 - **Idempotency.** The review run key is `flow:<flowRunId>:<nodeId>`, per principal. Re-executing the same flow run (a redelivered job) replays the stored decision with no second provider call. If the content changed since then, the replay returns `unknown` (`stale`). A review run that ended in `error` is retried.
 - **Downstream nodes.** The runner has no step-level resume: re-executing a run starts it over. The decision node itself is idempotent, but the nodes after it (http, mail, deploy…) must be idempotent themselves.
-- **Runtime.** Verified on the Docker/Node worker path (`serve.ts` registers the `flow-runs` consumer). Cloudflare Workers has no `flow-runs` consumer yet, so parity for asynchronous runs on Workers is not claimed.
+- **Runtime.** Docker/Node and Cloudflare Workers run the same processing code. On Docker/Node, `serve.ts` registers the `flow-runs` and `flow-events` consumers; on Workers, the queue handler `processCloudflareQueue` calls the same `registerFlowRunsWorker` / `registerFlowEventWorker` (`apps/cms/src/cloudflare-flow-queue.ts`) with the same cache, key provider and provider env. Until backlog B118 was fixed, Workers had no `flow-runs` consumer, so parity for asynchronous runs on Workers was not claimed. It is now verified by unit tests against the Workers handler and a local `wrangler dev` run, not on a deployed Worker. The idempotency notes above apply the same way on both runtimes. See [Cloudflare Workers: Flows queues](#cloudflare-workers-flows-queues).
 
 Studio: the palette has an **AI Decision** block with four branch handles (true/false/unknown/error, plus the option keys listed in `choices`). Run history shows each decision: the branch taken, the value, the threshold, the model, the review run, and an explicit `unknown` or error state.
+
+## Cloudflare Workers: Flows queues
+
+On Cloudflare Workers, Flows uses two queues with their own producer and consumer in every profile of `apps/cms/wrangler.toml` (B118):
+
+| Profile | `flow-runs` (manual runs, async AI chat) | `flow-events` (event and schedule runs) |
+|---|---|---|
+| Local/default | `lumibase-flow-runs-local` | `lumibase-flow-events-local` |
+| staging | `lumibase-flow-runs-staging` | `lumibase-flow-events-staging` |
+| production | `lumibase-flow-runs-production` | `lumibase-flow-events-production` |
+| dev | `lumibase-flow-runs-dev` | `lumibase-flow-events-dev` |
+| demo | `lumibase-flow-runs-demo` | `lumibase-flow-events-demo` |
+
+- The bindings are `FLOW_RUNS_QUEUE` and `FLOW_EVENTS_QUEUE`. Each consumer has a dead-letter queue with the same name plus `-dlq`.
+- `max_retries = 2`, so at most 3 deliveries, equal to the BullMQ default `attempts: 3` on Docker. A failed message is retried after 30 seconds and goes to the DLQ when its retries run out.
+- Delivery is at-least-once: a redelivered event or schedule job records a new run, so downstream nodes must be idempotent. A manual run reuses its `runId`.
+- The Worker routes by queue name: `lumibase-<logical>-<profile>` → `agent-runs`, `flow-runs` or `flow-events`. If you rename a queue, keep the logical segment. A queue that matches no name has no consumer; its messages are retried and then go to the DLQ.
+- The Worker's `* * * * *` cron sweeps due schedule flows onto `flow-events`, like the `flow-schedule` cron on Docker. `next_run_at` only advances while the flow is still due, so overlapping sweeps enqueue each flow exactly once (B128).
+- Missing binding: if the runtime has no `FLOW_RUNS_QUEUE`, `POST /api/v1/flows/:id/run` runs inline with `LUMIBASE_FLOW_SYNC_TIMEOUT` (it used to return 500 and leave a `pending` run behind), and AI chat `Prefer: respond-async` falls back to the sync path. Without `FLOW_EVENTS_QUEUE`, event flows are not enqueued and the schedule sweep consumes no slots.
+
+Create these queues before you deploy this version to a named profile: a consumer bound to a queue that does not exist makes the deploy fail. Cloudflare creates a missing DLQ automatically ([Data location](https://developers.cloudflare.com/queues/configuration/data-location/)), but creating it first lets you monitor it.
+
+```bash
+cd apps/cms
+for profile in staging production dev demo; do
+  for q in flow-runs flow-events; do
+    pnpm exec wrangler queues create "lumibase-$q-$profile"
+    pnpm exec wrangler queues create "lumibase-$q-$profile-dlq"
+  done
+done
+```
+
+Local `wrangler dev` simulates queues, so there is nothing to create.
 
 ## API endpoints
 

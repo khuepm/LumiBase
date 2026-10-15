@@ -85,7 +85,9 @@ describe('Cloudflare agent queue entrypoint (B10)', () => {
   it('Worker exports the handler and every deployment profile pairs its producer/consumer', () => {
     const root = resolve(import.meta.dirname, '../..');
     const entry = readFileSync(resolve(root, 'src/cloudflare.ts'), 'utf8');
-    expect(entry).toContain('queue: processCloudflareAgentQueue');
+    // The export is the dispatcher (B118); it routes agent-runs batches here.
+    expect(entry).toContain('queue: processCloudflareQueue');
+    expect(entry).toContain("controller.cron === '* * * * *'");
     expect(entry).toContain('sweepStaleRuns({ db })');
     const config = readFileSync(resolve(root, 'wrangler.toml'), 'utf8');
     for (const name of ['local', 'staging', 'production', 'dev', 'demo']) {

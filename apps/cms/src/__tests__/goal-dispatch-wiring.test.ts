@@ -87,7 +87,10 @@ describe('reconciler goal dispatch is wired, not merely implemented', () => {
   });
 
   it('wires Cloudflare delivery to the shared agent worker', () => {
-    expect(read('cloudflare.ts')).toContain('queue: processCloudflareAgentQueue');
+    // The export is the queue dispatcher (B118); it routes agent-runs batches
+    // to the agent handler, which runs the shared worker.
+    expect(read('cloudflare.ts')).toContain('queue: processCloudflareQueue');
+    expect(read('cloudflare-queue.ts')).toContain("'agent-runs': processCloudflareAgentQueue");
     expect(read('cloudflare-agent-queue.ts')).toContain('await processAgentRunJob(');
   });
 });

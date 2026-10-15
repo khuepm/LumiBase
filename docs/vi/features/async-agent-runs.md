@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-10-13T19:46:03.541Z
+version: 5
+lastUpdated: 2026-10-15T22:44:20.548Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7cbba410d113f4c5
+sourceHash: 53154b975e36b1e6
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-13T19:46:03.541Z
-codeVerifiedHash: 7cbba410d113f4c5
+codeVerified: 2026-10-15T22:44:20.548Z
+codeVerifiedHash: 53154b975e36b1e6
 codeVerifiedClaims: 8
 ---
 
@@ -39,6 +39,7 @@ Với production, chạy từ `apps/cms`:
 ```bash
 cd apps/cms
 pnpm exec wrangler queues create lumibase-agent-runs-production
+pnpm exec wrangler queues create lumibase-agent-runs-production-dlq
 pnpm run deploy:production
 ```
 
@@ -49,6 +50,9 @@ Queue handler cần `HYPERDRIVE`; môi trường local có thể dùng `DATABASE
 khi `LUMIBASE_ENV=development`. Cấu hình cùng bộ secret LLM và mã hoá
 như đường thực thi đồng bộ. Worker nhận các provider cache, search, queue và key
 từ runtime Cloudflare.
+Cùng queue handler `queue()` đó của Worker (`processCloudflareQueue`) cũng định
+tuyến các hàng đợi `flow-runs` và `flow-events`; xem
+[Cloudflare Workers: queue của Flows](./flows-automation.md#cloudflare-workers-queue-của-flows).
 
 ## Thực thi và phục hồi
 

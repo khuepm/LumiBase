@@ -3,6 +3,7 @@ import type { QueueProvider } from '@lumibase/runtime';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { and, eq, isNotNull, lte } from 'drizzle-orm';
 import { FLOW_EVENTS_QUEUE, type FlowEventJob } from './flow-dispatch';
+import { queueAccepts } from './queue-routing';
 
 /**
  * Scheduled flow runner (visual-flow-builder Req 2).
@@ -140,7 +141,9 @@ export interface FlowSchedulerDeps {
  */
 export async function runDueScheduledFlows(deps: FlowSchedulerDeps, now = new Date()): Promise<number> {
   const { db, queue } = deps;
-  if (!queue) return 0;
+  // Return before advancing `next_run_at`: a runtime without the `flow-events`
+  // binding (Workers before the queue exists, B118) must not consume slots.
+  if (!queueAccepts(queue, FLOW_EVENTS_QUEUE)) return 0;
 
   const due = await db
     .select()
@@ -161,10 +164,23 @@ export async function runDueScheduledFlows(deps: FlowSchedulerDeps, now = new Da
       // Advance next_run_at first (idempotency guard); invalid/missing cron →
       // clear it so the flow stops being swept instead of firing every tick.
       const next = cron ? nextCronRun(cron, now) : null;
-      await db
+      // Conditional advance (B128): only the sweep whose UPDATE still finds the
+      // flow due enqueues it. Docker sweeps from two leader-locked crons with
+      // different locks and Workers has no lock at all; a concurrent sweep's
+      // UPDATE re-checks the WHERE after the first commits and matches 0 rows.
+      const advanced = await db
         .update(flows)
         .set({ nextRunAt: next, updatedAt: new Date() })
-        .where(and(eq(flows.id, flow.id), eq(flows.siteId, flow.siteId)));
+        .where(
+          and(
+            eq(flows.id, flow.id),
+            eq(flows.siteId, flow.siteId),
+            isNotNull(flows.nextRunAt),
+            lte(flows.nextRunAt, now),
+          ),
+        )
+        .returning({ id: flows.id });
+      if (advanced.length === 0) continue;
 
       await queue.enqueue<FlowEventJob>(FLOW_EVENTS_QUEUE, 'flow:scheduled', {
         siteId: flow.siteId,
