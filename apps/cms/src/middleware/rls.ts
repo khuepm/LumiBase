@@ -61,11 +61,11 @@ export function withRls() {
         // statement, so later queries of the request are not scoped (B130).
         await sql`SELECT set_config('app.site_id', ${siteId}, true)`;
       } catch (err) {
-        // Fail CLOSED: if the RLS scope can't be established, the DB-layer
-        // tenant isolation is silently absent for this request. Rather than
-        // relying solely on application-level `.where(siteId)` filters (a
-        // single missed filter would then leak cross-tenant rows), reject the
-        // request so a degraded RLS setup can never widen data exposure.
+        // Fail CLOSED when the set_config statement itself errors (the
+        // database is unreachable or misconfigured). This does not mean the
+        // success path scopes the request: it does not (B130), and
+        // application-level `.where(siteId)` filters remain the only gate on
+        // the request path today.
         const requestId = c.get('requestId');
         console.error('[rls] Failed to set app.site_id — failing closed', {
           requestId,

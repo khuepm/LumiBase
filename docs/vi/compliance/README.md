@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:10:34.119Z
+version: 2
+lastUpdated: 2026-10-16T16:21:57.264Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b2197c8ff5d8c316
+sourceHash: 0554c81e0be570fa
 mtEngine: manual
 syncStatus: human-translated
+codeVerified: 2026-10-16T16:21:57.264Z
+codeVerifiedHash: 0554c81e0be570fa
+codeVerifiedClaims: 12
 ---
 
 # Compliance & User Rights
@@ -71,7 +74,7 @@ liệu thị trường để biết phạm vi, ngoại lệ và ngưỡng áp d�
 |----------|:----------:|------------|
 | Audit log + provenance | ✅ | `apps/cms/src/modules/audit/` |
 | Retention audit (tự động dọn) | ✅ | `apps/cms/src/modules/audit/rotator.ts` |
-| Cô lập đa tenant (RLS) | ✅ | `apps/cms/src/middleware/rls.ts` |
+| Cô lập đa tenant | ✅ | Lọc `site_id` mức ứng dụng (`apps/cms/src/services/item-service.ts`); RLS backstop `apps/cms/src/middleware/rls.ts` chưa có hiệu lực (B130) |
 | Mã hoá field-level (AES-256-GCM) | ✅ | `apps/cms/src/services/crypto-service.ts` |
 | RBAC / phân quyền chi tiết | ✅ | `packages/database/src/schema/access.ts` |
 | Soft-delete content item | ✅ | `packages/database/src/schema/cms.ts` (`items.deletedAt`) |

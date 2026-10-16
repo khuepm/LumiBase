@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-10-16T15:41:53.243Z
+version: 4
+lastUpdated: 2026-10-16T16:21:56.474Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8af70ed63dc681c6
+sourceHash: d7a00ae97daff0c0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-16T15:41:53.243Z
-codeVerifiedHash: 8af70ed63dc681c6
+codeVerified: 2026-10-16T16:21:56.474Z
+codeVerifiedHash: d7a00ae97daff0c0
 codeVerifiedClaims: 28
 ---
 
@@ -179,7 +179,7 @@ pnpm -F @lumibase/database migrate
 ### Bảo mật database
 
 - [ ] Đọc mục này trước khi áp RLS. Hiện chỉ các đường code dùng `runSiteTransaction` mới set `app.site_id` trên đúng connection chạy truy vấn của chúng; `withRls` thì không (B130). Đừng cho ứng dụng kết nối bằng role NOBYPASSRLS sau khi áp `rls-policies.sql`: các lệnh đọc trên request path và background job sẽ không thấy dòng nào.
-- [ ] Role ứng dụng: cho tới khi có B130, ứng dụng kết nối bằng role có BYPASSRLS (hoặc owner của bảng). Áp file vẫn có ích: file đã sẵn sàng cho bản sửa, và đã có hiệu lực với các đường `runSiteTransaction`.
+- [ ] Role ứng dụng: cho tới khi có B130, ứng dụng kết nối bằng superuser hoặc role có BYPASSRLS. Owner của bảng không được miễn: `rls-policies.sql` bật `FORCE ROW LEVEL SECURITY`, nên owner không phải superuser cũng không thấy dòng nào. Áp file không gây hại và đã sẵn sàng cho bản sửa, nhưng chưa thực thi gì cho tới khi ứng dụng chạy bằng role không có BYPASSRLS, việc này cần B130.
 - [ ] Đã bật Row Level Security (RLS): áp `packages/database/migrations/rls-policies.sql` bằng owner của database (không phải role ứng dụng). `pnpm db:migrate` không áp file này; áp lại sau mỗi lần upgrade.
   ```bash
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \

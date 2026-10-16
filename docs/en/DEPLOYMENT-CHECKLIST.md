@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-10-16T15:41:53.243Z
+version: 5
+lastUpdated: 2026-10-16T16:21:56.474Z
 sourceLang: en
-contentHash: 8af70ed63dc681c6
-codeVerified: 2026-10-16T15:41:53.243Z
-codeVerifiedHash: 8af70ed63dc681c6
+contentHash: d7a00ae97daff0c0
+codeVerified: 2026-10-16T16:21:56.474Z
+codeVerifiedHash: d7a00ae97daff0c0
 codeVerifiedClaims: 28
 ---
 
@@ -176,7 +176,7 @@ pnpm -F @lumibase/database migrate
 ### Database Security
 
 - [ ] Read this before applying RLS. Today only code paths that use `runSiteTransaction` set `app.site_id` on the connection that runs their queries; `withRls` does not (B130). Do not connect the app with a NOBYPASSRLS role after applying `rls-policies.sql`: request-path reads and background jobs would see no rows.
-- [ ] App role: until B130 lands, the app connects with a role that has BYPASSRLS (or the table owner). Applying the file is still useful: it is ready for the fix, and it already applies to the `runSiteTransaction` paths.
+- [ ] App role: until B130 lands, the app connects as a superuser or a role with BYPASSRLS. The table owner is not exempt: `rls-policies.sql` sets `FORCE ROW LEVEL SECURITY`, so a non-superuser owner sees no rows either. Applying the file is harmless and ready for the fix, but it enforces nothing until the app runs on a role without BYPASSRLS, which needs B130.
 - [ ] Row Level Security (RLS) enabled: apply `packages/database/migrations/rls-policies.sql` as the database owner (not the app role). `pnpm db:migrate` does not apply it; re-apply after every upgrade.
   ```bash
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \

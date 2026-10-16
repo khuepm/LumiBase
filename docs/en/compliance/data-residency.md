@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:08:20.200Z
+version: 2
+lastUpdated: 2026-10-16T16:21:57.502Z
 sourceLang: en
-contentHash: b4c3cb49368f85ba
-codeVerified: 2026-08-02T19:08:20.200Z
-codeVerifiedHash: b4c3cb49368f85ba
-codeVerifiedClaims: 4
+contentHash: 0c784040a0a0ab1b
+codeVerified: 2026-10-16T16:21:57.502Z
+codeVerifiedHash: 0c784040a0a0ab1b
+codeVerifiedClaims: 2
 ---
 
 # Data Residency & Cross-Border Transfers
@@ -56,7 +56,7 @@ codeVerifiedClaims: 4
 
 ## 5. Status in LumiBase
 
-- ✅ Multi-tenant isolation (`apps/cms/src/middleware/rls.ts`) keeps tenants separate
+- ✅ Multi-tenant isolation (app-level `site_id` filters; RLS backstop: B130) keeps tenants separate
   but does **not** by itself pin a region.
 - ⚠️ Region pinning is an **operational/deployment** choice, not an app setting today.
   There is no built-in per-record region routing. `[Inference]` For multi-region

@@ -1,14 +1,14 @@
 ---
-version: 3
-lastUpdated: 2026-10-16T15:41:56.032Z
+version: 4
+lastUpdated: 2026-10-16T16:21:58.210Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7b66a33e132dcd4a
+sourceHash: 1ff0d713cc1851ce
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-16T15:41:56.032Z
-codeVerifiedHash: 7b66a33e132dcd4a
-codeVerifiedClaims: 58
+codeVerified: 2026-10-16T16:21:58.210Z
+codeVerifiedHash: 1ff0d713cc1851ce
+codeVerifiedClaims: 56
 ---
 
 # Gap Analysis — Rights ↔ LumiBase Features
@@ -37,9 +37,9 @@ codeVerifiedClaims: 58
 | Xoá tài khoản (in-app/web) | ⚠️ | Erasure do admin `/api/v1/admin/erasure` + SAR `/api/v1/admin/sar` (regulated) | Thêm luồng tự phục vụ + URL yêu cầu xoá công khai (Apple 5.1.1(v) / Google Play). |
 | Minh bạch / thông báo quyền riêng tư | ⚠️ | Trang privacy tại `apps/landing/src/app/privacy/page.tsx` (chung chung) | Bản đồ dữ liệu để khai báo "data safety"/nhãn chính xác; thông báo theo từng triển khai. |
 | Thông báo vi phạm | ⚠️ | `apps/cms/src/modules/audit/` cung cấp dấu vết phát hiện; `modules/anomaly` | Quy trình ứng phó sự cố + thông báo cơ quan trong 72h (mức tổ chức). |
-| Chuyển dữ liệu xuyên biên giới / nội địa hoá | ⚠️ | Runtime edge; `apps/cms/src/middleware/rls.ts` cô lập tenant | Cấu hình ghim vùng / data-residency + tài liệu. |
+| Chuyển dữ liệu xuyên biên giới / nội địa hoá | ⚠️ | Runtime edge; lọc `site_id` mức ứng dụng cô lập tenant (RLS backstop: B130) | Cấu hình ghim vùng / data-residency + tài liệu. |
 | Quyết định tự động / con người xem xét | ✅ | `apps/cms/src/modules/data-rights/automated-decisions-service.ts`; `GET /api/v1/me/automated-decisions` hiển thị revisions agent trên nội dung của user kèm provenance; HITL qua `ai_approvals` | Thêm hành động "yêu cầu con người xem xét" do user khởi tạo. |
-| Biện pháp an ninh (mã hoá/truy cập) | ✅ | `apps/cms/src/services/crypto-service.ts` (AES-256-GCM); `fields.encrypted` (`cms.ts:124`); `middleware/rls.ts`; RBAC `schema/access.ts` | Duy trì; tài liệu hoá quản lý khoá. |
+| Biện pháp an ninh (mã hoá/truy cập) | ✅ | `apps/cms/src/services/crypto-service.ts` (AES-256-GCM); `fields.encrypted` (`cms.ts:124`); lọc `site_id` mức ứng dụng (RLS backstop: B130); RBAC `schema/access.ts` | Duy trì; tài liệu hoá quản lý khoá. |
 | Retention / tự động dọn | ✅ | Audit: `apps/cms/src/modules/audit/rotator.ts`; tổng quát: `apps/cms/src/modules/data-rights/retention-service.ts` (activity + notifications đã đọc/lưu) qua `POST /api/v1/retention/run` | Mở rộng mốc cho nhiều bảng PII; lên lịch trên cron rotation. |
 
 ## 2. Những điều LumiBase đã làm tốt

@@ -447,9 +447,11 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   queries; `withRls` does not (it runs `set_config` as a standalone autocommit
   statement, so the setting ends with that statement). Do not connect the app
   with a NOBYPASSRLS role after applying `rls-policies.sql`: request-path reads
-  and background jobs would see no rows. Keep the app on a role with
-  BYPASSRLS (or the owner) until the fix ships; it is tracked as post-v1 spec
-  `rls-request-scope`. The docs and code comments that said the request path
+  and background jobs would see no rows. Keep the app on a superuser or a role
+  with BYPASSRLS until the fix ships. The table owner is not exempt: the file
+  sets `FORCE ROW LEVEL SECURITY`, so a non-superuser owner sees no rows
+  either. Until then the applied file enforces nothing. The fix is tracked as
+  post-v1 spec `rls-request-scope`. The docs and code comments that said the request path
   was scoped now say this.
 
 

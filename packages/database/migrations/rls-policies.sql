@@ -11,11 +11,13 @@
 --      policies target those names.
 --   2. The policies only bind a role without BYPASSRLS (and not a superuser).
 --      Until B130 (`.kiro/specs/rls-request-scope/`) lands, keep the app
---      connected with a role that has BYPASSRLS (or the owner): today only
---      code paths that use `runSiteTransaction` set `app.site_id` on the
+--      connected as a superuser or a role with BYPASSRLS: today only code
+--      paths that use `runSiteTransaction` set `app.site_id` on the
 --      connection that runs their queries; `withRls` does not. With a
 --      NOBYPASSRLS app role, request-path reads and background jobs would see
---      no rows.
+--      no rows. The table owner is NOT exempt: FORCE ROW LEVEL SECURITY below
+--      applies the policies to a non-superuser owner as well. Until then the
+--      file is harmless and enforces nothing.
 --   3. The custom setting `app.site_id` gets a safe default ('') on the
 --      current database; this file sets it itself (no hardcoded db name).
 --
