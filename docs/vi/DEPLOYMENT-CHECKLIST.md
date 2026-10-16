@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-10-15T22:27:48.731Z
+version: 3
+lastUpdated: 2026-10-16T15:41:53.243Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 641f834b11c530ea
+sourceHash: 8af70ed63dc681c6
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T22:27:48.731Z
-codeVerifiedHash: 641f834b11c530ea
+codeVerified: 2026-10-16T15:41:53.243Z
+codeVerifiedHash: 8af70ed63dc681c6
 codeVerifiedClaims: 28
 ---
 
@@ -178,6 +178,8 @@ pnpm -F @lumibase/database migrate
 
 ### Bảo mật database
 
+- [ ] Đọc mục này trước khi áp RLS. Hiện chỉ các đường code dùng `runSiteTransaction` mới set `app.site_id` trên đúng connection chạy truy vấn của chúng; `withRls` thì không (B130). Đừng cho ứng dụng kết nối bằng role NOBYPASSRLS sau khi áp `rls-policies.sql`: các lệnh đọc trên request path và background job sẽ không thấy dòng nào.
+- [ ] Role ứng dụng: cho tới khi có B130, ứng dụng kết nối bằng role có BYPASSRLS (hoặc owner của bảng). Áp file vẫn có ích: file đã sẵn sàng cho bản sửa, và đã có hiệu lực với các đường `runSiteTransaction`.
 - [ ] Đã bật Row Level Security (RLS): áp `packages/database/migrations/rls-policies.sql` bằng owner của database (không phải role ứng dụng). `pnpm db:migrate` không áp file này; áp lại sau mỗi lần upgrade.
   ```bash
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \
@@ -189,7 +191,7 @@ pnpm -F @lumibase/database migrate
    WHERE policyname IN ('site_isolation', 'site_isolation_permit')
    ORDER BY 1, 2;
   ```
-- [ ] Smoke test RLS bằng role ứng dụng: count > 0 với site có settings, và = 0 khi chưa set `app.site_id`.
+- [ ] Smoke test RLS bằng một role không có BYPASSRLS: count > 0 với site có settings, và = 0 khi chưa set `app.site_id`. Test này tự mở transaction riêng; nó chứng minh policy đúng, không chứng minh ứng dụng đã có scope.
   ```sql
   BEGIN;
   SELECT set_config('app.site_id', '<site id>', true);

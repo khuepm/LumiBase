@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-10-15T22:27:48.900Z
+version: 4
+lastUpdated: 2026-10-16T15:42:02.405Z
 sourceLang: en
-contentHash: 827b677e2b8b29aa
-codeVerified: 2026-10-15T22:27:48.900Z
-codeVerifiedHash: 827b677e2b8b29aa
+contentHash: 26786696dca3efd4
+codeVerified: 2026-10-16T15:42:02.405Z
+codeVerifiedHash: 26786696dca3efd4
 codeVerifiedClaims: 6
 ---
 
@@ -110,7 +110,7 @@ Run migrations deliberately and verify both schema and application behavior:
 - For production, schedule a maintenance window if the migration changes large tables, indexes, constraints, permissions, or tenant-scoped data.
 - Apply migrations with the same application version that will serve traffic.
 - Verify migration history after completion.
-- If the deployment uses the RLS backstop, re-apply `packages/database/migrations/rls-policies.sql` as the database owner after the migrations (`psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f packages/database/migrations/rls-policies.sql`). The file is idempotent. Then verify the policies as in the "Database Security" section of `DEPLOYMENT-CHECKLIST.md`. Deployments that applied the file before B125 must re-apply it: the old version had only restrictive policies, so the non-superuser app role saw no rows.
+- If the deployment uses the RLS backstop, re-apply `packages/database/migrations/rls-policies.sql` as the database owner after the migrations (`psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f packages/database/migrations/rls-policies.sql`). The file is idempotent. Then verify the policies as in the "Database Security" section of `DEPLOYMENT-CHECKLIST.md`. Deployments that applied the file before B125 must re-apply it: the old version had only restrictive policies, so the non-superuser app role saw no rows. Today only code paths that use `runSiteTransaction` set `app.site_id` on the connection that runs their queries; `withRls` does not (B130). Do not connect the app with a NOBYPASSRLS role after applying `rls-policies.sql`: request-path reads and background jobs would see no rows.
 - Smoke test core reads and writes for at least one representative site tenant.
 - Keep a record of migration IDs applied during the upgrade.
 

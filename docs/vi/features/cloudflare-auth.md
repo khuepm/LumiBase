@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-10-15T22:28:25.017Z
+version: 4
+lastUpdated: 2026-10-16T15:41:59.749Z
 sourceLang: vi
-contentHash: 140c0adb805aad56
-codeVerified: 2026-10-15T22:28:25.017Z
-codeVerifiedHash: 140c0adb805aad56
+contentHash: 29ddc3e668a10c9d
+codeVerified: 2026-10-16T15:41:59.749Z
+codeVerifiedHash: 29ddc3e668a10c9d
 codeVerifiedClaims: 8
 ---
 
@@ -134,14 +134,14 @@ Quy trình kiểm tra quyền hạn của User:
    - Mặc định sau khi đăng nhập thành công, End-user được gán vai trò `member` gắn với `site_id` của request.
 
 ### B. Bảo mật Multi-Tenancy (Row-Level Security)
-LumiBase thực thi multi-tenancy nghiêm ngặt ở tầng database nhờ middleware `withRls()` của Hono kết hợp với cơ chế Row-Level Security (RLS) của PostgreSQL:
+LumiBase thiết kế lớp chốt multi-tenancy ở tầng database bằng middleware `withRls()` của Hono kết hợp với cơ chế Row-Level Security (RLS) của PostgreSQL. Gate chính hiện nay là bộ lọc `site_id` ở tầng ứng dụng; lớp chốt RLS chưa có hiệu lực trên request path (B130):
 
 1. **Xác định Site**: `withTenant()` middleware đọc header `X-Lumi-Site` để lấy `siteId` hiện tại.
-2. **Thiết lập DB context**: `withRls()` thực thi câu lệnh SQL:
+2. **Thiết lập DB context**: `withRls()` thực thi câu lệnh SQL dưới đây như một câu autocommit riêng. Vì `is_local = true`, setting hết hiệu lực ngay khi câu đó xong, nên nó không áp cho các câu sau của request (B130):
    ```sql
    SELECT set_config('app.site_id', '<siteId>', true);
    ```
-3. **RLS Policy**: Mọi câu lệnh truy vấn dữ liệu sau đó (Drizzle ORM) sẽ được Postgres tự động lọc theo cặp policy mà `packages/database/migrations/rls-policies.sql` tạo cho mỗi bảng:
+3. **RLS Policy**: Postgres lọc mỗi câu truy vấn theo cặp policy mà `packages/database/migrations/rls-policies.sql` tạo cho mỗi bảng, dựa trên `app.site_id` của transaction chạy câu đó. Hiện chỉ các đường code dùng `runSiteTransaction` mới set `app.site_id` trên đúng connection chạy truy vấn của chúng:
    ```sql
    CREATE POLICY site_isolation ON <table_name>
      AS RESTRICTIVE FOR ALL TO PUBLIC
@@ -151,4 +151,4 @@ LumiBase thực thi multi-tenancy nghiêm ngặt ở tầng database nhờ middl
      USING (site_id = app_site_id()) WITH CHECK (site_id = app_site_id());
    ```
    `app_site_id()` trả `NULLIF(current_setting('app.site_id', true), '')`, nên khi không set scope thì không có dòng nào hiện ra và mọi lệnh ghi đều bị từ chối.
-   *Điều này đảm bảo người dùng hoặc admin của site này hoàn toàn không thể đọc/ghi dữ liệu của site khác, ngay cả khi viết code lỗi thiếu điều kiện WHERE.*
+   *Khi B130 xong, điều này sẽ đảm bảo người dùng hoặc admin của site này hoàn toàn không thể đọc/ghi dữ liệu của site khác, ngay cả khi viết code lỗi thiếu điều kiện WHERE. Cho tới lúc đó, đừng cho ứng dụng kết nối bằng role NOBYPASSRLS sau khi áp `rls-policies.sql`: các lệnh đọc trên request path và background job sẽ không thấy dòng nào.*

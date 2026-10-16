@@ -67,7 +67,10 @@ export class PreviewEnvManager {
     return `${base}/api/v1/deliver/page/${ephemeralId}/home`;
   }
 
-  /** Best-effort RLS context switch (mirrors `withRls`); no-op in dev. */
+  /**
+   * Best-effort RLS context switch (mirrors `withRls`); no-op in dev.
+   * Standalone autocommit statement: it does not scope later queries (B130).
+   */
   private async setContext(siteId: string): Promise<void> {
     if (this.deps.isDev) return;
     try {

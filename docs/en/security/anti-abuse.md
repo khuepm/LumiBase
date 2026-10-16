@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-10-15T22:27:47.620Z
+version: 4
+lastUpdated: 2026-10-16T15:42:03.648Z
 sourceLang: en
-contentHash: 781cd60c0c80bbdb
-codeVerified: 2026-10-15T22:27:47.620Z
-codeVerifiedHash: 781cd60c0c80bbdb
+contentHash: 724de2469a4a0d4b
+codeVerified: 2026-10-16T15:42:03.648Z
+codeVerifiedHash: 724de2469a4a0d4b
 codeVerifiedClaims: 72
 ---
 
@@ -159,7 +159,10 @@ enforce isolation in the database so a missing `.where()` cannot leak data.
   role without BYPASSRLS no rows unless a permissive policy passes; the
   restrictive half stops any other permissive policy from widening access.
   With `app.site_id` unset or empty, no row is visible and every write fails.
-  The request binds `SET LOCAL app.site_id` per request.
+  Today only code paths that use `runSiteTransaction` set `app.site_id` on the
+  connection that runs their queries; `withRls` does not (B130). Do not
+  connect the app with a NOBYPASSRLS role after applying `rls-policies.sql`:
+  request-path reads and background jobs would see no rows.
 - Apply the file as the database owner (not the app role), and re-apply it
   after every upgrade: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1
   --single-transaction -f packages/database/migrations/rls-policies.sql`.

@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-10-15T22:27:48.900Z
+version: 4
+lastUpdated: 2026-10-16T15:42:02.405Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 827b677e2b8b29aa
+sourceHash: 26786696dca3efd4
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T22:27:48.900Z
-codeVerifiedHash: 827b677e2b8b29aa
+codeVerified: 2026-10-16T15:42:02.405Z
+codeVerifiedHash: 26786696dca3efd4
 codeVerifiedClaims: 6
 ---
 
@@ -113,7 +113,7 @@ Chạy migration có chủ đích và xác minh cả schema lẫn hành vi ứng
 - Với production, đặt maintenance window nếu migration thay đổi bảng lớn, index, constraint, permissions hoặc dữ liệu theo tenant.
 - Apply migration bằng cùng phiên bản ứng dụng sẽ phục vụ traffic.
 - Xác minh migration history sau khi hoàn tất.
-- Nếu deployment dùng RLS backstop, áp lại `packages/database/migrations/rls-policies.sql` bằng owner của database sau khi chạy migration (`psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f packages/database/migrations/rls-policies.sql`). File này idempotent. Sau đó kiểm policy như mục "Bảo mật database" trong `DEPLOYMENT-CHECKLIST.md`. Deployment đã áp file trước B125 bắt buộc phải áp lại: bản cũ chỉ có policy restrictive nên role ứng dụng non-superuser không thấy dòng nào.
+- Nếu deployment dùng RLS backstop, áp lại `packages/database/migrations/rls-policies.sql` bằng owner của database sau khi chạy migration (`psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f packages/database/migrations/rls-policies.sql`). File này idempotent. Sau đó kiểm policy như mục "Bảo mật database" trong `DEPLOYMENT-CHECKLIST.md`. Deployment đã áp file trước B125 bắt buộc phải áp lại: bản cũ chỉ có policy restrictive nên role ứng dụng non-superuser không thấy dòng nào. Hiện chỉ các đường code dùng `runSiteTransaction` mới set `app.site_id` trên đúng connection chạy truy vấn của chúng; `withRls` thì không (B130). Đừng cho ứng dụng kết nối bằng role NOBYPASSRLS sau khi áp `rls-policies.sql`: các lệnh đọc trên request path và background job sẽ không thấy dòng nào.
 - Smoke test core reads/writes cho ít nhất một site tenant đại diện.
 - Ghi lại migration ID đã apply trong lần nâng cấp.
 

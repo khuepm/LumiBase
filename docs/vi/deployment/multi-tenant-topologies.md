@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-12T19:36:40.832Z
+version: 2
+lastUpdated: 2026-10-16T15:41:58.675Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 949e959f703a293e
+sourceHash: 3f89361a5fc6551c
 mtEngine: manual
-syncStatus: translated
+syncStatus: human-translated
+codeVerified: 2026-10-16T15:41:58.675Z
+codeVerifiedHash: 3f89361a5fc6551c
+codeVerifiedClaims: 24
 ---
 
 # Các Topology Triển Khai Đa Tenant
@@ -40,8 +43,9 @@ hoặc flow (xem `packages/extension-sdk/`) để Core image giữ nguyên trên
 Đây là các khối xây dựng mà mọi topology đều ghép từ chúng. **[Platform]**
 
 1. **Tenancy mức dòng (row-level).** Mọi bảng domain đều mang `site_id`;
-   query được scope ở tầng ORM và được cưỡng chế lần nữa bởi RLS middleware
-   (`apps/cms/src/middleware/rls.ts`).
+   query được scope ở tầng ORM. RLS middleware
+   (`apps/cms/src/middleware/rls.ts`) được thiết kế để cưỡng chế lần nữa, nhưng
+   hiện chưa scope được các truy vấn của request (B130).
 2. **Resolve tenant theo request** (`apps/cms/src/middleware/tenant.ts`),
    theo thứ tự ưu tiên:
    1. header `X-Lumi-Site` (Studio, SDK, server-to-server),

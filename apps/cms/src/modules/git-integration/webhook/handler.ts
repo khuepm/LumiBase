@@ -3,9 +3,10 @@
  *
  * The route is un-authenticated (providers can't carry a session) but the
  * per-integration secret signature is the authenticity gate. siteId +
- * integrationId in the path let this un-tenanted handler scope its lookup; we
- * set the RLS session var to the path's siteId before reading (mirroring
- * `withRls`), so it can only ever touch that one site's rows.
+ * integrationId in the path let this un-tenanted handler scope its lookup by
+ * the path's siteId, so it can only ever touch that one site's rows. It also
+ * runs `set_config('app.site_id', …)` first (mirroring `withRls`), but as a
+ * standalone statement that does not scope the later queries (B130).
  */
 import type { Context } from 'hono';
 import { and, eq } from 'drizzle-orm';
@@ -48,6 +49,7 @@ export async function handleWebhook(c: Context<AppEnv>): Promise<Response> {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sql = c.get('runtime').database.getConnection() as any;
+      // Standalone autocommit statement: it does not scope later queries (B130).
       await sql`SELECT set_config('app.site_id', ${siteId}, true)`;
     } catch (err) {
       console.warn('[git-webhook] failed to set app.site_id', {

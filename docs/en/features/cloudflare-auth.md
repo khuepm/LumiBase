@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-10-15T22:28:25.017Z
+version: 5
+lastUpdated: 2026-10-16T15:41:59.749Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 140c0adb805aad56
+sourceHash: 29ddc3e668a10c9d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T22:28:25.017Z
-codeVerifiedHash: 140c0adb805aad56
+codeVerified: 2026-10-16T15:41:59.749Z
+codeVerifiedHash: 29ddc3e668a10c9d
 codeVerifiedClaims: 8
 ---
 
@@ -137,14 +137,14 @@ How a user's permissions are checked:
    - By default, after a successful sign-in an end-user is assigned the `member` role bound to the request's `site_id`.
 
 ### B. Multi-tenancy security (row-level security)
-LumiBase enforces strict multi-tenancy at the database layer, using Hono's `withRls()` middleware together with PostgreSQL row-level security (RLS):
+LumiBase designs a database-layer multi-tenancy backstop, using Hono's `withRls()` middleware together with PostgreSQL row-level security (RLS). The primary gate today is the application-level `site_id` filter; the RLS backstop is not yet effective on the request path (B130):
 
 1. **Resolve the site**: the `withTenant()` middleware reads the `X-Lumi-Site` header to get the current `siteId`.
-2. **Set the DB context**: `withRls()` executes:
+2. **Set the DB context**: `withRls()` runs the statement below as a standalone autocommit statement. Because `is_local = true`, the setting ends as soon as that statement finishes, so it does not apply to the request's later statements (B130):
    ```sql
    SELECT set_config('app.site_id', '<siteId>', true);
    ```
-3. **RLS policy**: every subsequent query (via Drizzle ORM) is filtered automatically by Postgres through the policy pair that `packages/database/migrations/rls-policies.sql` creates on each table:
+3. **RLS policy**: Postgres filters each query through the policy pair that `packages/database/migrations/rls-policies.sql` creates on each table, based on the `app.site_id` of the transaction that runs it. Today only code paths that use `runSiteTransaction` set `app.site_id` on the connection that runs their queries:
    ```sql
    CREATE POLICY site_isolation ON <table_name>
      AS RESTRICTIVE FOR ALL TO PUBLIC
@@ -154,4 +154,4 @@ LumiBase enforces strict multi-tenancy at the database layer, using Hono's `with
      USING (site_id = app_site_id()) WITH CHECK (site_id = app_site_id());
    ```
    `app_site_id()` returns `NULLIF(current_setting('app.site_id', true), '')`, so with no scope set no row is visible and every write is refused.
-   *This means a user or admin of one site cannot read or write another site's data at all — even if some code is buggy and omits its WHERE clause.*
+   *Once B130 lands, this will mean a user or admin of one site cannot read or write another site's data at all — even if some code is buggy and omits its WHERE clause. Until then, do not connect the app with a NOBYPASSRLS role after applying `rls-policies.sql`: request-path reads and background jobs would see no rows.*

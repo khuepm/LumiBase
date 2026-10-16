@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-09-01T19:24:39.765Z
+version: 3
+lastUpdated: 2026-10-16T15:41:56.032Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1f15fcdd2bd8aaf8
+sourceHash: 7b66a33e132dcd4a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-01T19:24:39.765Z
-codeVerifiedHash: 1f15fcdd2bd8aaf8
+codeVerified: 2026-10-16T15:41:56.032Z
+codeVerifiedHash: 7b66a33e132dcd4a
 codeVerifiedClaims: 58
 ---
 
@@ -50,9 +50,10 @@ Các nguyên thuỷ này là thật và tái sử dụng được khi xây tính
   append-only, che bí mật; `routes.ts` cho truy vấn phân trang cursor và xuất NDJSON;
   `rotator.ts` dọn theo mốc cấu hình được. Hỗ trợ mạnh bằng chứng GDPR Điều 30/32 và
   dấu vết phát hiện vi phạm.
-- **Cô lập đa tenant.** `apps/cms/src/middleware/rls.ts` thực thi row-level security
-  qua `SET LOCAL app.site_id`, bổ sung cho lọc `site_id` mức ứng dụng — phòng thủ
-  nhiều lớp chống rò rỉ liên tenant.
+- **Cô lập đa tenant.** Lọc `site_id` mức ứng dụng là gate chính.
+  `apps/cms/src/middleware/rls.ts` được thiết kế để thêm row-level security bên
+  trên, nhưng hiện chưa scope được các truy vấn của request (B130); hiện chỉ các
+  đường `runSiteTransaction` có scope.
 - **Mã hoá.** `apps/cms/src/services/crypto-service.ts` cung cấp AES-256-GCM; field có
   thể đánh dấu `encrypted` (`packages/database/src/schema/cms.ts:124`).
 - **Kiểm soát truy cập chi tiết.** `packages/database/src/schema/access.ts` định nghĩa

@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-10-15T22:27:48.154Z
+version: 5
+lastUpdated: 2026-10-16T15:42:05.616Z
 sourceLang: en
-contentHash: 80197960d1b052a3
-codeVerified: 2026-10-15T22:27:48.154Z
-codeVerifiedHash: 80197960d1b052a3
+contentHash: c0dc9d41c7293cdf
+codeVerified: 2026-10-16T15:42:05.616Z
+codeVerifiedHash: c0dc9d41c7293cdf
 codeVerifiedClaims: 52
 ---
 
@@ -62,11 +62,17 @@ after the remediations in this changeset (see [Remediations](#remediations-appli
 - **`site_id` scoping at the query layer** — every list/read builds its `where`
   with `scopeSite(items.siteId, siteId)` (`services/item-service.ts:654-665`,
   `:642-651`); `scopeSite` is used pervasively across services.
-- **Postgres RLS backstop, fail-closed** — `middleware/rls.ts:35-81` sets
-  `app.site_id` per request and returns `503 RLS_UNAVAILABLE` if the scope
-  can't be set (`:54-76`). A RESTRICTIVE + PERMISSIVE policy pair per table in
+- **Postgres RLS backstop, not yet effective on the request path** —
+  `middleware/rls.ts:43-90` runs `set_config('app.site_id', …, true)` as a
+  standalone autocommit statement, so the setting ends with that statement and
+  the request's later queries are not scoped (B130). It still returns
+  `503 RLS_UNAVAILABLE` if that statement fails (`:63-85`). A RESTRICTIVE +
+  PERMISSIVE policy pair per table in
   `packages/database/migrations/rls-policies.sql` (since B125; before that the
   file had only restrictive policies, so a non-superuser role saw 0 rows).
+  Today only code paths that use `runSiteTransaction` set `app.site_id` on the
+  connection that runs their queries. The primary BOLA control is the
+  `site_id` filter above.
 - **Membership binding prevents tenant hopping** — `middleware/site-membership.ts:86-98`
   requires a `user_sites` row for the requested site, else `403 TENANT_FORBIDDEN`;
   API keys are site-matched in `withAuth` (`middleware/auth.ts:276-282`).
@@ -76,9 +82,10 @@ after the remediations in this changeset (see [Remediations](#remediations-appli
 - **Tests** — `apps/cms/src/__tests__/idor-tenant-isolation.integration.test.ts`;
   matrix in `docs/en/security/idor-testing.md`.
 
-Residual: RLS is skipped in development (`rls.ts:43-45`), so dev-only paths lack
+Residual: RLS is skipped in development (`rls.ts:51-53`), so dev-only paths lack
 the DB backstop. [Inference] non-`ItemService` services must apply `scopeSite`
-themselves; RLS is the production backstop for any miss.
+themselves; RLS can only become the production backstop for any miss once
+B130 lands.
 
 ## API2:2023 — Broken Authentication
 

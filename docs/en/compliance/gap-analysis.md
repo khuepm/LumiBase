@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-09-01T19:24:39.765Z
+version: 3
+lastUpdated: 2026-10-16T15:41:56.032Z
 sourceLang: en
-contentHash: 1f15fcdd2bd8aaf8
-codeVerified: 2026-09-01T19:24:39.765Z
-codeVerifiedHash: 1f15fcdd2bd8aaf8
+contentHash: 7b66a33e132dcd4a
+codeVerified: 2026-10-16T15:41:56.032Z
+codeVerifiedHash: 7b66a33e132dcd4a
 codeVerifiedClaims: 58
 ---
 
@@ -47,9 +47,10 @@ These primitives are real and reusable when building compliance features:
   secret-masked, append-only events; `routes.ts` offers cursor-paginated query and
   NDJSON export; `rotator.ts` prunes on a configurable horizon. Strong support for
   GDPR Art. 30/32 evidence and breach detection trails.
-- **Multi-tenant isolation.** `apps/cms/src/middleware/rls.ts` enforces row-level
-  security via `SET LOCAL app.site_id`, in addition to app-level `site_id` filters —
-  defense-in-depth against cross-tenant leakage.
+- **Multi-tenant isolation.** App-level `site_id` filters are the primary gate.
+  `apps/cms/src/middleware/rls.ts` is meant to add row-level security on top, but
+  it does not scope the request's queries yet (B130); only `runSiteTransaction`
+  paths are scoped today.
 - **Encryption.** `apps/cms/src/services/crypto-service.ts` provides AES-256-GCM;
   fields can be marked `encrypted` (`packages/database/src/schema/cms.ts:124`).
 - **Fine-grained access control.** `packages/database/src/schema/access.ts` defines

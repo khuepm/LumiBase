@@ -442,6 +442,16 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   migration and no backfill. Deployments that never applied the file are not
   affected.
 
+  **Known limitation (B130):** today only code paths that use
+  `runSiteTransaction` set `app.site_id` on the connection that runs their
+  queries; `withRls` does not (it runs `set_config` as a standalone autocommit
+  statement, so the setting ends with that statement). Do not connect the app
+  with a NOBYPASSRLS role after applying `rls-policies.sql`: request-path reads
+  and background jobs would see no rows. Keep the app on a role with
+  BYPASSRLS (or the owner) until the fix ships; it is tracked as post-v1 spec
+  `rls-request-scope`. The docs and code comments that said the request path
+  was scoped now say this.
+
 
 ## [1.0.0-rc.4] - 2026-09-29
 

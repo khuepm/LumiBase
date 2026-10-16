@@ -11,10 +11,11 @@ function skipRlsInDev(): boolean {
  * Run `fn` inside a Drizzle transaction with `app.site_id` set_config applied
  * **inside** the same transaction (high-load-cache-readiness §12 / P16).
  *
- * `withRls` middleware sets the scope on the request connection before the
- * handler runs; an explicit `db.transaction()` starts a nested transaction
- * where that outer-local setting is not guaranteed to apply — callers that
- * write through a transaction must use this helper (or equivalent) instead.
+ * This is currently the only code path that sets `app.site_id` on the
+ * transaction that runs its queries. `withRls` runs `set_config` as a
+ * standalone autocommit statement, so it does not scope any later query of
+ * the request (B130 / `.kiro/specs/rls-request-scope/`). Callers that need
+ * the RLS backstop must run their queries through this helper.
  */
 export async function runSiteTransaction<T>(
   db: Database,

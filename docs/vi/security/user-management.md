@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-08-30T09:36:15.719Z
+version: 4
+lastUpdated: 2026-10-16T15:42:07.307Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 644f0f4b2f32179b
+sourceHash: 4b66b07a25ce763a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-30T09:36:15.719Z
-codeVerifiedHash: 644f0f4b2f32179b
+codeVerified: 2026-10-16T15:42:07.307Z
+codeVerifiedHash: 4b66b07a25ce763a
 codeVerifiedClaims: 112
 ---
 
@@ -69,7 +69,8 @@ api_keys → api_key_roles/policies  ← integration principals, scoped per site
 ```
 
 - Luật domain: mọi bảng domain có `site_id` và mọi query lọc theo nó (Strict
-  Rule #2). RLS (`withRls`) là lớp phòng thủ chiều sâu dự phòng.
+  Rule #2). RLS (`withRls`) được thiết kế làm lớp phòng thủ chiều sâu dự phòng,
+  nhưng hiện chưa scope được các truy vấn của request (B130).
 - **`subscriber`** là role frontend đặc quyền tối thiểu. Nó không cấp gì cho
   tới khi bạn gắn quyền đọc nội dung vào nó (ví dụ `articles::read WHERE
   status = 'published'`). Nó được tạo idempotent ở lần đăng ký đầu tiên

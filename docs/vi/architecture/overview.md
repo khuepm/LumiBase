@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
+version: 2
+lastUpdated: 2026-10-16T15:41:55.207Z
 sourceLang: vi
-contentHash: b070858cd46928df
+contentHash: cf4e35c792699125
+codeVerified: 2026-10-16T15:41:55.207Z
+codeVerifiedHash: cf4e35c792699125
+codeVerifiedClaims: 2
 ---
 
 # Tổng quan Kiến trúc
@@ -180,7 +183,7 @@ Xem [features/runtime-abstraction.md](../features/runtime-abstraction.md) để 
 - `site_id` truyền qua subdomain hoặc header `X-Lumi-Site`.
 - Middleware `withTenant()` gắn `c.set('siteId', …)` và inject vào mọi service.
 - Drizzle helper `scopeSite(siteId)` wrap query builder để bắt buộc filter.
-- Middleware `withRls()` set Postgres session var để áp dụng RLS policies bổ sung.
+- Middleware `withRls()` được thiết kế để set `app.site_id` cho các RLS policy, nhưng hiện chưa scope được các truy vấn của request (B130); hiện chỉ các đường `runSiteTransaction` có scope.
 
 ## 7. Bảo mật
 

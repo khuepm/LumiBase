@@ -11,21 +11,29 @@
  * The middleware must run AFTER `withDb()` (so `c.get('db')` is set)
  * and AFTER `withTenant()` (so `c.get('siteId')` is set).
  *
- * How it works:
- *   1. Before each request, call `SET LOCAL app.site_id = '<siteId>'`
- *      on the raw Postgres connection. `SET LOCAL` is transaction-scoped,
- *      so it resets automatically when the transaction ends.
- *   2. Postgres RLS policies (see `rls-policies.sql`) use
- *      `current_setting('app.site_id')` in their USING / WITH CHECK clauses.
- *   3. Admin roles bypass RLS via `adminAccess = true`; we use
- *      `SET LOCAL row_security = off` for those connections.
+ * What it actually does today (B130):
+ *   1. It runs `SELECT set_config('app.site_id', <siteId>, true)` as a
+ *      standalone statement on the connection pool. With `is_local = true`
+ *      the setting lasts only for that statement's own implicit
+ *      transaction, which autocommits as soon as the statement returns.
+ *   2. Every later query of the request runs in a different transaction
+ *      (and possibly on a different pooled connection), where
+ *      `current_setting('app.site_id', true)` is ''. So this middleware does
+ *      NOT scope the request's queries. Neither Hyperdrive nor the Docker
+ *      pool wraps a request in one transaction.
+ *   3. Postgres RLS policies (see `rls-policies.sql`) read
+ *      `current_setting('app.site_id')`. Today only code that goes through
+ *      `runSiteTransaction` (`services/rls-transaction.ts`) sets it on the
+ *      transaction that runs its queries.
+ *   4. No code path sets `row_security = off`; there is no admin bypass here.
+ *
+ * Consequence: do not connect the app with a NOBYPASSRLS role after applying
+ * `rls-policies.sql`; request-path reads and background jobs would see no
+ * rows. The fix is tracked in B130 / `.kiro/specs/rls-request-scope/`.
  *
  * Security notes:
- *   - `SET LOCAL` scope is per-transaction; connection pooling via Hyperdrive
- *     wraps each Worker invocation in an implicit transaction.
- *   - We never use `SET` (session-level) which would leak across pool connections.
- *   - The `app.site_id` setting is declared in `postgresql.conf` via
- *     `SET search_path` is not affected.
+ *   - We never use `SET` (session-level), which would leak across pool
+ *     connections.
  */
 
 import { createMiddleware } from 'hono/factory';
@@ -49,7 +57,8 @@ export function withRls() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const sql = (runtime.database.getConnection() as any);
 
-        // SET LOCAL applies only to the current transaction (Hyperdrive scope).
+        // Autocommit statement: the transaction-local setting ends with this
+        // statement, so later queries of the request are not scoped (B130).
         await sql`SELECT set_config('app.site_id', ${siteId}, true)`;
       } catch (err) {
         // Fail CLOSED: if the RLS scope can't be established, the DB-layer

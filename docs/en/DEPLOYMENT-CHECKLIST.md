@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-10-15T22:27:48.731Z
+version: 4
+lastUpdated: 2026-10-16T15:41:53.243Z
 sourceLang: en
-contentHash: 641f834b11c530ea
-codeVerified: 2026-10-15T22:27:48.731Z
-codeVerifiedHash: 641f834b11c530ea
+contentHash: 8af70ed63dc681c6
+codeVerified: 2026-10-16T15:41:53.243Z
+codeVerifiedHash: 8af70ed63dc681c6
 codeVerifiedClaims: 28
 ---
 
@@ -175,6 +175,8 @@ pnpm -F @lumibase/database migrate
 
 ### Database Security
 
+- [ ] Read this before applying RLS. Today only code paths that use `runSiteTransaction` set `app.site_id` on the connection that runs their queries; `withRls` does not (B130). Do not connect the app with a NOBYPASSRLS role after applying `rls-policies.sql`: request-path reads and background jobs would see no rows.
+- [ ] App role: until B130 lands, the app connects with a role that has BYPASSRLS (or the table owner). Applying the file is still useful: it is ready for the fix, and it already applies to the `runSiteTransaction` paths.
 - [ ] Row Level Security (RLS) enabled: apply `packages/database/migrations/rls-policies.sql` as the database owner (not the app role). `pnpm db:migrate` does not apply it; re-apply after every upgrade.
   ```bash
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \
@@ -186,7 +188,7 @@ pnpm -F @lumibase/database migrate
    WHERE policyname IN ('site_isolation', 'site_isolation_permit')
    ORDER BY 1, 2;
   ```
-- [ ] RLS smoke test as the app role: the count is > 0 for a site that has settings, and 0 when `app.site_id` is not set.
+- [ ] RLS smoke test as a role without BYPASSRLS: the count is > 0 for a site that has settings, and 0 when `app.site_id` is not set. This test opens its own transaction; it proves the policies, not that the application is scoped.
   ```sql
   BEGIN;
   SELECT set_config('app.site_id', '<site id>', true);

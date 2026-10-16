@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 3
-lastUpdated: 2026-10-15T22:27:47.620Z
+version: 4
+lastUpdated: 2026-10-16T15:42:03.648Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 781cd60c0c80bbdb
+sourceHash: 724de2469a4a0d4b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T22:27:47.620Z
-codeVerifiedHash: 781cd60c0c80bbdb
+codeVerified: 2026-10-16T15:42:03.648Z
+codeVerifiedHash: 724de2469a4a0d4b
 codeVerifiedClaims: 72
 ---
 
@@ -163,7 +163,11 @@ lập trong database để một `.where()` bị thiếu không làm rò rỉ d�
   (PERMISSIVE). Postgres không cho role thiếu BYPASSRLS thấy dòng nào trừ khi có
   một policy permissive đúng; nửa restrictive chặn mọi policy permissive khác nới
   rộng quyền. Khi `app.site_id` chưa set hoặc rỗng thì không dòng nào hiện ra và
-  mọi lệnh ghi đều bị từ chối. Request bind `SET LOCAL app.site_id` mỗi request.
+  mọi lệnh ghi đều bị từ chối. Hiện chỉ các đường code dùng
+  `runSiteTransaction` mới set `app.site_id` trên đúng connection chạy truy vấn
+  của chúng; `withRls` thì không (B130). Đừng cho ứng dụng kết nối bằng role
+  NOBYPASSRLS sau khi áp `rls-policies.sql`: các lệnh đọc trên request path và
+  background job sẽ không thấy dòng nào.
 - Áp file bằng owner của database (không phải role ứng dụng), và áp lại sau mỗi
   lần upgrade: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1
   --single-transaction -f packages/database/migrations/rls-policies.sql`.

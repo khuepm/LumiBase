@@ -1,14 +1,14 @@
 ---
 title: Git Integration (GitHub / GitLab)
-version: 1
-lastUpdated: 2026-07-28T10:20:15.614Z
+version: 2
+lastUpdated: 2026-10-16T15:42:00.882Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 00b92c1afa81ad18
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T10:20:15.614Z
-codeVerifiedHash: 00b92c1afa81ad18
+sourceHash: e93e52ab330892b7
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-10-16T15:42:00.882Z
+codeVerifiedHash: e93e52ab330892b7
 codeVerifiedClaims: 10
 ---
 
@@ -89,9 +89,10 @@ liệu tenant):
   cả sáu đều được đăng ký cho RLS `site_isolation` trong
   `packages/database/migrations/rls-policies.sql`.
 - **Định tuyến webhook:** receiver công khai nhúng `siteId` + `integrationId` vào
-  URL và set biến session RLS thành `siteId` đó trước khi đọc — nó chỉ có thể
-  chạm tới row của đúng một site, và chữ ký bằng secret riêng theo từng
-  integration là cửa xác thực.
+  URL và scope các lệnh đọc theo `siteId` đó — nó chỉ có thể chạm tới row của
+  đúng một site, và chữ ký bằng secret riêng theo từng integration là cửa xác
+  thực. Nó cũng chạy `set_config('app.site_id', …)` trước, nhưng như một câu
+  riêng nên không scope các truy vấn sau (B130).
 - **Preview:** id của site tạm thời được dẫn xuất từ `siteId` gốc
   (`${siteId}__pr-${n}`); nội dung preview nằm ở row `sites` riêng của nó, cách ly
   khỏi nội dung production của site gốc. Việc provision là một lần ghi *system*

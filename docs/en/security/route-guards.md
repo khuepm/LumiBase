@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-09-28T20:04:25.222Z
+version: 5
+lastUpdated: 2026-10-16T15:42:06.275Z
 sourceLang: en
-contentHash: a419b13e68bdfcf4
-codeVerified: 2026-09-28T20:04:25.222Z
-codeVerifiedHash: a419b13e68bdfcf4
+contentHash: 553f33f34b9707c0
+codeVerified: 2026-10-16T15:42:06.275Z
+codeVerifiedHash: 553f33f34b9707c0
 codeVerifiedClaims: 22
 ---
 
@@ -27,7 +27,7 @@ Each layer answers one question, in order:
 | `withSiteMembership` | Is this principal allowed on **that** site? (`user_sites` membership; API keys already site-matched by `withAuth`) | 403 `TENANT_FORBIDDEN` |
 | `withStudioAccess` | May this principal use the Studio surface? (`appAccess`, TFA) | 403 `APP_ACCESS_DENIED` / `TFA_REQUIRED` |
 | `withControlPlaneAccessGuard` | Is this a system-administration path? Then require an admin principal even if the route forgets its own check. An admin principal is a role literally named `admin`/`administrator`, or a signed-in **user** whose role grants admin access in the active site (`access.admin`); API keys, anonymous and `frontend`-audience sessions never qualify through the bundle. One exception: `GET /api/v1/permissions/me` passes for any authenticated principal, because it only returns the caller's own permission bundle. | 403 `CONTROL_PLANE_FORBIDDEN` |
-| `withRls` | Postgres row-level security as the last line. | — |
+| `withRls` | Postgres row-level security as the last line. Not effective yet: it does not scope the request's queries (B130). | — |
 
 ## Rules when adding or changing routes
 

@@ -32,9 +32,9 @@ Phần lớn item hoãn đã được ghi rõ trong chính spec. Ngoại lệ l�
 
 ## Post-v1 — proposal/roadmap, chưa bắt đầu
 
-collection-create-modes · tenant-localization-config · db-view-introspection · cdc-feed-roadmap · idempotency-keys · project-configuration (chỉ có design.md)
+collection-create-modes · tenant-localization-config · db-view-introspection · cdc-feed-roadmap · idempotency-keys · project-configuration (chỉ có design.md) · rls-request-scope (B130; thêm 2026-10-16)
 
-Không spec nào trong nhóm này reserve public surface trong code (khác M2A — đã tuyên bố out-of-scope trong `docs/en/contributing/versioning-policy.md` và trả 501 `RELATION_TYPE_NOT_IMPLEMENTED`). Đã verify riêng cho `idempotency-keys`: không có chỗ nào trong `apps/`/`packages/` đọc header `Idempotency-Key` và không có bảng schema tương ứng, nên header này là surface **hoàn toàn mới** khi ship ở 1.x — additive, không phá contract 1.0.
+Không spec nào trong nhóm này reserve public surface trong code (khác M2A — đã tuyên bố out-of-scope trong `docs/en/contributing/versioning-policy.md` và trả 501 `RELATION_TYPE_NOT_IMPLEMENTED`). Đã verify riêng cho `idempotency-keys`: không có chỗ nào trong `apps/`/`packages/` đọc header `Idempotency-Key` và không có bảng schema tương ứng, nên header này là surface **hoàn toàn mới** khi ship ở 1.x — additive, không phá contract 1.0. Tương tự cho `rls-request-scope`: không có chỗ nào trong `apps/`/`packages/` đọc `DATABASE_SYSTEM_URL`, `HYPERDRIVE_SYSTEM` hay `LUMIBASE_DB_RLS` (đã kiểm bằng `git grep` 2026-10-16), nên các biến này là surface mới, additive khi ship ở 1.x. Cho tới lúc đó, docs bảo operator giữ ứng dụng ở role có BYPASSRLS khi áp `rls-policies.sql`.
 
 ---
 

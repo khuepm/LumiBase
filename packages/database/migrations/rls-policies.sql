@@ -9,8 +9,13 @@
 --   1. Run this migration AFTER the schema migration (0000_lumibase_init),
 --      which creates every system table in the `lumibase_` namespace — these
 --      policies target those names.
---   2. The Postgres role used by Hyperdrive must NOT be a superuser.
---      Use a dedicated `lumibase_app` role with GRANT on all tables.
+--   2. The policies only bind a role without BYPASSRLS (and not a superuser).
+--      Until B130 (`.kiro/specs/rls-request-scope/`) lands, keep the app
+--      connected with a role that has BYPASSRLS (or the owner): today only
+--      code paths that use `runSiteTransaction` set `app.site_id` on the
+--      connection that runs their queries; `withRls` does not. With a
+--      NOBYPASSRLS app role, request-path reads and background jobs would see
+--      no rows.
 --   3. The custom setting `app.site_id` gets a safe default ('') on the
 --      current database; this file sets it itself (no hardcoded db name).
 --

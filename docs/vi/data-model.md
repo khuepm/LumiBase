@@ -1,13 +1,13 @@
 ---
-version: 6
-lastUpdated: 2026-10-15T22:27:48.531Z
+version: 7
+lastUpdated: 2026-10-16T15:41:57.544Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3eecec4234c1cbaf
+sourceHash: 2f7315562b5b0499
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T22:27:48.531Z
-codeVerifiedHash: 3eecec4234c1cbaf
+codeVerified: 2026-10-16T15:41:57.544Z
+codeVerifiedHash: 2f7315562b5b0499
 codeVerifiedClaims: 18
 ---
 
@@ -530,5 +530,5 @@ buộc vào `{ siteId, integrationId, field }`); plaintext không bao giờ đư
 
 - Bắt buộc index `(siteId, …)` ở mọi bảng domain.
 - Áp dụng Drizzle helper `scopeSite(siteId)` ở tầng repo.
-- Postgres RLS được bật qua middleware `withRls()` (`apps/cms/src/middleware/rls.ts`) — set session var để defence-in-depth.
+- Middleware `withRls()` (`apps/cms/src/middleware/rls.ts`) được thiết kế để set `app.site_id` cho defence-in-depth, nhưng hiện chưa scope được các truy vấn của request: nó chạy `set_config` như một câu autocommit riêng (B130). Hiện chỉ các đường `runSiteTransaction` có scope.
 - Các policy nằm ở `packages/database/migrations/rls-policies.sql`. Operator tự áp file này; `pnpm db:migrate` không áp. Mỗi bảng trong danh sách có hai policy cùng predicate: `site_isolation` (RESTRICTIVE) và `site_isolation_permit` (PERMISSIVE). Ngoại lệ là `lumibase_extensions`, các dòng global (`site_id IS NULL`) của bảng này vẫn hiện. Khi `app.site_id` chưa set thì không dòng nào của bảng có scope hiện ra.

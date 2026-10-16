@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-09-28T20:04:25.222Z
+version: 5
+lastUpdated: 2026-10-16T15:42:06.275Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a419b13e68bdfcf4
+sourceHash: 553f33f34b9707c0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-28T20:04:25.222Z
-codeVerifiedHash: a419b13e68bdfcf4
+codeVerified: 2026-10-16T15:42:06.275Z
+codeVerifiedHash: 553f33f34b9707c0
 codeVerifiedClaims: 22
 ---
 
@@ -30,7 +30,7 @@ Mỗi lớp trả lời một câu hỏi, theo thứ tự:
 | `withSiteMembership` | Principal này có được phép trên **site đó** không? (thành viên `user_sites`; API key đã được khớp site bởi `withAuth`) | 403 `TENANT_FORBIDDEN` |
 | `withStudioAccess` | Principal này có được dùng bề mặt Studio không? (`appAccess`, TFA) | 403 `APP_ACCESS_DENIED` / `TFA_REQUIRED` |
 | `withControlPlaneAccessGuard` | Đây có phải đường dẫn quản trị hệ thống không? Nếu vậy đòi hỏi một principal admin ngay cả khi route quên kiểm tra của chính nó. Principal admin là role có tên đúng `admin`/`administrator`, hoặc một **user** đã đăng nhập có role cấp quyền admin trong site đang dùng (`access.admin`); API key, principal ẩn danh và session audience `frontend` không bao giờ đủ điều kiện qua bundle. Một ngoại lệ: `GET /api/v1/permissions/me` cho qua mọi principal đã xác thực, vì nó chỉ trả bundle quyền của chính người gọi. | 403 `CONTROL_PLANE_FORBIDDEN` |
-| `withRls` | Row-level security của Postgres như tuyến phòng thủ cuối. | — |
+| `withRls` | Row-level security của Postgres như tuyến phòng thủ cuối. Chưa có hiệu lực: nó chưa scope được các truy vấn của request (B130). | — |
 
 ## Quy tắc khi thêm hoặc thay đổi route
 

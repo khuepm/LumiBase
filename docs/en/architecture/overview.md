@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
+version: 2
+lastUpdated: 2026-10-16T15:41:55.207Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: b070858cd46928df
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: cf4e35c792699125
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-10-16T15:41:55.207Z
+codeVerifiedHash: cf4e35c792699125
+codeVerifiedClaims: 2
 ---
 
 # Architecture Overview
@@ -183,7 +186,7 @@ See [features/runtime-abstraction.md](../features/runtime-abstraction.md) for de
 - `site_id` is passed via subdomain or the `X-Lumi-Site` header.
 - The `withTenant()` middleware sets `c.set('siteId', …)` and injects it into every service.
 - The Drizzle helper `scopeSite(siteId)` wraps the query builder to force the filter.
-- The `withRls()` middleware sets a Postgres session var to apply additional RLS policies.
+- The `withRls()` middleware is meant to set `app.site_id` for the RLS policies, but it does not scope the request's queries yet (B130); only `runSiteTransaction` paths are scoped today.
 
 ## 7. Security
 
