@@ -26,6 +26,7 @@ import {
 } from '../services/decision-governance';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPendingRun, FLOW_RUNS_QUEUE } from '../services/flow-run-service';
+import { queueAccepts } from '../services/queue-routing';
 
 // ---------------------------------------------------------------------------
 // Zod Schemas
@@ -265,7 +266,8 @@ aiRouter.post('/chat', async (c) => {
     const userCapabilities = await getUserCapabilities(c);
 
     // Async path: enqueue LLM + harness on worker; HITL still surfaces via poll.
-    if (prefersAsyncResponse(c) && runtime.queue) {
+    // Without a `flow-runs` binding (Workers, B118) fall through to the sync path.
+    if (prefersAsyncResponse(c) && queueAccepts(runtime.queue, FLOW_RUNS_QUEUE)) {
       const run = await createPendingRun(db, {
         siteId,
         runType: 'ai_chat',

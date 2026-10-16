@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:05:49.466Z
+version: 3
+lastUpdated: 2026-10-15T22:44:20.713Z
 sourceLang: en
-contentHash: 8213b15617869cfe
-codeVerified: 2026-08-02T19:05:54.545Z
-codeVerifiedHash: 8213b15617869cfe
+contentHash: ec8fbb57ca052907
+codeVerified: 2026-10-15T22:44:20.713Z
+codeVerifiedHash: ec8fbb57ca052907
 codeVerifiedClaims: 26
 ---
 
@@ -73,6 +73,16 @@ codeVerifiedClaims: 26
 - [ ] Queue created (for realtime):
   ```bash
   wrangler queues create lumibase-realtime
+  ```
+- [ ] Queues created for agent runs and Flows, with their dead-letter queues, for every named profile you deploy (see [Flows queues](features/flows-automation.md#cloudflare-workers-flows-queues)):
+  ```bash
+  cd apps/cms
+  for profile in staging production dev demo; do
+    for q in agent-runs flow-runs flow-events; do
+      pnpm exec wrangler queues create "lumibase-$q-$profile"
+      pnpm exec wrangler queues create "lumibase-$q-$profile-dlq"
+    done
+  done
   ```
 - [ ] Update `wrangler.toml` with binding IDs
 

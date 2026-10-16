@@ -19,7 +19,7 @@ import * as Sentry from '@sentry/cloudflare';
 import { createDb } from '@lumibase/database';
 import { createCloudflareRuntime } from '@lumibase/runtime';
 import app from './index';
-import { processCloudflareAgentQueue } from './cloudflare-agent-queue';
+import { processCloudflareQueue } from './cloudflare-queue';
 import type { Bindings } from './env';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
@@ -56,14 +56,15 @@ import { withWorkerRuntimeDefault } from './worker-runtime-default';
 export default Sentry.withSentry(
   (env: Bindings) => resolveSentryOptions(env),
   {
-  queue: processCloudflareAgentQueue,
+  // Routes by `batch.queue` to the agent-runs, flow-runs and flow-events consumers.
+  queue: processCloudflareQueue,
 
   fetch: (request: Request, env: Bindings, ctx: ExecutionContext) =>
     app.fetch(request, withWorkerRuntimeDefault(env), ctx),
 
   /**
    * Cloudflare Cron Trigger handler (design §10.2). Fires on the
-   * `[triggers] crons` schedule in wrangler.toml (`0 * * * *`, hourly).
+   * `[triggers] crons` schedule in wrangler.toml (minute, 5-minute, hourly).
    *
    * Builds a Drizzle client from the Hyperdrive binding — the SAME fallback
    * path `middleware/db.ts` uses (`createDb(hyperdrive.connectionString)`) —
@@ -90,12 +91,28 @@ export default Sentry.withSentry(
 
     const db = createDb(hyperdrive.connectionString);
 
-    // Two triggers share this handler (wrangler [triggers] crons):
-    //   "*/5 * * * *"  → pageview flush (every 5 min)
-    //   "0 * * * *"    → audit rotation + refresh-token prune (top of the hour)
-    // `controller.cron` names the schedule that fired; branch so the hourly
-    // work doesn't run 12× per hour. The pageview flush runs on every tick.
+    // Three triggers share this handler (wrangler [triggers] crons):
+    //   "* * * * *"    → schedule-flow sweep onto `flow-events` (B118); only that
+    //   "*/5 * * * *"  → pageview flush + stale-claim/run sweeps (every 5 min)
+    //   "0 * * * *"    → the 5-minute work plus audit rotation, refresh-token
+    //                    prune and review-run purge (top of the hour)
+    // `controller.cron` names the schedule that fired; branch so the minute
+    // tick doesn't run the 5-minute work and the hourly work doesn't run 12×
+    // per hour.
     const runtime = createCloudflareRuntime(env as unknown as Record<string, unknown>);
+
+    if (controller.cron === '* * * * *') {
+      // Same sweep the Docker `flow-schedule` cron runs. Workers has no leader
+      // lock; the conditional `next_run_at` advance makes overlapping ticks
+      // enqueue each due flow once (B132).
+      ctx.waitUntil(
+        import('./services/flow-scheduler')
+          .then(({ runDueScheduledFlows }) => runDueScheduledFlows({ db, queue: runtime.queue }))
+          .catch(() => console.error('[flow-schedule] tick failed')),
+      );
+      return;
+    }
+
     ctx.waitUntil(runScheduledPageviewFlush(db, runtime));
 
     // Abandoned approval claims (#453). A Worker eviction mid-execution leaves

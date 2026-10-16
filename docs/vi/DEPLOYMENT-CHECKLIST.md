@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:05:49.466Z
+version: 2
+lastUpdated: 2026-10-15T22:44:20.713Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8213b15617869cfe
+sourceHash: ec8fbb57ca052907
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:05:54.545Z
-codeVerifiedHash: 8213b15617869cfe
+codeVerified: 2026-10-15T22:44:20.713Z
+codeVerifiedHash: ec8fbb57ca052907
 codeVerifiedClaims: 26
 ---
 
@@ -76,6 +76,16 @@ codeVerifiedClaims: 26
 - [ ] Đã tạo Queue (cho realtime):
   ```bash
   wrangler queues create lumibase-realtime
+  ```
+- [ ] Đã tạo queue cho agent run và Flows, kèm dead-letter queue, cho mọi profile có tên mà bạn deploy (xem [queue của Flows](features/flows-automation.md#cloudflare-workers-queue-của-flows)):
+  ```bash
+  cd apps/cms
+  for profile in staging production dev demo; do
+    for q in agent-runs flow-runs flow-events; do
+      pnpm exec wrangler queues create "lumibase-$q-$profile"
+      pnpm exec wrangler queues create "lumibase-$q-$profile-dlq"
+    done
+  done
   ```
 - [ ] Đã cập nhật `wrangler.toml` với các binding ID
 

@@ -85,10 +85,22 @@ new_sqlite_classes = ["PageviewCounter"]
 # The `*/5` trigger drives the pageview hot-counter/DO flush into
 # lumibase_pageview_daily; the handler branches on the fire time so the hourly
 # rotation still only runs at minute 0.
+# The `* * * * *` trigger sweeps due schedule flows onto `flow-events` (same
+# sweep as the Docker `flow-schedule` cron, B118); the handler returns after it,
+# so the minute tick runs nothing else.
 [triggers]
-crons = ["0 * * * *", "*/5 * * * *"]
+crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]
 
 # ─── Queues ───────────────────────────────────────────────────────────────────
+# The Worker's `queue()` export (src/cloudflare-queue.ts) routes each batch by
+# queue name: `lumibase-<logical>-<profile>` → agent-runs / flow-runs /
+# flow-events. Keep the logical segment if you rename a queue. Every named
+# profile needs its queues (and `-dlq`) created before deploy, e.g.
+#   wrangler queues create lumibase-flow-runs-production
+#   wrangler queues create lumibase-flow-runs-production-dlq
+# Flows consumers use `max_retries = 2` (3 deliveries), the same as Docker's
+# BullMQ default `attempts: 3`. See docs/en/features/flows-automation.md.
+#
 # Used by ItemService to publish mutation events to SiteRoom without blocking.
 # [[queues.producers]]
 # binding = "REALTIME_QUEUE"
@@ -105,6 +117,28 @@ max_batch_size = 1
 max_batch_timeout = 1
 max_retries = 3
 dead_letter_queue = "lumibase-agent-runs-local-dlq"
+
+[[queues.producers]]
+binding = "FLOW_RUNS_QUEUE"
+queue = "lumibase-flow-runs-local"
+
+[[queues.consumers]]
+queue = "lumibase-flow-runs-local"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-runs-local-dlq"
+
+[[queues.producers]]
+binding = "FLOW_EVENTS_QUEUE"
+queue = "lumibase-flow-events-local"
+
+[[queues.consumers]]
+queue = "lumibase-flow-events-local"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-events-local-dlq"
 
 # ─── Environment Profiles ────────────────────────────────────────────────────
 # Top-level [vars] is intentionally local/development only. Named environments
@@ -210,8 +244,30 @@ max_batch_timeout = 1
 max_retries = 3
 dead_letter_queue = "lumibase-agent-runs-staging-dlq"
 
+[[env.staging.queues.producers]]
+binding = "FLOW_RUNS_QUEUE"
+queue = "lumibase-flow-runs-staging"
+
+[[env.staging.queues.consumers]]
+queue = "lumibase-flow-runs-staging"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-runs-staging-dlq"
+
+[[env.staging.queues.producers]]
+binding = "FLOW_EVENTS_QUEUE"
+queue = "lumibase-flow-events-staging"
+
+[[env.staging.queues.consumers]]
+queue = "lumibase-flow-events-staging"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-events-staging-dlq"
+
 [env.staging.triggers]
-crons = ["0 * * * *", "*/5 * * * *"]
+crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]
 
 [env.production]
 name = "lumibase-cms-production"
@@ -313,8 +369,30 @@ max_batch_timeout = 1
 max_retries = 3
 dead_letter_queue = "lumibase-agent-runs-production-dlq"
 
+[[env.production.queues.producers]]
+binding = "FLOW_RUNS_QUEUE"
+queue = "lumibase-flow-runs-production"
+
+[[env.production.queues.consumers]]
+queue = "lumibase-flow-runs-production"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-runs-production-dlq"
+
+[[env.production.queues.producers]]
+binding = "FLOW_EVENTS_QUEUE"
+queue = "lumibase-flow-events-production"
+
+[[env.production.queues.consumers]]
+queue = "lumibase-flow-events-production"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-events-production-dlq"
+
 [env.production.triggers]
-crons = ["0 * * * *", "*/5 * * * *"]
+crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]
 
 # ─── Dev environment (dev.lumibase.dev, shared domain) ───────────────────────
 # Continuous-integration environment, auto-deployed from the `dev` branch.
@@ -376,8 +454,30 @@ max_batch_timeout = 1
 max_retries = 3
 dead_letter_queue = "lumibase-agent-runs-dev-dlq"
 
+[[env.dev.queues.producers]]
+binding = "FLOW_RUNS_QUEUE"
+queue = "lumibase-flow-runs-dev"
+
+[[env.dev.queues.consumers]]
+queue = "lumibase-flow-runs-dev"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-runs-dev-dlq"
+
+[[env.dev.queues.producers]]
+binding = "FLOW_EVENTS_QUEUE"
+queue = "lumibase-flow-events-dev"
+
+[[env.dev.queues.consumers]]
+queue = "lumibase-flow-events-dev"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-events-dev-dlq"
+
 [env.dev.triggers]
-crons = ["0 * * * *", "*/5 * * * *"]
+crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]
 
 # ─── Demo environment (demo.lumibase.dev, shared domain) ─────────────────────
 # Public demo / showcase. Deployed manually via workflow_dispatch. May be
@@ -440,5 +540,27 @@ max_batch_timeout = 1
 max_retries = 3
 dead_letter_queue = "lumibase-agent-runs-demo-dlq"
 
+[[env.demo.queues.producers]]
+binding = "FLOW_RUNS_QUEUE"
+queue = "lumibase-flow-runs-demo"
+
+[[env.demo.queues.consumers]]
+queue = "lumibase-flow-runs-demo"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-runs-demo-dlq"
+
+[[env.demo.queues.producers]]
+binding = "FLOW_EVENTS_QUEUE"
+queue = "lumibase-flow-events-demo"
+
+[[env.demo.queues.consumers]]
+queue = "lumibase-flow-events-demo"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-flow-events-demo-dlq"
+
 [env.demo.triggers]
-crons = ["0 * * * *", "*/5 * * * *"]
+crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]

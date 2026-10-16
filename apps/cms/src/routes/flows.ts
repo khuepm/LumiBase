@@ -19,6 +19,7 @@ import { createMiddleware } from 'hono/factory';
 import type { AppEnv } from '../env';
 import { listOperations } from '../services/flow-service';
 import { principalRefFromAuth } from '../services/effective-capability-service';
+import { queueAccepts } from '../services/queue-routing';
 import { flowSchema, graphErrorsForSave, cronCheckForSave, createFlowRecord, FlowSaveError } from '../services/flow-management';
 import {
   createPendingRun,
@@ -236,7 +237,9 @@ flowsRouter.post('/:id/run', async (c) => {
   // `ai:decision` re-resolves it when the node executes (J10, #517).
   const principal = principalRefFromAuth(c.get('auth'), siteId);
 
-  if (runtime.queue) {
+  // A runtime without the `flow-runs` binding (Workers before the operator
+  // created the queue) runs inline instead of orphaning the pending row (B118).
+  if (queueAccepts(runtime.queue, FLOW_RUNS_QUEUE)) {
     await runtime.queue.enqueue(FLOW_RUNS_QUEUE, 'flow:run', {
       kind: 'flow',
       siteId,
