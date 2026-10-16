@@ -104,7 +104,7 @@ export default Sentry.withSentry(
     if (controller.cron === '* * * * *') {
       // Same sweep the Docker `flow-schedule` cron runs. Workers has no leader
       // lock; the conditional `next_run_at` advance makes overlapping ticks
-      // enqueue each due flow once (B128).
+      // enqueue each due flow once (B132).
       ctx.waitUntil(
         import('./services/flow-scheduler')
           .then(({ runDueScheduledFlows }) => runDueScheduledFlows({ db, queue: runtime.queue }))

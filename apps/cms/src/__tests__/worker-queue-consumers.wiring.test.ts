@@ -38,14 +38,14 @@ const PROFILES = ['local', 'staging', 'production', 'dev', 'demo'] as const;
  * appears in `serve.ts` fails the test.
  */
 const DOCKER_ONLY_CONSUMERS: Record<string, string> = {
-  registerContentIndexingWorker: 'B127',
-  registerRevalidationWorker: 'B127',
-  registerAuditLogWorker: 'B127',
-  registerCdcDispatchWorker: 'B127',
-  registerVetoCommitWorker: 'B127',
-  registerSchedulerWorker: 'B127',
-  registerStatusPoller: 'B127',
-  registerEnvelopeMigrationWorker: 'B127',
+  registerContentIndexingWorker: 'B131',
+  registerRevalidationWorker: 'B131',
+  registerAuditLogWorker: 'B131',
+  registerCdcDispatchWorker: 'B131',
+  registerVetoCommitWorker: 'B131',
+  registerSchedulerWorker: 'B131',
+  registerStatusPoller: 'B131',
+  registerEnvelopeMigrationWorker: 'B131',
 };
 
 // ── Scanner ─────────────────────────────────────────────────────────────────

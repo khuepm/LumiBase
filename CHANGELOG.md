@@ -279,7 +279,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `Prefer: respond-async` falls back to the sync path. Event dispatch and the
   schedule sweep skip when `flow-events` is not bound, without consuming
   schedule slots. Docker is unchanged (BullMQ accepts any queue name).
-- **A due schedule flow is enqueued once per tick, not twice (B128).** Docker
+- **A due schedule flow is enqueued once per tick, not twice (B132).** Docker
   ran the schedule sweep from two leader-locked crons with different locks, and
   advanced `next_run_at` unconditionally. The advance is now conditional
   (still due → advance and enqueue; already advanced → skip).

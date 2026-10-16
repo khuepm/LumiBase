@@ -1,10 +1,10 @@
 ---
-version: 7
-lastUpdated: 2026-10-15T22:44:20.342Z
+version: 8
+lastUpdated: 2026-10-16T17:38:35.512Z
 sourceLang: vi
-contentHash: fa7cc4b0208971d5
-codeVerified: 2026-10-15T22:44:20.342Z
-codeVerifiedHash: fa7cc4b0208971d5
+contentHash: 5565293f8aac9d97
+codeVerified: 2026-10-16T17:38:35.512Z
+codeVerifiedHash: 5565293f8aac9d97
 codeVerifiedClaims: 16
 translatedFrom: en
 sourceHash: a3fe5733ba13b42f
@@ -133,7 +133,7 @@ Trên Cloudflare Workers, Flows dùng hai queue có producer và consumer riêng
 - `max_retries = 2`, tức tối đa 3 lần giao, bằng mặc định `attempts: 3` của BullMQ trên Docker. Message lỗi được thử lại sau 30 giây, hết lượt thì vào DLQ.
 - Giao ít nhất một lần (at-least-once): một job theo event hoặc theo lịch được giao lại sẽ ghi một run mới, nên các node phía sau phải idempotent. Run thủ công dùng lại `runId` của nó.
 - Worker định tuyến theo tên queue: `lumibase-<logical>-<profile>` → `agent-runs`, `flow-runs` hoặc `flow-events`. Nếu đổi tên queue, giữ nguyên phần logical. Queue không khớp tên nào không có consumer; message của nó được thử lại rồi vào DLQ.
-- Cron `* * * * *` của Worker quét các flow theo lịch đã đến hạn và đưa chúng vào `flow-events`, giống cron `flow-schedule` trên Docker. `next_run_at` chỉ được đẩy tới khi flow vẫn còn đến hạn, nên các lần quét chồng nhau đưa mỗi flow vào queue đúng một lần (B128).
+- Cron `* * * * *` của Worker quét các flow theo lịch đã đến hạn và đưa chúng vào `flow-events`, giống cron `flow-schedule` trên Docker. `next_run_at` chỉ được đẩy tới khi flow vẫn còn đến hạn, nên các lần quét chồng nhau đưa mỗi flow vào queue đúng một lần (B132).
 - Thiếu binding: nếu runtime không có `FLOW_RUNS_QUEUE`, `POST /api/v1/flows/:id/run` chạy inline với `LUMIBASE_FLOW_SYNC_TIMEOUT` (trước đây nó trả 500 và để lại một run `pending`), còn `Prefer: respond-async` của AI chat rơi về đường đồng bộ. Không có `FLOW_EVENTS_QUEUE` thì flow theo event không được đưa vào queue, và lần quét theo lịch không tiêu thụ slot nào.
 
 Tạo các queue này trước khi deploy phiên bản này lên một profile có tên: consumer trỏ tới một queue chưa tồn tại làm deploy thất bại. Cloudflare tự tạo DLQ còn thiếu ([Data location](https://developers.cloudflare.com/queues/configuration/data-location/)), nhưng tạo sẵn giúp bạn theo dõi nó.

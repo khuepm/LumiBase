@@ -164,7 +164,7 @@ export async function runDueScheduledFlows(deps: FlowSchedulerDeps, now = new Da
       // Advance next_run_at first (idempotency guard); invalid/missing cron →
       // clear it so the flow stops being swept instead of firing every tick.
       const next = cron ? nextCronRun(cron, now) : null;
-      // Conditional advance (B128): only the sweep whose UPDATE still finds the
+      // Conditional advance (B132): only the sweep whose UPDATE still finds the
       // flow due enqueues it. Docker sweeps from two leader-locked crons with
       // different locks and Workers has no lock at all; a concurrent sweep's
       // UPDATE re-checks the WHERE after the first commits and matches 0 rows.

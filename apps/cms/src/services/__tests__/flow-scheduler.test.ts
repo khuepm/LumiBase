@@ -123,7 +123,7 @@ describe('runDueScheduledFlows (Req 2.1)', () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it('enqueues only the flows this sweep advanced; a concurrent sweep won the rest (B128)', async () => {
+  it('enqueues only the flows this sweep advanced; a concurrent sweep won the rest (B132)', async () => {
     const { db } = makeDb(
       [
         { id: 'won', siteId: 's1', triggerOptions: { cron: '* * * * *' } },

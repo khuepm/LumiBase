@@ -1,13 +1,13 @@
 ---
-version: 7
-lastUpdated: 2026-10-15T22:44:20.342Z
+version: 8
+lastUpdated: 2026-10-16T17:38:35.512Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: fa7cc4b0208971d5
+sourceHash: 5565293f8aac9d97
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T22:44:20.342Z
-codeVerifiedHash: fa7cc4b0208971d5
+codeVerified: 2026-10-16T17:38:35.512Z
+codeVerifiedHash: 5565293f8aac9d97
 codeVerifiedClaims: 16
 contentHash: a3fe5733ba13b42f
 ---
@@ -133,7 +133,7 @@ On Cloudflare Workers, Flows uses two queues with their own producer and consume
 - `max_retries = 2`, so at most 3 deliveries, equal to the BullMQ default `attempts: 3` on Docker. A failed message is retried after 30 seconds and goes to the DLQ when its retries run out.
 - Delivery is at-least-once: a redelivered event or schedule job records a new run, so downstream nodes must be idempotent. A manual run reuses its `runId`.
 - The Worker routes by queue name: `lumibase-<logical>-<profile>` → `agent-runs`, `flow-runs` or `flow-events`. If you rename a queue, keep the logical segment. A queue that matches no name has no consumer; its messages are retried and then go to the DLQ.
-- The Worker's `* * * * *` cron sweeps due schedule flows onto `flow-events`, like the `flow-schedule` cron on Docker. `next_run_at` only advances while the flow is still due, so overlapping sweeps enqueue each flow exactly once (B128).
+- The Worker's `* * * * *` cron sweeps due schedule flows onto `flow-events`, like the `flow-schedule` cron on Docker. `next_run_at` only advances while the flow is still due, so overlapping sweeps enqueue each flow exactly once (B132).
 - Missing binding: if the runtime has no `FLOW_RUNS_QUEUE`, `POST /api/v1/flows/:id/run` runs inline with `LUMIBASE_FLOW_SYNC_TIMEOUT` (it used to return 500 and leave a `pending` run behind), and AI chat `Prefer: respond-async` falls back to the sync path. Without `FLOW_EVENTS_QUEUE`, event flows are not enqueued and the schedule sweep consumes no slots.
 
 Create these queues before you deploy this version to a named profile: a consumer bound to a queue that does not exist makes the deploy fail. Cloudflare creates a missing DLQ automatically ([Data location](https://developers.cloudflare.com/queues/configuration/data-location/)), but creating it first lets you monitor it.

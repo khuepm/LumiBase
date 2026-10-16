@@ -5,7 +5,7 @@ import { runDueScheduledFlows } from '../flow-scheduler';
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
- * Conditional `next_run_at` advance on Postgres (B128). Docker sweeps from two
+ * Conditional `next_run_at` advance on Postgres (B132). Docker sweeps from two
  * leader-locked crons with different locks and Workers has no lock, so a sweep
  * can act on a row another sweep has already advanced. Only the sweep whose
  * UPDATE still finds the flow due may enqueue it.
@@ -13,7 +13,7 @@ import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpe
 
 const SITE = 'site_flow_scheduler_it';
 
-describe.skipIf(!hasDbIntegrationUrl)('Schedule-flow sweep — DB integration (B128)', () => {
+describe.skipIf(!hasDbIntegrationUrl)('Schedule-flow sweep — DB integration (B132)', () => {
   let db: Database;
   let flowId: string;
   const now = new Date();
