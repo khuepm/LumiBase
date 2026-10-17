@@ -248,9 +248,9 @@ test('collectPackages reads names and scripts, and skips the root manifest', () 
   }
 });
 
-// ─── Follow-ups from the review of PR #535 (B112) ────────────────────────────
+// ─── Follow-ups from the review of PR #535 (B133) ────────────────────────────
 // Each fix has a failing twin: the assertion marked "twin" fails on the guard
-// as it was before B112, which is how these cases were proven to test the fix.
+// as it was before B133, which is how these cases were proven to test the fix.
 
 // N6 — fences follow CommonMark, and only shell-like fences are scanned.
 

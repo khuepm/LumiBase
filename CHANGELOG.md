@@ -402,7 +402,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   target. Repo-wide parity drops from 37 problems in 30 pairs to 35 in 29. A link
   that is dead in both locales still compares equal, as it did before: parity is
   not a dead-link check, and reporting it as a locale mismatch would mislead.
-- **Docs command guard and parity follow-ups (B112).** `pnpm --filter
+- **Docs command guard and parity follow-ups (B133).** `pnpm --filter
   @lumibase/cms deploy` in `deployment/overview.md` and the enterprise CI recipe
   in `enterprise/private-submodule.md` ran pnpm's builtin `deploy` (which fails
   with `ERR_PNPM_INVALID_DEPLOY_TARGET`), not the package's deploy script; both

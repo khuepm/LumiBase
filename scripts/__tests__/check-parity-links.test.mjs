@@ -114,7 +114,7 @@ test('the single-locale rule still holds after the dead-in-both change', () => {
   assert.notDeepEqual(vi.files, en.files);
 });
 
-// ─── Own-tree rule (B112) ────────────────────────────────────────────────────
+// ─── Own-tree rule (B133) ────────────────────────────────────────────────────
 // Collapsing on "the target exists in both trees" alone made a VI link to the
 // ENGLISH copy of a page that has a Vietnamese one (`../en/getting-started.md`)
 // compare equal to the EN page's `./getting-started.md`: both became

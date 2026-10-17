@@ -138,7 +138,7 @@ function inlineCode(body) {
  * sends readers to the English copy (`../en/getting-started.md`) of a page
  * that has a Vietnamese one is reported, not matched against the EN page's
  * `./getting-started.md`. Backlog B67, the false positive B37(d) recorded, and
- * the own-tree rule B112.
+ * the own-tree rule B133.
  */
 export function linkTargets(body, from = null) {
   const files = [];
@@ -187,7 +187,7 @@ export function resolveDocLink(target, { rel, locale }) {
   // Present in only some: each side has to agree on one real file (B67).
   // Only inside the linking doc's own locale tree: a link that crosses into
   // the other locale stays locale-specific, so `../en/x.md` from a VI page
-  // never compares equal to `./x.md` from the EN page (B112).
+  // never compares equal to `./x.md` from the EN page (B133).
   const collapse = targetLocale === locale && (present === LOCALES.length || present === 0);
   return (collapse ? `docs/*/${inner}` : resolved) + fragment;
 }

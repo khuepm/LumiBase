@@ -41,7 +41,7 @@
 // SQL `-- then pnpm picks it up`, a `// pnpm …` in TypeScript, or a Markdown
 // example of a code block are not commands. Every fenced `pnpm` line in the
 // docs sits in one of the scanned languages, so no real command lost coverage
-// when this rule was added (B112).
+// when this rule was added (B133).
 //
 // A line ending in `\` is joined with the next one before it is parsed, the
 // way the shell reads it, so `pnpm -F @lumibase/cms \` followed by `nosuch` is
@@ -68,7 +68,7 @@
 // pnpm silently runs its builtin, not the script: `pnpm -F @lumibase/cms
 // deploy` is pnpm's `deploy` (which fails asking for a target directory), not
 // the `deploy` script `apps/cms` defines. That is reported with the fix,
-// `pnpm … run deploy` (B112).
+// `pnpm … run deploy` (B133).
 //
 // When no script matches, pnpm 9 runs a binary of that name instead, so
 // `pnpm tsx scripts/x.ts` from a package that has `tsx` installed works. The
@@ -484,7 +484,7 @@ export function checkDocument({
 
     if (command.builtin) {
       // A builtin is fine unless a target defines a script with its name: pnpm
-      // then runs the builtin and the script is silently never run (B112).
+      // then runs the builtin and the script is silently never run (B133).
       let targets;
       if (command.kind === 'filtered') targets = selected.map((pkg) => [pkg, packages.get(pkg)]);
       else if (command.kind === 'recursive') targets = [...packages.entries()];
