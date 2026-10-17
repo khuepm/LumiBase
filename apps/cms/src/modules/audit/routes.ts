@@ -115,8 +115,9 @@
  *
  * A page cursor is `base64(`${timestamp_iso}|${id}`)` — the ISO-8601
  * timestamp of the LAST returned row joined to its `id` by a literal
- * `|`. Both parts are ASCII (an ISO date and a `nanoid`, whose alphabet
- * is `A-Za-z0-9_-`), so plain base64 round-trips losslessly. Decoding a
+ * `|`. Both parts are ASCII (an ISO date and an id — a uuidv7, or a
+ * `nanoid` on older rows; both alphabets are a subset of `A-Za-z0-9_-`),
+ * so plain base64 round-trips losslessly. Decoding a
  * cursor yields the `(timestamp, id)` tuple that seeds the next page's
  * range predicate; a MALFORMED cursor (bad base64, missing `|`,
  * unparseable timestamp, empty id) is a client error → 400
@@ -212,7 +213,7 @@ const KNOWN_EVENTS: ReadonlySet<string> = new Set(AUDIT_EVENTS);
  * Standard-base64 encode an ASCII string, portable across Node 20+ and
  * Cloudflare Workers (mirrors the `btoa` / `Buffer` fallback used in
  * `setup-token.ts` and `recovery/service.ts`). The cursor payload is
- * always ASCII (ISO timestamp + `nanoid`), so no UTF-8 escaping is
+ * always ASCII (ISO timestamp + uuidv7/`nanoid` id), so no UTF-8 escaping is
  * needed.
  */
 function base64Encode(input: string): string {
@@ -250,7 +251,7 @@ export function encodeCursor(timestamp: Date, id: string): string {
  * `null` here to 400 VALIDATION_ERROR — a bad cursor is a client error,
  * not a silent "start from the top".
  *
- * Splits on the FIRST `|` only: a `nanoid` never contains `|`, but
+ * Splits on the FIRST `|` only: neither a uuidv7 nor a `nanoid` contains `|`, but
  * splitting on the first separator is robust regardless and keeps any
  * stray separator inside the (already-validated) id portion.
  */

@@ -1,10 +1,10 @@
 ---
-version: 11
-lastUpdated: 2026-10-17T16:36:19.111Z
+version: 12
+lastUpdated: 2026-10-17T19:37:27.803Z
 sourceLang: en
-contentHash: 577f33de1b43aa9b
-codeVerified: 2026-10-17T16:36:19.111Z
-codeVerifiedHash: 577f33de1b43aa9b
+contentHash: 732dcf0c241b6a1b
+codeVerified: 2026-10-17T19:37:27.803Z
+codeVerifiedHash: 732dcf0c241b6a1b
 codeVerifiedClaims: 76
 ---
 
@@ -193,12 +193,14 @@ Backs `POST /api/v1/ai/decisions`: typed `noul` / `choice` / `score` answers wit
 | `DECISION_MAX_RETRIES` | ✗ | Retries after the first attempt for 429/503/529, network errors and attempt timeouts (default `2`, range 0–5). |
 | `DECISION_MAX_INPUT_BYTES` | ✗ | UTF-8 byte cap on the serialized state + questions (default `131072`). Over the cap → `413 DECISION_INPUT_TOO_LARGE` before any provider call. |
 | `DECISION_MAX_INPUT_TOKENS` | ✗ | Estimated token budget for the same payload (default `24000`). The estimate counts ~4 ASCII chars or 1 non-ASCII code point per token; it is not the provider's tokenizer. |
+| `DECISION_LLM_MAX_OUTPUT_TOKENS` | ✗ | `llm` only: cap on the estimated size of the complete answer (default `4096`, range 256–32768), the same on every provider. Over it → `413 DECISION_INPUT_TOO_LARGE` before the call. The cap sent upstream is that estimate, at least 256 tokens. |
+| `DECISION_LLM_THINKING_TOKENS` | ✗ | `llm` on Gemini/Vertex only: thinking headroom added to the cap sent upstream, not part of the 413 check (default `1024`, range 0–32768). Raise it when `DECISION_PARSE_FAILED` repeats on Gemini/Vertex; keep the sum of both variables below the model's output limit (an upstream `400` is `422 DECISION_VALIDATION`). Headroom is 0 for OpenAI/NVIDIA/Anthropic/Workers AI, whose default models do not reason; a reasoning `LLM_MODEL` shares the same cap and may fail with `DECISION_PARSE_FAILED` — not supported in this version. |
 | `DECISION_SITE_REQUESTS_PER_HOUR` | ✗ | Platform ceiling on admitted decisions per site per clock hour (default `600`, range 0–1000000). Over it → `429 DECISION_QUOTA_EXCEEDED`. |
 | `DECISION_SITE_MAX_CONCURRENT` | ✗ | Platform ceiling on decisions in flight per site (default `4`, range 1–1000). Over it → `429 DECISION_CONCURRENCY_LIMITED`. |
 | `DECISION_SITE_TOKENS_PER_DAY` | ✗ | Platform ceiling on estimated tokens per site per UTC day, every attempt included (default `2000000`, range 0–1000000000). |
 | `DECISION_REVIEW_RETENTION_DAYS` | ✗ | Days a draft review run and its feedback are kept before the hourly purge deletes them (default `180`, range 1–3650; empty or invalid → default). Review profiles are kept. |
 
-Invalid values in these eight variables are ignored with a warning and the default applies. A site can tighten the three `DECISION_SITE_*` ceilings, never raise them, through its `aiDecisions` setting. Decisions are also off for a site until a site admin opts in there (see [API spec → Governance](../api/hono-api-spec.md)).
+Invalid values in these variables are ignored with a warning and the default applies. A site can tighten the three `DECISION_SITE_*` ceilings, never raise them, through its `aiDecisions` setting. Decisions are also off for a site until a site admin opts in there (see [API spec → Governance](../api/hono-api-spec.md)).
 
 ---
 

@@ -3562,7 +3562,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '413':
-          description: Over the input byte or estimated token budget (DECISION_INPUT_TOO_LARGE)
+          description: Over the input byte or estimated token budget, or (llm) the estimated answer is over DECISION_LLM_MAX_OUTPUT_TOKENS (DECISION_INPUT_TOO_LARGE)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

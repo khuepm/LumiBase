@@ -225,7 +225,8 @@ export function effectiveDecisionQuota(platform: DecisionQuota, site: DecisionSi
 /**
  * Output tokens are unknown until the provider answers, so they are reserved
  * from the shape of the questions: a fixed envelope plus a probability per
- * option. An estimate, not a tokenizer count.
+ * option. An estimate, not a tokenizer count. Fallback when the provider has
+ * no output allowance (Jev/OpenRouter); `llm` reserves the cap it sends.
  */
 export function estimateDecisionOutputTokens(request: DecisionRequest): number {
   let total = 32;
@@ -329,6 +330,13 @@ export class DecisionQuotaLedger {
       try {
         value = await this.cache.increment(key, by, { ttl: ttl[key] });
       } catch {
+        await undo();
+        throw new DecisionGovernanceError('DECISION_QUOTA_UNAVAILABLE', 'Decision quota accounting is unavailable.');
+      }
+      // `undefined > limit` and `NaN > limit` are false, so a garbage counter
+      // would admit the request. Fail closed. The bad key is not rolled back:
+      // whether it applied is unknown, and undoing it could under-count.
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
         await undo();
         throw new DecisionGovernanceError('DECISION_QUOTA_UNAVAILABLE', 'Decision quota accounting is unavailable.');
       }
@@ -469,16 +477,19 @@ export class DecisionGovernanceService {
     }
 
     let inputTokens: number;
+    let outputTokens: number;
     try {
       const size = assertDecisionInputBudget(request, configured.limits);
       accounting.inputBytes = size.bytes;
       accounting.estimatedInputTokens = size.estimatedTokens;
       inputTokens = size.estimatedTokens;
+      // `llm` reserves exactly the cap it sends upstream (thinking headroom
+      // included) and throws its output 413 here, before any counter moves.
+      outputTokens = configured.outputAllowance?.(request) ?? estimateDecisionOutputTokens(request);
     } catch (error) {
       return fail(error as Error);
     }
 
-    const outputTokens = estimateDecisionOutputTokens(request);
     const perAttempt = inputTokens + outputTokens;
     // Worst case: every retry is sent and billed.
     const reserve = perAttempt * (configured.limits.maxRetries + 1);
