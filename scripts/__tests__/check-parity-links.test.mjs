@@ -113,3 +113,33 @@ test('the single-locale rule still holds after the dead-in-both change', () => {
   const vi = linkTargets('[index](./llms.txt)', { rel: 'README.md', locale: 'vi' });
   assert.notDeepEqual(vi.files, en.files);
 });
+
+// ─── Own-tree rule (B133) ────────────────────────────────────────────────────
+// Collapsing on "the target exists in both trees" alone made a VI link to the
+// ENGLISH copy of a page that has a Vietnamese one (`../en/getting-started.md`)
+// compare equal to the EN page's `./getting-started.md`: both became
+// `docs/*/getting-started.md`. The literal comparison it replaced did flag
+// that, so resolution had quietly lost a check. Collapse now happens only for
+// links that stay in the linking doc's own locale tree.
+
+test('a VI link into the EN tree is not equal to the EN own-tree link', () => {
+  const en = linkTargets('[start](./getting-started.md)', { rel: 'README.md', locale: 'en' });
+  const vi = linkTargets('[start](../en/getting-started.md)', { rel: 'README.md', locale: 'vi' });
+  assert.deepEqual(en.files, ['docs/*/getting-started.md']);
+  assert.deepEqual(vi.files, ['docs/en/getting-started.md']);
+  assert.notDeepEqual(vi.files, en.files);
+});
+
+test('an EN link into the VI tree is not equal to the VI own-tree link', () => {
+  const vi = linkTargets('[start](./getting-started.md)', { rel: 'README.md', locale: 'vi' });
+  const en = linkTargets('[start](../vi/getting-started.md)', { rel: 'README.md', locale: 'en' });
+  assert.deepEqual(en.files, ['docs/vi/getting-started.md']);
+  assert.notDeepEqual(en.files, vi.files);
+});
+
+test('a cross-locale link to a page dead in both trees stays locale-specific', () => {
+  const en = linkTargets('[gone](./no-such-page.md)', { rel: 'README.md', locale: 'en' });
+  const vi = linkTargets('[gone](../en/no-such-page.md)', { rel: 'README.md', locale: 'vi' });
+  assert.deepEqual(vi.files, ['docs/en/no-such-page.md']);
+  assert.notDeepEqual(vi.files, en.files);
+});

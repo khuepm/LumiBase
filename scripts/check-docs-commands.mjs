@@ -25,6 +25,28 @@
 // workspace" that are not commands. Comment lines inside a fence are skipped for
 // the same reason, and so is a trailing `# comment` after a command.
 //
+// Fences follow CommonMark: a fence opens with three or more backticks or
+// tildes, and only a line of the SAME character, at least as long as the
+// opener, with nothing but whitespace after it, closes it. Anything else that
+// looks like a fence while one is open is content. So a four-backtick fence
+// that shows a three-backtick block does not flip the guard's in-fence state.
+// (Leading indentation is accepted on both lines, as before, so fences inside
+// list items stay covered; container indentation is not modelled further.)
+//
+// Only SHELL-LIKE fences are scanned: untagged, `bash`, `sh`, `shell`, `zsh`,
+// `console`, `shell-session`, `sh-session`, `terminal`, plus `yaml`/`yml` (CI
+// `run:` steps) and `dockerfile`/`docker` (`RUN pnpm …`). The info string's
+// first word decides, case-insensitively. Skipping the other languages is
+// simpler and more correct than teaching the parser every comment syntax: a
+// SQL `-- then pnpm picks it up`, a `// pnpm …` in TypeScript, or a Markdown
+// example of a code block are not commands. Every fenced `pnpm` line in the
+// docs sits in one of the scanned languages, so no real command lost coverage
+// when this rule was added (B133).
+//
+// A line ending in `\` is joined with the next one before it is parsed, the
+// way the shell reads it, so `pnpm -F @lumibase/cms \` followed by `nosuch` is
+// checked as one command. The reported line is the first physical line.
+//
 // Each `pnpm` invocation is tokenised, so options are parsed rather than
 // guessed at:
 //   -F <pkg> / --filter <pkg> / --filter=<pkg> / -F<pkg>  -> that package.json
@@ -34,9 +56,30 @@
 //   other flags (`--silent`, `--parallel`, …)             -> skipped, never a script
 //   pnpm <script> / pnpm run <script>                     -> the directory's package.json
 //
+// A filter name without a scope (`--filter cms`) resolves the way pnpm 9 does:
+// an exact package name first, otherwise the single `@<scope>/cms`. When two
+// scopes have a `cms`, pnpm selects nothing, and the guard reports the filter
+// as ambiguous.
+//
 // `run` is resolved, not skipped: `pnpm run nosuch` and `pnpm -F <pkg> run
 // nosuch` are reported exactly like `pnpm nosuch`. pnpm's other subcommands
-// (`install`, `exec`, `dlx`, `create`, …) are builtins, not missing scripts.
+// (`install`, `exec`, `dlx`, `create`, …) are builtins, not missing scripts —
+// UNLESS the target package defines a script with the builtin's name. Then
+// pnpm silently runs its builtin, not the script: `pnpm -F @lumibase/cms
+// deploy` is pnpm's `deploy` (which fails asking for a target directory), not
+// the `deploy` script `apps/cms` defines. That is reported with the fix,
+// `pnpm … run deploy` (B133).
+//
+// When no script matches, pnpm 9 runs a binary of that name instead, so
+// `pnpm tsx scripts/x.ts` from a package that has `tsx` installed works. The
+// guard models that fallback for the root and directory forms only, since
+// pnpm does not fall back under `--filter`/`-r` (measured: "None of the
+// selected packages has a "wrangler" script"); there the message suggests
+// `pnpm … exec <bin>`. Only `node_modules/.bin` (of the directory and of the
+// repository root) and `node` itself are modelled. Any other command on PATH
+// (`pnpm git …`) is reported: write the command directly, or use `pnpm exec`.
+// The lookup reads the checkout, so a tree without `pnpm install` reports
+// implicit-exec lines — the loud direction. CI installs before `check:all`.
 //
 // The directory a root-form command resolves against starts at the repository
 // root for every fence. `cd <dir>` (or `-C <dir>`) moves it only when <dir> is a
@@ -53,8 +96,16 @@
 // -----------------------------------
 // - Arguments: `pnpm lumibase typegen` resolves, because `lumibase` is a root
 //   script. Existence only.
+// - Prose and inline code: only fences are read. A wrong command in a table
+//   cell or a sentence is invisible here.
+// - Non-shell fences (`sql`, `ts`, `json`, `md`, `text`, …), see above.
 // - Filter selectors that are patterns rather than names (`./apps/*`,
 //   `@lumibase/cms...`, `{apps/**}`, `!x`): pnpm resolves those, not this guard.
+// - Packages in OPTIONAL_PACKAGES: absent from the checkout, so neither their
+//   scripts nor a builtin that shadows one can be verified.
+// - `pnpm -C <dir> <bin>`: pnpm 9 mis-parses implicit exec after `-C`
+//   (measured: `Command "apps/cms" not found`). The guard treats `-C` like
+//   `cd` and does not model the quirk.
 // - Root-form commands in USER_PROJECT_DOCS below. Docs that show commands for
 //   a *scaffolded user project* (`pnpm dev` in a generated Hono app is not a
 //   root script and must not fail this check) are listed there. The filtered
@@ -95,7 +146,10 @@ const USER_PROJECT_DOCS = new Set([
  */
 const OPTIONAL_PACKAGES = new Set(['@lumibase/enterprise']);
 
-/** pnpm's own subcommands and their aliases — never a package script. */
+/**
+ * pnpm's own subcommands and their aliases. A builtin is never a missing
+ * script — but it shadows a script of the same name (see the header).
+ */
 const PNPM_SUBCOMMANDS = new Set([
   'add', 'approve-builds', 'audit', 'bin', 'c', 'cat-file', 'cat-index', 'completion',
   'config', 'create', 'dedupe', 'deploy', 'deprecate', 'dist-tag', 'dlx', 'doctor', 'env',
@@ -116,6 +170,18 @@ const VALUE_OPTIONS = new Set([
 
 /** A filter that pnpm expands as a selector, not a package name. */
 const SELECTOR = /[*{}[\]!^]|\.\.\.|^\.{1,2}\//;
+
+/**
+ * Fence languages whose lines are commands. Untagged fences (`''`) are
+ * included: most command blocks in the docs are written that way.
+ */
+export const SHELL_FENCES = new Set([
+  '', 'bash', 'sh', 'shell', 'zsh', 'console', 'shell-session', 'sh-session', 'terminal',
+  'yaml', 'yml', 'dockerfile', 'docker',
+]);
+
+/** Commands pnpm 9 can fall back to that are not in any `node_modules/.bin`. */
+const SYSTEM_COMMANDS = new Set(['node']);
 
 /** A script token containing a placeholder the reader substitutes. */
 const PLACEHOLDER = /<[^>]*>|\$\{[^}]*\}|\$[A-Za-z_]\w*|\*/;
@@ -158,6 +224,38 @@ export function collectPackageDirs(root) {
   return new Map(walkPackages(root).map((p) => [p.dir, p.scripts]));
 }
 
+/** name -> repo-relative dir for every package.json in the workspace. */
+export function collectPackageDirsByName(root) {
+  return new Map(walkPackages(root).map((p) => [p.name, p.dir]));
+}
+
+/**
+ * `(dir, name) => boolean`: whether pnpm 9's implicit exec would find a binary
+ * `name` when run from repo-relative `dir` — in that directory's
+ * `node_modules/.bin` or in the repository root's.
+ */
+export function binLookup(root) {
+  return (dir, name) =>
+    fs.existsSync(path.join(root, dir, 'node_modules', '.bin', name)) ||
+    fs.existsSync(path.join(root, 'node_modules', '.bin', name));
+}
+
+/**
+ * A `--filter` name resolved the way pnpm 9 does: an exact package name, or —
+ * when the name has no `@` and no `/` — the single `@<scope>/<name>`. Two or
+ * more scoped matches select nothing in pnpm, so they are `ambiguous` here.
+ */
+export function resolveFilterName(name, names) {
+  const all = [...names];
+  if (all.includes(name)) return { pkg: name };
+  if (!name.includes('@') && !name.includes('/')) {
+    const scoped = all.filter((n) => /^@[^/]+\//.test(n) && n.slice(n.indexOf('/') + 1) === name);
+    if (scoped.length === 1) return { pkg: scoped[0] };
+    if (scoped.length > 1) return { ambiguous: scoped.sort() };
+  }
+  return { missing: true };
+}
+
 /**
  * The directory a `cd`/`-C` moves resolution to: `target` when it is the repo
  * root or a known package dir, otherwise `cwd` unchanged (see the header).
@@ -185,7 +283,9 @@ function wordsAfter(rest) {
 
 /**
  * One `pnpm` invocation reduced to what has to be resolved, or `null` when it
- * runs no script (a builtin subcommand, bare `pnpm`, `pnpm run` with no name).
+ * names nothing (bare `pnpm`, `pnpm run` with no name). A builtin subcommand
+ * comes back with `builtin: true`, so the caller can tell whether it shadows a
+ * script of the same name.
  */
 export function parsePnpm(words, { cwd = '.', packageDirs = new Map() } = {}) {
   const filters = [];
@@ -224,12 +324,73 @@ export function parsePnpm(words, { cwd = '.', packageDirs = new Map() } = {}) {
       recursive = true;
       continue;
     }
-    if (!sawRun && PNPM_SUBCOMMANDS.has(word)) return null;
-    if (!/^[A-Za-z0-9_$<{][A-Za-z0-9:_.\-<>{}$*]*$/.test(word)) return null;
     const kind = filters.length > 0 ? 'filtered' : recursive ? 'recursive' : 'root';
+    if (!sawRun && PNPM_SUBCOMMANDS.has(word))
+      return { kind, pkg: filters[0], filters, script: word, cwd: dir, ifPresent, builtin: true };
+    if (!/^[A-Za-z0-9_$<{][A-Za-z0-9:_.\-<>{}$*]*$/.test(word)) return null;
     return { kind, pkg: filters[0], filters, script: word, cwd: dir, ifPresent };
   }
   return null;
+}
+
+const COMMENT_LINE = /^\s*(#|\/\/)/;
+
+/** A line that closes the fence `open` (same char, at least as long, nothing after). */
+function closesFence(line, open) {
+  const close = /^\s*(`{3,}|~{3,})\s*$/.exec(line);
+  return Boolean(close) && close[1][0] === open.char && close[1].length >= open.length;
+}
+
+/**
+ * The logical lines inside shell-like fences: `{ text, lineNumber, fence }`,
+ * where `fence` numbers the fence a line belongs to and `lineNumber` is the
+ * first physical line of a `\`-continued command. See the header for the
+ * fence rules. Pure, so it is testable on its own.
+ */
+export function fencedLines(text) {
+  const out = [];
+  const lines = text.split('\n');
+  let open = null;
+  let fences = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!open) {
+      const opener = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+      if (!opener) continue;
+      const info = opener[2].trim();
+      // CommonMark: a backtick fence's info string cannot contain a backtick
+      // (that line is inline code, e.g. ```` ```x``` ````).
+      if (opener[1][0] === '`' && info.includes('`')) continue;
+      fences += 1;
+      open = {
+        char: opener[1][0],
+        length: opener[1].length,
+        lang: info.split(/\s+/)[0].toLowerCase(),
+        id: fences,
+      };
+      continue;
+    }
+    if (closesFence(line, open)) {
+      open = null;
+      continue;
+    }
+    if (!SHELL_FENCES.has(open.lang)) continue;
+    const lineNumber = i + 1;
+    let logical = line;
+    // Join `\`-continued lines the way the shell does. A comment does not
+    // continue, and a fence closer ends the command.
+    while (
+      !COMMENT_LINE.test(logical) &&
+      /\\\s*$/.test(logical) &&
+      i + 1 < lines.length &&
+      !closesFence(lines[i + 1], open)
+    ) {
+      logical = `${logical.replace(/\\\s*$/, '')} ${lines[i + 1]}`;
+      i += 1;
+    }
+    out.push({ text: logical, lineNumber, fence: open.id });
+  }
+  return out;
 }
 
 /**
@@ -241,17 +402,14 @@ export function parsePnpm(words, { cwd = '.', packageDirs = new Map() } = {}) {
  */
 export function extractCommands(text, { packageDirs = new Map() } = {}) {
   const found = [];
-  let inFence = false;
+  let fence = 0;
   let cwd = '.';
-  text.split('\n').forEach((line, index) => {
-    if (/^\s*(```|~~~)/.test(line)) {
-      inFence = !inFence;
+  for (const { text: line, lineNumber, fence: id } of fencedLines(text)) {
+    if (id !== fence) {
+      fence = id;
       cwd = '.'; // every fence starts at the repository root
-      return;
     }
-    if (!inFence) return;
-    if (/^\s*(#|\/\/)/.test(line)) return; // a comment, not a command
-    const lineNumber = index + 1;
+    if (COMMENT_LINE.test(line)) continue; // a comment, not a command
     for (const segment of line.split(/&&|\|\||;/)) {
       const cd = /^\s*cd\s+(\S+)/.exec(segment);
       if (cd) {
@@ -266,7 +424,7 @@ export function extractCommands(text, { packageDirs = new Map() } = {}) {
         found.push({ ...command, lineNumber, text: `pnpm ${shown}` });
       }
     }
-  });
+  }
   return found;
 }
 
@@ -284,40 +442,98 @@ function hasScript(scripts, script) {
 
 const listed = (scripts) => [...scripts].sort().join(', ');
 
-/** Problems for one document, given the workspace's scripts. */
-export function checkDocument({ rel, text, rootScripts, packages, packageDirs = new Map() }) {
+/**
+ * Problems for one document, given the workspace's scripts.
+ *
+ * `binExists(dir, name)` answers pnpm 9's implicit-exec fallback (see the
+ * header); it is injected so tests never depend on what is installed, and it
+ * defaults to "nothing is installed". `packageDirsByName` maps a package name
+ * to its directory for that lookup under `--filter`.
+ */
+export function checkDocument({
+  rel,
+  text,
+  rootScripts,
+  packages,
+  packageDirs = new Map(),
+  packageDirsByName = new Map(),
+  binExists = () => false,
+}) {
   const problems = [];
   const skipRootForm = USER_PROJECT_DOCS.has(rel);
   for (const command of extractCommands(text, { packageDirs })) {
     const where = `${rel}:${command.lineNumber}  \`${command.text}\``;
+    const { script } = command;
+
+    // Which packages a filtered command selects, with problems for the filters
+    // that select nothing (unknown or ambiguous names).
+    const selected = [];
     if (command.kind === 'filtered') {
-      const named = command.filters.filter((f) => !SELECTOR.test(f) && !OPTIONAL_PACKAGES.has(f));
-      for (const pkg of named)
-        if (!packages.has(pkg)) problems.push(`${where} — no workspace package is named ${pkg}`);
-      const existing = named.filter((pkg) => packages.has(pkg));
-      if (command.ifPresent || existing.length === 0) continue;
-      if (!existing.some((pkg) => hasScript(packages.get(pkg), command.script))) {
+      for (const filter of command.filters) {
+        if (SELECTOR.test(filter)) continue;
+        const resolved = resolveFilterName(filter, packages.keys());
+        if (resolved.pkg) selected.push(resolved.pkg);
+        else if (OPTIONAL_PACKAGES.has(filter)) continue;
+        else if (resolved.ambiguous)
+          problems.push(
+            `${where} — ${filter} is ambiguous (matches ${resolved.ambiguous.join(', ')}); pnpm selects nothing — use the scoped name`,
+          );
+        else problems.push(`${where} — no workspace package is named ${filter}`);
+      }
+    }
+
+    if (command.builtin) {
+      // A builtin is fine unless a target defines a script with its name: pnpm
+      // then runs the builtin and the script is silently never run (B133).
+      let targets;
+      if (command.kind === 'filtered') targets = selected.map((pkg) => [pkg, packages.get(pkg)]);
+      else if (command.kind === 'recursive') targets = [...packages.entries()];
+      else if (command.cwd === '.') targets = skipRootForm ? [] : [['the root package', rootScripts]];
+      else targets = [[`${command.cwd}/package.json`, packageDirs.get(command.cwd) ?? new Set()]];
+      const shadowed = targets.filter(([, scripts]) => scripts.has(script)).map(([name]) => name);
+      if (shadowed.length > 0) {
+        const fixed = command.text.replace(new RegExp(`\\s${script}$`), ` run ${script}`);
         problems.push(
-          existing.length === 1
-            ? `${where} — ${existing[0]} has no "${command.script}" script (it has: ${listed(packages.get(existing[0]))})`
-            : `${where} — none of ${existing.join(', ')} has a "${command.script}" script`,
+          `${where} — pnpm runs its builtin "${script}" here, not the "${script}" script of ${shadowed.join(', ')}; use \`${fixed}\``,
+        );
+      }
+      continue;
+    }
+
+    if (command.kind === 'filtered') {
+      if (command.ifPresent || selected.length === 0) continue;
+      if (!selected.some((pkg) => hasScript(packages.get(pkg), script))) {
+        const bin = selected.some((pkg) => binExists(packageDirsByName.get(pkg) ?? '.', script))
+          ? ` — pnpm does not fall back to binaries with --filter/-r; use \`pnpm --filter ${selected[0]} exec ${script}\``
+          : '';
+        problems.push(
+          (selected.length === 1
+            ? `${where} — ${selected[0]} has no "${script}" script (it has: ${listed(packages.get(selected[0]))})`
+            : `${where} — none of ${selected.join(', ')} has a "${script}" script`) + bin,
         );
       }
     } else if (command.kind === 'recursive') {
       if (command.ifPresent) continue;
-      if (![...packages.values()].some((scripts) => hasScript(scripts, command.script)))
-        problems.push(`${where} — no workspace package has a "${command.script}" script`);
+      if (![...packages.values()].some((scripts) => hasScript(scripts, script))) {
+        const bin = binExists('.', script)
+          ? ` — pnpm does not fall back to binaries with --filter/-r; use \`pnpm -r exec ${script}\``
+          : '';
+        problems.push(`${where} — no workspace package has a "${script}" script${bin}`);
+      }
     } else if (command.cwd === '.') {
       if (skipRootForm || command.ifPresent) continue;
-      if (!hasScript(rootScripts, command.script))
-        problems.push(`${where} — the root package.json has no "${command.script}" script`);
+      if (hasScript(rootScripts, script)) continue;
+      // pnpm 9 runs a binary when no script matches (root and dir form only).
+      if (SYSTEM_COMMANDS.has(script) || binExists('.', script)) continue;
+      problems.push(`${where} — the root package.json has no "${script}" script`);
     } else {
       const scripts = packageDirs.get(command.cwd);
       if (command.ifPresent || !scripts) continue;
-      if (!hasScript(scripts, command.script))
-        problems.push(
-          `${where} — ${command.cwd}/package.json has no "${command.script}" script (it has: ${listed(scripts)})`,
-        );
+      if (hasScript(scripts, script)) continue;
+      if (SYSTEM_COMMANDS.has(script) || binExists(command.cwd, script)) continue;
+      problems.push(
+        `${where} — ${command.cwd}/package.json has no "${script}" script (it has: ${listed(scripts)})`,
+      );
     }
   }
   return problems;
@@ -350,6 +566,8 @@ function main() {
   );
   const packages = collectPackages(REPO_ROOT);
   const packageDirs = collectPackageDirs(REPO_ROOT);
+  const packageDirsByName = collectPackageDirsByName(REPO_ROOT);
+  const binExists = binLookup(REPO_ROOT);
   const docs = collectDocs(REPO_ROOT);
 
   const problems = [];
@@ -362,6 +580,8 @@ function main() {
         rootScripts,
         packages,
         packageDirs,
+        packageDirsByName,
+        binExists,
       }),
     );
   }
