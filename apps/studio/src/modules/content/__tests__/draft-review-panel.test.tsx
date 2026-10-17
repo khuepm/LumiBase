@@ -336,6 +336,64 @@ describe('draft review in the item editor', () => {
     expect(calls(/\/feedback$/)).toHaveLength(0);
   });
 
+  it.each([
+    ['reviewed content', 0, 'Edited title'],
+    ['suggestion target outside the profile', 2, 'news'],
+  ] as const)('preserves edits to %s while feedback is pending', async (_label, fieldIndex, value) => {
+    const pending = deferred<unknown>();
+    routes({ feedback: () => pending.promise });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Review draft' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Accept the suggestion for Category' }));
+    await waitFor(() => expect(calls(/\/feedback$/)).toHaveLength(1));
+
+    const field = screen.getAllByRole('textbox')[fieldIndex]!;
+    fireEvent.change(field, { target: { value } });
+    await act(async () => pending.resolve({ data: [{ questionKey: 'category', verdict: 'accept' }] }));
+
+    expect(field).toHaveValue(value);
+    expect(screen.getAllByRole('textbox')[2]).not.toHaveValue('sport');
+    expect(await screen.findByText(/The draft changed after this review/)).toBeInTheDocument();
+    expect(suggestion('category').getByText('Accepted')).toBeInTheDocument();
+    expect(suggestion('category').queryByText(/Applied to category/)).not.toBeInTheDocument();
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it('does not apply pending feedback after a new review replaces the run', async () => {
+    const pending = deferred<unknown>();
+    const onApply = vi.fn();
+    let runs = 0;
+    routes({
+      reviews: async () => ({ data: reviewRun({ id: `run_${++runs}` }) }),
+      feedback: () => pending.promise,
+    });
+    renderPanel({ onApply });
+    fireEvent.click(await screen.findByRole('button', { name: 'Review draft' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Accept the suggestion for Category' }));
+    await waitFor(() => expect(calls(/\/feedback$/)).toHaveLength(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Run again' }));
+    await waitFor(() => expect(calls('/api/v1/ai/reviews')).toHaveLength(2));
+    expect(await screen.findByText('Suggested: sport')).toBeInTheDocument();
+
+    await act(async () => pending.resolve({ data: [{ questionKey: 'category', verdict: 'accept' }] }));
+    expect(onApply).not.toHaveBeenCalled();
+    expect(suggestion('category').getByRole('button', { name: 'Accept the suggestion for Category' })).toBeEnabled();
+    expect(suggestion('category').queryByText('Accepted')).not.toBeInTheDocument();
+  });
+
+  it('does not apply pending feedback after the editor unmounts', async () => {
+    const pending = deferred<unknown>();
+    const onApply = vi.fn();
+    routes({ feedback: () => pending.promise });
+    const view = renderPanel({ onApply });
+    fireEvent.click(await screen.findByRole('button', { name: 'Review draft' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Accept the suggestion for Category' }));
+    await waitFor(() => expect(calls(/\/feedback$/)).toHaveLength(1));
+    view.unmount();
+    await act(async () => pending.resolve({ data: [{ questionKey: 'category', verdict: 'accept' }] }));
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
   it('turns a 409 REVIEW_STALE on feedback into the stale state without applying', async () => {
     const onApply = vi.fn();
     routes({ feedback: async () => Promise.reject(lumiError(409, 'REVIEW_STALE')) });

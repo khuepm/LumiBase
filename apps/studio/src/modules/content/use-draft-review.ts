@@ -59,6 +59,8 @@ export interface DraftReviewTarget {
   itemId?: string;
   snapshot?: Record<string, unknown>;
   projected: Record<string, unknown>;
+  /** Full local draft, including suggestion target fields outside the profile. Never sent to the CMS. */
+  draft: Record<string, unknown>;
 }
 
 export interface DraftReviewFeedbackState {
@@ -70,6 +72,8 @@ export interface DraftReviewFeedbackState {
    * applied to the draft.
    */
   earlier?: boolean;
+  /** Feedback was saved, but a concurrent draft edit prevented application. */
+  applyBlocked?: boolean;
 }
 
 /** Maps a decision/review error code (and HTTP status when there is none) to a panel state. */
@@ -184,12 +188,17 @@ export function useDraftReview({
   const attemptRef = useRef(0);
   const targetRef = useRef(target);
   targetRef.current = target;
+  const scopeRef = useRef({ collection, profileId: profile?.id });
+  scopeRef.current = { collection, profileId: profile?.id };
 
   const current = canonicalReviewJson(target.projected);
   const changed = internal.base !== null && current !== internal.base;
 
   // Abort an in-flight review when the editor unmounts (navigation away).
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    attemptRef.current += 1;
+  }, []);
 
   const run = useCallback(async () => {
     if (!profile) return;
@@ -234,6 +243,7 @@ export function useDraftReview({
   }, [collection, profile]);
 
   const cancel = useCallback(() => {
+    attemptRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
     setInternal({ state: { status: 'idle' }, base: null });
@@ -245,8 +255,9 @@ export function useDraftReview({
   /**
    * Records one verdict, once per `runId:questionKey`. Resolves `true` only
    * when the CMS stored it — the caller applies a value after that, never
-   * before. A changed draft, or 409 `REVIEW_STALE`, turns the panel stale and
-   * resolves `false` without recording anything.
+   * before. A changed draft or 409 `REVIEW_STALE` turns the panel stale and
+   * resolves `false`. If the draft changes while feedback is being stored,
+   * its saved verdict stays visible, but no value is applied.
    *
    * The first verdict per run and question is final on the server, and a
    * repeat returns the stored row. So when a retry follows a request that the
@@ -258,6 +269,13 @@ export function useDraftReview({
     async (questionKey: string, verdict: ReviewVerdict, editedValue?: unknown): Promise<boolean> => {
       const reviewRun = runOf(internal.state);
       if (!reviewRun) return false;
+      const attempt = attemptRef.current;
+      const target = targetRef.current;
+      const draft = canonicalReviewJson(target.draft);
+      const isActive = () => attemptRef.current === attempt && targetRef.current.itemId === target.itemId &&
+        scopeRef.current.collection === collection && scopeRef.current.profileId === profile?.id;
+      const isFresh = () => canonicalReviewJson(targetRef.current.draft) === draft &&
+        (internal.base === null || canonicalReviewJson(targetRef.current.projected) === internal.base);
       const key = `${reviewRun.id}:${questionKey}`;
       const existing = feedback[key];
       if (existing && existing.status !== 'error') return false;
@@ -269,19 +287,38 @@ export function useDraftReview({
       setFeedback((prev) => ({ ...prev, [key]: { verdict, status: 'pending' } }));
       try {
         const contentHash =
-          reviewRun.source === 'snapshot' ? await draftReviewHash(targetRef.current.projected) : undefined;
+          reviewRun.source === 'snapshot' ? await draftReviewHash(target.projected) : undefined;
+        if (!isActive()) return false;
+        if (verdict !== 'reject' && !isFresh()) {
+          setFeedback((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+          setInternal((prev) => ({ ...prev, state: { status: 'stale', run: reviewRun } }));
+          return false;
+        }
         const stored = await submitReviewFeedback(reviewRun.id, {
           entries: [{ questionKey, verdict, ...(verdict === 'edit' ? { editedValue } : {}) }],
           ...(contentHash ? { contentHash } : {}),
         })(getApiClient());
+        // An old completion must not alter a replacement review or apply to
+        // an editor that has navigated away.
+        if (!isActive()) return false;
         const row = Array.isArray(stored) ? stored.find((r) => r.questionKey === questionKey) : undefined;
         if (row && (row.verdict !== verdict || (verdict === 'edit' && !jsonEqual(row.editedValue, editedValue)))) {
           setFeedback((prev) => ({ ...prev, [key]: { verdict: row.verdict, status: 'saved', earlier: true } }));
           return false;
         }
-        setFeedback((prev) => ({ ...prev, [key]: { verdict, status: 'saved' } }));
+        const applyBlocked = verdict !== 'reject' && !isFresh();
+        setFeedback((prev) => ({ ...prev, [key]: { verdict, status: 'saved', applyBlocked } }));
+        if (applyBlocked) {
+          setInternal((prev) => ({ ...prev, state: { status: 'stale', run: reviewRun } }));
+          return false;
+        }
         return true;
       } catch (err) {
+        if (!isActive()) return false;
         if (err instanceof LumiError && decisionErrorCode(err) === 'REVIEW_STALE') {
           setFeedback((prev) => {
             const next = { ...prev };
@@ -295,7 +332,7 @@ export function useDraftReview({
         return false;
       }
     },
-    [internal, feedback],
+    [internal, feedback, collection, profile?.id],
   );
 
   let state = internal.state;
