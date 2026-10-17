@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 11
-lastUpdated: 2026-10-17T16:36:19.111Z
+version: 12
+lastUpdated: 2026-10-17T19:37:27.803Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 577f33de1b43aa9b
+sourceHash: 732dcf0c241b6a1b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-17T16:36:19.111Z
-codeVerifiedHash: 577f33de1b43aa9b
+codeVerified: 2026-10-17T19:37:27.803Z
+codeVerifiedHash: 732dcf0c241b6a1b
 codeVerifiedClaims: 76
 ---
 

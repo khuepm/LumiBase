@@ -76,11 +76,30 @@ const CREATE = /\bcreateDecisionProvider\s*\(/;
 const AUTHORIZE = /\bauthorizeDecision\s*\(/;
 const GOVERNED = /\brunGovernedDecision\s*\(/;
 
-/** Files that resolve a provider without both governance calls. */
-function ungovernedEntryPoints(files: Array<{ rel: string; source: string }>): string[] {
+/**
+ * Principal-less system callers. No person is behind them, so there is no
+ * grant for `authorizeDecision` to check; they are gated instead by a site
+ * switch read at call time, and they still MUST go through
+ * `runGovernedDecision` (opt-in, allowlist, budgets, quota, audit with
+ * `principal: null`). Adding a file here needs that reason, not convenience.
+ *
+ * - services/semantic-drift-scan.ts — J12 #519 semantic drift pass, gated by
+ *   `aiDecisions.enabled` + `aiDecisions.drift` (`driftDecisionsEnabled`).
+ */
+const SYSTEM_ENTRY_POINTS = ['services/semantic-drift-scan.ts'];
+
+/** Files that resolve a provider without the governance calls they need. */
+function ungovernedEntryPoints(
+  files: Array<{ rel: string; source: string }>,
+  systemEntryPoints: string[] = SYSTEM_ENTRY_POINTS,
+): string[] {
   return files
     .filter(({ rel }) => rel !== PROVIDER_FILE && rel !== GOVERNANCE_FILE)
-    .filter(({ source }) => CREATE.test(source) && !(AUTHORIZE.test(source) && GOVERNED.test(source)))
+    .filter(({ rel, source }) => {
+      if (!CREATE.test(source)) return false;
+      if (systemEntryPoints.includes(rel)) return !GOVERNED.test(source);
+      return !(AUTHORIZE.test(source) && GOVERNED.test(source));
+    })
     .map(({ rel }) => rel);
 }
 
@@ -143,6 +162,26 @@ describe('decision governance wiring — the guards can fire (negative checks)',
       },
     ];
     expect(ungovernedEntryPoints(scratch)).toEqual(['routes/bad.ts', 'routes/half.ts']);
+  });
+
+  it('a system entry point is exempt from authorizeDecision only, never from runGovernedDecision', () => {
+    const scratch = [
+      { rel: 'services/sys-good.ts', source: 'const p = createDecisionProvider(env); await runGovernedDecision(d, r, o);' },
+      { rel: 'services/sys-bad.ts', source: 'const p = createDecisionProvider(env);' },
+    ];
+    expect(ungovernedEntryPoints(scratch, ['services/sys-good.ts', 'services/sys-bad.ts'])).toEqual([
+      'services/sys-bad.ts',
+    ]);
+    // Without the allowlist entry, the same principal-less file is flagged.
+    expect(ungovernedEntryPoints(scratch, [])).toEqual(['services/sys-good.ts', 'services/sys-bad.ts']);
+  });
+
+  it('every system entry point on the allowlist still exists and still calls runGovernedDecision', () => {
+    for (const rel of SYSTEM_ENTRY_POINTS) {
+      const file = sources.find((s) => s.rel === rel);
+      expect(file, rel).toBeDefined();
+      expect(GOVERNED.test(file!.source), rel).toBe(true);
+    }
   });
 
   it('the prefix-match classification would fire if /api/v1/ai were guarded', () => {

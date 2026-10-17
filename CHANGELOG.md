@@ -336,7 +336,9 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `ai:decide` without the API.
 - The Definition of Done §2c gains a line: request/worker paths that call a
   paid AI decision provider go through `authorizeDecision` +
-  `runGovernedDecision`, locked by `decision-governance.wiring.test.ts`. No
+  `runGovernedDecision`, locked by `decision-governance.wiring.test.ts`.
+  Principal-less system passes (the J12 semantic drift scan) are listed
+  explicitly and must still go through `runGovernedDecision`. No
   migration and no upgrade step for any of the entries above.
 - **P2 queue recovery and governed write parity (B93, B87).** Queue submission
   failures settle only unclaimed runs, preserve masked tasks for explicit retries,
