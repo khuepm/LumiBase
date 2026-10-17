@@ -4,15 +4,15 @@
  * The route is un-authenticated (providers can't carry a session) but the
  * per-integration secret signature is the authenticity gate. siteId +
  * integrationId in the path let this un-tenanted handler scope its lookup by
- * the path's siteId, so it can only ever touch that one site's rows. It also
- * runs `set_config('app.site_id', …)` first (mirroring `withRls`), but as a
- * standalone statement that does not scope the later queries (B130).
+ * the path's siteId, so it can only ever touch that one site's rows. Every
+ * query runs on `scopedDbFor(c, siteId)`, which under `LUMIBASE_DB_RLS=enforce`
+ * scopes each statement to that site (B130).
  */
 import type { Context } from 'hono';
 import { and, eq } from 'drizzle-orm';
 import { gitIntegrations, gitWebhookEvents } from '@lumibase/database';
-import { formatSafeError } from '@lumibase/contracts/utils';
 import type { AppEnv } from '../../../env';
+import { scopedDbFor } from '../../../middleware/db';
 import type { Database } from '@lumibase/database';
 import { AuditLogger } from '../../audit/logger';
 import { AutonomyService } from '../../../services/autonomy-service';
@@ -40,25 +40,12 @@ export async function handleWebhook(c: Context<AppEnv>): Promise<Response> {
     return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
   }
 
-  // Scope RLS to the path's site before reading (defence-in-depth; signature
-  // is the real gate). Best-effort, like `withRls`.
   const isDev =
     c.env.LUMIBASE_ENV === 'development' ||
     process.env.LUMIBASE_ENV === 'development';
-  if (!isDev) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sql = c.get('runtime').database.getConnection() as any;
-      // Standalone autocommit statement: it does not scope later queries (B130).
-      await sql`SELECT set_config('app.site_id', ${siteId}, true)`;
-    } catch (err) {
-      console.warn('[git-webhook] failed to set app.site_id', {
-        err: formatSafeError(err),
-      });
-    }
-  }
-
-  const db = c.get('db');
+  // The site comes from the path, not `withTenant`; scope every query to it
+  // (defence-in-depth; the signature is the real gate) (B130).
+  const db = scopedDbFor(c, siteId);
   const [integration] = await db
     .select()
     .from(gitIntegrations)
@@ -249,6 +236,7 @@ async function runPreviewSideEffects(
   const cfg = getGitConfig(c);
   const manager = new PreviewEnvManager({
     db: args.db,
+    scopedDb: (id) => scopedDbFor(c, id),
     runtime: c.get('runtime'),
     siteId: args.siteId,
     integrationId: args.integrationId,
