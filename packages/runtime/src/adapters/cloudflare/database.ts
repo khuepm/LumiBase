@@ -16,11 +16,16 @@ export interface Hyperdrive {
  * SQL client. On Cloudflare Workers, Hyperdrive handles connection pooling
  * at the edge, so the client is created per-request with minimal pool settings.
  *
+ * `systemHyperdrive` (`HYPERDRIVE_SYSTEM`) is an optional second binding for
+ * the system role (BYPASSRLS), used when `LUMIBASE_DB_RLS=enforce` (B130).
+ * Without it, `getSystemConnection()` is the main connection.
+ *
  * The `close()` method is a no-op because Cloudflare Workers connections are
  * scoped to the request isolate lifetime and cleaned up automatically.
  */
 export class CloudflareDatabaseProvider implements DatabaseProvider {
   private sql: postgres.Sql | null = null;
+  private systemSql: postgres.Sql | null = null;
 
   /**
    * The client is built on first use, not here. The runtime is constructed for
@@ -29,7 +34,10 @@ export class CloudflareDatabaseProvider implements DatabaseProvider {
    * turned every request into an opaque 500 — `/health` included, which is the
    * one endpoint that exists to say "the database is not configured".
    */
-  constructor(private readonly hyperdrive: Hyperdrive | undefined) {}
+  constructor(
+    private readonly hyperdrive: Hyperdrive | undefined,
+    private readonly systemHyperdrive?: Hyperdrive,
+  ) {}
 
   getConnection(): postgres.Sql {
     if (!this.sql) {
@@ -46,6 +54,21 @@ export class CloudflareDatabaseProvider implements DatabaseProvider {
       });
     }
     return this.sql;
+  }
+
+  getSystemConnection(): postgres.Sql {
+    if (!this.hasSystemConnection()) return this.getConnection();
+    if (!this.systemSql) {
+      this.systemSql = postgres(this.systemHyperdrive!.connectionString, {
+        max: 5,
+        prepare: false,
+      });
+    }
+    return this.systemSql;
+  }
+
+  hasSystemConnection(): boolean {
+    return Boolean(this.systemHyperdrive?.connectionString);
   }
 
   async close(): Promise<void> {

@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 10
-lastUpdated: 2026-10-11T23:27:46.581Z
+version: 11
+lastUpdated: 2026-10-17T16:36:19.111Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2467802388e8c9ae
+sourceHash: 577f33de1b43aa9b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-11T23:27:46.581Z
-codeVerifiedHash: 2467802388e8c9ae
-codeVerifiedClaims: 74
+codeVerified: 2026-10-17T16:36:19.111Z
+codeVerifiedHash: 577f33de1b43aa9b
+codeVerifiedClaims: 76
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -121,6 +121,8 @@ closed với `500` chứ không phải một lỗi có mã.
 | `DATABASE_POOL_MIN` | ✗ | Số kết nối pool DB tối thiểu (mặc định: `2`) |
 | `DATABASE_POOL_MAX` | ✗ | Số kết nối pool DB tối đa (mặc định: `10`) |
 | `DATABASE_SSL` | ✗ | `true` để bắt buộc SSL cho kết nối DB |
+| `LUMIBASE_DB_RLS` | ✗ | Scope RLS trên request path: `off` (mặc định) hoặc `enforce`. Giá trị khác thì fail closed (lỗi khởi động trên Docker, `503 RLS_MISCONFIGURED` trên Workers). Xem [Scope RLS trên request path](../features/rls-request-scope.md) |
+| `DATABASE_SYSTEM_URL` | Khi `LUMIBASE_DB_RLS=enforce` (Docker) | Chuỗi kết nối của system role (`BYPASSRLS`) cho worker, cron và route hệ thống. Không đặt: các đường đó dùng `DATABASE_URL`. Cũng đọc được từ `DATABASE_SYSTEM_URL_FILE` |
 
 Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#binding-cloudflare)).
 
@@ -294,6 +296,7 @@ Cấu hình các binding này trong `apps/cms/wrangler.toml` (không phải bi�
 | Binding | Loại | Mục đích |
 |---------|------|----------|
 | `HYPERDRIVE` | Hyperdrive | Pool kết nối PostgreSQL |
+| `HYPERDRIVE_SYSTEM` | Hyperdrive (tuỳ chọn) | System role (`BYPASSRLS`) cho handler scheduled/queue và route hệ thống; bắt buộc khi `LUMIBASE_DB_RLS=enforce` |
 | `CONFIG_CACHE` | KV Namespace | Cache schema, permission và settings |
 | `MEDIA` | R2 Bucket | Lưu trữ object media/file |
 | `SITE_ROOM` | Durable Object | Điều phối WebSocket theo từng site (realtime) |

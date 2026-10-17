@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 3
-lastUpdated: 2026-10-15T22:27:47.620Z
+version: 5
+lastUpdated: 2026-10-17T16:36:20.390Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 781cd60c0c80bbdb
+sourceHash: 59729a48912c6d74
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T22:27:47.620Z
-codeVerifiedHash: 781cd60c0c80bbdb
+codeVerified: 2026-10-17T16:36:20.390Z
+codeVerifiedHash: 59729a48912c6d74
 codeVerifiedClaims: 72
 ---
 
@@ -163,7 +163,11 @@ lập trong database để một `.where()` bị thiếu không làm rò rỉ d�
   (PERMISSIVE). Postgres không cho role thiếu BYPASSRLS thấy dòng nào trừ khi có
   một policy permissive đúng; nửa restrictive chặn mọi policy permissive khác nới
   rộng quyền. Khi `app.site_id` chưa set hoặc rỗng thì không dòng nào hiện ra và
-  mọi lệnh ghi đều bị từ chối. Request bind `SET LOCAL app.site_id` mỗi request.
+  mọi lệnh ghi đều bị từ chối. Với `LUMIBASE_DB_RLS=enforce`, `withDb()` set
+  `app.site_id` trong transaction của mọi câu của request, và worker dùng một
+  system connection `BYPASSRLS` (B130). Khi tắt cờ (mặc định), ứng dụng phải
+  kết nối bằng role bypass RLS. Xem
+  [Scope RLS trên request path](../features/rls-request-scope.md).
 - Áp file bằng owner của database (không phải role ứng dụng), và áp lại sau mỗi
   lần upgrade: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1
   --single-transaction -f packages/database/migrations/rls-policies.sql`.

@@ -1,11 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-10-15T22:27:48.154Z
+version: 6
+lastUpdated: 2026-10-17T16:36:20.841Z
 sourceLang: en
-contentHash: 80197960d1b052a3
-codeVerified: 2026-10-15T22:27:48.154Z
-codeVerifiedHash: 80197960d1b052a3
-codeVerifiedClaims: 52
+contentHash: a2b7adecef882822
+codeVerified: 2026-10-17T16:36:20.841Z
+codeVerifiedHash: a2b7adecef882822
+codeVerifiedClaims: 56
 ---
 
 # OWASP API Security Top 10 (2023) — LumiBase Audit
@@ -62,11 +62,16 @@ after the remediations in this changeset (see [Remediations](#remediations-appli
 - **`site_id` scoping at the query layer** — every list/read builds its `where`
   with `scopeSite(items.siteId, siteId)` (`services/item-service.ts:654-665`,
   `:642-651`); `scopeSite` is used pervasively across services.
-- **Postgres RLS backstop, fail-closed** — `middleware/rls.ts:35-81` sets
-  `app.site_id` per request and returns `503 RLS_UNAVAILABLE` if the scope
-  can't be set (`:54-76`). A RESTRICTIVE + PERMISSIVE policy pair per table in
+- **Postgres RLS backstop, opt-in on the request path** — with
+  `LUMIBASE_DB_RLS=enforce`, `withDb()` (`middleware/db.ts`) runs every request
+  statement in its own transaction with `app.site_id` set, and `withRls()`
+  (`middleware/rls.ts`) returns `503 RLS_UNAVAILABLE` when the request db is not
+  scoped (B130). Workers use a BYPASSRLS system connection. A RESTRICTIVE +
+  PERMISSIVE policy pair per table in
   `packages/database/migrations/rls-policies.sql` (since B125; before that the
   file had only restrictive policies, so a non-superuser role saw 0 rows).
+  The flag is off by default. The primary BOLA control is the `site_id`
+  filter above.
 - **Membership binding prevents tenant hopping** — `middleware/site-membership.ts:86-98`
   requires a `user_sites` row for the requested site, else `403 TENANT_FORBIDDEN`;
   API keys are site-matched in `withAuth` (`middleware/auth.ts:276-282`).
@@ -76,9 +81,10 @@ after the remediations in this changeset (see [Remediations](#remediations-appli
 - **Tests** — `apps/cms/src/__tests__/idor-tenant-isolation.integration.test.ts`;
   matrix in `docs/en/security/idor-testing.md`.
 
-Residual: RLS is skipped in development (`rls.ts:43-45`), so dev-only paths lack
-the DB backstop. [Inference] non-`ItemService` services must apply `scopeSite`
-themselves; RLS is the production backstop for any miss.
+Residual: the DB backstop only applies where operators set
+`LUMIBASE_DB_RLS=enforce` with a NOBYPASSRLS app role. [Inference]
+non-`ItemService` services must apply `scopeSite` themselves; RLS is the
+backstop for any miss only in enforce mode.
 
 ## API2:2023 — Broken Authentication
 

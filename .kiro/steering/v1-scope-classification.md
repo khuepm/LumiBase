@@ -29,6 +29,7 @@ Phần lớn item hoãn đã được ghi rõ trong chính spec. Ngoại lệ l�
 | Spec | Trạng thái | Quyết định |
 |---|---|---|
 | deployment-integrations | ~~rate-limit cho deploy hooks~~ (**fixed** — task 6.2, per-target two-tier limiter) · ~~idempotency test~~ (**fixed** — task 9.3, 2026-09-07: `status-poller-idempotency.db.integration.test.ts` chạy thật trên Postgres, 5/5; đã kiểm âm bằng cách bỏ guard) · ~~HMAC/JWS webhook signing~~ (**fixed** — task 12.3, HMAC-SHA1 Vercel + JWS/HS256 Netlify với body-digest binding, constant-time, fail-closed) | Core deploy-hooks đã ship trong 0.x và giữ nguyên contract. Cả ba item của nhóm này nay đã đóng; không còn việc mở, không chặn tag. Còn lại duy nhất một mục **không phải code**: xác nhận endpoint Vercel/Netlify trên API sống (design §11 TODO). |
+| rls-request-scope | **Code đã có (2026-10-17, owner chọn phương án B, PR #552)**, sau cờ `LUMIBASE_DB_RLS` (mặc định `off`). Surface env additive: `LUMIBASE_DB_RLS`, `DATABASE_SYSTEM_URL` (+`_FILE`), binding tuỳ chọn `HYPERDRIVE_SYSTEM`. Còn mở: đo chi phí trên Hyperdrive staging; biến thể golden-path E2E chạy với `enforce` trong CI | Ship ở bản 1.x minor (additive, tắt mặc định, không đổi hành vi khi tắt). **Nếu merge trước tag `v1.0.0`, ba tên biến này trở thành surface 1.0 — đối chiếu lại lúc cắt RC.** Không chặn tag |
 
 ## Post-v1 — proposal/roadmap, chưa bắt đầu
 

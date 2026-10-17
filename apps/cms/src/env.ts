@@ -12,6 +12,23 @@ export interface Bindings {
   /** Producer for governed asynchronous agent runs. */
   AGENT_RUNS_QUEUE?: Queue;
   HYPERDRIVE?: Hyperdrive;
+  /**
+   * Optional second Hyperdrive config for the system role (BYPASSRLS), used by
+   * scheduled/queue handlers and system routes when `LUMIBASE_DB_RLS=enforce`
+   * (B130). Unset: system paths use `HYPERDRIVE`.
+   */
+  HYPERDRIVE_SYSTEM?: Hyperdrive;
+  /**
+   * Request-path RLS scope (B130): `off` (default) or `enforce`. With
+   * `enforce` every request statement runs in its own transaction with
+   * `app.site_id` set. Any other value fails closed.
+   */
+  LUMIBASE_DB_RLS?: string;
+  /**
+   * Connection string for the system role (BYPASSRLS) in Docker mode. Required
+   * when `LUMIBASE_DB_RLS=enforce`; unset means system paths use `DATABASE_URL`.
+   */
+  DATABASE_SYSTEM_URL?: string;
   /** @deprecated Use `c.get('runtime').cache` (CacheProvider) instead of accessing KV directly. */
   CONFIG_CACHE?: KVNamespace;
   /** @deprecated Use `c.get('runtime').storage` (StorageProvider) instead of accessing R2 directly. */
@@ -272,6 +289,12 @@ export interface AuthPrincipal {
  */
 export interface Variables {
   db: Database;
+  /**
+   * Memoised system-role db (BYPASSRLS, unscoped). Set by `withSystemDb()` /
+   * `systemDbFor(c)` in `middleware/db.ts`; only for system routes and writes
+   * that legitimately cross sites (B130).
+   */
+  systemDb?: Database;
   /** Active site id (Strict Rule #2). Set by `withTenant`. */
   siteId: string;
   /** Authenticated principal. Set by `withAuth`. */

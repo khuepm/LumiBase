@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 4
-lastUpdated: 2026-10-15T22:27:48.154Z
+version: 6
+lastUpdated: 2026-10-17T16:36:20.841Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 80197960d1b052a3
+sourceHash: a2b7adecef882822
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T22:27:48.154Z
-codeVerifiedHash: 80197960d1b052a3
-codeVerifiedClaims: 52
+codeVerified: 2026-10-17T16:36:20.841Z
+codeVerifiedHash: a2b7adecef882822
+codeVerifiedClaims: 56
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -68,11 +68,16 @@ sau các lần khắc phục trong changeset này (xem [Khắc phục](#các-kh�
 - **Scope theo `site_id` ở tầng query** — mọi list/read đều dựng `where` của nó
   bằng `scopeSite(items.siteId, siteId)` (`services/item-service.ts:654-665`,
   `:642-651`); `scopeSite` được dùng khắp các service.
-- **Postgres RLS làm lớp chốt, fail-closed** — `middleware/rls.ts:35-81` set
-  `app.site_id` theo từng request và trả `503 RLS_UNAVAILABLE` nếu không set được
-  scope (`:54-76`). Mỗi bảng có một cặp policy RESTRICTIVE + PERMISSIVE trong
+- **Postgres RLS làm lớp chốt, opt-in trên request path** — với
+  `LUMIBASE_DB_RLS=enforce`, `withDb()` (`middleware/db.ts`) chạy mỗi câu của
+  request trong transaction riêng có set `app.site_id`, và `withRls()`
+  (`middleware/rls.ts`) trả `503 RLS_UNAVAILABLE` khi db của request chưa được
+  scope (B130). Worker dùng system connection BYPASSRLS. Mỗi bảng có một cặp policy
+  RESTRICTIVE + PERMISSIVE trong
   `packages/database/migrations/rls-policies.sql` (từ B125; trước đó file chỉ có
   policy restrictive nên role non-superuser thấy 0 dòng).
+  Cờ mặc định tắt. Biện pháp chính chống BOLA là bộ lọc `site_id` ở
+  trên.
 - **Ràng buộc membership ngăn việc nhảy tenant** — `middleware/site-membership.ts:86-98`
   yêu cầu có một row `user_sites` cho site được yêu cầu, nếu không thì
   `403 TENANT_FORBIDDEN`; API key được khớp theo site trong `withAuth`
@@ -83,9 +88,10 @@ sau các lần khắc phục trong changeset này (xem [Khắc phục](#các-kh�
 - **Tests** — `apps/cms/src/__tests__/idor-tenant-isolation.integration.test.ts`;
   ma trận ở `docs/vi/security/idor-testing.md`.
 
-Còn lại: RLS bị bỏ qua trong development (`rls.ts:43-45`), nên các đường chỉ có ở
-dev thiếu lớp chốt ở DB. [Inference] các service không phải `ItemService` phải tự
-áp `scopeSite`; RLS là lớp chốt ở production cho mọi trường hợp bỏ sót.
+Còn lại: lớp chốt ở DB chỉ áp dụng khi operator đặt `LUMIBASE_DB_RLS=enforce`
+với role ứng dụng NOBYPASSRLS. [Inference] các service không phải `ItemService`
+phải tự áp `scopeSite`; RLS chỉ là lớp chốt cho mọi trường hợp bỏ sót ở chế độ
+enforce.
 
 ## API2:2023 — Broken Authentication
 

@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-10-15T22:27:48.731Z
+version: 5
+lastUpdated: 2026-10-17T16:36:18.899Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 641f834b11c530ea
+sourceHash: 55533cd9fd73e735
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T22:27:48.731Z
-codeVerifiedHash: 641f834b11c530ea
-codeVerifiedClaims: 28
+codeVerified: 2026-10-17T16:36:18.899Z
+codeVerifiedHash: 55533cd9fd73e735
+codeVerifiedClaims: 30
 ---
 
 # Checklist deploy LumiBase lên production
@@ -178,6 +178,10 @@ pnpm -F @lumibase/database migrate
 
 ### Bảo mật database
 
+- [ ] Chọn chế độ RLS. Lớp chốt chỉ thực thi khi `LUMIBASE_DB_RLS=enforce`; quy trình đầy đủ ở [Scope RLS trên request path](features/rls-request-scope.md).
+  - `off` (mặc định): ứng dụng kết nối bằng role bypass RLS (role có `BYPASSRLS`; superuser cũng bypass). Owner của bảng không được miễn: `rls-policies.sql` bật `FORCE ROW LEVEL SECURITY`, nên owner không phải superuser không thấy dòng nào. Ở chế độ này áp file không thay đổi gì.
+  - `enforce`: hai role. `DATABASE_URL` (hoặc `HYPERDRIVE`) là role ứng dụng tạo với `NOSUPERUSER NOBYPASSRLS`; tuyệt đối không là superuser hay role có `BYPASSRLS`, nếu không lớp chốt không thực thi gì. `DATABASE_SYSTEM_URL` (hoặc binding `HYPERDRIVE_SYSTEM`) là system role có `BYPASSRLS`, nên không phải superuser, dành cho worker, cron và route hệ thống. Cả hai role được cấp `USAGE` trên schema và `SELECT, INSERT, UPDATE, DELETE` trên mọi bảng (cấp lại sau các migration thêm bảng).
+- [ ] Với `enforce`: log khởi động Docker có `[db-rls] request-path RLS scope: enforce (…)` và không có `[db-rls] WARNING`; `GET /health/ready` trả 200 (nó probe cả hai connection).
 - [ ] Đã bật Row Level Security (RLS): áp `packages/database/migrations/rls-policies.sql` bằng owner của database (không phải role ứng dụng). `pnpm db:migrate` không áp file này; áp lại sau mỗi lần upgrade.
   ```bash
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \
@@ -189,7 +193,7 @@ pnpm -F @lumibase/database migrate
    WHERE policyname IN ('site_isolation', 'site_isolation_permit')
    ORDER BY 1, 2;
   ```
-- [ ] Smoke test RLS bằng role ứng dụng: count > 0 với site có settings, và = 0 khi chưa set `app.site_id`.
+- [ ] Smoke test RLS bằng một role không có BYPASSRLS: count > 0 với site có settings, và = 0 khi chưa set `app.site_id`. Test này tự mở transaction riêng; nó chứng minh policy đúng, không chứng minh ứng dụng đã có scope. Với ứng dụng, chạy bước kiểm tra hai site trong [Scope RLS trên request path](features/rls-request-scope.md#bật-tính-năng).
   ```sql
   BEGIN;
   SELECT set_config('app.site_id', '<site id>', true);

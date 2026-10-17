@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
+import { scopedDbFor } from '../middleware/db';
 import { AuditLogger } from '../modules/audit/logger';
 import {
   SuppressionService,
@@ -43,7 +44,9 @@ async function processUnsubscribe(
   const claims = await verifyUnsubscribeToken(token, secret);
   if (!claims) return { ok: false };
 
-  const service = new SuppressionService({ db: c.get('db') });
+  // The verified token names the site; scope to it (B130).
+  const db = scopedDbFor(c, claims.siteId);
+  const service = new SuppressionService({ db });
   const { alreadySuppressed } = await service.suppress({
     siteId: claims.siteId,
     email: claims.email,
@@ -52,7 +55,7 @@ async function processUnsubscribe(
   });
 
   if (!alreadySuppressed) {
-    await new AuditLogger({ db: c.get('db'), siteId: claims.siteId }).write({
+    await new AuditLogger({ db, siteId: claims.siteId }).write({
       event: 'email_unsubscribed',
       targetEmail: claims.email,
       ip: c.get('ip') ?? null,

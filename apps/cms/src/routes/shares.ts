@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
+import { scopedDbFor } from '../middleware/db';
 import { ShareService, ShareServiceError } from '../services/share-service';
 import { formatSafeError } from '@lumibase/contracts/utils';
 
@@ -35,7 +36,12 @@ function toError(err: unknown) {
 
 sharePublicRouter.get('/:token', async (c) => {
   try {
-    const service = new ShareService({ db: c.get('db'), cache: c.get('runtime').cache });
+    // The token decides the site, so later queries self-scope (B130).
+    const service = new ShareService({
+      db: c.get('db'),
+      cache: c.get('runtime').cache,
+      scopedDb: (siteId) => scopedDbFor(c, siteId),
+    });
     const result = await service.read({
       token: c.req.param('token'),
       password: c.req.header('x-lumi-share-password') ?? c.req.query('password') ?? null,

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 
 const SECRET_FILE_VARS = [
   'DATABASE_URL',
+  'DATABASE_SYSTEM_URL',
   'REDIS_URL',
   'JWT_SECRET',
   'ENCRYPTION_KEY',

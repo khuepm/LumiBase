@@ -9,8 +9,16 @@
 --   1. Run this migration AFTER the schema migration (0000_lumibase_init),
 --      which creates every system table in the `lumibase_` namespace — these
 --      policies target those names.
---   2. The Postgres role used by Hyperdrive must NOT be a superuser.
---      Use a dedicated `lumibase_app` role with GRANT on all tables.
+--   2. The policies only bind a role without BYPASSRLS (and not a superuser).
+--      They only enforce anything when the CMS runs with
+--      LUMIBASE_DB_RLS=enforce (B130, docs/en/features/rls-request-scope.md):
+--      the app connects as a NOSUPERUSER NOBYPASSRLS role and every request
+--      statement sets `app.site_id` in its own transaction, while workers,
+--      cron and system routes use DATABASE_SYSTEM_URL / HYPERDRIVE_SYSTEM on a
+--      role with BYPASSRLS. With the flag off (default) keep the app on a role
+--      that bypasses RLS: a NOBYPASSRLS app role would see no rows. The table
+--      owner is NOT exempt: FORCE ROW LEVEL SECURITY below applies the
+--      policies to a non-superuser owner as well.
 --   3. The custom setting `app.site_id` gets a safe default ('') on the
 --      current database; this file sets it itself (no hardcoded db name).
 --

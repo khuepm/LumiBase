@@ -1,11 +1,11 @@
 ---
-version: 7
-lastUpdated: 2026-10-15T22:27:48.360Z
+version: 9
+lastUpdated: 2026-10-17T16:36:20.639Z
 sourceLang: en
-contentHash: b7a84590f139488d
-codeVerified: 2026-10-15T22:27:48.360Z
-codeVerifiedHash: b7a84590f139488d
-codeVerifiedClaims: 54
+contentHash: 7af46441f83e7d8e
+codeVerified: 2026-10-17T16:36:20.639Z
+codeVerifiedHash: 7af46441f83e7d8e
+codeVerifiedClaims: 56
 ---
 
 # CWE Top 100 Security Audit — LumiBase
@@ -69,7 +69,7 @@ Of the **78 applicable** weaknesses: **78 mitigated (100%)**, 0 partial, 0 not a
 | 14 | 121 | Stack Buffer Overflow | — | Memory-safety class. |
 | 15 | 502 | Unsafe Deserialization | ✅ | Config import via strict Zod schemas before any processing (`apps/cms/src/services/config-import-service.ts:79`); no yaml.load/vm/unserialize. |
 | 16 | 122 | Heap Buffer Overflow | — | Memory-safety class. |
-| 17 | 863 | Incorrect Authorization | ✅ | Postgres RLS on 48 tables with transaction-scoped `SET LOCAL app.site_id`, a restrictive + permissive policy pair per table (B125) (`packages/database/migrations/rls-policies.sql`); app-level `siteId` scoping in services; field-level masking in `permission-service.ts`. |
+| 17 | 863 | Incorrect Authorization | ✅ | App-level `siteId` scoping in services is the primary gate; field-level masking in `permission-service.ts`. Postgres RLS backstop on 48 tables, a restrictive + permissive policy pair per table (B125) (`packages/database/migrations/rls-policies.sql`). With `LUMIBASE_DB_RLS=enforce` (opt-in) every request statement runs in its own transaction with `app.site_id` set (`middleware/db.ts`), workers use a BYPASSRLS system connection, and `withRls` fails closed on an unscoped db (B130). |
 | 18 | 20 | Improper Input Validation | ✅ | Zod `safeParse()` consistently on all route inputs (shared schemas in `packages/contracts/src/schemas`). |
 | 19 | 284 | Improper Access Control | ✅ | **Fixed 2026-07-06.** Route surfaces (flows, ai, cdc, uploads, shares) enforce admin/permission checks. `/health` now returns only overall `status` to anonymous callers (per-subsystem detail requires the observability token); `/metrics` enforces `METRICS_TOKEN` in **all** environments when configured (previously non-prod bypass). See CWE-668. |
 | 20 | 200 | Sensitive Info Exposure | ✅ | `formatSafeError()` strips request/response objects; clients get generic error codes; stack traces log server-side only (`apps/cms/src/index.ts:328`). |

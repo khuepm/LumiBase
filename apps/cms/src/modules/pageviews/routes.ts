@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../../env';
+import { scopedDbFor } from '../../middleware/db';
 import { PageviewService } from './service';
 import { shouldRecord } from './bot-filter';
 
@@ -23,7 +24,8 @@ export const pageviewsPublicRouter = new Hono<AppEnv>();
 
 pageviewsPublicRouter.post('/:site_id/hit', async (c) => {
   const siteId = c.req.param('site_id');
-  const db = c.get('db');
+  // The site comes from the path, not `withTenant`; scope to it (B130).
+  const db = scopedDbFor(c, siteId);
   const runtime = c.get('runtime');
 
   // Honour bots / DNT / GPC before doing any work.
