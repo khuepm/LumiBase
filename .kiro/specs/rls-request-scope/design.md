@@ -1,6 +1,8 @@
 # Design — RLS Request Scope (B130)
 
-> Trạng thái: **post-v1, chưa bắt đầu.** Đây là thay đổi public surface **additive** (env var `DATABASE_SYSTEM_URL`, binding `HYPERDRIVE_SYSTEM`, cờ `LUMIBASE_DB_RLS`), nên chỉ ship ở một bản minor 1.x (`v1-release-criteria.md` §6). Phase 0 (docs + backlog + comment, không đổi logic) đã làm ở PR ghi trong B130.
+> Status: implemented behind opt-in flag `LUMIBASE_DB_RLS` (owner option B, 2026-10-16; PR #552, 2026-10-17). Mặc định `off`; xem `tasks.md` và mục Implementation decisions trong `design.md`.
+>
+> Trạng thái ban đầu (Phase 0): **post-v1, chưa bắt đầu.** Đây là thay đổi public surface **additive** (env var `DATABASE_SYSTEM_URL`, binding `HYPERDRIVE_SYSTEM`, cờ `LUMIBASE_DB_RLS`), nên chỉ ship ở một bản minor 1.x (`v1-release-criteria.md` §6). Phase 0 (docs + backlog + comment, không đổi logic) đã làm ở PR ghi trong B130.
 >
 > Số dòng code trích dẫn bên dưới đo ở commit `356a859e` (+ #550 `9d130b24`). Đối chiếu lại trước khi làm.
 
@@ -137,3 +139,39 @@ Toàn bộ worker/cron/queue (F2, F3), trên cả `serve.ts` lẫn `cloudflare.t
 - **Before** (trên nền #550): postgres riêng, `log_statement=all`, `log_line_prefix='%p %x '`. Migrate, áp file, tạo role `app` NOBYPASSRLS. Chạy CMS bằng `tsx src/serve.ts` với `DATABASE_URL=app`, `LUMIBASE_ENV=production`. Gọi list items cho site A: **0 dòng**. Trong log, câu `set_config` và câu `SELECT … lumibase_items` có `%x` (xid) khác nhau (hoặc 0) và có thể khác `%p`. Số đo Phase 0 ở §1 đã xác nhận phần này ở mức middleware.
 - **After**: cùng thủ tục với `LUMIBASE_DB_RLS=enforce` + `DATABASE_SYSTEM_URL`. List trả dòng của A, không có dòng của B. Trong log, mỗi query có `BEGIN` → `set_config` → query → `COMMIT` trên **cùng** `%p`/`%x`.
 - **Chi phí**: 1000 lần `GET /items` tuần tự và song song (k6 `apps/cms/k6/load-items.js`) với cờ `off` vs `enforce` trên Docker local. Ghi p50/p95 vào mô tả PR. Hyperdrive staging đo riêng; không suy từ local.
+
+## Implementation decisions (PR #552, 2026-10-17)
+
+- **D1** Cờ parse ở `apps/cms/src/config/db-rls.ts` (Worker-safe): `''`/`off` → off, `enforce` → enforce, giá trị khác → `DbRlsConfigError` (fail closed). Đọc `c.env` trước, rồi `process.env`.
+- **D2** `enforce` áp cho mọi nhánh của `withDb` (dev, runtime, Hyperdrive fallback). `withRls` không còn chạm DB nên không còn dev-skip; `runSiteTransaction` chỉ skip ở dev khi cờ không phải `enforce`.
+- **D3** Nhận biết db đã scope qua marker `SITE_SCOPED_SQL` trên client (`db.$client`), đọc qua `isSiteScopedSql` / `scopedSiteIdOf`; `unscopedSqlOf` lấy lại client gốc để scope sang site khác.
+- **D4** Toàn bộ helper phía request ở `middleware/db.ts`: `withDb`, `withSystemDb`, `scopedDbFor(c, siteId)` (off → `c.get('db')`), `systemDbFor(c)` (memo trong `Variables.systemDb`; off không có system connection riêng → dùng lại `c.get('db')`).
+- **D5** Workers: `enforce` thiếu system connection → `503 RLS_MISCONFIGURED` theo từng request.
+- **D6** `DatabaseProvider.getSystemConnection()` + `hasSystemConnection()`; thiếu cấu hình thì trả connection chính. Docker: pool thứ hai lazy (`max: 10`); Cloudflare: Hyperdrive thứ hai lazy (`max: 5`).
+- **D7** Docker startup check `config/db-rls-startup.ts` (`assertDbRlsStartup`): cờ sai / `enforce` thiếu `DATABASE_SYSTEM_URL` / system role không bypass RLS → throw; app role bypass RLS ở `enforce` → cảnh báo; `off` + role NOBYPASSRLS + đã có policy → cảnh báo (probe tư vấn, lỗi kết nối không chặn khởi động). `DATABASE_SYSTEM_URL` hỗ trợ `_FILE`.
+- **D8** Workers dùng `cloudflare-system-db.ts` `createCloudflareSystemDb(env)`: `HYPERDRIVE_SYSTEM` → (chỉ khi off) `HYPERDRIVE` → (chỉ dev) `DATABASE_SYSTEM_URL ?? DATABASE_URL`.
+- **D9** `wrangler.toml` chỉ có khối `HYPERDRIVE_SYSTEM` dạng comment (binding Hyperdrive cần id thật); deploy hiện tại không đổi.
+- **D10** Đường hệ thống: setup, recovery, `/scim/v2`, git OAuth callback, `adminPathGuard`, `auditApiKeyUseDenied`; `/health` probe cả hai connection.
+- **D11** `PreviewEnvManager` nhận `scopedDb(siteId)`; mỗi câu chạy trên site nó tác động; `setContext` đã xoá.
+- **D12** Client đã scope ném `SCOPED_SQL_UNSUPPORTED` cho `reserve`, `listen`, `notify`, `subscribe`, `savepoint` (top level), `file` và các API cursor/stream của query.
+- **D13** Property test (fast-check) ở `apps/cms` để không thêm devDependency vào `packages/runtime`.
+- **D14** Fixture role/DB dùng chung: `apps/cms/src/test-utils/rls-roles.ts` (suite DB + script bench).
+- **D15** Spec vẫn post-v1 trong `v1-scope-classification.md`; nếu merge trước tag `v1.0.0` thì ba tên biến môi trường thành surface 1.0, đối chiếu lúc cắt RC.
+- **D16** Doc tính năng: cặp `docs/{en,vi}/features/rls-request-scope.md`.
+- Hộp `{ r }` trong `runScoped` là phòng thủ: kiểm âm cho thấy với callback `async` của postgres.js 3.4.9 nó không bắt buộc; `.count` được kiểm trên DB thật.
+- Biến thể golden-path E2E chạy `enforce` trong CI (kế hoạch item 17) **chưa làm** trong PR này; hành vi được chứng minh bằng suite DB integration (chạy trong job `DB integration suites`).
+
+## Kết quả đo (local Docker, 2026-10-17)
+
+Postgres 16.15 trong container trên cùng máy (loopback), Node 24.15.0, postgres.js 3.4.9, máy dùng chung (load 5–9). **Không đại diện cho Hyperdrive.** Script `apps/cms/scripts/bench-rls-scope.ts`, middleware `withDb`/`withRls` thật, list 50 item, 2 site × 200 item, ba lần chạy:
+
+| | off (role BYPASSRLS) | enforce (role NOBYPASSRLS) |
+|---|---|---|
+| Câu SQL / request | 1 | 4 (`begin`, `set_config($1)`, query, `commit`) |
+| Tuần tự 1000 req, p50 | 2.11–2.31 ms | 3.42–3.85 ms |
+| Tuần tự 1000 req, p95 | 4.45–7.01 ms | 6.73–9.10 ms |
+| Song song 20, p50 | 18.56–26.04 ms | 29.69–33.37 ms |
+| Song song 20, throughput | 575–939 rps | 435–620 rps |
+
+Log `log_statement=all` xác nhận `begin` → `set_config('app.site_id', $1, true)` (tham số `$1`) → query → `commit` trên cùng backend pid. k6 không chạy (chưa cài); Hyperdrive staging chưa đo.
+

@@ -1,4 +1,5 @@
 # Requirements Document — RLS Request Scope (B130)
+> Status: implemented behind opt-in flag `LUMIBASE_DB_RLS` (owner option B, 2026-10-16; PR #552, 2026-10-17). Mặc định `off`; xem `tasks.md` và mục Implementation decisions trong `design.md`.
 
 ## Introduction
 
