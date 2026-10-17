@@ -119,9 +119,13 @@ function setScope(tx: AnyTx, siteId: string) {
  * and the query are started together so they pipeline on the connection; the
  * scope query is created first, so it executes first.
  *
- * The result is boxed because postgres.js `Promise.all`s a callback result
- * that is an Array, which would turn a RowList into a plain array and drop
- * `.count` / `.columns`.
+ * The result is boxed because postgres.js `Promise.all`s a `begin` callback
+ * result that is an Array, which would turn a RowList into a plain array and
+ * drop `.count` / `.columns`. With the async callback below that branch does
+ * not trigger on postgres.js 3.4.9 (an async function returns a Promise, not
+ * an Array), so the box is defensive: it keeps `.count` if this callback is
+ * ever made synchronous. `rls-request-scope.db.integration.test.ts` checks
+ * `.count` against a real database.
  */
 function runScoped<T>(base: AnySql, siteId: string, run: (tx: AnyTx) => PromiseLike<T>): Promise<T> {
   return (
