@@ -4,6 +4,7 @@ import {
   isSiteScopedSql,
   scopedSiteIdOf,
   SITE_SCOPED_SQL,
+  unscopedSqlOf,
 } from '../scoped-sql';
 
 /**
@@ -268,5 +269,7 @@ describe('createSiteScopedSql', () => {
     expect(isSiteScopedSql(base)).toBe(false);
     expect(scopedSiteIdOf(base)).toBeUndefined();
     expect(isSiteScopedSql(undefined)).toBe(false);
+    expect(unscopedSqlOf(sql)).toBe(base);
+    expect(unscopedSqlOf(base)).toBe(base);
   });
 });

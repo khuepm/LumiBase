@@ -1,7 +1,7 @@
-import { createDb } from '@lumibase/database';
 import { createCloudflareRuntime } from '@lumibase/runtime';
 import { z } from 'zod';
 import type { Bindings } from './env';
+import { createCloudflareSystemDb } from './cloudflare-system-db';
 import { processAgentRunJob, type AgentRunJobPayload } from './services/agent-run-worker';
 
 const id = z.string().min(1);
@@ -37,13 +37,14 @@ export async function processCloudflareAgentQueue(batch: MessageBatch<unknown>, 
     return false;
   });
   if (messages.length === 0) return;
-  const connectionString = env.HYPERDRIVE?.connectionString
-    ?? (env.LUMIBASE_ENV === 'development' ? env.DATABASE_URL : undefined);
-  if (!connectionString) {
+  // System connection (B130): a batch can carry runs of several sites, and the
+  // worker claims and settles runs without a request scope.
+  const system = createCloudflareSystemDb(env);
+  if (!system.db) {
     // Throw before claiming a run. Cloudflare retries the batch on infra failure.
-    throw new Error('Agent queue requires HYPERDRIVE (or development DATABASE_URL).');
+    throw new Error(`Agent queue: ${system.error}`);
   }
-  const db = createDb(connectionString);
+  const db = system.db;
   const runtime = createCloudflareRuntime({ ...env });
   // LLM configuration contains strings only; never cast Worker bindings to env strings.
   const workerEnv: Record<string, string | undefined> = {};

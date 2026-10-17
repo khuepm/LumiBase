@@ -35,6 +35,7 @@ import type postgres from 'postgres';
 
 /** Marker so callers can tell a scoped client from a plain pool. */
 export const SITE_SCOPED_SQL: unique symbol = Symbol.for('lumibase.siteScopedSql');
+const SITE_SCOPED_BASE: unique symbol = Symbol.for('lumibase.siteScopedSql.base');
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySql = postgres.Sql<any>;
@@ -189,6 +190,7 @@ export function createSiteScopedSql<S extends AnySql>(base: S, siteId: string): 
     },
     get(_t, prop) {
       if (prop === SITE_SCOPED_SQL) return siteId;
+      if (prop === SITE_SCOPED_BASE) return base;
       if (prop === 'unsafe') return unsafe;
       if (prop === 'begin') return begin;
       if (typeof prop === 'string' && UNSUPPORTED_CLIENT_MEMBERS.has(prop)) {
@@ -211,6 +213,14 @@ export function isSiteScopedSql(x: unknown): boolean {
     (typeof x === 'function' || (typeof x === 'object' && x !== null)) &&
     typeof (x as Record<symbol, unknown>)[SITE_SCOPED_SQL] === 'string'
   );
+}
+
+/**
+ * The unscoped client under a scoped one (so a request can re-scope the same
+ * connection to another site), or `x` itself when it is not scoped.
+ */
+export function unscopedSqlOf<S>(x: S): S {
+  return isSiteScopedSql(x) ? ((x as unknown as Record<symbol, S>)[SITE_SCOPED_BASE] as S) : x;
 }
 
 /** The site a scoped client is bound to, or `undefined` for a plain client. */

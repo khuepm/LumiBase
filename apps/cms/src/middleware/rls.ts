@@ -1,85 +1,62 @@
 /**
- * Row-Level Security middleware — Phase G hardening.
+ * Row-Level Security assertion (B130, `.kiro/specs/rls-request-scope/`).
  *
- * Defence-in-depth: even if application-level permission checks are
- * bypassed, Postgres RLS ensures rows are invisible to the current
- * connection unless `app.site_id` matches the row's `site_id` column.
+ * The scope itself is applied by `withDb()` (`middleware/db.ts`): with
+ * `LUMIBASE_DB_RLS=enforce` it wraps the request connection with
+ * `createSiteScopedSql`, so EVERY statement of the request runs as
+ * `BEGIN; <set app.site_id, is_local>; <query>; COMMIT` on one reserved
+ * connection. The setting therefore reaches the query it guards and dies with
+ * that transaction; it cannot leak to another request through the pool, and
+ * no session-level `SET` is used. `withDb` runs right after `withTenant` in
+ * `index.ts`, so the middlewares that read RLS tables before this one
+ * (membership, studio access, auth audit) are scoped too.
+ *
+ * This middleware no longer touches the database. It only fails closed:
+ *
+ * - flag `off` (default): pass through. Isolation relies on application
+ *   `site_id` filters, and the app connects with a role that bypasses RLS.
+ * - invalid flag value: 503 `RLS_MISCONFIGURED`.
+ * - `enforce` with a `siteId` but an unscoped `c.get('db')`: 503
+ *   `RLS_UNAVAILABLE`. Something built the request db outside `withDb`, and
+ *   serving the request would run its queries without the site scope.
+ *
+ * Previously this middleware ran the scope statement on its own, as an
+ * autocommit statement on the pool, so its value was gone before the next
+ * query and nothing was scoped (B130).
  *
  * Usage:
- *   api.use('*', withTenant(), withAuth(), withDb(), withRls());
- *
- * The middleware must run AFTER `withDb()` (so `c.get('db')` is set)
- * and AFTER `withTenant()` (so `c.get('siteId')` is set).
- *
- * What it actually does today (B130):
- *   1. It runs `SELECT set_config('app.site_id', <siteId>, true)` as a
- *      standalone statement on the connection pool. With `is_local = true`
- *      the setting lasts only for that statement's own implicit
- *      transaction, which autocommits as soon as the statement returns.
- *   2. Every later query of the request runs in a different transaction
- *      (and possibly on a different pooled connection), where
- *      `current_setting('app.site_id', true)` is ''. So this middleware does
- *      NOT scope the request's queries. Neither Hyperdrive nor the Docker
- *      pool wraps a request in one transaction.
- *   3. Postgres RLS policies (see `rls-policies.sql`) read
- *      `current_setting('app.site_id')`. Today only code that goes through
- *      `runSiteTransaction` (`services/rls-transaction.ts`) sets it on the
- *      transaction that runs its queries.
- *   4. No code path sets `row_security = off`; there is no admin bypass here.
- *
- * Consequence: do not connect the app with a NOBYPASSRLS role after applying
- * `rls-policies.sql`; request-path reads and background jobs would see no
- * rows. The fix is tracked in B130 / `.kiro/specs/rls-request-scope/`.
- *
- * Security notes:
- *   - We never use `SET` (session-level), which would leak across pool
- *     connections.
+ *   api.use('*', withTenant(), withDb(), …, withRls());
  */
 
 import { createMiddleware } from 'hono/factory';
+import { isSiteScopedSql, scopedSiteIdOf } from '@lumibase/runtime';
 import type { AppEnv } from '../env';
-import { formatSafeError } from '@lumibase/contracts/utils';
+import { dbClientOf } from './db';
+import { DbRlsConfigError, resolveDbRlsMode, rlsErrorBody } from '../config/db-rls';
 
 export function withRls() {
   return createMiddleware<AppEnv>(async (c, next) => {
+    let mode;
+    try {
+      mode = resolveDbRlsMode(c.env);
+    } catch (err) {
+      if (!(err instanceof DbRlsConfigError)) throw err;
+      console.error('[rls] invalid LUMIBASE_DB_RLS — failing closed', {
+        requestId: c.get('requestId'),
+        message: err.message,
+      });
+      return c.json(rlsErrorBody('RLS_MISCONFIGURED', err.message), 503);
+    }
+
     const siteId = c.get('siteId');
-    const runtime = c.get('runtime');
-
-    // Skip RLS in development to avoid Wrangler / postgres.js connection pooling crash.
-    // Cloudflare Workers sandbox throws "Cannot perform I/O on behalf of a different request" 
-    // when executing raw pool queries concurrently across async request boundaries.
-    const isDev = c.env.LUMIBASE_ENV === 'development' || process.env.LUMIBASE_ENV === 'development';
-
-    if (siteId && !isDev) {
-      try {
-        // Obtain the raw SQL connection from the runtime database adapter.
-        // The runtime exposes `getConnection()` returning a postgres.js sql tag.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const sql = (runtime.database.getConnection() as any);
-
-        // Autocommit statement: the transaction-local setting ends with this
-        // statement, so later queries of the request are not scoped (B130).
-        await sql`SELECT set_config('app.site_id', ${siteId}, true)`;
-      } catch (err) {
-        // Fail CLOSED when the set_config statement itself errors (the
-        // database is unreachable or misconfigured). This does not mean the
-        // success path scopes the request: it does not (B130), and
-        // application-level `.where(siteId)` filters remain the only gate on
-        // the request path today.
-        const requestId = c.get('requestId');
-        console.error('[rls] Failed to set app.site_id — failing closed', {
-          requestId,
-          err: formatSafeError(err),
+    if (mode === 'enforce' && siteId) {
+      const client = dbClientOf(c.get('db'));
+      if (!isSiteScopedSql(client) || scopedSiteIdOf(client) !== siteId) {
+        console.error('[rls] request db is not scoped to the request site — failing closed', {
+          requestId: c.get('requestId'),
         });
         return c.json(
-          {
-            errors: [
-              {
-                code: 'RLS_UNAVAILABLE',
-                message: 'Request could not be securely scoped. Please retry.',
-              },
-            ],
-          },
+          rlsErrorBody('RLS_UNAVAILABLE', 'Request could not be securely scoped. Please retry.'),
           503,
         );
       }

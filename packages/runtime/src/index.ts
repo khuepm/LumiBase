@@ -30,7 +30,7 @@ export {
   resolveActiveKeyId,
 } from './adapters/shared-keys';
 // Worker-safe: `scoped-sql` imports `postgres` as a type only.
-export { createSiteScopedSql, isSiteScopedSql, scopedSiteIdOf, SITE_SCOPED_SQL } from './scoped-sql';
+export { createSiteScopedSql, isSiteScopedSql, scopedSiteIdOf, unscopedSqlOf, SITE_SCOPED_SQL } from './scoped-sql';
 export { MemoryCacheProvider } from './memory-cache';
 export { MemoryRateLimiter } from './memory-rate-limiter';
 export { RedisRateLimiter } from './adapters/redis-rate-limiter';

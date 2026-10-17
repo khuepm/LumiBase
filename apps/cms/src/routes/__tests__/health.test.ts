@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../../env';
 import { healthRouter } from '../health';
 
-function buildApp(options?: { unhealthy?: boolean }) {
+function buildApp(options?: { unhealthy?: boolean; system?: 'up' | 'down' }) {
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
     c.set('runtime', {
@@ -11,6 +11,11 @@ function buildApp(options?: { unhealthy?: boolean }) {
       database: {
         getConnection: () => async () => {
           if (options?.unhealthy) throw new Error('db down');
+          return [{ ok: 1 }];
+        },
+        hasSystemConnection: () => options?.system !== undefined,
+        getSystemConnection: () => async () => {
+          if (options?.system === 'down') throw new Error('system db down');
           return [{ ok: 1 }];
         },
         close: async () => {},
@@ -103,5 +108,15 @@ describe('health routes', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.services).toBeUndefined();
+  });
+
+  it('probes a dedicated system connection too (B130): healthy when both answer', async () => {
+    const res = await buildApp({ system: 'up' }).request('/health/ready');
+    expect(res.status).toBe(200);
+  });
+
+  it('reports the database unhealthy when the system connection fails (B130)', async () => {
+    const res = await buildApp({ system: 'down' }).request('/health/ready');
+    expect(res.status).toBe(503);
   });
 });
