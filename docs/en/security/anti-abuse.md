@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-10-16T15:42:03.648Z
+version: 5
+lastUpdated: 2026-10-17T16:36:20.390Z
 sourceLang: en
-contentHash: 724de2469a4a0d4b
-codeVerified: 2026-10-16T15:42:03.648Z
-codeVerifiedHash: 724de2469a4a0d4b
+contentHash: 59729a48912c6d74
+codeVerified: 2026-10-17T16:36:20.390Z
+codeVerifiedHash: 59729a48912c6d74
 codeVerifiedClaims: 72
 ---
 
@@ -159,10 +159,11 @@ enforce isolation in the database so a missing `.where()` cannot leak data.
   role without BYPASSRLS no rows unless a permissive policy passes; the
   restrictive half stops any other permissive policy from widening access.
   With `app.site_id` unset or empty, no row is visible and every write fails.
-  Today only code paths that use `runSiteTransaction` set `app.site_id` on the
-  connection that runs their queries; `withRls` does not (B130). Do not
-  connect the app with a NOBYPASSRLS role after applying `rls-policies.sql`:
-  request-path reads and background jobs would see no rows.
+  With `LUMIBASE_DB_RLS=enforce`, `withDb()` sets `app.site_id` inside the
+  transaction of every request statement, and workers use a `BYPASSRLS`
+  system connection (B130). With the flag off (default) the app must connect
+  with a role that bypasses RLS. See
+  [Request-path RLS scope](../features/rls-request-scope.md).
 - Apply the file as the database owner (not the app role), and re-apply it
   after every upgrade: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1
   --single-transaction -f packages/database/migrations/rls-policies.sql`.

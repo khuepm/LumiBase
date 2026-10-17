@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-10-16T15:41:55.207Z
+version: 3
+lastUpdated: 2026-10-17T16:36:17.354Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: cf4e35c792699125
+sourceHash: 0d8d73675bbebcf8
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-16T15:41:55.207Z
-codeVerifiedHash: cf4e35c792699125
+codeVerified: 2026-10-17T16:36:17.354Z
+codeVerifiedHash: 0d8d73675bbebcf8
 codeVerifiedClaims: 2
 ---
 
@@ -186,7 +186,7 @@ See [features/runtime-abstraction.md](../features/runtime-abstraction.md) for de
 - `site_id` is passed via subdomain or the `X-Lumi-Site` header.
 - The `withTenant()` middleware sets `c.set('siteId', …)` and injects it into every service.
 - The Drizzle helper `scopeSite(siteId)` wraps the query builder to force the filter.
-- The `withRls()` middleware is meant to set `app.site_id` for the RLS policies, but it does not scope the request's queries yet (B130); only `runSiteTransaction` paths are scoped today.
+- With `LUMIBASE_DB_RLS=enforce`, `withDb()` runs every request statement in its own transaction with `app.site_id` set, and `withRls()` fails closed when the request db is not scoped. Workers and system routes use a `BYPASSRLS` system connection. The flag is off by default (B130, [Request-path RLS scope](../features/rls-request-scope.md)).
 
 ## 7. Security
 

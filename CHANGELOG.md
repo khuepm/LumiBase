@@ -10,6 +10,15 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Added
+- **Request-path RLS scope, opt-in (B130).** `LUMIBASE_DB_RLS=enforce`
+  (default `off`) makes the Postgres RLS backstop from `rls-policies.sql`
+  enforce on the request path: every request statement runs as
+  `BEGIN; set_config('app.site_id', $1, true); <query>; COMMIT` on one
+  connection. New, additive configuration: `DATABASE_SYSTEM_URL` (+ `_FILE`,
+  Docker) and the optional `HYPERDRIVE_SYSTEM` binding (Workers) for the
+  BYPASSRLS system role used by workers, cron and system routes. Docker refuses
+  to start when `enforce` lacks a BYPASSRLS system role; any value other than
+  `off`/`enforce` fails closed. See `docs/en/features/rls-request-scope.md`.
 - **Studio: Flows, semantic drift and automation status in Settings → AI
   decisions (#518, #519).** Site admins switch `aiDecisions.flows` and
   `aiDecisions.drift` there. Jev automation is shown read-only (configured
@@ -442,17 +451,24 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   migration and no backfill. Deployments that never applied the file are not
   affected.
 
-  **Known limitation (B130):** today only code paths that use
-  `runSiteTransaction` set `app.site_id` on the connection that runs their
-  queries; `withRls` does not (it runs `set_config` as a standalone autocommit
-  statement, so the setting ends with that statement). Do not connect the app
-  with a NOBYPASSRLS role after applying `rls-policies.sql`: request-path reads
-  and background jobs would see no rows. Keep the app on a superuser or a role
-  with BYPASSRLS until the fix ships. The table owner is not exempt: the file
-  sets `FORCE ROW LEVEL SECURITY`, so a non-superuser owner sees no rows
-  either. Until then the applied file enforces nothing. The fix is tracked as
-  post-v1 spec `rls-request-scope`. The docs and code comments that said the request path
-  was scoped now say this.
+  **Fixed (B130):** `withRls` used to run `set_config` as a standalone
+  autocommit statement, so the setting ended with that statement and no
+  request query was scoped. With `LUMIBASE_DB_RLS=enforce` every request
+  statement now runs in its own transaction with `app.site_id` set
+  (`createSiteScopedSql`), routers that learn the site in the handler scope
+  themselves, and workers, cron, queue consumers and system routes use a
+  BYPASSRLS system connection (`DATABASE_SYSTEM_URL` / `HYPERDRIVE_SYSTEM`).
+  `withRls` fails closed with `503 RLS_UNAVAILABLE` on an unscoped request db.
+  Cost measured on a local Docker Postgres: 1000 sequential list requests p50
+  2.11–2.31 ms with the flag off and 3.42–3.85 ms with it on (three runs;
+  Hyperdrive not measured). With the flag off (default) the app still needs a
+  role that bypasses RLS, and the table owner is not exempt (`FORCE ROW LEVEL
+  SECURITY`).
+  **Upgrade note:** nothing to do for default deployments; with the flag off
+  `withRls` no longer runs its per-request `set_config` round trip. To turn the
+  backstop on, follow `docs/en/features/rls-request-scope.md` (two roles, the
+  new variables, no migration, no backfill; roll back with
+  `LUMIBASE_DB_RLS=off`).
 
 
 ## [1.0.0-rc.4] - 2026-09-29

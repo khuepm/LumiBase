@@ -1,8 +1,8 @@
 ---
-version: 2
-lastUpdated: 2026-10-16T16:22:11.671Z
+version: 3
+lastUpdated: 2026-10-17T16:36:17.769Z
 sourceLang: en
-contentHash: c3474a9fa05c6ae1
+contentHash: 42059f4b40b82ca0
 ---
 
 # Data Processing Agreement (DPA) — Template
@@ -44,7 +44,7 @@ Personnel authorized to process data are bound by confidentiality.
 ## 6. Security measures (Art. 32)
 Reference the technical measures LumiBase provides: per-field AES-256-GCM
 encryption (`crypto-service.ts`), tenant isolation by app-level `site_id`
-filters (the database RLS backstop is not effective yet, B130), RBAC
+filters (plus the database RLS backstop when `LUMIBASE_DB_RLS=enforce`), RBAC
 (`schema/access.ts`), append-only audit logging with secret masking, and
 retention controls. Add transport encryption (TLS) and host hardening.
 

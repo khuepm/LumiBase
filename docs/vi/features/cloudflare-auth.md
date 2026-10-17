@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-10-16T15:41:59.749Z
+version: 5
+lastUpdated: 2026-10-17T16:36:19.548Z
 sourceLang: vi
-contentHash: 29ddc3e668a10c9d
-codeVerified: 2026-10-16T15:41:59.749Z
-codeVerifiedHash: 29ddc3e668a10c9d
+contentHash: 11872c1d86999172
+codeVerified: 2026-10-17T16:36:19.548Z
+codeVerifiedHash: 11872c1d86999172
 codeVerifiedClaims: 8
 ---
 
@@ -134,14 +134,14 @@ Quy trình kiểm tra quyền hạn của User:
    - Mặc định sau khi đăng nhập thành công, End-user được gán vai trò `member` gắn với `site_id` của request.
 
 ### B. Bảo mật Multi-Tenancy (Row-Level Security)
-LumiBase thiết kế lớp chốt multi-tenancy ở tầng database bằng middleware `withRls()` của Hono kết hợp với cơ chế Row-Level Security (RLS) của PostgreSQL. Gate chính hiện nay là bộ lọc `site_id` ở tầng ứng dụng; lớp chốt RLS chưa có hiệu lực trên request path (B130):
+LumiBase thiết kế lớp chốt multi-tenancy ở tầng database bằng middleware `withRls()` của Hono kết hợp với cơ chế Row-Level Security (RLS) của PostgreSQL. Gate chính là bộ lọc `site_id` ở tầng ứng dụng; lớp chốt RLS có hiệu lực khi `LUMIBASE_DB_RLS=enforce` (B130, mặc định tắt):
 
 1. **Xác định Site**: `withTenant()` middleware đọc header `X-Lumi-Site` để lấy `siteId` hiện tại.
-2. **Thiết lập DB context**: `withRls()` thực thi câu lệnh SQL dưới đây như một câu autocommit riêng. Vì `is_local = true`, setting hết hiệu lực ngay khi câu đó xong, nên nó không áp cho các câu sau của request (B130):
+2. **Thiết lập DB context**: với `LUMIBASE_DB_RLS=enforce`, `withDb()` chạy câu lệnh dưới đây trong cùng transaction với mỗi câu của request (`BEGIN; …; <query>; COMMIT`), site id là tham số bind. Vì `is_local = true`, setting hết hiệu lực cùng transaction đó và không thể rò sang request khác; `withRls()` fail closed nếu db của request chưa được scope:
    ```sql
    SELECT set_config('app.site_id', '<siteId>', true);
    ```
-3. **RLS Policy**: Postgres lọc mỗi câu truy vấn theo cặp policy mà `packages/database/migrations/rls-policies.sql` tạo cho mỗi bảng, dựa trên `app.site_id` của transaction chạy câu đó. Hiện chỉ các đường code dùng `runSiteTransaction` mới set `app.site_id` trên đúng connection chạy truy vấn của chúng:
+3. **RLS Policy**: Postgres lọc mỗi câu truy vấn theo cặp policy mà `packages/database/migrations/rls-policies.sql` tạo cho mỗi bảng, dựa trên `app.site_id` của transaction chạy câu đó:
    ```sql
    CREATE POLICY site_isolation ON <table_name>
      AS RESTRICTIVE FOR ALL TO PUBLIC
@@ -151,4 +151,4 @@ LumiBase thiết kế lớp chốt multi-tenancy ở tầng database bằng midd
      USING (site_id = app_site_id()) WITH CHECK (site_id = app_site_id());
    ```
    `app_site_id()` trả `NULLIF(current_setting('app.site_id', true), '')`, nên khi không set scope thì không có dòng nào hiện ra và mọi lệnh ghi đều bị từ chối.
-   *Khi B130 xong, điều này sẽ đảm bảo người dùng hoặc admin của site này hoàn toàn không thể đọc/ghi dữ liệu của site khác, ngay cả khi viết code lỗi thiếu điều kiện WHERE. Cho tới lúc đó, đừng cho ứng dụng kết nối bằng role NOBYPASSRLS sau khi áp `rls-policies.sql`: các lệnh đọc trên request path và background job sẽ không thấy dòng nào.*
+   *Với `enforce` và role ứng dụng NOBYPASSRLS, người dùng hoặc admin của site này hoàn toàn không thể đọc/ghi dữ liệu của site khác, ngay cả khi viết code lỗi thiếu điều kiện WHERE. Worker và route hệ thống dùng một system connection `BYPASSRLS` riêng; xem [Scope RLS trên request path](rls-request-scope.md).*

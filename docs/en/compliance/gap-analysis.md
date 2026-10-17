@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-10-16T16:21:58.210Z
+version: 5
+lastUpdated: 2026-10-17T16:36:17.848Z
 sourceLang: en
-contentHash: 1ff0d713cc1851ce
-codeVerified: 2026-10-16T16:21:58.210Z
-codeVerifiedHash: 1ff0d713cc1851ce
+contentHash: 23156707d72f06a9
+codeVerified: 2026-10-17T16:36:17.848Z
+codeVerifiedHash: 23156707d72f06a9
 codeVerifiedClaims: 56
 ---
 
@@ -34,9 +34,9 @@ codeVerifiedClaims: 56
 | Account deletion (in-app/web) | ⚠️ | Admin-driven erasure `/api/v1/admin/erasure` + SAR `/api/v1/admin/sar` (regulated) | Add a self-service + publicly reachable deletion-request URL (Apple 5.1.1(v) / Google Play). |
 | Transparency / privacy notice | ⚠️ | Privacy page at `apps/landing/src/app/privacy/page.tsx` (generic) | Data map to back accurate store "data safety"/labels; per-deployment notice. |
 | Breach notification | ⚠️ | `apps/cms/src/modules/audit/` provides detection trail; `modules/anomaly` | Incident-response runbook + 72h regulator notification process (organizational). |
-| Cross-border transfer / localization | ⚠️ | Edge runtime; app-level `site_id` filters isolate tenants (RLS backstop: B130) | Region-pinning / data-residency configuration + documentation. |
+| Cross-border transfer / localization | ⚠️ | Edge runtime; app-level `site_id` filters isolate tenants (opt-in RLS backstop: `LUMIBASE_DB_RLS=enforce`) | Region-pinning / data-residency configuration + documentation. |
 | Automated decisions / human review | ✅ | `apps/cms/src/modules/data-rights/automated-decisions-service.ts`; `GET /api/v1/me/automated-decisions` surfaces agent revisions on the user's content with provenance; HITL via `ai_approvals` | Add a user-initiated "request human review" action. |
-| Security measures (encryption/access) | ✅ | `apps/cms/src/services/crypto-service.ts` (AES-256-GCM); `fields.encrypted` (`cms.ts:124`); app-level `site_id` filters (RLS backstop: B130); RBAC `schema/access.ts` | Maintain; document key management. |
+| Security measures (encryption/access) | ✅ | `apps/cms/src/services/crypto-service.ts` (AES-256-GCM); `fields.encrypted` (`cms.ts:124`); app-level `site_id` filters (opt-in RLS backstop: `LUMIBASE_DB_RLS=enforce`); RBAC `schema/access.ts` | Maintain; document key management. |
 | Retention / auto-purge | ✅ | Audit: `apps/cms/src/modules/audit/rotator.ts`; general: `apps/cms/src/modules/data-rights/retention-service.ts` (activity + read/archived notifications) via `POST /api/v1/retention/run` | Extend horizons to more PII tables; schedule on the rotation cron. |
 
 ## 2. What LumiBase already does well
@@ -48,9 +48,9 @@ These primitives are real and reusable when building compliance features:
   NDJSON export; `rotator.ts` prunes on a configurable horizon. Strong support for
   GDPR Art. 30/32 evidence and breach detection trails.
 - **Multi-tenant isolation.** App-level `site_id` filters are the primary gate.
-  `apps/cms/src/middleware/rls.ts` is meant to add row-level security on top, but
-  it does not scope the request's queries yet (B130); only `runSiteTransaction`
-  paths are scoped today.
+  Row-level security adds a backstop on top when `LUMIBASE_DB_RLS=enforce`:
+  `apps/cms/src/middleware/db.ts` scopes every request statement to the request
+  site (B130). The flag is off by default.
 - **Encryption.** `apps/cms/src/services/crypto-service.ts` provides AES-256-GCM;
   fields can be marked `encrypted` (`packages/database/src/schema/cms.ts:124`).
 - **Fine-grained access control.** `packages/database/src/schema/access.ts` defines

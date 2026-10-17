@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-10-16T15:41:58.675Z
+version: 3
+lastUpdated: 2026-10-17T16:36:19.353Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3f89361a5fc6551c
+sourceHash: 2c8b40db1b62f0c8
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-16T15:41:58.675Z
-codeVerifiedHash: 3f89361a5fc6551c
+codeVerified: 2026-10-17T16:36:19.353Z
+codeVerifiedHash: 2c8b40db1b62f0c8
 codeVerifiedClaims: 24
 ---
 
@@ -43,9 +43,9 @@ hoặc flow (xem `packages/extension-sdk/`) để Core image giữ nguyên trên
 Đây là các khối xây dựng mà mọi topology đều ghép từ chúng. **[Platform]**
 
 1. **Tenancy mức dòng (row-level).** Mọi bảng domain đều mang `site_id`;
-   query được scope ở tầng ORM. RLS middleware
-   (`apps/cms/src/middleware/rls.ts`) được thiết kế để cưỡng chế lần nữa, nhưng
-   hiện chưa scope được các truy vấn của request (B130).
+   query được scope ở tầng ORM. Với `LUMIBASE_DB_RLS=enforce`, database
+   cưỡng chế lần nữa: `apps/cms/src/middleware/db.ts` scope mọi câu của request
+   theo site của request (B130; mặc định tắt).
 2. **Resolve tenant theo request** (`apps/cms/src/middleware/tenant.ts`),
    theo thứ tự ưu tiên:
    1. header `X-Lumi-Site` (Studio, SDK, server-to-server),

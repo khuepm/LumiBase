@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-10-16T16:21:57.502Z
+version: 3
+lastUpdated: 2026-10-17T16:36:17.525Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 0c784040a0a0ab1b
+sourceHash: 31f3830b261b11ef
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-16T16:21:57.502Z
-codeVerifiedHash: 0c784040a0a0ab1b
+codeVerified: 2026-10-17T16:36:17.525Z
+codeVerifiedHash: 31f3830b261b11ef
 codeVerifiedClaims: 2
 ---
 
@@ -59,7 +59,7 @@ codeVerifiedClaims: 2
 
 ## 5. Trạng thái trong LumiBase
 
-- ✅ Cô lập đa tenant (lọc `site_id` mức ứng dụng; RLS backstop: B130) tách biệt tenant nhưng tự nó
+- ✅ Cô lập đa tenant (lọc `site_id` mức ứng dụng; RLS backstop opt-in, `LUMIBASE_DB_RLS=enforce`) tách biệt tenant nhưng tự nó
   **không** ghim khu vực.
 - ⚠️ Ghim khu vực là lựa chọn **vận hành/triển khai**, không phải setting ứng dụng hiện
   nay. Chưa có routing khu vực theo bản ghi. `[Inference]` Để lưu trú đa khu vực, chạy

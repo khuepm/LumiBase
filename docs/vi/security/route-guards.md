@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-10-16T15:42:06.275Z
+version: 6
+lastUpdated: 2026-10-17T16:36:21.044Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 553f33f34b9707c0
+sourceHash: 0a951ac2ef5f147c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-16T15:42:06.275Z
-codeVerifiedHash: 553f33f34b9707c0
+codeVerified: 2026-10-17T16:36:21.044Z
+codeVerifiedHash: 0a951ac2ef5f147c
 codeVerifiedClaims: 22
 ---
 
@@ -30,7 +30,8 @@ Mỗi lớp trả lời một câu hỏi, theo thứ tự:
 | `withSiteMembership` | Principal này có được phép trên **site đó** không? (thành viên `user_sites`; API key đã được khớp site bởi `withAuth`) | 403 `TENANT_FORBIDDEN` |
 | `withStudioAccess` | Principal này có được dùng bề mặt Studio không? (`appAccess`, TFA) | 403 `APP_ACCESS_DENIED` / `TFA_REQUIRED` |
 | `withControlPlaneAccessGuard` | Đây có phải đường dẫn quản trị hệ thống không? Nếu vậy đòi hỏi một principal admin ngay cả khi route quên kiểm tra của chính nó. Principal admin là role có tên đúng `admin`/`administrator`, hoặc một **user** đã đăng nhập có role cấp quyền admin trong site đang dùng (`access.admin`); API key, principal ẩn danh và session audience `frontend` không bao giờ đủ điều kiện qua bundle. Một ngoại lệ: `GET /api/v1/permissions/me` cho qua mọi principal đã xác thực, vì nó chỉ trả bundle quyền của chính người gọi. | 403 `CONTROL_PLANE_FORBIDDEN` |
-| `withRls` | Row-level security của Postgres như tuyến phòng thủ cuối. Chưa có hiệu lực: nó chưa scope được các truy vấn của request (B130). | — |
+| `withRls` | Kiểm tra đứng sau lớp chốt Postgres RLS: với `LUMIBASE_DB_RLS=enforce` nó trả `503 RLS_UNAVAILABLE` khi db của request chưa được scope theo site của request. Bản thân scope do `withDb` áp (B130). | — |
+| `withSystemDb` | Db của system role (BYPASSRLS, không scope) cho các router không có site scope: setup, recovery, `/scim/v2`, git OAuth callback (B130). | — |
 
 ## Quy tắc khi thêm hoặc thay đổi route
 

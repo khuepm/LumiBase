@@ -1,11 +1,11 @@
 ---
 title: Git Integration (GitHub / GitLab)
-version: 2
-lastUpdated: 2026-10-16T15:42:00.882Z
+version: 3
+lastUpdated: 2026-10-17T16:36:19.750Z
 sourceLang: en
-contentHash: e93e52ab330892b7
-codeVerified: 2026-10-16T15:42:00.882Z
-codeVerifiedHash: e93e52ab330892b7
+contentHash: b872b017b31245db
+codeVerified: 2026-10-17T16:36:19.750Z
+codeVerifiedHash: b872b017b31245db
 codeVerifiedClaims: 10
 ---
 
@@ -86,8 +86,10 @@ down (cascade-delete) on close/merge, with a TTL cleanup.
 - **Webhook routing:** the public receiver embeds `siteId` + `integrationId` in
   the URL and scopes its reads by that `siteId` — it can only ever touch that
   one site's rows, and the per-integration secret signature is the
-  authenticity gate. It also runs `set_config('app.site_id', …)` first, but as
-  a standalone statement that does not scope the later queries (B130).
+  authenticity gate. Its queries run on `scopedDbFor(c, siteId)`, so with
+  `LUMIBASE_DB_RLS=enforce` the database scopes them to that site too (B130).
+  Preview provisioning scopes each query to the site it acts on (base or
+  ephemeral).
 - **Preview:** the ephemeral site id is derived from the base `siteId`
   (`${siteId}__pr-${n}`); preview content lives in its own `sites` row, isolated
   from the base site's production content. Provisioning is a deliberate

@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-10-16T16:21:57.264Z
+version: 3
+lastUpdated: 2026-10-17T16:36:18.478Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 0554c81e0be570fa
+sourceHash: d14100204027e8fa
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-16T16:21:57.264Z
-codeVerifiedHash: 0554c81e0be570fa
+codeVerified: 2026-10-17T16:36:18.478Z
+codeVerifiedHash: d14100204027e8fa
 codeVerifiedClaims: 12
 ---
 
@@ -74,7 +74,7 @@ liệu thị trường để biết phạm vi, ngoại lệ và ngưỡng áp d�
 |----------|:----------:|------------|
 | Audit log + provenance | ✅ | `apps/cms/src/modules/audit/` |
 | Retention audit (tự động dọn) | ✅ | `apps/cms/src/modules/audit/rotator.ts` |
-| Cô lập đa tenant | ✅ | Lọc `site_id` mức ứng dụng (`apps/cms/src/services/item-service.ts`); RLS backstop `apps/cms/src/middleware/rls.ts` chưa có hiệu lực (B130) |
+| Cô lập đa tenant | ✅ | Lọc `site_id` mức ứng dụng (`apps/cms/src/services/item-service.ts`); RLS backstop trên request path khi `LUMIBASE_DB_RLS=enforce` (`apps/cms/src/middleware/db.ts`, opt-in, B130) |
 | Mã hoá field-level (AES-256-GCM) | ✅ | `apps/cms/src/services/crypto-service.ts` |
 | RBAC / phân quyền chi tiết | ✅ | `packages/database/src/schema/access.ts` |
 | Soft-delete content item | ✅ | `packages/database/src/schema/cms.ts` (`items.deletedAt`) |

@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 8
-lastUpdated: 2026-10-16T15:42:04.795Z
+version: 9
+lastUpdated: 2026-10-17T16:36:20.639Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f6a0c30a21917cb2
+sourceHash: 7af46441f83e7d8e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-16T15:42:04.795Z
-codeVerifiedHash: f6a0c30a21917cb2
-codeVerifiedClaims: 54
+codeVerified: 2026-10-17T16:36:20.639Z
+codeVerifiedHash: 7af46441f83e7d8e
+codeVerifiedClaims: 56
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -76,7 +76,7 @@ Trong **78 điểm yếu có áp dụng**: **78 đã vá (100%)**, 0 một phầ
 | 14 | 121 | Stack Buffer Overflow | — | Lớp lỗi bộ nhớ. |
 | 15 | 502 | Unsafe Deserialization | ✅ | Config import qua Zod strict trước mọi xử lý (`apps/cms/src/services/config-import-service.ts:79`); không có yaml.load/vm/unserialize. |
 | 16 | 122 | Heap Buffer Overflow | — | Lớp lỗi bộ nhớ. |
-| 17 | 863 | Incorrect Authorization | ✅ | Scope `siteId` ở tầng service là biện pháp chính; masking cấp field trong `permission-service.ts`. Lớp chốt Postgres RLS trên 48 bảng, mỗi bảng một cặp policy restrictive + permissive (B125) (`packages/database/migrations/rls-policies.sql`). Lớp chốt đã có sẵn nhưng request path chưa có scope: chỉ `runSiteTransaction` set `app.site_id` trên đúng transaction chạy truy vấn của nó; `withRls` thì không (B130). |
+| 17 | 863 | Incorrect Authorization | ✅ | Scope `siteId` ở tầng service là biện pháp chính; masking cấp field trong `permission-service.ts`. Lớp chốt Postgres RLS trên 48 bảng, mỗi bảng một cặp policy restrictive + permissive (B125) (`packages/database/migrations/rls-policies.sql`). Với `LUMIBASE_DB_RLS=enforce` (opt-in), mỗi câu của request chạy trong transaction riêng có set `app.site_id` (`middleware/db.ts`), worker dùng system connection BYPASSRLS, và `withRls` fail closed khi db chưa được scope (B130). |
 | 18 | 20 | Improper Input Validation | ✅ | Zod `safeParse()` nhất quán trên mọi input route (schema dùng chung ở `packages/contracts/src/schemas`). |
 | 19 | 284 | Improper Access Control | ✅ | **Đã vá 2026-07-06.** Các bề mặt route (flows, ai, cdc, uploads, shares) đều kiểm admin/permission. `/health` nay chỉ trả `status` tổng cho caller ẩn danh (chi tiết subsystem cần observability token); `/metrics` ép `METRICS_TOKEN` ở **mọi** môi trường khi được cấu hình (trước đây bỏ qua ở non-prod). Xem CWE-668. |
 | 20 | 200 | Lộ thông tin nhạy cảm | ✅ | `formatSafeError()` bỏ object request/response; client chỉ nhận mã lỗi chung; stack trace chỉ log phía server (`apps/cms/src/index.ts:328`). |

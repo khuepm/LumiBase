@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-10-16T15:41:55.207Z
+version: 3
+lastUpdated: 2026-10-17T16:36:17.354Z
 sourceLang: vi
-contentHash: cf4e35c792699125
-codeVerified: 2026-10-16T15:41:55.207Z
-codeVerifiedHash: cf4e35c792699125
+contentHash: 0d8d73675bbebcf8
+codeVerified: 2026-10-17T16:36:17.354Z
+codeVerifiedHash: 0d8d73675bbebcf8
 codeVerifiedClaims: 2
 ---
 
@@ -183,7 +183,7 @@ Xem [features/runtime-abstraction.md](../features/runtime-abstraction.md) để 
 - `site_id` truyền qua subdomain hoặc header `X-Lumi-Site`.
 - Middleware `withTenant()` gắn `c.set('siteId', …)` và inject vào mọi service.
 - Drizzle helper `scopeSite(siteId)` wrap query builder để bắt buộc filter.
-- Middleware `withRls()` được thiết kế để set `app.site_id` cho các RLS policy, nhưng hiện chưa scope được các truy vấn của request (B130); hiện chỉ các đường `runSiteTransaction` có scope.
+- Với `LUMIBASE_DB_RLS=enforce`, `withDb()` chạy mỗi câu của request trong transaction riêng có set `app.site_id`, và `withRls()` fail closed khi db của request chưa được scope. Worker và route hệ thống dùng một system connection có `BYPASSRLS`. Cờ mặc định tắt (B130, [Scope RLS trên request path](../features/rls-request-scope.md)).
 
 ## 7. Bảo mật
 

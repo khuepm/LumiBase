@@ -1,11 +1,11 @@
 ---
-version: 10
-lastUpdated: 2026-10-11T23:27:46.581Z
+version: 11
+lastUpdated: 2026-10-17T16:36:19.111Z
 sourceLang: en
-contentHash: 2467802388e8c9ae
-codeVerified: 2026-10-11T23:27:46.581Z
-codeVerifiedHash: 2467802388e8c9ae
-codeVerifiedClaims: 74
+contentHash: 577f33de1b43aa9b
+codeVerified: 2026-10-17T16:36:19.111Z
+codeVerifiedHash: 577f33de1b43aa9b
+codeVerifiedClaims: 76
 ---
 
 # Environment Variables Reference
@@ -116,6 +116,8 @@ rather than a typed error.
 | `DATABASE_POOL_MIN` | ✗ | Minimum DB pool connections (default: `2`) |
 | `DATABASE_POOL_MAX` | ✗ | Maximum DB pool connections (default: `10`) |
 | `DATABASE_SSL` | ✗ | `true` to require SSL for DB connection |
+| `LUMIBASE_DB_RLS` | ✗ | Request-path RLS scope: `off` (default) or `enforce`. Any other value fails closed (startup error on Docker, `503 RLS_MISCONFIGURED` on Workers). See [Request-path RLS scope](../features/rls-request-scope.md) |
+| `DATABASE_SYSTEM_URL` | With `LUMIBASE_DB_RLS=enforce` (Docker) | Connection string of the system role (`BYPASSRLS`) used by workers, cron and system routes. Unset: those paths use `DATABASE_URL`. Also read from `DATABASE_SYSTEM_URL_FILE` |
 
 For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](#cloudflare-bindings)).
 
@@ -277,6 +279,7 @@ Configure these in `apps/cms/wrangler.toml` (not environment variables):
 | Binding | Type | Purpose |
 |---------|------|---------|
 | `HYPERDRIVE` | Hyperdrive | Pooled PostgreSQL connections |
+| `HYPERDRIVE_SYSTEM` | Hyperdrive (optional) | System role (`BYPASSRLS`) for scheduled/queue handlers and system routes; required with `LUMIBASE_DB_RLS=enforce` |
 | `CONFIG_CACHE` | KV Namespace | Schema, permission, and settings cache |
 | `MEDIA` | R2 Bucket | Media/file object storage |
 | `SITE_ROOM` | Durable Object | Per-site WebSocket coordination (realtime) |

@@ -1,11 +1,11 @@
 ---
-version: 5
-lastUpdated: 2026-10-16T16:21:56.474Z
+version: 6
+lastUpdated: 2026-10-17T16:36:18.899Z
 sourceLang: en
-contentHash: d7a00ae97daff0c0
-codeVerified: 2026-10-16T16:21:56.474Z
-codeVerifiedHash: d7a00ae97daff0c0
-codeVerifiedClaims: 28
+contentHash: 55533cd9fd73e735
+codeVerified: 2026-10-17T16:36:18.899Z
+codeVerifiedHash: 55533cd9fd73e735
+codeVerifiedClaims: 30
 ---
 
 # LumiBase Production Deployment Checklist
@@ -175,8 +175,10 @@ pnpm -F @lumibase/database migrate
 
 ### Database Security
 
-- [ ] Read this before applying RLS. Today only code paths that use `runSiteTransaction` set `app.site_id` on the connection that runs their queries; `withRls` does not (B130). Do not connect the app with a NOBYPASSRLS role after applying `rls-policies.sql`: request-path reads and background jobs would see no rows.
-- [ ] App role: until B130 lands, the app connects as a superuser or a role with BYPASSRLS. The table owner is not exempt: `rls-policies.sql` sets `FORCE ROW LEVEL SECURITY`, so a non-superuser owner sees no rows either. Applying the file is harmless and ready for the fix, but it enforces nothing until the app runs on a role without BYPASSRLS, which needs B130.
+- [ ] Choose the RLS mode. The backstop only enforces anything with `LUMIBASE_DB_RLS=enforce`; the full procedure is in [Request-path RLS scope](features/rls-request-scope.md).
+  - `off` (default): the app connects with a role that bypasses RLS (a role with `BYPASSRLS`; a superuser also bypasses it). The table owner is not exempt: `rls-policies.sql` sets `FORCE ROW LEVEL SECURITY`, so a non-superuser owner sees no rows. Applying the file changes nothing in this mode.
+  - `enforce`: two roles. `DATABASE_URL` (or `HYPERDRIVE`) is an app role created `NOSUPERUSER NOBYPASSRLS`; never a superuser or a `BYPASSRLS` role, or the backstop enforces nothing. `DATABASE_SYSTEM_URL` (or the `HYPERDRIVE_SYSTEM` binding) is a system role with `BYPASSRLS`, preferably not a superuser, for workers, cron and system routes. Both roles get `USAGE` on the schema and `SELECT, INSERT, UPDATE, DELETE` on all tables (re-grant after migrations that add tables).
+- [ ] With `enforce`: the Docker startup log shows `[db-rls] request-path RLS scope: enforce (…)` and no `[db-rls] WARNING`; `GET /health/ready` is 200 (it probes both connections).
 - [ ] Row Level Security (RLS) enabled: apply `packages/database/migrations/rls-policies.sql` as the database owner (not the app role). `pnpm db:migrate` does not apply it; re-apply after every upgrade.
   ```bash
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \
@@ -188,7 +190,7 @@ pnpm -F @lumibase/database migrate
    WHERE policyname IN ('site_isolation', 'site_isolation_permit')
    ORDER BY 1, 2;
   ```
-- [ ] RLS smoke test as a role without BYPASSRLS: the count is > 0 for a site that has settings, and 0 when `app.site_id` is not set. This test opens its own transaction; it proves the policies, not that the application is scoped.
+- [ ] RLS smoke test as a role without BYPASSRLS: the count is > 0 for a site that has settings, and 0 when `app.site_id` is not set. This test opens its own transaction; it proves the policies, not that the application is scoped. For the application, run the two-site check in [Request-path RLS scope](features/rls-request-scope.md#enable-it).
   ```sql
   BEGIN;
   SELECT set_config('app.site_id', '<site id>', true);
