@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:05:49.466Z
+version: 2
+lastUpdated: 2026-10-15T22:27:48.731Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8213b15617869cfe
+sourceHash: 641f834b11c530ea
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:05:54.545Z
-codeVerifiedHash: 8213b15617869cfe
-codeVerifiedClaims: 26
+codeVerified: 2026-10-15T22:27:48.731Z
+codeVerifiedHash: 641f834b11c530ea
+codeVerifiedClaims: 28
 ---
 
 # Checklist deploy LumiBase lên production
@@ -178,7 +178,24 @@ pnpm -F @lumibase/database migrate
 
 ### Bảo mật database
 
-- [ ] Đã bật Row Level Security (RLS)
+- [ ] Đã bật Row Level Security (RLS): áp `packages/database/migrations/rls-policies.sql` bằng owner của database (không phải role ứng dụng). `pnpm db:migrate` không áp file này; áp lại sau mỗi lần upgrade.
+  ```bash
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \
+    -f packages/database/migrations/rls-policies.sql
+  ```
+- [ ] Đã kiểm policy RLS: query dưới đây trả 2 dòng cho mỗi bảng (`site_isolation` RESTRICTIVE, `site_isolation_permit` PERMISSIVE).
+  ```sql
+  SELECT tablename, policyname, permissive FROM pg_policies
+   WHERE policyname IN ('site_isolation', 'site_isolation_permit')
+   ORDER BY 1, 2;
+  ```
+- [ ] Smoke test RLS bằng role ứng dụng: count > 0 với site có settings, và = 0 khi chưa set `app.site_id`.
+  ```sql
+  BEGIN;
+  SELECT set_config('app.site_id', '<site id>', true);
+  SELECT count(*) FROM lumibase_settings;
+  COMMIT;
+  ```
 - [ ] Không cho truy cập public schema
 - [ ] Đã bật audit logging
 - [ ] Đã cấu hình lịch backup

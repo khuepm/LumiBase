@@ -1,10 +1,10 @@
 ---
-version: 6
-lastUpdated: 2026-09-01T19:24:40.400Z
+version: 7
+lastUpdated: 2026-10-15T22:27:48.360Z
 sourceLang: en
-contentHash: 89c28ee896625129
-codeVerified: 2026-09-01T19:24:40.400Z
-codeVerifiedHash: 89c28ee896625129
+contentHash: b7a84590f139488d
+codeVerified: 2026-10-15T22:27:48.360Z
+codeVerifiedHash: b7a84590f139488d
 codeVerifiedClaims: 54
 ---
 
@@ -69,7 +69,7 @@ Of the **78 applicable** weaknesses: **78 mitigated (100%)**, 0 partial, 0 not a
 | 14 | 121 | Stack Buffer Overflow | — | Memory-safety class. |
 | 15 | 502 | Unsafe Deserialization | ✅ | Config import via strict Zod schemas before any processing (`apps/cms/src/services/config-import-service.ts:79`); no yaml.load/vm/unserialize. |
 | 16 | 122 | Heap Buffer Overflow | — | Memory-safety class. |
-| 17 | 863 | Incorrect Authorization | ✅ | Postgres RLS on 25+ tables with transaction-scoped `SET LOCAL app.site_id` (`packages/database/migrations/rls-policies.sql`); app-level `siteId` scoping in services; field-level masking in `permission-service.ts`. |
+| 17 | 863 | Incorrect Authorization | ✅ | Postgres RLS on 48 tables with transaction-scoped `SET LOCAL app.site_id`, a restrictive + permissive policy pair per table (B125) (`packages/database/migrations/rls-policies.sql`); app-level `siteId` scoping in services; field-level masking in `permission-service.ts`. |
 | 18 | 20 | Improper Input Validation | ✅ | Zod `safeParse()` consistently on all route inputs (shared schemas in `packages/contracts/src/schemas`). |
 | 19 | 284 | Improper Access Control | ✅ | **Fixed 2026-07-06.** Route surfaces (flows, ai, cdc, uploads, shares) enforce admin/permission checks. `/health` now returns only overall `status` to anonymous callers (per-subsystem detail requires the observability token); `/metrics` enforces `METRICS_TOKEN` in **all** environments when configured (previously non-prod bypass). See CWE-668. |
 | 20 | 200 | Sensitive Info Exposure | ✅ | `formatSafeError()` strips request/response objects; clients get generic error codes; stack traces log server-side only (`apps/cms/src/index.ts:328`). |
@@ -90,7 +90,7 @@ Of the **78 applicable** weaknesses: **78 mitigated (100%)**, 0 partial, 0 not a
 | 35 | 798 | Hard-coded Credentials | ✅ | Secrets via env/`*_FILE`; production startup rejects known dev-default values (`apps/cms/src/config/production.ts:25`); dev-auth bypass triple-gated to development. |
 | 36 | 362 | Race Condition | ✅ | **Fixed 2026-07-06.** The AI approval commit/reject UPDATEs are now guarded by `WHERE status = 'pending'` and use `.returning()`; a zero-row result means a concurrent decision already won, and the caller gets a conflict instead of silently overwriting (`services/ai-harness.ts`). Recovery tokens remain single-use via atomic consume. |
 | 37 | 401 | Memory Leak | — | Memory-safety class. |
-| 38 | 732 | Permissions on Critical Resource | ✅ | `FORCE ROW LEVEL SECURITY` prevents table-owner bypass; migration mandates a non-superuser app role (`rls-policies.sql:12,59`). |
+| 38 | 732 | Permissions on Critical Resource | ✅ | `FORCE ROW LEVEL SECURITY` prevents table-owner bypass; migration mandates a non-superuser app role (`rls-policies.sql:12,117`). |
 | 39 | 119 | Memory Buffer Bounds | — | Memory-safety class. |
 | 40 | 601 | Open Redirect | — | No `returnTo`/redirect-by-user-URL mechanism found in auth routes; external-JWT issuers are configured server-side. No surface today; add a centralized redirect validator if login redirects are ever introduced. |
 

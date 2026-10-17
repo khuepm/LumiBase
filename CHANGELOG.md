@@ -413,6 +413,35 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - The release Docker smoke test now fails when the image reports a version
   other than its tag, or when `/setup` does not serve the Studio.
 
+### Security
+
+- **RLS backstop no longer hides every row (B125).** Every `site_isolation`
+  policy in `packages/database/migrations/rls-policies.sql` was RESTRICTIVE and
+  the file created no PERMISSIVE policy. Postgres shows a role without
+  BYPASSRLS no rows unless a permissive policy passes, so the non-superuser app
+  role the file requires saw 0 rows and wrote 0 rows on every scoped table.
+  Each table now gets a pair with the same predicate: `site_isolation`
+  (RESTRICTIVE) and `site_isolation_permit` (PERMISSIVE). The permissive half
+  is not `USING (true)`, and the restrictive half stops any other permissive
+  policy from widening access. With `app.site_id` unset or empty, no row is
+  visible and every write is refused. `lumibase_extensions` keeps its global
+  rows (`site_id IS NULL`) visible, as before. `app_site_id()` is now
+  `SECURITY INVOKER` with a pinned `search_path` (B128), and the
+  `ALTER DATABASE` default uses `current_database()` instead of the hardcoded
+  name `lumibase`. Tested as a NOSUPERUSER NOBYPASSRLS role in
+  `apps/cms/src/__tests__/rls-policies.db.integration.test.ts`, plus a static
+  tripwire in `rls-policies.wiring.test.ts`.
+
+  **Upgrade:** operators who already applied the old `rls-policies.sql` MUST
+  re-apply the new file, as the database owner:
+  `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f packages/database/migrations/rls-policies.sql`.
+  It is idempotent and converges from the restrictive-only version. Then check
+  that `SELECT tablename, policyname, permissive FROM pg_policies WHERE policyname IN ('site_isolation', 'site_isolation_permit') ORDER BY 1, 2;`
+  returns two rows per table. A `USING (true)` permissive policy added by hand
+  as a workaround can be dropped afterwards (it is harmless if kept). No schema
+  migration and no backfill. Deployments that never applied the file are not
+  affected.
+
 
 ## [1.0.0-rc.4] - 2026-09-29
 

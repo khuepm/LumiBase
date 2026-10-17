@@ -36,7 +36,9 @@ Checklist bắt buộc trước khi đánh dấu một feature spec là hoàn th
 Với MỌI feature đụng tới dữ liệu, hàng đợi, cache, realtime, background job, file/asset, hoặc tài nguyên ngoài:
 
 - [ ] **Phân loại tài nguyên**: ghi rõ cái gì **dùng chung toàn deployment** (vd: VAPID key, KEK env, SMTP transport) và cái gì **cô lập theo tenant** (mọi bảng có `site_id`, index search, DO/queue key, cache key). Tài nguyên dùng chung phải có lý do (định danh server, không phải dữ liệu tenant) — nếu là dữ liệu tenant thì PHẢI cô lập.
-- [ ] **Mọi query mang `site_id`**: đọc/ghi/đếm/xoá đều `where(eq(table.siteId, siteId))`; bảng mới được thêm vào `rls-policies.sql` (`site_isolation`).
+- [ ] **Mọi query mang `site_id`**: đọc/ghi/đếm/xoá đều `where(eq(table.siteId, siteId))`; bảng mới được thêm vào `rls-policies.sql` (`site_isolation`). Thêm vào mảng `tables` là đủ: `rls-policies.db.integration.test.ts` tự phủ bảng mới (đúng cặp policy, role ứng dụng thấy dòng của chính site). Không tạo policy RLS lẻ ngoài cặp `site_isolation` / `site_isolation_permit`.
+
+  > Sinh sau B125: mọi `site_isolation` từng là RESTRICTIVE và không có policy PERMISSIVE nào, nên role non-superuser mà file yêu cầu thấy 0 dòng trên mọi bảng. Backstop trông đúng nhưng không bao giờ cho phép gì, và mọi suite DB đều kết nối bằng superuser (bypass RLS) nên không suite nào thấy.
 - [ ] **Khoá hạ tầng có tiền tố tenant**: cache key, search index name, Durable Object name, queue dedup key, lock key — đều chứa `siteId`. Không có khoá "trần" dùng chung giữa tenant.
 - [ ] **Ghi dữ liệu được cache theo tag**: feature có đường ghi làm dữ liệu tenant được cache (theo tag hoặc version pointer) → PHẢI gọi `invalidateByTag` / `bumpVersion` / `forgetNegative` tương ứng sau commit **và** có test hành vi chứng minh entry cũ không còn được phục vụ (không chỉ unit test hàm invalidate).
 
