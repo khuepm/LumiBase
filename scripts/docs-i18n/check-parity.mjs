@@ -79,7 +79,10 @@ const CODE_LANGS = new Set([
  */
 const HASH_COMMENT_LANGS = new Set([
   'bash', 'sh', 'shell', 'zsh', 'console',
-  'yaml', 'yml', 'toml', 'env', 'dotenv', 'dockerfile', 'docker',
+  'yaml', 'yml', 'toml', 'env', 'dotenv',
+  // Not `dockerfile`/`docker`: a Dockerfile only treats a LEADING `#` as a
+  // comment; mid-line it is an argument (`COPY a b # x`), so stripping it
+  // would hide real drift.
 ]);
 
 /**
@@ -88,10 +91,17 @@ const HASH_COMMENT_LANGS = new Set([
  * end of the line) after it — so `https://x/#anchor`, `"#fff"`, `"a # b"`,
  * `${#arr}` and `color:#fff` are code, not comments. This is a conservative
  * subset of the shell/YAML rule: a missed comment only means a false positive
- * (the old behaviour), never a hidden difference in the code before the `#`.
+ * (the old behaviour). An escaped space (`foo\ # bar`) is part of the word, so
+ * the `#` after it is code.
+ *
+ * Known over-strip (B140): quote state is per line, so a ` # ` inside the
+ * continuation of a multi-line quoted string, a heredoc body or a TOML `"""`
+ * block is cut as if it were a comment. Hiding a real difference this way needs
+ * both locales to differ ONLY after that `#`; no such fence exists today.
  */
 function trailingCommentStart(line) {
   let quote = null;
+  let escaped = -1; // index of the last backslash-escaped character
   for (let i = 0; i < line.length; i += 1) {
     const ch = line[i];
     if (quote) {
@@ -99,11 +109,11 @@ function trailingCommentStart(line) {
       else if (ch === quote) quote = null;
       continue;
     }
-    if (ch === '\\') { i += 1; continue; }
+    if (ch === '\\') { i += 1; escaped = i; continue; }
     if (ch === '"' || ch === "'") { quote = ch; continue; }
     if (
       ch === '#' &&
-      i > 0 && /\s/.test(line[i - 1]) &&
+      i > 0 && /\s/.test(line[i - 1]) && escaped !== i - 1 &&
       (i + 1 === line.length || /\s/.test(line[i + 1]))
     ) {
       return i;

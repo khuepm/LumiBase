@@ -423,10 +423,11 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   (B111).** `check-parity` stripped only whole-line comments from code fences,
   so `gh secret set X  # paste the token` against its Vietnamese copy was
   reported as changed code. It now also strips a trailing `  # …` in shell and
-  YAML-like fences (`bash`, `sh`, `yaml`, `toml`, `env`, `dockerfile`, …),
-  only when the `#` has whitespace on both sides and sits outside quotes, so
-  URL fragments, `"#fff"` and `${#arr}` stay code and a difference before the
-  `#` is still reported. The two blanket `allow code-fences` waivers this
+  YAML-like fences (`bash`, `sh`, `yaml`, `toml`, `env`, …), only when the `#`
+  has whitespace on both sides, sits outside quotes and does not follow an
+  escaped space, so URL fragments, `"#fff"`, `${#arr}` and `foo\ # bar` stay
+  code and a difference before the `#` is still reported. Dockerfile fences are
+  deliberately excluded: there only a leading `#` is a comment (B139). The two blanket `allow code-fences` waivers this
   forced (`docs/vi/deployment/cloudflare-pages-ci.md`,
   `docs/vi/enterprise/private-submodule.md`) are removed, so code changes in
   those pairs are checked again. Repo-wide parity drops from 28 problems in 23

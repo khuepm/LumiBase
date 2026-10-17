@@ -81,3 +81,18 @@ test('trailing `#` is only treated as a comment in shell/YAML-like fences', () =
   assert.equal(stripCodeComments(line, 'bash'), 'const total = a');
   differ('a # one\n', 'a # two\n', 'typescript');
 });
+
+test('an escaped space before `#` keeps the `#` in the word (bash `foo\\ # bar`)', () => {
+  assert.equal(stripCodeComments('echo foo\\ # bar', 'bash'), 'echo foo\\ # bar');
+  differ('echo foo\\ # one\n', 'echo foo\\ # two\n', 'bash');
+  // An unescaped space still starts a comment.
+  assert.equal(stripCodeComments('echo foo\\  # bar', 'bash'), 'echo foo\\');
+});
+
+test('Dockerfile keeps a mid-line `#`: only a leading `#` is a comment there', () => {
+  const line = 'COPY a b # x';
+  assert.equal(stripCodeComments(line, 'dockerfile'), line);
+  assert.equal(stripCodeComments(line, 'docker'), line);
+  differ('COPY a b # one\n', 'COPY a b # two\n', 'dockerfile');
+  same('# English\nFROM node:22\n', '# Tiếng Việt\nFROM node:22\n', 'dockerfile');
+});
