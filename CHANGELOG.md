@@ -419,6 +419,19 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   its first run that found `docs/vi/deployment/google-cloud-vm.md` sending
   readers to the English Devpost draft although a Vietnamese one exists, now
   fixed together with a drifted `git clone` line in the same pair.
+- **Docs parity no longer reads a translated trailing comment as code drift
+  (B111).** `check-parity` stripped only whole-line comments from code fences,
+  so `gh secret set X  # paste the token` against its Vietnamese copy was
+  reported as changed code. It now also strips a trailing `  # …` in shell and
+  YAML-like fences (`bash`, `sh`, `yaml`, `toml`, `env`, `dockerfile`, …),
+  only when the `#` has whitespace on both sides and sits outside quotes, so
+  URL fragments, `"#fff"` and `${#arr}` stay code and a difference before the
+  `#` is still reported. The two blanket `allow code-fences` waivers this
+  forced (`docs/vi/deployment/cloudflare-pages-ci.md`,
+  `docs/vi/enterprise/private-submodule.md`) are removed, so code changes in
+  those pairs are checked again. Repo-wide parity drops from 28 problems in 23
+  pairs to 25 in 20: three more pairs whose only difference was translated
+  trailing comments now pass, and no hidden drift surfaced.
 - **The Docker production override is documented as the local trap it is
   (B47c).** `docs/{en,vi}/deployment/docker.md` now says to set
   `DATABASE_SSL_MODE=disable` when trying that stack locally: the override

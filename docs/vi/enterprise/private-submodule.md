@@ -8,9 +8,6 @@ mtEngine: manual
 syncStatus: human-translated
 ---
 
-<!-- check-parity: allow code-fences -->
-<!-- Comment cuối dòng trong block #5 (yaml, "submodules: false   # …") được dịch có chủ ý; check-parity chỉ bỏ qua comment nguyên dòng nên báo nhầm. Gỡ waiver khi B111 được sửa. -->
-
 # App enterprise riêng tư qua git submodule
 
 Hướng dẫn này thiết lập `apps/enterprise/` thành một app **chỉ-riêng-tư**: source

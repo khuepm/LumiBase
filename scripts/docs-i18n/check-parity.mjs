@@ -16,7 +16,9 @@
 //
 //   1. language      — the target side must actually read as the target language
 //   2. headings      — same count, same level sequence (text differs, shape does not)
-//   3. code fences   — same count, and each body byte-identical: code is never translated
+//   3. code fences   — same count, and each code body identical once comments
+//                      (whole-line, plus trailing `  # …` in shell/YAML-like
+//                      fences) are removed: code is never translated, comments are
 //   4. inline code   — same multiset of spans (`siteId`, `LUMIBASE_X`, paths…)
 //   5. link targets  — same multiset of URLs/paths (link text differs, destinations do not)
 //   6. tables        — same table count and same row count per table
@@ -66,6 +68,70 @@ const CODE_LANGS = new Set([
   'sql', 'graphql', 'gql', 'http', 'html', 'css', 'diff', 'dockerfile', 'docker',
   'python', 'py', 'go', 'rust', 'rs', 'java', 'kotlin', 'swift', 'php', 'ruby',
 ]);
+
+/**
+ * Fence languages where `#` starts a comment that may follow code on the same
+ * line (`gh secret set X  # paste the token`, `submodules: false   # …`). Only
+ * these get trailing comments stripped; in `ts`/`json`/`css`… a `#` is a private
+ * field, a colour or a fragment, never a comment. Mirrors the shell-like set of
+ * `scripts/check-docs-commands.mjs` (`SHELL_FENCES`) plus the other `#`-comment
+ * config formats in CODE_LANGS.
+ */
+const HASH_COMMENT_LANGS = new Set([
+  'bash', 'sh', 'shell', 'zsh', 'console',
+  'yaml', 'yml', 'toml', 'env', 'dotenv', 'dockerfile', 'docker',
+]);
+
+/**
+ * Index where a trailing `#` comment starts in `line`, or -1. The `#` must sit
+ * outside single/double quotes with whitespace before it and whitespace (or the
+ * end of the line) after it — so `https://x/#anchor`, `"#fff"`, `"a # b"`,
+ * `${#arr}` and `color:#fff` are code, not comments. This is a conservative
+ * subset of the shell/YAML rule: a missed comment only means a false positive
+ * (the old behaviour), never a hidden difference in the code before the `#`.
+ */
+function trailingCommentStart(line) {
+  let quote = null;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (quote) {
+      if (ch === '\\' && quote === '"') i += 1;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '\\') { i += 1; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (
+      ch === '#' &&
+      i > 0 && /\s/.test(line[i - 1]) &&
+      (i + 1 === line.length || /\s/.test(line[i + 1]))
+    ) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Fence body with its comments removed, for comparing code across locales.
+ * Comments are prose and are meant to be translated. Whole-line `#`, `//` and
+ * `--` comments are dropped for every code language; for HASH_COMMENT_LANGS a
+ * trailing `  # …` is cut as well (B111 — translated trailing comments used to
+ * read as code drift and needed a blanket `allow code-fences` waiver).
+ */
+export function stripCodeComments(body, lang = '') {
+  const trailing = HASH_COMMENT_LANGS.has(lang.toLowerCase());
+  return body
+    .split('\n')
+    .filter((l) => !/^\s*(#|\/\/|--)/.test(l))
+    .map((l) => {
+      if (!trailing) return l;
+      const at = trailingCommentStart(l);
+      return at === -1 ? l : l.slice(0, at).trimEnd();
+    })
+    .join('\n')
+    .trim();
+}
 
 /** A doc can waive a specific check when the divergence is deliberate. */
 const WAIVER = /<!--\s*check-parity:\s*allow\s+([^>]+?)\s*-->/g;
@@ -281,24 +347,20 @@ export function checkPair(rel) {
     add('code-fences', `en has ${fences.en.length} fenced blocks, vi has ${fences.vi.length}`);
   } else {
     // Comments inside a fence are prose and are meant to be translated, so they
-    // are stripped before comparing. Prose-shaped fences (diagrams, trees,
-    // sample output, untagged blocks) are compared by count only — translating
-    // an ASCII architecture diagram's labels is correct, not drift.
-    const stripComments = (s) =>
-      s
-        .split('\n')
-        .filter((l) => !/^\s*(#|\/\/|--)/.test(l))
-        .join('\n')
-        .trim();
+    // are stripped before comparing (stripCodeComments). Prose-shaped fences
+    // (diagrams, trees, sample output, untagged blocks) are compared by count
+    // only — translating an ASCII architecture diagram's labels is correct, not
+    // drift.
     const real = [];
     for (let i = 0; i < fences.en.length; i += 1) {
-      if (!CODE_LANGS.has(fences.en[i].lang.toLowerCase())) continue;
-      if (stripComments(fences.en[i].body) !== stripComments(fences.vi[i].body)) {
+      const lang = fences.en[i].lang.toLowerCase();
+      if (!CODE_LANGS.has(lang)) continue;
+      if (stripCodeComments(fences.en[i].body, lang) !== stripCodeComments(fences.vi[i].body, lang)) {
         real.push(`#${i + 1} (${fences.en[i].lang})`);
       }
     }
     if (real.length) {
-      add('code-fences', `code differs (ignoring comment lines) in block(s) ${real.join(', ')}`);
+      add('code-fences', `code differs (ignoring comments) in block(s) ${real.join(', ')}`);
     }
   }
 
