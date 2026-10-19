@@ -157,8 +157,13 @@ declare module '../env' {
   }
 }
 
-export function isStudioAccessPath(path: string): boolean {
-  return STUDIO_ACCESS_PATH_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+/**
+ * `prefixes` exists only so tripwire tests can run this exact matcher against
+ * a scratch list (decision-governance.wiring.test.ts); the middleware always
+ * uses the default.
+ */
+export function isStudioAccessPath(path: string, prefixes: readonly string[] = STUDIO_ACCESS_PATH_PREFIXES): boolean {
+  return prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }
 
 function isStudioClientRequest(clientHeader: string | undefined, userAgent: string | undefined): boolean {

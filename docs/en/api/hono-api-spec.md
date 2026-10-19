@@ -1,10 +1,10 @@
 ---
-version: 24
-lastUpdated: 2026-10-17T03:05:25.812Z
+version: 25
+lastUpdated: 2026-10-18T12:38:51.030Z
 sourceLang: en
-contentHash: 2350e94c53c83da2
-codeVerified: 2026-10-17T19:37:24.750Z
-codeVerifiedHash: 2350e94c53c83da2
+contentHash: f84a2eb1bd81b270
+codeVerified: 2026-10-18T12:38:51.030Z
+codeVerifiedHash: f84a2eb1bd81b270
 codeVerifiedClaims: 436
 ---
 
@@ -858,7 +858,7 @@ The CMS validates upstream answers before returning them: required values must b
 3. **Site opt-in.** The site sends content to the provider only after a site admin stores the `aiDecisions` setting with `enabled: true` (`POST /api/v1/settings`). It is off by default, and a malformed value reads as off. Setting it back to `false` (or deleting the key) is the per-site kill switch: the next request gets `403 DECISION_DISABLED`. Only the decision endpoints, draft review and Flows `ai:decision` nodes read this setting, so editing, publishing and Copilot chat are unaffected. Unsetting `DECISION_PROVIDER` is the platform-wide switch.
 4. **Field allowlist.** With `allowedStateFields` set, `state` must be an object whose top-level keys are all listed; otherwise `422 DECISION_FIELD_NOT_ALLOWED`.
 5. **Input budget** → `413 DECISION_INPUT_TOO_LARGE` (above).
-6. **Site quota**, accounted atomically with the runtime counter (Redis `INCRBY` on Docker, the per-site `PageviewCounter` Durable Object on Cloudflare): admitted decisions per hour, decisions in flight, and estimated tokens per UTC day. The token reservation is the worst case, every retry included: (estimated input + estimated output (with `llm`, the output cap sent upstream, thinking headroom included)) × (`DECISION_MAX_RETRIES` + 1). Once the provider answers, the site is charged the reported usage plus an estimate for each earlier failed attempt, and the rest is refunded. An unknown count is charged at the estimate, never as free. A timeout or failure after attempts were sent is charged per attempt; a request that never reached the provider is fully refunded. A limit that would be exceeded → `429 DECISION_QUOTA_EXCEEDED` or `429 DECISION_CONCURRENCY_LIMITED` with `Retry-After`. A request whose worst-case reservation alone exceeds the daily token budget can never be admitted, so its `429 DECISION_QUOTA_EXCEEDED` carries no `Retry-After`. If the counter backend is down or answers with a non-numeric value, the request fails closed with `503 DECISION_QUOTA_UNAVAILABLE`. `Retry-After` is listed in `Access-Control-Expose-Headers`, so cross-origin callers (Studio on Pages, the desktop shell, browser SDK) can read it.
+6. **Site quota**, accounted atomically with the runtime counter (Redis `INCRBY` on Docker, the per-site `PageviewCounter` Durable Object on Cloudflare): admitted decisions per hour, decisions in flight, and estimated tokens per UTC day. The token reservation is the worst case, every attempt the provider can send included: with Jev/OpenRouter, (estimated input + estimated output) × (`DECISION_MAX_RETRIES` + 1); with `llm`, which sends one request and never retries, estimated input + the output cap sent upstream (thinking headroom included). Once the provider answers, the site is charged the reported usage plus an estimate for each earlier failed attempt, and the rest is refunded. An unknown count is charged at the estimate, never as free. A timeout or failure after attempts were sent is charged per attempt; a request that never reached the provider is fully refunded. A limit that would be exceeded → `429 DECISION_QUOTA_EXCEEDED` or `429 DECISION_CONCURRENCY_LIMITED` with `Retry-After`. A request whose worst-case reservation alone exceeds the daily token budget can never be admitted, so its `429 DECISION_QUOTA_EXCEEDED` carries no `Retry-After`. If the counter backend is down or answers with a non-numeric value, the request fails closed with `503 DECISION_QUOTA_UNAVAILABLE`. `Retry-After` is listed in `Access-Control-Expose-Headers`, so cross-origin callers (Studio on Pages, the desktop shell, browser SDK) can read it.
 
 The site `aiDecisions` setting can tighten the platform ceilings, never raise them:
 

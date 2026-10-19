@@ -491,8 +491,9 @@ export class DecisionGovernanceService {
     }
 
     const perAttempt = inputTokens + outputTokens;
-    // Worst case: every retry is sent and billed.
-    const reserve = perAttempt * (configured.limits.maxRetries + 1);
+    // Worst case: every attempt the provider can send is sent and billed.
+    // Jev/OpenRouter retry (maxRetries + 1); `llm` sends one request.
+    const reserve = perAttempt * (configured.maxAttempts ?? configured.limits.maxRetries + 1);
     const now = this.deps.now ?? Date.now;
     const ledger = new DecisionQuotaLedger(
       this.deps.cache,

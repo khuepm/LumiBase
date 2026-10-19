@@ -17,6 +17,7 @@ import {
   type DecisionSiteSettings,
 } from '../decision-governance';
 import {
+  createDecisionProvider,
   DEFAULT_DECISION_LIMITS,
   DecisionProviderError,
   measureDecisionInput,
@@ -420,6 +421,77 @@ describe('output allowance (#510 J03 on #511)', () => {
     expect(provider.provider.decide).not.toHaveBeenCalled();
     expect(await counter(cache, requestsKey)).toBe(0);
     expect(await counter(cache, tokensKey)).toBe(0);
+  });
+});
+
+describe('reservation attempt multiplier (llm sends one request)', () => {
+  // The real factory output, with only the upstream call stubbed, so the
+  // multiplier and allowance are the ones production wires.
+  const fromEnv = (env: Record<string, string>, decide: ConfiguredDecisionProvider['provider']['decide']) => {
+    const real = createDecisionProvider(env)!;
+    return { ...real, provider: { decide: vi.fn(decide) } };
+  };
+  const llmEnv = { DECISION_PROVIDER: 'llm', LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'k' };
+  const jevEnv = { DECISION_PROVIDER: 'typesafe', TYPESAFE_API_KEY: 'k' };
+  const once = async (_req: DecisionRequest, options?: DecisionCallOptions) => {
+    options?.onAttempt?.();
+    return answer({ inputTokens: 40, outputTokens: 3 });
+  };
+
+  it('the factory declares one attempt for llm and leaves Jev/OpenRouter on the retry default', () => {
+    expect(createDecisionProvider(llmEnv)!.maxAttempts).toBe(1);
+    expect(createDecisionProvider(jevEnv)!.maxAttempts).toBeUndefined();
+    expect(createDecisionProvider({ DECISION_PROVIDER: 'openrouter', OPENROUTER_API_KEY: 'k' })!.maxAttempts)
+      .toBeUndefined();
+  });
+
+  it('llm reserves for exactly one attempt; Jev still reserves for every retry', async () => {
+    const llm = fromEnv(llmEnv, once);
+    const llmPerAttempt = inputTokens + llm.outputAllowance!(request);
+    const llmResult = await service(llm).svc.decide(request);
+    expect(llmResult.accounting.reservedTokens).toBe(llmPerAttempt);
+
+    const jev = fromEnv(jevEnv, once);
+    const jevResult = await service(jev).svc.decide(request);
+    // Unchanged formula: (input + estimate) × (maxRetries + 1).
+    expect(jevResult.accounting.reservedTokens).toBe(perAttempt * (DEFAULT_DECISION_LIMITS.maxRetries + 1));
+  });
+
+  it('admits llm on a budget that only fits one attempt, where Jev is refused', async () => {
+    const llm = fromEnv(llmEnv, once);
+    const llmPerAttempt = inputTokens + llm.outputAllowance!(request);
+    const quota = { budgetPerDay: llmPerAttempt };
+    expect((await service(llm, { quota }).svc.decide(request)).ok).toBe(true);
+
+    const jev = fromEnv(jevEnv, once);
+    const refused = await service(jev, { quota: { budgetPerDay: perAttempt * 2 } }).svc.decide(request);
+    expect(!refused.ok && (refused.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_EXCEEDED');
+  });
+
+  it('llm settle and refund still balance the counters', async () => {
+    const ok = service(fromEnv(llmEnv, once));
+    const okResult = await ok.svc.decide(request);
+    expect(okResult.accounting.chargedTokens).toBe(43);
+    expect(await counter(ok.cache, tokensKey)).toBe(43);
+    expect(await counter(ok.cache, requestsKey)).toBe(1);
+
+    const llm = fromEnv(llmEnv, async (_req, options) => {
+      options?.onAttempt?.();
+      throw new DecisionProviderError('DECISION_TIMEOUT', 'timed out');
+    });
+    const llmPerAttempt = inputTokens + llm.outputAllowance!(request);
+    const failed = service(llm);
+    const failedResult = await failed.svc.decide(request);
+    // A sent-then-failed attempt is charged at the reservation, never more.
+    expect(failedResult.accounting).toMatchObject({ attempts: 1, reservedTokens: llmPerAttempt, chargedTokens: llmPerAttempt });
+    expect(await counter(failed.cache, tokensKey)).toBe(llmPerAttempt);
+
+    const cancelled = service(fromEnv(llmEnv, async () => {
+      throw new DecisionProviderError('DECISION_CANCELLED', 'cancelled');
+    }));
+    await cancelled.svc.decide(request);
+    expect(await counter(cancelled.cache, tokensKey)).toBe(0);
+    expect(await counter(cancelled.cache, requestsKey)).toBe(0);
   });
 });
 

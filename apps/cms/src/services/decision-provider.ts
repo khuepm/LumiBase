@@ -970,6 +970,13 @@ export interface ConfiguredDecisionProvider {
    * governance keeps its own estimate (`estimateDecisionOutputTokens` in decision-governance).
    */
   outputAllowance?(request: DecisionRequest): number;
+  /**
+   * Most upstream requests one decision can send, which governance reserves
+   * quota for. Undefined → `limits.maxRetries + 1` (Jev/OpenRouter retry in
+   * the provider). `llm` is 1: LLMDecisionProvider never retries, so
+   * reserving for retries would refuse a site near its budget for no reason.
+   */
+  maxAttempts?: number;
 }
 
 /**
@@ -1033,6 +1040,8 @@ export function createDecisionProvider(
         model,
         limits,
         outputAllowance: (request) => provider.outputCap(request),
+        // `decide` sends exactly one request (see LLMDecisionProvider.decide).
+        maxAttempts: 1,
         provider,
       };
     }

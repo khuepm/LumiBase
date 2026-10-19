@@ -322,6 +322,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   get `DECISION_LLM_THINKING_TOKENS` (default 1024) of headroom, and their usage
   now includes `thoughtsTokenCount`. Governance reserves the cap actually sent
   upstream. Copilot calls keep sending 1024. Both variables are optional.
+- **LLM decisions reserve quota for one attempt, not for retries (#510).** The
+  daily decision budget was reserved as `(input + output cap) ×
+  (DECISION_MAX_RETRIES + 1)` for every provider, but `DECISION_PROVIDER=llm`
+  sends exactly one request, so a site near its `budgetPerDay` got `429
+  DECISION_QUOTA_EXCEEDED` early. `llm` now reserves `input + output cap`.
+  Jev and OpenRouter, which do retry, reserve exactly as before. Charging and
+  refunds are unchanged. No route, error code, setting or counter key changes.
 - **Decision quota fails closed on non-finite counter values (#511).** A counter
   backend that answers without a numeric value (for example a Durable Object
   reply with no `value`) now returns `503 DECISION_QUOTA_UNAVAILABLE` instead of

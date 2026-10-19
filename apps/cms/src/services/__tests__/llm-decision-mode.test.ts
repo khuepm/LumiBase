@@ -380,6 +380,21 @@ describe.each([
   });
 });
 
+describe('a non-adapter failure from a custom LLMProvider', () => {
+  // Not an LLMHttpError / LLMNetworkError / LLMResponseError: llmFailure's
+  // final branch. The JS type (TypeError) must not be read as "network".
+  it('is DECISION_UPSTREAM with a fixed message that does not echo the error', async () => {
+    const llm: LLMProvider = { chat: vi.fn(async () => { throw new TypeError(`x ${SENTINEL}`); }) };
+
+    const error = await new LLMDecisionProvider(llm, 'm').decide(request).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(DecisionProviderError);
+    expect(error).toMatchObject({ code: 'DECISION_UPSTREAM' });
+    expect((error as Error).message).toBe('LLM provider request failed.');
+    expect((error as Error).message).not.toContain('SENTINEL');
+  });
+});
+
 describe('/ai/chat keeps its error contract (regression)', () => {
   it.each(adapters)('$name: non-2xx is still an Error with the original message', async (adapter) => {
     respond(500, 'boom');

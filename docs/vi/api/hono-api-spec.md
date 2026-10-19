@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 23
-lastUpdated: 2026-10-17T03:05:25.812Z
+version: 24
+lastUpdated: 2026-10-18T12:38:51.030Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2350e94c53c83da2
+sourceHash: f84a2eb1bd81b270
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-17T19:37:24.750Z
-codeVerifiedHash: 2350e94c53c83da2
+codeVerified: 2026-10-18T12:38:51.030Z
+codeVerifiedHash: f84a2eb1bd81b270
 codeVerifiedClaims: 436
 ---
 
@@ -749,7 +749,7 @@ CMS kiểm tra câu trả lời upstream trước khi trả về: giá trị b�
 3. **Site opt-in.** Site chỉ gửi nội dung tới provider sau khi site admin lưu setting `aiDecisions` với `enabled: true` (`POST /api/v1/settings`). Mặc định là tắt, và giá trị sai định dạng được coi là tắt. Đặt lại `false` (hoặc xoá key) là kill switch theo site: request kế tiếp nhận `403 DECISION_DISABLED`. Chỉ các endpoint decision, draft review và node Flows `ai:decision` đọc setting này, nên việc soạn thảo, publish và chat Copilot không bị ảnh hưởng. Bỏ đặt `DECISION_PROVIDER` là công tắc cho toàn nền tảng.
 4. **Danh sách field được phép.** Khi đặt `allowedStateFields`, `state` phải là object và mọi key cấp đầu đều nằm trong danh sách; nếu không thì `422 DECISION_FIELD_NOT_ALLOWED`.
 5. **Budget đầu vào** → `413 DECISION_INPUT_TOO_LARGE` (ở trên).
-6. **Quota theo site**, hạch toán atomic bằng counter của runtime (Redis `INCRBY` trên Docker, Durable Object `PageviewCounter` theo site trên Cloudflare): số decision được nhận mỗi giờ, số decision đang chạy, và số token ước lượng mỗi ngày UTC. Lượng token giữ chỗ là trường hợp xấu nhất, tính cả mọi lần retry: (input ước lượng + output ước lượng (với `llm` là trần output gửi lên upstream, đã gồm headroom thinking)) × (`DECISION_MAX_RETRIES` + 1). Khi provider trả lời, site bị tính usage đã báo cộng với ước lượng cho mỗi lần gọi lỗi trước đó, phần còn lại được hoàn. Số token không biết được tính theo ước lượng, không bao giờ coi là miễn phí. Timeout hoặc lỗi sau khi đã gửi request thì tính theo từng lần gọi; request chưa tới provider được hoàn toàn bộ. Nếu sẽ vượt giới hạn → `429 DECISION_QUOTA_EXCEEDED` hoặc `429 DECISION_CONCURRENCY_LIMITED` kèm `Retry-After`. Request mà riêng lượng giữ chỗ xấu nhất đã vượt budget token cả ngày thì không bao giờ được nhận, nên `429 DECISION_QUOTA_EXCEEDED` của nó không kèm `Retry-After`. Nếu backend counter không hoạt động hoặc trả về giá trị không phải số, request bị chặn (fail closed) với `503 DECISION_QUOTA_UNAVAILABLE`. `Retry-After` có trong `Access-Control-Expose-Headers`, nên caller cross-origin (Studio trên Pages, shell desktop, SDK trên trình duyệt) đọc được nó.
+6. **Quota theo site**, hạch toán atomic bằng counter của runtime (Redis `INCRBY` trên Docker, Durable Object `PageviewCounter` theo site trên Cloudflare): số decision được nhận mỗi giờ, số decision đang chạy, và số token ước lượng mỗi ngày UTC. Lượng token giữ chỗ là trường hợp xấu nhất, tính cả mọi lần gọi mà provider có thể gửi: với Jev/OpenRouter là (input ước lượng + output ước lượng) × (`DECISION_MAX_RETRIES` + 1); với `llm`, vốn chỉ gửi một request và không bao giờ retry, là input ước lượng + trần output gửi lên upstream (đã gồm headroom thinking). Khi provider trả lời, site bị tính usage đã báo cộng với ước lượng cho mỗi lần gọi lỗi trước đó, phần còn lại được hoàn. Số token không biết được tính theo ước lượng, không bao giờ coi là miễn phí. Timeout hoặc lỗi sau khi đã gửi request thì tính theo từng lần gọi; request chưa tới provider được hoàn toàn bộ. Nếu sẽ vượt giới hạn → `429 DECISION_QUOTA_EXCEEDED` hoặc `429 DECISION_CONCURRENCY_LIMITED` kèm `Retry-After`. Request mà riêng lượng giữ chỗ xấu nhất đã vượt budget token cả ngày thì không bao giờ được nhận, nên `429 DECISION_QUOTA_EXCEEDED` của nó không kèm `Retry-After`. Nếu backend counter không hoạt động hoặc trả về giá trị không phải số, request bị chặn (fail closed) với `503 DECISION_QUOTA_UNAVAILABLE`. `Retry-After` có trong `Access-Control-Expose-Headers`, nên caller cross-origin (Studio trên Pages, shell desktop, SDK trên trình duyệt) đọc được nó.
 
 Setting `aiDecisions` của site có thể siết các mức trần của nền tảng, nhưng không thể nâng lên:
 
