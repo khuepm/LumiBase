@@ -74,7 +74,7 @@ function aliasedProviderDecide(source: string): boolean {
     aliases.add(m[1]!);
   }
   return [...aliases].some((alias) =>
-    new RegExp(String.raw`(?<![\w$.])${alias.replace(/\$/g, '\\$')}\s*\??\.\s*decide\s*\(`).test(source),
+    new RegExp(String.raw`(?<![\w$.])${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\s*\??\.\s*decide\s*\(`).test(source),
   );
 }
 
