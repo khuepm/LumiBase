@@ -137,17 +137,19 @@ async function resolveWorkerCapabilities(
         allowed: false,
         capabilities: [],
         controlPlaneAdmin: false,
+        callerClass: 'standard',
         code: 'PRINCIPAL_UNRESOLVED',
         message: `Agent role "${payload.agentRole}" is unknown or disabled; the run has no capabilities.`,
       };
     }
-    return { allowed: true, capabilities, controlPlaneAdmin: false };
+    return { allowed: true, capabilities, controlPlaneAdmin: false, callerClass: 'standard' };
   }
 
   return {
     allowed: true,
     capabilities: payload.capabilities ?? [],
     controlPlaneAdmin: false,
+    callerClass: 'standard',
   };
 }
 

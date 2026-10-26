@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Database } from '@lumibase/database';
 import {
   decisionHarness,
@@ -155,6 +155,40 @@ describe('gates are evaluated when the node executes', () => {
     h.grants.delete('usr_editor');
     expect(await decide()).toMatchObject({ branch: 'error', errorCode: 'FORBIDDEN' });
     expect(calls()).toBe(0);
+  });
+
+  // #562 / B144: the class comes from the resolver (stored api_keys.prefix), so
+  // a publishable key that an admin granted ai:decide is still refused.
+  describe('a publishable API key holding ai:decide is refused', () => {
+    const keyRef = { type: 'api_key' as const, siteId: SITE, apiKeyId: 'key_pub' };
+    beforeEach(() => {
+      h.grants.set('key_pub', ['ai:decide', 'items:read']);
+      h.callerClasses.set('key_pub', 'publishable_api_key');
+    });
+
+    it('→ error branch, no provider call, no quota reservation', async () => {
+      const increment = vi.spyOn(h.cache, 'increment');
+      const out = await decide(OPTIONS, node(), ctx({ principal: keyRef }));
+      expect(out).toMatchObject({ branch: 'error', errorCode: 'FORBIDDEN', decision: null });
+      expect(calls()).toBe(0);
+      expect(increment).not.toHaveBeenCalled();
+    });
+
+    it('→ throws FORBIDDEN when no error branch is mapped', async () => {
+      const err = await decide(OPTIONS, node({ true: 'T', false: 'F', unknown: 'U' }), ctx({ principal: keyRef })).catch(
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(FlowDecisionError);
+      expect((err as FlowDecisionError).code).toBe('FORBIDDEN');
+      expect(calls()).toBe(0);
+    });
+
+    it('the same key resolved as a secret key decides', async () => {
+      h.callerClasses.set('key_pub', 'standard');
+      const out = await decide(OPTIONS, node(), ctx({ principal: keyRef }));
+      expect(out.branch).toBe('true');
+      expect(calls()).toBe(1);
+    });
   });
 
   it('a run with no principal (event, schedule, webhook) is refused, not run as system', async () => {

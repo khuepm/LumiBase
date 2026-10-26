@@ -6,7 +6,8 @@
  * `DecisionGovernanceService.decide` pair rather than calling a provider.
  *
  * Every gate runs before the provider is called, in this order:
- *   capability `ai:decide` → provider configured → site opt-in (kill switch)
+ *   caller class (no publishable API key or frontend session, #562)
+ *   → capability `ai:decide` → provider configured → site opt-in (kill switch)
  *   → state field allowlist → input budget → quota reservation.
  *
  * Quota is accounted with the runtime's atomic counter (`CacheProvider.increment`:
@@ -37,6 +38,7 @@ import {
   DECISION_CAPABILITY,
   satisfiesCapability,
   type AuthenticatedPrincipalRef,
+  type PrincipalCallerClass,
 } from './effective-capability-service';
 
 export { DECISION_CAPABILITY, DECISION_PERMISSION_COLLECTION } from './effective-capability-service';
@@ -397,10 +399,39 @@ function secondsUntil(now: number, at: number): number {
 export interface DecisionGrant {
   allowed: boolean;
   capabilities: readonly string[];
+  /**
+   * From `resolveRequestCapabilities` / `resolvePrincipalCapabilities` only
+   * (#562). Required so every grant producer has to pass it on; an entry
+   * point must never write it itself (`decision-governance.wiring.test.ts`).
+   */
+  callerClass: PrincipalCallerClass;
 }
 
-/** Throws FORBIDDEN unless the resolved grant carries `ai:decide` (admin satisfies it). */
+export const PUBLISHABLE_KEY_DECISION_MESSAGE =
+  'Publishable API keys cannot use AI decisions. Call this endpoint from a server with a secret API key.';
+export const FRONTEND_SESSION_DECISION_MESSAGE = 'Frontend (subscriber) sessions cannot use AI decisions.';
+
+/**
+ * Throws FORBIDDEN unless the caller may ask for a decision.
+ *
+ * 1. Caller class first (#562, B144): publishable API keys and
+ *    `frontend`-audience sessions are refused even when a role or policy
+ *    grants `ai:decide` or admin access. Those credentials live in browsers
+ *    and apps, so a paid provider call must come from Studio or a server
+ *    holding a secret key. Anything other than `standard` (including a missing
+ *    value from a cast) is refused: fail closed.
+ * 2. Then the `ai:decide` capability (admin satisfies it).
+ */
 export function authorizeDecision(grant: DecisionGrant): void {
+  if (grant.callerClass === 'publishable_api_key') {
+    throw new DecisionGovernanceError('FORBIDDEN', PUBLISHABLE_KEY_DECISION_MESSAGE);
+  }
+  if (grant.callerClass === 'frontend_session') {
+    throw new DecisionGovernanceError('FORBIDDEN', FRONTEND_SESSION_DECISION_MESSAGE);
+  }
+  if (grant.callerClass !== 'standard') {
+    throw new DecisionGovernanceError('FORBIDDEN', 'The caller could not be classified.');
+  }
   if (!grant.allowed || !satisfiesCapability(grant.capabilities, DECISION_CAPABILITY)) {
     throw new DecisionGovernanceError('FORBIDDEN', `The ${DECISION_CAPABILITY} capability is required.`);
   }

@@ -46,6 +46,8 @@ const SITE_A = 'site_dec_gov_a';
 const SITE_B = 'site_dec_gov_b';
 const KEY_A = 'key_dec_gov_a';
 const KEY_B = 'key_dec_gov_b';
+/** Publishable key on site A holding the same grant (#562). */
+const KEY_PUB = 'key_dec_gov_pub';
 const USER = 'usr_dec_gov_member';
 const STATE_SENTINEL = 'state-sentinel-jane.doe@example.test';
 
@@ -104,6 +106,7 @@ describe.skipIf(!hasDbIntegrationUrl)('decision governance — DB integration (t
   async function cleanup() {
     await db.delete(apiKeys).where(eq(apiKeys.id, KEY_A)).catch(() => undefined);
     await db.delete(apiKeys).where(eq(apiKeys.id, KEY_B)).catch(() => undefined);
+    await db.delete(apiKeys).where(eq(apiKeys.id, KEY_PUB)).catch(() => undefined);
     await db.delete(sites).where(eq(sites.id, SITE_A)).catch(() => undefined);
     await db.delete(sites).where(eq(sites.id, SITE_B)).catch(() => undefined);
     await db.delete(users).where(eq(users.id, USER)).catch(() => undefined);
@@ -137,9 +140,11 @@ describe.skipIf(!hasDbIntegrationUrl)('decision governance — DB integration (t
     await db.insert(apiKeys).values([
       { id: KEY_A, siteId: SITE_A, name: 'Dec Gov A', prefix: 'lbk_sec_a', tokenHash: 'not-a-real-hash-dec-gov-a' },
       { id: KEY_B, siteId: SITE_B, name: 'Dec Gov B', prefix: 'lbk_sec_b', tokenHash: 'not-a-real-hash-dec-gov-b' },
+      { id: KEY_PUB, siteId: SITE_A, name: 'Dec Gov pub', prefix: 'lbk_pub_decgov01', tokenHash: 'not-a-real-hash-dec-gov-pub' },
     ]);
     await db.insert(apiKeyPolicies).values([
       { siteId: SITE_A, apiKeyId: KEY_A, policyId: policyA, priority: 0 },
+      { siteId: SITE_A, apiKeyId: KEY_PUB, policyId: policyA, priority: 0 },
       { siteId: SITE_B, apiKeyId: KEY_B, policyId: policyB, priority: 0 },
     ]);
 
@@ -171,6 +176,19 @@ describe.skipIf(!hasDbIntegrationUrl)('decision governance — DB integration (t
     expect(rows[0]!.metadata).toMatchObject({ outcome: 'OK', principal: { type: 'api_key', id: KEY_A } });
   });
 
+  // #562: `keyAuth` carries no prefix snapshot, so only the stored
+  // api_keys.prefix can classify the key — the path a queued flow run takes.
+  it('refuses a publishable key holding the grant from its stored prefix; the secret key on the same site decides', async () => {
+    await expect(decide(SITE_A, keyAuth(KEY_PUB))).resolves.toEqual({ code: 'FORBIDDEN' });
+    expect(fetchMock).not.toHaveBeenCalled();
+    const audits = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.siteId, SITE_A), eq(auditLog.event, 'ai_decision')));
+    expect(audits).toHaveLength(0);
+    await expect(decide(SITE_A, keyAuth(KEY_A))).resolves.toMatchObject({ code: 'OK' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
   it("denies site A's key on site B before any upstream call", async () => {
     await expect(decide(SITE_B, keyAuth(KEY_A))).resolves.toEqual({ code: 'FORBIDDEN' });
     expect(fetchMock).not.toHaveBeenCalled();

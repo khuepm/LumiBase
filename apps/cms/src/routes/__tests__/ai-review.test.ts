@@ -19,6 +19,7 @@ const ctx = vi.hoisted(() => ({
     allowed: boolean;
     capabilities: string[];
     controlPlaneAdmin: boolean;
+    callerClass?: string;
     code?: string;
   },
   settings: { enabled: true, allowedStateFields: null } as DecisionSiteSettings,
@@ -29,7 +30,8 @@ const ctx = vi.hoisted(() => ({
 
 vi.mock('../../services/governed-capabilities', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/governed-capabilities')>()),
-  resolveRequestCapabilities: vi.fn(async () => ctx.grant),
+  // A Studio user unless a test says otherwise (#562: the class is required).
+  resolveRequestCapabilities: vi.fn(async () => ({ callerClass: 'standard', ...ctx.grant })),
 }));
 
 vi.mock('../../services/decision-governance', async (importOriginal) => ({

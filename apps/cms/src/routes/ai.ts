@@ -528,6 +528,8 @@ aiRouter.delete('/conversations/:id', async (c) => {
  * about `state`. Read-only: no content is written, so no HITL approval.
  * Governed (#511): `ai:decide` capability, site opt-in, field allowlist,
  * per-site quota, and an audit event — all before the provider is called.
+ * Publishable API keys and `frontend` sessions are refused with 403 FORBIDDEN
+ * even with that capability (#562), before the body is read.
  */
 function decisionAuditContext(c: Context<AppEnv>): DecisionAuditContext {
   const siteId = c.get('siteId');

@@ -153,7 +153,8 @@ describe('security guard wiring — control-plane path coverage', () => {
   });
 
   // #511: the decision endpoint is content plane on purpose (editors via
-  // Studio + API keys via the SDK). Its gate is the `ai:decide` capability
+  // Studio + secret API keys via the SDK; publishable keys and frontend
+  // sessions are refused in authorizeDecision, #562). Its gate is the `ai:decide` capability
   // (`create` on `lumibase_ai_decisions`) + site opt-in + quota inside
   // authorizeDecision / runGovernedDecision — pinned by
   // decision-governance.wiring.test.ts.

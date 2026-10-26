@@ -78,7 +78,12 @@ export async function executeAiChatRun(
           new EffectiveCapabilityService({ db, siteId: job.siteId }),
           job.principal,
         )
-      : { allowed: true as const, capabilities: job.userCapabilities ?? [], controlPlaneAdmin: false };
+      : {
+          allowed: true as const,
+          capabilities: job.userCapabilities ?? [],
+          controlPlaneAdmin: false,
+          callerClass: 'standard' as const,
+        };
 
     // ItemService must be PRINCIPAL-BOUND here, and this is the reason it has to
     // be built after resolution rather than before.
