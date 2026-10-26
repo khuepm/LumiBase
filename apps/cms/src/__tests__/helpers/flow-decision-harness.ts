@@ -25,7 +25,10 @@ import {
   type DecisionRequest,
   type DecisionResponse,
 } from '../../services/decision-provider';
-import type { AuthenticatedPrincipalRef } from '../../services/effective-capability-service';
+import type {
+  AuthenticatedPrincipalRef,
+  PrincipalCallerClass,
+} from '../../services/effective-capability-service';
 import type { AiDecisionRuntime } from '../../services/flow-ai-decision';
 import type { GovernedCapabilityResolution } from '../../services/governed-capabilities';
 import type { MagicContext } from '../../services/permission-dsl';
@@ -71,6 +74,8 @@ export interface DecisionHarness {
   settings: { value: DecisionSiteSettings };
   /** Capabilities per principal id; absent = the principal no longer resolves. */
   grants: Map<string, string[]>;
+  /** Caller class per principal id (#562); absent = `standard`. */
+  callerClasses: Map<string, PrincipalCallerClass>;
   /** Answers the fake provider returns, or an error it throws. */
   upstream: { answers: Record<string, DecisionAnswer>; error: Error | null };
   provider: ConfiguredDecisionProvider & { provider: { decide: ReturnType<typeof vi.fn> } };
@@ -78,6 +83,8 @@ export interface DecisionHarness {
   configured: { value: ConfiguredDecisionProvider | null };
   content: ReviewContentAccess & { onRead?: () => void; items: Record<string, Record<string, unknown>> };
   quota: { value: DecisionQuota };
+  /** The quota ledger's counter backend; spy on `increment` to prove no reservation. */
+  cache: MemoryCacheProvider;
 }
 
 function idOf(ref: AuthenticatedPrincipalRef): string {
@@ -89,6 +96,7 @@ export async function decisionHarness(siteId = SITE): Promise<DecisionHarness> {
   const cache = new MemoryCacheProvider();
   const settings = { value: { enabled: true, allowedStateFields: null, flows: true } as DecisionSiteSettings };
   const grants = new Map<string, string[]>([['usr_editor', ['ai:decide', 'items:read']]]);
+  const callerClasses = new Map<string, PrincipalCallerClass>();
   const upstream: DecisionHarness['upstream'] = {
     answers: {
       spam: { type: 'noul', noul: 0.95 },
@@ -134,9 +142,22 @@ export async function decisionHarness(siteId = SITE): Promise<DecisionHarness> {
     async resolveGrant(ref): Promise<GovernedCapabilityResolution> {
       const capabilities = ref.siteId === siteId ? grants.get(idOf(ref)) : undefined;
       if (!capabilities) {
-        return { allowed: false, capabilities: [], controlPlaneAdmin: false, code: 'PRINCIPAL_NOT_FOUND', message: 'gone' };
+        return {
+          allowed: false,
+          capabilities: [],
+          controlPlaneAdmin: false,
+          callerClass: 'standard',
+          code: 'PRINCIPAL_NOT_FOUND',
+          message: 'gone',
+        };
       }
-      return { allowed: true, capabilities, controlPlaneAdmin: false, permissionContext: permissionContext(ref) };
+      return {
+        allowed: true,
+        capabilities,
+        controlPlaneAdmin: false,
+        callerClass: callerClasses.get(idOf(ref)) ?? 'standard',
+        permissionContext: permissionContext(ref),
+      };
     },
     async readSettings() {
       return settings.value;
@@ -160,5 +181,5 @@ export async function decisionHarness(siteId = SITE): Promise<DecisionHarness> {
   const seed = new ReviewService({ store, siteId, content, decide: async () => { throw new Error('unused'); } });
   await seed.createProfile(profileInput, admin);
 
-  return { runtime, store, settings, grants, upstream, provider, configured, content, quota };
+  return { runtime, store, settings, grants, callerClasses, upstream, provider, configured, content, quota, cache };
 }

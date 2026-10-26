@@ -1,10 +1,10 @@
 ---
-version: 25
-lastUpdated: 2026-10-18T12:38:51.030Z
+version: 26
+lastUpdated: 2026-10-26T15:54:50.581Z
 sourceLang: en
-contentHash: f84a2eb1bd81b270
-codeVerified: 2026-10-18T12:38:51.030Z
-codeVerifiedHash: f84a2eb1bd81b270
+contentHash: 6effd443ca740e9f
+codeVerified: 2026-10-26T15:54:50.581Z
+codeVerifiedHash: 6effd443ca740e9f
 codeVerifiedClaims: 436
 ---
 
@@ -841,7 +841,7 @@ Authorization: Bearer <token>
 }
 ```
 
-Errors: `403 FORBIDDEN` (no `ai:decide`), `403 DECISION_DISABLED`, `422 DECISION_FIELD_NOT_ALLOWED`, `429 DECISION_QUOTA_EXCEEDED` / `DECISION_CONCURRENCY_LIMITED`, `503 DECISION_QUOTA_UNAVAILABLE` (see Governance below), `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (over the byte or token budget; the message gives sizes only), `503 DECISION_NOT_CONFIGURED` (no `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream overloaded or unreachable), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (the client closed the request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
+Errors: `403 FORBIDDEN` (no `ai:decide`, or the caller is a publishable API key or a `frontend` session), `403 DECISION_DISABLED`, `422 DECISION_FIELD_NOT_ALLOWED`, `429 DECISION_QUOTA_EXCEEDED` / `DECISION_CONCURRENCY_LIMITED`, `503 DECISION_QUOTA_UNAVAILABLE` (see Governance below), `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (over the byte or token budget; the message gives sizes only), `503 DECISION_NOT_CONFIGURED` (no `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream overloaded or unreachable), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (the client closed the request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
 
 Deadlines and retries: one decision has a total deadline (`DECISION_TIMEOUT_MS`, default 20 s) that includes every retry and backoff, and each upstream attempt has its own timeout (`DECISION_ATTEMPT_TIMEOUT_MS`, default 8 s, capped by what remains of the deadline). Only `429`/`503`/`529`, network errors and attempt timeouts are retried, at most `DECISION_MAX_RETRIES` times (default 2), with full-jitter exponential backoff that honours `Retry-After`. A wait that would run past the deadline is not started. Auth, validation and parse failures are never retried. When the client disconnects, the in-flight upstream call is aborted and no retry follows. The `llm` provider is bounded by the same deadline and budget but makes a single call; the deadline and a client disconnect abort that LLM request.
 
@@ -853,7 +853,7 @@ The CMS validates upstream answers before returning them: required values must b
 
 **Governance (#511).** Every gate below runs before the provider is called, in this order, and a request that fails one never reaches it:
 
-1. **Capability `ai:decide`.** Grant it with a policy permission `create` on the reserved collection `lumibase_ai_decisions`; site admins already satisfy it. That permission grants nothing else (no `items:write`). Without it → `403 FORBIDDEN`. Anonymous callers, members without the capability and principals of another site are all refused here.
+1. **Capability `ai:decide`.** Grant it with a policy permission `create` on the reserved collection `lumibase_ai_decisions`; site admins already satisfy it. That permission grants nothing else (no `items:write`). Without it → `403 FORBIDDEN`. Anonymous callers, members without the capability and principals of another site are all refused here. Publishable API keys (`lbk_pub_…`) and `frontend`-audience sessions are always refused here with `403 FORBIDDEN`, even when a role or policy grants `create` on `lumibase_ai_decisions` or admin access (#562). Those credentials live in browsers and apps, so paid decision calls must come from Studio users or from a server that holds a secret API key. The refusal comes before the body is read. It applies to every `ai:decide` route (decisions, review profiles, reviews, feedback, rollout, sessions) and to Flows `ai:decision` nodes.
 2. **Provider configured** → otherwise `503 DECISION_NOT_CONFIGURED`.
 3. **Site opt-in.** The site sends content to the provider only after a site admin stores the `aiDecisions` setting with `enabled: true` (`POST /api/v1/settings`). It is off by default, and a malformed value reads as off. Setting it back to `false` (or deleting the key) is the per-site kill switch: the next request gets `403 DECISION_DISABLED`. Only the decision endpoints, draft review and Flows `ai:decision` nodes read this setting, so editing, publishing and Copilot chat are unaffected. Unsetting `DECISION_PROVIDER` is the platform-wide switch.
 4. **Field allowlist.** With `allowedStateFields` set, `state` must be an object whose top-level keys are all listed; otherwise `422 DECISION_FIELD_NOT_ALLOWED`.

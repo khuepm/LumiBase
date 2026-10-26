@@ -1,8 +1,11 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { isControlPlanePath } from '../middleware/control-plane-access-guard';
+import type { AuthPrincipal } from '../env';
+import { hasSiteAdminAccess, isControlPlanePath } from '../middleware/control-plane-access-guard';
 import { isStudioAccessPath } from '../middleware/studio-access';
+import { authorizeDecision, DecisionGovernanceError } from '../services/decision-governance';
+import type { PermissionBundle } from '../services/permission-service';
 
 /**
  * Tripwire for #511 (J04): every path to a PAID decision provider is governed
@@ -149,6 +152,133 @@ function ungovernedEntryPoints(
     })
     .map(({ rel }) => rel);
 }
+
+/**
+ * #562 / B144: publishable API keys and `frontend` sessions are refused inside
+ * `authorizeDecision`, from the grant's `callerClass`. That only holds while
+ * (1) the class is set by the capability resolvers and nobody else, and
+ * (2) every entry point gets its grant from one of them. A new entry point
+ * that builds `{ allowed: true, capabilities: […], callerClass: 'standard' }`
+ * itself, or spreads `{ ...grant, callerClass: 'standard' }`, would typecheck
+ * and skip the block. These rules lock both halves.
+ */
+const CALLER_CLASS = /\bcallerClass\b/;
+/** Files that may mention `callerClass` at all. */
+const CALLER_CLASS_RESOLVERS = [
+  'services/effective-capability-service.ts',
+  'services/governed-capabilities.ts',
+  GOVERNANCE_FILE,
+];
+/**
+ * Agent-tool capability producers: they build a `GovernedCapabilityResolution`
+ * for the AI harness (agent roles, legacy job snapshots), never for a decision.
+ * They may set `callerClass: 'standard'` only because they never call
+ * `authorizeDecision`; the last rule below fails if one starts to.
+ */
+const CALLER_CLASS_NON_DECISION = ['services/agent-run-worker.ts', 'services/ai-chat-run-worker.ts'];
+const RESOLVER_CALL = /\bresolveRequestCapabilities\s*\(|\bresolvePrincipalCapabilities\s*\(|\.\s*resolveGrant\s*\(/;
+
+function callerClassOffenders(
+  files: Array<{ rel: string; source: string }>,
+  allowed: string[] = [...CALLER_CLASS_RESOLVERS, ...CALLER_CLASS_NON_DECISION],
+): string[] {
+  return files
+    .filter(({ rel, source }) => !allowed.includes(rel) && CALLER_CLASS.test(source))
+    .map(({ rel }) => rel);
+}
+
+/** Non-system files that call `authorizeDecision` without a grant from a resolver. */
+function grantsNotFromResolver(files: Array<{ rel: string; source: string }>): string[] {
+  return files
+    .filter(({ rel }) => rel !== GOVERNANCE_FILE && !SYSTEM_ENTRY_POINTS.includes(rel))
+    .filter(({ source }) => AUTHORIZE.test(source) && !RESOLVER_CALL.test(source))
+    .map(({ rel }) => rel);
+}
+
+describe('decision caller class wiring (#562)', () => {
+  it('only the capability resolvers (and the documented non-decision producers) mention callerClass', () => {
+    expect(callerClassOffenders(sources)).toEqual([]);
+  });
+
+  it('the non-decision producers never call authorizeDecision', () => {
+    for (const rel of CALLER_CLASS_NON_DECISION) {
+      const file = sources.find((s) => s.rel === rel);
+      expect(file, rel).toBeDefined();
+      expect(AUTHORIZE.test(file!.source), rel).toBe(false);
+    }
+  });
+
+  it('every file that calls authorizeDecision gets its grant from a capability resolver', () => {
+    expect(grantsNotFromResolver(sources)).toEqual([]);
+    // The scan must see the three real entry points, or it proves nothing.
+    const authorizing = sources.filter(({ source }) => AUTHORIZE.test(source)).map(({ rel }) => rel);
+    expect(authorizing).toEqual(
+      expect.arrayContaining(['routes/ai.ts', 'routes/ai-review.ts', 'services/flow-ai-decision.ts']),
+    );
+  });
+
+  it('the refusal lives in the shared authorizeDecision, whatever capability the grant holds', () => {
+    for (const callerClass of ['publishable_api_key', 'frontend_session', undefined] as const) {
+      for (const capabilities of [['ai:decide'], ['admin'], ['*']]) {
+        let error: unknown;
+        try {
+          authorizeDecision({ allowed: true, capabilities, callerClass: callerClass as never });
+        } catch (err) {
+          error = err;
+        }
+        expect(error, `${callerClass} ${capabilities}`).toBeInstanceOf(DecisionGovernanceError);
+        expect((error as DecisionGovernanceError).code).toBe('FORBIDDEN');
+      }
+    }
+  });
+
+  // Flows `ai:decision` (services/flow-ai-decision.ts) resolves a persisted
+  // principal ref, which carries no session audience: only the API key row is
+  // re-read. That is enough only because a flow run is started from the
+  // control plane, which refuses frontend sessions and API keys. If
+  // /api/v1/flows ever leaves the control plane, flow principals must carry
+  // the caller class.
+  it('flow runs start on the control plane, which refuses frontend sessions and API keys', () => {
+    expect(isControlPlanePath('/api/v1/flows/f1/run')).toBe(true);
+    const admin = { admin: true } as PermissionBundle;
+    const frontend: AuthPrincipal = { userId: 'u', roles: ['r'], isFrontendUser: true, raw: { aud: 'frontend' } };
+    const apiKey: AuthPrincipal = { type: 'api_key', apiKeyId: 'k', roles: [], raw: {} };
+    expect(hasSiteAdminAccess(frontend, admin)).toBe(false);
+    expect(hasSiteAdminAccess(apiKey, admin)).toBe(false);
+    // And the matcher can say yes, so the two `false` above mean something.
+    expect(hasSiteAdminAccess({ userId: 'u', roles: ['r'], raw: { aud: 'studio' } }, admin)).toBe(true);
+  });
+});
+
+describe('decision caller class wiring — the guards can fire (negative checks)', () => {
+  it.each([
+    ['routes/minted.ts', "authorizeDecision({ ...grant, callerClass: 'standard' });"],
+    ['routes/literal.ts', "const g = { allowed: true, capabilities: ['ai:decide'], callerClass: 'standard' };"],
+    ['routes/shorthand.ts', "const callerClass = 'standard'; authorizeDecision({ ...grant, callerClass });"],
+  ])('flags %s', (rel, source) => {
+    expect(callerClassOffenders([{ rel, source }])).toEqual([rel]);
+  });
+
+  it('does not fire on a file that never names the field', () => {
+    expect(
+      callerClassOffenders([{ rel: 'routes/ok.ts', source: 'const grant = await resolveRequestCapabilities(c); authorizeDecision(grant);' }]),
+    ).toEqual([]);
+  });
+
+  it('flags an entry point that authorizes a grant it did not resolve', () => {
+    const scratch = [
+      {
+        rel: 'routes/minted.ts',
+        source:
+          "authorizeDecision(grant); const p = createDecisionProvider(env); await runGovernedDecision(d, r, o);",
+      },
+      { rel: 'routes/http.ts', source: 'const grant = await resolveRequestCapabilities(c); authorizeDecision(grant);' },
+      { rel: 'services/queued.ts', source: 'const grant = await resolvePrincipalCapabilities(s, ref); authorizeDecision(grant);' },
+      { rel: 'services/flow.ts', source: 'const grant = await runtime.resolveGrant(principal); authorizeDecision(grant);' },
+    ];
+    expect(grantsNotFromResolver(scratch)).toEqual(['routes/minted.ts']);
+  });
+});
 
 describe('decision governance wiring (source scan)', () => {
   it.each(RULES)('$label appears only in its allowed files', ({ test, allowed }) => {

@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-10-14T08:31:19.846Z
+version: 5
+lastUpdated: 2026-10-26T15:54:55.091Z
 sourceLang: en
-contentHash: 5ebfd117cea73c0d
-codeVerified: 2026-10-14T08:31:19.846Z
-codeVerifiedHash: 5ebfd117cea73c0d
+contentHash: c6b8c8284912e170
+codeVerified: 2026-10-26T15:54:55.091Z
+codeVerifiedHash: c6b8c8284912e170
 codeVerifiedClaims: 8
 ---
 
@@ -243,7 +243,7 @@ Other agent commands: `createAgentGoal`, `listAgentGoals`, `retryAgentRun`,
 
 ## Decisions
 
-`decide` calls `POST /api/v1/ai/decisions`: typed `noul` / `choice` / `score` questions answered with probabilities by TypeSafe Jev or the configured equivalent. Provider keys stay on the CMS; the client only sends its usual bearer and `X-Lumi-Site` headers, so never put a TypeSafe or OpenRouter key in browser code.
+`decide` calls `POST /api/v1/ai/decisions`: typed `noul` / `choice` / `score` questions answered with probabilities by TypeSafe Jev or the configured equivalent. Provider keys stay on the CMS; the client only sends its usual bearer and `X-Lumi-Site` headers, so never put a TypeSafe or OpenRouter key in browser code. Call `decide` and the review commands from Studio or from a server with a secret API key: a publishable API key (`lbk_pub_…`) or a frontend session gets `403 FORBIDDEN`, even when its role grants `ai:decide`.
 
 ```typescript
 import { decide, LumiError } from '@lumibase/sdk'

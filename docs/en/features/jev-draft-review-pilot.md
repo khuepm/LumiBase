@@ -1,10 +1,10 @@
 ---
-version: 3
+version: 4
 sourceLang: en
-lastUpdated: 2026-10-14T16:17:50.688Z
-contentHash: 84389437c23c0c9c
-codeVerified: 2026-10-14T16:17:50.688Z
-codeVerifiedHash: 84389437c23c0c9c
+lastUpdated: 2026-10-26T15:54:53.960Z
+contentHash: 7cdbfd6d6b58b528
+codeVerified: 2026-10-26T15:54:53.960Z
+codeVerifiedHash: 7cdbfd6d6b58b528
 codeVerifiedClaims: 30
 ---
 
@@ -60,7 +60,7 @@ API calls and run counts are never reported as user value. They appear only as d
 ## Setup
 
 1. **Profile.** A site admin creates a review profile for the collection (`POST /api/v1/ai/review-profiles`, see [draft review](./draft-review.md)).
-2. **People.** Grant the pilot editors the `ai:decide` capability (`create` on the `lumibase_ai_decisions` permission collection). Editors without it see the plain editor and record no sessions.
+2. **People.** Grant the pilot editors the `ai:decide` capability (`create` on the `lumibase_ai_decisions` permission collection). Editors without it see the plain editor and record no sessions. The capability works for Studio users and secret API keys only: publishable API keys and frontend sessions get `403 FORBIDDEN` even with it.
 3. **Baseline.** In Studio, **Settings → AI decisions**: turn on **Run the draft-review pilot**, choose the collections (at most 100) and keep the mode **Baseline**. No content is sent anywhere in this phase, so the site does not need to opt in to the provider yet. Collect at least 100 sessions.
 4. **Assisted.** Turn on **Send content to the decision provider**, switch the mode to **Assisted** and save. Collect at least 100 assisted sessions. Keep the same collections, editors and kind of work as in the baseline.
 5. **Adjudication.** A person who did not author the content checks a random sample of at least 50 viewed suggestions and records `{ "sampled": 50, "errors": 3, "adjudicators": 1 }` in a JSON file. The system does not collect this.
@@ -79,7 +79,7 @@ The report is written to `apps/cms/eval/jev-pilot/reports/` as JSON and Markdown
 | Action | Needs |
 |---|---|
 | Change the pilot or the kill switch (`POST /api/v1/settings`, key `aiDecisions`) | site admin |
-| Read the pilot mode, run a review, give feedback | `ai:decide` |
+| Read the pilot mode, run a review, give feedback | `ai:decide` (not a publishable API key or frontend session) |
 | Record a session | `ai:decide`, as a signed-in user (not an API key) |
 | Read the metrics (`GET /api/v1/ai/reviews/metrics`) | site admin |
 

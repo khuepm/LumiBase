@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-10-14T08:31:19.846Z
+version: 5
+lastUpdated: 2026-10-26T15:54:55.091Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5ebfd117cea73c0d
+sourceHash: c6b8c8284912e170
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T08:31:19.846Z
-codeVerifiedHash: 5ebfd117cea73c0d
+codeVerified: 2026-10-26T15:54:55.091Z
+codeVerifiedHash: c6b8c8284912e170
 codeVerifiedClaims: 8
 ---
 
@@ -248,7 +248,7 @@ Các command agent khác: `createAgentGoal`, `listAgentGoals`, `retryAgentRun`,
 
 ## Decisions
 
-`decide` gọi `POST /api/v1/ai/decisions`: các câu hỏi có kiểu `noul` / `choice` / `score`, được TypeSafe Jev hoặc AI tương đương đã cấu hình trả lời kèm xác suất. Key của provider nằm ở CMS; client chỉ gửi bearer và header `X-Lumi-Site` như thường lệ, nên không bao giờ đặt key TypeSafe hay OpenRouter trong code chạy trên trình duyệt.
+`decide` gọi `POST /api/v1/ai/decisions`: các câu hỏi có kiểu `noul` / `choice` / `score`, được TypeSafe Jev hoặc AI tương đương đã cấu hình trả lời kèm xác suất. Key của provider nằm ở CMS; client chỉ gửi bearer và header `X-Lumi-Site` như thường lệ, nên không bao giờ đặt key TypeSafe hay OpenRouter trong code chạy trên trình duyệt. Hãy gọi `decide` và các command review từ Studio hoặc từ server dùng secret API key: publishable API key (`lbk_pub_…`) hay session frontend nhận `403 FORBIDDEN`, kể cả khi role của nó cấp `ai:decide`.
 
 ```typescript
 import { decide, LumiError } from '@lumibase/sdk'

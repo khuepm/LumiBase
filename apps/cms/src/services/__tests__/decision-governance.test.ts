@@ -10,7 +10,9 @@ import {
   disallowedStateFields,
   effectiveDecisionQuota,
   estimateDecisionOutputTokens,
+  FRONTEND_SESSION_DECISION_MESSAGE,
   parseDecisionSettings,
+  PUBLISHABLE_KEY_DECISION_MESSAGE,
   REVIEW_ROLLOUT_OFF,
   reviewRolloutMode,
   type DecisionQuota,
@@ -175,15 +177,56 @@ describe('site settings', () => {
 
 describe('authorizeDecision', () => {
   it.each([
-    [{ allowed: false, capabilities: ['ai:decide'] }],
-    [{ allowed: true, capabilities: [] }],
-    [{ allowed: true, capabilities: ['items:write', 'schema:read'] }],
+    [{ allowed: false, capabilities: ['ai:decide'], callerClass: 'standard' as const }],
+    [{ allowed: true, capabilities: [], callerClass: 'standard' as const }],
+    [{ allowed: true, capabilities: ['items:write', 'schema:read'], callerClass: 'standard' as const }],
   ])('denies %j', (grant) => {
     expect(() => authorizeDecision(grant)).toThrow(DecisionGovernanceError);
   });
 
   it.each([[['ai:decide']], [['admin']], [['*']]])('allows %j', (capabilities) => {
-    expect(() => authorizeDecision({ allowed: true, capabilities })).not.toThrow();
+    expect(() => authorizeDecision({ allowed: true, capabilities, callerClass: 'standard' })).not.toThrow();
+  });
+
+  // #562 / B144: client-held credentials are refused whatever they were granted.
+  const refused = (grant: Parameters<typeof authorizeDecision>[0]): DecisionGovernanceError => {
+    try {
+      authorizeDecision(grant);
+    } catch (error) {
+      if (error instanceof DecisionGovernanceError) return error;
+      throw error;
+    }
+    throw new Error('expected authorizeDecision to throw');
+  };
+
+  it.each([[['ai:decide']], [['admin']], [['*']]])(
+    'refuses a publishable API key holding %j',
+    (capabilities) => {
+      const error = refused({ allowed: true, capabilities, callerClass: 'publishable_api_key' });
+      expect(error.code).toBe('FORBIDDEN');
+      expect(error.message).toBe(PUBLISHABLE_KEY_DECISION_MESSAGE);
+    },
+  );
+
+  it.each([[['ai:decide']], [['admin']], [['*']]])(
+    'refuses a frontend session holding %j',
+    (capabilities) => {
+      const error = refused({ allowed: true, capabilities, callerClass: 'frontend_session' });
+      expect(error.code).toBe('FORBIDDEN');
+      expect(error.message).toBe(FRONTEND_SESSION_DECISION_MESSAGE);
+    },
+  );
+
+  it('reports the caller class before the missing capability', () => {
+    const error = refused({ allowed: true, capabilities: [], callerClass: 'publishable_api_key' });
+    expect(error.code).toBe('FORBIDDEN');
+    expect(error.message).toBe(PUBLISHABLE_KEY_DECISION_MESSAGE);
+  });
+
+  it.each([[undefined], ['other'], ['']])('fails closed for an unclassified caller %j', (callerClass) => {
+    const error = refused({ allowed: true, capabilities: ['admin'], callerClass: callerClass as never });
+    expect(error.code).toBe('FORBIDDEN');
+    expect(error.message).toBe('The caller could not be classified.');
   });
 });
 

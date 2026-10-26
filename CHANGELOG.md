@@ -468,6 +468,24 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Security
 
+- **AI decisions refuse publishable API keys and frontend sessions (#562,
+  B144).** `POST /api/v1/ai/decisions`, every `ai:decide` route under
+  `/api/v1/ai/review-profiles` and `/api/v1/ai/reviews`, and Flows
+  `ai:decision` nodes now return `403 FORBIDDEN` for publishable API keys
+  (`lbk_pub_…`) and `frontend`-audience sessions, even when a role or policy
+  grants `create` on `lumibase_ai_decisions` or admin access. These
+  credentials live in browsers and apps, so anyone holding one could spend the
+  site's paid decision budget. The check runs in the shared
+  `authorizeDecision`, before the body is read, quota is reserved or the
+  provider is called. The refusal writes the same single `ai_decision` audit
+  event as other refusals. The error code is unchanged (`FORBIDDEN`); only the
+  message names the caller type.
+  **Upgrade note:** this narrows the #529 contract for misconfigured callers
+  only. Move browser or app callers behind your own server with a secret API
+  key, or use Studio. Secret keys and Studio users with the grant are
+  unaffected. No migration. The Definition of Done §2c gains a line for this
+  class: client-held credentials never use a paid capability, and the refusal
+  lives in the shared authorization function, not per route.
 - **RLS backstop no longer hides every row (B125).** Every `site_isolation`
   policy in `packages/database/migrations/rls-policies.sql` was RESTRICTIVE and
   the file created no PERMISSIVE policy. Postgres shows a role without
