@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 11
-lastUpdated: 2026-10-17T16:36:19.111Z
+version: 12
+lastUpdated: 2026-10-17T19:37:27.803Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 577f33de1b43aa9b
+sourceHash: 732dcf0c241b6a1b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-17T16:36:19.111Z
-codeVerifiedHash: 577f33de1b43aa9b
+codeVerified: 2026-10-17T19:37:27.803Z
+codeVerifiedHash: 732dcf0c241b6a1b
 codeVerifiedClaims: 76
 ---
 
@@ -199,12 +199,14 @@ Phục vụ `POST /api/v1/ai/decisions`: trả về câu trả lời có kiểu 
 | `DECISION_MAX_RETRIES` | ✗ | Số lần retry sau lần gọi đầu, cho 429/503/529, lỗi mạng và timeout của lần gọi (mặc định `2`, khoảng 0–5). |
 | `DECISION_MAX_INPUT_BYTES` | ✗ | Giới hạn byte UTF-8 của state + questions sau khi serialize (mặc định `131072`). Vượt giới hạn → `413 DECISION_INPUT_TOO_LARGE` trước khi gọi provider. |
 | `DECISION_MAX_INPUT_TOKENS` | ✗ | Budget token ước lượng cho cùng payload đó (mặc định `24000`). Cách ước lượng: khoảng 4 ký tự ASCII hoặc 1 code point không phải ASCII cho một token; không phải tokenizer của provider. |
+| `DECISION_LLM_MAX_OUTPUT_TOKENS` | ✗ | Chỉ cho `llm`: trần kích thước ước lượng của câu trả lời đầy đủ (mặc định `4096`, khoảng 256–32768), giống nhau trên mọi provider. Vượt trần → `413 DECISION_INPUT_TOO_LARGE` trước khi gọi. Trần gửi lên upstream là ước lượng đó, tối thiểu 256 token. |
+| `DECISION_LLM_THINKING_TOKENS` | ✗ | Chỉ cho `llm` trên Gemini/Vertex: headroom thinking cộng vào trần gửi lên upstream, không tham gia kiểm 413 (mặc định `1024`, khoảng 0–32768). Nâng nó khi `DECISION_PARSE_FAILED` lặp lại trên Gemini/Vertex; giữ tổng hai biến dưới giới hạn output của model (lỗi `400` từ upstream là `422 DECISION_VALIDATION`). Headroom bằng 0 với OpenAI/NVIDIA/Anthropic/Workers AI, vì model mặc định của chúng không reasoning; một `LLM_MODEL` reasoning sẽ dùng chung trần đó và có thể lỗi `DECISION_PARSE_FAILED` — chưa được hỗ trợ trong bản này. |
 | `DECISION_SITE_REQUESTS_PER_HOUR` | ✗ | Mức trần của nền tảng cho số decision được nhận mỗi site mỗi giờ (mặc định `600`, khoảng 0–1000000). Vượt mức → `429 DECISION_QUOTA_EXCEEDED`. |
 | `DECISION_SITE_MAX_CONCURRENT` | ✗ | Mức trần của nền tảng cho số decision đang chạy cùng lúc mỗi site (mặc định `4`, khoảng 1–1000). Vượt mức → `429 DECISION_CONCURRENCY_LIMITED`. |
 | `DECISION_SITE_TOKENS_PER_DAY` | ✗ | Mức trần của nền tảng cho số token ước lượng mỗi site mỗi ngày UTC, tính cả mọi lần gọi (mặc định `2000000`, khoảng 0–1000000000). |
 | `DECISION_REVIEW_RETENTION_DAYS` | ✗ | Số ngày giữ một lần review bản nháp và feedback của nó trước khi job chạy mỗi giờ xoá (mặc định `180`, khoảng 1–3650; rỗng hoặc sai → mặc định). Review profile được giữ lại. |
 
-Giá trị không hợp lệ ở tám biến này sẽ bị bỏ qua kèm cảnh báo và dùng giá trị mặc định. Site có thể siết ba mức trần `DECISION_SITE_*` qua setting `aiDecisions`, nhưng không thể nâng lên. Decision cũng bị tắt với một site cho tới khi site admin opt-in ở setting đó (xem [API spec → Governance](../api/hono-api-spec.md)).
+Giá trị không hợp lệ ở các biến này sẽ bị bỏ qua kèm cảnh báo và dùng giá trị mặc định. Site có thể siết ba mức trần `DECISION_SITE_*` qua setting `aiDecisions`, nhưng không thể nâng lên. Decision cũng bị tắt với một site cho tới khi site admin opt-in ở setting đó (xem [API spec → Governance](../api/hono-api-spec.md)).
 
 ---
 <!-- check-parity: allow inline-code -->

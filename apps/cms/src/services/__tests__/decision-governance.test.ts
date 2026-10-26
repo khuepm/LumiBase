@@ -17,6 +17,7 @@ import {
   type DecisionSiteSettings,
 } from '../decision-governance';
 import {
+  createDecisionProvider,
   DEFAULT_DECISION_LIMITS,
   DecisionProviderError,
   measureDecisionInput,
@@ -382,5 +383,194 @@ describe('audit helpers', () => {
         questions: { spam: { ...request.questions.spam!, instructions: 'Changed?' } as never },
       }),
     ).not.toBe(version);
+  });
+});
+
+describe('output allowance (#510 J03 on #511)', () => {
+  it('reserves the provider allowance instead of the governance estimate', async () => {
+    // Holds the reservation open until the counter has been read.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const provider = configured(async (_req, options) => {
+      options?.onAttempt?.();
+      await gate;
+      return answer({ inputTokens: null, outputTokens: null });
+    });
+    provider.outputAllowance = () => 5_000;
+    const { svc, cache } = service(provider);
+    const pending = svc.decide(request);
+    await vi.waitFor(() => expect(provider.provider.decide).toHaveBeenCalledTimes(1));
+    expect(await counter(cache, tokensKey)).toBe((inputTokens + 5_000) * 3);
+    release();
+    const result = await pending;
+    expect(result.accounting.reservedTokens).toBe((inputTokens + 5_000) * 3);
+    // Unknown usage is charged at the allowance, never as free.
+    expect(result.accounting.chargedTokens).toBe(inputTokens + 5_000);
+  });
+
+  it('returns the output 413 before reserving or calling the provider', async () => {
+    const provider = configured(async () => answer({ inputTokens: 1, outputTokens: 1 }));
+    provider.outputAllowance = () => {
+      throw new DecisionProviderError('DECISION_INPUT_TOO_LARGE', 'answer too large');
+    };
+    const { svc, cache } = service(provider);
+    const result = await svc.decide(request);
+    expect(!result.ok && (result.error as DecisionProviderError).code).toBe('DECISION_INPUT_TOO_LARGE');
+    expect(provider.provider.decide).not.toHaveBeenCalled();
+    expect(await counter(cache, requestsKey)).toBe(0);
+    expect(await counter(cache, tokensKey)).toBe(0);
+  });
+});
+
+describe('reservation attempt multiplier (llm sends one request)', () => {
+  // The real factory output, with only the upstream call stubbed, so the
+  // multiplier and allowance are the ones production wires.
+  const fromEnv = (env: Record<string, string>, decide: ConfiguredDecisionProvider['provider']['decide']) => {
+    const real = createDecisionProvider(env)!;
+    return { ...real, provider: { decide: vi.fn(decide) } };
+  };
+  const llmEnv = { DECISION_PROVIDER: 'llm', LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'k' };
+  const jevEnv = { DECISION_PROVIDER: 'typesafe', TYPESAFE_API_KEY: 'k' };
+  const once = async (_req: DecisionRequest, options?: DecisionCallOptions) => {
+    options?.onAttempt?.();
+    return answer({ inputTokens: 40, outputTokens: 3 });
+  };
+
+  it('the factory declares one attempt for llm and leaves Jev/OpenRouter on the retry default', () => {
+    expect(createDecisionProvider(llmEnv)!.maxAttempts).toBe(1);
+    expect(createDecisionProvider(jevEnv)!.maxAttempts).toBeUndefined();
+    expect(createDecisionProvider({ DECISION_PROVIDER: 'openrouter', OPENROUTER_API_KEY: 'k' })!.maxAttempts)
+      .toBeUndefined();
+  });
+
+  it('llm reserves for exactly one attempt; Jev still reserves for every retry', async () => {
+    const llm = fromEnv(llmEnv, once);
+    const llmPerAttempt = inputTokens + llm.outputAllowance!(request);
+    const llmResult = await service(llm).svc.decide(request);
+    expect(llmResult.accounting.reservedTokens).toBe(llmPerAttempt);
+
+    const jev = fromEnv(jevEnv, once);
+    const jevResult = await service(jev).svc.decide(request);
+    // Unchanged formula: (input + estimate) × (maxRetries + 1).
+    expect(jevResult.accounting.reservedTokens).toBe(perAttempt * (DEFAULT_DECISION_LIMITS.maxRetries + 1));
+  });
+
+  it('admits llm on a budget that only fits one attempt, where Jev is refused', async () => {
+    const llm = fromEnv(llmEnv, once);
+    const llmPerAttempt = inputTokens + llm.outputAllowance!(request);
+    const quota = { budgetPerDay: llmPerAttempt };
+    expect((await service(llm, { quota }).svc.decide(request)).ok).toBe(true);
+
+    const jev = fromEnv(jevEnv, once);
+    const refused = await service(jev, { quota: { budgetPerDay: perAttempt * 2 } }).svc.decide(request);
+    expect(!refused.ok && (refused.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_EXCEEDED');
+  });
+
+  it('llm settle and refund still balance the counters', async () => {
+    const ok = service(fromEnv(llmEnv, once));
+    const okResult = await ok.svc.decide(request);
+    expect(okResult.accounting.chargedTokens).toBe(43);
+    expect(await counter(ok.cache, tokensKey)).toBe(43);
+    expect(await counter(ok.cache, requestsKey)).toBe(1);
+
+    const llm = fromEnv(llmEnv, async (_req, options) => {
+      options?.onAttempt?.();
+      throw new DecisionProviderError('DECISION_TIMEOUT', 'timed out');
+    });
+    const llmPerAttempt = inputTokens + llm.outputAllowance!(request);
+    const failed = service(llm);
+    const failedResult = await failed.svc.decide(request);
+    // A sent-then-failed attempt is charged at the reservation, never more.
+    expect(failedResult.accounting).toMatchObject({ attempts: 1, reservedTokens: llmPerAttempt, chargedTokens: llmPerAttempt });
+    expect(await counter(failed.cache, tokensKey)).toBe(llmPerAttempt);
+
+    const cancelled = service(fromEnv(llmEnv, async () => {
+      throw new DecisionProviderError('DECISION_CANCELLED', 'cancelled');
+    }));
+    await cancelled.svc.decide(request);
+    expect(await counter(cancelled.cache, tokensKey)).toBe(0);
+    expect(await counter(cancelled.cache, requestsKey)).toBe(0);
+  });
+});
+
+describe('non-finite quota counters fail closed (#511)', () => {
+  it.each([
+    ['undefined', undefined],
+    ['NaN', Number.NaN],
+    ['the string "7"', '7'],
+    ['Infinity', Number.POSITIVE_INFINITY],
+  ])(
+    'refuses when the counter resolves %s',
+    async (_label, bad) => {
+      const provider = configured(async () => answer({ inputTokens: 1, outputTokens: 1 }));
+      const cache = new MemoryCacheProvider();
+      cache.increment = async () => bad as unknown as number;
+      const { svc } = service(provider, { cache });
+      const result = await svc.decide(request);
+      expect(!result.ok && (result.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_UNAVAILABLE');
+      expect(provider.provider.decide).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rolls back the keys already taken, not the garbage one', async () => {
+    const provider = configured(async () => answer({ inputTokens: 1, outputTokens: 1 }));
+    const cache = new MemoryCacheProvider();
+    const increment = cache.increment.bind(cache);
+    cache.increment = async (key, by, options) =>
+      key.includes(':run:') ? Number.NaN : increment(key, by, options);
+    const { svc } = service(provider, { cache });
+    const result = await svc.decide(request);
+    expect(!result.ok && (result.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_UNAVAILABLE');
+    expect(await counter(cache, requestsKey)).toBe(0);
+    expect(await counter(cache, tokensKey)).toBe(0);
+    expect(provider.provider.decide).not.toHaveBeenCalled();
+  });
+});
+
+describe('two-site isolation (#511, DoD §2b)', () => {
+  it("exhausting site A's hourly quota leaves site B admitted, on one shared counter backend", async () => {
+    const cache = new MemoryCacheProvider();
+    const increment = cache.increment.bind(cache);
+    const keys: string[] = [];
+    cache.increment = async (key, by, options) => {
+      keys.push(key);
+      return increment(key, by, options);
+    };
+    const at = () => Date.UTC(2026, 9, 10, 8, 30);
+    const make = (siteId: string) => {
+      const provider = configured(async (_req, options) => {
+        options?.onAttempt?.();
+        return answer({ inputTokens: 1, outputTokens: 1 });
+      });
+      return {
+        provider,
+        svc: new DecisionGovernanceService({
+          configured: provider,
+          settings: enabled,
+          quota: { ...DEFAULT_DECISION_QUOTA, requestsPerHour: 1 },
+          cache,
+          siteId,
+          now: at,
+        }),
+      };
+    };
+    const a = make('site_1');
+    const b = make('site_2');
+
+    expect((await a.svc.decide(request)).ok).toBe(true);
+    const denied = await a.svc.decide(request);
+    expect(!denied.ok && (denied.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_EXCEEDED');
+    expect(a.provider.provider.decide).toHaveBeenCalledTimes(1);
+
+    expect((await b.svc.decide(request)).ok).toBe(true);
+    expect(b.provider.provider.decide).toHaveBeenCalledTimes(1);
+
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys.every((key) => key.startsWith('dq:site_1:') || key.startsWith('dq:site_2:'))).toBe(true);
+    expect(keys.some((key) => key.startsWith('dq:site_2:'))).toBe(true);
+    expect(await counter(cache, requestsKey)).toBe(1);
+    expect(await counter(cache, requestsKey.replace('site_1', 'site_2'))).toBe(1);
   });
 });

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { isControlPlanePath } from '../middleware/control-plane-access-guard';
+import { isStudioAccessPath } from '../middleware/studio-access';
 
 /**
  * Security-guard wiring tripwires.
@@ -149,6 +150,18 @@ describe('security guard wiring — control-plane path coverage', () => {
     // Draft review stays content plane (ai:decide), only automation is control plane.
     expect(isControlPlanePath('/api/v1/ai/reviews')).toBe(false);
     expect(isControlPlanePath('/api/v1/ai/automationx')).toBe(false);
+  });
+
+  // #511: the decision endpoint is content plane on purpose (editors via
+  // Studio + API keys via the SDK). Its gate is the `ai:decide` capability
+  // (`create` on `lumibase_ai_decisions`) + site opt-in + quota inside
+  // authorizeDecision / runGovernedDecision — pinned by
+  // decision-governance.wiring.test.ts.
+  // Pins only this path, not the /api/v1/ai prefix, so sibling routes stay
+  // free to be reclassified as control plane.
+  it('keeps /api/v1/ai/decisions on the content plane (capability-gated in DecisionGovernanceService)', () => {
+    expect(isControlPlanePath('/api/v1/ai/decisions')).toBe(false);
+    expect(isStudioAccessPath('/api/v1/ai/decisions')).toBe(false);
   });
 });
 
