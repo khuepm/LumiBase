@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 24
-lastUpdated: 2026-10-18T12:38:51.030Z
+version: 25
+lastUpdated: 2026-10-26T15:54:50.581Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f84a2eb1bd81b270
+sourceHash: 6effd443ca740e9f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-18T12:38:51.030Z
-codeVerifiedHash: f84a2eb1bd81b270
+codeVerified: 2026-10-26T15:54:50.581Z
+codeVerifiedHash: 6effd443ca740e9f
 codeVerifiedClaims: 436
 ---
 
@@ -732,7 +732,7 @@ Authorization: Bearer <token>
 }
 ```
 
-Lỗi: `403 FORBIDDEN` (không có `ai:decide`), `403 DECISION_DISABLED`, `422 DECISION_FIELD_NOT_ALLOWED`, `429 DECISION_QUOTA_EXCEEDED` / `DECISION_CONCURRENCY_LIMITED`, `503 DECISION_QUOTA_UNAVAILABLE` (xem phần Governance bên dưới), `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (vượt budget byte hoặc token; message chỉ nêu kích thước), `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream quá tải hoặc không kết nối được), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (client đã đóng request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
+Lỗi: `403 FORBIDDEN` (không có `ai:decide`, hoặc caller là publishable API key hay session `frontend`), `403 DECISION_DISABLED`, `422 DECISION_FIELD_NOT_ALLOWED`, `429 DECISION_QUOTA_EXCEEDED` / `DECISION_CONCURRENCY_LIMITED`, `503 DECISION_QUOTA_UNAVAILABLE` (xem phần Governance bên dưới), `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (vượt budget byte hoặc token; message chỉ nêu kích thước), `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream quá tải hoặc không kết nối được), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (client đã đóng request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
 
 Deadline và retry: mỗi decision có một deadline tổng (`DECISION_TIMEOUT_MS`, mặc định 20 giây) bao gồm mọi lần retry và thời gian chờ backoff, và mỗi lần gọi upstream có timeout riêng (`DECISION_ATTEMPT_TIMEOUT_MS`, mặc định 8 giây, không vượt phần còn lại của deadline). Chỉ `429`/`503`/`529`, lỗi mạng và timeout của một lần gọi mới được retry, tối đa `DECISION_MAX_RETRIES` lần (mặc định 2), với exponential backoff có full jitter và tôn trọng `Retry-After`. Lần chờ nào sẽ vượt deadline thì không bắt đầu. Lỗi auth, validation và parse không bao giờ được retry. Khi client ngắt kết nối, lần gọi upstream đang chạy bị huỷ và không retry nữa. Provider `llm` bị giới hạn bởi cùng deadline và budget nhưng chỉ gọi một lần; deadline và việc client ngắt kết nối sẽ huỷ request LLM đó.
 
@@ -744,7 +744,7 @@ CMS kiểm tra câu trả lời upstream trước khi trả về: giá trị b�
 
 **Governance (#511).** Mọi cổng dưới đây chạy trước khi gọi provider, theo đúng thứ tự này; request bị chặn ở một cổng thì không bao giờ tới provider:
 
-1. **Capability `ai:decide`.** Cấp bằng permission `create` của policy trên collection dành riêng `lumibase_ai_decisions`; site admin đã có sẵn. Permission này không cấp thêm quyền nào khác (không có `items:write`). Không có → `403 FORBIDDEN`. Caller ẩn danh, member không có capability và principal của site khác đều bị từ chối ở bước này.
+1. **Capability `ai:decide`.** Cấp bằng permission `create` của policy trên collection dành riêng `lumibase_ai_decisions`; site admin đã có sẵn. Permission này không cấp thêm quyền nào khác (không có `items:write`). Không có → `403 FORBIDDEN`. Caller ẩn danh, member không có capability và principal của site khác đều bị từ chối ở bước này. Publishable API key (`lbk_pub_…`) và session có audience `frontend` luôn bị từ chối ở bước này với `403 FORBIDDEN`, kể cả khi role hay policy cấp `create` trên `lumibase_ai_decisions` hoặc quyền admin (#562). Các credential này nằm trong trình duyệt và app, nên lời gọi decision trả phí phải đến từ người dùng Studio hoặc từ một server giữ secret API key. Việc từ chối xảy ra trước khi đọc body. Nó áp dụng cho mọi route `ai:decide` (decisions, review profiles, reviews, feedback, rollout, sessions) và cho node Flows `ai:decision`.
 2. **Đã cấu hình provider** → nếu chưa thì `503 DECISION_NOT_CONFIGURED`.
 3. **Site opt-in.** Site chỉ gửi nội dung tới provider sau khi site admin lưu setting `aiDecisions` với `enabled: true` (`POST /api/v1/settings`). Mặc định là tắt, và giá trị sai định dạng được coi là tắt. Đặt lại `false` (hoặc xoá key) là kill switch theo site: request kế tiếp nhận `403 DECISION_DISABLED`. Chỉ các endpoint decision, draft review và node Flows `ai:decision` đọc setting này, nên việc soạn thảo, publish và chat Copilot không bị ảnh hưởng. Bỏ đặt `DECISION_PROVIDER` là công tắc cho toàn nền tảng.
 4. **Danh sách field được phép.** Khi đặt `allowedStateFields`, `state` phải là object và mọi key cấp đầu đều nằm trong danh sách; nếu không thì `422 DECISION_FIELD_NOT_ALLOWED`.

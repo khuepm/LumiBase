@@ -2,6 +2,36 @@
 
 Append-only history of automated EN ⇄ VI documentation syncs. Each run records language detection, preserved content and translation actions so no source content is silently lost.
 
+## 2026-10-26T15:56:14.799Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-26T15:56:03.837Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-26T15:55:03.893Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned: 1
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `features/permissions-rbac.md` | vi → en | source changed since last sync |
+
+---
+
 ## 2026-10-26T04:57:50.273Z — mode `preserve-only` (effective `preserve-only`)
 
 Engine: `claude` · API key: absent · files scanned: 158
