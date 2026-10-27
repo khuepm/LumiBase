@@ -1,13 +1,13 @@
 ---
-version: 10
-lastUpdated: 2026-10-26T16:20:00.077Z
+version: 11
+lastUpdated: 2026-10-26T16:34:59.862Z
 sourceLang: en
 translatedFrom: en
-sourceHash: c6540b0b00f06e27
+sourceHash: 12cc0dd5f56de04c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-26T16:20:00.077Z
-codeVerifiedHash: c6540b0b00f06e27
+codeVerified: 2026-10-26T16:34:59.862Z
+codeVerifiedHash: 12cc0dd5f56de04c
 codeVerifiedClaims: 6
 ---
 
@@ -66,7 +66,7 @@ resolution / patch hash mới, rồi `pnpm settings:check` để xác nhận hai
 | `proxy-addr` | `^2.0.8` | [GHSA-jqcg-44mw-7w3h](https://github.com/advisories/GHSA-jqcg-44mw-7w3h) (critical), chưa vá dưới `2.0.8`. Đi vào qua `packages/mcp-server` → `@modelcontextprotocol/sdk` → `express@5.2.1`, vốn khai `^2.0.7`. | `express` yêu cầu `proxy-addr >=2.0.8`. Kiểm tra bằng `pnpm why -r proxy-addr`. |
 | `source-map-js` | `^1.2.2` | [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) (high), chưa vá dưới `1.2.2`. Đi vào qua `postcss` (`next`, `vite`) và `css-tree` (`jsdom`). | `postcss` và `css-tree` yêu cầu `>=1.2.2`. |
 | `@graphql-tools/utils@11` | `^12.0.3` | [GHSA-7mx3-vvmw-hjmv](https://github.com/advisories/GHSA-7mx3-vvmw-hjmv) — prototype pollution trong `mergeDeep` (high), ảnh hưởng `<=12.0.0` và **không có bản vá cho nhánh 11.x**. `graphql-yoga@5.24` (dùng trong `apps/cms`) vẫn khai `^11.2.0`, nên override này nâng bản đó qua một major. Giới hạn ở selector `@11` để các consumer 12.x tự resolve. Đã kiểm chứng bằng test GraphQL của CMS và một lượt smoke `createYoga` (biến, lỗi được che, validation, introspection). | `graphql-yoga` khai `@graphql-tools/utils >=12.0.1`. |
-| `fast-uri` | `4.1.5` | [GHSA-qw65-cvwx-89v3](https://github.com/advisories/GHSA-qw65-cvwx-89v3) / [GHSA-58mr-gqgx-xq4g](https://github.com/advisories/GHSA-58mr-gqgx-xq4g) (high, đã vá bằng lần pin `4.1.4` trước đó), sau đó [GHSA-hrr3-gc8f-f4qj](https://github.com/advisories/GHSA-hrr3-gc8f-f4qj) / [GHSA-jvvf-x445-j334](https://github.com/advisories/GHSA-jvvf-x445-j334) (moderate), chưa vá dưới `4.1.5`, sau đó [GHSA-w74x-v6f9-j3xg](https://github.com/advisories/GHSA-w74x-v6f9-j3xg) / [GHSA-wjr9-j795-jxcr](https://github.com/advisories/GHSA-wjr9-j795-jxcr) (moderate) và [GHSA-xhq7-xmqj-769h](https://github.com/advisories/GHSA-xhq7-xmqj-769h) / [GHSA-333x-w4r6-6crp](https://github.com/advisories/GHSA-333x-w4r6-6crp) (low), chưa vá dưới `4.2.3`. Nay là mức sàn thay vì pin chính xác (lockfile vẫn ghim đúng một version). Đi vào qua `ajv`; `ajv@8.20.0` khai `^3.0.1`, nên override này cũng giữ ajv ở nhánh 4.x (`3.1.9` là bản vá tương đương ở 3.x). | `ajv` khai range `fast-uri` `>=4.2.3` (hoặc workspace chủ động quay về 3.x `>=3.1.9`). |
+| `fast-uri` | `^4.2.3` | [GHSA-qw65-cvwx-89v3](https://github.com/advisories/GHSA-qw65-cvwx-89v3) / [GHSA-58mr-gqgx-xq4g](https://github.com/advisories/GHSA-58mr-gqgx-xq4g) (high, đã vá bằng lần pin `4.1.4` trước đó), sau đó [GHSA-hrr3-gc8f-f4qj](https://github.com/advisories/GHSA-hrr3-gc8f-f4qj) / [GHSA-jvvf-x445-j334](https://github.com/advisories/GHSA-jvvf-x445-j334) (moderate), chưa vá dưới `4.1.5`, sau đó [GHSA-w74x-v6f9-j3xg](https://github.com/advisories/GHSA-w74x-v6f9-j3xg) / [GHSA-wjr9-j795-jxcr](https://github.com/advisories/GHSA-wjr9-j795-jxcr) (moderate) và [GHSA-xhq7-xmqj-769h](https://github.com/advisories/GHSA-xhq7-xmqj-769h) / [GHSA-333x-w4r6-6crp](https://github.com/advisories/GHSA-333x-w4r6-6crp) (low), chưa vá dưới `4.2.3`. Nay là mức sàn thay vì pin chính xác (lockfile vẫn ghim đúng một version). Đi vào qua `ajv`; `ajv@8.20.0` khai `^3.0.1`, nên override này cũng giữ ajv ở nhánh 4.x (`3.1.9` là bản vá tương đương ở 3.x). | `ajv` khai range `fast-uri` `>=4.2.3` (hoặc workspace chủ động quay về 3.x `>=3.1.9`). |
 | `qs` | `^6.16.1` | [GHSA-x5fp-wj9c-mxmx](https://github.com/advisories/GHSA-x5fp-wj9c-mxmx) / [GHSA-4mjr-xmp4-gh2g](https://github.com/advisories/GHSA-4mjr-xmp4-gh2g) (moderate), chưa vá dưới `6.16.0`. Nâng lên `6.16.1` vì `body-parser@2.4.0` khai `^6.16.1` và override này thay thế range đó. Đi vào qua `express` trong `packages/mcp-server`. | `express` (hoặc `body-parser`) yêu cầu `qs >=6.16.0`. |
 | `body-parser@2` | `^2.4.0` | [GHSA-27r3-jxmh-p828](https://github.com/advisories/GHSA-27r3-jxmh-p828) — DoS qua byte thừa sau body đã nén (high), chưa vá dưới `2.4.0`. Đi vào qua `packages/mcp-server > @modelcontextprotocol/sdk > express@5.2.1` (khai `^2.2.1`) và `express-rate-limit > express`. Scope về `@2` (cùng dạng với `nanoid@3`) để một bản 1.x sau này không bị nâng vượt major (bản vá 1.x là `1.20.9`). | `express` khai `body-parser >=2.4.0`. Kiểm bằng `pnpm why -r body-parser`. |
 | `ip-address` | `^10.7.4` | [GHSA-rpw4-54j3-4h4q](https://github.com/advisories/GHSA-rpw4-54j3-4h4q), [GHSA-2vr4-cq9g-pvrc](https://github.com/advisories/GHSA-2vr4-cq9g-pvrc), [GHSA-j6r3-76f7-8jcv](https://github.com/advisories/GHSA-j6r3-76f7-8jcv), [GHSA-h3mg-xc3c-68pw](https://github.com/advisories/GHSA-h3mg-xc3c-68pw) (moderate), chưa vá dưới `10.7.1`, sau đó [GHSA-rxp7-6hxx-x8q5](https://github.com/advisories/GHSA-rxp7-6hxx-x8q5) (moderate), chưa vá dưới `10.7.4`. Đi vào qua `express-rate-limit` trong `packages/mcp-server`. | `express-rate-limit` yêu cầu `ip-address >=10.7.4`. |
