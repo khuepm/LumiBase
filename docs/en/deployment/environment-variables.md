@@ -1,11 +1,11 @@
 ---
-version: 12
-lastUpdated: 2026-10-17T19:37:27.803Z
+version: 13
+lastUpdated: 2026-10-27T01:30:34.850Z
 sourceLang: en
-contentHash: 732dcf0c241b6a1b
-codeVerified: 2026-10-17T19:37:27.803Z
-codeVerifiedHash: 732dcf0c241b6a1b
-codeVerifiedClaims: 76
+contentHash: 025e6c3a1657ee3e
+codeVerified: 2026-10-29T08:43:08.605Z
+codeVerifiedHash: 025e6c3a1657ee3e
+codeVerifiedClaims: 80
 ---
 
 # Environment Variables Reference
@@ -199,6 +199,7 @@ Backs `POST /api/v1/ai/decisions`: typed `noul` / `choice` / `score` answers wit
 | `DECISION_SITE_MAX_CONCURRENT` | ✗ | Platform ceiling on decisions in flight per site (default `4`, range 1–1000). Over it → `429 DECISION_CONCURRENCY_LIMITED`. |
 | `DECISION_SITE_TOKENS_PER_DAY` | ✗ | Platform ceiling on estimated tokens per site per UTC day, every attempt included (default `2000000`, range 0–1000000000). |
 | `DECISION_REVIEW_RETENTION_DAYS` | ✗ | Days a draft review run and its feedback are kept before the hourly purge deletes them (default `180`, range 1–3650; empty or invalid → default). Review profiles are kept. |
+| `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` | ✗ | Window for aggregating refused (`403 FORBIDDEN`) decision requests in the audit log (#564): one `ai_decision` event per site, caller and reason per window, then at counts 10, 100, 1000 … (default `300`, range 0–86400; `0` = one event per refusal). The exact total is in `lumibase_ai_decision_refusals_total`. See [Hono API spec — AI decisions](../api/hono-api-spec.md). |
 
 Invalid values in these variables are ignored with a warning and the default applies. A site can tighten the three `DECISION_SITE_*` ceilings, never raise them, through its `aiDecisions` setting. Decisions are also off for a site until a site admin opts in there (see [API spec → Governance](../api/hono-api-spec.md)).
 
@@ -248,6 +249,7 @@ Large imports can trip the default budget. Raise `LUMIBASE_RATE_LIMIT_MAX` and p
 | `LUMIBASE_RATE_LIMIT_WINDOW_S` | ✗ | `60` | Window length in seconds. |
 | `LUMIBASE_RATE_LIMIT_DISABLED` | ✗ | (unset) | Set to `true` to disable the throttle entirely. |
 | `LUMIBASE_DELIVER_RATE_LIMIT` | ✗ | `1200` | Max requests per minute per client IP on the public Delivery API (`/api/v1/deliver/*`). `0` disables. See [Caching — penetration](../features/caching.md). |
+| `LUMIBASE_AI_IP_RATE_LIMIT` | ✗ | `300` | Max requests per minute per client IP per site on `/api/v1/ai/*`, checked before authentication (#564). Over it → `429 RATE_LIMITED` with `Retry-After`. `0` disables; skipped when the client IP is unknown. Store failure follows `LUMIBASE_RATE_LIMIT_FAIL_CLOSED`. |
 | `LUMIBASE_NEGATIVE_CACHE_TTL` | ✗ | `30` | Tombstone TTL (seconds) for confirmed absences on public read paths, before ±20% jitter. `0` disables. |
 
 ---

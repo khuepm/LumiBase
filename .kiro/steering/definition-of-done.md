@@ -64,6 +64,9 @@ Với MỌI feature đụng tới dữ liệu, hàng đợi, cache, realtime, ba
 - [ ] **Credential nằm ở client** (publishable API key `lbk_pub_…`, session audience `frontend`) không bao giờ dùng capability trả phí/đặc quyền của content plane (vd `ai:decide`), kể cả khi role/policy cấp nó, trừ khi có quyết định tường minh của owner. Từ chối **trong hàm authorization dùng chung** dựa trên `callerClass` mà resolver capability đặt (`resolveRequestCapabilities` / `resolvePrincipalCapabilities`), không từ chối theo từng route và không để entry point tự đặt `callerClass`; khoá bằng `decision-governance.wiring.test.ts`.
 
   > B144/#562: publishable key hoặc session frontend được cấp `create` trên `lumibase_ai_decisions` (hoặc bundle admin từ policy) gọi được provider trả phí, vì `authorizeDecision` chỉ xét capability.
+- [ ] **Đường từ chối có ghi audit cho caller không tin được** (credential công khai/rẻ, chưa xác thực) phải bị chặn biên: gộp theo cửa sổ + metric đếm mọi lần + rate limit trước `withAuth`; không ghi một row mỗi request. Store gộp lỗi thì vẫn ghi row (không bỏ bằng chứng). Với AI decisions: dựng audit context bằng `decisionAuditContextForRequest(c)`, không tự dựng.
+
+  > B147/#564: mỗi request `ai:decide` bị từ chối ghi một row `ai_decision`, nên một publishable key hay session frontend biến request miễn phí thành ghi vào bảng audit trên Postgres dùng chung. Cơ chế: `apps/cms/src/services/decision-refusal-audit.ts`; khoá bằng `decision-governance.wiring.test.ts` (chỉ `decision-governance.ts` ghi event `ai_decision`, entry point request dùng context chung) và `security-guards.wiring.test.ts` (`withAiIpRateLimit` trước `withAuth`).
 - [ ] Tripwire test `apps/cms/src/__tests__/security-guards.wiring.test.ts` vẫn pass; nếu tái cấu trúc guard thì cập nhật assertion CÙNG với behavioural test mới, không xoá.
 
 ## 2d. Desktop/mobile shell impact — RÀ SOÁT khi đổi Studio SPA hoặc auth/CORS

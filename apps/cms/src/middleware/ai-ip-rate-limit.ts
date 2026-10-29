@@ -25,7 +25,7 @@ import { consumeRateLimit } from './rate-limit-helper';
  *     (default: fail open, like `withRateLimit` / `withDeliverRateLimit`)
  *
  * Skipped when the client IP is unknown: on Docker without a proxy that sets
- * `CF-Connecting-IP`, every client resolves to `'unknown'` (B158), and one
+ * `CF-Connecting-IP`, every client resolves to `'unknown'` (B160), and one
  * shared bucket would let one caller lock every Studio user out of AI. The
  * refusal-audit bound does not depend on this limiter.
  *

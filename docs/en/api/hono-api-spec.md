@@ -1,11 +1,11 @@
 ---
-version: 26
-lastUpdated: 2026-10-26T15:54:50.581Z
+version: 27
+lastUpdated: 2026-10-27T01:30:28.032Z
 sourceLang: en
-contentHash: 6effd443ca740e9f
-codeVerified: 2026-10-26T15:54:50.581Z
-codeVerifiedHash: 6effd443ca740e9f
-codeVerifiedClaims: 436
+contentHash: 894131ebee884553
+codeVerified: 2026-10-29T08:43:07.755Z
+codeVerifiedHash: 894131ebee884553
+codeVerifiedClaims: 438
 ---
 
 # Hono API Specification — LumiBase
@@ -853,7 +853,7 @@ The CMS validates upstream answers before returning them: required values must b
 
 **Governance (#511).** Every gate below runs before the provider is called, in this order, and a request that fails one never reaches it:
 
-1. **Capability `ai:decide`.** Grant it with a policy permission `create` on the reserved collection `lumibase_ai_decisions`; site admins already satisfy it. That permission grants nothing else (no `items:write`). Without it → `403 FORBIDDEN`. Anonymous callers, members without the capability and principals of another site are all refused here. Publishable API keys (`lbk_pub_…`) and `frontend`-audience sessions are always refused here with `403 FORBIDDEN`, even when a role or policy grants `create` on `lumibase_ai_decisions` or admin access (#562). Those credentials live in browsers and apps, so paid decision calls must come from Studio users or from a server that holds a secret API key. The refusal comes before the body is read. It applies to every `ai:decide` route (decisions, review profiles, reviews, feedback, rollout, sessions) and to Flows `ai:decision` nodes.
+1. **Capability `ai:decide`.** Grant it with a policy permission `create` on the reserved collection `lumibase_ai_decisions`; site admins already satisfy it. That permission grants nothing else (no `items:write`). Without it → `403 FORBIDDEN`. Anonymous callers, members without the capability and principals of another site are all refused here. Publishable API keys (`lbk_pub_…`) and `frontend`-audience sessions are always refused here with `403 FORBIDDEN`, even when a role or policy grants `create` on `lumibase_ai_decisions` or admin access (#562). Those credentials live in browsers and apps, so paid decision calls must come from Studio users or from a server that holds a secret API key. The refusal comes before the body is read. It applies to every `ai:decide` route (decisions, review profiles, reviews, feedback, rollout, sessions) and to Flows `ai:decision` nodes. Refusals at this step are audited in aggregate, not one event per request (see the audit paragraph below).
 2. **Provider configured** → otherwise `503 DECISION_NOT_CONFIGURED`.
 3. **Site opt-in.** The site sends content to the provider only after a site admin stores the `aiDecisions` setting with `enabled: true` (`POST /api/v1/settings`). It is off by default, and a malformed value reads as off. Setting it back to `false` (or deleting the key) is the per-site kill switch: the next request gets `403 DECISION_DISABLED`. Only the decision endpoints, draft review and Flows `ai:decision` nodes read this setting, so editing, publishing and Copilot chat are unaffected. Unsetting `DECISION_PROVIDER` is the platform-wide switch.
 4. **Field allowlist.** With `allowedStateFields` set, `state` must be an object whose top-level keys are all listed; otherwise `422 DECISION_FIELD_NOT_ALLOWED`.
@@ -866,7 +866,13 @@ The site `aiDecisions` setting can tighten the platform ceilings, never raise th
 { "key": "aiDecisions", "value": { "enabled": true, "allowedStateFields": ["title", "body"], "requestsPerHour": 100, "maxConcurrent": 2, "budgetPerDay": 200000 } }
 ```
 
-Each call writes one `ai_decision` audit event with the request ID, the principal (type and ID), provider, model, a rubric fingerprint (`sha256:` of the questions, so the same rubric gives the same version), question types, outcome, HTTP status, latency, reported usage, attempts, and reserved and charged tokens. It never records `state`, instructions, criteria, answers, the actor's email or the client IP. Audit rows follow the audit log retention (`LUMIBASE_AUDIT_RETENTION_DAYS`, default 90 days). `POST /ai/decisions` stores no decision content. Draft review runs (below) store the answers, never the reviewed content. What the provider keeps is governed by the provider's own terms.
+Each admitted call, and each call refused after this first step, writes one `ai_decision` audit event with the request ID, the principal (type and ID), provider, model, a rubric fingerprint (`sha256:` of the questions, so the same rubric gives the same version), question types, outcome, HTTP status, latency, reported usage, attempts, and reserved and charged tokens. It never records `state`, instructions, criteria, answers, the actor's email or the client IP. Audit rows follow the audit log retention (`LUMIBASE_AUDIT_RETENTION_DAYS`, default 90 days). `POST /ai/decisions` stores no decision content. Draft review runs (below) store the answers, never the reviewed content. What the provider keeps is governed by the provider's own terms.
+
+**Refusals are audited in aggregate (#564).** A `403 FORBIDDEN` from step 1 does not write one event per request, so a flood of refused requests cannot flood the audit log. Refusals are counted per site, refusal reason and subject: the principal (type and ID), or a keyed hash of the client IP when there is no principal. The first refusal in each `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` window (default 300 s) writes an event with `refusal.count: 1`. Later refusals in the same window write again only at counts 10, 100, 1000, and so on. The first event of the next window carries `refusal.previousWindowCount`, the exact count of the window before. If no refusal follows, the last event's count is a lower bound, and the metric `lumibase_ai_decision_refusals_total{reason,principal,audit}` has the exact number of every refusal. If the counter store is unavailable, every refusal writes an event (evidence is never dropped). `0` turns aggregation off. Each refusal event has `metadata.refusal` (`reason`, `count`, `dedup`: `first` / `checkpoint` / `unbounded`, `windowStart`, `windowSeconds`) and `clientIpHash`: HMAC-SHA256 of the site and IP keyed by `JWT_SECRET`, 16 hex characters, or `null` when the IP is unknown. The `ip` column stays empty. Rotating `JWT_SECRET` changes the hashes. `refusal.reason` is one of `publishable_api_key`, `frontend_session`, `unclassified_caller`, `capability_missing`, `principal_unresolved`, `principal_site_mismatch`, `principal_not_found`, `principal_inactive`, `principal_not_member`, `api_key_revoked`, `api_key_expired`, `dev_principal_forbidden`, `principal_denied`, `other`. A key of another site is reported as `principal_not_found`.
+
+**Abuse bounds for `/api/v1/ai/*` (#564).** Every request under `/api/v1/ai` counts against a per-client-IP, per-site limit, `LUMIBASE_AI_IP_RATE_LIMIT` (default 300 per minute, 60-second window, `0` = off). It runs after the site check and before authentication, so a blocked request costs no token or API-key check, no quota reservation, no provider call and no audit event. Over the limit → `429 RATE_LIMITED` with `Retry-After` (listed in `Access-Control-Expose-Headers`); the counter is `lumibase_ai_ip_rate_limited_total`. If the limiter store is unavailable, the request passes, or gets `503 RATE_LIMIT_UNAVAILABLE` when `LUMIBASE_RATE_LIMIT_FAIL_CLOSED=true` (the same rule as the other limiters). The limit is skipped when the client IP cannot be resolved. On Docker behind a reverse proxy, the proxy must **overwrite** `CF-Connecting-IP` with the real client IP: the CMS trusts that header as sent, so a client-supplied value must never pass through.
+
+As an outer defence, add a Cloudflare WAF rate-limiting rule in front of the Worker or the Docker origin: expression `(http.request.uri.path wildcard "/api/v1/ai/*")` (optionally `and http.request.method eq "POST"`), counting by IP, for example 120 requests per 1 minute, action **Block** for 1 minute (block, not a challenge, because callers are APIs). The CMS limits stay in force behind it.
 
 **Draft review (#512).** A review profile is a versioned rubric: the top-level fields a review reads and the Decision questions it asks (same shapes as above). A review run applies one profile version to one item, or to an unsaved draft, through the governed path above (so the `ai:decide` capability, site opt-in, field allowlist, budgets and the `ai_decision` audit event all apply), and stores the answers with their provenance. Reviews only suggest: no endpoint here changes an item.
 
@@ -1364,6 +1370,7 @@ tombstones), `LUMIBASE_DELIVER_RATE_LIMIT` (req/min/IP, default `1200`,
 | File upload | 100 req/min per user |
 | Realtime connections | 50 concurrent per site |
 | AI Chat | 60 req/min per user |
+| AI routes (`/api/v1/ai/*`), before auth | 300 req/min per client IP per site (`LUMIBASE_AI_IP_RATE_LIMIT`) |
 
 Rate limit headers:
 ```

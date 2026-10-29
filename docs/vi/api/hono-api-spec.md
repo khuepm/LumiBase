@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 25
-lastUpdated: 2026-10-26T15:54:50.581Z
+version: 26
+lastUpdated: 2026-10-27T01:30:28.032Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6effd443ca740e9f
+sourceHash: 894131ebee884553
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-26T15:54:50.581Z
-codeVerifiedHash: 6effd443ca740e9f
-codeVerifiedClaims: 436
+codeVerified: 2026-10-29T08:43:07.755Z
+codeVerifiedHash: 894131ebee884553
+codeVerifiedClaims: 438
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -744,7 +744,7 @@ CMS kiểm tra câu trả lời upstream trước khi trả về: giá trị b�
 
 **Governance (#511).** Mọi cổng dưới đây chạy trước khi gọi provider, theo đúng thứ tự này; request bị chặn ở một cổng thì không bao giờ tới provider:
 
-1. **Capability `ai:decide`.** Cấp bằng permission `create` của policy trên collection dành riêng `lumibase_ai_decisions`; site admin đã có sẵn. Permission này không cấp thêm quyền nào khác (không có `items:write`). Không có → `403 FORBIDDEN`. Caller ẩn danh, member không có capability và principal của site khác đều bị từ chối ở bước này. Publishable API key (`lbk_pub_…`) và session có audience `frontend` luôn bị từ chối ở bước này với `403 FORBIDDEN`, kể cả khi role hay policy cấp `create` trên `lumibase_ai_decisions` hoặc quyền admin (#562). Các credential này nằm trong trình duyệt và app, nên lời gọi decision trả phí phải đến từ người dùng Studio hoặc từ một server giữ secret API key. Việc từ chối xảy ra trước khi đọc body. Nó áp dụng cho mọi route `ai:decide` (decisions, review profiles, reviews, feedback, rollout, sessions) và cho node Flows `ai:decision`.
+1. **Capability `ai:decide`.** Cấp bằng permission `create` của policy trên collection dành riêng `lumibase_ai_decisions`; site admin đã có sẵn. Permission này không cấp thêm quyền nào khác (không có `items:write`). Không có → `403 FORBIDDEN`. Caller ẩn danh, member không có capability và principal của site khác đều bị từ chối ở bước này. Publishable API key (`lbk_pub_…`) và session có audience `frontend` luôn bị từ chối ở bước này với `403 FORBIDDEN`, kể cả khi role hay policy cấp `create` trên `lumibase_ai_decisions` hoặc quyền admin (#562). Các credential này nằm trong trình duyệt và app, nên lời gọi decision trả phí phải đến từ người dùng Studio hoặc từ một server giữ secret API key. Việc từ chối xảy ra trước khi đọc body. Nó áp dụng cho mọi route `ai:decide` (decisions, review profiles, reviews, feedback, rollout, sessions) và cho node Flows `ai:decision`. Các lần từ chối ở bước này được ghi audit gộp, không phải một event mỗi request (xem đoạn audit bên dưới).
 2. **Đã cấu hình provider** → nếu chưa thì `503 DECISION_NOT_CONFIGURED`.
 3. **Site opt-in.** Site chỉ gửi nội dung tới provider sau khi site admin lưu setting `aiDecisions` với `enabled: true` (`POST /api/v1/settings`). Mặc định là tắt, và giá trị sai định dạng được coi là tắt. Đặt lại `false` (hoặc xoá key) là kill switch theo site: request kế tiếp nhận `403 DECISION_DISABLED`. Chỉ các endpoint decision, draft review và node Flows `ai:decision` đọc setting này, nên việc soạn thảo, publish và chat Copilot không bị ảnh hưởng. Bỏ đặt `DECISION_PROVIDER` là công tắc cho toàn nền tảng.
 4. **Danh sách field được phép.** Khi đặt `allowedStateFields`, `state` phải là object và mọi key cấp đầu đều nằm trong danh sách; nếu không thì `422 DECISION_FIELD_NOT_ALLOWED`.
@@ -757,7 +757,13 @@ Setting `aiDecisions` của site có thể siết các mức trần của nền 
 { "key": "aiDecisions", "value": { "enabled": true, "allowedStateFields": ["title", "body"], "requestsPerHour": 100, "maxConcurrent": 2, "budgetPerDay": 200000 } }
 ```
 
-Mỗi lần gọi ghi một audit event `ai_decision` gồm request ID, principal (loại và ID), provider, model, dấu vân tay rubric (`sha256:` của questions, nên cùng rubric thì cùng version), loại câu hỏi, outcome, HTTP status, latency, usage đã báo, số lần gọi, và số token đã giữ chỗ và đã tính. Event không bao giờ ghi `state`, instructions, criteria, câu trả lời, email của người gọi hay IP của client. Audit tuân theo thời hạn lưu của audit log (`LUMIBASE_AUDIT_RETENTION_DAYS`, mặc định 90 ngày). `POST /ai/decisions` không lưu nội dung decision. Các lần review bản nháp (bên dưới) lưu câu trả lời, không bao giờ lưu nội dung được review. Việc provider giữ lại gì do điều khoản của chính provider quy định.
+Mỗi lần gọi được nhận, và mỗi lần gọi bị từ chối sau bước đầu tiên này, ghi một audit event `ai_decision` gồm request ID, principal (loại và ID), provider, model, dấu vân tay rubric (`sha256:` của questions, nên cùng rubric thì cùng version), loại câu hỏi, outcome, HTTP status, latency, usage đã báo, số lần gọi, và số token đã giữ chỗ và đã tính. Event không bao giờ ghi `state`, instructions, criteria, câu trả lời, email của người gọi hay IP của client. Audit tuân theo thời hạn lưu của audit log (`LUMIBASE_AUDIT_RETENTION_DAYS`, mặc định 90 ngày). `POST /ai/decisions` không lưu nội dung decision. Các lần review bản nháp (bên dưới) lưu câu trả lời, không bao giờ lưu nội dung được review. Việc provider giữ lại gì do điều khoản của chính provider quy định.
+
+**Lần từ chối được ghi audit gộp (#564).** Một `403 FORBIDDEN` ở bước 1 không ghi một event cho mỗi request, nên một loạt request bị từ chối không thể làm ngập audit log. Lần từ chối được đếm theo site, lý do từ chối và chủ thể: principal (loại và ID), hoặc hash có khoá của IP client khi không có principal. Lần từ chối đầu tiên trong mỗi cửa sổ `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` (mặc định 300 giây) ghi một event với `refusal.count: 1`. Các lần từ chối sau trong cùng cửa sổ chỉ ghi lại khi bộ đếm đạt 10, 100, 1000, v.v. Event đầu tiên của cửa sổ kế tiếp mang `refusal.previousWindowCount`, số đếm chính xác của cửa sổ trước. Nếu không có lần từ chối nào tiếp theo, số đếm của event cuối là cận dưới, còn metric `lumibase_ai_decision_refusals_total{reason,principal,audit}` có số chính xác của mọi lần từ chối. Nếu kho bộ đếm không dùng được, mọi lần từ chối đều ghi event (không bao giờ bỏ bằng chứng). `0` tắt việc gộp. Mỗi event từ chối có `metadata.refusal` (`reason`, `count`, `dedup`: `first` / `checkpoint` / `unbounded`, `windowStart`, `windowSeconds`) và `clientIpHash`: HMAC-SHA256 của site và IP với khoá `JWT_SECRET`, 16 ký tự hex, hoặc `null` khi không biết IP. Cột `ip` để trống. Đổi `JWT_SECRET` thì hash đổi theo. `refusal.reason` là một trong `publishable_api_key`, `frontend_session`, `unclassified_caller`, `capability_missing`, `principal_unresolved`, `principal_site_mismatch`, `principal_not_found`, `principal_inactive`, `principal_not_member`, `api_key_revoked`, `api_key_expired`, `dev_principal_forbidden`, `principal_denied`, `other`. Key của site khác được báo là `principal_not_found`.
+
+**Giới hạn chống lạm dụng cho `/api/v1/ai/*` (#564).** Mọi request dưới `/api/v1/ai` được tính vào giới hạn theo IP client và theo site, `LUMIBASE_AI_IP_RATE_LIMIT` (mặc định 300 mỗi phút, cửa sổ 60 giây, `0` = tắt). Nó chạy sau bước kiểm tra site và trước xác thực, nên request bị chặn không tốn kiểm tra token hay API key, không giữ chỗ quota, không gọi provider và không ghi audit event. Vượt giới hạn → `429 RATE_LIMITED` kèm `Retry-After` (có trong `Access-Control-Expose-Headers`); bộ đếm là `lumibase_ai_ip_rate_limited_total`. Nếu kho của limiter không dùng được, request được cho qua, hoặc nhận `503 RATE_LIMIT_UNAVAILABLE` khi `LUMIBASE_RATE_LIMIT_FAIL_CLOSED=true` (cùng quy tắc với các limiter khác). Giới hạn được bỏ qua khi không xác định được IP client. Trên Docker sau reverse proxy, proxy phải **ghi đè** `CF-Connecting-IP` bằng IP thật của client: CMS tin header này đúng như được gửi, nên không bao giờ được để giá trị do client gửi đi qua.
+
+Làm lớp phòng thủ bên ngoài, thêm một rule rate limiting của Cloudflare WAF trước Worker hoặc origin Docker: biểu thức `(http.request.uri.path wildcard "/api/v1/ai/*")` (tuỳ chọn thêm `and http.request.method eq "POST"`), đếm theo IP, ví dụ 120 request mỗi 1 phút, hành động **Block** trong 1 phút (chặn, không phải challenge, vì caller là API). Các giới hạn của CMS vẫn có hiệu lực phía sau.
 
 **Review bản nháp (#512).** Review profile là một rubric có phiên bản: các field cấp cao nhất mà review đọc và các câu hỏi Decision mà nó hỏi (cùng dạng như trên). Một lần review (run) áp một phiên bản profile lên một item, hoặc lên một bản nháp chưa lưu, qua đường đi có governance ở trên (nên capability `ai:decide`, opt-in của site, allowlist field, các budget và audit event `ai_decision` đều áp dụng), rồi lưu câu trả lời cùng provenance. Review chỉ đề xuất: không endpoint nào ở đây thay đổi item.
 
@@ -1181,6 +1187,7 @@ Các biến có thể điều chỉnh (env): `LUMIBASE_DELIVER_SMAXAGE` (giây, 
 | Upload File | 100 req/phút mỗi người dùng |
 | Kết nối Realtime | 50 đồng thời mỗi site |
 | AI Chat | 60 req/phút mỗi người dùng |
+| Route AI (`/api/v1/ai/*`), trước xác thực | 300 req/phút mỗi IP client mỗi site (`LUMIBASE_AI_IP_RATE_LIMIT`) |
 
 Header rate limit:
 ```

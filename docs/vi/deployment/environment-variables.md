@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 12
-lastUpdated: 2026-10-17T19:37:27.803Z
+version: 13
+lastUpdated: 2026-10-27T01:30:34.850Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 732dcf0c241b6a1b
+sourceHash: 025e6c3a1657ee3e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-17T19:37:27.803Z
-codeVerifiedHash: 732dcf0c241b6a1b
-codeVerifiedClaims: 76
+codeVerified: 2026-10-29T08:43:08.605Z
+codeVerifiedHash: 025e6c3a1657ee3e
+codeVerifiedClaims: 80
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -205,6 +205,7 @@ Phục vụ `POST /api/v1/ai/decisions`: trả về câu trả lời có kiểu 
 | `DECISION_SITE_MAX_CONCURRENT` | ✗ | Mức trần của nền tảng cho số decision đang chạy cùng lúc mỗi site (mặc định `4`, khoảng 1–1000). Vượt mức → `429 DECISION_CONCURRENCY_LIMITED`. |
 | `DECISION_SITE_TOKENS_PER_DAY` | ✗ | Mức trần của nền tảng cho số token ước lượng mỗi site mỗi ngày UTC, tính cả mọi lần gọi (mặc định `2000000`, khoảng 0–1000000000). |
 | `DECISION_REVIEW_RETENTION_DAYS` | ✗ | Số ngày giữ một lần review bản nháp và feedback của nó trước khi job chạy mỗi giờ xoá (mặc định `180`, khoảng 1–3650; rỗng hoặc sai → mặc định). Review profile được giữ lại. |
+| `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` | ✗ | Cửa sổ gộp các request decision bị từ chối (`403 FORBIDDEN`) trong audit log (#564): một event `ai_decision` cho mỗi site, caller và lý do trong mỗi cửa sổ, rồi ghi lại khi đếm tới 10, 100, 1000 … (mặc định `300`, khoảng 0–86400; `0` = một event cho mỗi lần từ chối). Tổng chính xác nằm ở `lumibase_ai_decision_refusals_total`. Xem [Đặc tả Hono API — AI decisions](../api/hono-api-spec.md). |
 
 Giá trị không hợp lệ ở các biến này sẽ bị bỏ qua kèm cảnh báo và dùng giá trị mặc định. Site có thể siết ba mức trần `DECISION_SITE_*` qua setting `aiDecisions`, nhưng không thể nâng lên. Decision cũng bị tắt với một site cho tới khi site admin opt-in ở setting đó (xem [API spec → Governance](../api/hono-api-spec.md)).
 
@@ -258,6 +259,7 @@ Import lớn có thể chạm ngân sách mặc định. Tăng `LUMIBASE_RATE_LI
 | `LUMIBASE_RATE_LIMIT_WINDOW_S` | ✗ | `60` | Độ dài cửa sổ, đơn vị giây. |
 | `LUMIBASE_RATE_LIMIT_DISABLED` | ✗ | (không đặt) | Đặt `true` để tắt hẳn throttle. |
 | `LUMIBASE_DELIVER_RATE_LIMIT` | ✗ | `1200` | Số request tối đa mỗi phút, theo IP client, trên Delivery API công khai (`/api/v1/deliver/*`). `0` là tắt. Xem [Caching — penetration](../features/caching.md). |
+| `LUMIBASE_AI_IP_RATE_LIMIT` | ✗ | `300` | Số request tối đa mỗi phút, theo IP client và theo site, trên `/api/v1/ai/*`, kiểm tra trước xác thực (#564). Vượt → `429 RATE_LIMITED` kèm `Retry-After`. `0` là tắt; bỏ qua khi không biết IP client. Kho lỗi thì theo `LUMIBASE_RATE_LIMIT_FAIL_CLOSED`. |
 | `LUMIBASE_NEGATIVE_CACHE_TTL` | ✗ | `30` | TTL tombstone (giây) cho các trường hợp xác nhận không tồn tại trên đường đọc công khai, trước khi cộng jitter ±20%. `0` là tắt. |
 
 ---
