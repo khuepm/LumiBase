@@ -1,13 +1,13 @@
 ---
-version: 11
-lastUpdated: 2026-10-26T16:34:59.862Z
+version: 12
+lastUpdated: 2026-10-29T08:18:32.171Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 12cc0dd5f56de04c
+sourceHash: f9f3dd816843f1b1
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-26T16:34:59.862Z
-codeVerifiedHash: 12cc0dd5f56de04c
+codeVerified: 2026-10-29T08:18:32.171Z
+codeVerifiedHash: f9f3dd816843f1b1
 codeVerifiedClaims: 6
 ---
 
@@ -71,6 +71,7 @@ resolution / patch hash mới, rồi `pnpm settings:check` để xác nhận hai
 | `body-parser@2` | `^2.4.0` | [GHSA-27r3-jxmh-p828](https://github.com/advisories/GHSA-27r3-jxmh-p828) — DoS qua byte thừa sau body đã nén (high), chưa vá dưới `2.4.0`. Đi vào qua `packages/mcp-server > @modelcontextprotocol/sdk > express@5.2.1` (khai `^2.2.1`) và `express-rate-limit > express`. Scope về `@2` (cùng dạng với `nanoid@3`) để một bản 1.x sau này không bị nâng vượt major (bản vá 1.x là `1.20.9`). | `express` khai `body-parser >=2.4.0`. Kiểm bằng `pnpm why -r body-parser`. |
 | `ip-address` | `^10.7.4` | [GHSA-rpw4-54j3-4h4q](https://github.com/advisories/GHSA-rpw4-54j3-4h4q), [GHSA-2vr4-cq9g-pvrc](https://github.com/advisories/GHSA-2vr4-cq9g-pvrc), [GHSA-j6r3-76f7-8jcv](https://github.com/advisories/GHSA-j6r3-76f7-8jcv), [GHSA-h3mg-xc3c-68pw](https://github.com/advisories/GHSA-h3mg-xc3c-68pw) (moderate), chưa vá dưới `10.7.1`, sau đó [GHSA-rxp7-6hxx-x8q5](https://github.com/advisories/GHSA-rxp7-6hxx-x8q5) (moderate), chưa vá dưới `10.7.4`. Đi vào qua `express-rate-limit` trong `packages/mcp-server`. | `express-rate-limit` yêu cầu `ip-address >=10.7.4`. |
 | `sharp` | `>=0.35.5` | [GHSA-wq5f-xc86-pv6w](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) — lỗ hổng trong dependency librsvg đi kèm (high), chưa vá dưới `0.35.5`. Đi vào qua `next` trong `apps/consumer` và `apps/landing`, và qua `wrangler` → `miniflare` trong `apps/cms`. Nâng sàn override hiện có để cài mới không giữ lại `0.35.4`. | `next` và `miniflare` yêu cầu `sharp >=0.35.5`. Kiểm tra bằng `pnpm why -r sharp`. |
+| `seroval` | `^1.6.11` | [GHSA-97r2-qh9m-474h](https://github.com/advisories/GHSA-97r2-qh9m-474h), [GHSA-wp97-x4hv-qvhp](https://github.com/advisories/GHSA-wp97-x4hv-qvhp) và [GHSA-7rv5-mrxv-xcr9](https://github.com/advisories/GHSA-7rv5-mrxv-xcr9) (high), chưa vá dưới `1.6.8`, cùng [GHSA-9wx9-5pv9-3349](https://github.com/advisories/GHSA-9wx9-5pv9-3349) và [GHSA-f86p-h4j2-7qgj](https://github.com/advisories/GHSA-f86p-h4j2-7qgj) (moderate), chưa vá dưới `1.6.11`. Đi vào qua `apps/studio > @tanstack/react-router > @tanstack/router-core`, mà bản mới nhất vẫn khai `^1.6.7`, nên nâng router không giúp được. Resolve ra `1.7.3`; `seroval-plugins` giữ ở `1.6.7` (peer của nó là `seroval ^1.0`, và một lượt round-trip URL/Headers/FormData với các plugin web chạy được trên 1.7.3). | `@tanstack/router-core` khai `seroval >=1.6.11`. Kiểm bằng `pnpm why -r seroval`. |
 | `@types/react` | `19.3.0` | **Không phải pin bảo mật** — ép React 19 types toàn workspace để Studio/Docs/Landing/`@lumibase/ui` typecheck cùng major với runtime React 19. | Trôi lệch giữa các app không còn là mối lo, hoặc workspace cố ý tách React major trở lại. |
 | `@types/react-dom` | `19.3.0` | Giống `@types/react` — nhất quán type React 19. Vì là pin chính xác, đây cũng là mục thứ hai `pnpm drift:check` bắt được: đợt bump nhóm minor-and-patch nâng `apps/{docs,landing,studio}` lên `^19.2.7` trong khi pin này vẫn ở `19.2.5`, nên importer trong lockfile vẫn ghi `specifier: 19.2.5`. Nâng pin cùng nhịp với manifest. | Giống `@types/react`. |
 

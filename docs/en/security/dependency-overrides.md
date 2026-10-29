@@ -1,10 +1,10 @@
 ---
-version: 11
-lastUpdated: 2026-10-26T16:34:59.862Z
+version: 12
+lastUpdated: 2026-10-29T08:18:32.171Z
 sourceLang: en
-contentHash: 12cc0dd5f56de04c
-codeVerified: 2026-10-26T16:34:59.862Z
-codeVerifiedHash: 12cc0dd5f56de04c
+contentHash: f9f3dd816843f1b1
+codeVerified: 2026-10-29T08:18:32.171Z
+codeVerifiedHash: f9f3dd816843f1b1
 codeVerifiedClaims: 6
 ---
 
@@ -70,6 +70,7 @@ still agree.
 | `body-parser@2` | `^2.4.0` | [GHSA-27r3-jxmh-p828](https://github.com/advisories/GHSA-27r3-jxmh-p828) — DoS via trailing bytes after a compressed body (high), unpatched below `2.4.0`. Reached through `packages/mcp-server > @modelcontextprotocol/sdk > express@5.2.1` (declares `^2.2.1`) and `express-rate-limit > express`. Scoped to `@2` (same shape as `nanoid@3`) so a future 1.x copy is not lifted across a major (the 1.x fix is `1.20.9`). | `express` declares `body-parser >=2.4.0`. Verify with `pnpm why -r body-parser`. |
 | `ip-address` | `^10.7.4` | [GHSA-rpw4-54j3-4h4q](https://github.com/advisories/GHSA-rpw4-54j3-4h4q), [GHSA-2vr4-cq9g-pvrc](https://github.com/advisories/GHSA-2vr4-cq9g-pvrc), [GHSA-j6r3-76f7-8jcv](https://github.com/advisories/GHSA-j6r3-76f7-8jcv), [GHSA-h3mg-xc3c-68pw](https://github.com/advisories/GHSA-h3mg-xc3c-68pw) (moderate), unpatched below `10.7.1`, then [GHSA-rxp7-6hxx-x8q5](https://github.com/advisories/GHSA-rxp7-6hxx-x8q5) (moderate), unpatched below `10.7.4`. Reached through `express-rate-limit` in `packages/mcp-server`. | `express-rate-limit` requires `ip-address >=10.7.4`. |
 | `sharp` | `>=0.35.5` | [GHSA-wq5f-xc86-pv6w](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) — vulnerability in the bundled librsvg dependency (high), unpatched below `0.35.5`. Reached through `next` in `apps/consumer` and `apps/landing`, and through `wrangler` → `miniflare` in `apps/cms`. Raises the existing override floor so fresh installs cannot retain `0.35.4`. | `next` and `miniflare` require `sharp >=0.35.5`. Verify with `pnpm why -r sharp`. |
+| `seroval` | `^1.6.11` | [GHSA-97r2-qh9m-474h](https://github.com/advisories/GHSA-97r2-qh9m-474h), [GHSA-wp97-x4hv-qvhp](https://github.com/advisories/GHSA-wp97-x4hv-qvhp) and [GHSA-7rv5-mrxv-xcr9](https://github.com/advisories/GHSA-7rv5-mrxv-xcr9) (high), unpatched below `1.6.8`, plus [GHSA-9wx9-5pv9-3349](https://github.com/advisories/GHSA-9wx9-5pv9-3349) and [GHSA-f86p-h4j2-7qgj](https://github.com/advisories/GHSA-f86p-h4j2-7qgj) (moderate), unpatched below `1.6.11`. Reached through `apps/studio > @tanstack/react-router > @tanstack/router-core`, whose latest release still declares `^1.6.7`, so a newer router does not help. Resolves `1.7.3`; `seroval-plugins` stays at `1.6.7` (its peer is `seroval ^1.0`, and a URL/Headers/FormData round-trip with the web plugins passes on 1.7.3). | `@tanstack/router-core` declares `seroval >=1.6.11`. Verify with `pnpm why -r seroval`. |
 | `@types/react` | `19.3.0` | **Not a security pin** — enforces React 19 types workspace-wide so Studio/Docs/Landing/`@lumibase/ui` typecheck against the same major as runtime React 19. | Drift between apps is no longer a concern, or the workspace splits React majors again intentionally. |
 | `@types/react-dom` | `19.3.0` | Same as `@types/react` — React 19 type consistency. Being an exact pin, it is also the second entry `pnpm drift:check` has caught: the minor-and-patch group bump raised `apps/{docs,landing,studio}` to `^19.2.7` while this pin stayed at `19.2.5`, so the lockfile importers still recorded `specifier: 19.2.5`. Raise the pin in step with the manifests. | Same as `@types/react`. |
 

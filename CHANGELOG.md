@@ -488,7 +488,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   lives in the shared authorization function, not per route.
 
 - **Dependency advisories cleared; `pnpm audit --prod --audit-level high`
-  passes again** (0 findings of any severity, from 22). All fixes stay inside
+  passes again** (0 findings of any severity, from 22 plus 5 seroval findings
+  published later). All fixes stay inside
   the major already in use:
   - `next` 16.3.8 → 16.4.3 (`apps/landing`, `apps/consumer`, with
     `eslint-config-next` in lockstep):
@@ -518,6 +519,11 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
     GHSA-333x-w4r6-6crp (low).
   - `ip-address` 10.7.3 → 10.7.5 (override floor `^10.7.4`):
     GHSA-rxp7-6hxx-x8q5 (moderate).
+  - `seroval` 1.6.7 → 1.7.3 through a new `seroval` override (`apps/studio`
+    via `@tanstack/react-router` → `@tanstack/router-core`, which still
+    declares `^1.6.7`): GHSA-97r2-qh9m-474h, GHSA-wp97-x4hv-qvhp,
+    GHSA-7rv5-mrxv-xcr9 (high), GHSA-9wx9-5pv9-3349, GHSA-f86p-h4j2-7qgj
+    (moderate). Published after the first audit run on this change.
   - `qs` override floor `^6.16.0` → `^6.16.1` (6.16.1), the range
     `body-parser@2.4.0` declares. Not an advisory.
 
