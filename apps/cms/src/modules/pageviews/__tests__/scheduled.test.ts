@@ -4,20 +4,23 @@ import { CloudflareCacheProvider, type RuntimeContext } from '@lumibase/runtime'
 import type { Database } from '@lumibase/database';
 import { CounterStore, handleCounterRequest, type CounterSql } from '../../../pageviews/counter-store';
 import { DecisionGovernanceError, DecisionQuotaLedger } from '../../../services/decision-governance';
+import { DECISION_REFUSAL_KEY_PREFIX, refusalDedupKey } from '../../../services/decision-refusal-audit';
 import { runScheduledPageviewFlush } from '../scheduled';
 
 /**
  * #511: the 5-minute pageview flush drains each site's PageviewCounter DO with
- * `prefix=pv`. The same DO holds the decision quota (`dq:`) and the API rate
- * limiter (`rl:`), so the flush must roll up `pv:`/`pvu:` and leave the quota
- * untouched — otherwise every tick would hand each site a fresh decision
+ * `prefix=pv`. The same DO holds the decision quota (`dq:`), the API rate
+ * limiters (`rl:`, including the /api/v1/ai IP limit `rl:{site}:aiip:`) and the
+ * decision refusal dedup counters (`dra:`, #564), so the flush must roll up
+ * `pv:`/`pvu:` and leave the others untouched — otherwise every tick would hand each site a fresh decision
  * budget. Everything below the flush is real: CloudflareCacheProvider, one
  * CounterStore on SQLite per DO name, and DecisionQuotaLedger. Only the
  * rollup sink and the site list are faked.
  *
  * Negative check: setting `PAGEVIEW_DRAIN_PREFIX` to `''` in
  * packages/runtime/src/adapters/cloudflare/cache.ts makes the quota
- * assertion below fail (the drain empties `dq:` too).
+ * assertion below fail (the drain empties `dq:` too), and the refusal dedup
+ * assertion in the second case fail (it empties `dra:` and `rl:` too).
  */
 const addToDaily = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => undefined));
 vi.mock('../rollup', () => ({ addToDaily }));
@@ -115,5 +118,31 @@ describe('scheduled pageview flush vs decision quota (#511)', () => {
     expect(drainCount).toBe(2);
     expect(drains.map(({ doName }) => doName).sort()).toEqual(['site_1', 'site_2']);
     expect(drains.every(({ url }) => new URL(url).searchParams.get('prefix') === 'pv')).toBe(true);
+  });
+
+  it('leaves the decision refusal dedup counters and the AI IP limiter alone (#564)', async () => {
+    // A drained dedup key would let the next refusal write a fresh "first" row
+    // every five minutes; a drained limiter key would reset the IP budget.
+    expect(DECISION_REFUSAL_KEY_PREFIX.startsWith('pv')).toBe(false);
+    expect('rl'.startsWith('pv')).toBe(false);
+    const { cache } = cloudflareCache();
+    const dedup = refusalDedupKey({
+      siteId: 'site_1',
+      window: 1,
+      kind: 'ip',
+      subjectHash: 'a'.repeat(16),
+      reason: 'publishable_api_key',
+    });
+    const limiter = `rl:site_1:aiip:${'b'.repeat(16)}`;
+    for (let i = 0; i < 3; i += 1) await cache.increment(dedup, 1, { ttl: 2 * 300 + 60 });
+    await cache.increment(limiter, 1, { ttl: 60 });
+    await cache.increment(`pv:site_1:${DAY}:/b`, 1);
+
+    const silent = { log: () => {}, error: () => {} };
+    const result = await runScheduledPageviewFlush(fakeDb(['site_1']), { cache } as unknown as RuntimeContext, silent);
+    expect(result.countersDrained).toBe(1);
+
+    expect(await cache.increment(dedup, 0, { ttl: 660 })).toBe(3);
+    expect(await cache.increment(limiter, 0, { ttl: 60 })).toBe(1);
   });
 });

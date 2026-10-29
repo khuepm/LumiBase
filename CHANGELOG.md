@@ -530,6 +530,36 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   No migration and no upgrade step. Rationale and removal conditions for each
   override: `docs/{en,vi}/security/dependency-overrides.md`.
 
+- **Bounded audit volume for refused AI decisions (#564, B147).** Every
+  refused `ai:decide` request used to write one `ai_decision` audit row, so a
+  cheap or public credential (a publishable key, a frontend session, a member
+  without the grant) could turn free requests into audit-table writes on the
+  shared database and bury real events. Authorization refusals (`403
+  FORBIDDEN`) are now aggregated per site, refusal reason and subject (the
+  principal, or a keyed hash of the client IP when there is none): the first
+  refusal in each window writes an event, later ones write again only at counts
+  10, 100, 1000 …, and the first event of the next window carries the exact
+  count of the previous one. Refusal events carry `metadata.refusal`
+  (`reason`, `count`, `dedup`, `windowStart`, `windowSeconds`,
+  `previousWindowCount`) and `clientIpHash` (HMAC-SHA256 keyed by
+  `JWT_SECRET`), never the IP. If the counter store is down, every refusal
+  still writes an event. Two new metrics give the exact totals:
+  `lumibase_ai_decision_refusals_total{reason,principal,audit}` and
+  `lumibase_ai_ip_rate_limited_total`. A per-client-IP, per-site limit on
+  `/api/v1/ai/*` (default 300 requests per minute) runs before authentication
+  and answers `429 RATE_LIMITED` with `Retry-After`. New optional env vars:
+  `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` (default `300`, `0` = one event per
+  refusal) and `LUMIBASE_AI_IP_RATE_LIMIT` (default `300`, `0` = off). The API
+  spec recommends a Cloudflare WAF rate-limiting rule for `/api/v1/ai/*` as the
+  outer defence.
+  **Behaviour change:** refused-authorization `ai_decision` events are no
+  longer one per request; read `refusal.count` (or the metric) for volume.
+  Admitted calls and calls refused after authorization still write one event
+  each. No migration, no backfill. Behind a reverse proxy on Docker, the proxy
+  must overwrite `CF-Connecting-IP` with the real client IP for the IP limit to
+  apply. The Definition of Done §2c gains a line for this class: an audited
+  refusal path reachable by untrusted callers must be aggregated, counted in a
+  metric and rate-limited before authentication.
 - **RLS backstop no longer hides every row (B125).** Every `site_isolation`
   policy in `packages/database/migrations/rls-policies.sql` was RESTRICTIVE and
   the file created no PERMISSIVE policy. Postgres shows a role without

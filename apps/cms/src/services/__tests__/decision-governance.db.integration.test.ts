@@ -22,6 +22,8 @@ import {
   decisionQuotaFromEnv,
   readDecisionSettings,
   runGovernedDecision,
+  writeDecisionAudit,
+  type DecisionGovernanceError,
   type GovernedDecisionOutcome,
 } from '../decision-governance';
 import { createDecisionProvider } from '../decision-provider';
@@ -90,6 +92,41 @@ describe.skipIf(!hasDbIntegrationUrl)('decision governance — DB integration (t
     );
     const body = outcome.body as { errors?: Array<{ code: string }> };
     return { code: outcome.status === 200 ? 'OK' : body.errors?.[0]?.code ?? 'UNKNOWN', outcome };
+  }
+
+  /**
+   * #564: a refusal audited exactly as routes/ai.ts does it — through
+   * `writeDecisionAudit` with the refusal store that
+   * `decisionAuditContextForRequest` builds (here by hand: no Hono context).
+   */
+  async function refuseAudited(siteId: string, auth: AuthPrincipal): Promise<string> {
+    const startedAt = Date.now();
+    const principal = principalRefFromAuth(auth, siteId);
+    const grant = await resolvePrincipalCapabilities(new EffectiveCapabilityService({ db, siteId, cache }), principal!);
+    try {
+      authorizeDecision(grant);
+      return 'ALLOWED';
+    } catch (err) {
+      const error = err as DecisionGovernanceError;
+      await writeDecisionAudit(
+        {
+          db,
+          siteId,
+          requestId: 'req-dec-gov-refusal',
+          principal,
+          refusal: { cache, clientIp: '203.0.113.7', hashSecret: 'it-secret', windowSeconds: 300 },
+        },
+        { outcome: 'FORBIDDEN', status: 403, startedAt, refusalReason: error.reason },
+      );
+      return error.code;
+    }
+  }
+
+  async function decisionRows(siteId: string) {
+    return db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.siteId, siteId), eq(auditLog.event, 'ai_decision')));
   }
 
   async function grantPolicy(siteId: string, name: string): Promise<string> {
@@ -212,5 +249,41 @@ describe.skipIf(!hasDbIntegrationUrl)('decision governance — DB integration (t
   it("site B's grant does not inherit site A's opt-in: DECISION_DISABLED, no upstream call", async () => {
     await expect(decide(SITE_B, keyAuth(KEY_B))).resolves.toMatchObject({ code: 'DECISION_DISABLED' });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('#564: 15 refused publishable-key requests on A write 2 audit rows (count 1 and 10), not 15', async () => {
+    for (let i = 0; i < 15; i++) await expect(refuseAudited(SITE_A, keyAuth(KEY_PUB))).resolves.toBe('FORBIDDEN');
+    expect(fetchMock).not.toHaveBeenCalled();
+    const rows = (await decisionRows(SITE_A)).sort((a, b) => a.id.localeCompare(b.id));
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => (r.metadata as { refusal: { count: number } }).refusal.count)).toEqual([1, 10]);
+    for (const row of rows) {
+      expect(row.id).toMatch(UUIDV7);
+      expect(row.ip).toBeNull();
+      expect(row.metadata).toMatchObject({
+        outcome: 'FORBIDDEN',
+        principal: { type: 'api_key', id: KEY_PUB },
+        refusal: { reason: 'publishable_api_key' },
+      });
+      expect((row.metadata as { clientIpHash: string }).clientIpHash).toMatch(/^[0-9a-f]{16}$/);
+      expect(JSON.stringify(row)).not.toContain('203.0.113.7');
+    }
+  });
+
+  it("#564: site A's key refused on site B writes its own row on B; the granted key on A still writes one OK row", async () => {
+    for (let i = 0; i < 12; i++) await refuseAudited(SITE_A, keyAuth(KEY_PUB));
+    await expect(refuseAudited(SITE_B, keyAuth(KEY_A))).resolves.toBe('FORBIDDEN');
+    // A key of another site is looked up by (id, site): indistinguishable from
+    // a missing key on purpose, so the reason is principal_not_found.
+    const onB = await decisionRows(SITE_B);
+    expect(onB).toHaveLength(1);
+    expect(onB[0]!.siteId).toBe(SITE_B);
+    expect(onB[0]!.metadata).toMatchObject({ refusal: { reason: 'principal_not_found', count: 1, dedup: 'first' } });
+
+    const before = (await decisionRows(SITE_A)).length;
+    await expect(decide(SITE_A, keyAuth(KEY_A))).resolves.toMatchObject({ code: 'OK' });
+    const after = await decisionRows(SITE_A);
+    expect(after).toHaveLength(before + 1);
+    expect(after.filter((r) => (r.metadata as { outcome: string }).outcome === 'OK')).toHaveLength(1);
   });
 });

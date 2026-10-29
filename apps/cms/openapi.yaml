@@ -3471,7 +3471,10 @@ paths:
         `lumibase_ai_decisions`; admins have it), the site must opt in via the
         `aiDecisions` setting, `state` must respect its field allowlist, and
         the site's hourly, concurrency and daily token budgets apply. Each call
-        writes an `ai_decision` audit event without content.
+        writes an `ai_decision` audit event without content, except 403
+        FORBIDDEN refusals, which are audited in aggregate per window (#564).
+        Every /api/v1/ai/* request also counts against a per-client-IP limit
+        (LUMIBASE_AI_IP_RATE_LIMIT, default 300/min) checked before auth.
       parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
       requestBody:
         required: true
@@ -3575,10 +3578,12 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '429':
           description: >
-            Decision provider rate limit (DECISION_RATE_LIMITED), or a site
-            budget used up (DECISION_QUOTA_EXCEEDED, DECISION_CONCURRENCY_LIMITED).
-            Site budgets set Retry-After in seconds, except when one request's
-            worst-case reservation exceeds the whole daily budget (never admissible).
+            Decision provider rate limit (DECISION_RATE_LIMITED), a site
+            budget used up (DECISION_QUOTA_EXCEEDED, DECISION_CONCURRENCY_LIMITED),
+            or the per-client-IP limit on /api/v1/ai/* (RATE_LIMITED, #564).
+            Site budgets and the IP limit set Retry-After in seconds, except when
+            one request's worst-case reservation exceeds the whole daily budget
+            (never admissible).
           headers:
             Retry-After:
               schema: { type: integer }

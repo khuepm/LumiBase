@@ -139,6 +139,8 @@ export interface Bindings {
   LUMIBASE_DELIVER_RATE_LIMIT?: string;
   /** Authenticated API rate limit (req/min per principal). Default 600; `0` = off. */
   LUMIBASE_API_RATE_LIMIT?: string;
+  /** /api/v1/ai/* rate limit per client IP per site, req/min (default 300; `0` = off). Runs before auth (#564). */
+  LUMIBASE_AI_IP_RATE_LIMIT?: string;
   /** Debounce window (seconds) for API-key `lastUsedAt` writes. Default 60; `0` = touch every request. */
   LUMIBASE_APIKEY_TOUCH_INTERVAL?: string;
   /** Max JSON request body in bytes for the app-level guard. Default 1 MiB. */
@@ -233,6 +235,8 @@ export interface Bindings {
   DECISION_SITE_MAX_CONCURRENT?: string;
   /** Platform ceiling: estimated tokens per site per UTC day, retries included (default 2,000,000). */
   DECISION_SITE_TOKENS_PER_DAY?: string;
+  /** Dedup window (s) for refused-decision audit rows (default 300; `0` = one row per refusal) (#564). */
+  DECISION_REFUSAL_AUDIT_WINDOW_SECONDS?: string;
   /** Days a draft review run (and its feedback) is kept before the hourly purge (default 180). */
   DECISION_REVIEW_RETENTION_DAYS?: string;
   // ── Custom domains / Cloudflare for SaaS (services/domains/*) ───────────
