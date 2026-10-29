@@ -486,6 +486,50 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   unaffected. No migration. The Definition of Done §2c gains a line for this
   class: client-held credentials never use a paid capability, and the refusal
   lives in the shared authorization function, not per route.
+
+- **Dependency advisories cleared; `pnpm audit --prod --audit-level high`
+  passes again** (0 findings of any severity, from 22 plus 5 seroval findings
+  published later). All fixes stay inside
+  the major already in use:
+  - `next` 16.3.8 → 16.4.3 (`apps/landing`, `apps/consumer`, with
+    `eslint-config-next` in lockstep):
+    [GHSA-2464-fhr4-w9xw](https://github.com/advisories/GHSA-2464-fhr4-w9xw)
+    and [GHSA-673q-mjm6-r5xr](https://github.com/advisories/GHSA-673q-mjm6-r5xr)
+    (critical, RCE),
+    [GHSA-p3m5-59mp-jv5r](https://github.com/advisories/GHSA-p3m5-59mp-jv5r)
+    (high, DoS).
+  - `dompurify` 3.4.16 → 3.4.17 (`apps/docs`, `apps/studio` and the override):
+    GHSA-cg2g-xh64-v4q7 (critical), GHSA-mrv2-3pqr-j5jr (high),
+    GHSA-c6gr-qvv4-5v3f (low).
+  - `zod` 4.6.5 → 4.6.7 (CMS validation, `@lumibase/contracts`,
+    `@lumibase/ai-skills`, `@lumibase/extensions`, `@lumibase/mcp-server`,
+    Studio): GHSA-mrhx-c7xc-m3w5 (high, memory exhaustion on oversized input).
+    The published packages now declare `zod ^4.6.7`, so their consumers
+    resolve the patched version.
+  - `body-parser` 2.3.0 → 2.4.0 through a new `body-parser@2` override
+    (`@lumibase/mcp-server` via `@modelcontextprotocol/sdk` → `express`):
+    GHSA-27r3-jxmh-p828 (high, DoS).
+  - `undici` 7.29.1 → 7.30.1 (override floor; `miniflare` pins `7.29.1`):
+    GHSA-xjj6-f33q-929c (high), GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472
+    (moderate).
+  - `nodemailer` 10.0.14 → 10.1.7 (`apps/cms`): GHSA-8c8m-p3m8-cjg8,
+    GHSA-m943-m63m-w62w, GHSA-85x2-q946-cp5h (moderate).
+  - `fast-uri` 4.1.5 → 4.2.3 (override, now a floor instead of an exact pin):
+    GHSA-w74x-v6f9-j3xg, GHSA-wjr9-j795-jxcr (moderate), GHSA-xhq7-xmqj-769h,
+    GHSA-333x-w4r6-6crp (low).
+  - `ip-address` 10.7.3 → 10.7.5 (override floor `^10.7.4`):
+    GHSA-rxp7-6hxx-x8q5 (moderate).
+  - `seroval` 1.6.7 → 1.7.3 through a new `seroval` override (`apps/studio`
+    via `@tanstack/react-router` → `@tanstack/router-core`, which still
+    declares `^1.6.7`): GHSA-97r2-qh9m-474h, GHSA-wp97-x4hv-qvhp,
+    GHSA-7rv5-mrxv-xcr9 (high), GHSA-9wx9-5pv9-3349, GHSA-f86p-h4j2-7qgj
+    (moderate). Published after the first audit run on this change.
+  - `qs` override floor `^6.16.0` → `^6.16.1` (6.16.1), the range
+    `body-parser@2.4.0` declares. Not an advisory.
+
+  No migration and no upgrade step. Rationale and removal conditions for each
+  override: `docs/{en,vi}/security/dependency-overrides.md`.
+
 - **RLS backstop no longer hides every row (B125).** Every `site_isolation`
   policy in `packages/database/migrations/rls-policies.sql` was RESTRICTIVE and
   the file created no PERMISSIVE policy. Postgres shows a role without
