@@ -37,7 +37,7 @@ describe('security guard wiring — /api/v1 middleware chain (index.ts)', () => 
 
   it('mounts the full guard chain on the authenticated api sub-app', () => {
     expect(source).toMatch(
-      /api\.use\('\*',\s*withTenant\(\),\s*withDb\(\),\s*withTenantExists\(\),\s*withAuth\(\),\s*withSiteMembership\(\),\s*withRateLimit\(\),\s*requireSetupComplete\(\),\s*withStudioAccess\(\),\s*withControlPlaneAccessGuard\(\),/,
+      /api\.use\('\*',\s*withTenant\(\),\s*withDb\(\),\s*withTenantExists\(\),\s*withAiIpRateLimit\(\),\s*withAuth\(\),\s*withSiteMembership\(\),\s*withRateLimit\(\),\s*requireSetupComplete\(\),\s*withStudioAccess\(\),\s*withControlPlaneAccessGuard\(\),/,
     );
   });
 
@@ -56,6 +56,19 @@ describe('security guard wiring — /api/v1 middleware chain (index.ts)', () => 
     expect(dbIdx).toBeGreaterThan(-1);
     expect(existsIdx).toBeGreaterThan(dbIdx);
     expect(authIdx).toBeGreaterThan(existsIdx);
+  });
+
+  it('keeps withAiIpRateLimit after withTenantExists and before withAuth (#564)', () => {
+    // After the site check so only real sites get counters; before auth so a
+    // blocked /api/v1/ai/* flood costs no JWT/API-key work, no quota, no
+    // provider call and no audit write. Behaviour: ai-ip-rate-limit.test.ts.
+    const chain = source.match(/api\.use\('\*',[^\n]*\);/)?.[0] ?? '';
+    const existsIdx = chain.indexOf('withTenantExists()');
+    const limitIdx = chain.indexOf('withAiIpRateLimit()');
+    const authIdx = chain.indexOf('withAuth()');
+    expect(existsIdx).toBeGreaterThan(-1);
+    expect(limitIdx).toBeGreaterThan(existsIdx);
+    expect(authIdx).toBeGreaterThan(limitIdx);
   });
 
   it('mounts a dedicated IP rate limiter on the public deliver surface', () => {

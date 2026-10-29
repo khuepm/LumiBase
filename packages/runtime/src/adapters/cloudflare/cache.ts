@@ -200,8 +200,9 @@ export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProv
    *
    * Only pageview keys (`pv:` and `pvu:`) are drained. The same DO also holds
    * every other `increment()` counter for the site — rate-limit windows,
-   * decision quotas — which expire through the TTL forwarded by `increment`
-   * (the DO prunes expired rows), not through this drain.
+   * decision quotas, decision refusal dedup (`dra:`) — which expire through the
+   * TTL forwarded by `increment` (the DO prunes expired rows), not through this
+   * drain.
    */
   async drainSite(siteId: string): Promise<{
     counters: Array<{ key: string; value: number }>;

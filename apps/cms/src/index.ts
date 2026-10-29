@@ -10,6 +10,7 @@ import { withDb, withSystemDb } from './middleware/db';
 import { withLogger } from './middleware/logger';
 import { withRateLimit } from './middleware/rate-limit';
 import { withDeliverRateLimit } from './middleware/deliver-rate-limit';
+import { withAiIpRateLimit } from './middleware/ai-ip-rate-limit';
 import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
@@ -219,7 +220,11 @@ app.route('/api/v1/integrations/git', gitPublicRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
-api.use('*', withTenant(), withDb(), withTenantExists(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
+// `withAiIpRateLimit` (#564) sits after `withTenantExists` (only real sites get
+// counters) and before `withAuth` (a blocked /api/v1/ai/* request costs no JWT
+// or API-key work, no quota reservation, no provider call and no audit write).
+// It is a no-op outside /api/v1/ai.
+api.use('*', withTenant(), withDb(), withTenantExists(), withAiIpRateLimit(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
 // Sub-routers must be attached to their parent BEFORE the parent is mounted
 // on `api`: Hono's `route()` copies the child's routes at call time, so
 // anything registered on `authRouter`/`meRouter` afterwards is invisible to

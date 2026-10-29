@@ -113,6 +113,7 @@ let resolved: { capabilities: string[]; controlPlaneAdmin: boolean; callerClass:
 
 let cache: MemoryCacheProvider;
 let auth: AuthPrincipal;
+let clientIp: string;
 
 beforeEach(() => {
   ctx.settings = { enabled: true, allowedStateFields: null, review: pilot };
@@ -120,6 +121,7 @@ beforeEach(() => {
   ctx.store = new MemoryReviewStore();
   ctx.content = content();
   cache = new MemoryCacheProvider();
+  clientIp = '203.0.113.7';
   resolved = { capabilities: ['ai:decide'], controlPlaneAdmin: false, callerClass: 'standard' };
   vi.spyOn(EffectiveCapabilityService.prototype, 'resolve').mockImplementation(
     async (principal) =>
@@ -155,6 +157,7 @@ function buildApp(): Hono<AppEnv> {
     c.set('auth', auth);
     c.set('siteId', 'site_1');
     c.set('requestId', 'req_1');
+    c.set('ip', clientIp);
     c.set('db', {} as AppEnv['Variables']['db']);
     c.set('runtime', { cache } as unknown as AppEnv['Variables']['runtime']);
     await next();
@@ -219,6 +222,19 @@ async function errorOf(res: Response): Promise<{ code: string; message: string }
   return ((await res.json()) as { errors: Array<{ code: string; message: string }> }).errors[0]!;
 }
 
+/**
+ * No quota was reserved (`dq:`), and the refusal was counted once in its
+ * per-window dedup key (`dra:`, #564). Before #564 the refusal touched no
+ * counter at all; counting it is what bounds the audit rows.
+ */
+function expectNoQuotaOneRefusalCounter(increment: { mock: { calls: unknown[][] } }): void {
+  const keys = increment.mock.calls.map(([key]) => String(key));
+  expect(keys.some((key) => key.startsWith('dq:'))).toBe(false);
+  expect(keys.every((key) => key.startsWith('dra:site_1:'))).toBe(true);
+  // One increment of this window's key (+1) and one read of the previous window's (+0).
+  expect(increment.mock.calls.filter(([, by]) => by === 1)).toHaveLength(1);
+}
+
 const refusedCallers = [
   ['a publishable API key', publishableKey, PUBLISHABLE_KEY_DECISION_MESSAGE],
   ['a frontend session', frontendSession, FRONTEND_SESSION_DECISION_MESSAGE],
@@ -243,7 +259,7 @@ describe.each(refusedCallers)('%s', (_label, principal, message) => {
       expect(res.status).toBe(403);
       expect(await errorOf(res)).toEqual({ code: 'FORBIDDEN', message });
       expect(fetchMock).not.toHaveBeenCalled();
-      expect(increment).not.toHaveBeenCalled();
+      expectNoQuotaOneRefusalCounter(increment);
       expect(ctx.audits).toHaveLength(1);
       expect(ctx.audits[0]).toMatchObject({ event: 'ai_decision', metadata: { outcome: 'FORBIDDEN', status: 403 } });
     });
@@ -269,7 +285,7 @@ describe.each(refusedCallers)('%s', (_label, principal, message) => {
       expect(res.status).toBe(403);
       expect(await errorOf(res)).toEqual({ code: 'FORBIDDEN', message });
       expect(fetchMock).not.toHaveBeenCalled();
-      expect(increment).not.toHaveBeenCalled();
+      expectNoQuotaOneRefusalCounter(increment);
       expect(read).not.toHaveBeenCalled();
       expect((ctx.store as MemoryReviewStore).runs).toHaveLength(0);
       expect(ctx.audits).toHaveLength(1);
@@ -323,5 +339,69 @@ describe('e. the DB-derived class alone refuses', () => {
     expect(res.status).toBe(403);
     expect(await errorOf(res)).toEqual({ code: 'FORBIDDEN', message: PUBLISHABLE_KEY_DECISION_MESSAGE });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('f–i. refused requests are audited in aggregate (#564, B147)', () => {
+  const HEX16 = /^[0-9a-f]{16}$/;
+
+  it('f. 20 publishable-key POST /ai/decisions → 20 × 403 but 2 audit rows (count 1 and 10), no raw IP', async () => {
+    auth = publishableKey;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jevOk()));
+    const app = buildApp();
+    for (let i = 0; i < 20; i++) {
+      expect((await call(app, 'POST', '/ai/decisions', decisionBody)).status).toBe(403);
+    }
+    expect(ctx.audits).toHaveLength(2);
+    expect(ctx.audits.map((a) => (a.metadata?.refusal as { count: number }).count)).toEqual([1, 10]);
+    for (const audit of ctx.audits) {
+      expect(audit.metadata).toMatchObject({
+        outcome: 'FORBIDDEN',
+        principal: { type: 'api_key', id: 'key_pub' },
+        refusal: { reason: 'publishable_api_key' },
+      });
+      expect(audit.metadata?.clientIpHash).toMatch(HEX16);
+    }
+    expect(JSON.stringify(ctx.audits)).not.toContain('203.0.113.7');
+  });
+
+  it('g. 12 frontend-session POST /ai/reviews → 2 audit rows with reason frontend_session', async () => {
+    auth = frontendSession;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jevOk()));
+    const app = buildApp();
+    await seedProfile(app);
+    for (let i = 0; i < 12; i++) expect((await call(app, 'POST', '/ai/reviews', reviewBody)).status).toBe(403);
+    expect(ctx.audits).toHaveLength(2);
+    expect(ctx.audits.map((a) => (a.metadata?.refusal as { reason: string }).reason)).toEqual([
+      'frontend_session',
+      'frontend_session',
+    ]);
+  });
+
+  it('h. after a flood, a granted secret key still decides and writes exactly one OK row', async () => {
+    auth = publishableKey;
+    const fetchMock = vi.fn().mockResolvedValue(jevOk());
+    vi.stubGlobal('fetch', fetchMock);
+    const app = buildApp();
+    for (let i = 0; i < 15; i++) await call(app, 'POST', '/ai/decisions', decisionBody);
+    ctx.audits = [];
+    auth = secretKey;
+    const res = await call(app, 'POST', '/ai/decisions', decisionBody);
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(ctx.audits).toHaveLength(1);
+    expect(ctx.audits[0]?.metadata).toMatchObject({ outcome: 'OK', status: 200 });
+    expect(ctx.audits[0]?.metadata?.refusal).toBeUndefined();
+  });
+
+  it('i. a key rotating its IP on every request is still bounded (keyed by principal)', async () => {
+    auth = publishableKey;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jevOk()));
+    const app = buildApp();
+    for (let i = 0; i < 20; i++) {
+      clientIp = `198.51.100.${i + 1}`;
+      await call(app, 'POST', '/ai/decisions', decisionBody);
+    }
+    expect(ctx.audits).toHaveLength(2);
   });
 });

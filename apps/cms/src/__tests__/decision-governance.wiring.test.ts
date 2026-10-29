@@ -1,12 +1,22 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { MemoryCacheProvider } from '@lumibase/runtime';
+import { describe, expect, it, vi } from 'vitest';
 import type { AuthPrincipal } from '../env';
 import { hasSiteAdminAccess, isControlPlanePath } from '../middleware/control-plane-access-guard';
 import { isStudioAccessPath } from '../middleware/studio-access';
-import { authorizeDecision, DecisionGovernanceError } from '../services/decision-governance';
+import { authorizeDecision, DecisionGovernanceError, writeDecisionAudit } from '../services/decision-governance';
 import type { PermissionBundle } from '../services/permission-service';
 
+const audits = vi.hoisted(() => [] as unknown[]);
+vi.mock('../modules/audit/logger', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../modules/audit/logger')>()),
+  AuditLogger: class {
+    async write(entry: unknown) {
+      audits.push(entry);
+    }
+  },
+}));
 /**
  * Tripwire for #511 (J04): every path to a PAID decision provider is governed
  * — `authorizeDecision` (capability `ai:decide`) and `runGovernedDecision`
@@ -383,5 +393,151 @@ describe('decision governance wiring — the guards can fire (negative checks)',
     // And with the real lists they fire on guarded paths, including a sibling under /api/v1/ai.
     expect(isControlPlanePath('/api/v1/ai/automation/templates')).toBe(true);
     expect(isStudioAccessPath('/api/v1/agent/goals')).toBe(true);
+  });
+});
+
+/**
+ * #564 / B147: authorization refusals are aggregated per window so a flood of
+ * refused requests cannot flood the audit log. That holds only while
+ * (1) `writeDecisionAudit` in decision-governance.ts stays the only writer of
+ * the `ai_decision` event (it routes `FORBIDDEN` to `recordDecisionRefusal`),
+ * and (2) every request-path entry point builds its audit context with
+ * `decisionAuditContextForRequest(c)`, which carries the refusal store. A
+ * hand-built `{ db, siteId, requestId, principal }` has no store, so its
+ * refusals would write one row each again. These rules lock both halves.
+ */
+// A quoted literal, or a template literal as an event value (backticks in comments are prose).
+const AI_DECISION_EVENT = /(['"])ai_decision\1|\bevent\s*:\s*`ai_decision`/;
+const WRITE_AUDIT = /\bwriteDecisionAudit\s*\(/;
+const REQUEST_CONTEXT = /\bdecisionAuditContextForRequest\s*\(/;
+const AUDIT_CONTEXT_TYPE = /\bDecisionAuditContext\b/;
+
+/**
+ * Entry points that authorize a persisted principal off the request path.
+ * They write no refusal row: they return `FORBIDDEN` to their caller and never
+ * call `writeDecisionAudit` themselves (asserted below).
+ *
+ * - services/flow-ai-decision.ts — Flows `ai:decision` (J10), principal from the run.
+ * - services/semantic-drift-scan.ts — J12 system scan, no principal at all.
+ */
+const NON_REQUEST_DECISION_ENTRY_POINTS = ['services/flow-ai-decision.ts', 'services/semantic-drift-scan.ts'];
+
+function eventWriters(files: Array<{ rel: string; source: string }>): string[] {
+  return files.filter(({ rel, source }) => rel !== GOVERNANCE_FILE && AI_DECISION_EVENT.test(source)).map(({ rel }) => rel);
+}
+
+/** Arguments of each `writeDecisionAudit(` call, first argument only. */
+function auditContextArgs(source: string): string[] {
+  const out: string[] = [];
+  for (const m of source.matchAll(/\bwriteDecisionAudit\s*\(\s*/g)) {
+    let depth = 0;
+    let arg = '';
+    for (const ch of source.slice(m.index! + m[0].length)) {
+      if (depth === 0 && (ch === ',' || ch === ')')) break;
+      if ('([{'.includes(ch)) depth++;
+      if (')]}'.includes(ch)) depth--;
+      arg += ch;
+    }
+    out.push(arg.trim());
+  }
+  return out;
+}
+
+function unboundedRefusalWriters(
+  files: Array<{ rel: string; source: string }>,
+  exempt: string[] = NON_REQUEST_DECISION_ENTRY_POINTS,
+): string[] {
+  return files
+    .filter(({ rel }) => rel !== GOVERNANCE_FILE && !exempt.includes(rel))
+    .filter(({ source }) => AUTHORIZE.test(source) && (WRITE_AUDIT.test(source) || GOVERNED.test(source)))
+    .filter(
+      ({ source }) =>
+        !REQUEST_CONTEXT.test(source) ||
+        AUDIT_CONTEXT_TYPE.test(source) ||
+        auditContextArgs(source).some((arg) => !/^decisionAuditContextForRequest\(\s*\w+\s*\)$/.test(arg)),
+    )
+    .map(({ rel }) => rel);
+}
+
+describe('decision refusal audit wiring (#564)', () => {
+  it("only decision-governance.ts writes the 'ai_decision' event", () => {
+    expect(eventWriters(sources)).toEqual([]);
+    expect(AI_DECISION_EVENT.test(sources.find((s) => s.rel === GOVERNANCE_FILE)!.source)).toBe(true);
+  });
+
+  it('every request-path decision entry point builds its audit context with decisionAuditContextForRequest', () => {
+    expect(unboundedRefusalWriters(sources)).toEqual([]);
+    // The scan must see both HTTP entry points, or it proves nothing.
+    const scanned = sources
+      .filter(({ source }) => AUTHORIZE.test(source) && (WRITE_AUDIT.test(source) || GOVERNED.test(source)))
+      .map(({ rel }) => rel);
+    expect(scanned).toEqual(expect.arrayContaining(['routes/ai.ts', 'routes/ai-review.ts']));
+  });
+
+  it('the non-request entry points still exist and never write a decision audit themselves', () => {
+    for (const rel of NON_REQUEST_DECISION_ENTRY_POINTS) {
+      const file = sources.find((s) => s.rel === rel);
+      expect(file, rel).toBeDefined();
+      expect(WRITE_AUDIT.test(file!.source), rel).toBe(false);
+    }
+  });
+
+  it('writeDecisionAudit still routes FORBIDDEN through the bounded path', async () => {
+    audits.length = 0;
+    const audit = {
+      db: {} as never,
+      siteId: 'site_1',
+      requestId: null,
+      principal: null,
+      refusal: { cache: new MemoryCacheProvider(), clientIp: '203.0.113.7', hashSecret: 's', windowSeconds: 300 },
+    };
+    const record = { outcome: 'FORBIDDEN' as const, status: 403, startedAt: Date.now(), refusalReason: 'capability_missing' as const };
+    await writeDecisionAudit(audit, record);
+    await writeDecisionAudit(audit, record);
+    expect(audits).toHaveLength(1);
+  });
+});
+
+describe('decision refusal audit wiring — the guards can fire (negative checks)', () => {
+  it("flags a second writer of the 'ai_decision' event", () => {
+    expect(
+      eventWriters([
+        { rel: 'routes/other.ts', source: "await new AuditLogger({ db, siteId }).write({ event: 'ai_decision' });" },
+        { rel: 'routes/template.ts', source: 'await logger.write({ event: `ai_decision` });' },
+        { rel: 'routes/ok.ts', source: '// writes `ai_decision` rows through writeDecisionAudit' },
+      ]),
+    ).toEqual(['routes/other.ts', 'routes/template.ts']);
+  });
+
+  it('flags hand-built audit contexts and passes the compliant shape', () => {
+    const scratch = [
+      {
+        rel: 'routes/builder.ts',
+        source:
+          'function ctx(c): DecisionAuditContext { return { db, siteId, requestId, principal }; }\n' +
+          "authorizeDecision(grant); await writeDecisionAudit(ctx(c), { outcome: 'FORBIDDEN' });",
+      },
+      {
+        rel: 'routes/inline.ts',
+        source:
+          'const a = decisionAuditContextForRequest(c);\n' +
+          "authorizeDecision(grant); await writeDecisionAudit({ db, siteId, requestId, principal: principalRefFromAuth(x, s) }, { outcome: 'FORBIDDEN' });",
+      },
+      {
+        rel: 'routes/none.ts',
+        source: 'authorizeDecision(grant); await runGovernedDecision(d, r, { audit: { db, siteId, requestId, principal } });',
+      },
+      {
+        rel: 'routes/good.ts',
+        source:
+          "authorizeDecision(grant); await writeDecisionAudit(decisionAuditContextForRequest(c), { outcome: 'FORBIDDEN' });\n" +
+          'await runGovernedDecision(d, r, { audit: decisionAuditContextForRequest(c) });',
+      },
+    ];
+    expect(unboundedRefusalWriters(scratch)).toEqual(['routes/builder.ts', 'routes/inline.ts', 'routes/none.ts']);
+    // Without the exemption, a flow-style entry point that builds its own context is flagged too.
+    const flow = [{ rel: 'services/flow-ai-decision.ts', source: 'authorizeDecision(g); runGovernedDecision(d, r, { audit });' }];
+    expect(unboundedRefusalWriters(flow)).toEqual([]);
+    expect(unboundedRefusalWriters(flow, [])).toEqual(['services/flow-ai-decision.ts']);
   });
 });

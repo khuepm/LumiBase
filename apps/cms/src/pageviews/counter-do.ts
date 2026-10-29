@@ -9,8 +9,8 @@
  * `idFromName(siteId)` (mirroring the realtime `SiteRoom`), which both bounds a
  * site's counters to a single serialized actor — making increments race-free —
  * and isolates tenants. The same DO also backs every other `increment()` caller
- * for the site (API rate limits, decision quotas); those rely on the counter
- * TTLs the store enforces, not on the pageview drain.
+ * for the site (API rate limits, decision quotas, decision refusal dedup);
+ * those rely on the counter TTLs the store enforces, not on the pageview drain.
  *
  * Storage is SQLite-backed (`ctx.storage.sql`), which on the free plan requires
  * the `new_sqlite_classes` wrangler migration. Pageview state lives here only

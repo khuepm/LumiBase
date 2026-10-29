@@ -228,6 +228,30 @@ describe('authorizeDecision', () => {
     expect(error.code).toBe('FORBIDDEN');
     expect(error.message).toBe('The caller could not be classified.');
   });
+
+  // #564: the refusal carries a bounded reason for the aggregated audit, the
+  // metric and the dedup key. Messages and codes are unchanged.
+  it.each([
+    [{ allowed: true, capabilities: ['admin'], callerClass: 'publishable_api_key' as const }, 'publishable_api_key'],
+    [{ allowed: true, capabilities: ['admin'], callerClass: 'frontend_session' as const }, 'frontend_session'],
+    [{ allowed: true, capabilities: ['admin'], callerClass: 'other' as never }, 'unclassified_caller'],
+    [{ allowed: true, capabilities: ['items:write'], callerClass: 'standard' as const }, 'capability_missing'],
+    [
+      { allowed: false, capabilities: [], callerClass: 'standard' as const, code: 'PRINCIPAL_SITE_MISMATCH' },
+      'principal_site_mismatch',
+    ],
+    [
+      { allowed: false, capabilities: [], callerClass: 'standard' as const, code: 'PRINCIPAL_UNRESOLVED' },
+      'principal_unresolved',
+    ],
+    [{ allowed: false, capabilities: [], callerClass: 'standard' as const, code: 'API_KEY_REVOKED' }, 'api_key_revoked'],
+    [{ allowed: false, capabilities: [], callerClass: 'standard' as const, code: 'SOMETHING_NEW' }, 'principal_denied'],
+    [{ allowed: false, capabilities: ['ai:decide'], callerClass: 'standard' as const }, 'principal_denied'],
+  ])('names the refusal reason for %j', (grant, reason) => {
+    const error = refused(grant);
+    expect(error.code).toBe('FORBIDDEN');
+    expect(error.reason).toBe(reason);
+  });
 });
 
 describe('ai:decide capability mapping', () => {
