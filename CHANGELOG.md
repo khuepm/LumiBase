@@ -225,6 +225,15 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
 
 ### Fixed
+- **`GET /api/v1/deployments` returns the newest deployments first (#568,
+  B162).** The list had no `ORDER BY`, so with `limit` Postgres could return
+  any rows rather than the most recent ones. It is now ordered by `createdAt`
+  descending, with `id` descending as tie-breaker. The same order applies to
+  the `listDeployments` AI skill. An invalid `limit` now returns `400 VALIDATION`.
+  Before, `?limit=abc` and `?limit=-5` returned every deployment of the site
+  with no limit, and `?limit=1.5` failed with `500`. `0` still returns an
+  empty list and values above 200 are still capped at 200. The `{ data }`
+  response shape is unchanged.
 - **Benchmark CLI: validated merges and frozen thresholds across runs (#513).**
   `bench:jev --merge` now validates each report file (schema, generator,
   `mode`, `split`, dataset, rubric, protocol, seed, sample counts, runs)
