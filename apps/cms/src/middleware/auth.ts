@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import { apiKeys, users, userSites } from '@lumibase/database';
 import { and, eq, sql } from 'drizzle-orm';
+import { systemDbFor } from './db';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { runDetached } from '../lib/detached';
@@ -99,7 +100,11 @@ async function auditApiKeyUseDenied(
   // is also the tenant that actually needs to see this event — someone is using
   // their key against another site. The requested id is still preserved in
   // `metadata.requestedSiteId` below, where no FK applies.
-  await new AuditLogger({ db: c.get('db'), siteId: row.siteId }).write({
+  //
+  // The write goes through the system connection (B130): the key's site
+  // differs from the request's site scope, so under LUMIBASE_DB_RLS=enforce
+  // the scoped request db would fail the policy's WITH CHECK.
+  await new AuditLogger({ db: systemDbFor(c), siteId: row.siteId }).write({
     event: 'api_key_use_denied',
     actorEmail: null,
     ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,

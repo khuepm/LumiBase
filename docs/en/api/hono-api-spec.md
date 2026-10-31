@@ -1,11 +1,11 @@
 ---
-version: 7
-lastUpdated: 2026-09-26T03:57:31.525Z
+version: 30
+lastUpdated: 2026-10-31T14:37:43.205Z
 sourceLang: en
-contentHash: b157d8705dab563a
-codeVerified: 2026-09-26T03:57:31.525Z
-codeVerifiedHash: b157d8705dab563a
-codeVerifiedClaims: 384
+contentHash: 8bd42dc1dd644fb3
+codeVerified: 2026-10-31T14:37:43.205Z
+codeVerifiedHash: 8bd42dc1dd644fb3
+codeVerifiedClaims: 456
 ---
 
 # Hono API Specification — LumiBase
@@ -739,6 +739,85 @@ Authorization: Bearer <token>
 
 ---
 
+## 7c. Deployments
+
+Per-site deployment targets (Vercel / Netlify), manual deploy triggers, build
+status and logs (spec `deployment-integrations`). Every route except the inbound
+webhook requires site admin (`requireSiteAdmin`): `400 TENANT_REQUIRED` without a
+resolved site, `403 FORBIDDEN` without admin access. Provider tokens are encrypted
+on write and never returned. Bodies are validated with
+`DeploymentTargetCreateSchema` / `DeploymentTargetUpdateSchema` /
+`DeployTriggerSchema` (`@lumibase/contracts`); a failed parse returns
+`400 VALIDATION`. `400 UNKNOWN_PROVIDER` means the stored target names a
+provider that is not registered in this deployment (only `vercel` and `netlify`
+are).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/deployments/targets` | List targets for the site (token columns omitted) |
+| `POST` | `/api/v1/deployments/targets` | Create `{ provider (vercel\|netlify), name, projectId, token, defaultBranch?, productionUrl? }` → `201`. The token is verified against the provider before anything is stored: `400 TOKEN_INVALID` |
+| `PATCH` | `/api/v1/deployments/targets/:id` | Update `{ name?, projectId?, token?, defaultBranch?, productionUrl?, status? (active\|inactive) }`. A `token` is re-verified and re-encrypted (rotation). `404 NOT_FOUND`, `400 TOKEN_INVALID`, `400 UNKNOWN_PROVIDER` (only when a `token` is sent) |
+| `DELETE` | `/api/v1/deployments/targets/:id` | Delete a target (its deployments cascade) → `{ data: null }`. `404 NOT_FOUND` |
+| `POST` | `/api/v1/deployments/targets/:id/deploy` | Trigger a build `{ branch?, reason? }` → `201` with the new deployment row (`triggerSource: "manual"`). `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `400 UNKNOWN_PROVIDER`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (provider call failed; an `error` row is still recorded) |
+| `GET` | `/api/v1/deployments` | List deployments, newest first (`createdAt` descending, `id` descending as tie-breaker). Filter `?targetId=&status=&limit=`. `limit` must be a non-negative integer: it defaults to 50 when absent or empty, `0` returns an empty list, and values above 200 are capped at 200. Any other value (`abc`, `-5`, `1.5`) returns `400 VALIDATION`. No `meta` |
+| `GET` | `/api/v1/deployments/:id` | Get one deployment. `404 NOT_FOUND` |
+| `GET` | `/api/v1/deployments/:id/logs` | Fetch the build log from the provider, secrets masked → `{ data: { log } }`. `404 NOT_FOUND` when the deployment does not exist or has no provider id yet, `400 UNKNOWN_PROVIDER` when its target or provider is unavailable |
+| `POST` | `/api/v1/deployments/:id/refresh` | Force a status sync from the provider (no-op once the status is terminal). `404 NOT_FOUND` when the deployment does not exist. With no provider id yet, or with an unavailable target or provider, the row is returned unchanged (`200`, never `UNKNOWN_PROVIDER`) |
+
+Public (no session; signature-verified):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/deployments/webhook/:provider` | Inbound status webhook (`vercel` \| `netlify`). Tenant comes from `withTenant` (`X-Lumi-Site` or host mapping). `404 UNKNOWN_PROVIDER`, `401 INVALID_SIGNATURE`; otherwise `200 { data: null }`, including when the body matches no deployment |
+
+**Target shape** (`data` of the target routes): `{ id, provider, name, projectId, defaultBranch, productionUrl, status, createdAt, updatedAt }`.
+
+**Deployment shape** (`data` of the deployment routes and the trigger): `{ id, siteId, targetId, provider, providerDeploymentId, status (queued|building|ready|error|canceled), branch, commitSha, commitMessage, url, triggeredBy, triggerSource (manual|auto|agent), errorMessage, logExcerpt, createdAt, updatedAt, completedAt }`.
+
+**Trigger rate limit:** each target has a two-tier budget, 5 triggers per 60 s and 30 per 3600 s, keyed by site and target (`apps/cms/src/services/deployment/trigger-rate-limit.ts`). It applies to every `triggerSource` (`manual`, `auto`, `agent`). A coalesced auto trigger reuses a recent build and does not consume budget. When the limiter backend is unreachable the trigger is allowed (fail-open). A rejected trigger creates no row and returns:
+
+```json
+{
+  "errors": [
+    {
+      "code": "RATE_LIMITED",
+      "message": "Too many deploy triggers for this target. Please try again later.",
+      "retryAfterSeconds": 42
+    }
+  ]
+}
+```
+
+with a matching `Retry-After: 42` header.
+
+**Webhook signatures:** the secret is the per-site setting `deployment.webhook.<provider>` (value `{ "secret": "…" }`), never a request header. An empty or missing secret rejects every request (fail-closed). Vercel sends `x-vercel-signature`, the lowercase hex HMAC-SHA1 of the raw body. Netlify sends `x-webhook-signature`, a compact JWS (HS256) whose `sha256` claim must equal the SHA-256 hex digest of the raw body (a JWS whose payload is the raw body itself is also accepted). Both comparisons are constant-time.
+
+**Trigger a deploy:**
+```bash
+POST /api/v1/deployments/targets/dpt_abc123/deploy
+Content-Type: application/json
+Authorization: Bearer <token>
+X-Lumi-Site: <siteId>
+
+{ "branch": "main", "reason": "Homepage copy update" }
+```
+
+**Response (`201`, abridged):**
+```json
+{
+  "data": {
+    "id": "dep_def456",
+    "targetId": "dpt_abc123",
+    "provider": "vercel",
+    "status": "queued",
+    "branch": "main",
+    "triggerSource": "manual"
+  }
+}
+```
+
+---
+
 ## 8. AI Copilot
 
 | Method | Path | Description |
@@ -749,6 +828,25 @@ Authorization: Bearer <token>
 | `GET` | `/api/v1/ai/conversations` | List conversation history |
 | `GET` | `/api/v1/ai/conversations/:id/messages` | Get messages in a conversation |
 | `DELETE` | `/api/v1/ai/conversations/:id` | Delete a conversation |
+| `POST` | `/api/v1/ai/decisions` | Ask the decision model (TypeSafe Jev or equivalent) typed questions |
+| `GET` | `/api/v1/ai/review-profiles` | List active draft review profiles (`?collection=`) |
+| `GET` | `/api/v1/ai/review-profiles/:key` | Get a review profile (`?version=` for an older one) |
+| `POST` | `/api/v1/ai/review-profiles` | Create version 1 of a review profile (admin) |
+| `POST` | `/api/v1/ai/review-profiles/:key/versions` | Publish the next version of a review profile (admin) |
+| `POST` | `/api/v1/ai/reviews` | Review an item or an unsaved draft with a profile (suggest-only) |
+| `GET` | `/api/v1/ai/reviews?collection=&itemId=` | List the review runs of an item |
+| `GET` | `/api/v1/ai/reviews/:id` | Get a review run with its staleness |
+| `POST` | `/api/v1/ai/reviews/:id/feedback` | Record accept / edit / reject on a run's answers |
+| `GET` | `/api/v1/ai/reviews/rollout?collection=` | Draft-review pilot mode of a collection: `off`, `baseline` or `assisted` |
+| `POST` | `/api/v1/ai/reviews/sessions` | Record one editor review session on a pilot collection (timing) |
+| `GET` | `/api/v1/ai/reviews/metrics?from=&to=` | Draft-review pilot metrics (admin) |
+| `GET` | `/api/v1/ai/automation/templates` | Jev automation flow templates (admin) |
+| `POST` | `/api/v1/ai/automation/templates/:key/build` | Build a draft manual flow from a template; writes nothing (admin) |
+| `GET` | `/api/v1/ai/automation/actions` | Automation action history with its audit chain (admin) |
+| `GET` | `/api/v1/ai/automation/actions/:id` | One automation action with its audit chain (admin) |
+| `POST` | `/api/v1/ai/automation/actions/:id/feedback` | Accept / override / reject the decision behind an action (admin) |
+| `POST` | `/api/v1/ai/automation/actions/:id/revert` | Restore the value before an applied action (admin) |
+| `GET` | `/api/v1/ai/automation/metrics?from=&to=` | Shadow precision and coverage in the auto-action zone (admin) |
 
 **Chat request:**
 ```json
@@ -781,6 +879,103 @@ Authorization: Bearer <token>
 { "decision": "approved" }
 ```
 
+**Decision request** (`POST /api/v1/ai/decisions`) — 1–32 questions keyed by `[A-Za-z0-9_-]{1,64}`; `noul` = yes/no, `choice` = 2–255 options, `score` = 2–10 rubric levels (lowest first). `state` is a string, object or array. The whole request (state, instructions, criteria and nesting) must fit the input budget: ≤ `DECISION_MAX_INPUT_BYTES` UTF-8 bytes (default 131,072) **and** ≤ `DECISION_MAX_INPUT_TOKENS` estimated tokens (default 24,000), checked before the provider is called. Read-only, so no HITL approval:
+```json
+{
+  "state": { "title": "Summer sale", "body": "Buy now!!!" },
+  "questions": {
+    "spam": {
+      "type": "noul",
+      "instructions": "Is this post spam?",
+      "criteria": { "true": "spam", "false": "legitimate" }
+    },
+    "topic": {
+      "type": "choice",
+      "instructions": "Pick the topic",
+      "criteria": { "promo": "Promotion", "news": null }
+    },
+    "quality": {
+      "type": "score",
+      "instructions": "Rate editorial quality",
+      "criteria": ["poor", "ok", "great"]
+    }
+  }
+}
+```
+
+**Decision response** — `calibrated` is `false` when `DECISION_PROVIDER=llm`, because those probabilities are self-reported by the LLM. `usage.inputTokens` / `usage.outputTokens` are `null` when the provider did not report them (unknown, never a made-up `0`):
+```json
+{
+  "data": {
+    "provider": "typesafe",
+    "model": "jev-1.13",
+    "calibrated": true,
+    "answers": {
+      "spam": { "type": "noul", "noul": 0.12 },
+      "topic": { "type": "choice", "choice": "promo", "probabilities": { "promo": 0.9, "news": 0.1 }, "confidence": 0.9 },
+      "quality": { "type": "score", "score": 1.4, "legend": { "0": "poor", "1": "ok", "2": "great" }, "probabilities": { "0": 0, "1": 0.6, "2": 0.4 }, "confidence": 0.6 }
+    },
+    "usage": { "inputTokens": 120, "outputTokens": 0 }
+  }
+}
+```
+
+Errors: `403 FORBIDDEN` (no `ai:decide`, or the caller is a publishable API key or a `frontend` session), `403 DECISION_DISABLED`, `422 DECISION_FIELD_NOT_ALLOWED`, `429 DECISION_QUOTA_EXCEEDED` / `DECISION_CONCURRENCY_LIMITED`, `503 DECISION_QUOTA_UNAVAILABLE` (see Governance below), `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (over the byte or token budget; the message gives sizes only), `503 DECISION_NOT_CONFIGURED` (no `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream overloaded or unreachable), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (the client closed the request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
+
+Deadlines and retries: one decision has a total deadline (`DECISION_TIMEOUT_MS`, default 20 s) that includes every retry and backoff, and each upstream attempt has its own timeout (`DECISION_ATTEMPT_TIMEOUT_MS`, default 8 s, capped by what remains of the deadline). Only `429`/`503`/`529`, network errors and attempt timeouts are retried, at most `DECISION_MAX_RETRIES` times (default 2), with full-jitter exponential backoff that honours `Retry-After`. A wait that would run past the deadline is not started. Auth, validation and parse failures are never retried. When the client disconnects, the in-flight upstream call is aborted and no retry follows. The `llm` provider is bounded by the same deadline and budget but makes a single call; the deadline and a client disconnect abort that LLM request.
+
+The token count is an estimate, not the provider's tokenizer: about 4 ASCII characters per token, and every non-ASCII code point (e.g. Vietnamese diacritics) as one token. It over-counts on purpose; the 24,000 default leaves 25% headroom under Jev's 32,000-token context.
+
+The CMS validates upstream answers before returning them: required values must be finite and in range, Choice/Score distributions must include exactly the declared options/levels and sum to 1 within an absolute tolerance of `1e-6`, and Score must lie in `0..N-1`. Missing or malformed answers return `502 DECISION_PARSE_FAILED`; values are never clamped or defaulted into decisions. Confidence is required for Choice/Score and is not inferred from the winning probability. The LLM provider uses the same validation.
+
+**`DECISION_PROVIDER=llm`** is an equivalent provider you select by configuration; it is **not** an automatic failover, and nothing switches to it when Jev fails. It calls `LLM_PROVIDER` in structured decision mode: a dedicated decision system prompt, no Copilot skills and no tool calling. A Score answer from the LLM is the weighted expected level `Σ i·p(i)` computed from its validated level probabilities, on the same `0..N-1` scale as Jev and never rounded; the level the model names is ignored, so one distribution yields one score on every adapter. Because the probabilities are uncalibrated, thresholds tuned for Jev must not be reused for `llm` as-is. Tool-only or non-JSON replies fail with `502 DECISION_PARSE_FAILED`. With `llm`, the estimated size of the complete answer is also checked against `DECISION_LLM_MAX_OUTPUT_TOKENS` before the call (`413 DECISION_INPUT_TOO_LARGE`), a 2xx reply that is not JSON or has the wrong envelope is `502 DECISION_PARSE_FAILED` (as with Jev), an unreachable provider is `503 DECISION_UNAVAILABLE`, upstream HTTP statuses map to the same codes as Jev, and upstream error bodies are never logged or returned.
+
+**Governance (#511).** Every gate below runs before the provider is called, in this order, and a request that fails one never reaches it:
+
+1. **Capability `ai:decide`.** Grant it with a policy permission `create` on the reserved collection `lumibase_ai_decisions`; site admins already satisfy it. That permission grants nothing else (no `items:write`). Without it → `403 FORBIDDEN`. Anonymous callers, members without the capability and principals of another site are all refused here. Publishable API keys (`lbk_pub_…`) and `frontend`-audience sessions are always refused here with `403 FORBIDDEN`, even when a role or policy grants `create` on `lumibase_ai_decisions` or admin access (#562). Those credentials live in browsers and apps, so paid decision calls must come from Studio users or from a server that holds a secret API key. The refusal comes before the body is read. It applies to every `ai:decide` route (decisions, review profiles, reviews, feedback, rollout, sessions) and to Flows `ai:decision` nodes. Refusals at this step are audited in aggregate, not one event per request (see the audit paragraph below).
+2. **Provider configured** → otherwise `503 DECISION_NOT_CONFIGURED`.
+3. **Site opt-in.** The site sends content to the provider only after a site admin stores the `aiDecisions` setting with `enabled: true` (`POST /api/v1/settings`). It is off by default, and a malformed value reads as off. Setting it back to `false` (or deleting the key) is the per-site kill switch: the next request gets `403 DECISION_DISABLED`. Only the decision endpoints, draft review and Flows `ai:decision` nodes read this setting, so editing, publishing and Copilot chat are unaffected. Unsetting `DECISION_PROVIDER` is the platform-wide switch.
+4. **Field allowlist.** With `allowedStateFields` set, `state` must be an object whose top-level keys are all listed; otherwise `422 DECISION_FIELD_NOT_ALLOWED`.
+5. **Input budget** → `413 DECISION_INPUT_TOO_LARGE` (above).
+6. **Site quota**, accounted atomically with the runtime counter (Redis `INCRBY` on Docker, the per-site `PageviewCounter` Durable Object on Cloudflare): admitted decisions per hour, decisions in flight, and estimated tokens per UTC day. The token reservation is the worst case, every attempt the provider can send included: with Jev/OpenRouter, (estimated input + estimated output) × (`DECISION_MAX_RETRIES` + 1); with `llm`, which sends one request and never retries, estimated input + the output cap sent upstream (thinking headroom included). Once the provider answers, the site is charged the reported usage plus an estimate for each earlier failed attempt, and the rest is refunded. An unknown count is charged at the estimate, never as free. A timeout or failure after attempts were sent is charged per attempt; a request that never reached the provider is fully refunded. A limit that would be exceeded → `429 DECISION_QUOTA_EXCEEDED` or `429 DECISION_CONCURRENCY_LIMITED` with `Retry-After`. A request whose worst-case reservation alone exceeds the daily token budget can never be admitted, so its `429 DECISION_QUOTA_EXCEEDED` carries no `Retry-After`. If the counter backend is down or answers with a non-numeric value, the request fails closed with `503 DECISION_QUOTA_UNAVAILABLE`. `Retry-After` is listed in `Access-Control-Expose-Headers`, so cross-origin callers (Studio on Pages, the desktop shell, browser SDK) can read it.
+
+The site `aiDecisions` setting can tighten the platform ceilings, never raise them:
+
+```json
+{ "key": "aiDecisions", "value": { "enabled": true, "allowedStateFields": ["title", "body"], "requestsPerHour": 100, "maxConcurrent": 2, "budgetPerDay": 200000 } }
+```
+
+Each admitted call, and each call refused after this first step, writes one `ai_decision` audit event with the request ID, the principal (type and ID), provider, model, a rubric fingerprint (`sha256:` of the questions, so the same rubric gives the same version), question types, outcome, HTTP status, latency, reported usage, attempts, and reserved and charged tokens. It never records `state`, instructions, criteria, answers, the actor's email or the client IP. Audit rows follow the audit log retention (`LUMIBASE_AUDIT_RETENTION_DAYS`, default 90 days). `POST /ai/decisions` stores no decision content. Draft review runs (below) store the answers, never the reviewed content. What the provider keeps is governed by the provider's own terms.
+
+**Refusals are audited in aggregate (#564).** A `403 FORBIDDEN` from step 1 does not write one event per request, so a flood of refused requests cannot flood the audit log. Refusals are counted per site, refusal reason and subject: the principal (type and ID), or a keyed hash of the client IP when there is no principal. The first refusal in each `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` window (default 300 s) writes an event with `refusal.count: 1`. Later refusals in the same window write again only at counts 10, 100, 1000, and so on. The first event of the next window carries `refusal.previousWindowCount`, the exact count of the window before. If no refusal follows, the last event's count is a lower bound, and the metric `lumibase_ai_decision_refusals_total{reason,principal,audit}` has the exact number of every refusal. If the counter store is unavailable, every refusal writes an event (evidence is never dropped). `0` turns aggregation off. Each refusal event has `metadata.refusal` (`reason`, `count`, `dedup`: `first` / `checkpoint` / `unbounded`, `windowStart`, `windowSeconds`) and `clientIpHash`: HMAC-SHA256 of the site and IP keyed by `JWT_SECRET`, 16 hex characters, or `null` when the IP is unknown. The `ip` column stays empty. Rotating `JWT_SECRET` changes the hashes. `refusal.reason` is one of `publishable_api_key`, `frontend_session`, `unclassified_caller`, `capability_missing`, `principal_unresolved`, `principal_site_mismatch`, `principal_not_found`, `principal_inactive`, `principal_not_member`, `api_key_revoked`, `api_key_expired`, `dev_principal_forbidden`, `principal_denied`, `other`. A key of another site is reported as `principal_not_found`.
+
+**Abuse bounds for `/api/v1/ai/*` (#564).** Every request under `/api/v1/ai` counts against a per-client-IP, per-site limit, `LUMIBASE_AI_IP_RATE_LIMIT` (default 300 per minute, 60-second window, `0` = off). It runs after the site check and before authentication, so a blocked request costs no token or API-key check, no quota reservation, no provider call and no audit event. Over the limit → `429 RATE_LIMITED` with `Retry-After` (listed in `Access-Control-Expose-Headers`); the counter is `lumibase_ai_ip_rate_limited_total`. If the limiter store is unavailable, the request passes, or gets `503 RATE_LIMIT_UNAVAILABLE` when `LUMIBASE_RATE_LIMIT_FAIL_CLOSED=true` (the same rule as the other limiters). The limit is skipped when the client IP cannot be resolved. On Docker behind a reverse proxy, the proxy must **overwrite** `CF-Connecting-IP` with the real client IP: the CMS trusts that header as sent, so a client-supplied value must never pass through.
+
+As an outer defence, add a Cloudflare WAF rate-limiting rule in front of the Worker or the Docker origin: expression `(http.request.uri.path wildcard "/api/v1/ai/*")` (optionally `and http.request.method eq "POST"`), counting by IP, for example 120 requests per 1 minute, action **Block** for 1 minute (block, not a challenge, because callers are APIs). The CMS limits stay in force behind it.
+
+**Draft review (#512).** A review profile is a versioned rubric: the top-level fields a review reads and the Decision questions it asks (same shapes as above). A review run applies one profile version to one item, or to an unsaved draft, through the governed path above (so the `ai:decide` capability, site opt-in, field allowlist, budgets and the `ai_decision` audit event all apply), and stores the answers with their provenance. Reviews only suggest: no endpoint here changes an item.
+
+- **Profiles.** Reading needs `ai:decide`; creating and versioning need a site admin. Rows are immutable: `POST /review-profiles/:key/versions` inserts version + 1 and archives the previous active version in one transaction, so a run always points at the exact questions it was answered against. A profile may be bound to one `collection` (others get `422 REVIEW_COLLECTION_MISMATCH`) and may set `minConfidence`.
+- **Presets.** `taxonomy` is a `choice` over `presetOptions.categories` plus `other` and `unknown`. `brand-voice` scores tone match and clarity on atomic 5-level rubrics (against `presetOptions.voice`) and adds a `needs_review` flag. `brief-alignment` compares the content with the `sourceField` (a brief or source the editor supplies). Without a `sourceField` it only checks internal coherence and the profile stores the note `no source — not a fact-check`. No preset claims to verify facts.
+- **Reading content.** With `itemId`, the server reads the profile's fields with the caller's own row and field permissions. Fields the caller cannot read are not sent and are listed in `omittedFields`. With `snapshot` (an unsaved draft), each key must be one of the profile's fields and one the caller may read and write (`create`, or `update` when `itemId` is also given). Otherwise the request fails with `422 REVIEW_FIELD_NOT_ALLOWED` before any provider call. Content travels only in `state` and the questions come from the stored profile, so text inside the content cannot change what is asked.
+- **Provenance and staleness.** A run records the actual provider, model, `calibrated`, the profile key and version, the latest live revision, the principal, latency, usage and `contentHash` (`sha256:` of the canonical JSON of the reviewed fields). `GET /reviews/:id` recomputes the hash and revision. When either changed, the run comes back `stale: true` with `staleReason` `content_changed`, `revision_changed` or `item_unavailable`. A caller who can no longer read a field the run reviewed gets `404`. Snapshot runs are visible only to their author and admins.
+- **Abstention.** `status` is `abstained` when every `choice` answer is `other`/`unknown`, or when a confidence is below the profile's `minConfidence`.
+- **Idempotency.** Keys are scoped to the caller: the same `idempotencyKey` (body) or `Idempotency-Key` header from the same principal returns the same run (`200`) with no second provider call, while another principal using the same key gets its own run. A run that ended in `error` is retried in place, so it never becomes a second row. The retry re-reads the item and rebinds the run (content hash, revision, profile version, omitted fields) to what it actually reviewed. A run still `running` five minutes after it started (its process died) is reclaimed the same way; until then a replay returns it as `running`. If the original call does finish after that, its answers are discarded: a run is completed only by the attempt that holds the current claim, so the response of the late call is the run as stored.
+- **Feedback.** `POST /reviews/:id/feedback` takes `entries` of `{ questionKey, verdict: accept | edit | reject, editedValue? }`. It stores one row per run, question and principal; a retried submission adds none and returns the stored rows. The first verdict is final: resubmitting a different verdict (or `editedValue`) for the same question does not overwrite it, and the response carries the stored verdict, so compare it with what you sent. `accept` or `edit` on a stale run returns `409 REVIEW_STALE` unless the body says `acknowledgeStale: true`, so a review is never silently applied to a different revision. For snapshot runs, send the current draft's `contentHash` to get the same check. `reject` is always accepted.
+- **Retention.** The hourly job deletes runs older than `DECISION_REVIEW_RETENTION_DAYS` (default 180), and their feedback with them. Profiles are kept.
+- **Pilot rollout (#516).** The `aiDecisions` setting has a `review` object: `{ enabled, pilotCollections, mode: 'baseline' | 'assisted' }`. It is off when absent or malformed. `POST /reviews` and new feedback need the collection in the pilot in `assisted` mode (which also needs `aiDecisions.enabled`); otherwise they return `403 DECISION_DISABLED` before any content is read. `GET /reviews/rollout?collection=` reports the mode (`ai:decide`). Turning the pilot off deletes nothing: runs, feedback and sessions stay readable.
+- **Flows (#517).** A flow node `ai:decision` runs one review with a pinned `profileVersion` on one item and returns `branch`: `true`/`false`/`unknown` for a `noul` question (`noulThreshold`), the option key or `unknown` for a `choice` question (`minConfidence`, abstention), or `error`. It needs the `aiDecisions` setting to have both `enabled: true` and `flows: true`; `flows` is off by default. When the node executes, the server re-resolves the principal that started the run, checks `ai:decide` on that live grant and re-reads both switches, so a revoked grant or a later kill switch stops queued runs too. Only manual runs (`POST /flows/:id/run`) carry a principal; event, schedule and webhook runs are refused (`FORBIDDEN`). A failure (forbidden, disabled, quota, timeout, cancel, provider error) takes the node's `error` branch when one is mapped and otherwise fails the node (`onError`); it is never `true`. The review idempotency key is `flow:<flowRunId>:<nodeId>`, so re-executing a run replays the stored decision with no second provider call. See [Flows](../features/flows-automation.md).
+- **Sessions.** `POST /reviews/sessions` (`ai:decide`, signed-in users only: API keys and the dev principal get `403 FORBIDDEN`) records `{ collection, itemId?, mode, runId?, viewedQuestions?, durationMs, locale? }`: one editor session from opening the editor to the first save. The mode must match the collection's current mode (`409 REVIEW_SESSION_MODE_MISMATCH`), the collection must be in the pilot (`403 DECISION_DISABLED`), and a `runId` must be the caller's own run on the same collection and item, with `viewedQuestions` it answered (`422 REVIEW_SESSION_RUN_INVALID`). No content is stored. The run retention purge sets `run_id` to null and keeps the session.
+- **Metrics.** `GET /reviews/metrics?from=&to=` (site admin, window at most 366 days, default the last 30) returns time per item (baseline vs assisted p50/p95), accept/edit/reject/no-action rates over **viewed** suggestions only with 95% Wilson intervals, coverage, abstention, error rate, latency p50/p95, tokens per run, splits by locale, provider and profile version, sample counts (with distinct editors and items per mode), and the pre-registered criteria of protocol `jev-pilot-v1` with `insufficientSample` flags. Only sessions and verdicts of `user` principals count. Run counts are operational denominators, never user value. See [Draft-review pilot](../features/jev-draft-review-pilot.md).
+- **Automation (#518).** Flow nodes `ai:apply-tags` and `editorial:route` read an upstream `ai:decision` and record one row per flow run, node and item in `lumibase_ai_automation_actions`. They are **shadow** by default: the proposal is recorded and nothing is written. A proposal is live only when `aiDecisions.automation` has `mode: 'live'`, a `gate` (`approvedBy`, `approvedAt`, `evidenceRef`) and a threshold for the item's locale and the action whose `provider`, `model`, `profileKey`, `profileVersion` and `questionKey` match the decision (read from the stored review run, which must be about the node's item), and the confidence is at or above its `minConfidence`; anything else (including a malformed block) is shadow. A live proposal goes through the governed harness (`updateItem`, agent `jev-automation`, `autonomyCap: 1`), so it becomes an approval or is refused at L0; automation never writes directly. The `updateItem` call carries `expect: { <field>: <value the proposal was computed from> }`, which the harness re-checks when the approved write runs; a field a human changed in between fails the approval with `ITEM_PRECONDITION_FAILED` and nothing is written (row `denied`, reason `stale_at_approval`). `expect` is an optional `updateItem` argument for any caller. Only the target field is proposed, never `status`, deletes or schema; the `submit_review` transition is proposed only. Stale decisions, decisions an editor overrode, pinned or unreadable fields are skipped and recorded. `/api/v1/ai/automation/*` is control plane (site admin). `POST /automation/actions/:id/revert` restores `previous` of an applied action through the caller's ItemService, and refuses with `409 AUTOMATION_REVERT_CONFLICT` when the field changed since. `GET /automation/metrics` reports precision and coverage in the auto-action zone with `insufficientSample` and `shadowRequired`; it switches nothing on. See [Jev automation](../features/jev-automation.md).
+
+```json
+POST /api/v1/ai/reviews
+{ "profile": "spam-check", "collection": "posts", "itemId": "itm_1", "idempotencyKey": "review-itm_1-0001" }
+```
+
+Errors: `403 FORBIDDEN`, `404 REVIEW_PROFILE_NOT_FOUND` / `REVIEW_ITEM_NOT_FOUND` / `REVIEW_RUN_NOT_FOUND`, `409 REVIEW_PROFILE_EXISTS` / `REVIEW_PROFILE_CONFLICT` / `REVIEW_STALE` / `REVIEW_NOT_COMPLETE`, `422 REVIEW_FIELD_NOT_ALLOWED` / `REVIEW_COLLECTION_MISMATCH` / `REVIEW_SESSION_RUN_INVALID`, `409 REVIEW_SESSION_MODE_MISMATCH`, `400 VALIDATION`, plus every decision error above.
+
 ### Agent API (Content OS)
 
 All routes mount under the authenticated chain; the token's roles are the capability set.
@@ -802,7 +997,7 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Versions, draft, `/compile` (NL→evaluators), `:id/dry-run`, `:id/activate` |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze` |
 | `*` | `/api/v1/agent/intents[...]` | Content intents CRUD, `:id/pause|resume|scan|drifts`, `/compile` |
-| `POST` | `/api/v1/intents/:id/scan` | One reconciliation cycle: `{ scan, reconcile, dispatch }`. `dispatch` advances each reconciler goal one step (draft → promote → verify) and reports `dispatched/completed/skipped/blocked` plus `queueUnavailable` on runtimes without a queue adapter. See [reconciler repair loop](../features/reconciler-repair-loop.md) |
+| `POST` | `/api/v1/intents/:id/scan` | One reconciliation cycle: `{ scan, reconcile, dispatch }`. `dispatch` advances each reconciler goal one step (draft → promote → verify) and reports `dispatched/completed/skipped/blocked` plus `queueUnavailable` on runtimes without a queue adapter. See [reconciler repair loop](../features/reconciler-repair-loop.md). When the intent has `semantic` rules, `scan.semantic` reports the separately budgeted semantic pass (`status` `ran`/`off`/`unavailable`, counts, `completed`, `cursor`), and `scan.semanticOrphansResolved` counts rows of removed semantic rules it resolved. Updating an intent so a stored semantic rule changes profile, question, context or fields without a `version` bump returns `422 SEMANTIC_RULE_VERSION_REQUIRED`; see [semantic drift](../features/jev-semantic-drift.md) |
 | `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Law Zero pins: list / release |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Public llms.txt index per site |
@@ -1254,6 +1449,7 @@ tombstones), `LUMIBASE_DELIVER_RATE_LIMIT` (req/min/IP, default `1200`,
 | File upload | 100 req/min per user |
 | Realtime connections | 50 concurrent per site |
 | AI Chat | 60 req/min per user |
+| AI routes (`/api/v1/ai/*`), before auth | 300 req/min per client IP per site (`LUMIBASE_AI_IP_RATE_LIMIT`) |
 
 Rate limit headers:
 ```

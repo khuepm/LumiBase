@@ -11,8 +11,19 @@ import { ExtensionsService } from '../services/extensions-service';
 import { approvalRequesterFromAuth, principalRefFromAuth, resolveRequestCapabilities } from '../services/governed-capabilities';
 import { IntentService } from '../services/intent-service';
 import { SchemaService } from '../services/schema-service';
-import { itemServiceForRequest } from '../services/item-service-factory';
+import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
 import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
+import { createDecisionProvider, type DecisionProviderEnv } from '../services/decision-provider';
+import { decisionAuditContextForRequest } from '../services/decision-refusal-audit';
+import {
+  authorizeDecision,
+  decisionQuotaFromEnv,
+  DecisionGovernanceError,
+  readDecisionSettings,
+  runGovernedDecision,
+  writeDecisionAudit,
+  type DecisionQuotaEnv,
+} from '../services/decision-governance';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPendingRun, FLOW_RUNS_QUEUE } from '../services/flow-run-service';
 
@@ -31,6 +42,47 @@ export const chatSchema = z.object({
 
 export const decideSchema = z.object({
   decision: z.enum(['approved', 'rejected']),
+});
+
+const decisionPayloadSchema = z.union([
+  z.string().min(1).max(20_000),
+  z.record(z.string(), z.unknown()),
+  z.array(z.unknown()),
+]);
+
+const decisionQuestionSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('noul'),
+    instructions: decisionPayloadSchema,
+    criteria: z.object({ true: decisionPayloadSchema, false: decisionPayloadSchema }),
+  }),
+  z.object({
+    type: z.literal('choice'),
+    instructions: decisionPayloadSchema,
+    criteria: z
+      .record(z.string().min(1).max(128), decisionPayloadSchema.nullable())
+      .refine((options) => {
+        const count = Object.keys(options).length;
+        return count >= 2 && count <= 255;
+      }, 'A choice question needs 2-255 options'),
+  }),
+  z.object({
+    type: z.literal('score'),
+    instructions: decisionPayloadSchema,
+    criteria: z.array(decisionPayloadSchema).min(2).max(10),
+  }),
+]);
+
+export const decisionRequestSchema = z.object({
+  // Size is bounded on the whole request (state + questions) by the provider's
+  // input budget, so an oversized payload fails with 413 before any fetch.
+  state: decisionPayloadSchema,
+  questions: z
+    .record(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'Invalid question key'), decisionQuestionSchema)
+    .refine((questions) => {
+      const count = Object.keys(questions).length;
+      return count >= 1 && count <= 32;
+    }, 'Provide 1-32 questions'),
 });
 
 // ---------------------------------------------------------------------------
@@ -88,13 +140,17 @@ export function buildAuthorizedHarness(c: Context<AppEnv>): AISecureHarness {
     accessService: new AccessService({ db, siteId, userId: auth.userId ?? null, cache: runtime.cache }),
     intentService: new IntentService({ db, siteId, userId: auth.userId ?? null, llm }),
     configService: new ConfigService({ db, siteId }),
-    extensionsService: new ExtensionsService({ db, siteId, userId: auth.userId ?? null }),
+    extensionsService: new ExtensionsService({
+      db, siteId, userId: auth.userId ?? null, cache: runtime.cache, env: c.env,
+      permissionCtx: buildRequestPermissionContext({ auth, siteId, headers: c.req.header(), ip: c.get('ip') ?? null }),
+    }),
     llm,
     queue: runtime.queue,
     notify: buildAgentNotifier(c),
     // An approved `triggerDeployment` executes here — without the KeyProvider
     // the approval would resolve into a configuration error.
     keys: runtime.keys,
+    cache: runtime.cache,
   });
 }
 
@@ -309,6 +365,11 @@ aiRouter.post('/chat', async (c) => {
       notify: buildAgentNotifier(c),
       // Enables the deployment skills, which decrypt target tokens.
       keys: runtime.keys,
+      cache: runtime.cache,
+      extensionsService: new ExtensionsService({
+        db, siteId, userId: auth.userId ?? null, cache: runtime.cache, env: c.env,
+        permissionCtx: buildRequestPermissionContext({ auth, siteId, headers: c.req.header(), ip: c.get('ip') ?? null }),
+      }),
     });
     const result = await harness.execute(
       toolCall.name,
@@ -455,6 +516,74 @@ aiRouter.delete('/conversations/:id', async (c) => {
     );
 
   return c.body(null, 204);
+});
+
+// ---------------------------------------------------------------------------
+// Decision routes (TypeSafe Jev / equivalent)
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /decisions
+ * Asks the configured decision model (DECISION_PROVIDER) typed questions
+ * about `state`. Read-only: no content is written, so no HITL approval.
+ * Governed (#511): `ai:decide` capability, site opt-in, field allowlist,
+ * per-site quota, and an audit event — all before the provider is called.
+ * Publishable API keys and `frontend` sessions are refused with 403 FORBIDDEN
+ * even with that capability (#562), before the body is read.
+ */
+aiRouter.post('/decisions', async (c) => {
+  const startedAt = Date.now();
+
+  const grant = await resolveRequestCapabilities(c);
+  try {
+    authorizeDecision(grant);
+  } catch (err) {
+    const error = err as DecisionGovernanceError;
+    // Refusals are aggregated per window (#564): this bounds the audit rows a
+    // flood of refused requests can write.
+    await writeDecisionAudit(decisionAuditContextForRequest(c), {
+      outcome: error.code,
+      status: 403,
+      startedAt,
+      refusalReason: error.reason,
+    });
+    return c.json({ errors: [{ code: error.code, message: error.message }] }, 403);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const parsed = decisionRequestSchema.safeParse(body);
+
+  if (!parsed.success) {
+    await writeDecisionAudit(decisionAuditContextForRequest(c), { outcome: 'VALIDATION', status: 400, startedAt });
+    return c.json(
+      {
+        errors: parsed.error.issues.map((issue) => ({
+          code: 'VALIDATION',
+          message: issue.message,
+          path: issue.path.map(String),
+        })),
+      },
+      400,
+    );
+  }
+
+  const request = parsed.data;
+  const env = c.env as unknown as DecisionProviderEnv & DecisionQuotaEnv;
+  const configured = createDecisionProvider(env);
+  const outcome = await runGovernedDecision(
+    async () => ({
+      configured,
+      settings: await readDecisionSettings(c.get('db'), c.get('siteId')),
+      quota: decisionQuotaFromEnv(env),
+      cache: c.get('runtime').cache,
+      siteId: c.get('siteId'),
+    }),
+    request,
+    // Client disconnect aborts the upstream call and suppresses retries.
+    { signal: c.req.raw.signal, audit: decisionAuditContextForRequest(c), startedAt },
+  );
+  if (outcome.retryAfterSeconds !== undefined) c.header('Retry-After', String(outcome.retryAfterSeconds));
+  return c.json(outcome.body, outcome.status);
 });
 
 // ---------------------------------------------------------------------------

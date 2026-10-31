@@ -27,6 +27,13 @@ compatibility_flags = ["nodejs_compat"]
 # binding = "HYPERDRIVE"
 # id = "REPLACE_WITH_HYPERDRIVE_ID"
 
+# Optional system-role Hyperdrive (B130). Only needed with LUMIBASE_DB_RLS=enforce:
+# point it at a role with BYPASSRLS; scheduled/queue handlers and system routes use it.
+# Leave commented out otherwise (a Hyperdrive binding needs a real config id).
+# [[hyperdrive]]
+# binding = "HYPERDRIVE_SYSTEM"
+# id = "REPLACE_WITH_SYSTEM_HYPERDRIVE_ID"
+
 # Cloudflare KV for caching configurations and permissions (Strict Rule #4).
 # [[kv_namespaces]]
 # binding = "CONFIG_CACHE"
@@ -93,6 +100,18 @@ crons = ["0 * * * *", "*/5 * * * *"]
 # [[queues.producers]]
 # binding = "REALTIME_QUEUE"
 # queue = "lumibase-realtime"
+
+
+[[queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-local"
+
+[[queues.consumers]]
+queue = "lumibase-agent-runs-local"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-local-dlq"
 
 # ─── Environment Profiles ────────────────────────────────────────────────────
 # Top-level [vars] is intentionally local/development only. Named environments
@@ -178,6 +197,13 @@ new_sqlite_classes = ["PageviewCounter"]
 # binding = "HYPERDRIVE"
 # id = "REPLACE_WITH_STAGING_HYPERDRIVE_ID"
 
+# Optional system-role Hyperdrive (B130). Only needed with LUMIBASE_DB_RLS=enforce:
+# point it at a role with BYPASSRLS; scheduled/queue handlers and system routes use it.
+# Leave commented out otherwise (a Hyperdrive binding needs a real config id).
+# [[env.staging.hyperdrive]]
+# binding = "HYPERDRIVE_SYSTEM"
+# id = "REPLACE_WITH_STAGING_SYSTEM_HYPERDRIVE_ID"
+
 # [[env.staging.kv_namespaces]]
 # binding = "CONFIG_CACHE"
 # id = "REPLACE_WITH_STAGING_KV_ID"
@@ -185,6 +211,18 @@ new_sqlite_classes = ["PageviewCounter"]
 # [[env.staging.r2_buckets]]
 # binding = "MEDIA"
 # bucket_name = "lumibase-media-staging"
+
+
+[[env.staging.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-staging"
+
+[[env.staging.queues.consumers]]
+queue = "lumibase-agent-runs-staging"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-staging-dlq"
 
 [env.staging.triggers]
 crons = ["0 * * * *", "*/5 * * * *"]
@@ -265,6 +303,13 @@ new_sqlite_classes = ["PageviewCounter"]
 binding = "HYPERDRIVE"
 id = "6ab50691143d4cfaa338d103125b77f3"
 
+# Optional system-role Hyperdrive (B130). Only needed with LUMIBASE_DB_RLS=enforce:
+# point it at a role with BYPASSRLS; scheduled/queue handlers and system routes use it.
+# Leave commented out otherwise (a Hyperdrive binding needs a real config id).
+# [[env.production.hyperdrive]]
+# binding = "HYPERDRIVE_SYSTEM"
+# id = "REPLACE_WITH_PRODUCTION_SYSTEM_HYPERDRIVE_ID"
+
 [[env.production.kv_namespaces]]
 binding = "CONFIG_CACHE"
 id = "c303408c8d134b75b957926c9457b9e0"
@@ -276,6 +321,18 @@ bucket_name = "lumibase-media"
 [[env.production.queues.producers]]
 binding = "REALTIME_QUEUE"
 queue = "lumibase-realtime"
+
+
+[[env.production.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-production"
+
+[[env.production.queues.consumers]]
+queue = "lumibase-agent-runs-production"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-production-dlq"
 
 [env.production.triggers]
 crons = ["0 * * * *", "*/5 * * * *"]
@@ -328,6 +385,18 @@ new_sqlite_classes = ["SiteRoom"]
 tag = "v2"
 new_sqlite_classes = ["PageviewCounter"]
 
+
+[[env.dev.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-dev"
+
+[[env.dev.queues.consumers]]
+queue = "lumibase-agent-runs-dev"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-dev-dlq"
+
 [env.dev.triggers]
 crons = ["0 * * * *", "*/5 * * * *"]
 
@@ -379,6 +448,18 @@ new_sqlite_classes = ["SiteRoom"]
 [[env.demo.migrations]]
 tag = "v2"
 new_sqlite_classes = ["PageviewCounter"]
+
+
+[[env.demo.queues.producers]]
+binding = "AGENT_RUNS_QUEUE"
+queue = "lumibase-agent-runs-demo"
+
+[[env.demo.queues.consumers]]
+queue = "lumibase-agent-runs-demo"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 3
+dead_letter_queue = "lumibase-agent-runs-demo-dlq"
 
 [env.demo.triggers]
 crons = ["0 * * * *", "*/5 * * * *"]

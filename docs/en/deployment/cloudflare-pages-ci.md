@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T10:20:14.923Z
+version: 2
+lastUpdated: 2026-10-13T19:47:38.305Z
 sourceLang: en
-contentHash: 574553a580a51075
-codeVerified: 2026-07-28T10:20:14.923Z
-codeVerifiedHash: 574553a580a51075
+contentHash: ea64d1bb9cfe0d79
+codeVerified: 2026-10-13T19:47:38.305Z
+codeVerifiedHash: ea64d1bb9cfe0d79
 codeVerifiedClaims: 4
 ---
 
@@ -84,7 +84,7 @@ With local `wrangler` authenticated to the owning account:
 ```bash
 # docs (SSG output in dist/)
 pnpm docs:build
-cd apps/docs && npx wrangler pages deploy dist --project-name lumibase-docs --branch main
+npx wrangler pages deploy dist --project-name lumibase-docs --branch main --cwd apps/docs
 
 # landing (static export in out/)
 pnpm landing:build

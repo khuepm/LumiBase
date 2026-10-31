@@ -14,6 +14,7 @@ import cron, { type ScheduledTask } from 'node-cron';
 import { loadSecretFiles, validateProductionConfig } from './config/production';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
+import { runScheduledReviewRunPurge } from './services/review-run-retention';
 import { bootstrapNodeObservability } from './observability/node';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPressureLimiter } from './pressure-limiter';
@@ -21,6 +22,7 @@ import { startWorkerHealthServer } from './worker-health';
 import { setRuntimeFactory } from './middleware/runtime';
 import { mountStudio } from './serve-studio';
 import { runSetupTokenStartup } from './modules/setup/startup';
+import { assertDbRlsStartup } from './config/db-rls-startup';
 import type { Bindings } from './env';
 
 type ProcessRole = 'web' | 'worker' | 'all';
@@ -68,6 +70,12 @@ async function main() {
   // its own Docker runtime, so every process ended up with two — two Redis
   // connections, two pg pools — and discarded one on the first request.
   setRuntimeFactory(() => runtime);
+  // ── Request-path RLS scope (B130) ───────────────────────────────────────
+  //
+  // Validates LUMIBASE_DB_RLS for every process role. With `enforce` it
+  // requires DATABASE_SYSTEM_URL on a BYPASSRLS role and fails the start
+  // otherwise: workers and cron below run on that system connection.
+  await assertDbRlsStartup({ rawMode: process.env.LUMIBASE_DB_RLS, database: runtime.database });
 
 
   if (runHttp) {
@@ -81,10 +89,11 @@ async function main() {
     // operator is not reading. A DB failure here fails the start on purpose —
     // see `runSetupTokenStartup`.
     //
-    // `getConnection()` is typed `unknown` so the runtime package does not
-    // depend on postgres-js; both adapters return a postgres-js `Sql`.
+    // Runs before any site exists, so it uses the system connection (B130).
+    // `getSystemConnection()` is typed `unknown` so the runtime package does
+    // not depend on postgres-js; both adapters return a postgres-js `Sql`.
     await runSetupTokenStartup({
-      db: drizzle(runtime.database.getConnection() as Sql, { schema }),
+      db: drizzle(runtime.database.getSystemConnection() as Sql, { schema }),
       env: process.env,
     });
 
@@ -189,12 +198,15 @@ async function main() {
   // `recoverMissedExecutions`: ticks missed while the process was down are
   // not replayed (audit rotation / pageview flush catch up on the next cron).
   //
-  // The rotator needs a Drizzle client. We mirror `middleware/db.ts`'s runtime
-  // path: `runtime.database.getConnection()` returns the postgres-js `Sql`
-  // instance (cast required — the provider types it as `unknown` to avoid
-  // coupling to postgres-js), which we wrap with the shared `schema`.
+  // Every worker, cron and queue consumer below shares this Drizzle client.
+  // It runs on the SYSTEM connection (B130): most jobs sweep across sites
+  // without a site scope, and the audit batcher inserts rows of several sites
+  // in one statement, so under `LUMIBASE_DB_RLS=enforce` they need a role
+  // with BYPASSRLS (`DATABASE_SYSTEM_URL`). Without a dedicated system
+  // connection `getSystemConnection()` is the main pool, as before.
+  // Tripwire T3 (`__tests__/rls-scope.wiring.test.ts`) keeps it that way.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rotatorDb = drizzle(runtime.database.getConnection() as any, { schema });
+  const rotatorDb = drizzle(runtime.database.getSystemConnection() as any, { schema });
 
   // Hourly cron. `runScheduledRotation` is best-effort and never throws, so the
   // callback is safe to fire-and-forget; the returned promise only logs the
@@ -210,6 +222,7 @@ async function main() {
       async () => {
         await runScheduledRotation(rotatorDb);
         void runScheduledRefreshTokenPrune(rotatorDb);
+        void runScheduledReviewRunPurge(rotatorDb, process.env.DECISION_REVIEW_RETENTION_DAYS);
       },
       lockOpts,
     ),
@@ -343,14 +356,17 @@ async function main() {
   // the flow and records the run. Without it, event flows never fire.
   const { registerFlowEventWorker } = await import('./services/flow-dispatch');
   registerFlowEventWorker({
+    cache: runtime.cache,
     db: rotatorDb,
     queue: runtime.queue,
     keys: runtime.keys,
+    env: process.env as Record<string, string | undefined>,
   });
 
   // ── Manual flow runs + AI chat async (high-load task 17) ────────────────
   const { registerFlowRunsWorker } = await import('./services/flow-run-service');
   registerFlowRunsWorker({
+    cache: runtime.cache,
     db: rotatorDb,
     queue: runtime.queue,
     keys: runtime.keys,

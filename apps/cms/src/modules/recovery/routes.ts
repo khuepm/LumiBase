@@ -18,10 +18,10 @@
  *
  * This router is therefore modelled on `setupRouter`
  * (`apps/cms/src/modules/setup/routes.ts`): it is a standalone
- * `Hono<AppEnv>` that applies ONLY `withDb()` internally (no tenant, no
- * auth) and is mounted on the TOP-LEVEL `app` in
+ * `Hono<AppEnv>` that applies ONLY `withSystemDb()` internally (no tenant, no
+ * auth; system connection — B130) and is mounted on the TOP-LEVEL `app` in
  * `apps/cms/src/index.ts` — NOT on the authenticated `api`. `withRuntime`
- * has already run globally, so the per-request `withDb()` here resolves
+ * has already run globally, so the per-request `withSystemDb()` here resolves
  * the Drizzle client through the runtime's DatabaseProvider exactly like
  * the setup wizard does on a fresh instance.
  *
@@ -123,7 +123,7 @@ import { eq, sql } from 'drizzle-orm';
 import { users } from '@lumibase/database';
 
 import type { AppEnv } from '../../env';
-import { withDb } from '../../middleware/db';
+import { withSystemDb } from '../../middleware/db';
 import { hashPassword } from '../../services/auth/password';
 import { extractClientIp } from '../login-guard/ip-extract';
 import { AuditLogger } from '../audit/logger';
@@ -194,10 +194,11 @@ function buildService(
 
 export const recoveryRouter = new Hono<AppEnv>();
 
-// Public surface: only `withDb()` (no tenant, no auth) — the operator is
+// Public surface: only `withSystemDb()` (no tenant, no auth) — the operator is
 // locked out and can't authenticate. `withRuntime` ran globally, so this
 // resolves the Drizzle client the same way `setupRouter` does.
-recoveryRouter.use('*', withDb());
+// System connection (B130): pre-tenant break-glass, no site scope.
+recoveryRouter.use('*', withSystemDb());
 
 // ── POST /recover (Req 14.4; design §4.7) ─────────────────────────────────
 

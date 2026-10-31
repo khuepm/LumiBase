@@ -1,5 +1,5 @@
 import { flows, flowRuns, type Database } from '@lumibase/database';
-import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
+import type { CacheProvider, KeyProvider, QueueProvider } from '@lumibase/runtime';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { and, eq } from 'drizzle-orm';
 import type { AuthenticatedPrincipalRef } from './effective-capability-service';
@@ -24,6 +24,20 @@ export interface FlowManualRunJob {
   runId: string;
   flowId: string;
   input: Record<string, unknown>;
+  /**
+   * Who triggered the run (J10, #517). A reference only: operations that act
+   * for the caller (`ai:decision`) re-resolve capabilities when they execute.
+   * Absent on jobs enqueued before this field existed.
+   */
+  principal?: AuthenticatedPrincipalRef | null;
+}
+
+/** Run-environment extras that operations acting for the caller need. */
+export interface FlowRunExtras {
+  principal?: AuthenticatedPrincipalRef | null;
+  cache?: CacheProvider;
+  /** Provider/quota configuration (`DECISION_*`, `ENCRYPTION_KEY`, `LUMIBASE_ENV`). */
+  processEnv?: Record<string, string | undefined>;
 }
 
 export interface AiChatRunJob {
@@ -124,6 +138,7 @@ export async function executeFlowGraph(
   keys: KeyProvider | undefined,
   runId: string,
   signal?: AbortSignal,
+  extras: FlowRunExtras = {},
 ): Promise<FlowRunResult> {
   const [flow] = await db
     .select()
@@ -138,6 +153,9 @@ export async function executeFlowGraph(
     keys,
     runId,
     _signal: signal,
+    principal: extras.principal ?? null,
+    cache: extras.cache,
+    processEnv: extras.processEnv,
   });
 }
 
@@ -149,12 +167,16 @@ export async function runFlowSyncWithTimeout(
   input: Record<string, unknown>,
   keys: KeyProvider | undefined,
   env?: Record<string, string | undefined>,
+  extras: Omit<FlowRunExtras, 'processEnv'> = {},
 ): Promise<FlowRunResult> {
   const timeoutMs = flowSyncTimeoutMs(env);
   const signal = AbortSignal.timeout(timeoutMs);
   await markRunRunning(db, runId, siteId);
   try {
-    const result = await executeFlowGraph(db, siteId, flowId, input, keys, runId, signal);
+    const result = await executeFlowGraph(db, siteId, flowId, input, keys, runId, signal, {
+      ...extras,
+      processEnv: env,
+    });
     await persistRunOutcome(db, runId, siteId, result);
     return result;
   } catch (err) {
@@ -175,10 +197,11 @@ export async function processFlowRunJob(
   job: FlowRunJob,
   keys?: KeyProvider,
   env?: Record<string, string | undefined>,
+  cache?: CacheProvider,
 ): Promise<void> {
   if (job.kind === 'ai_chat') {
     const { executeAiChatRun } = await import('./ai-chat-run-worker');
-    await executeAiChatRun(db, job, keys, env);
+    await executeAiChatRun(db, job, keys, env, cache);
     return;
   }
 
@@ -194,6 +217,8 @@ export async function processFlowRunJob(
       keys,
       job.runId,
       signal,
+      // The principal is a reference; ai:decision re-resolves it now.
+      { principal: job.principal ?? null, cache, processEnv: env },
     );
     await persistRunOutcome(db, job.runId, job.siteId, result);
   } catch (err) {
@@ -214,18 +239,19 @@ export async function processFlowRunJob(
 export interface FlowRunsWorkerDeps {
   db: Database;
   queue?: QueueProvider;
+  cache?: CacheProvider;
   keys?: KeyProvider;
   env?: Record<string, string | undefined>;
 }
 
 export function registerFlowRunsWorker(deps: FlowRunsWorkerDeps): void {
-  const { db, queue, keys, env } = deps;
+  const { db, queue, keys, env, cache } = deps;
   if (!queue) return;
 
   queue.process<FlowRunJob>(FLOW_RUNS_QUEUE, async (job) => {
     try {
       if (job.name === 'flow:run' || job.name === 'ai:chat') {
-        await processFlowRunJob(db, job.data, keys, env);
+        await processFlowRunJob(db, job.data, keys, env, cache);
       }
     } catch (err) {
       console.error('[flow-runs] job failed', { job: job.name, err: formatSafeError(err) });

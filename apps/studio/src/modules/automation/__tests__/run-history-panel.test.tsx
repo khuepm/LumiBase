@@ -87,6 +87,56 @@ describe('RunHistoryPanel', () => {
     );
   });
 
+  it('shows each ai:decision with the branch taken, and unknown / error states explicitly (J10)', async () => {
+    const decision = (value: number, unknownReason: string | null) => ({
+      profileKey: 'moderation',
+      profileVersion: 3,
+      questionKey: 'spam',
+      questionType: 'noul',
+      value,
+      confidence: null,
+      threshold: 0.8,
+      unknownReason,
+      provider: 'typesafe',
+      model: 'jev-1.13',
+      calibrated: true,
+    });
+    const detail: FlowRunDetail = {
+      ...RUN_DETAIL,
+      steps: {
+        decide_a: { branch: 'unknown', runId: 'rr_1', replayed: false, decision: decision(0.55, 'between_thresholds') },
+        decide_b: { branch: 'true', runId: 'rr_2', replayed: true, decision: decision(0.97, null) },
+        decide_c: { branch: 'error', runId: null, replayed: false, decision: null, errorCode: 'DECISION_DISABLED' },
+        log_1: { logged: true },
+      },
+    };
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/runs/run_1')) return Promise.resolve(jsonResponse(detail));
+      return Promise.resolve(jsonResponse([RUN_SUMMARY]));
+    });
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: /1.5s/ }));
+
+    const unknown = await screen.findByTestId('decision-decide_a');
+    expect(unknown).toHaveTextContent('Branch taken: unknown');
+    expect(unknown).toHaveTextContent('Unknown — no decision was taken (probability between the thresholds)');
+    expect(unknown).toHaveTextContent('moderation@v3 · spam = 0.55');
+
+    const yes = screen.getByTestId('decision-decide_b');
+    expect(yes).toHaveTextContent('Branch taken: true');
+    expect(yes).toHaveTextContent('replayed, no new provider call');
+    expect(yes).not.toHaveTextContent('Unknown');
+
+    const failed = screen.getByTestId('decision-decide_c');
+    expect(failed).toHaveTextContent('Branch taken: error');
+    expect(failed).toHaveTextContent('Decision failed: DECISION_DISABLED');
+    expect(failed).toHaveTextContent('nothing was treated as approved');
+
+    // Ordinary steps are not shown as decisions.
+    expect(screen.queryByTestId('decision-log_1')).toBeNull();
+  });
+
   it('shows an empty state when there are no runs', async () => {
     fetchMock.mockImplementation(() => Promise.resolve(jsonResponse([])));
     renderPanel();

@@ -69,9 +69,9 @@
 
 import type { MiddlewareHandler } from 'hono';
 import { eq, sql } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { schema, systemState } from '@lumibase/database';
+import { systemState } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
+import { systemDbFor } from './db';
 import type { AppEnv } from '../env';
 import { pathEqualsConstantTime } from '../modules/setup/path-compare';
 
@@ -400,10 +400,13 @@ function resolveDb(
   if (existing) return existing;
   const runtime = c.get('runtime');
   if (!runtime) return null;
-  // The runtime exposes a `postgres.Sql` connection; wrap it in
-  // Drizzle on the spot so the guard works even when `withDb()` has
-  // not yet run.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sqlConn = runtime.database.getConnection() as any;
-  return drizzle(sqlConn, { schema }) as unknown as Database;
+  // The guard runs before `withTenant`, with no site scope, so it reads
+  // through the system connection (B130). `systemDbFor` builds it from the
+  // runtime adapter, so the guard works even when `withDb()` has not yet run.
+  try {
+    return systemDbFor(c);
+  } catch {
+    // Misconfigured RLS flag / no connection: the caller fails open.
+    return null;
+  }
 }

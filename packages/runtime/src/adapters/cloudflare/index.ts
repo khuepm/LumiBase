@@ -30,12 +30,15 @@ interface CloudflareEnv {
   CONFIG_CACHE: KVNamespace;
   MEDIA: R2Bucket;
   HYPERDRIVE: Hyperdrive;
+  /** Optional system-role (BYPASSRLS) Hyperdrive config (B130). */
+  HYPERDRIVE_SYSTEM?: Hyperdrive;
   MEILISEARCH_HOST: string;
   MEILISEARCH_API_KEY: string;
   // Either a pre-built map (legacy) or individual Queue producer bindings
   // (e.g. REALTIME_QUEUE) wired in wrangler.toml. See collectQueues().
   QUEUES?: Record<string, CloudflareQueue>;
   REALTIME_QUEUE?: CloudflareQueue;
+  AGENT_RUNS_QUEUE?: CloudflareQueue;
   MEDIA_BASE_URL?: string;
   /** Zone id for global edge purge (#392). Absent → colo-local purge only. */
   CF_PURGE_ZONE_ID?: string;
@@ -56,7 +59,7 @@ interface CloudflareEnv {
  */
 function collectQueues(env: Record<string, unknown>): Record<string, CloudflareQueue> {
   const cfEnv = env as unknown as CloudflareEnv;
-  if (cfEnv.QUEUES) return cfEnv.QUEUES;
+  if (cfEnv.QUEUES) return { ...cfEnv.QUEUES, ...(cfEnv.AGENT_RUNS_QUEUE ? { 'agent-runs': cfEnv.AGENT_RUNS_QUEUE } : {}) };
 
   const queues: Record<string, CloudflareQueue> = {};
   for (const [key, value] of Object.entries(env)) {
@@ -64,6 +67,9 @@ function collectQueues(env: Record<string, unknown>): Record<string, CloudflareQ
       queues[key] = value as CloudflareQueue;
     }
   }
+
+  // Business code addresses logical queues; binding names are platform config.
+  if (cfEnv.AGENT_RUNS_QUEUE) queues['agent-runs'] = cfEnv.AGENT_RUNS_QUEUE;
 
   // Provide generic aliases pointing at the first available queue so health
   // probes and queue-agnostic callers work without hardcoding a binding name.
@@ -100,7 +106,7 @@ export function createCloudflareRuntime(env: Record<string, unknown>): RuntimeCo
         : undefined,
     ),
     storage: new CloudflareStorageProvider(cfEnv.MEDIA),
-    database: new CloudflareDatabaseProvider(cfEnv.HYPERDRIVE),
+    database: new CloudflareDatabaseProvider(cfEnv.HYPERDRIVE, cfEnv.HYPERDRIVE_SYSTEM),
     search: new CloudflareSearchProvider(
       cfEnv.MEILISEARCH_HOST,
       cfEnv.MEILISEARCH_API_KEY,

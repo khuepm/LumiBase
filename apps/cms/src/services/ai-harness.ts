@@ -13,7 +13,7 @@ import type { IntentService } from './intent-service';
 import { runFlow, type FlowGraph } from './flow-service';
 import { ContentVersionService } from './content-version-service';
 import type { ConfiguredLLM } from './llm-provider';
-import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
+import type { CacheProvider, KeyProvider, QueueProvider } from '@lumibase/runtime';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentAutonomousOpsTotal } from './agent-metrics';
 import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
@@ -106,6 +106,7 @@ export interface AISecureHarnessConfig {
    * stubbing (they have no meaningful offline behaviour).
    */
   keys?: KeyProvider;
+  cache?: CacheProvider;
   /** AccessService for governed RBAC + identity skills (roles/policies/api-keys/users/teams). */
   accessService?: AccessService;
   /** IntentService for governed content-intent (SLO) skills. */
@@ -148,6 +149,7 @@ interface SkillServices {
   siteId?: string;
   /** KeyProvider for deployment token encryption/decryption. */
   keys?: KeyProvider;
+  cache?: CacheProvider;
   /**
    * Marks a service as reached, for retry safety (#453).
    *
@@ -281,6 +283,9 @@ function primaryDangerousCapability(
 function isStageableItemPatch(skillName: string, args: Record<string, unknown>): boolean {
   return (
     skillName === 'updateItem' &&
+    // A precondition is checked by the handler; the veto-window commit path
+    // does not run it, so a guarded patch is never staged.
+    args['expect'] === undefined &&
     typeof args['collection'] === 'string' &&
     typeof args['id'] === 'string' &&
     typeof args['data'] === 'object' &&
@@ -524,6 +529,13 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         siteId: services.siteId,
         eventStore: new DrizzleCdcEventStore(services.db),
         retentionDays,
+        cache: services.cache,
+        audit: async (event, metadata) => {
+          const { AuditLogger } = await import('../modules/audit/logger');
+          await new AuditLogger({ db: services.db!, siteId: services.siteId! }).write({
+            event, metadata, actorEmail: null, ip: null, userAgent: null, requestId: null,
+          });
+        },
       }),
     );
   };
@@ -684,6 +696,20 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         const id = args['id'] as string;
         const data = (args['data'] as Record<string, unknown>) ?? {};
         const status = args['status'] as string | undefined;
+        const expected = args['expect'] as Record<string, unknown> | undefined;
+        if (expected && Object.keys(expected).length > 0) {
+          // Checked when the update runs, not when it was requested: an
+          // approval may execute long after the proposal (B119).
+          const current = (await itemServiceRef.detail(collection, id, Object.keys(expected))) as Record<string, unknown>;
+          const changed = Object.keys(expected).filter(
+            (field) => canonicalValue(current?.[field]) !== canonicalValue(expected[field]),
+          );
+          if (changed.length > 0) {
+            throw new ItemPreconditionFailedError(
+              `${changed.join(', ')} changed since this update was proposed; nothing was written.`,
+            );
+          }
+        }
         const result = await itemServiceRef.patch(collection, id, { data, ...(status ? { status } : {}) });
         return { updated: true, item: result };
       },
@@ -1508,20 +1534,10 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'flows',
       dangerous: true,
       handler: async (args) => {
-        if (!db || !siteId) return { created: true };
-        const [row] = await db
-          .insert(flows)
-          .values({
-            siteId,
-            name: args['name'] as string,
-            description: args['description'] as string | undefined,
-            status: (args['status'] as 'active' | 'inactive' | 'draft' | undefined) ?? 'draft',
-            triggerType: args['triggerType'] as 'webhook' | 'event' | 'schedule' | 'manual',
-            triggerOptions: (args['triggerOptions'] as Record<string, unknown>) ?? {},
-            graph: (args['graph'] as Record<string, unknown>) ?? { nodes: [] },
-          })
-          .returning();
-        return { created: true, flow: row };
+        if (!db || !siteId) throw new Error('FLOW_SERVICE_NOT_CONFIGURED');
+        const { createFlowRecord } = await import('./flow-management');
+        markTouched?.();
+        return { created: true, flow: await createFlowRecord(db, siteId, args) };
       },
     },
 
@@ -1930,7 +1946,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           key: args['key'] as string | undefined,
           name: args['name'] as string,
           version: args['version'] as string,
-          type: args['type'] as string,
+          type: args['type'] as 'interface' | 'display' | 'layout' | 'panel' | 'module' | 'hook' | 'endpoint',
           enabled: args['enabled'] as boolean | undefined,
           bundleUrl: args['bundleUrl'] as string,
           manifest: args['manifest'] as Record<string, string> | undefined,
@@ -2074,6 +2090,7 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           operations: Array.isArray(args['operations']) ? args['operations'] : [],
           webhook_id: args['webhookId'] ? String(args['webhookId']) : undefined,
           extension_name: args['extensionName'] ? String(args['extensionName']) : undefined,
+          payload_mode: args['payload_mode'],
         });
         return await service.create(input);
       },
@@ -2221,6 +2238,36 @@ function rebindable<T extends object>(initial: T): Rebindable<T> {
   };
 }
 
+/**
+ * `updateItem` refused because a field no longer holds the value its
+ * `expect` precondition names. Thrown before any write, so an approval that
+ * fails this way is settled `failed` with a reason that says nothing was
+ * written (not the generic "side effect unknown").
+ */
+export class ItemPreconditionFailedError extends Error {
+  readonly code = 'ITEM_PRECONDITION_FAILED' as const;
+  constructor(message: string) {
+    super(message);
+    this.name = 'ItemPreconditionFailedError';
+  }
+}
+
+/** JSON with sorted object keys; `undefined` reads as `null` (an absent field). */
+function canonicalValue(value: unknown): string {
+  const sort = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(sort);
+    if (v && typeof v === 'object') {
+      return Object.fromEntries(
+        Object.keys(v as Record<string, unknown>)
+          .sort()
+          .map((k) => [k, sort((v as Record<string, unknown>)[k])]),
+      );
+    }
+    return v === undefined ? null : v;
+  };
+  return JSON.stringify(sort(value));
+}
+
 class ServiceTouchTracker {
   private touched = false;
 
@@ -2267,6 +2314,7 @@ export class AISecureHarness {
   private readonly itemService?: ItemService;
   /** Present when an ItemService was supplied; lets approvals rebind it (#472). */
   private readonly itemServiceRef?: Rebindable<ItemService>;
+  private readonly extensionsServiceRef?: Rebindable<ExtensionsService>;
   private readonly queue?: QueueProvider;
   private readonly notify?: AgentNotifier;
   /** Set when a skill handler reaches a service; drives retry safety (#453). */
@@ -2280,6 +2328,7 @@ export class AISecureHarness {
     // approval rebinding it reaches every write path rather than only the ones
     // this class calls directly.
     this.itemService = this.itemServiceRef?.proxy;
+    this.extensionsServiceRef = config.extensionsService ? rebindable(config.extensionsService) : undefined;
     this.queue = config.queue;
     this.notify = config.notify;
     const hasService = Boolean(
@@ -2305,11 +2354,12 @@ export class AISecureHarness {
         accessService: this.serviceTouch.wrap(config.accessService),
         intentService: this.serviceTouch.wrap(config.intentService),
         configService: this.serviceTouch.wrap(config.configService),
-        extensionsService: this.serviceTouch.wrap(config.extensionsService),
+        extensionsService: this.serviceTouch.wrap(this.extensionsServiceRef?.proxy),
         db: config.db,
         siteId: config.siteId,
         // Tenant context + KeyProvider enable the deployment skills.
         keys: config.keys,
+        cache: config.cache,
         // Reaches the services this factory builds itself (deployments,
         // cdc-feed, content-versions), which the constructor cannot proxy.
         trackTouch: (service) => this.serviceTouch.wrap(service),
@@ -2981,6 +3031,9 @@ export class AISecureHarness {
 
       return { success: true, data: result };
     } catch (err: unknown) {
+      if (err instanceof ItemPreconditionFailedError) {
+        return { success: false, error: `${err.code}: ${err.message}`, code: err.code };
+      }
       const message = err instanceof Error ? err.message : 'Unknown execution error';
       return { success: false, error: message };
     } finally {
@@ -3094,36 +3147,23 @@ export class AISecureHarness {
   }
 
   /**
-   * Row/field scope for an approval execution, or a no-op when there is none.
-   *
-   * Two cases deliberately produce no rebinding:
-   *
-   * - **An agent-role requester.** A role is a capability set, not a principal
-   *   with policies, so there is no row/field context to apply; the capability
-   *   check is the whole gate by design (this is the reconciler path, #455).
-   * - **A harness with no ItemService** (offline registry mode in tests).
-   *
-   * What is NOT applied is the *decider's* row/field scope. Approving is not
-   * performing: the decider authorises an action the requester asked for, and the
-   * action runs with the requester's reach. Intersecting two `MagicContext`s is
-   * not a defined operation here, so pretending to do it would be worse than
-   * saying plainly that it is not done — noted in the governed-tool contract docs
-   * and in the backlog.
+   * Bind approval execution to the original requester's current permissions.
+   * Item row/field scope applies when a principal context is available.
+   * Extension writes require that context even without an ItemService; an
+   * agent-role requester without principal policies cannot inherit the decider's
+   * extension permissions. Restore both services when execution finishes.
    */
   private scopeToRequester(grant: ApprovalRequesterResolution): () => void {
-    if (!grant.allowed || !grant.permissionContext || !this.itemServiceRef) {
-      return () => {};
+    if (!grant.allowed || (grant.permissionContext && grant.permissionContext.siteId !== this.siteId)) return () => {};
+    const restores: Array<() => void> = [];
+    const rebound = grant.permissionContext ? this.reboundItemService(grant.permissionContext) : null;
+    if (rebound && this.itemServiceRef) restores.push(this.itemServiceRef.rebind(rebound));
+    const extensions = this.extensionsServiceRef?.proxy;
+    if (extensions?.withPermissionContext) {
+      const scoped = extensions.withPermissionContext(grant.permissionContext);
+      if (scoped && typeof scoped.installExtension === 'function') restores.push(this.extensionsServiceRef!.rebind(scoped));
     }
-    const requesterContext = grant.permissionContext;
-    if (requesterContext.siteId !== this.siteId) {
-      // Resolution already refuses a cross-tenant requester; this is the second
-      // door on the same lock, because rebinding to another tenant's context
-      // would move `siteId` on the executing service.
-      return () => {};
-    }
-    const rebound = this.reboundItemService(requesterContext);
-    if (!rebound) return () => {};
-    return this.itemServiceRef.rebind(rebound);
+    return () => { for (const restore of restores.reverse()) restore(); };
   }
 
   /**
@@ -3531,8 +3571,9 @@ export class AISecureHarness {
 
     // The skill failed. Whether the approval is retryable depends on how far
     // it got: see settleFailedClaim.
+    const precondition = result.code === 'ITEM_PRECONDITION_FAILED';
     const outcome = existingAgentApproval
-      ? await this.settleFailedClaim(existingAgentApproval.id, result.error)
+      ? await this.settleFailedClaim(existingAgentApproval.id, result.error, { precondition })
       : 'pending';
     await this.runService.finishToolCall(toolCallId, {
       status: 'failed',
@@ -3543,9 +3584,12 @@ export class AISecureHarness {
     await this.runService.failRun(run.runId, result.error);
     return {
       status: 'denied',
+      ...(result.code ? { code: result.code } : {}),
       message:
         outcome === 'failed'
-          ? `${result.error} (approval marked failed: the action may have partially run; reopen it after verifying)`
+          ? precondition
+            ? `${result.error} (approval marked failed: the content changed since the proposal)`
+            : `${result.error} (approval marked failed: the action may have partially run; reopen it after verifying)`
           : result.error,
       runId: run.runId,
       toolCallId,
@@ -3575,7 +3619,24 @@ export class AISecureHarness {
   private async settleFailedClaim(
     agentApprovalId: string,
     reason: string,
+    options: { precondition?: boolean } = {},
   ): Promise<'pending' | 'failed'> {
+    // A failed precondition (B119) is terminal but known-safe: the handler
+    // refused before writing. Re-offering it would fail the same way, so it
+    // is settled `failed` with a reason that says so.
+    if (options.precondition) {
+      await this.db
+        .update(agentApprovals)
+        .set({ status: 'failed', decidedAt: new Date(), decisionReason: reason.slice(0, 1000) })
+        .where(
+          and(
+            eq(agentApprovals.id, agentApprovalId),
+            eq(agentApprovals.siteId, this.siteId),
+            eq(agentApprovals.status, 'deciding'),
+          ),
+        );
+      return 'failed';
+    }
     if (!this.serviceTouch.wasTouched) {
       await this.releaseClaim(agentApprovalId);
       return 'pending';

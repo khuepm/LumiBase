@@ -3,8 +3,10 @@ import type { AppEnv } from '../env';
 import type { MagicContext } from './permission-dsl';
 import {
   EffectiveCapabilityService,
+  callerClassFromAuth,
   principalRefFromAuth,
   type AuthenticatedPrincipalRef,
+  type PrincipalCallerClass,
   type CapabilityDenialCode,
   type EffectiveCapabilityServiceDeps,
 } from './effective-capability-service';
@@ -40,6 +42,13 @@ export interface GovernedCapabilityResolution {
   /** Whether this principal may pass a control-plane admin backstop. */
   controlPlaneAdmin: boolean;
   /**
+   * What kind of credential the caller presented (#562). Set only here, from
+   * trusted auth middleware (request path) and the stored API key row (both
+   * paths). Entry points pass it on unchanged; `authorizeDecision` refuses any
+   * value other than `standard`.
+   */
+  callerClass: PrincipalCallerClass;
+  /**
    * Principal-bound context for building a request-equivalent `ItemService` off
    * the request path.
    *
@@ -59,6 +68,7 @@ const UNRESOLVED: GovernedCapabilityResolution = {
   allowed: false,
   capabilities: [],
   controlPlaneAdmin: false,
+  callerClass: 'standard',
   code: 'PRINCIPAL_UNRESOLVED',
   message: 'The request has no principal that capabilities can be resolved for.',
 };
@@ -107,9 +117,14 @@ export function effectiveCapabilityServiceForRequest(c: Context<AppEnv>): Effect
 export async function resolveRequestCapabilities(
   c: Context<AppEnv>,
 ): Promise<GovernedCapabilityResolution> {
-  const principal = principalRefFromAuth(c.get('auth'), c.get('siteId'));
-  if (!principal) return UNRESOLVED;
-  return resolvePrincipalCapabilities(effectiveCapabilityServiceForRequest(c), principal);
+  const auth = c.get('auth');
+  // The request knows facts a persisted ref does not (session audience). Both
+  // sources must say `standard` for the caller to be `standard` (#562).
+  const authClass = callerClassFromAuth(auth);
+  const principal = principalRefFromAuth(auth, c.get('siteId'));
+  if (!principal) return authClass === 'standard' ? UNRESOLVED : { ...UNRESOLVED, callerClass: authClass };
+  const resolution = await resolvePrincipalCapabilities(effectiveCapabilityServiceForRequest(c), principal);
+  return authClass === 'standard' ? resolution : { ...resolution, callerClass: authClass };
 }
 
 /**
@@ -124,6 +139,7 @@ const RESOLUTION_FAILED: GovernedCapabilityResolution = {
   allowed: false,
   capabilities: [],
   controlPlaneAdmin: false,
+  callerClass: 'standard',
   code: 'PRINCIPAL_UNRESOLVED',
   message: 'Capabilities could not be resolved for this principal.',
 };
@@ -153,6 +169,7 @@ export async function resolvePrincipalCapabilities(
       allowed: false,
       capabilities: [],
       controlPlaneAdmin: false,
+      callerClass: 'standard',
       code: resolution.code,
       message: resolution.message,
     };
@@ -161,13 +178,14 @@ export async function resolvePrincipalCapabilities(
     allowed: true,
     capabilities: resolution.capabilities,
     controlPlaneAdmin: resolution.controlPlaneAdmin,
+    callerClass: resolution.callerClass,
     permissionContext: resolution.permissionContext,
   };
 }
 
 /** Re-exported so call sites need one import to persist a principal. */
-export { principalRefFromAuth };
-export type { AuthenticatedPrincipalRef };
+export { callerClassFromAuth, principalRefFromAuth };
+export type { AuthenticatedPrincipalRef, PrincipalCallerClass };
 
 /**
  * Wraps the request's principal as approval provenance (#472).

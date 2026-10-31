@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T00:11:35.763Z
+version: 8
+lastUpdated: 2026-10-17T16:36:18.599Z
 sourceLang: en
-contentHash: 6edecac703c795d3
-codeVerified: 2026-07-28T00:11:35.763Z
-codeVerifiedHash: 6edecac703c795d3
-codeVerifiedClaims: 14
+contentHash: 6630c26d6eedb264
+codeVerified: 2026-10-17T16:36:18.599Z
+codeVerifiedHash: 6630c26d6eedb264
+codeVerifiedClaims: 20
 ---
 
 # Data Model (Drizzle / Postgres)
@@ -349,12 +349,25 @@ Operational notes:
 - `agent_tool_calls.cost` stores token/cost estimates after secret masking.
 - If the same goal fails at least three runs and a runtime `QueueProvider` is available, the run service enqueues `agent-dead-letter` with the scoped run failure payload.
 
+### Draft review tables (Jev)
+
+| Table | Purpose |
+|---|---|
+| `lumibase_review_profiles` | Versioned review rubrics; rows are immutable, unique `(site_id, key, version)` |
+| `lumibase_review_runs` | One decision run of a profile on an item or snapshot, with provider, model, content hash and answers; purged after `DECISION_REVIEW_RETENTION_DAYS` |
+| `lumibase_review_feedback` | Accept/edit/reject per run, question and principal; deleted with its run |
+| `lumibase_review_sessions` | Pilot timing (#516): one editor session from opening the editor to the first save, `mode` `baseline`/`assisted`, `duration_ms`, `locale`, the viewed `run_id` and `viewed_questions`. No content. `run_id` is set null when the run is purged |
+| `lumibase_ai_automation_actions` | Jev automation (#518): one metadata action (`tag` / `route`) per flow run, node and item, unique `(site_id, flow_run_id, node_id, item_id)`. `mode` `shadow`/`live`, `status`, `reason`, `proposed`, `previous`, `applied`, `approval_id`, `reverted_at`, plus the chain ids `revision_id`, `review_run_id` and `content_hash`. `review_run_id` is set null when the run is purged |
+
+All five tables have `site_id` (FK cascade) and every query is site scoped. All five are also in the `site_isolation` RLS list of `packages/database/migrations/rls-policies.sql`. The retention purge of `lumibase_review_runs` runs site by site, each in a transaction that sets `app.site_id` (`apps/cms/src/services/review-run-retention.ts`), so it keeps deleting on a database where those policies are applied.
+Turning the draft-review pilot off deletes none of these rows.
+
 ### Content OS tables (`content-os.ts`)
 
 | Collection | Purpose |
 |---|---|
-| `content_intents` | Declared desired state (SLO) per collection: rules, cron schedule, budget, autonomy cap, maintenance window |
-| `content_drifts` | Detected rule violations; unique `(siteId, fingerprint)` dedupes detection across scans |
+| `content_intents` | Declared desired state (SLO) per collection: rules, cron schedule, budget, autonomy cap, maintenance window. `scan_cursor` resumes the deterministic scan; `semantic_scan_cursor` (migration 0022, J12) resumes the separately budgeted [semantic pass](./features/jev-semantic-drift.md) |
+| `content_drifts` | Detected rule violations; unique `(siteId, fingerprint)` dedupes detection across scans. `status` is `open`/`assigned`/`resolved`/`stale`, or `unevaluated` for a semantic rule that could not be judged (plain text column, no CHECK constraint). Semantic rows use `rule_type = 'semantic'` and `rule_key = <key>@v<version>:<profileVersion>:<contentHash>` |
 | `agent_autonomy_grants` | Earned trust per (site, agentRole, capability): level 0–4, evidence, expiry |
 | `agent_incidents` | Demotion evidence and exception-inbox feed (`veto`, `eval_fail`, `load_guard`, …) |
 | `agent_freezes` | Kill-switch freezes (scope `site`/`role`); `liftedAt IS NULL` = active; doubles as audit trail |
@@ -514,4 +527,5 @@ AAD-bound to `{ siteId, integrationId, field }`); plaintext is never stored.
 
 - An index on `(siteId, …)` is mandatory on every domain table.
 - Apply the Drizzle `scopeSite(siteId)` helper at the repository layer.
-- Postgres RLS is enabled through the `withRls()` middleware (`apps/cms/src/middleware/rls.ts`) — it sets a session variable for defence in depth.
+- Defence in depth: with `LUMIBASE_DB_RLS=enforce`, `withDb()` (`apps/cms/src/middleware/db.ts`) runs each request statement in its own transaction with `app.site_id` set, and `withRls()` (`apps/cms/src/middleware/rls.ts`) fails closed if the request db is not scoped. Off by default (B130).
+- The policies live in `packages/database/migrations/rls-policies.sql`. The operator applies that file by hand; `pnpm db:migrate` does not. Each listed table gets two policies with the same predicate: `site_isolation` (RESTRICTIVE) and `site_isolation_permit` (PERMISSIVE). The exception is `lumibase_extensions`, whose global rows (`site_id IS NULL`) stay visible. With `app.site_id` unset, no row of a scoped table is visible.

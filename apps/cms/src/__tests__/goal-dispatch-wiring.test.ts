@@ -86,11 +86,8 @@ describe('reconciler goal dispatch is wired, not merely implemented', () => {
     expect(typeof GoalDispatchService.prototype.dispatchReconcilerGoals).toBe('function');
   });
 
-  it('documents that async runs remain Node/Docker-only', () => {
-    // `cloudflare.ts` has no `queue()` consumer export (backlog B10), so a
-    // Cloudflare deployment enqueues nothing and dispatch is a no-op there. The
-    // limit is stated in the worker rather than implied by its absence.
-    expect(read('services/agent-run-worker.ts')).toMatch(/Cloudflare Workers/);
-    expect(read('cloudflare.ts')).not.toMatch(/^\s*async queue\(/m);
+  it('wires Cloudflare delivery to the shared agent worker', () => {
+    expect(read('cloudflare.ts')).toContain('queue: processCloudflareAgentQueue');
+    expect(read('cloudflare-agent-queue.ts')).toContain('await processAgentRunJob(');
   });
 });

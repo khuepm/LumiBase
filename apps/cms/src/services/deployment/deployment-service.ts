@@ -324,6 +324,10 @@ export class DeploymentService {
       .select()
       .from(deployments)
       .where(and(...conds))
+      // Newest first, deterministic: without an ORDER BY Postgres may return
+      // any rows, so `limit` would not mean "the most recent N" (B162). `id`
+      // breaks ties between rows created in the same instant.
+      .orderBy(desc(deployments.createdAt), desc(deployments.id))
       .limit(Math.min(200, filter.limit ?? 50));
   }
 

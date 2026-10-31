@@ -23,12 +23,14 @@
 // types are erased.
 export * from './interfaces';
 export { createCloudflareRuntime, createCloudflareKeyProvider } from './adapters/cloudflare';
-export { CloudflareRealtimeProvider, CloudflareEdgeCacheProvider } from './adapters/cloudflare';
+export { CloudflareRealtimeProvider, CloudflareEdgeCacheProvider, CloudflareCacheProvider } from './adapters/cloudflare';
 export {
   EnvKeyProvider,
   collectKeys,
   resolveActiveKeyId,
 } from './adapters/shared-keys';
+// Worker-safe: `scoped-sql` imports `postgres` as a type only.
+export { createSiteScopedSql, isSiteScopedSql, scopedSiteIdOf, unscopedSqlOf, SITE_SCOPED_SQL } from './scoped-sql';
 export { MemoryCacheProvider } from './memory-cache';
 export { MemoryRateLimiter } from './memory-rate-limiter';
 export { RedisRateLimiter } from './adapters/redis-rate-limiter';

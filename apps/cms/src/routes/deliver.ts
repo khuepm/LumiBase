@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql, type SQL } from 
 import { Hono } from 'hono';
 import { recordEdgeUrl } from '@lumibase/runtime';
 import type { AppEnv, Variables } from '../env';
+import { scopedDbFor } from '../middleware/db';
 import {
   DELIVER_APP_CACHE_TTL_SECONDS,
   deliverAppCacheKey,
@@ -303,7 +304,8 @@ deliverRouter.get('/llms.txt/:site_id', async (c) => {
     return c.text('Site not found.', 404);
   }
 
-  const db = c.get('db');
+  // The site comes from the path, not `withTenant`; scope to it (B130).
+  const db = scopedDbFor(c, siteId);
   const cache = c.get('runtime')?.cache;
   const ttl = resolveNegativeTtl(c.env);
   const neg =
@@ -475,7 +477,8 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
     return c.json({ error: 'Page not found.' }, 404);
   }
 
-  const db = c.get('db');
+  // The site comes from the path, not `withTenant`; scope to it (B130).
+  const db = scopedDbFor(c, siteId);
   const withProvenance = c.req.query('provenance') === 'true';
   const hasCredentials = Boolean(c.req.header('authorization'));
   const isPreview = c.req.query('preview') === 'true' || c.req.query('draft') === 'true';

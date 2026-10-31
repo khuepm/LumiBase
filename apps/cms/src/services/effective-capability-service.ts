@@ -2,6 +2,8 @@ import { apiKeys, users, userSites, type Database } from '@lumibase/database';
 import type { CacheProvider } from '@lumibase/runtime';
 import { and, eq } from 'drizzle-orm';
 import type { AuthPrincipal } from '../env';
+import { isPublishablePrefix } from './api-key-publishable';
+import { isFrontendAudience } from './auth/token-audience';
 import type { MagicContext } from './permission-dsl';
 import {
   PermissionService,
@@ -30,9 +32,28 @@ export type CapabilityDenialCode =
   | 'API_KEY_EXPIRED'
   | 'DEV_PRINCIPAL_FORBIDDEN';
 
+/**
+ * What kind of credential the principal is presenting (#562, B144).
+ *
+ * `publishable_api_key` (`lbk_pub_…`) and `frontend_session` (custom JWT with
+ * the `frontend` audience) are held by browsers and apps, so they are treated
+ * as public. A grant on them can still be useful for reads, but some
+ * capabilities (paid AI decisions) must never be usable by them, whatever a
+ * role or policy says. Everything else is `standard`.
+ *
+ * Only the capability resolvers set this value; entry points read it.
+ */
+export type PrincipalCallerClass = 'standard' | 'publishable_api_key' | 'frontend_session';
+
 export interface EffectiveCapabilityGrant {
   allowed: true;
   principal: AuthenticatedPrincipalRef;
+  /**
+   * Caller class derived from the stored API key row. Users and dev principals
+   * are `standard` here; the session audience is only known on the request
+   * (see {@link callerClassFromAuth}).
+   */
+  callerClass: Extract<PrincipalCallerClass, 'standard' | 'publishable_api_key'>;
   /** Coarse harness capabilities. Row/field checks remain in ItemService. */
   capabilities: string[];
   /** Whether this principal may pass the MCP control-plane admin backstop. */
@@ -105,6 +126,15 @@ export function satisfiesCapability(
   return capabilities.includes(required);
 }
 
+/**
+ * `ai:decide` (#511) rides the existing permission language rather than a new
+ * one: a policy grants `create` on this reserved system collection. User
+ * collections cannot take the `lumibase_` prefix (schema-service), so a
+ * content collection never collides with it.
+ */
+export const DECISION_PERMISSION_COLLECTION = 'lumibase_ai_decisions';
+export const DECISION_CAPABILITY = 'ai:decide';
+
 const ITEM_CAPABILITIES_BY_ACTION: Readonly<Record<string, readonly string[]>> = {
   read: ['items:read'],
   create: ['items:create', 'items:write'],
@@ -129,6 +159,11 @@ export function capabilitiesFromPermissionBundle(bundle: PermissionBundle): stri
       if (/^schema:(read|create|update|delete|migrate)$/.test(action)) {
         capabilities.add(action);
       }
+      continue;
+    }
+    if (permission.collection === DECISION_PERMISSION_COLLECTION) {
+      // Never an item grant: `create` here must not mint items:write.
+      if (action === 'create') capabilities.add(DECISION_CAPABILITY);
       continue;
     }
 
@@ -159,6 +194,30 @@ export function principalRefFromAuth(
     return { type: 'dev', siteId, roles: [...(auth.roles ?? [])] };
   }
   return null;
+}
+
+/**
+ * Caller class of the request's principal, from trusted auth middleware only
+ * (#562). Like {@link principalRefFromAuth}, raw request bodies, MCP arguments
+ * and prompts must never supply this value.
+ *
+ * - API key whose stored prefix is publishable (`auth.apiKey.prefix`, set by
+ *   `withAuth` from the `api_keys` row) → `publishable_api_key`.
+ * - Custom-JWT end-user (`isFrontendUser`) or a verified token whose `aud`
+ *   contains `frontend` → `frontend_session`.
+ * - Anything else → `standard`.
+ */
+export function callerClassFromAuth(auth: AuthPrincipal | undefined): PrincipalCallerClass {
+  if (!auth) return 'standard';
+  if (auth.type === 'api_key') {
+    return isPublishablePrefix(auth.apiKey?.prefix as string | undefined)
+      ? 'publishable_api_key'
+      : 'standard';
+  }
+  if (auth.isFrontendUser === true || isFrontendAudience(auth.raw?.aud)) {
+    return 'frontend_session';
+  }
+  return 'standard';
 }
 
 /** Resolve live, tenant-scoped tool capabilities for one authenticated principal. */
@@ -232,7 +291,7 @@ export class EffectiveCapabilityService {
       ? { ...bundle, admin: true }
       : bundle;
 
-    return this.grant(principal, effectiveBundle, context, effectiveBundle.admin);
+    return this.grant(principal, effectiveBundle, context, effectiveBundle.admin, 'standard');
   }
 
   private async resolveApiKey(
@@ -241,6 +300,7 @@ export class EffectiveCapabilityService {
     const [apiKey] = await this.deps.db
       .select({
         id: apiKeys.id,
+        prefix: apiKeys.prefix,
         revokedAt: apiKeys.revokedAt,
         expiresAt: apiKeys.expiresAt,
       })
@@ -277,7 +337,16 @@ export class EffectiveCapabilityService {
 
     // API keys can carry an admin policy for data-plane parity, but the current
     // HTTP control-plane backstop deliberately accepts human/dev admins only.
-    return this.grant(principal, bundle, context, false);
+    // The prefix is derived from the token itself (#562): a publishable key is
+    // classified from the stored row, so a queued job that only kept the key id
+    // is still recognised.
+    return this.grant(
+      principal,
+      bundle,
+      context,
+      false,
+      isPublishablePrefix(apiKey.prefix) ? 'publishable_api_key' : 'standard',
+    );
   }
 
   private resolveDev(
@@ -309,7 +378,7 @@ export class EffectiveCapabilityService {
       user: { roles: [...principal.roles] },
       apiKey: null,
     });
-    return this.grant(principal, bundle, context, true);
+    return this.grant(principal, bundle, context, true, 'standard');
   }
 
   private permissionContext(
@@ -341,10 +410,12 @@ export class EffectiveCapabilityService {
     bundle: PermissionBundle,
     permissionContext: MagicContext,
     controlPlaneAdmin: boolean,
+    callerClass: EffectiveCapabilityGrant['callerClass'],
   ): EffectiveCapabilityGrant {
     return {
       allowed: true,
       principal,
+      callerClass,
       capabilities: capabilitiesFromPermissionBundle(bundle),
       controlPlaneAdmin,
       bundle,

@@ -127,6 +127,10 @@ export const AgentToolSchemas = {
       id,
       data: record,
       status: z.enum(['draft', 'published', 'archived']).optional(),
+      // Precondition: field → the value the item must still hold when the
+      // update runs (also when it runs after an approval). Any difference
+      // refuses the update with ITEM_PRECONDITION_FAILED before it writes.
+      expect: z.record(slug, z.unknown()).optional(),
     })
     .strict(),
   deleteItem: z.object({ collection: slug, id }).strict(),
@@ -216,10 +220,8 @@ export const AgentToolSchemas = {
    * `routes/flows.ts`. `graph` and its nodes stay non-strict like the route's: the
    * runtime `FlowNode` carries editor keys such as `position`.
    *
-   * This validates the input only. `POST /flows` additionally refuses an `active`
-   * flow whose graph does not validate, requires a cron for an active schedule
-   * trigger and computes `nextRunAt`; the handler does none of that, which is why
-   * the stdio `create_flow` tool is not routed here (see `governed.ts`).
+   * The shared flow-management service also validates active graphs and schedule
+   * cron, and computes nextRunAt for both REST and governed calls.
    */
   createFlow: z
     .object({
@@ -314,10 +316,8 @@ export const AgentToolSchemas = {
 
   // ── extensions ───────────────────────────────────────────────────────────
   /**
-   * Input only. `POST /extensions` also verifies the bundle signature, refuses the
-   * reserved `lumibase-*` namespace without an official signature and checks the
-   * per-action `extensions:*` permissions; `ExtensionsService` does none of that,
-   * so the stdio tool stays on REST (see `governed.ts`).
+   * ExtensionsService applies the same signature, reserved namespace and
+   * per-action permission checks to REST and governed calls.
    */
   installExtension: extensionInput.strict(),
   /**
@@ -329,12 +329,6 @@ export const AgentToolSchemas = {
   uninstallExtension: z.object({ id }).strict(),
 
   // ── cdc ──────────────────────────────────────────────────────────────────
-  /**
-   * What the handler reads before it re-parses with `CdcSubscriptionCreateSchema`.
-   * `payload_mode` is absent on purpose: the handler never forwards it, so
-   * declaring it would accept a `snapshot` request and create a `reference`
-   * subscription.
-   */
   createCdcSubscription: z
     .object({
       name: z.string().min(1).max(128),
@@ -343,6 +337,7 @@ export const AgentToolSchemas = {
       operations: z.array(CdcOperationSchema).optional(),
       webhookId: z.string().min(1).optional(),
       extensionName: z.string().min(1).optional(),
+      payload_mode: z.enum(['reference', 'snapshot']).optional(),
     })
     .strict()
     .superRefine((sub, ctx) => {

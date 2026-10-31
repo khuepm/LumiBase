@@ -45,6 +45,87 @@ components:
                 type: array
                 items: { type: string }
               trace: { type: object, additionalProperties: true }
+    ReviewProfileInput:
+      type: object
+      required: [fields]
+      description: Give `questions`, a `preset`, or both.
+      properties:
+        collection: { type: string, nullable: true, description: Collection name; null = any collection }
+        fields:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items: { type: string, pattern: '^[A-Za-z_][A-Za-z0-9_]{0,63}$' }
+        preset: { type: string, enum: [taxonomy, brand-voice, brief-alignment] }
+        presetOptions:
+          type: object
+          properties:
+            categories: { type: array, items: { type: string }, minItems: 1, maxItems: 200 }
+            voice: { type: string, maxLength: 4000 }
+        questions:
+          type: object
+          description: Same question shapes as POST /ai/decisions (1-32).
+          additionalProperties: { type: object }
+        sourceField: { type: string, nullable: true, description: Must be one of fields }
+        minConfidence: { type: number, minimum: 0, maximum: 1, nullable: true }
+    ReviewProfile:
+      type: object
+      properties:
+        id: { type: string }
+        key: { type: string }
+        version: { type: integer }
+        status: { type: string, enum: [active, archived] }
+        collection: { type: string, nullable: true }
+        preset: { type: string, nullable: true, enum: [taxonomy, brand-voice, brief-alignment, null] }
+        fields: { type: array, items: { type: string } }
+        questions: { type: object, additionalProperties: { type: object } }
+        sourceField: { type: string, nullable: true }
+        minConfidence: { type: number, nullable: true }
+        note: { type: string, nullable: true, description: 'e.g. "no source — not a fact-check"' }
+        createdBy: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    ReviewRun:
+      type: object
+      properties:
+        id: { type: string, description: uuidv7 }
+        profileId: { type: string }
+        profileKey: { type: string }
+        profileVersion: { type: integer }
+        collection: { type: string }
+        itemId: { type: string, nullable: true }
+        revisionId: { type: string, nullable: true, description: Latest live revision when the item was read }
+        contentHash: { type: string, description: 'sha256:<hex> of the canonical JSON of the reviewed fields' }
+        source: { type: string, enum: [item, snapshot] }
+        omittedFields: { type: array, items: { type: string }, description: Profile fields the caller could not read; not sent }
+        status: { type: string, enum: [running, success, abstained, error] }
+        provider: { type: string, nullable: true }
+        model: { type: string, nullable: true }
+        calibrated: { type: boolean, nullable: true }
+        answers: { type: object, nullable: true, additionalProperties: { type: object } }
+        usage:
+          type: object
+          nullable: true
+          properties:
+            inputTokens: { type: integer, nullable: true }
+            outputTokens: { type: integer, nullable: true }
+        latencyMs: { type: integer, nullable: true }
+        errorCode: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
+        stale: { type: boolean }
+        staleReason: { type: string, nullable: true, enum: [content_changed, revision_changed, item_unavailable, null] }
+        note: { type: string, nullable: true }
+    ReviewFeedback:
+      type: object
+      properties:
+        id: { type: string }
+        runId: { type: string }
+        questionKey: { type: string }
+        verdict: { type: string, enum: [accept, edit, reject] }
+        editedValue: {}
+        principalType: { type: string }
+        principalId: { type: string }
+        createdAt: { type: string, format: date-time }
     AuthMe:
       type: object
       properties:
@@ -3374,6 +3455,938 @@ paths:
                 properties:
                   data: { $ref: '#/components/schemas/AIApproval' }
 
+  /ai/decisions:
+    post:
+      summary: Ask the decision model (TypeSafe Jev or equivalent) typed questions
+      description: >
+        Read-only. Each question is `noul` (yes/no), `choice` (2-255 options)
+        or `score` (2-10 rubric levels, lowest first). Answers carry
+        probabilities; `calibrated` is false when DECISION_PROVIDER=llm.
+        Malformed upstream answers fail with 502 DECISION_PARSE_FAILED, never
+        zero-valued defaults. Choice/Score distributions must contain exactly
+        the declared options/levels and sum to 1 within 1e-6. Confidence is
+        required; Score lies in 0..N-1 for N rubric levels.
+        Governed (#511), checked before the provider is called: the caller
+        needs the `ai:decide` capability (granted by `create` on
+        `lumibase_ai_decisions`; admins have it), the site must opt in via the
+        `aiDecisions` setting, `state` must respect its field allowlist, and
+        the site's hourly, concurrency and daily token budgets apply. Each call
+        writes an `ai_decision` audit event without content, except 403
+        FORBIDDEN refusals, which are audited in aggregate per window (#564).
+        Every /api/v1/ai/* request also counts against a per-client-IP limit
+        (LUMIBASE_AI_IP_RATE_LIMIT, default 300/min) checked before auth.
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state, questions]
+              properties:
+                state:
+                  description: >
+                    String (≤ 20,000 chars), object or array. The whole request
+                    (state + questions) must fit DECISION_MAX_INPUT_BYTES and the
+                    estimated DECISION_MAX_INPUT_TOKENS budget, else 413.
+                  oneOf:
+                    - { type: string, minLength: 1, maxLength: 20000 }
+                    - { type: object, additionalProperties: true }
+                    - { type: array, items: {} }
+                questions:
+                  type: object
+                  minProperties: 1
+                  maxProperties: 32
+                  description: Keys match ^[A-Za-z0-9_-]{1,64}$.
+                  additionalProperties:
+                    type: object
+                    required: [type, instructions, criteria]
+                    properties:
+                      type: { type: string, enum: [noul, choice, score] }
+                      instructions: {}
+                      criteria:
+                        description: >
+                          noul → { true, false }; choice → option key → description
+                          or null; score → ordered array of levels.
+      responses:
+        '200':
+          description: Typed answers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      provider: { type: string, enum: [typesafe, openrouter, llm] }
+                      model: { type: string }
+                      calibrated: { type: boolean }
+                      answers:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          required: [type]
+                          oneOf:
+                            - required: [type, noul]
+                              properties:
+                                type: { type: string, enum: [noul] }
+                            - required: [type, choice, probabilities, confidence]
+                              properties:
+                                type: { type: string, enum: [choice] }
+                            - required: [type, score, legend, probabilities, confidence]
+                              properties:
+                                type: { type: string, enum: [score] }
+                          properties:
+                            type: { type: string, enum: [noul, choice, score] }
+                            noul: { type: number, minimum: 0, maximum: 1 }
+                            choice: { type: string }
+                            score: { type: number, minimum: 0, maximum: 9 }
+                            legend: { type: object, additionalProperties: true }
+                            probabilities:
+                              type: object
+                              additionalProperties: { type: number, minimum: 0, maximum: 1 }
+                            confidence: { type: number, minimum: 0, maximum: 1 }
+                      usage:
+                        type: object
+                        properties:
+                          inputTokens: { type: integer, nullable: true, description: null when the provider did not report it }
+                          outputTokens: { type: integer, nullable: true, description: null when the provider did not report it }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: >
+            FORBIDDEN (no `ai:decide` capability) or DECISION_DISABLED (the site
+            has not opted in, or turned decisions off)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: Over the input byte or estimated token budget, or (llm) the estimated answer is over DECISION_LLM_MAX_OUTPUT_TOKENS (DECISION_INPUT_TOO_LARGE)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: >
+            The decision provider rejected the request (DECISION_VALIDATION), or
+            `state` has fields outside the site allowlist (DECISION_FIELD_NOT_ALLOWED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: >
+            Decision provider rate limit (DECISION_RATE_LIMITED), a site
+            budget used up (DECISION_QUOTA_EXCEEDED, DECISION_CONCURRENCY_LIMITED),
+            or the per-client-IP limit on /api/v1/ai/* (RATE_LIMITED, #564).
+            Site budgets and the IP limit set Retry-After in seconds, except when
+            one request's worst-case reservation exceeds the whole daily budget
+            (never admissible).
+          headers:
+            Retry-After:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '502':
+          description: DECISION_AUTH, DECISION_UPSTREAM or DECISION_PARSE_FAILED
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: >
+            DECISION_NOT_CONFIGURED, DECISION_UNAVAILABLE, or
+            DECISION_QUOTA_UNAVAILABLE (quota accounting is down; fails closed)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '504':
+          description: The decision did not complete within DECISION_TIMEOUT_MS (DECISION_TIMEOUT)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '499':
+          description: The client closed the request; the upstream call was aborted (DECISION_CANCELLED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/review-profiles:
+    get:
+      summary: List the active review profiles (#512)
+      description: >
+        The active version of every draft review profile of the site. Needs
+        `ai:decide`. With `collection`, only profiles bound to that collection
+        or to any collection.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: collection, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: Profiles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/ReviewProfile' } }
+        '403':
+          description: FORBIDDEN (no `ai:decide` capability)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      summary: Create version 1 of a review profile (admin)
+      description: >
+        Admin only. Give `questions` (same shapes as POST /ai/decisions), a
+        `preset` (`taxonomy` needs `presetOptions.categories`; `brand-voice`
+        takes `presetOptions.voice`; `brief-alignment` compares with
+        `sourceField`, and without it only checks coherence and stores the
+        note "no source — not a fact-check"), or both (custom questions are
+        merged after the preset's, 32 at most).
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [key]
+                  properties:
+                    key: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$' }
+                - { $ref: '#/components/schemas/ReviewProfileInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewProfile' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: REVIEW_PROFILE_EXISTS (publish a new version instead)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/review-profiles/{key}:
+    get:
+      summary: Get a review profile, the active version or a given one
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: key, in: path, required: true, schema: { type: string } }
+        - { name: version, in: query, required: false, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewProfile' }
+        '400':
+          description: Validation error (version is not a positive integer)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN (no `ai:decide` capability)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: REVIEW_PROFILE_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/review-profiles/{key}/versions:
+    post:
+      summary: Publish the next version of a review profile (admin)
+      description: >
+        Profiles are immutable. This inserts version + 1 with the full body and
+        archives the previous active version in one transaction. Runs keep
+        pointing at the version they were answered against.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: key, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewProfileInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewProfile' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: REVIEW_PROFILE_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: REVIEW_PROFILE_CONFLICT (another version was published at the same time; retry)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/reviews:
+    post:
+      summary: Review an item or an unsaved draft with a profile (#512)
+      description: >
+        Suggest-only: nothing is written to the item. Needs `ai:decide`, then
+        runs the governed decision path of POST /ai/decisions (site opt-in,
+        field allowlist, input budget, quota, `ai_decision` audit event).
+        With `itemId` the server reads the profile's fields with the caller's
+        row/field permissions; unreadable fields are not sent and are listed
+        in `omittedFields`. With `snapshot` (an unsaved draft) every key must
+        be a profile field the caller may read and write (`create`, or
+        `update` when `itemId` is also given), else 422 before any provider
+        call. Content goes only into `state`; the questions come from the
+        stored profile. The same `idempotencyKey` (or `Idempotency-Key`
+        header) from the same principal returns the same run without a
+        second provider call; keys never cross principals. A run that ended
+        in `error`, or is still `running` five minutes after it started, is
+        retried in place and rebound to the content, revision and profile
+        version the retry actually reviewed.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 8, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profile, collection]
+              properties:
+                profile: { type: string }
+                profileVersion: { type: integer, minimum: 1, description: Defaults to the active version }
+                collection: { type: string }
+                itemId: { type: string }
+                snapshot: { type: object, additionalProperties: true }
+                idempotencyKey: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        '200':
+          description: Replay of an existing run with the same idempotency key
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewRun' }
+        '201':
+          description: >
+            Run completed: `status` is `success`, or `abstained` when every
+            choice answer is `other`/`unknown` or a confidence is below the
+            profile's `minConfidence`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewRun' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: >
+            FORBIDDEN (no `ai:decide`, or no read permission on the collection)
+            or DECISION_DISABLED (site not opted in, or the collection is not
+            in the draft-review pilot in `assisted` mode — see
+            GET /ai/reviews/rollout)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: >
+            REVIEW_PROFILE_NOT_FOUND or REVIEW_ITEM_NOT_FOUND, or
+            REVIEW_RUN_NOT_FOUND when a replayed run's profile is no longer
+            stored
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: >
+            REVIEW_FIELD_NOT_ALLOWED (snapshot field not in the profile or not
+            readable and writable, or no readable field at all),
+            REVIEW_COLLECTION_MISMATCH, or the decision 422 codes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Decision rate limit or site budget (see POST /ai/decisions)
+          headers:
+            Retry-After:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        default:
+          description: Any other POST /ai/decisions error (413, 499, 502, 503, 504)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    get:
+      summary: List the review runs of an item (newest first, 50 at most)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: collection, in: query, required: true, schema: { type: string } }
+        - { name: itemId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: >
+            Runs the caller may see: item runs whose reviewed fields the caller
+            can read now, and snapshot runs the caller created (admins see all)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/ReviewRun' } }
+        '400':
+          description: collection and itemId are required
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: REVIEW_ITEM_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/reviews/rollout:
+    get:
+      summary: Draft-review pilot mode for a collection (#516)
+      description: >
+        `off` unless the site setting `aiDecisions.review` is enabled and lists
+        the collection. `assisted` also needs `aiDecisions.enabled` (content
+        is sent to the provider); `baseline` does not. A malformed setting
+        reads as `off`. Studio hides the review panel unless the mode is
+        `assisted`.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: collection, in: query, required: true, schema: { type: string, maxLength: 128 } }
+      responses:
+        '200':
+          description: Mode
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      collection: { type: string }
+                      mode: { type: string, enum: [off, baseline, assisted] }
+        '400':
+          description: collection is required
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN (no `ai:decide` capability)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/reviews/sessions:
+    post:
+      summary: Record one editor review session on a pilot collection (#516)
+      description: >
+        One session is opening the editor until the first successful save,
+        in `baseline` (panel hidden) or `assisted` mode. No content is
+        stored. `runId` must be the caller's own run on the same collection
+        (and item when both are known) and `viewedQuestions` the questions it
+        answered that were rendered to the editor; pilot metrics count
+        verdicts over these viewed suggestions only. Only signed-in users
+        record sessions. Site and principal come from the request context.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [collection, mode, durationMs]
+              properties:
+                collection: { type: string, maxLength: 128 }
+                itemId: { type: string, maxLength: 128 }
+                mode: { type: string, enum: [baseline, assisted] }
+                runId: { type: string, description: Assisted only }
+                viewedQuestions: { type: array, maxItems: 32, items: { type: string }, description: Needs runId }
+                durationMs: { type: integer, minimum: 0, maximum: 86400000 }
+                locale: { type: string, description: 'Content locale, e.g. vi or en-US' }
+      responses:
+        '201':
+          description: Stored session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      collection: { type: string }
+                      itemId: { type: string, nullable: true }
+                      mode: { type: string, enum: [baseline, assisted] }
+                      runId: { type: string, nullable: true }
+                      viewedQuestions: { type: array, items: { type: string } }
+                      principalType: { type: string }
+                      principalId: { type: string }
+                      durationMs: { type: integer }
+                      locale: { type: string, nullable: true }
+                      createdAt: { type: string, format: date-time }
+        '400':
+          description: Validation error (also a baseline session with a run, or viewedQuestions without runId)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN (no `ai:decide`, or not a signed-in user — API keys and the dev principal record no sessions) or DECISION_DISABLED (collection not in the pilot)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: REVIEW_SESSION_MODE_MISMATCH (the collection is in the other mode now)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: >
+            REVIEW_SESSION_RUN_INVALID (run not the caller's, of another
+            collection or item, without answers, or a viewed question it did
+            not answer)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/reviews/metrics:
+    get:
+      summary: Draft-review pilot metrics (#516, admin only)
+      description: >
+        Aggregates this site's sessions, runs and feedback created in
+        [from, to): time per item (baseline vs assisted, p50/p95),
+        accept/edit/reject/no-action rates over viewed suggestions only
+        (95% Wilson intervals), coverage/abstention, error rate, latency,
+        tokens per run, splits by locale, provider and profile version, and
+        the pre-registered criteria of protocol `jev-pilot-v1` with
+        `insufficientSample` flags. Run counts are operational denominators,
+        not user value. `truncated` is true when a table hit the row limit.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time }, description: Defaults to 30 days before to }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time }, description: Defaults to now }
+      responses:
+        '200':
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '400':
+          description: Invalid dates, from not before to, or more than 366 days apart
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/reviews/{id}:
+    get:
+      summary: Get a review run with its staleness
+      description: >
+        For item runs `stale` compares the current content hash of the reviewed
+        fields and the latest revision with the run (`content_changed`,
+        `revision_changed`, `item_unavailable`). Snapshot runs report
+        `stale: false`; a changed draft is detected on feedback via
+        `contentHash`.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Run
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ReviewRun' }
+        '403':
+          description: FORBIDDEN (no `ai:decide` capability)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: REVIEW_RUN_NOT_FOUND (also when the caller cannot read the fields it reviewed)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/reviews/{id}/feedback:
+    post:
+      summary: Record accept / edit / reject on the answers of a run
+      description: >
+        One row per run, question and principal; a retried submission returns
+        the stored rows and adds none. The first verdict is final: a
+        different verdict or `editedValue` for the same question is not
+        stored, and the response carries the stored one. `accept` or `edit` on a stale run (or,
+        for snapshot runs, when `contentHash` differs from the run's) is
+        refused with 409 REVIEW_STALE unless `acknowledgeStale: true`.
+        `reject` is always accepted. Feedback never changes the item.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries]
+              properties:
+                entries:
+                  type: array
+                  minItems: 1
+                  maxItems: 32
+                  items:
+                    type: object
+                    required: [questionKey, verdict]
+                    properties:
+                      questionKey: { type: string }
+                      verdict: { type: string, enum: [accept, edit, reject] }
+                      editedValue: { description: Required for edit }
+                acknowledgeStale: { type: boolean }
+                contentHash: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+      responses:
+        '201':
+          description: Stored feedback
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/ReviewFeedback' } }
+        '400':
+          description: Validation error (also a question the run did not answer)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: >
+            FORBIDDEN (no `ai:decide` capability), or DECISION_DISABLED when the
+            run's collection is no longer in the assisted pilot. Stored
+            feedback stays readable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: REVIEW_RUN_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: REVIEW_STALE, or REVIEW_NOT_COMPLETE (the run has no answers)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/automation/templates:
+    get:
+      summary: Jev automation flow templates (#518, admin only)
+      description: >
+        Taxonomy tagging and editorial queue routing templates, each with its
+        parameters and an example draft flow. Control plane.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+      responses:
+        '200':
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '403':
+          description: FORBIDDEN or CONTROL_PLANE_FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/automation/templates/{key}/build:
+    post:
+      summary: Build a draft manual flow from a template (#518, admin only)
+      description: >
+        Validates the parameters and returns a draft, manual-trigger flow body
+        for POST /flows. Writes nothing.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: key, in: path, required: true, schema: { type: string, enum: [taxonomy-tagging, editorial-routing] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Draft flow
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '400':
+          description: VALIDATION (invalid or reserved parameters)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN or CONTROL_PLANE_FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: AUTOMATION_TEMPLATE_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/automation/actions:
+    get:
+      summary: Automation action history (#518, admin only)
+      description: >
+        Shadow and live actions of this site, newest first, each with its
+        audit chain by id (revision, review run, flow run, approval, feedback).
+        Live rows are reconciled with their approval (approved → applied).
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: collection, in: query, required: false, schema: { type: string } }
+        - { name: itemId, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string } }
+        - { name: mode, in: query, required: false, schema: { type: string, enum: [shadow, live] } }
+        - { name: action, in: query, required: false, schema: { type: string, enum: [tag, route] } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        '200':
+          description: Actions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { type: object, additionalProperties: true } }
+        '400':
+          description: VALIDATION
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN or CONTROL_PLANE_FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/automation/actions/{id}:
+    get:
+      summary: One automation action with its audit chain (#518, admin only)
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Action
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '403':
+          description: FORBIDDEN or CONTROL_PLANE_FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: AUTOMATION_ACTION_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/automation/actions/{id}/feedback:
+    post:
+      summary: Accept, override or reject the decision behind an action (#518, admin only)
+      description: >
+        Stored as review feedback on the action's review run and question
+        (one verdict per principal). An override is `edit` with `editedValue`:
+        the tag or queue the editor wants, mapped back to the decision's value
+        (choice key, or `true`/`false` for a noul) through the node's `tagMap`
+        / `queues`; that decision value is what is stored. Applies nothing.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [verdict]
+              properties:
+                verdict: { type: string, enum: [accept, edit, reject] }
+                editedValue: { description: Required for edit }
+                acknowledgeStale: { type: boolean }
+      responses:
+        '201':
+          description: Feedback
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '400':
+          description: VALIDATION
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN or CONTROL_PLANE_FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: AUTOMATION_ACTION_NOT_FOUND or REVIEW_RUN_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: AUTOMATION_NO_DECISION, REVIEW_NOT_COMPLETE or REVIEW_STALE
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: AUTOMATION_OVERRIDE_UNMAPPED (the override is not a value the decision can take)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/automation/actions/{id}/revert:
+    post:
+      summary: Restore the value before an applied action (#518, admin only)
+      description: >
+        Writes `previous` back through the caller's ItemService. Refused when
+        the field no longer holds what the action wrote (a later edit wins).
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Reverted action
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '403':
+          description: FORBIDDEN or CONTROL_PLANE_FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: AUTOMATION_ACTION_NOT_FOUND
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: AUTOMATION_NOT_APPLIED, AUTOMATION_ALREADY_REVERTED or AUTOMATION_REVERT_CONFLICT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ai/automation/metrics:
+    get:
+      summary: Shadow precision and coverage in the auto-action zone (#518, admin only)
+      description: >
+        Per action/locale/provider/model/profile/question split: precision over
+        in-zone proposals with a signed-in user's verdict and coverage of the
+        zone (95% Wilson intervals), evaluated against the current
+        `aiDecisions.automation.thresholds`. `insufficientSample` and
+        `shadowRequired` follow protocol `jev-automation-v1`. Switches nothing on.
+      parameters:
+        - { $ref: '#/components/parameters/SiteHeader' }
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '400':
+          description: Invalid dates, from not before to, or more than 366 days apart
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: FORBIDDEN or CONTROL_PLANE_FORBIDDEN (admin role required)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /ai/suggest-field:
     post:
       summary: Suggest field type and interface for a given field name + context
@@ -4181,11 +5194,24 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
   /deployments:
     get:
-      summary: List deployments (filterable)
+      summary: List deployments (filterable, newest first)
+      description: >-
+        Returns deployments newest first, ordered by `createdAt` descending
+        with `id` descending as the tie-breaker, so `limit` returns the most
+        recent N.
       parameters:
         - { $ref: '#/components/parameters/SiteHeader' }
         - { name: targetId, in: query, required: false, schema: { type: string } }
         - { name: status, in: query, required: false, schema: { type: string, enum: [queued, building, ready, error, canceled] } }
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            Maximum number of deployments to return. Must be a non-negative
+            integer; `0` returns an empty list. Values above 200 are not
+            rejected but clamped to 200. An empty or omitted value uses the
+            default of 50.
+          schema: { type: integer, minimum: 0, default: 50 }
       responses:
         '200':
           description: OK
@@ -4197,6 +5223,11 @@ paths:
                   data:
                     type: array
                     items: { $ref: '#/components/schemas/Deployment' }
+        '400':
+          description: '`VALIDATION` — `limit` is not a non-negative integer (non-numeric, negative or fractional)'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /deployments/{id}:
     get:
       summary: Get a single deployment

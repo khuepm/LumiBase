@@ -45,6 +45,8 @@ const HARNESS_CALL_SITES = [
   'routes/mcp.ts',
   'services/ai-chat-run-worker.ts',
   'services/agent-run-worker.ts',
+  // Jev automation live proposals (#518): the flow run's principal is the requester.
+  'services/ai-automation-ops.ts',
 ] as const;
 
 function read(relative: string): string {

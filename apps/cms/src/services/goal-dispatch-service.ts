@@ -803,6 +803,14 @@ export class GoalDispatchService {
 
       case 'dispatch_draft':
       case 'dispatch_promote': {
+        if (!repair && drift?.ruleType === 'semantic') {
+          // Semantic drift (J12, #519) is a review goal by design: the MVP
+          // detects and suggests review, and no agent repairs it. The reason
+          // says so instead of reading as a missing skill.
+          result.blocked += 1;
+          await this.blockGoal(goal.id, 'HUMAN_REVIEW_REQUIRED');
+          return { goalId: goal.id, action: 'block', reason: 'HUMAN_REVIEW_REQUIRED' };
+        }
         if (!repair) {
           // Only translation drift has a wired repair path. Saying so on the
           // goal is the point: a silent skip would leave the drift assigned to a
@@ -1048,16 +1056,14 @@ export class GoalDispatchService {
 
     try {
       await this.deps.queue!.enqueue(AGENT_RUNS_QUEUE, 'execute', payload);
-    } catch (error) {
-      // A queue that accepted the run row but refused the job would otherwise
-      // leave the run `queued` with nothing to pick it up. Settle both sides.
-      const message = error instanceof Error ? error.message : String(error);
-      await runService.failRun(run.runId, `enqueue failed: ${message}`, {
-        stopReason: 'enqueue_failed',
-      });
-      await this.blockGoal(goal.id, 'ENQUEUE_FAILED');
-      result.blocked += 1;
-      return { goalId: goal.id, action: 'block', reason: 'ENQUEUE_FAILED', runId: run.runId };
+    } catch {
+      // Only block an unclaimed run; a lost broker acknowledgement may occur
+      // after a worker has started or even completed the action.
+      if (await runService.failQueuedRun(run.runId, 'enqueue_failed')) {
+        await this.blockGoal(goal.id, 'ENQUEUE_FAILED');
+        result.blocked += 1;
+        return { goalId: goal.id, action: 'block', reason: 'ENQUEUE_FAILED', runId: run.runId };
+      }
     }
 
     result.dispatched += 1;

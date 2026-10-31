@@ -1,0 +1,643 @@
+import { describe, expect, it, vi } from 'vitest';
+import { MemoryCacheProvider, type CacheProvider } from '@lumibase/runtime';
+import {
+  authorizeDecision,
+  decisionQuotaFromEnv,
+  decisionRubricVersion,
+  DecisionGovernanceError,
+  DecisionGovernanceService,
+  DEFAULT_DECISION_QUOTA,
+  disallowedStateFields,
+  effectiveDecisionQuota,
+  estimateDecisionOutputTokens,
+  FRONTEND_SESSION_DECISION_MESSAGE,
+  parseDecisionSettings,
+  PUBLISHABLE_KEY_DECISION_MESSAGE,
+  REVIEW_ROLLOUT_OFF,
+  reviewRolloutMode,
+  type DecisionQuota,
+  type DecisionSiteSettings,
+} from '../decision-governance';
+import {
+  createDecisionProvider,
+  DEFAULT_DECISION_LIMITS,
+  DecisionProviderError,
+  measureDecisionInput,
+  type ConfiguredDecisionProvider,
+  type DecisionCallOptions,
+  type DecisionRequest,
+  type DecisionResponse,
+} from '../decision-provider';
+import { capabilitiesFromPermissionBundle } from '../effective-capability-service';
+import type { PermissionBundle } from '../permission-service';
+
+const request: DecisionRequest = {
+  state: { title: 'Summer sale', body: 'Buy now!!!' },
+  questions: {
+    spam: { type: 'noul', instructions: 'Is this post spam?', criteria: { true: 'spam', false: 'legitimate' } },
+  },
+};
+
+const answer = (usage: DecisionResponse['usage']): DecisionResponse => ({
+  provider: 'typesafe',
+  model: 'jev-1.13',
+  calibrated: true,
+  answers: { spam: { type: 'noul', noul: 0.2 } },
+  usage,
+});
+
+const enabled: DecisionSiteSettings = { enabled: true, allowedStateFields: null };
+const inputTokens = measureDecisionInput(request).estimatedTokens;
+const perAttempt = inputTokens + estimateDecisionOutputTokens(request);
+
+function configured(
+  decide: (req: DecisionRequest, options?: DecisionCallOptions) => Promise<DecisionResponse>,
+  maxRetries = 2,
+): ConfiguredDecisionProvider {
+  return {
+    name: 'typesafe',
+    model: 'jev-latest',
+    limits: { ...DEFAULT_DECISION_LIMITS, maxRetries },
+    provider: { decide: vi.fn(decide) },
+  };
+}
+
+function service(
+  provider: ConfiguredDecisionProvider | null,
+  options: { cache?: CacheProvider; settings?: DecisionSiteSettings; quota?: Partial<DecisionQuota> } = {},
+) {
+  const cache = options.cache ?? new MemoryCacheProvider();
+  return {
+    cache,
+    svc: new DecisionGovernanceService({
+      configured: provider,
+      settings: options.settings ?? enabled,
+      quota: { ...DEFAULT_DECISION_QUOTA, ...options.quota },
+      cache,
+      siteId: 'site_1',
+      now: () => Date.UTC(2026, 9, 10, 8, 30),
+    }),
+  };
+}
+
+/** Atomic like INCRBY, but yields before answering so concurrent callers interleave. */
+function yieldingCounter(): CacheProvider {
+  const values = new Map<string, number>();
+  const cache = new MemoryCacheProvider();
+  cache.increment = async (key: string, by = 1) => {
+    const next = (values.get(key) ?? 0) + by;
+    values.set(key, next);
+    await new Promise((resolve) => setTimeout(resolve, Math.random() * 3));
+    return next;
+  };
+  cache.get = async <T>(key: string) => (values.get(key) ?? null) as T | null;
+  return cache;
+}
+
+const tokensKey = 'dq:site_1:tok:' + Math.floor(Date.UTC(2026, 9, 10, 8, 30) / 86_400_000);
+const requestsKey = 'dq:site_1:req:' + Math.floor(Date.UTC(2026, 9, 10, 8, 30) / 3_600_000);
+
+async function counter(cache: CacheProvider, key: string): Promise<number> {
+  return Number((await cache.get<number | string>(key)) ?? 0);
+}
+
+describe('site settings', () => {
+  it('defaults to disabled and reads malformed values as disabled', () => {
+    expect(parseDecisionSettings({})).toEqual({ enabled: false, allowedStateFields: null, review: REVIEW_ROLLOUT_OFF, flows: false, drift: false });
+    expect(parseDecisionSettings({ enabled: 'yes' }).enabled).toBe(false);
+    expect(parseDecisionSettings({ enabled: true, requestsPerHour: -1 }).enabled).toBe(false);
+    expect(parseDecisionSettings(null).enabled).toBe(false);
+  });
+
+  it('keeps the opt-in, allowlist and tighter limits', () => {
+    expect(
+      parseDecisionSettings({ enabled: true, allowedStateFields: ['title'], requestsPerHour: 10, budgetPerDay: 500 }),
+    ).toEqual({
+      enabled: true,
+      allowedStateFields: ['title'],
+      requestsPerHour: 10,
+      budgetPerDay: 500,
+      review: REVIEW_ROLLOUT_OFF,
+      // Flows decisions (J10) stay off unless set explicitly.
+      flows: false,
+      drift: false,
+    });
+  });
+
+  it('reads the draft-review pilot rollout (J09) and fails closed on a malformed one', () => {
+    const on = parseDecisionSettings({
+      enabled: true,
+      review: { enabled: true, pilotCollections: ['posts'], mode: 'assisted' },
+    });
+    expect(on.review).toEqual({ enabled: true, pilotCollections: ['posts'], mode: 'assisted' });
+    expect(reviewRolloutMode(on, 'posts')).toBe('assisted');
+    expect(reviewRolloutMode(on, 'pages')).toBe('off');
+    // Assisted sends content, so it needs the site opt-in; baseline does not.
+    expect(reviewRolloutMode({ ...on, enabled: false }, 'posts')).toBe('off');
+    expect(reviewRolloutMode({ ...on, enabled: false, review: { ...on.review!, mode: 'baseline' } }, 'posts')).toBe('baseline');
+    // Defaults: an empty review object is off, with no collections.
+    expect(parseDecisionSettings({ enabled: true, review: {} }).review).toEqual(REVIEW_ROLLOUT_OFF);
+    // A malformed review value turns the whole setting off, never open.
+    const bad = parseDecisionSettings({ enabled: true, review: { enabled: true, pilotCollections: 'posts', mode: 'assisted' } });
+    expect(bad.enabled).toBe(false);
+    expect(reviewRolloutMode(bad, 'posts')).toBe('off');
+    expect(reviewRolloutMode(parseDecisionSettings({ enabled: true, review: { enabled: true, pilotCollections: ['posts'], mode: 'auto' } }), 'posts')).toBe('off');
+    // Absent review (older stored values) reads as off.
+    expect(reviewRolloutMode({ enabled: true, allowedStateFields: null }, 'posts')).toBe('off');
+  });
+
+  it('lets a site tighten but never raise the platform ceiling', () => {
+    const quota = effectiveDecisionQuota(DEFAULT_DECISION_QUOTA, {
+      enabled: true,
+      allowedStateFields: null,
+      requestsPerHour: 10,
+      maxConcurrent: 1_000,
+    });
+    expect(quota).toEqual({ requestsPerHour: 10, maxConcurrent: 4, budgetPerDay: 2_000_000 });
+  });
+
+  it('reads platform ceilings from the environment', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(
+      decisionQuotaFromEnv({
+        DECISION_SITE_REQUESTS_PER_HOUR: '50',
+        DECISION_SITE_MAX_CONCURRENT: '0',
+        DECISION_SITE_TOKENS_PER_DAY: '9000',
+      }),
+    ).toEqual({ requestsPerHour: 50, maxConcurrent: 4, budgetPerDay: 9000 });
+  });
+
+  it('checks top-level state fields against the allowlist', () => {
+    expect(disallowedStateFields({ title: 'x' }, null)).toBeNull();
+    expect(disallowedStateFields({ title: 'x' }, ['title'])).toBeNull();
+    expect(disallowedStateFields({ title: 'x', email: 'a@b' }, ['title'])).toEqual(['email']);
+    expect(disallowedStateFields('plain text', ['title'])).toEqual([]);
+  });
+});
+
+describe('authorizeDecision', () => {
+  it.each([
+    [{ allowed: false, capabilities: ['ai:decide'], callerClass: 'standard' as const }],
+    [{ allowed: true, capabilities: [], callerClass: 'standard' as const }],
+    [{ allowed: true, capabilities: ['items:write', 'schema:read'], callerClass: 'standard' as const }],
+  ])('denies %j', (grant) => {
+    expect(() => authorizeDecision(grant)).toThrow(DecisionGovernanceError);
+  });
+
+  it.each([[['ai:decide']], [['admin']], [['*']]])('allows %j', (capabilities) => {
+    expect(() => authorizeDecision({ allowed: true, capabilities, callerClass: 'standard' })).not.toThrow();
+  });
+
+  // #562 / B144: client-held credentials are refused whatever they were granted.
+  const refused = (grant: Parameters<typeof authorizeDecision>[0]): DecisionGovernanceError => {
+    try {
+      authorizeDecision(grant);
+    } catch (error) {
+      if (error instanceof DecisionGovernanceError) return error;
+      throw error;
+    }
+    throw new Error('expected authorizeDecision to throw');
+  };
+
+  it.each([[['ai:decide']], [['admin']], [['*']]])(
+    'refuses a publishable API key holding %j',
+    (capabilities) => {
+      const error = refused({ allowed: true, capabilities, callerClass: 'publishable_api_key' });
+      expect(error.code).toBe('FORBIDDEN');
+      expect(error.message).toBe(PUBLISHABLE_KEY_DECISION_MESSAGE);
+    },
+  );
+
+  it.each([[['ai:decide']], [['admin']], [['*']]])(
+    'refuses a frontend session holding %j',
+    (capabilities) => {
+      const error = refused({ allowed: true, capabilities, callerClass: 'frontend_session' });
+      expect(error.code).toBe('FORBIDDEN');
+      expect(error.message).toBe(FRONTEND_SESSION_DECISION_MESSAGE);
+    },
+  );
+
+  it('reports the caller class before the missing capability', () => {
+    const error = refused({ allowed: true, capabilities: [], callerClass: 'publishable_api_key' });
+    expect(error.code).toBe('FORBIDDEN');
+    expect(error.message).toBe(PUBLISHABLE_KEY_DECISION_MESSAGE);
+  });
+
+  it.each([[undefined], ['other'], ['']])('fails closed for an unclassified caller %j', (callerClass) => {
+    const error = refused({ allowed: true, capabilities: ['admin'], callerClass: callerClass as never });
+    expect(error.code).toBe('FORBIDDEN');
+    expect(error.message).toBe('The caller could not be classified.');
+  });
+
+  // #564: the refusal carries a bounded reason for the aggregated audit, the
+  // metric and the dedup key. Messages and codes are unchanged.
+  it.each([
+    [{ allowed: true, capabilities: ['admin'], callerClass: 'publishable_api_key' as const }, 'publishable_api_key'],
+    [{ allowed: true, capabilities: ['admin'], callerClass: 'frontend_session' as const }, 'frontend_session'],
+    [{ allowed: true, capabilities: ['admin'], callerClass: 'other' as never }, 'unclassified_caller'],
+    [{ allowed: true, capabilities: ['items:write'], callerClass: 'standard' as const }, 'capability_missing'],
+    [
+      { allowed: false, capabilities: [], callerClass: 'standard' as const, code: 'PRINCIPAL_SITE_MISMATCH' },
+      'principal_site_mismatch',
+    ],
+    [
+      { allowed: false, capabilities: [], callerClass: 'standard' as const, code: 'PRINCIPAL_UNRESOLVED' },
+      'principal_unresolved',
+    ],
+    [{ allowed: false, capabilities: [], callerClass: 'standard' as const, code: 'API_KEY_REVOKED' }, 'api_key_revoked'],
+    [{ allowed: false, capabilities: [], callerClass: 'standard' as const, code: 'SOMETHING_NEW' }, 'principal_denied'],
+    [{ allowed: false, capabilities: ['ai:decide'], callerClass: 'standard' as const }, 'principal_denied'],
+  ])('names the refusal reason for %j', (grant, reason) => {
+    const error = refused(grant);
+    expect(error.code).toBe('FORBIDDEN');
+    expect(error.reason).toBe(reason);
+  });
+});
+
+describe('ai:decide capability mapping', () => {
+  const bundle = (collection: string, action: string): PermissionBundle => ({
+    admin: false,
+    appAccess: true,
+    tfaRequired: false,
+    roles: [],
+    policies: [],
+    byKey: {
+      [`${collection}::${action}`]: { collection, action, rule: null, fields: ['*'] } as never,
+    },
+  });
+
+  it('grants ai:decide from create on the reserved collection, and nothing else', () => {
+    expect(capabilitiesFromPermissionBundle(bundle('lumibase_ai_decisions', 'create'))).toEqual(['ai:decide']);
+  });
+
+  it('does not grant it from other actions or ordinary collections', () => {
+    expect(capabilitiesFromPermissionBundle(bundle('lumibase_ai_decisions', 'read'))).toEqual([]);
+    expect(capabilitiesFromPermissionBundle(bundle('posts', 'create'))).not.toContain('ai:decide');
+  });
+});
+
+describe('DecisionGovernanceService gates', () => {
+  it('reports DECISION_NOT_CONFIGURED without touching counters', async () => {
+    const { svc, cache } = service(null);
+    const result = await svc.decide(request);
+    expect(result.ok).toBe(false);
+    expect(!result.ok && (result.error as DecisionGovernanceError).code).toBe('DECISION_NOT_CONFIGURED');
+    expect(await counter(cache, requestsKey)).toBe(0);
+  });
+
+  it.each([
+    ['disabled site', { enabled: false, allowedStateFields: null }, 'DECISION_DISABLED'],
+    ['field outside the allowlist', { enabled: true, allowedStateFields: ['title'] }, 'DECISION_FIELD_NOT_ALLOWED'],
+  ] satisfies Array<[string, DecisionSiteSettings, string]>)('rejects a %s before reserving or calling the provider', async (_label, settings, code) => {
+    const provider = configured(async () => answer({ inputTokens: 1, outputTokens: 1 }));
+    const { svc, cache } = service(provider, { settings });
+    const result = await svc.decide(request);
+    expect(!result.ok && (result.error as DecisionGovernanceError).code).toBe(code);
+    expect(provider.provider.decide).not.toHaveBeenCalled();
+    expect(await counter(cache, requestsKey)).toBe(0);
+  });
+
+  it('rejects input over the budget before reserving', async () => {
+    const provider = configured(async () => answer({ inputTokens: 1, outputTokens: 1 }));
+    provider.limits = { ...provider.limits, maxInputTokens: 5 };
+    const { svc, cache } = service(provider);
+    const result = await svc.decide(request);
+    expect(!result.ok && (result.error as DecisionProviderError).code).toBe('DECISION_INPUT_TOO_LARGE');
+    expect(provider.provider.decide).not.toHaveBeenCalled();
+    expect(await counter(cache, tokensKey)).toBe(0);
+  });
+
+  it('rejects when the worst-case reservation exceeds the daily budget', async () => {
+    const provider = configured(async () => answer({ inputTokens: 1, outputTokens: 1 }), 2);
+    const { svc, cache } = service(provider, { quota: { budgetPerDay: perAttempt * 3 - 1 } });
+    const result = await svc.decide(request);
+    expect(!result.ok && (result.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_EXCEEDED');
+    // Unsatisfiable at any time, so no Retry-After hint.
+    expect(!result.ok && (result.error as DecisionGovernanceError).retryAfterSeconds).toBeUndefined();
+    expect(provider.provider.decide).not.toHaveBeenCalled();
+    expect(await counter(cache, tokensKey)).toBe(0);
+    expect(await counter(cache, requestsKey)).toBe(0);
+  });
+});
+
+describe('DecisionGovernanceService accounting', () => {
+  it('charges reported usage and refunds the rest of the reservation', async () => {
+    const provider = configured(async (_req, options) => {
+      options?.onAttempt?.();
+      return answer({ inputTokens: 40, outputTokens: 3 });
+    });
+    const { svc, cache } = service(provider);
+    const result = await svc.decide(request);
+    expect(result.ok).toBe(true);
+    expect(result.accounting).toMatchObject({ attempts: 1, reservedTokens: perAttempt * 3, chargedTokens: 43 });
+    expect(await counter(cache, tokensKey)).toBe(43);
+    expect(await counter(cache, requestsKey)).toBe(1);
+  });
+
+  it('charges unknown usage at the estimate, never as free', async () => {
+    const provider = configured(async (_req, options) => {
+      options?.onAttempt?.();
+      return answer({ inputTokens: null, outputTokens: 3 });
+    });
+    const { svc, cache } = service(provider);
+    const result = await svc.decide(request);
+    expect(result.accounting.chargedTokens).toBe(inputTokens + 3);
+    expect(await counter(cache, tokensKey)).toBe(inputTokens + 3);
+  });
+
+  it('charges every retried attempt before a success', async () => {
+    const provider = configured(async (_req, options) => {
+      options?.onAttempt?.();
+      options?.onAttempt?.();
+      return answer({ inputTokens: 40, outputTokens: 3 });
+    });
+    const { svc } = service(provider);
+    const result = await svc.decide(request);
+    expect(result.accounting).toMatchObject({ attempts: 2, chargedTokens: perAttempt + 43 });
+  });
+
+  it('charges timed-out attempts and keeps the request counted', async () => {
+    const provider = configured(async (_req, options) => {
+      options?.onAttempt?.();
+      options?.onAttempt?.();
+      options?.onAttempt?.();
+      throw new DecisionProviderError('DECISION_TIMEOUT', 'timed out');
+    });
+    const { svc, cache } = service(provider);
+    const result = await svc.decide(request);
+    expect(result.ok).toBe(false);
+    expect(result.accounting.chargedTokens).toBe(perAttempt * 3);
+    expect(await counter(cache, tokensKey)).toBe(perAttempt * 3);
+    expect(await counter(cache, requestsKey)).toBe(1);
+  });
+
+  it('releases everything when the provider failed before sending anything', async () => {
+    const provider = configured(async () => {
+      throw new DecisionProviderError('DECISION_CANCELLED', 'cancelled');
+    });
+    const { svc, cache } = service(provider);
+    const result = await svc.decide(request);
+    expect(result.accounting.chargedTokens).toBe(0);
+    expect(await counter(cache, tokensKey)).toBe(0);
+    expect(await counter(cache, requestsKey)).toBe(0);
+  });
+
+  it('fails closed when the counter backend is down', async () => {
+    const provider = configured(async () => answer({ inputTokens: 1, outputTokens: 1 }));
+    const cache = new MemoryCacheProvider();
+    cache.increment = async () => {
+      throw new Error('down');
+    };
+    const { svc } = service(provider, { cache });
+    const result = await svc.decide(request);
+    expect(!result.ok && (result.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_UNAVAILABLE');
+    expect(provider.provider.decide).not.toHaveBeenCalled();
+  });
+});
+
+describe('DecisionGovernanceService concurrency', () => {
+  it('admits at most maxConcurrent in-flight decisions and frees slots after', async () => {
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const provider = configured(async (_req, options) => {
+      options?.onAttempt?.();
+      await gate;
+      return answer({ inputTokens: 1, outputTokens: 1 });
+    });
+    const { svc } = service(provider, { quota: { maxConcurrent: 2 } });
+
+    const pending = Array.from({ length: 6 }, () => svc.decide(request));
+    await vi.waitFor(() => expect(provider.provider.decide).toHaveBeenCalledTimes(2));
+    finish();
+    const results = await Promise.all(pending);
+
+    expect(results.filter((r) => r.ok)).toHaveLength(2);
+    const limited = results.filter((r) => !r.ok && (r.error as DecisionGovernanceError).code === 'DECISION_CONCURRENCY_LIMITED');
+    expect(limited).toHaveLength(4);
+    expect((await svc.decide(request)).ok).toBe(true);
+  });
+
+  it('does not overshoot the request quota or the budget under interleaved increments', async () => {
+    const provider = configured(async (_req, options) => {
+      options?.onAttempt?.();
+      return answer({ inputTokens: null, outputTokens: null });
+    }, 0);
+    const cache = yieldingCounter();
+    const { svc } = service(provider, {
+      cache,
+      quota: { requestsPerHour: 1_000, maxConcurrent: 1_000, budgetPerDay: perAttempt * 7 },
+    });
+
+    const results = await Promise.all(Array.from({ length: 25 }, () => svc.decide(request)));
+
+    expect(results.filter((r) => r.ok).length).toBeLessThanOrEqual(7);
+    expect(results.filter((r) => r.ok).length).toBeGreaterThan(0);
+    expect(await counter(cache, tokensKey)).toBeLessThanOrEqual(perAttempt * 7);
+    expect(provider.provider.decide).toHaveBeenCalledTimes(results.filter((r) => r.ok).length);
+  });
+});
+
+describe('audit helpers', () => {
+  it('fingerprints the rubric without exposing it', async () => {
+    const version = await decisionRubricVersion(request);
+    expect(version).toMatch(/^sha256:[0-9a-f]{16}$/);
+    expect(await decisionRubricVersion({ ...request, state: 'different state' })).toBe(version);
+    expect(
+      await decisionRubricVersion({
+        ...request,
+        questions: { spam: { ...request.questions.spam!, instructions: 'Changed?' } as never },
+      }),
+    ).not.toBe(version);
+  });
+});
+
+describe('output allowance (#510 J03 on #511)', () => {
+  it('reserves the provider allowance instead of the governance estimate', async () => {
+    // Holds the reservation open until the counter has been read.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const provider = configured(async (_req, options) => {
+      options?.onAttempt?.();
+      await gate;
+      return answer({ inputTokens: null, outputTokens: null });
+    });
+    provider.outputAllowance = () => 5_000;
+    const { svc, cache } = service(provider);
+    const pending = svc.decide(request);
+    await vi.waitFor(() => expect(provider.provider.decide).toHaveBeenCalledTimes(1));
+    expect(await counter(cache, tokensKey)).toBe((inputTokens + 5_000) * 3);
+    release();
+    const result = await pending;
+    expect(result.accounting.reservedTokens).toBe((inputTokens + 5_000) * 3);
+    // Unknown usage is charged at the allowance, never as free.
+    expect(result.accounting.chargedTokens).toBe(inputTokens + 5_000);
+  });
+
+  it('returns the output 413 before reserving or calling the provider', async () => {
+    const provider = configured(async () => answer({ inputTokens: 1, outputTokens: 1 }));
+    provider.outputAllowance = () => {
+      throw new DecisionProviderError('DECISION_INPUT_TOO_LARGE', 'answer too large');
+    };
+    const { svc, cache } = service(provider);
+    const result = await svc.decide(request);
+    expect(!result.ok && (result.error as DecisionProviderError).code).toBe('DECISION_INPUT_TOO_LARGE');
+    expect(provider.provider.decide).not.toHaveBeenCalled();
+    expect(await counter(cache, requestsKey)).toBe(0);
+    expect(await counter(cache, tokensKey)).toBe(0);
+  });
+});
+
+describe('reservation attempt multiplier (llm sends one request)', () => {
+  // The real factory output, with only the upstream call stubbed, so the
+  // multiplier and allowance are the ones production wires.
+  const fromEnv = (env: Record<string, string>, decide: ConfiguredDecisionProvider['provider']['decide']) => {
+    const real = createDecisionProvider(env)!;
+    return { ...real, provider: { decide: vi.fn(decide) } };
+  };
+  const llmEnv = { DECISION_PROVIDER: 'llm', LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'k' };
+  const jevEnv = { DECISION_PROVIDER: 'typesafe', TYPESAFE_API_KEY: 'k' };
+  const once = async (_req: DecisionRequest, options?: DecisionCallOptions) => {
+    options?.onAttempt?.();
+    return answer({ inputTokens: 40, outputTokens: 3 });
+  };
+
+  it('the factory declares one attempt for llm and leaves Jev/OpenRouter on the retry default', () => {
+    expect(createDecisionProvider(llmEnv)!.maxAttempts).toBe(1);
+    expect(createDecisionProvider(jevEnv)!.maxAttempts).toBeUndefined();
+    expect(createDecisionProvider({ DECISION_PROVIDER: 'openrouter', OPENROUTER_API_KEY: 'k' })!.maxAttempts)
+      .toBeUndefined();
+  });
+
+  it('llm reserves for exactly one attempt; Jev still reserves for every retry', async () => {
+    const llm = fromEnv(llmEnv, once);
+    const llmPerAttempt = inputTokens + llm.outputAllowance!(request);
+    const llmResult = await service(llm).svc.decide(request);
+    expect(llmResult.accounting.reservedTokens).toBe(llmPerAttempt);
+
+    const jev = fromEnv(jevEnv, once);
+    const jevResult = await service(jev).svc.decide(request);
+    // Unchanged formula: (input + estimate) × (maxRetries + 1).
+    expect(jevResult.accounting.reservedTokens).toBe(perAttempt * (DEFAULT_DECISION_LIMITS.maxRetries + 1));
+  });
+
+  it('admits llm on a budget that only fits one attempt, where Jev is refused', async () => {
+    const llm = fromEnv(llmEnv, once);
+    const llmPerAttempt = inputTokens + llm.outputAllowance!(request);
+    const quota = { budgetPerDay: llmPerAttempt };
+    expect((await service(llm, { quota }).svc.decide(request)).ok).toBe(true);
+
+    const jev = fromEnv(jevEnv, once);
+    const refused = await service(jev, { quota: { budgetPerDay: perAttempt * 2 } }).svc.decide(request);
+    expect(!refused.ok && (refused.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_EXCEEDED');
+  });
+
+  it('llm settle and refund still balance the counters', async () => {
+    const ok = service(fromEnv(llmEnv, once));
+    const okResult = await ok.svc.decide(request);
+    expect(okResult.accounting.chargedTokens).toBe(43);
+    expect(await counter(ok.cache, tokensKey)).toBe(43);
+    expect(await counter(ok.cache, requestsKey)).toBe(1);
+
+    const llm = fromEnv(llmEnv, async (_req, options) => {
+      options?.onAttempt?.();
+      throw new DecisionProviderError('DECISION_TIMEOUT', 'timed out');
+    });
+    const llmPerAttempt = inputTokens + llm.outputAllowance!(request);
+    const failed = service(llm);
+    const failedResult = await failed.svc.decide(request);
+    // A sent-then-failed attempt is charged at the reservation, never more.
+    expect(failedResult.accounting).toMatchObject({ attempts: 1, reservedTokens: llmPerAttempt, chargedTokens: llmPerAttempt });
+    expect(await counter(failed.cache, tokensKey)).toBe(llmPerAttempt);
+
+    const cancelled = service(fromEnv(llmEnv, async () => {
+      throw new DecisionProviderError('DECISION_CANCELLED', 'cancelled');
+    }));
+    await cancelled.svc.decide(request);
+    expect(await counter(cancelled.cache, tokensKey)).toBe(0);
+    expect(await counter(cancelled.cache, requestsKey)).toBe(0);
+  });
+});
+
+describe('non-finite quota counters fail closed (#511)', () => {
+  it.each([
+    ['undefined', undefined],
+    ['NaN', Number.NaN],
+    ['the string "7"', '7'],
+    ['Infinity', Number.POSITIVE_INFINITY],
+  ])(
+    'refuses when the counter resolves %s',
+    async (_label, bad) => {
+      const provider = configured(async () => answer({ inputTokens: 1, outputTokens: 1 }));
+      const cache = new MemoryCacheProvider();
+      cache.increment = async () => bad as unknown as number;
+      const { svc } = service(provider, { cache });
+      const result = await svc.decide(request);
+      expect(!result.ok && (result.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_UNAVAILABLE');
+      expect(provider.provider.decide).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rolls back the keys already taken, not the garbage one', async () => {
+    const provider = configured(async () => answer({ inputTokens: 1, outputTokens: 1 }));
+    const cache = new MemoryCacheProvider();
+    const increment = cache.increment.bind(cache);
+    cache.increment = async (key, by, options) =>
+      key.includes(':run:') ? Number.NaN : increment(key, by, options);
+    const { svc } = service(provider, { cache });
+    const result = await svc.decide(request);
+    expect(!result.ok && (result.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_UNAVAILABLE');
+    expect(await counter(cache, requestsKey)).toBe(0);
+    expect(await counter(cache, tokensKey)).toBe(0);
+    expect(provider.provider.decide).not.toHaveBeenCalled();
+  });
+});
+
+describe('two-site isolation (#511, DoD §2b)', () => {
+  it("exhausting site A's hourly quota leaves site B admitted, on one shared counter backend", async () => {
+    const cache = new MemoryCacheProvider();
+    const increment = cache.increment.bind(cache);
+    const keys: string[] = [];
+    cache.increment = async (key, by, options) => {
+      keys.push(key);
+      return increment(key, by, options);
+    };
+    const at = () => Date.UTC(2026, 9, 10, 8, 30);
+    const make = (siteId: string) => {
+      const provider = configured(async (_req, options) => {
+        options?.onAttempt?.();
+        return answer({ inputTokens: 1, outputTokens: 1 });
+      });
+      return {
+        provider,
+        svc: new DecisionGovernanceService({
+          configured: provider,
+          settings: enabled,
+          quota: { ...DEFAULT_DECISION_QUOTA, requestsPerHour: 1 },
+          cache,
+          siteId,
+          now: at,
+        }),
+      };
+    };
+    const a = make('site_1');
+    const b = make('site_2');
+
+    expect((await a.svc.decide(request)).ok).toBe(true);
+    const denied = await a.svc.decide(request);
+    expect(!denied.ok && (denied.error as DecisionGovernanceError).code).toBe('DECISION_QUOTA_EXCEEDED');
+    expect(a.provider.provider.decide).toHaveBeenCalledTimes(1);
+
+    expect((await b.svc.decide(request)).ok).toBe(true);
+    expect(b.provider.provider.decide).toHaveBeenCalledTimes(1);
+
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys.every((key) => key.startsWith('dq:site_1:') || key.startsWith('dq:site_2:'))).toBe(true);
+    expect(keys.some((key) => key.startsWith('dq:site_2:'))).toBe(true);
+    expect(await counter(cache, requestsKey)).toBe(1);
+    expect(await counter(cache, requestsKey.replace('site_1', 'site_2'))).toBe(1);
+  });
+});

@@ -24,6 +24,7 @@ import { CommandPalette } from '@/components/command-palette';
 import { SearchPalette } from '@/components/search-palette';
 import { clearActiveToken, getApiClient, hasActiveToken, logout } from '@/lib/api';
 import { VersionInfoFooter } from '@/components/version-info-footer';
+import { SiteLanguageSync } from '@/components/site-language';
 import { getAdminBase } from '@/lib/admin-base';
 import { useInboxData } from '@/modules/mission-control/use-inbox';
 import { useGlobalShortcuts } from '@/lib/keybindings/use-keybindings';
@@ -185,6 +186,7 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="flex h-screen w-screen">
+      <SiteLanguageSync />
       {/* Skip-to-content link — visible on focus, hidden otherwise */}
       <a
         href="#main-content"

@@ -38,13 +38,105 @@ export interface LLMToolCall {
   arguments: Record<string, unknown>;
 }
 
+/**
+ * Token counts reported by the upstream. Each field is `null` when that count
+ * was not reported; the whole object is absent when neither was.
+ */
+export interface LLMUsage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+}
+
 export interface LLMResponse {
   content: string | null;
   toolCalls: LLMToolCall[];
+  /** Omitted (not zero) when the provider response carries no usage. */
+  usage?: LLMUsage;
+}
+
+export interface LLMChatOptions {
+  /** Override the Copilot instructions for a specialized caller. */
+  systemPrompt?: string;
+  /** Defaults to true for Copilot callers. */
+  tools?: boolean;
+  /** Aborts the upstream HTTP request (deadline or caller cancellation). */
+  signal?: AbortSignal;
+  /**
+   * Output token cap sent upstream. Absent → the Copilot default (1024) for
+   * OpenAI/NVIDIA/Anthropic/Gemini/Vertex, and no cap at all for Workers AI.
+   */
+  maxOutputTokens?: number;
+}
+
+/** Output cap of Copilot calls; decision mode passes its own per-request cap. */
+const DEFAULT_CHAT_MAX_OUTPUT_TOKENS = 1024;
+
+// ---------------------------------------------------------------------------
+// Errors — classified where they happen, so callers never guess from JS types
+// ---------------------------------------------------------------------------
+
+/** The upstream answered with a non-2xx status. */
+export class LLMHttpError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+    this.name = 'LLMHttpError';
+  }
+}
+
+/** `fetch()` rejected without the caller aborting (DNS, TLS, connection reset…). */
+export class LLMNetworkError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LLMNetworkError';
+  }
+}
+
+/** The upstream answered 2xx but the body is unusable (not JSON, or wrong envelope). */
+export class LLMResponseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LLMResponseError';
+  }
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Wraps only the transport: an abort keeps its original error path. */
+async function sendLLMRequest(url: string, init: RequestInit, signal?: AbortSignal): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new LLMNetworkError(messageOf(error));
+  }
+}
+
+/** Reads and maps a 2xx body; any failure in between is an unusable response. */
+async function readLLMBody<T, R>(res: Response, map: (data: T) => R): Promise<R> {
+  try {
+    return map((await res.json()) as T);
+  } catch (error) {
+    throw new LLMResponseError(messageOf(error));
+  }
+}
+
+function readCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/**
+ * Reads each count independently so a partially reported usage keeps the
+ * known field; returns undefined only when neither count is usable.
+ */
+function readUsage(input: unknown, output: unknown): LLMUsage | undefined {
+  const usage = { inputTokens: readCount(input), outputTokens: readCount(output) };
+  return usage.inputTokens === null && usage.outputTokens === null ? undefined : usage;
 }
 
 export interface LLMProvider {
-  chat(messages: LLMMessage[]): Promise<LLMResponse>;
+  chat(messages: LLMMessage[], options?: LLMChatOptions): Promise<LLMResponse>;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +226,7 @@ interface GeminiGenerateContentResponse {
       }>;
     };
   }>;
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
 }
 
 /**
@@ -141,7 +234,10 @@ interface GeminiGenerateContentResponse {
  * and Vertex AI: system instruction, mapped turns, and CORE_SKILLS exposed as
  * function declarations with automatic function-calling.
  */
-function buildGeminiRequestBody(messages: LLMMessage[]): Record<string, unknown> {
+function buildGeminiRequestBody(
+  messages: LLMMessage[],
+  options: LLMChatOptions = {},
+): Record<string, unknown> {
   const contents = messages.map((message) => ({
     role: message.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: message.content }],
@@ -149,21 +245,17 @@ function buildGeminiRequestBody(messages: LLMMessage[]): Record<string, unknown>
 
   return {
     systemInstruction: {
-      parts: [{ text: SYSTEM_PROMPT }],
+      parts: [{ text: options.systemPrompt ?? SYSTEM_PROMPT }],
     },
     contents,
-    tools: [
-      {
-        functionDeclarations: skillsToGeminiFunctionDeclarations(),
-      },
-    ],
-    toolConfig: {
-      functionCallingConfig: {
-        mode: 'AUTO',
-      },
-    },
+    ...(options.tools === false
+      ? {}
+      : {
+          tools: [{ functionDeclarations: skillsToGeminiFunctionDeclarations() }],
+          toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+        }),
     generationConfig: {
-      maxOutputTokens: 1024,
+      maxOutputTokens: options.maxOutputTokens ?? DEFAULT_CHAT_MAX_OUTPUT_TOKENS,
     },
   };
 }
@@ -186,7 +278,19 @@ function parseGeminiResponse(data: GeminiGenerateContentResponse): LLMResponse {
       arguments: call.args ?? {},
     }));
 
-  return { content, toolCalls };
+  // Thinking tokens are billed as output but reported apart from the
+  // candidates. A malformed thinking count makes output unknown: never an
+  // undercount, which would refund billed tokens to the decision quota.
+  const meta = data.usageMetadata;
+  const thoughts = meta?.thoughtsTokenCount;
+  const out = meta?.candidatesTokenCount;
+  const output = thoughts === undefined
+    ? out
+    : typeof out === 'number' && Number.isFinite(out) && typeof thoughts === 'number' && Number.isFinite(thoughts)
+      ? out + thoughts
+      : undefined;
+  const usage = readUsage(meta?.promptTokenCount, output);
+  return { content, toolCalls, ...(usage ? { usage } : {}) };
 }
 
 // ---------------------------------------------------------------------------
@@ -213,30 +317,31 @@ export class OpenAIProvider implements LLMProvider {
     this.label = label;
   }
 
-  async chat(messages: LLMMessage[]): Promise<LLMResponse> {
+  async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
     const body = {
       model: this.model,
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
-      tools: skillsToOpenAITools(),
-      tool_choice: 'auto',
-      max_tokens: 1024,
+      messages: [{ role: 'system', content: options.systemPrompt ?? SYSTEM_PROMPT }, ...messages],
+      ...(options.tools === false ? {} : { tools: skillsToOpenAITools(), tool_choice: 'auto' }),
+      max_tokens: options.maxOutputTokens ?? DEFAULT_CHAT_MAX_OUTPUT_TOKENS,
     };
 
-    const res = await fetch(`${this.baseUrl}/chat/completions`, {
+    const res = await sendLLMRequest(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(body),
-    });
+      signal: options.signal,
+    }, options.signal);
 
     if (!res.ok) {
       const err = await res.text().catch(() => 'Unknown error');
-      throw new Error(`${this.label} API error ${res.status}: ${err}`);
+      throw new LLMHttpError(res.status, `${this.label} API error ${res.status}: ${err}`);
     }
 
-    const data = (await res.json()) as {
+    type OpenAIChatBody = {
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
       choices: Array<{
         message: {
           content?: string | null;
@@ -247,17 +352,21 @@ export class OpenAIProvider implements LLMProvider {
       }>;
     };
 
-    const choice = data.choices[0]?.message;
-    const toolCalls: LLMToolCall[] =
-      choice?.tool_calls?.map((tc) => ({
-        name: tc.function.name,
-        arguments: JSON.parse(tc.function.arguments) as Record<string, unknown>,
-      })) ?? [];
+    return readLLMBody(res, (data: OpenAIChatBody): LLMResponse => {
+      const choice = data.choices[0]?.message;
+      const toolCalls: LLMToolCall[] =
+        choice?.tool_calls?.map((tc) => ({
+          name: tc.function.name,
+          arguments: JSON.parse(tc.function.arguments) as Record<string, unknown>,
+        })) ?? [];
 
-    return {
-      content: choice?.content ?? null,
-      toolCalls,
-    };
+      const usage = readUsage(data.usage?.prompt_tokens, data.usage?.completion_tokens);
+      return {
+        content: choice?.content ?? null,
+        toolCalls,
+        ...(usage ? { usage } : {}),
+      };
+    });
   }
 }
 
@@ -300,7 +409,7 @@ export class AnthropicProvider implements LLMProvider {
     this.model = model;
   }
 
-  async chat(messages: LLMMessage[]): Promise<LLMResponse> {
+  async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
     // Anthropic separates system from messages
     const userMessages = messages.map((m) => ({
       role: m.role === 'system' ? ('user' as const) : m.role,
@@ -309,13 +418,13 @@ export class AnthropicProvider implements LLMProvider {
 
     const body = {
       model: this.model,
-      system: SYSTEM_PROMPT,
+      system: options.systemPrompt ?? SYSTEM_PROMPT,
       messages: userMessages,
-      tools: skillsToAnthropicTools(),
-      max_tokens: 1024,
+      ...(options.tools === false ? {} : { tools: skillsToAnthropicTools() }),
+      max_tokens: options.maxOutputTokens ?? DEFAULT_CHAT_MAX_OUTPUT_TOKENS,
     };
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await sendLLMRequest('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -323,32 +432,37 @@ export class AnthropicProvider implements LLMProvider {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(body),
-    });
+      signal: options.signal,
+    }, options.signal);
 
     if (!res.ok) {
       const err = await res.text().catch(() => 'Unknown error');
-      throw new Error(`Anthropic API error ${res.status}: ${err}`);
+      throw new LLMHttpError(res.status, `Anthropic API error ${res.status}: ${err}`);
     }
 
-    const data = (await res.json()) as {
+    type AnthropicMessageBody = {
+      usage?: { input_tokens?: number; output_tokens?: number };
       content: Array<
         | { type: 'text'; text: string }
         | { type: 'tool_use'; name: string; input: Record<string, unknown> }
       >;
     };
 
-    let content: string | null = null;
-    const toolCalls: LLMToolCall[] = [];
+    return readLLMBody(res, (data: AnthropicMessageBody): LLMResponse => {
+      let content: string | null = null;
+      const toolCalls: LLMToolCall[] = [];
 
-    for (const block of data.content) {
-      if (block.type === 'text') {
-        content = block.text;
-      } else if (block.type === 'tool_use') {
-        toolCalls.push({ name: block.name, arguments: block.input });
+      for (const block of data.content) {
+        if (block.type === 'text') {
+          content = block.text;
+        } else if (block.type === 'tool_use') {
+          toolCalls.push({ name: block.name, arguments: block.input });
+        }
       }
-    }
 
-    return { content, toolCalls };
+      const usage = readUsage(data.usage?.input_tokens, data.usage?.output_tokens);
+      return { content, toolCalls, ...(usage ? { usage } : {}) };
+    });
   }
 }
 
@@ -365,10 +479,10 @@ export class GeminiProvider implements LLMProvider {
     this.model = normalizeGeminiModel(model);
   }
 
-  async chat(messages: LLMMessage[]): Promise<LLMResponse> {
-    const body = buildGeminiRequestBody(messages);
+  async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
+    const body = buildGeminiRequestBody(messages, options);
 
-    const res = await fetch(
+    const res = await sendLLMRequest(
       `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
       {
         method: 'POST',
@@ -377,16 +491,17 @@ export class GeminiProvider implements LLMProvider {
           'x-goog-api-key': this.apiKey,
         },
         body: JSON.stringify(body),
+        signal: options.signal,
       },
+      options.signal,
     );
 
     if (!res.ok) {
       const err = await res.text().catch(() => 'Unknown error');
-      throw new Error(`Gemini API error ${res.status}: ${err}`);
+      throw new LLMHttpError(res.status, `Gemini API error ${res.status}: ${err}`);
     }
 
-    const data = (await res.json()) as GeminiGenerateContentResponse;
-    return parseGeminiResponse(data);
+    return readLLMBody(res, parseGeminiResponse);
   }
 }
 
@@ -415,42 +530,37 @@ export class VertexProvider implements LLMProvider {
   private readonly location: string;
   private readonly model: string;
 
-  constructor(opts: {
-    accessToken: string;
-    projectId: string;
-    location?: string;
-    model?: string;
-  }) {
+  constructor(opts: { accessToken: string; projectId: string; location?: string; model?: string }) {
     this.accessToken = opts.accessToken;
     this.projectId = opts.projectId;
     this.location = opts.location || 'us-central1';
     this.model = normalizeGeminiModel(opts.model ?? 'gemini-3.5-flash');
   }
 
-  async chat(messages: LLMMessage[]): Promise<LLMResponse> {
-    const body = buildGeminiRequestBody(messages);
+  async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
+    const body = buildGeminiRequestBody(messages, options);
 
     const url =
       `https://${this.location}-aiplatform.googleapis.com/v1/projects/` +
       `${this.projectId}/locations/${this.location}/publishers/google/models/` +
       `${this.model}:generateContent`;
 
-    const res = await fetch(url, {
+    const res = await sendLLMRequest(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.accessToken}`,
       },
       body: JSON.stringify(body),
-    });
+      signal: options.signal,
+    }, options.signal);
 
     if (!res.ok) {
       const err = await res.text().catch(() => 'Unknown error');
-      throw new Error(`Vertex AI API error ${res.status}: ${err}`);
+      throw new LLMHttpError(res.status, `Vertex AI API error ${res.status}: ${err}`);
     }
 
-    const data = (await res.json()) as GeminiGenerateContentResponse;
-    return parseGeminiResponse(data);
+    return readLLMBody(res, parseGeminiResponse);
   }
 }
 
@@ -464,20 +574,21 @@ export class WorkersAIProvider implements LLMProvider {
   private readonly model: string;
   private readonly gatewayUrl?: string;
 
-  constructor(opts: {
-    accountId: string;
-    apiToken: string;
-    model?: string;
-    gatewayUrl?: string;
-  }) {
+  constructor(opts: { accountId: string; apiToken: string; model?: string; gatewayUrl?: string }) {
     this.accountId = opts.accountId;
     this.apiToken = opts.apiToken;
     this.model = opts.model ?? '@cf/meta/llama-3.1-8b-instruct';
     this.gatewayUrl = opts.gatewayUrl;
   }
 
-  async chat(messages: LLMMessage[]): Promise<LLMResponse> {
-    const allMessages = [{ role: 'system' as const, content: SYSTEM_PROMPT }, ...messages];
+  async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
+    const allMessages = [
+      {
+        role: 'system' as const,
+        content: options.systemPrompt ?? SYSTEM_PROMPT,
+      },
+      ...messages,
+    ];
 
     // Workers AI tool calling: pass tools in the request body
     const tools = skillsToOpenAITools(); // Workers AI uses OpenAI-compatible format
@@ -486,23 +597,30 @@ export class WorkersAIProvider implements LLMProvider {
       this.gatewayUrl ??
       `https://api.cloudflare.com/client/v4/accounts/${this.accountId}/ai/run/${this.model}`;
 
-    const res = await fetch(url, {
+    const res = await sendLLMRequest(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.apiToken}`,
       },
-      body: JSON.stringify({ messages: allMessages, tools }),
-    });
+      body: JSON.stringify({
+        messages: allMessages,
+        ...(options.tools === false ? {} : { tools }),
+        // Copilot calls keep the model default; only an explicit cap is sent.
+        ...(options.maxOutputTokens === undefined ? {} : { max_tokens: options.maxOutputTokens }),
+      }),
+      signal: options.signal,
+    }, options.signal);
 
     if (!res.ok) {
       const err = await res.text().catch(() => 'Unknown error');
-      throw new Error(`Workers AI error ${res.status}: ${err}`);
+      throw new LLMHttpError(res.status, `Workers AI error ${res.status}: ${err}`);
     }
 
-    const data = (await res.json()) as {
+    type WorkersAIBody = {
       result?: {
         response?: string;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
         tool_calls?: Array<{
           name: string;
           arguments: Record<string, unknown> | string;
@@ -510,19 +628,24 @@ export class WorkersAIProvider implements LLMProvider {
       };
     };
 
-    const toolCalls: LLMToolCall[] =
-      data.result?.tool_calls?.map((tc) => ({
-        name: tc.name,
-        arguments:
-          typeof tc.arguments === 'string'
-            ? (JSON.parse(tc.arguments) as Record<string, unknown>)
-            : tc.arguments,
-      })) ?? [];
+    return readLLMBody(res, (data: WorkersAIBody): LLMResponse => {
+      const toolCalls: LLMToolCall[] =
+        data.result?.tool_calls?.map((tc) => ({
+          name: tc.name,
+          arguments:
+            typeof tc.arguments === 'string'
+              ? (JSON.parse(tc.arguments) as Record<string, unknown>)
+              : tc.arguments,
+        })) ?? [];
 
-    return {
-      content: data.result?.response ?? null,
-      toolCalls,
-    };
+      // Not every Workers AI model reports usage; when absent it stays unknown.
+      const usage = readUsage(data.result?.usage?.prompt_tokens, data.result?.usage?.completion_tokens);
+      return {
+        content: data.result?.response ?? null,
+        toolCalls,
+        ...(usage ? { usage } : {}),
+      };
+    });
   }
 }
 

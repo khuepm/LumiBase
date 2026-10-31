@@ -21,8 +21,10 @@
     "deploy:staging": "node ../../scripts/with-build-metadata.mjs wrangler deploy --env staging",
     "deploy:demo": "node ../../scripts/with-build-metadata.mjs wrangler deploy --env demo",
     "deploy:production": "node ../../scripts/check-release-env.mjs --env production --config apps/cms/wrangler.toml && node ../../scripts/with-build-metadata.mjs wrangler deploy --env production",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.eval.json",
     "typegen": "tsx scripts/typegen.ts",
+    "bench:jev": "tsx scripts/jev-benchmark.ts",
+    "pilot:report": "tsx scripts/jev-pilot-report.ts",
     "lint": "echo \"(lint not configured)\" && exit 0",
     "test": "vitest --run",
     "k6:login-brute": "k6 run k6/login-brute-force.js",
@@ -44,12 +46,12 @@
     "maxmind": "5.0.7",
     "nanoid": "^6.0.1",
     "node-cron": "^4.6.0",
-    "nodemailer": "10.0.14",
+    "nodemailer": "10.1.7",
     "postgres": "^3.4.9",
     "prom-client": "^15.1.0",
     "uuid": "^14.0.1",
     "ws": "^8.22.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261005.1",
