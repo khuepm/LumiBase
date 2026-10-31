@@ -6,13 +6,10 @@ translatedFrom: en
 sourceHash: ea64d1bb9cfe0d79
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-13T19:47:38.305Z
+codeVerified: 2026-10-17T15:52:19.373Z
 codeVerifiedHash: ea64d1bb9cfe0d79
 codeVerifiedClaims: 4
 ---
-
-<!-- check-parity: allow code-fences -->
-<!-- Comment cuối dòng trong fence bash ("mong đợi 200", "dán token khi được hỏi") được dịch có chủ ý; check-parity chỉ bỏ qua comment nguyên dòng nên báo nhầm. Gỡ waiver khi B111 được sửa. -->
 
 # Thiết lập deploy Cloudflare Pages qua CI
 

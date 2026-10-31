@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-09-07T03:34:14.317Z
+version: 3
+lastUpdated: 2026-10-13T22:13:10.671Z
 sourceLang: en
-contentHash: 1767648d90471727
-codeVerified: 2026-09-07T03:34:14.317Z
-codeVerifiedHash: 1767648d90471727
+contentHash: 169f7e93758006ec
+codeVerified: 2026-10-13T22:13:10.671Z
+codeVerifiedHash: 169f7e93758006ec
 codeVerifiedClaims: 10
 ---
 
@@ -73,7 +73,7 @@ setup gate shows **"Couldn't reach the server."**
 
 | Target | Package | Output | Deploy command |
 | --- | --- | --- | --- |
-| CMS API Worker | `@lumibase/cms` | Worker bundle | `pnpm --filter @lumibase/cms deploy` |
+| CMS API Worker | `@lumibase/cms` | Worker bundle | `pnpm --filter @lumibase/cms run deploy` |
 | Documentation site | `@lumibase/docs` | `apps/docs/dist` | `pnpm docs:deploy` |
 | Landing site | `@lumibase/landing` | `apps/landing/out` | `pnpm landing:deploy` |
 | Marketplace site | `@lumibase/marketplace` | `apps/marketplace/out` | `pnpm marketplace:deploy` |
@@ -106,7 +106,7 @@ Secrets such as `JWT_SECRET`, Cloudflare Access values and database credentials 
 2. Run `pnpm --filter @lumibase/docs build` for the docs site.
 3. Run `pnpm --filter @lumibase/cms build` to dry-run the Worker bundle.
 4. Deploy docs with `pnpm docs:deploy`.
-5. Deploy the CMS Worker with `pnpm --filter @lumibase/cms deploy` after production bindings and secrets are configured.
+5. Deploy the CMS Worker with `pnpm --filter @lumibase/cms run deploy` after production bindings and secrets are configured.
 
 See [Cloudflare deployment](./cloudflare.md) for the detailed Worker and Pages commands.
 See [Private admin path](./private-admin-path.md) for the production no-redirect policy that keeps the Studio entry point secret.
