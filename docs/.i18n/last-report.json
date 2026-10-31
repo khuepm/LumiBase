@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-10-31T14:38:01.315Z",
-  "mode": "plan",
-  "effectiveMode": "plan",
+  "generatedAt": "2026-10-31T16:32:44.648Z",
+  "mode": "preserve-only",
+  "effectiveMode": "preserve-only",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
