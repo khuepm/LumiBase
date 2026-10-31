@@ -1,15 +1,15 @@
 ---
-version: 7
-lastUpdated: 2026-09-26T03:52:30.139Z
-sourceLang: vi
+version: 8
+lastUpdated: 2026-10-31T22:50:41.679Z
+sourceLang: en
 translatedFrom: vi
 sourceHash: 4f411aaa72bbc641
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-26T03:52:30.139Z
-codeVerifiedHash: 4f411aaa72bbc641
+codeVerified: 2026-10-31T22:50:41.679Z
+codeVerifiedHash: 8431450c18c2e01f
 codeVerifiedClaims: 36
-contentHash: b9ca7b4d798de9be
+contentHash: 8431450c18c2e01f
 ---
 
 # Governed tool contract — one contract for both MCP transports
@@ -64,7 +64,7 @@ The trust gradient used to be reachable only through the `isDangerous` branch, s
 
 | Level | Write skill (not control-plane) | Control-plane skill |
 |---|---|---|
-| L0 | `denied`, `code: 'AUTONOMY_SHADOW'` — no write, and **not** turned into an approval either | approval |
+| L0 | `denied`, `code: 'AUTONOMY_SHADOW'` — no write, and **not** turned into an approval either | `denied`, `code: 'AUTONOMY_SHADOW'` (since #578; it used to park an approval) |
 | L1 | approval (same rows, same ids, same decide endpoint) | approval |
 | L2 | executes | approval |
 | L3 | executes | staging + veto window (when the flag is on) |
@@ -73,6 +73,23 @@ The trust gradient used to be reachable only through the `isDangerous` branch, s
 **Backward compatibility:** `resolveAutonomy` defaults to **L2** for a safe capability when no grant exists. An installation that never configured autonomy behaves **exactly as before**; the gate only bites once someone has lowered the level explicitly (a grant row, or an intent's `autonomyCap`).
 
 **Reads are untouched:** the gate keys off capabilities matching `:(write|update|create|delete)$`.
+
+### 3a. Item writes are classified by their impact (#578)
+
+`createItem` and `updateItem` are not control-plane skills, but some of their calls change what the public sees. Those calls take the **control-plane column** of the table above (default L1: approval; L3 stages data patches into the veto window; L4 executes). Drafts keep the write-skill column.
+
+| Call | Classification | `riskReason` on the tool call |
+|---|---|---|
+| `createItem` without `status`, or `status: 'draft'` | write skill | — |
+| `createItem` with `status: 'published'` | escalated | `publication_change` |
+| `updateItem` that sets a `status` different from the item's current one (publish, unpublish, archive) | escalated | `publication_change` |
+| `updateItem` data patch on an item that is currently `published` | escalated | `live_content` |
+| `updateItem` on a draft or archived item, status unchanged | write skill | — |
+| `updateItem` when the current status cannot be read | escalated (fail closed) | `unknown_state` |
+
+The status read is a single site-scoped query on the item row. `isControlPlaneSkill` and the MCP admin backstop that uses it are unchanged, so an escalated item write still needs only content permissions, not admin. Field-level sensitivity (for example a `price` field on a draft) is not classified yet.
+
+`ItemService.create` also enforces the editorial gate now: on a collection with `editorialWorkflow: true`, creating an item as `published` returns `409 EDITORIAL_GATE_REQUIRED`, the same as publishing a draft through `patch`. This applies to REST and GraphQL callers too.
 
 ## 4. Capabilities come from RBAC, not from `auth.roles`
 

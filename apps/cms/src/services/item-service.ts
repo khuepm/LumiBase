@@ -823,6 +823,22 @@ export class ItemService {
     });
     const withPresets = this.permissions?.applyPresets(perm, payload.data ?? {}) ?? payload.data ?? {};
     const status = payload.status ?? 'draft';
+    // Editorial gate (Req 8.2) on the create path too. `patch` already refuses a
+    // direct draft→published on an editorialWorkflow collection, but `create`
+    // accepted `status: 'published'` and inserted it live, so the review step
+    // was skipped by creating instead of updating (#578). A new item has no
+    // editorial state yet, so it can never be in the approved/scheduled state
+    // that publishing requires.
+    if (
+      status === 'published' &&
+      (coll.meta as Record<string, unknown> | null)?.editorialWorkflow === true
+    ) {
+      throw new ItemServiceError(
+        'EDITORIAL_GATE_REQUIRED',
+        'Item must be approved before it can be published.',
+        409,
+      );
+    }
     const sort = payload.sort ?? 0;
     const createSnapshot = buildPermissionSnapshot({
       data: withPresets,
