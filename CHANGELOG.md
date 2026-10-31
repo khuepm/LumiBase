@@ -204,6 +204,20 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   schedule Flows runs report the semantic pass as `unavailable`.
 
 ### Changed
+- **Agent item writes are classified by impact (#578).** `createItem` with
+  `status: 'published'`, an `updateItem` that changes the item's status, and an
+  `updateItem` on a published item now take the same approval and autonomy
+  gradient as dangerous skills (default: pending approval; L3 stages data
+  patches in the veto window; L4 executes). Draft writes are unchanged. The tool
+  call output carries `riskReason` (`publication_change`, `live_content`,
+  `unknown_state`). An intent capped at L0 now refuses dangerous skills with
+  `AUTONOMY_SHADOW` instead of parking an approval. See
+  `docs/en/mcp/governed-tool-contract.md` §3a.
+- **Editorial gate on create (#578).** On a collection with
+  `editorialWorkflow: true`, creating an item as `published` returns
+  `409 EDITORIAL_GATE_REQUIRED`, the same as publishing a draft through PATCH.
+  Applies to REST, GraphQL and agents. Create items as drafts and publish
+  through the editorial workflow.
 - **Draft review needs the pilot (#516).** The Studio draft review panel shows
   only while the collection is in the pilot in `assisted` mode, and
   `POST /api/v1/ai/reviews` plus new feedback return `403 DECISION_DISABLED`

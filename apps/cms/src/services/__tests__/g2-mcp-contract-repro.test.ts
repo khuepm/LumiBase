@@ -599,13 +599,14 @@ describe('G2 repro · governed path: an L0 content write executes with no autono
     expect(insertedInto('lumibase_agent_approvals')).toHaveLength(0);
   });
 
-  it('GP4: control — a DANGEROUS skill at the same cap DOES park, proving the cap is only read there', async () => {
+  it('GP4: control — a DANGEROUS skill at the same cap is refused too, and parks nothing', async () => {
     const { db, insertedInto } = governedDb();
     const { created, service } = recordingItemService();
 
-    // `deleteItem` differs from `createItem` only in classification, not in
-    // capability tier. It parks; `createItem` does not. That contrast is the
-    // evidence that the gate is bound to `isDangerous`, not to "is a write".
+    // This control used to assert that `deleteItem` at L0 PARKED, as the
+    // contrast showing the cap was read only on the dangerous branch. Parking
+    // was itself a gap (#578): L0 promises no side effects, yet a parked
+    // approval could still be released by a human. Both branches now refuse.
     const result = await harnessWith(service, db).execute(
       'deleteItem',
       { collection: 'posts', id: 'item_1' },
@@ -614,10 +615,10 @@ describe('G2 repro · governed path: an L0 content write executes with no autono
       { autonomyCap: 0, agentName: 'lumibase-copilot' },
     );
 
-    expect(result.status).toBe('pending_approval');
+    expect(result).toMatchObject({ status: 'denied', code: 'AUTONOMY_SHADOW' });
     expect(created).toHaveLength(0);
-    expect(insertedInto('lumibase_ai_approvals')).toHaveLength(1);
-    expect(insertedInto('lumibase_agent_approvals')).toHaveLength(1);
+    expect(insertedInto('lumibase_ai_approvals')).toHaveLength(0);
+    expect(insertedInto('lumibase_agent_approvals')).toHaveLength(0);
   });
 
   it('GP5 [REGRESSION]: invalid input is checked before the run exists — nothing is persisted', async () => {

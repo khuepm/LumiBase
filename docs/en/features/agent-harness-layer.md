@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-09-26T03:57:31.179Z
+version: 4
+lastUpdated: 2026-10-31T22:50:44.414Z
 sourceLang: en
-contentHash: b473a29de49b4910
-codeVerified: 2026-09-26T03:57:31.179Z
-codeVerifiedHash: b473a29de49b4910
+contentHash: e12f22cc231fb868
+codeVerified: 2026-10-31T22:50:44.414Z
+codeVerifiedHash: e12f22cc231fb868
 codeVerifiedClaims: 20
 ---
 
@@ -234,6 +234,8 @@ A skill is classified as **DANGEROUS** (requires HITL approval) when:
 3. Its name starts with `delete`
 
 The `dangerous` flag is honoured by both `AISecureHarness.evaluateRisk` and `ToolRegistryService.coreTool`, so item CRUD keeps its existing (non-dangerous) classification while new governed write/delete skills are always gated.
+
+Item CRUD is additionally classified by impact (#578): `createItem` with `status: 'published'`, an `updateItem` that changes the item's status, and an `updateItem` on a published item go through the same approval and autonomy gradient as a dangerous skill. Draft writes are unchanged. See [governed tool contract §3a](../mcp/governed-tool-contract.md#3a-item-writes-are-classified-by-their-impact-578).
 
 | Skill | Service | Required Capability | Risk | Handler |
 |---|---|---|---|---|

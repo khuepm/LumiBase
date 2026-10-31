@@ -1,13 +1,13 @@
 ---
-version: 7
-lastUpdated: 2026-09-26T03:52:30.139Z
-sourceLang: vi
+version: 8
+lastUpdated: 2026-10-31T22:50:41.679Z
+sourceLang: en
 contentHash: 4f411aaa72bbc641
-codeVerified: 2026-09-26T03:52:30.139Z
-codeVerifiedHash: 4f411aaa72bbc641
+codeVerified: 2026-10-31T22:50:41.679Z
+codeVerifiedHash: 8431450c18c2e01f
 codeVerifiedClaims: 36
 translatedFrom: en
-sourceHash: b9ca7b4d798de9be
+sourceHash: 8431450c18c2e01f
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -64,7 +64,7 @@ Trước đây trust gradient chỉ vào được qua nhánh `isDangerous`, nên
 
 | Level | Skill ghi (không control-plane) | Skill control-plane |
 |---|---|---|
-| L0 | `denied`, `code: 'AUTONOMY_SHADOW'` — không ghi, và **không** biến thành approval | approval |
+| L0 | `denied`, `code: 'AUTONOMY_SHADOW'` — không ghi, và **không** biến thành approval | `denied`, `code: 'AUTONOMY_SHADOW'` (từ #578; trước đây park thành approval) |
 | L1 | approval (cùng bảng, cùng id, cùng endpoint decide) | approval |
 | L2 | chạy | approval |
 | L3 | chạy | staging + veto window (nếu bật cờ) |
@@ -73,6 +73,23 @@ Trước đây trust gradient chỉ vào được qua nhánh `isDangerous`, nên
 **Tương thích ngược:** `resolveAutonomy` default **L2** cho capability an toàn khi không có grant. Cài đặt chưa cấu hình autonomy hành xử **y như trước**; gate chỉ có tác dụng khi có người hạ level tường minh (grant row hoặc `autonomyCap` của intent).
 
 **Read không bị ảnh hưởng:** gate chỉ bám capability khớp `:(write|update|create|delete)$`.
+
+### 3a. Item write được phân loại theo tác động (#578)
+
+`createItem` và `updateItem` không phải skill control-plane, nhưng một số lời gọi của chúng làm thay đổi thứ công chúng nhìn thấy. Những lời gọi đó đi theo **cột control-plane** của bảng trên (mặc định L1: approval; L3 đưa data patch vào veto window; L4 chạy). Draft vẫn đi theo cột skill ghi.
+
+| Lời gọi | Phân loại | `riskReason` trên tool call |
+|---|---|---|
+| `createItem` không có `status`, hoặc `status: 'draft'` | skill ghi | — |
+| `createItem` với `status: 'published'` | nâng mức | `publication_change` |
+| `updateItem` đặt một `status` khác status hiện tại của item (publish, unpublish, archive) | nâng mức | `publication_change` |
+| `updateItem` data patch trên item đang `published` | nâng mức | `live_content` |
+| `updateItem` trên item draft hoặc archived, không đổi status | skill ghi | — |
+| `updateItem` khi không đọc được status hiện tại | nâng mức (fail closed) | `unknown_state` |
+
+Việc đọc status là một query duy nhất, scope theo site, trên row của item. `isControlPlaneSkill` và admin backstop của MCP dùng nó không đổi, nên một item write bị nâng mức vẫn chỉ cần quyền content, không cần admin. Độ nhạy theo field (ví dụ field `price` trên một draft) chưa được phân loại.
+
+`ItemService.create` nay cũng áp editorial gate: trên collection có `editorialWorkflow: true`, tạo item ở trạng thái `published` trả `409 EDITORIAL_GATE_REQUIRED`, giống như publish một draft qua `patch`. Quy tắc này áp cho cả REST và GraphQL.
 
 ## 4. Capability đến từ RBAC, không từ `auth.roles`
 

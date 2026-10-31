@@ -1,7 +1,14 @@
-import { agentApprovals, aiApprovals, flowRuns, flows } from '@lumibase/database';
+import {
+  agentApprovals,
+  aiApprovals,
+  collections as collectionsTable,
+  flowRuns,
+  flows,
+  items as itemsTable,
+} from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import { agentToolNamesWithSchema, jsonSchemaFor, validateAgentToolInput } from '@lumibase/contracts';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
 import type { MagicContext } from './permission-dsl';
@@ -274,6 +281,54 @@ function primaryDangerousCapability(
     ? (tool.requiredCapabilities as string[])
     : [];
   return caps.find((cap) => /:(write|update|create|delete)$/.test(cap)) ?? caps[0] ?? skillName;
+}
+
+/** The item status the Delivery API serves to anonymous readers. */
+const LIVE_ITEM_STATUS = 'published';
+
+/**
+ * Why an item write is escalated to the dangerous (HITL + autonomy) gradient.
+ *
+ * - `publication_change`: the write changes what the public sees by status —
+ *   `createItem` with `status: 'published'`, or `updateItem` that sets a status
+ *   different from the item's current one (publish, unpublish, archive).
+ * - `live_content`: an `updateItem` data patch on an item that is currently
+ *   published, so the change is visible on the Delivery API immediately.
+ * - `unknown_state`: the current status could not be read, so the write is
+ *   treated as live (fail closed).
+ */
+export type ItemWriteImpact = 'publication_change' | 'live_content' | 'unknown_state';
+
+/**
+ * Impact-aware risk for item CRUD (#578).
+ *
+ * `evaluateRisk` classifies by tool name and capability only, which is right
+ * for control-plane skills but blind to what an item write actually does:
+ * `createItem {status:'published'}` and a patch on a published item executed
+ * directly at the default level (L2), the same as editing a draft. This pure
+ * function adds the content state to the decision. It does NOT make a skill
+ * control-plane: `isControlPlaneSkill` (and the MCP admin backstop that uses
+ * it) is unchanged.
+ *
+ * `currentStatus` is the item's status before the write: a string, `null` when
+ * the item does not exist (the handler then reports NOT_FOUND), or `undefined`
+ * when it could not be read.
+ */
+export function classifyItemWriteImpact(
+  skillName: string,
+  args: Record<string, unknown>,
+  currentStatus: string | null | undefined,
+): ItemWriteImpact | null {
+  if (skillName === 'createItem') {
+    return args['status'] === LIVE_ITEM_STATUS ? 'publication_change' : null;
+  }
+  if (skillName !== 'updateItem') return null;
+  if (currentStatus === undefined) return 'unknown_state';
+  if (currentStatus === null) return null;
+  const nextStatus = args['status'];
+  if (typeof nextStatus === 'string' && nextStatus !== currentStatus) return 'publication_change';
+  if (currentStatus === LIVE_ITEM_STATUS) return 'live_content';
+  return null;
 }
 
 /**
@@ -2421,6 +2476,46 @@ export class AISecureHarness {
     return isControlPlaneSkill(skill, skillName);
   }
 
+  /**
+   * Impact-aware escalation for item writes (#578): see
+   * {@link classifyItemWriteImpact}. Only `updateItem` reads the database, and
+   * only the item's status column, scoped to this site. A read that fails is
+   * reported as `unknown_state`, which escalates (fail closed).
+   */
+  async evaluateItemWriteImpact(
+    skillName: string,
+    args: Record<string, unknown>,
+  ): Promise<ItemWriteImpact | null> {
+    if (skillName !== 'createItem' && skillName !== 'updateItem') return null;
+    let currentStatus: string | null | undefined = null;
+    if (skillName === 'updateItem') {
+      currentStatus = await this.readItemStatus(String(args['collection']), String(args['id']));
+    }
+    return classifyItemWriteImpact(skillName, args, currentStatus);
+  }
+
+  private async readItemStatus(collection: string, id: string): Promise<string | null | undefined> {
+    try {
+      const [row] = await this.db
+        .select({ status: itemsTable.status })
+        .from(itemsTable)
+        .innerJoin(collectionsTable, eq(collectionsTable.id, itemsTable.collectionId))
+        .where(
+          and(
+            eq(itemsTable.siteId, this.siteId),
+            eq(collectionsTable.siteId, this.siteId),
+            eq(collectionsTable.name, collection),
+            eq(itemsTable.id, id),
+            isNull(itemsTable.deletedAt),
+          ),
+        )
+        .limit(1);
+      return row ? row.status : null;
+    } catch {
+      return undefined;
+    }
+  }
+
   // ---------- Input validation ----------
 
   /**
@@ -2637,8 +2732,15 @@ export class AISecureHarness {
       }
     }
 
-    // Step 3: Evaluate risk
-    const isDangerous = this.evaluateRisk(tool, skillName) || policy.risk === 'dangerous' || policy.risk === 'review_required';
+    // Step 3: Evaluate risk. Name/capability classification first, then the
+    // content state of item writes (#578): publishing, unpublishing or editing
+    // live content goes through the same gradient as a dangerous skill.
+    const itemImpact = await this.evaluateItemWriteImpact(skillName, args);
+    const isDangerous =
+      this.evaluateRisk(tool, skillName) ||
+      policy.risk === 'dangerous' ||
+      policy.risk === 'review_required' ||
+      itemImpact !== null;
     const isWrite = isWriteSkill(tool);
 
     if (isDangerous) {
@@ -2654,6 +2756,21 @@ export class AISecureHarness {
         intentCap: envelope.autonomyCap ?? null,
         irreversible: IRREVERSIBLE_SKILLS.has(skillName),
       });
+
+      // L0 shadow: no side effects, not even approvable ones (#578). This branch
+      // used to fall through to `parkForApproval`, so a dangerous action under an
+      // L0 cap became a pending approval that a human could release — the write
+      // gate below already refused the same case for plain writes.
+      if (level === AUTONOMY_LEVELS.SHADOW) {
+        const message = `autonomy_shadow: L0 cannot write; "${skillName}" was not executed`;
+        await this.runService.finishToolCall(toolCallId, {
+          status: 'denied',
+          error: message,
+          latencyMs: Date.now() - startedAt,
+        });
+        await this.runService.failRun(run.runId, message, { stopReason: 'autonomy_shadow' });
+        return { status: 'denied', code: 'AUTONOMY_SHADOW', message, ...run, toolCallId };
+      }
 
       // L3 veto window: stageable item writes execute into staging and
       // auto-commit at the deadline unless a human vetoes (Req 13.1).
@@ -2764,9 +2881,10 @@ export class AISecureHarness {
         contextMessage,
         run,
         toolCallId,
-        approvalPolicy: policy.approvalPolicy,
+        approvalPolicy: policy.approvalPolicy === 'none' ? 'before_execute' : policy.approvalPolicy,
         startedAt,
         requestedByPrincipal: envelope.requestedByPrincipal ?? null,
+        riskReason: itemImpact,
       });
     }
 
@@ -2872,6 +2990,8 @@ export class AISecureHarness {
     approvalPolicy?: string | undefined;
     startedAt: number;
     requestedByPrincipal?: ApprovalRequester | null | undefined;
+    /** Set when an item write was escalated by its content impact (#578). */
+    riskReason?: ItemWriteImpact | null | undefined;
   }): Promise<HarnessExecutionResult> {
     const { skillName, args, contextMessage, run, toolCallId, startedAt } = input;
 
@@ -2916,7 +3036,11 @@ export class AISecureHarness {
 
     await this.runService.finishToolCall(toolCallId, {
       status: 'pending_approval',
-      output: { approvalId: record!.id, agentApprovalId: agentApproval!.id },
+      output: {
+        approvalId: record!.id,
+        agentApprovalId: agentApproval!.id,
+        ...(input.riskReason ? { riskReason: input.riskReason } : {}),
+      },
       approvalId: agentApproval!.id,
       latencyMs: Date.now() - startedAt,
     });
@@ -2956,7 +3080,9 @@ export class AISecureHarness {
       return { status: 'denied', code: 'VALIDATION', message: inputError };
     }
 
-    const isDangerous = this.evaluateRisk(skill, skillName);
+    const isDangerous =
+      this.evaluateRisk(skill, skillName) ||
+      (await this.evaluateItemWriteImpact(skillName, args)) !== null;
     if (isDangerous) {
       const [record] = await this.db
         .insert(aiApprovals)
