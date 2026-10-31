@@ -5194,11 +5194,24 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
   /deployments:
     get:
-      summary: List deployments (filterable)
+      summary: List deployments (filterable, newest first)
+      description: >-
+        Returns deployments newest first, ordered by `createdAt` descending
+        with `id` descending as the tie-breaker, so `limit` returns the most
+        recent N.
       parameters:
         - { $ref: '#/components/parameters/SiteHeader' }
         - { name: targetId, in: query, required: false, schema: { type: string } }
         - { name: status, in: query, required: false, schema: { type: string, enum: [queued, building, ready, error, canceled] } }
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            Maximum number of deployments to return. Must be a non-negative
+            integer; `0` returns an empty list. Values above 200 are not
+            rejected but clamped to 200. An empty or omitted value uses the
+            default of 50.
+          schema: { type: integer, minimum: 0, default: 50 }
       responses:
         '200':
           description: OK
@@ -5210,6 +5223,11 @@ paths:
                   data:
                     type: array
                     items: { $ref: '#/components/schemas/Deployment' }
+        '400':
+          description: '`VALIDATION` — `limit` is not a non-negative integer (non-numeric, negative or fractional)'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /deployments/{id}:
     get:
       summary: Get a single deployment
