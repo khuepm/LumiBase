@@ -1,10 +1,10 @@
 ---
-version: 28
-lastUpdated: 2026-10-31T14:06:46.108Z
+version: 29
+lastUpdated: 2026-10-31T14:23:53.801Z
 sourceLang: en
-contentHash: 70c53b24fe935e07
-codeVerified: 2026-10-31T14:06:46.108Z
-codeVerifiedHash: 70c53b24fe935e07
+contentHash: 9cc9f59ddb1cc9d8
+codeVerified: 2026-10-31T14:24:00.011Z
+codeVerifiedHash: 9cc9f59ddb1cc9d8
 codeVerifiedClaims: 456
 ---
 
@@ -748,19 +748,21 @@ resolved site, `403 FORBIDDEN` without admin access. Provider tokens are encrypt
 on write and never returned. Bodies are validated with
 `DeploymentTargetCreateSchema` / `DeploymentTargetUpdateSchema` /
 `DeployTriggerSchema` (`@lumibase/contracts`); a failed parse returns
-`400 VALIDATION`.
+`400 VALIDATION`. `400 UNKNOWN_PROVIDER` means the stored target names a
+provider that is not registered in this deployment (only `vercel` and `netlify`
+are).
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/deployments/targets` | List targets for the site (token columns omitted) |
 | `POST` | `/api/v1/deployments/targets` | Create `{ provider (vercel\|netlify), name, projectId, token, defaultBranch?, productionUrl? }` → `201`. The token is verified against the provider before anything is stored: `400 TOKEN_INVALID` |
-| `PATCH` | `/api/v1/deployments/targets/:id` | Update `{ name?, projectId?, token?, defaultBranch?, productionUrl?, status? (active\|inactive) }`. A `token` is re-verified and re-encrypted (rotation). `404 NOT_FOUND`, `400 TOKEN_INVALID` |
+| `PATCH` | `/api/v1/deployments/targets/:id` | Update `{ name?, projectId?, token?, defaultBranch?, productionUrl?, status? (active\|inactive) }`. A `token` is re-verified and re-encrypted (rotation). `404 NOT_FOUND`, `400 TOKEN_INVALID`, `400 UNKNOWN_PROVIDER` (only when a `token` is sent) |
 | `DELETE` | `/api/v1/deployments/targets/:id` | Delete a target (its deployments cascade) → `{ data: null }`. `404 NOT_FOUND` |
-| `POST` | `/api/v1/deployments/targets/:id/deploy` | Trigger a build `{ branch?, reason? }` → `201` with the new deployment row (`triggerSource: "manual"`). `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (provider call failed; an `error` row is still recorded) |
+| `POST` | `/api/v1/deployments/targets/:id/deploy` | Trigger a build `{ branch?, reason? }` → `201` with the new deployment row (`triggerSource: "manual"`). `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `400 UNKNOWN_PROVIDER`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (provider call failed; an `error` row is still recorded) |
 | `GET` | `/api/v1/deployments` | List deployments, filter `?targetId=&status=&limit=` (`limit` defaults to 50, capped at 200; no `meta`) |
 | `GET` | `/api/v1/deployments/:id` | Get one deployment. `404 NOT_FOUND` |
-| `GET` | `/api/v1/deployments/:id/logs` | Fetch the build log from the provider, secrets masked → `{ data: { log } }`. `404 NOT_FOUND` when the deployment has no provider id yet |
-| `POST` | `/api/v1/deployments/:id/refresh` | Force a status sync from the provider (no-op once the status is terminal). `404 NOT_FOUND` |
+| `GET` | `/api/v1/deployments/:id/logs` | Fetch the build log from the provider, secrets masked → `{ data: { log } }`. `404 NOT_FOUND` when the deployment does not exist or has no provider id yet, `400 UNKNOWN_PROVIDER` when its target or provider is unavailable |
+| `POST` | `/api/v1/deployments/:id/refresh` | Force a status sync from the provider (no-op once the status is terminal). `404 NOT_FOUND` when the deployment does not exist. With no provider id yet, or with an unavailable target or provider, the row is returned unchanged (`200`, never `UNKNOWN_PROVIDER`) |
 
 Public (no session; signature-verified):
 

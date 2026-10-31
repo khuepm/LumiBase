@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 27
-lastUpdated: 2026-10-31T14:06:46.108Z
+version: 28
+lastUpdated: 2026-10-31T14:23:53.801Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 70c53b24fe935e07
+sourceHash: 9cc9f59ddb1cc9d8
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-31T14:06:46.108Z
-codeVerifiedHash: 70c53b24fe935e07
+codeVerified: 2026-10-31T14:24:00.011Z
+codeVerifiedHash: 9cc9f59ddb1cc9d8
 codeVerifiedClaims: 456
 ---
 
@@ -639,19 +639,21 @@ không resolve được site, `403 FORBIDDEN` khi không có quyền admin. Toke
 Provider được mã hoá khi ghi và không bao giờ được trả về. Body được xác thực bằng
 `DeploymentTargetCreateSchema` / `DeploymentTargetUpdateSchema` /
 `DeployTriggerSchema` (`@lumibase/contracts`); parse lỗi trả về
-`400 VALIDATION`.
+`400 VALIDATION`. `400 UNKNOWN_PROVIDER` nghĩa là target đã lưu ghi một
+Provider không được đăng ký trong deployment này (chỉ có `vercel` và
+`netlify`).
 
 | Phương thức | Đường dẫn | Mô tả |
 |--------|------|-------------|
 | `GET` | `/api/v1/deployments/targets` | Liệt kê target của site (bỏ các cột token) |
 | `POST` | `/api/v1/deployments/targets` | Tạo `{ provider (vercel\|netlify), name, projectId, token, defaultBranch?, productionUrl? }` → `201`. Token được kiểm với Provider trước khi lưu bất cứ thứ gì: `400 TOKEN_INVALID` |
-| `PATCH` | `/api/v1/deployments/targets/:id` | Cập nhật `{ name?, projectId?, token?, defaultBranch?, productionUrl?, status? (active\|inactive) }`. Có `token` thì token được kiểm lại và mã hoá lại (rotation). `404 NOT_FOUND`, `400 TOKEN_INVALID` |
+| `PATCH` | `/api/v1/deployments/targets/:id` | Cập nhật `{ name?, projectId?, token?, defaultBranch?, productionUrl?, status? (active\|inactive) }`. Có `token` thì token được kiểm lại và mã hoá lại (rotation). `404 NOT_FOUND`, `400 TOKEN_INVALID`, `400 UNKNOWN_PROVIDER` (chỉ khi có gửi `token`) |
 | `DELETE` | `/api/v1/deployments/targets/:id` | Xoá target (các deployment của nó bị xoá theo cascade) → `{ data: null }`. `404 NOT_FOUND` |
-| `POST` | `/api/v1/deployments/targets/:id/deploy` | Kích hoạt build `{ branch?, reason? }` → `201` kèm dòng deployment mới (`triggerSource: "manual"`). `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (gọi Provider thất bại; vẫn ghi một dòng `error`) |
+| `POST` | `/api/v1/deployments/targets/:id/deploy` | Kích hoạt build `{ branch?, reason? }` → `201` kèm dòng deployment mới (`triggerSource: "manual"`). `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `400 UNKNOWN_PROVIDER`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (gọi Provider thất bại; vẫn ghi một dòng `error`) |
 | `GET` | `/api/v1/deployments` | Liệt kê deployment, lọc `?targetId=&status=&limit=` (`limit` mặc định 50, tối đa 200; không có `meta`) |
 | `GET` | `/api/v1/deployments/:id` | Lấy một deployment. `404 NOT_FOUND` |
-| `GET` | `/api/v1/deployments/:id/logs` | Lấy build log từ Provider, đã che secret → `{ data: { log } }`. `404 NOT_FOUND` khi deployment chưa có id phía Provider |
-| `POST` | `/api/v1/deployments/:id/refresh` | Ép đồng bộ trạng thái từ Provider (không làm gì khi trạng thái đã là terminal). `404 NOT_FOUND` |
+| `GET` | `/api/v1/deployments/:id/logs` | Lấy build log từ Provider, đã che secret → `{ data: { log } }`. `404 NOT_FOUND` khi deployment không tồn tại hoặc chưa có id phía Provider, `400 UNKNOWN_PROVIDER` khi target hoặc Provider của nó không khả dụng |
+| `POST` | `/api/v1/deployments/:id/refresh` | Ép đồng bộ trạng thái từ Provider (không làm gì khi trạng thái đã là terminal). `404 NOT_FOUND` khi deployment không tồn tại. Khi chưa có id phía Provider, hoặc target hay Provider không khả dụng, dòng được trả về nguyên trạng (`200`, không bao giờ `UNKNOWN_PROVIDER`) |
 
 Công khai (không có phiên; xác thực bằng chữ ký):
 
