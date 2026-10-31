@@ -1,10 +1,10 @@
 ---
-version: 29
-lastUpdated: 2026-10-31T14:23:53.801Z
+version: 30
+lastUpdated: 2026-10-31T14:37:43.205Z
 sourceLang: en
-contentHash: 9cc9f59ddb1cc9d8
-codeVerified: 2026-10-31T14:24:00.011Z
-codeVerifiedHash: 9cc9f59ddb1cc9d8
+contentHash: 8bd42dc1dd644fb3
+codeVerified: 2026-10-31T14:37:43.205Z
+codeVerifiedHash: 8bd42dc1dd644fb3
 codeVerifiedClaims: 456
 ---
 
@@ -759,7 +759,7 @@ are).
 | `PATCH` | `/api/v1/deployments/targets/:id` | Update `{ name?, projectId?, token?, defaultBranch?, productionUrl?, status? (active\|inactive) }`. A `token` is re-verified and re-encrypted (rotation). `404 NOT_FOUND`, `400 TOKEN_INVALID`, `400 UNKNOWN_PROVIDER` (only when a `token` is sent) |
 | `DELETE` | `/api/v1/deployments/targets/:id` | Delete a target (its deployments cascade) → `{ data: null }`. `404 NOT_FOUND` |
 | `POST` | `/api/v1/deployments/targets/:id/deploy` | Trigger a build `{ branch?, reason? }` → `201` with the new deployment row (`triggerSource: "manual"`). `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `400 UNKNOWN_PROVIDER`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (provider call failed; an `error` row is still recorded) |
-| `GET` | `/api/v1/deployments` | List deployments, filter `?targetId=&status=&limit=` (`limit` defaults to 50, capped at 200; no `meta`) |
+| `GET` | `/api/v1/deployments` | List deployments, newest first (`createdAt` descending, `id` descending as tie-breaker). Filter `?targetId=&status=&limit=`. `limit` must be a non-negative integer: it defaults to 50 when absent or empty, `0` returns an empty list, and values above 200 are capped at 200. Any other value (`abc`, `-5`, `1.5`) returns `400 VALIDATION`. No `meta` |
 | `GET` | `/api/v1/deployments/:id` | Get one deployment. `404 NOT_FOUND` |
 | `GET` | `/api/v1/deployments/:id/logs` | Fetch the build log from the provider, secrets masked → `{ data: { log } }`. `404 NOT_FOUND` when the deployment does not exist or has no provider id yet, `400 UNKNOWN_PROVIDER` when its target or provider is unavailable |
 | `POST` | `/api/v1/deployments/:id/refresh` | Force a status sync from the provider (no-op once the status is terminal). `404 NOT_FOUND` when the deployment does not exist. With no provider id yet, or with an unavailable target or provider, the row is returned unchanged (`200`, never `UNKNOWN_PROVIDER`) |
