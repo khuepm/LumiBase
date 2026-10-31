@@ -225,6 +225,11 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
 
 ### Fixed
+- **Deployments API documented in the API spec (B55).** `docs/{en,vi}/api/hono-api-spec.md`
+  gains section 7c covering `/api/v1/deployments/*`: target CRUD, manual trigger,
+  deployment list/detail/logs/refresh, the inbound webhook, the per-target
+  trigger rate limit (`429 RATE_LIMITED` + `Retry-After`) and webhook signature
+  verification (`401 INVALID_SIGNATURE`). Docs only; no API change.
 - **Benchmark CLI: validated merges and frozen thresholds across runs (#513).**
   `bench:jev --merge` now validates each report file (schema, generator,
   `mode`, `split`, dataset, rubric, protocol, seed, sample counts, runs)

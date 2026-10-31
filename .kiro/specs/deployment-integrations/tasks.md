@@ -82,7 +82,7 @@
   - [x] 14.2 KHÔNG cần migration cấp capability: role `administrator` (`adminAccess: true`) + `checkCapabilities` wildcard → admin tự có `deployments:*`.
 - [x] 15. Setup Impact Registry (DoD §2) — thêm dòng #21 `deployment-integrations` (n/a: capability mới qua wildcard, migration bảng mới, không seed/backfill) vào `admin-setup-wizard/setup-impact.md`. Wizard không đổi → không task mới ở `admin-setup-wizard/tasks.md`.
 - [x] 16. Docs (DoD §4)
-  - [x] 16.1 `docs/en/api/hono-api-spec.md`: section 7b endpoints deployment.
+  - [x] 16.1 `docs/{en,vi}/api/hono-api-spec.md`: section **7c. Deployments** (targets CRUD, trigger, list/detail/logs/refresh, inbound webhook, rate limit, webhook signatures). *Đính chính 2026-10-08:* lần tick trước ghi "section 7b" nhưng section đó chưa từng tồn tại; section 7c được viết đối chiếu `routes/deployments.ts` và đóng backlog B55.
   - [x] 16.2 `docs/en/data-model.md`: section 11c + bảng schema-file.
   - [x] 16.3 `docs/en/features/agent-harness-layer.md`: 4 skill + rule DANGEROUS cập nhật `deployments:write`.
   - [x] 16.4 CHANGELOG: entry `[Unreleased]` + upgrade note (migration 0032, capability qua wildcard).
