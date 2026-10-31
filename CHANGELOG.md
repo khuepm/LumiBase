@@ -223,6 +223,16 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   endpoint get `403 DECISION_DISABLED` until they opt in. New optional env
   ceilings `DECISION_SITE_REQUESTS_PER_HOUR`, `DECISION_SITE_MAX_CONCURRENT`,
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
+- **Shell: `tauri-plugin-updater` 2.13.1 → 2.14.1 in `Cargo.lock`, with
+  `@tauri-apps/plugin-updater` `^2.14.1` (2.14.1 resolved).** The grouped
+  Dependabot update #573 moves the npm package to 2.14, and `pnpm tauri:check`
+  refuses a different minor on the crate side; Dependabot does not update
+  `Cargo.lock`. Both sides now move together on `main`, so #573 passes the
+  check after a rebase. The crate update also brings `zip` 4 → 9 and
+  `minisign-verify` 0.2 → 0.3 (updater signature check), and Cargo re-resolves
+  some Windows-only crates from `windows-sys` 0.61 to 0.60. Desktop
+  `cargo check --locked` passes; the Android target is checked by
+  `shell-check.yml`.
 
 ### Fixed
 - **`GET /api/v1/deployments` returns the newest deployments first (#568,
