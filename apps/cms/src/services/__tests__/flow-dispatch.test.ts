@@ -115,6 +115,16 @@ describe('dispatchItemEvent (Req 1.1, 7.3)', () => {
     enqueue.mockRejectedValue(new Error('queue down'));
     await expect(dispatchItemEvent({ db, siteId: 's1', queue }, EVENT)).resolves.toBeUndefined();
   });
+
+  it('skips the flow lookup when the runtime has no flow-events binding (B118)', async () => {
+    const { db } = makeDb([flow('f1', {})]);
+    const select = vi.spyOn(db, 'select');
+    const { queue, enqueue } = makeQueue();
+    (queue as { supportsQueue?: (name: string) => boolean }).supportsQueue = (name) => name !== FLOW_EVENTS_QUEUE;
+    await dispatchItemEvent({ db, siteId: 's1', queue }, EVENT);
+    expect(select).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
 });
 
 describe('processFlowEventJob (Req 1.4)', () => {

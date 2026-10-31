@@ -18,6 +18,28 @@ Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned:
 
 ---
 
+## 2026-10-31T17:56:47.283Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-31T17:56:25.402Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned: 1
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `DEPLOYMENT-CHECKLIST.md` | en → vi | source changed since last sync |
+
+---
+
 ## 2026-10-31T16:32:44.648Z — mode `preserve-only` (effective `preserve-only`)
 
 Engine: `claude` · API key: absent · files scanned: 158

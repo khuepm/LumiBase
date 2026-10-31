@@ -11,6 +11,10 @@ import type { RuntimeContext } from '@lumibase/runtime';
 export interface Bindings {
   /** Producer for governed asynchronous agent runs. */
   AGENT_RUNS_QUEUE?: Queue;
+  /** Producer for manual flow runs and async AI chat (logical `flow-runs`, B118). */
+  FLOW_RUNS_QUEUE?: Queue;
+  /** Producer for event and schedule flow runs (logical `flow-events`, B118). */
+  FLOW_EVENTS_QUEUE?: Queue;
   HYPERDRIVE?: Hyperdrive;
   /**
    * Optional second Hyperdrive config for the system role (BYPASSRLS), used by

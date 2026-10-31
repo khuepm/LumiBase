@@ -185,8 +185,13 @@ describe('T3 — workers, cron and queue consumers use the system connection', (
   });
 
   it('the Cloudflare scheduled and queue handlers use createCloudflareSystemDb', () => {
-    for (const name of ['cloudflare.ts', 'cloudflare-agent-queue.ts']) {
+    // Queue consumers (#551, B118) build their db in the shared
+    // `openWorkerQueueResources` of `cloudflare-queue-common.ts`.
+    for (const name of ['cloudflare.ts', 'cloudflare-queue-common.ts']) {
       expect(code(join(CMS_SRC, name)), name).toContain('createCloudflareSystemDb(env)');
+    }
+    for (const name of ['cloudflare-agent-queue.ts', 'cloudflare-flow-queue.ts']) {
+      expect(code(join(CMS_SRC, name)), name).toMatch(/openWorkerQueueResources\(env,/);
     }
   });
 });
