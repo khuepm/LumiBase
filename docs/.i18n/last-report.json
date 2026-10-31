@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-10-15T22:00:06.041Z",
-  "mode": "preserve-only",
-  "effectiveMode": "preserve-only",
+  "generatedAt": "2026-10-31T17:56:47.283Z",
+  "mode": "plan",
+  "effectiveMode": "plan",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 157,
+    "upToDate": 158,
     "planned": 0
   },
   "actions": [
@@ -1358,6 +1358,18 @@
     },
     {
       "rel": "features/reconciler-repair-loop.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/rls-request-scope.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",

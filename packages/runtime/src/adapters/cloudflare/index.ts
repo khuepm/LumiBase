@@ -30,6 +30,8 @@ interface CloudflareEnv {
   CONFIG_CACHE: KVNamespace;
   MEDIA: R2Bucket;
   HYPERDRIVE: Hyperdrive;
+  /** Optional system-role (BYPASSRLS) Hyperdrive config (B130). */
+  HYPERDRIVE_SYSTEM?: Hyperdrive;
   MEILISEARCH_HOST: string;
   MEILISEARCH_API_KEY: string;
   // Either a pre-built map (legacy) or individual Queue producer bindings
@@ -124,7 +126,7 @@ export function createCloudflareRuntime(env: Record<string, unknown>): RuntimeCo
         : undefined,
     ),
     storage: new CloudflareStorageProvider(cfEnv.MEDIA),
-    database: new CloudflareDatabaseProvider(cfEnv.HYPERDRIVE),
+    database: new CloudflareDatabaseProvider(cfEnv.HYPERDRIVE, cfEnv.HYPERDRIVE_SYSTEM),
     search: new CloudflareSearchProvider(
       cfEnv.MEILISEARCH_HOST,
       cfEnv.MEILISEARCH_API_KEY,

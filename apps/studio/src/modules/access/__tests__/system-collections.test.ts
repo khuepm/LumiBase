@@ -55,6 +55,26 @@ describe('access system collection grouping', () => {
     );
   });
 
+  it('lists the AI decision capability in its own group, before sensitive, for non-admins too (#511)', () => {
+    for (const isAdmin of [false, true]) {
+      const groups = buildAccessCollectionGroups([], isAdmin);
+      const ids = groups.map((group) => group.id);
+      const ai = groups.find((group) => group.id === 'ai');
+
+      expect(ai?.label).toBe('AI usage');
+      expect(ai?.options).toEqual([
+        expect.objectContaining({ name: 'lumibase_ai_decisions', label: 'AI decisions', fromSystemContract: true, sensitive: false }),
+      ]);
+      if (isAdmin) expect(ids.indexOf('ai')).toBeLessThan(ids.indexOf('sensitive'));
+      expect(ids.indexOf('ai')).toBeGreaterThan(ids.indexOf('extension'));
+    }
+  });
+
+  it('keeps the collection name as the label when there is no system label', () => {
+    const content = buildAccessCollectionGroups(['posts'], false).find((group) => group.id === 'content');
+    expect(content?.options[0]).toMatchObject({ name: 'posts', label: 'posts' });
+  });
+
   it('returns the first visible option for dialog defaults', () => {
     expect(firstCollectionOption(buildAccessCollectionGroups(['posts'], false))).toBe('posts');
   });

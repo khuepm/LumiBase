@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-10-15T22:44:20.713Z
+version: 6
+lastUpdated: 2026-10-31T17:56:46.242Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ec8fbb57ca052907
+sourceHash: ccd23a962e4574a2
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T22:44:20.713Z
-codeVerifiedHash: ec8fbb57ca052907
-codeVerifiedClaims: 26
+codeVerified: 2026-10-31T17:56:46.242Z
+codeVerifiedHash: ccd23a962e4574a2
+codeVerifiedClaims: 30
 ---
 
 # Checklist deploy LumiBase lên production
@@ -188,7 +188,28 @@ pnpm -F @lumibase/database migrate
 
 ### Bảo mật database
 
-- [ ] Đã bật Row Level Security (RLS)
+- [ ] Chọn chế độ RLS. Lớp chốt chỉ thực thi khi `LUMIBASE_DB_RLS=enforce`; quy trình đầy đủ ở [Scope RLS trên request path](features/rls-request-scope.md).
+  - `off` (mặc định): ứng dụng kết nối bằng role bypass RLS (role có `BYPASSRLS`; superuser cũng bypass). Owner của bảng không được miễn: `rls-policies.sql` bật `FORCE ROW LEVEL SECURITY`, nên owner không phải superuser không thấy dòng nào. Ở chế độ này áp file không thay đổi gì.
+  - `enforce`: hai role. `DATABASE_URL` (hoặc `HYPERDRIVE`) là role ứng dụng tạo với `NOSUPERUSER NOBYPASSRLS`; tuyệt đối không là superuser hay role có `BYPASSRLS`, nếu không lớp chốt không thực thi gì. `DATABASE_SYSTEM_URL` (hoặc binding `HYPERDRIVE_SYSTEM`) là system role có `BYPASSRLS`, nên không phải superuser, dành cho worker, cron và route hệ thống. Cả hai role được cấp `USAGE` trên schema và `SELECT, INSERT, UPDATE, DELETE` trên mọi bảng (cấp lại sau các migration thêm bảng).
+- [ ] Với `enforce`: log khởi động Docker có `[db-rls] request-path RLS scope: enforce (…)` và không có `[db-rls] WARNING`; `GET /health/ready` trả 200 (nó probe cả hai connection).
+- [ ] Đã bật Row Level Security (RLS): áp `packages/database/migrations/rls-policies.sql` bằng owner của database (không phải role ứng dụng). `pnpm db:migrate` không áp file này; áp lại sau mỗi lần upgrade.
+  ```bash
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \
+    -f packages/database/migrations/rls-policies.sql
+  ```
+- [ ] Đã kiểm policy RLS: query dưới đây trả 2 dòng cho mỗi bảng (`site_isolation` RESTRICTIVE, `site_isolation_permit` PERMISSIVE).
+  ```sql
+  SELECT tablename, policyname, permissive FROM pg_policies
+   WHERE policyname IN ('site_isolation', 'site_isolation_permit')
+   ORDER BY 1, 2;
+  ```
+- [ ] Smoke test RLS bằng một role không có BYPASSRLS: count > 0 với site có settings, và = 0 khi chưa set `app.site_id`. Test này tự mở transaction riêng; nó chứng minh policy đúng, không chứng minh ứng dụng đã có scope. Với ứng dụng, chạy bước kiểm tra hai site trong [Scope RLS trên request path](features/rls-request-scope.md#bật-tính-năng).
+  ```sql
+  BEGIN;
+  SELECT set_config('app.site_id', '<site id>', true);
+  SELECT count(*) FROM lumibase_settings;
+  COMMIT;
+  ```
 - [ ] Không cho truy cập public schema
 - [ ] Đã bật audit logging
 - [ ] Đã cấu hình lịch backup

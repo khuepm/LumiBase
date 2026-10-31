@@ -1,3 +1,13 @@
+---
+version: 2
+lastUpdated: 2026-10-17T16:36:19.353Z
+sourceLang: en
+contentHash: 2c8b40db1b62f0c8
+codeVerified: 2026-10-17T16:36:19.353Z
+codeVerifiedHash: 2c8b40db1b62f0c8
+codeVerifiedClaims: 24
+---
+
 # Multi-Tenant Deployment Topologies
 
 > **Audience:** platform operators and solution architects deploying LumiBase for many tenants.
@@ -30,8 +40,9 @@ met by patching source code, model it as an extension or a flow instead
 These are the building blocks every topology composes. **[Platform]**
 
 1. **Row-level tenancy.** Every domain table carries `site_id`; queries are
-   scoped in the ORM layer and enforced again by RLS middleware
-   (`apps/cms/src/middleware/rls.ts`).
+   scoped in the ORM layer. With `LUMIBASE_DB_RLS=enforce` the database
+   enforces it again: `apps/cms/src/middleware/db.ts` scopes every request
+   statement to the request site (B130; off by default).
 2. **Tenant resolution by request** (`apps/cms/src/middleware/tenant.ts`), in
    priority order:
    1. `X-Lumi-Site` header (Studio, SDK, server-to-server),

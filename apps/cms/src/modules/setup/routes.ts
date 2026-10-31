@@ -4,7 +4,8 @@
  * Mounted in `apps/cms/src/index.ts` *outside* the authenticated tenant
  * stack — these endpoints answer before any user exists. The wizard
  * needs them to be reachable on a fresh instance, so the router only
- * relies on `withDb()` for the Drizzle client. The CORS layer is
+ * relies on `withSystemDb()` for the Drizzle client (system connection, no
+ * site scope — B130). The CORS layer is
  * inherited from the global stack.
  *
  * Routes (design §4.1–4.3):
@@ -23,7 +24,7 @@ import { PasswordSchema } from '@lumibase/contracts/schemas';
 import type { RateLimiterProvider } from '@lumibase/runtime';
 import { MemoryRateLimiter, collectKeys } from '@lumibase/runtime';
 import type { AppEnv } from '../../env';
-import { withDb } from '../../middleware/db';
+import { withSystemDb } from '../../middleware/db';
 import { consumeRateLimit } from '../../middleware/rate-limit-helper';
 import {
   SetupService,
@@ -308,7 +309,8 @@ function errorToHttp(error: SetupServiceError): { status: number; body: { errors
 export const setupRouter = new Hono<AppEnv>();
 
 // All setup routes need the per-request Drizzle client.
-setupRouter.use('*', withDb());
+// System connection (B130): setup runs before any site exists, with no scope.
+setupRouter.use('*', withSystemDb());
 
 setupRouter.get('/state', async (c) => {
   const ip = extractClientIp(c.req.raw);

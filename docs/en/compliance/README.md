@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:10:34.119Z
+version: 3
+lastUpdated: 2026-10-17T16:36:18.478Z
 sourceLang: en
-contentHash: b2197c8ff5d8c316
+contentHash: d14100204027e8fa
+codeVerified: 2026-10-17T16:36:18.478Z
+codeVerifiedHash: d14100204027e8fa
+codeVerifiedClaims: 12
 ---
 
 # Compliance & User Rights
@@ -69,7 +72,7 @@ authoritative scope, exemptions, and thresholds.
 |------------|:------:|----------|
 | Audit log + provenance | ✅ | `apps/cms/src/modules/audit/` |
 | Audit retention (configurable purge) | ✅ | `apps/cms/src/modules/audit/rotator.ts` |
-| Multi-tenant isolation (RLS) | ✅ | `apps/cms/src/middleware/rls.ts` |
+| Multi-tenant isolation | ✅ | App-level `site_id` filters (`apps/cms/src/services/item-service.ts`); RLS backstop on the request path with `LUMIBASE_DB_RLS=enforce` (`apps/cms/src/middleware/db.ts`, opt-in, B130) |
 | Field-level encryption (AES-256-GCM) | ✅ | `apps/cms/src/services/crypto-service.ts` |
 | RBAC / fine-grained permissions | ✅ | `packages/database/src/schema/access.ts` |
 | Soft-delete of content items | ✅ | `packages/database/src/schema/cms.ts` (`items.deletedAt`) |

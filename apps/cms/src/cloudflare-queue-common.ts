@@ -1,6 +1,7 @@
-import { createDb, type Database } from '@lumibase/database';
+import type { Database } from '@lumibase/database';
 import { createCloudflareRuntime, type RuntimeContext } from '@lumibase/runtime';
 import { z } from 'zod';
+import { createCloudflareSystemDb } from './cloudflare-system-db';
 import type { Bindings } from './env';
 
 /**
@@ -43,16 +44,18 @@ export interface WorkerQueueResources {
 }
 
 /**
- * Database, runtime and provider env for one batch. Throws before any message
- * is claimed when no database is configured, so Cloudflare retries the batch.
+ * Database (system role, B130), runtime and provider env for one batch. Throws
+ * before any message is claimed when no database is configured, so Cloudflare
+ * retries the batch.
  */
 export function openWorkerQueueResources(env: Bindings, label: string): WorkerQueueResources {
-  const connectionString = env.HYPERDRIVE?.connectionString
-    ?? (env.LUMIBASE_ENV === 'development' ? env.DATABASE_URL : undefined);
-  if (!connectionString) {
-    throw new Error(`${label} requires HYPERDRIVE (or development DATABASE_URL).`);
+  // System connection (B130): a batch can carry jobs of several sites, and the
+  // workers claim and settle rows without a request scope.
+  const system = createCloudflareSystemDb(env);
+  if (!system.db) {
+    throw new Error(`${label}: ${system.error}`);
   }
-  const db = createDb(connectionString);
+  const db = system.db;
   const runtime = createCloudflareRuntime({ ...env });
   // LLM/decision configuration contains strings only; never cast Worker bindings to env strings.
   const workerEnv: Record<string, string | undefined> = {};

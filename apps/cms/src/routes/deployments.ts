@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { z } from 'zod';
 import {
   DeploymentTargetCreateSchema,
   DeploymentTargetUpdateSchema,
@@ -129,11 +130,31 @@ deploymentsRouter.post('/targets/:id/deploy', async (c) => {
 
 // Deployments ------------------------------------------------------------------
 
+/**
+ * `limit` must be a non-negative integer. `0` (empty list) and values above 200
+ * (capped by the service) behave as before. Before B162 a non-numeric or
+ * negative value reached the query as `NaN`/negative, which drizzle drops, so
+ * the list came back unbounded; a fractional value failed the query with 500.
+ */
+const listLimitSchema = z.coerce.number().int().min(0);
+
 deploymentsRouter.get('/', async (c) => {
+  const rawLimit = c.req.query('limit');
+  let limit: number | undefined;
+  if (rawLimit) {
+    const parsed = listLimitSchema.safeParse(rawLimit);
+    if (!parsed.success) {
+      return c.json(
+        { errors: [{ code: 'VALIDATION', message: '`limit` must be a non-negative integer.' }] },
+        400,
+      );
+    }
+    limit = parsed.data;
+  }
   const data = await service(c).listDeployments({
     targetId: c.req.query('targetId'),
     status: c.req.query('status'),
-    limit: c.req.query('limit') ? Number(c.req.query('limit')) : undefined,
+    limit,
   });
   return c.json({ data });
 });

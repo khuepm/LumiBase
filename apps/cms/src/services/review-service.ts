@@ -429,9 +429,8 @@ export class ReviewService {
     // `completeRun` writes only while this attempt's claim holds. When it did
     // not (the call outlived the orphan timeout and a retry reclaimed the
     // run), return the run as stored now instead of this attempt's answers.
-    const current = async () => (await store.getRun(siteId, run.id)) ?? run;
     if (result?.ok) {
-      const completed = await store.completeRun(siteId, run.id, {
+      await store.completeRun(siteId, run.id, {
         status: reviewOutcomeStatus(result.data.answers, profile.minConfidence),
         provider: result.data.provider,
         model: result.data.model,
@@ -441,11 +440,14 @@ export class ReviewService {
         latencyMs,
         errorCode: null,
       }, run.createdAt);
-      return { ok: true, run: toRun(completed ?? (await current()), FRESH, profile.note), created: true };
+      // The item or caller visibility may have changed while the provider
+      // was running. Use the same assessment as subsequent reads, including
+      // when an orphan retry owns the stored run now.
+      return { ok: true, run: await this.getRun(run.id, options.principal), created: true };
     }
 
     const errorCode = 'errors' in outcome.body ? (outcome.body.errors[0]?.code ?? 'INTERNAL') : 'INTERNAL';
-    const failed = await store.completeRun(siteId, run.id, {
+    await store.completeRun(siteId, run.id, {
       status: 'error',
       provider: null,
       model: null,
@@ -455,7 +457,7 @@ export class ReviewService {
       latencyMs,
       errorCode,
     }, run.createdAt);
-    return { ok: false, run: toRun(failed ?? (await current()), FRESH, profile.note), outcome };
+    return { ok: false, run: await this.getRun(run.id, options.principal), outcome };
   }
 
   async getRun(id: string, principal: ReviewPrincipal): Promise<ReviewRun> {

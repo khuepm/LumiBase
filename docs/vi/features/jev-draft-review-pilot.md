@@ -1,13 +1,13 @@
 ---
-version: 3
+version: 4
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-10-14T16:17:50.688Z
-sourceHash: 84389437c23c0c9c
-codeVerified: 2026-10-14T16:17:50.688Z
-codeVerifiedHash: 84389437c23c0c9c
+lastUpdated: 2026-10-26T15:54:53.960Z
+sourceHash: 7cdbfd6d6b58b528
+codeVerified: 2026-10-26T15:54:53.960Z
+codeVerifiedHash: 7cdbfd6d6b58b528
 codeVerifiedClaims: 30
 ---
 
@@ -63,7 +63,7 @@ Số lượt gọi API và số run không bao giờ được báo như giá tr�
 ## Thiết lập
 
 1. **Hồ sơ.** Site admin tạo một hồ sơ kiểm tra cho bộ sưu tập (`POST /api/v1/ai/review-profiles`, xem [kiểm tra bản nháp](./draft-review.md)).
-2. **Người tham gia.** Cấp capability `ai:decide` cho các biên tập viên trong pilot (quyền `create` trên permission collection `lumibase_ai_decisions`). Biên tập viên không có quyền này thấy trình soạn thảo thường và không ghi phiên nào.
+2. **Người tham gia.** Cấp capability `ai:decide` cho các biên tập viên trong pilot (quyền `create` trên permission collection `lumibase_ai_decisions`). Biên tập viên không có quyền này thấy trình soạn thảo thường và không ghi phiên nào. Capability này chỉ có tác dụng với người dùng Studio và secret API key: publishable API key và session frontend nhận `403 FORBIDDEN` kể cả khi có nó.
 3. **Baseline.** Trong Studio, **Settings → AI decisions**: bật **Run the draft-review pilot**, chọn các bộ sưu tập (tối đa 100) và giữ chế độ **Baseline**. Giai đoạn này không gửi nội dung đi đâu, nên site chưa cần opt-in với provider. Thu ít nhất 100 phiên.
 4. **Assisted.** Bật **Send content to the decision provider**, đổi chế độ sang **Assisted** rồi lưu. Thu ít nhất 100 phiên assisted. Giữ nguyên bộ sưu tập, biên tập viên và loại công việc như ở baseline.
 5. **Đối chiếu.** Một người không phải tác giả nội dung kiểm tra một mẫu ngẫu nhiên ít nhất 50 gợi ý đã được xem và ghi `{ "sampled": 50, "errors": 3, "adjudicators": 1 }` vào một file JSON. Hệ thống không tự thu dữ liệu này.
@@ -82,7 +82,7 @@ Báo cáo được ghi vào `apps/cms/eval/jev-pilot/reports/` dưới dạng JS
 | Thao tác | Cần |
 |---|---|
 | Đổi pilot hoặc kill switch (`POST /api/v1/settings`, key `aiDecisions`) | site admin |
-| Đọc chế độ pilot, chạy kiểm tra, gửi feedback | `ai:decide` |
+| Đọc chế độ pilot, chạy kiểm tra, gửi feedback | `ai:decide` (không phải publishable API key hay session frontend) |
 | Ghi phiên | `ai:decide`, với tư cách người dùng đã đăng nhập (không phải API key) |
 | Đọc số liệu (`GET /api/v1/ai/reviews/metrics`) | site admin |
 

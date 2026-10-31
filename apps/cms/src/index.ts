@@ -6,10 +6,11 @@ import { adminPathGuard } from './middleware/admin-path-guard';
 import { withAuditContext } from './middleware/audit-context';
 import { withJsonBodyLimit } from './middleware/body-limit';
 import { withAuth } from './middleware/auth';
-import { withDb } from './middleware/db';
+import { withDb, withSystemDb } from './middleware/db';
 import { withLogger } from './middleware/logger';
 import { withRateLimit } from './middleware/rate-limit';
 import { withDeliverRateLimit } from './middleware/deliver-rate-limit';
+import { withAiIpRateLimit } from './middleware/ai-ip-rate-limit';
 import { withRls } from './middleware/rls';
 import { withRuntime } from './middleware/runtime';
 import { requireSetupComplete } from './middleware/setup-required';
@@ -119,7 +120,7 @@ app.use(
     origin: (origin, c) => resolveCorsOrigin(origin, c.env),
     credentials: true,
     allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password', 'X-LumiBase-Refresh'],
-    exposeHeaders: ['X-Request-Id'],
+    exposeHeaders: ['X-Request-Id', 'Retry-After'],
   }),
 );
 
@@ -171,15 +172,15 @@ app.route('/test-auth', testAuthRouter);
 
 // Setup wizard surface (`/api/v1/setup/*`). Public — does not pass through
 // `withTenant`/`withAuth` because no user exists during first-time setup.
-// `withRuntime` already ran globally so the per-request `withDb()` inside
-// the router resolves the connection through the runtime's DatabaseProvider.
+// `withRuntime` already ran globally so the per-request `withSystemDb()` inside
+// the router (system connection, no site scope — B130) resolves the connection through the runtime's DatabaseProvider.
 app.route('/api/v1/setup', setupRouter);
 
 // Public recovery surface (admin-setup-wizard task 10.7; Req 14.4, 14.5,
 // 14.8; design §4.7, §4.8). PUBLIC / pre-auth on purpose: the operator
 // is locked out and CANNOT authenticate, so `/admin/security/recover`
 // and `/admin/security/forgot-path` must NOT pass through `withAuth` or
-// the `admin` role gate. The router applies only `withDb()` internally
+// the `admin` role gate. The router applies only `withSystemDb()` internally
 // (like `setupRouter`).
 //
 // Mounted at `/api/v1/admin/security` *before* `app.route('/api/v1', api)`
@@ -195,8 +196,9 @@ app.route('/api/v1/setup', setupRouter);
 app.route('/api/v1/admin/security', recoveryRouter);
 
 // SCIM 2.0 provisioning. Auth happens inside the router using SCIM_TOKEN.
-// Needs withDb() so it can write to the users/teams tables.
-app.use('/scim/v2/*', withDb());
+// Cross-site user provisioning with no site scope, so it runs on the system
+// connection (B130).
+app.use('/scim/v2/*', withSystemDb());
 app.route('/scim/v2', scimRouter);
 
 // Inbound deployment status webhook. PUBLIC / pre-auth on purpose: the
@@ -208,7 +210,8 @@ app.route('/api/v1/deployments/webhook', deploymentsWebhookRouter);
 
 // Git integration public surface — OAuth callback + signature-verified webhook
 // receiver. PUBLIC on purpose: providers and OAuth redirects cannot carry a
-// session. The router applies only `withDb()` internally (like `setupRouter`).
+// session. The router applies `withSystemDb()` to the OAuth callback and
+// `withDb()` to the webhook, which scopes itself per site (B130).
 // Mounted BEFORE the authenticated `api` so its leaf paths
 // (`/oauth/:provider/callback`, `/webhook/:provider/:siteId/:integrationId`)
 // win; all other `/integrations/git/*` paths fall through to the authenticated
@@ -217,7 +220,11 @@ app.route('/api/v1/integrations/git', gitPublicRouter);
 
 // Authenticated + tenant-scoped surface.
 const api = new Hono<AppEnv>();
-api.use('*', withTenant(), withDb(), withTenantExists(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
+// `withAiIpRateLimit` (#564) sits after `withTenantExists` (only real sites get
+// counters) and before `withAuth` (a blocked /api/v1/ai/* request costs no JWT
+// or API-key work, no quota reservation, no provider call and no audit write).
+// It is a no-op outside /api/v1/ai.
+api.use('*', withTenant(), withDb(), withTenantExists(), withAiIpRateLimit(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
 // Sub-routers must be attached to their parent BEFORE the parent is mounted
 // on `api`: Hono's `route()` copies the child's routes at call time, so
 // anything registered on `authRouter`/`meRouter` afterwards is invisible to

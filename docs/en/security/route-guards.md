@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-09-28T20:04:25.222Z
+version: 6
+lastUpdated: 2026-10-17T16:36:21.044Z
 sourceLang: en
-contentHash: a419b13e68bdfcf4
-codeVerified: 2026-09-28T20:04:25.222Z
-codeVerifiedHash: a419b13e68bdfcf4
+contentHash: 0a951ac2ef5f147c
+codeVerified: 2026-10-17T16:36:21.044Z
+codeVerifiedHash: 0a951ac2ef5f147c
 codeVerifiedClaims: 22
 ---
 
@@ -27,7 +27,8 @@ Each layer answers one question, in order:
 | `withSiteMembership` | Is this principal allowed on **that** site? (`user_sites` membership; API keys already site-matched by `withAuth`) | 403 `TENANT_FORBIDDEN` |
 | `withStudioAccess` | May this principal use the Studio surface? (`appAccess`, TFA) | 403 `APP_ACCESS_DENIED` / `TFA_REQUIRED` |
 | `withControlPlaneAccessGuard` | Is this a system-administration path? Then require an admin principal even if the route forgets its own check. An admin principal is a role literally named `admin`/`administrator`, or a signed-in **user** whose role grants admin access in the active site (`access.admin`); API keys, anonymous and `frontend`-audience sessions never qualify through the bundle. One exception: `GET /api/v1/permissions/me` passes for any authenticated principal, because it only returns the caller's own permission bundle. | 403 `CONTROL_PLANE_FORBIDDEN` |
-| `withRls` | Postgres row-level security as the last line. | — |
+| `withRls` | Assertion behind the Postgres RLS backstop: with `LUMIBASE_DB_RLS=enforce` it answers `503 RLS_UNAVAILABLE` when the request db is not scoped to the request site. The scope itself is applied by `withDb` (B130). | — |
+| `withSystemDb` | System-role db (BYPASSRLS, unscoped) for routers with no site scope: setup, recovery, `/scim/v2`, git OAuth callback (B130). | — |
 
 ## Rules when adding or changing routes
 

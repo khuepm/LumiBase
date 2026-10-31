@@ -89,9 +89,17 @@ async function collectHealth(c: Context<AppEnv>): Promise<HealthResponse> {
 
   const [database, cache, search, storage, queue] = await Promise.all([
     probeService(async () => {
+      // Probe the app connection (the request path) and, when a dedicated
+      // one is configured, the system connection that workers and system
+      // routes use (B130). Either failing marks the database unhealthy.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sql = runtime.database.getConnection() as any;
       await sql`SELECT 1`;
+      if (runtime.database.hasSystemConnection?.()) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const system = runtime.database.getSystemConnection() as any;
+        await system`SELECT 1`;
+      }
       return true;
     }, 3000),
     probeCache(runtime),

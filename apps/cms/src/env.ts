@@ -16,6 +16,23 @@ export interface Bindings {
   /** Producer for event and schedule flow runs (logical `flow-events`, B118). */
   FLOW_EVENTS_QUEUE?: Queue;
   HYPERDRIVE?: Hyperdrive;
+  /**
+   * Optional second Hyperdrive config for the system role (BYPASSRLS), used by
+   * scheduled/queue handlers and system routes when `LUMIBASE_DB_RLS=enforce`
+   * (B130). Unset: system paths use `HYPERDRIVE`.
+   */
+  HYPERDRIVE_SYSTEM?: Hyperdrive;
+  /**
+   * Request-path RLS scope (B130): `off` (default) or `enforce`. With
+   * `enforce` every request statement runs in its own transaction with
+   * `app.site_id` set. Any other value fails closed.
+   */
+  LUMIBASE_DB_RLS?: string;
+  /**
+   * Connection string for the system role (BYPASSRLS) in Docker mode. Required
+   * when `LUMIBASE_DB_RLS=enforce`; unset means system paths use `DATABASE_URL`.
+   */
+  DATABASE_SYSTEM_URL?: string;
   /** @deprecated Use `c.get('runtime').cache` (CacheProvider) instead of accessing KV directly. */
   CONFIG_CACHE?: KVNamespace;
   /** @deprecated Use `c.get('runtime').storage` (StorageProvider) instead of accessing R2 directly. */
@@ -126,6 +143,8 @@ export interface Bindings {
   LUMIBASE_DELIVER_RATE_LIMIT?: string;
   /** Authenticated API rate limit (req/min per principal). Default 600; `0` = off. */
   LUMIBASE_API_RATE_LIMIT?: string;
+  /** /api/v1/ai/* rate limit per client IP per site, req/min (default 300; `0` = off). Runs before auth (#564). */
+  LUMIBASE_AI_IP_RATE_LIMIT?: string;
   /** Debounce window (seconds) for API-key `lastUsedAt` writes. Default 60; `0` = touch every request. */
   LUMIBASE_APIKEY_TOUCH_INTERVAL?: string;
   /** Max JSON request body in bytes for the app-level guard. Default 1 MiB. */
@@ -210,12 +229,18 @@ export interface Bindings {
   DECISION_MAX_INPUT_BYTES?: string;
   /** Estimated token budget on the same payload (default 24000). */
   DECISION_MAX_INPUT_TOKENS?: string;
+  /** `llm` only: cap on the estimated answer size in tokens (default 4096, 256–32768). */
+  DECISION_LLM_MAX_OUTPUT_TOKENS?: string;
+  /** `llm` + Gemini/Vertex only: thinking headroom added to the sent cap (default 1024, 0–32768). */
+  DECISION_LLM_THINKING_TOKENS?: string;
   /** Platform ceiling: admitted decisions per site per hour (default 600). A site may only tighten it. */
   DECISION_SITE_REQUESTS_PER_HOUR?: string;
   /** Platform ceiling: decisions in flight per site (default 4). */
   DECISION_SITE_MAX_CONCURRENT?: string;
   /** Platform ceiling: estimated tokens per site per UTC day, retries included (default 2,000,000). */
   DECISION_SITE_TOKENS_PER_DAY?: string;
+  /** Dedup window (s) for refused-decision audit rows (default 300; `0` = one row per refusal) (#564). */
+  DECISION_REFUSAL_AUDIT_WINDOW_SECONDS?: string;
   /** Days a draft review run (and its feedback) is kept before the hourly purge (default 180). */
   DECISION_REVIEW_RETENTION_DAYS?: string;
   // ── Custom domains / Cloudflare for SaaS (services/domains/*) ───────────
@@ -276,6 +301,12 @@ export interface AuthPrincipal {
  */
 export interface Variables {
   db: Database;
+  /**
+   * Memoised system-role db (BYPASSRLS, unscoped). Set by `withSystemDb()` /
+   * `systemDbFor(c)` in `middleware/db.ts`; only for system routes and writes
+   * that legitimately cross sites (B130).
+   */
+  systemDb?: Database;
   /** Active site id (Strict Rule #2). Set by `withTenant`. */
   siteId: string;
   /** Authenticated principal. Set by `withAuth`. */

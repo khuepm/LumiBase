@@ -69,7 +69,7 @@ export function createDockerRuntime(env: Record<string, unknown>): RuntimeContex
       secretAccessKey: s3SecretKey,
       bucket: s3Bucket,
     }),
-    database: new PostgresDatabaseProvider(databaseUrl),
+    database: new PostgresDatabaseProvider(databaseUrl, (env.DATABASE_SYSTEM_URL as string) || undefined),
     search: new MeiliSearchProvider(meiliHost, meiliKey),
     queue: new BullMQProvider(redis),
     media: new ImgproxyMediaProcessor(

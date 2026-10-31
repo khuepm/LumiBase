@@ -1,11 +1,11 @@
 ---
-version: 6
-lastUpdated: 2026-07-29T00:18:05.194Z
+version: 7
+lastUpdated: 2026-10-26T15:56:00.639Z
 sourceLang: vi
-contentHash: b42656099b8c2f3b
-codeVerified: 2026-07-29T00:18:05.194Z
-codeVerifiedHash: b42656099b8c2f3b
-codeVerifiedClaims: 26
+contentHash: 4b8146f76f71569d
+codeVerified: 2026-10-26T15:56:00.639Z
+codeVerifiedHash: 4b8146f76f71569d
+codeVerifiedClaims: 28
 ---
 
 # Permissions, Roles & Policies
@@ -183,6 +183,7 @@ Publishable key **không phải secret**. Bất cứ thứ gì ship xuống clie
 - **Origin allowlist** — `metadata.allowedOrigins`, sửa trực tiếp qua `PATCH /api-keys/:id/allowed-origins`. Rỗng = không ràng buộc. Studio cho sửa ngay trên key đang chạy tại **Access control → API keys**, chọn key rồi dùng ô *Allowed origins* trong panel chi tiết — siết chặt danh sách hoặc sửa một origin gõ sai không cần rotate token và redeploy thứ đang ship key đó. Lưu ô rỗng sẽ hỏi xác nhận, vì đó là mở rộng quyền truy cập.
 - Enforcement chỉ áp cho publishable key (secret key dùng server-to-server, nơi không có `Origin`). `Origin`/`Referer` không khớp → `403 ORIGIN_NOT_ALLOWED` và được audit; origin **vắng mặt** thì cho qua. Đây là chủ đích: control này chặn một *website khác* dùng key của bạn trong browser, tức đúng failure mode thực tế. Nó không phải phòng tuyến chống `curl` — thứ có thể set bất kỳ `Origin` nào — nên từ chối request thiếu origin chỉ làm hỏng caller native/server hợp lệ mà không thêm bảo mật.
 - `adminAccess`/`appAccess` không thể attach vào publishable key (`PUBLISHABLE_KEY_ELEVATION`), và **cả hai nửa** của một role binding đều được screen. Điều này quan trọng vì `PermissionService` cấp admin khi **hoặc** cột `roles.admin_access` **hoặc** `admin_access` của một policy đang active được set — nên chỉ soi policy là chưa đủ: một role gắn cờ trên cột của chính nó, không kèm policy elevate nào (hoặc không policy nào cả), sẽ lọt qua screen rồi cấp admin ở thời điểm request.
+- Publishable key không bao giờ dùng được AI decisions (`ai:decide`): `POST /api/v1/ai/decisions`, các route `ai:decide` của draft review và node Flows `ai:decision` trả `403 FORBIDDEN` kể cả khi policy cấp `create` trên `lumibase_ai_decisions` (#562). Session có audience `frontend` cũng vậy. Gọi decision từ Studio hoặc từ server dùng secret key.
 
 ## 7. API
 

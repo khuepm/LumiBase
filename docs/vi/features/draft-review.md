@@ -1,13 +1,13 @@
 ---
-version: 5
+version: 6
 sourceLang: en
-lastUpdated: 2026-10-15T17:06:40.300Z
+lastUpdated: 2026-10-26T15:54:52.810Z
 translatedFrom: en
-sourceHash: b8be829eacd43b1c
+sourceHash: 9b1d272fce3172f7
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T17:06:40.300Z
-codeVerifiedHash: b8be829eacd43b1c
+codeVerified: 2026-10-26T15:54:52.810Z
+codeVerifiedHash: 9b1d272fce3172f7
 codeVerifiedClaims: 22
 ---
 
@@ -64,7 +64,7 @@ Với bản nháp chưa lưu, phản hồi kèm mã băm của bản nháp như 
 |---|---|
 | Chưa thiết lập | bộ sưu tập không có hồ sơ đang hoạt động, `REVIEW_PROFILE_NOT_FOUND`, hoặc `DECISION_NOT_CONFIGURED` |
 | Đang tắt | `DECISION_DISABLED` cho site |
-| Không có quyền | `FORBIDDEN` (thiếu capability `ai:decide`) |
+| Không có quyền | `FORBIDDEN` (thiếu capability `ai:decide`, hoặc caller là publishable API key hay session frontend) |
 | Hết ngân sách | `DECISION_QUOTA_EXCEEDED`, `DECISION_CONCURRENCY_LIMITED` hoặc `DECISION_RATE_LIMITED`, kèm thời gian chờ `Retry-After` khi có |
 | Quá thời gian | `DECISION_TIMEOUT` |
 | Nhà cung cấp không khả dụng | `DECISION_UNAVAILABLE`, `DECISION_UPSTREAM`, `DECISION_AUTH`, `DECISION_PARSE_FAILED`, `DECISION_VALIDATION` hoặc `DECISION_QUOTA_UNAVAILABLE` |

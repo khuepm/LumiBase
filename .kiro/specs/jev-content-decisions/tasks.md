@@ -39,12 +39,14 @@ Priority chỉ áp dụng trong chương trình Jev. Chưa có assignee hoặc d
 - [ ] **J03 — [fix(ai): J03 align LLM decision semantics and disable tool calling](https://github.com/khuepm/LumiBase/issues/510)**
   - Đầu ra: Bổ sung chế độ structured decision trong LLM abstraction: system instruction đúng, không gắn CORE_SKILLS và không cho tool calling; không thay đổi hành vi chat hiện tại.
   - Nghiệm thu chính: Inspect request thực của adapter qua mocked fetch cho OpenAI-compatible, Anthropic, Gemini/Vertex và Workers AI: đúng system prompt, không có tools.
+  - Trạng thái (2026-10-12): phần nền đã merge qua #528. Follow-up trên `feature/510-jev-llm-decision-followups` (phân loại lỗi adapter LLM, không log body upstream, output budget có giới hạn thay cho trần 1024, headroom thinking + `thoughtsTokenCount` cho Gemini/Vertex) — đã implement, đang chờ review, **CHƯA Done/accepted**.
 
 ## B — MVP Kiểm tra bản nháp
 
 - [ ] **J04 — [feat(ai): J04 govern decision access, tenant budgets and audit events](https://github.com/khuepm/LumiBase/issues/511)**
   - Đầu ra: Chốt capability sử dụng decisions, phân loại route theo DoD; enforce trên HTTP/SDK và các caller nội bộ tương ứng. Giữ auth, membership, row/field RBAC hiện có.
   - Nghiệm thu chính: Tests deny anonymous/không capability/cross-site trước gọi provider; quota bị vượt không gọi upstream.
+  - Trạng thái (2026-10-12): governance đã merge qua #529 (contract `ai:decide`, mã lỗi, route giữ nguyên). Hardening trên `feature/510-jev-llm-decision-followups` (reserve đúng trần output của `llm` trước quota, fail-closed khi counter trả giá trị không phải số, audit sync dùng uuidv7, tripwire nguồn cho mọi lời gọi provider, `Retry-After` qua CORS, quyền AI decisions trong Studio, test drain-vs-quota và hai site, test Postgres hai site) — đã implement, đang chờ review, **CHƯA Done/accepted**.
 - [ ] **J05 — [feat(ai): J05 add versioned review profiles and item-bound decision runs](https://github.com/khuepm/LumiBase/issues/512)**
   - Đầu ra: Tạo review profile theo site/collection: fields được đọc, taxonomy cho choice, rubric atomic cho tone/brief alignment, noul cho cờ cần review; có other/unknown khi thích hợp.
   - Nghiệm thu chính: Tests cô lập tenant/field RBAC và profile permissions; snapshot chứa field cấm bị từ chối.

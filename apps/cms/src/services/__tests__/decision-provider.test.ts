@@ -5,6 +5,8 @@ import {
   LLMDecisionProvider,
   SystemOneDecisionProvider,
   createDecisionProvider,
+  estimateDecisionAnswerTokens,
+  resetDecisionProviderWarningsForTests,
   type DecisionRequest,
 } from '../decision-provider';
 import type { LLMProvider } from '../llm-provider';
@@ -402,6 +404,7 @@ describe('LLMDecisionProvider', () => {
       systemPrompt: expect.stringContaining('structured decision engine'),
       tools: false,
       signal: expect.any(AbortSignal),
+      maxOutputTokens: expect.any(Number),
     });
   });
 
@@ -446,5 +449,132 @@ describe('LLMDecisionProvider', () => {
   ])('rejects malformed LLM output: %s', async (_label, answers) => {
     await expect(new LLMDecisionProvider(llmReturning(JSON.stringify({ answers })), 'm').decide(request))
       .rejects.toMatchObject({ code: 'DECISION_PARSE_FAILED' });
+  });
+});
+
+describe('#510 J03 follow-up: Jev error messages never carry the upstream body', () => {
+  it.each([400, 422, 500])('drops the %i body from err.message', async (status) => {
+    const sentinel = 'SENTINEL_UPSTREAM_BODY_customer@example.test';
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(`echo: ${sentinel}`, { status })));
+
+    const error = await new SystemOneDecisionProvider({ apiKey: 'k', limits: { maxRetries: 0 } })
+      .decide(request)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(DecisionProviderError);
+    expect((error as Error).message).toBe(`typesafe decision API error ${status}`);
+    expect((error as Error).message).not.toContain('SENTINEL');
+  });
+});
+
+describe('#510 J03 follow-up: Jev score drift is detected, never rewritten', () => {
+  it('warns once per isolate when the upstream score differs from Σ i·p(i)', async () => {
+    resetDecisionProviderWarningsForTests();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // upstreamBody.quality: Σ i·p(i) = 0·0 + 1·0.6 + 2·0.4 = 1.4 → consistent. Drift it.
+    const drifted = structuredClone(upstreamBody);
+    drifted.answers.quality.score = 2;
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(drifted)));
+    const provider = new SystemOneDecisionProvider({ apiKey: 'k' });
+
+    const first = await provider.decide(request);
+    await provider.decide(request);
+
+    expect((first.answers.quality as { score: number }).score).toBe(2);
+    const driftWarnings = warn.mock.calls.filter(([m]) => String(m).includes('differs from'));
+    expect(driftWarnings).toHaveLength(1);
+    expect(JSON.stringify(driftWarnings[0])).not.toContain('quality');
+  });
+
+  it('does not warn when the score matches the weighted distribution', async () => {
+    resetDecisionProviderWarningsForTests();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(upstreamBody)));
+
+    await new SystemOneDecisionProvider({ apiKey: 'k' }).decide(request);
+
+    expect(warn.mock.calls.filter(([m]) => String(m).includes('differs from'))).toHaveLength(0);
+  });
+});
+
+describe('#510 J03 follow-up: estimateDecisionAnswerTokens', () => {
+  const yesNo = (n: number, prefix = 'question_'): DecisionRequest['questions'] => Object.fromEntries(
+    Array.from({ length: n }, (_, i) => [`${prefix}${String(i).padStart(2, '0')}`, {
+      type: 'choice' as const, instructions: 'x', criteria: { yes: null, no: null },
+    }]),
+  );
+
+  it('grows with the number of questions, options and levels', () => {
+    expect(estimateDecisionAnswerTokens(yesNo(2))).toBeGreaterThan(estimateDecisionAnswerTokens(yesNo(1)));
+    const choice = (options: number) => estimateDecisionAnswerTokens({
+      q: { type: 'choice', instructions: 'x', criteria: Object.fromEntries(Array.from({ length: options }, (_, i) => [`o${i}`, null])) },
+    });
+    expect(choice(3)).toBeGreaterThan(choice(2));
+    const score = (levels: number) => estimateDecisionAnswerTokens({
+      q: { type: 'score', instructions: 'x', criteria: Array.from({ length: levels }, (_, i) => `l${i}`) },
+    });
+    expect(score(10)).toBeGreaterThan(score(2));
+  });
+
+  it('counts every non-ASCII code point as a whole token', () => {
+    const ascii = estimateDecisionAnswerTokens({ cau_hoi: { type: 'noul', instructions: 'x', criteria: { true: 'a', false: 'b' } } });
+    const vietnamese = estimateDecisionAnswerTokens({ câu_hỏi: { type: 'noul', instructions: 'x', criteria: { true: 'a', false: 'b' } } });
+    // Two code points become non-ASCII: each costs a token instead of half a token (×1.25 margin).
+    expect(vietnamese).toBeGreaterThan(ascii);
+  });
+
+  it('does not depend on question or option order', () => {
+    const a = estimateDecisionAnswerTokens({
+      x: { type: 'choice', instructions: 'i', criteria: { alpha: null, be: null, gamma_long: 'x' } },
+      y: { type: 'noul', instructions: 'i', criteria: { true: 'a', false: 'b' } },
+    });
+    const b = estimateDecisionAnswerTokens({
+      y: { type: 'noul', instructions: 'i', criteria: { true: 'a', false: 'b' } },
+      x: { type: 'choice', instructions: 'i', criteria: { gamma_long: 'x', be: null, alpha: null } },
+    });
+    expect(a).toBe(b);
+  });
+
+  it('ignores instruction and criteria text (output size only)', () => {
+    const short = estimateDecisionAnswerTokens({ q: { type: 'noul', instructions: 'x', criteria: { true: 'a', false: 'b' } } });
+    const long = estimateDecisionAnswerTokens({
+      q: { type: 'noul', instructions: 'x'.repeat(5_000), criteria: { true: 'a'.repeat(500), false: 'b' } },
+    });
+    expect(long).toBe(short);
+  });
+});
+
+describe('#510 J03 follow-up: LLMDecisionProvider constructor stays compatible', () => {
+  it('still accepts the three-argument form', async () => {
+    const llm: LLMProvider = { chat: vi.fn().mockResolvedValue({ content: JSON.stringify(upstreamBody), toolCalls: [] }) };
+
+    const result = await new LLMDecisionProvider(llm, 'm', { deadlineMs: 5_000 }).decide(request);
+
+    expect(result.provider).toBe('llm');
+  });
+});
+
+describe('#510 J03 follow-up: configured provider exposes the llm output allowance', () => {
+  it('typesafe: keeps #529 limits and defines no allowance (governance estimates)', () => {
+    const configured = createDecisionProvider({ DECISION_PROVIDER: 'typesafe', TYPESAFE_API_KEY: 'k', DECISION_MAX_RETRIES: '3' })!;
+    expect(configured.limits.maxRetries).toBe(3);
+    expect(configured.outputAllowance).toBeUndefined();
+  });
+  it('llm: allowance is the cap sent, with thinking headroom only on Gemini/Vertex', () => {
+    const openai = createDecisionProvider({ DECISION_PROVIDER: 'llm', LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'k' })!;
+    const gemini = createDecisionProvider({ DECISION_PROVIDER: 'llm', LLM_PROVIDER: 'gemini', GEMINI_API_KEY: 'k' })!;
+    const need = Math.max(estimateDecisionAnswerTokens(request.questions), 256);
+    expect(openai.outputAllowance!(request)).toBe(need);
+    expect(gemini.outputAllowance!(request)).toBe(need + 1024);
+  });
+  it('llm: the allowance throws the same 413 as decide when the answer cannot fit', () => {
+    const configured = createDecisionProvider({
+      DECISION_PROVIDER: 'llm', LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'k', DECISION_LLM_MAX_OUTPUT_TOKENS: '256',
+    })!;
+    const big: DecisionRequest = {
+      state: 's',
+      questions: { q: { type: 'choice', instructions: 'x', criteria: Object.fromEntries(Array.from({ length: 120 }, (_, i) => [`option_${i}`, null])) } },
+    };
+    expect(() => configured.outputAllowance!(big)).toThrow(expect.objectContaining({ code: 'DECISION_INPUT_TOO_LARGE' }));
   });
 });

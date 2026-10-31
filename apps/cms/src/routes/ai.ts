@@ -14,6 +14,7 @@ import { SchemaService } from '../services/schema-service';
 import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
 import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
 import { createDecisionProvider, type DecisionProviderEnv } from '../services/decision-provider';
+import { decisionAuditContextForRequest } from '../services/decision-refusal-audit';
 import {
   authorizeDecision,
   decisionQuotaFromEnv,
@@ -21,7 +22,6 @@ import {
   readDecisionSettings,
   runGovernedDecision,
   writeDecisionAudit,
-  type DecisionAuditContext,
   type DecisionQuotaEnv,
 } from '../services/decision-governance';
 import { formatSafeError } from '@lumibase/contracts/utils';
@@ -530,17 +530,9 @@ aiRouter.delete('/conversations/:id', async (c) => {
  * about `state`. Read-only: no content is written, so no HITL approval.
  * Governed (#511): `ai:decide` capability, site opt-in, field allowlist,
  * per-site quota, and an audit event — all before the provider is called.
+ * Publishable API keys and `frontend` sessions are refused with 403 FORBIDDEN
+ * even with that capability (#562), before the body is read.
  */
-function decisionAuditContext(c: Context<AppEnv>): DecisionAuditContext {
-  const siteId = c.get('siteId');
-  return {
-    db: c.get('db'),
-    siteId,
-    requestId: c.get('requestId') ?? null,
-    principal: principalRefFromAuth(c.get('auth'), siteId),
-  };
-}
-
 aiRouter.post('/decisions', async (c) => {
   const startedAt = Date.now();
 
@@ -549,7 +541,14 @@ aiRouter.post('/decisions', async (c) => {
     authorizeDecision(grant);
   } catch (err) {
     const error = err as DecisionGovernanceError;
-    await writeDecisionAudit(decisionAuditContext(c), { outcome: error.code, status: 403, startedAt });
+    // Refusals are aggregated per window (#564): this bounds the audit rows a
+    // flood of refused requests can write.
+    await writeDecisionAudit(decisionAuditContextForRequest(c), {
+      outcome: error.code,
+      status: 403,
+      startedAt,
+      refusalReason: error.reason,
+    });
     return c.json({ errors: [{ code: error.code, message: error.message }] }, 403);
   }
 
@@ -557,7 +556,7 @@ aiRouter.post('/decisions', async (c) => {
   const parsed = decisionRequestSchema.safeParse(body);
 
   if (!parsed.success) {
-    await writeDecisionAudit(decisionAuditContext(c), { outcome: 'VALIDATION', status: 400, startedAt });
+    await writeDecisionAudit(decisionAuditContextForRequest(c), { outcome: 'VALIDATION', status: 400, startedAt });
     return c.json(
       {
         errors: parsed.error.issues.map((issue) => ({
@@ -583,7 +582,7 @@ aiRouter.post('/decisions', async (c) => {
     }),
     request,
     // Client disconnect aborts the upstream call and suppresses retries.
-    { signal: c.req.raw.signal, audit: decisionAuditContext(c), startedAt },
+    { signal: c.req.raw.signal, audit: decisionAuditContextForRequest(c), startedAt },
   );
   if (outcome.retryAfterSeconds !== undefined) c.header('Retry-After', String(outcome.retryAfterSeconds));
   return c.json(outcome.body, outcome.status);

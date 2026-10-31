@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T17:24:38.531Z
+version: 5
+lastUpdated: 2026-10-17T16:36:20.171Z
 sourceLang: en
-contentHash: 8bdc8a6b72516bd5
-codeVerified: 2026-08-02T17:24:38.531Z
-codeVerifiedHash: 8bdc8a6b72516bd5
-codeVerifiedClaims: 4
+contentHash: f8a278e8d2b78c15
+codeVerified: 2026-10-17T16:36:20.171Z
+codeVerifiedHash: f8a278e8d2b78c15
+codeVerifiedClaims: 6
 ---
 
 # Upgrade Operations
@@ -110,6 +110,7 @@ Run migrations deliberately and verify both schema and application behavior:
 - For production, schedule a maintenance window if the migration changes large tables, indexes, constraints, permissions, or tenant-scoped data.
 - Apply migrations with the same application version that will serve traffic.
 - Verify migration history after completion.
+- If the deployment uses the RLS backstop, re-apply `packages/database/migrations/rls-policies.sql` as the database owner after the migrations (`psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f packages/database/migrations/rls-policies.sql`). The file is idempotent. Then verify the policies as in the "Database Security" section of `DEPLOYMENT-CHECKLIST.md`. Deployments that applied the file before B125 must re-apply it: the old version had only restrictive policies, so the non-superuser app role saw no rows. The policies only enforce anything with `LUMIBASE_DB_RLS=enforce` and a NOBYPASSRLS app role (opt-in, B130). Turning it on needs no migration or backfill: create the app and system roles, set `DATABASE_SYSTEM_URL` (or bind `HYPERDRIVE_SYSTEM`) and the flag, as in [Request-path RLS scope](../features/rls-request-scope.md). To roll back, set `LUMIBASE_DB_RLS=off` and point the app back at a role that bypasses RLS. Default deployments need nothing; with the flag off `withRls` no longer runs its old per-request `set_config` statement.
 - Smoke test core reads and writes for at least one representative site tenant.
 - Keep a record of migration IDs applied during the upgrade.
 

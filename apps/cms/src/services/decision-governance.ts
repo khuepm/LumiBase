@@ -6,7 +6,8 @@
  * `DecisionGovernanceService.decide` pair rather than calling a provider.
  *
  * Every gate runs before the provider is called, in this order:
- *   capability `ai:decide` → provider configured → site opt-in (kill switch)
+ *   caller class (no publishable API key or frontend session, #562)
+ *   → capability `ai:decide` → provider configured → site opt-in (kill switch)
  *   → state field allowlist → input budget → quota reservation.
  *
  * Quota is accounted with the runtime's atomic counter (`CacheProvider.increment`:
@@ -24,6 +25,11 @@ import type { UnofficialStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { AuditLogger } from '../modules/audit/logger';
 import {
+  recordDecisionRefusal,
+  type DecisionRefusalStore,
+  type DecisionRefusalSummary,
+} from './decision-refusal-audit';
+import {
   assertDecisionInputBudget,
   DecisionProviderError,
   readBound,
@@ -37,6 +43,7 @@ import {
   DECISION_CAPABILITY,
   satisfiesCapability,
   type AuthenticatedPrincipalRef,
+  type PrincipalCallerClass,
 } from './effective-capability-service';
 
 export { DECISION_CAPABILITY, DECISION_PERMISSION_COLLECTION } from './effective-capability-service';
@@ -225,7 +232,8 @@ export function effectiveDecisionQuota(platform: DecisionQuota, site: DecisionSi
 /**
  * Output tokens are unknown until the provider answers, so they are reserved
  * from the shape of the questions: a fixed envelope plus a probability per
- * option. An estimate, not a tokenizer count.
+ * option. An estimate, not a tokenizer count. Fallback when the provider has
+ * no output allowance (Jev/OpenRouter); `llm` reserves the cap it sends.
  */
 export function estimateDecisionOutputTokens(request: DecisionRequest): number {
   let total = 32;
@@ -250,16 +258,46 @@ export type DecisionGovernanceCode =
   | 'DECISION_CONCURRENCY_LIMITED'
   | 'DECISION_QUOTA_UNAVAILABLE';
 
+/**
+ * Why `authorizeDecision` refused (#564). A bounded set: it is part of the
+ * refusal dedup key, the refusal metric label and `metadata.refusal.reason`.
+ */
+export const DECISION_REFUSAL_REASONS = [
+  'publishable_api_key',
+  'frontend_session',
+  'unclassified_caller',
+  'capability_missing',
+  'principal_unresolved',
+  'principal_site_mismatch',
+  'principal_not_found',
+  'principal_inactive',
+  'principal_not_member',
+  'api_key_revoked',
+  'api_key_expired',
+  'dev_principal_forbidden',
+  'principal_denied',
+  'other',
+] as const;
+export type DecisionRefusalReason = (typeof DECISION_REFUSAL_REASONS)[number];
+
 export class DecisionGovernanceError extends Error {
   readonly code: DecisionGovernanceCode;
   /** Seconds until the exhausted window resets, for `Retry-After`. */
   readonly retryAfterSeconds?: number;
+  /** Set on authorization refusals (`FORBIDDEN` from `authorizeDecision`) only. */
+  readonly reason?: DecisionRefusalReason;
 
-  constructor(code: DecisionGovernanceCode, message: string, retryAfterSeconds?: number) {
+  constructor(
+    code: DecisionGovernanceCode,
+    message: string,
+    retryAfterSeconds?: number,
+    options?: { reason?: DecisionRefusalReason },
+  ) {
     super(message);
     this.name = 'DecisionGovernanceError';
     this.code = code;
     this.retryAfterSeconds = retryAfterSeconds;
+    if (options?.reason) this.reason = options.reason;
   }
 }
 
@@ -332,6 +370,13 @@ export class DecisionQuotaLedger {
         await undo();
         throw new DecisionGovernanceError('DECISION_QUOTA_UNAVAILABLE', 'Decision quota accounting is unavailable.');
       }
+      // `undefined > limit` and `NaN > limit` are false, so a garbage counter
+      // would admit the request. Fail closed. The bad key is not rolled back:
+      // whether it applied is unknown, and undoing it could under-count.
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        await undo();
+        throw new DecisionGovernanceError('DECISION_QUOTA_UNAVAILABLE', 'Decision quota accounting is unavailable.');
+      }
       taken.push([key, by]);
       return value;
     };
@@ -389,13 +434,67 @@ function secondsUntil(now: number, at: number): number {
 export interface DecisionGrant {
   allowed: boolean;
   capabilities: readonly string[];
+  /**
+   * From `resolveRequestCapabilities` / `resolvePrincipalCapabilities` only
+   * (#562). Required so every grant producer has to pass it on; an entry
+   * point must never write it itself (`decision-governance.wiring.test.ts`).
+   */
+  callerClass: PrincipalCallerClass;
+  /**
+   * Denial code from the capability resolver when `allowed` is false. Used
+   * only to name the refusal reason (#564); it never admits anything.
+   */
+  code?: string;
 }
 
-/** Throws FORBIDDEN unless the resolved grant carries `ai:decide` (admin satisfies it). */
+const GRANT_DENIAL_REASONS: ReadonlySet<string> = new Set([
+  'principal_unresolved',
+  'principal_site_mismatch',
+  'principal_not_found',
+  'principal_inactive',
+  'principal_not_member',
+  'api_key_revoked',
+  'api_key_expired',
+  'dev_principal_forbidden',
+]);
+
+function grantDenialReason(code: string | undefined): DecisionRefusalReason {
+  const reason = code?.toLowerCase();
+  return reason && GRANT_DENIAL_REASONS.has(reason) ? (reason as DecisionRefusalReason) : 'principal_denied';
+}
+
+function refused(message: string, reason: DecisionRefusalReason): DecisionGovernanceError {
+  return new DecisionGovernanceError('FORBIDDEN', message, undefined, { reason });
+}
+
+export const PUBLISHABLE_KEY_DECISION_MESSAGE =
+  'Publishable API keys cannot use AI decisions. Call this endpoint from a server with a secret API key.';
+export const FRONTEND_SESSION_DECISION_MESSAGE = 'Frontend (subscriber) sessions cannot use AI decisions.';
+
+/**
+ * Throws FORBIDDEN unless the caller may ask for a decision.
+ *
+ * 1. Caller class first (#562, B144): publishable API keys and
+ *    `frontend`-audience sessions are refused even when a role or policy
+ *    grants `ai:decide` or admin access. Those credentials live in browsers
+ *    and apps, so a paid provider call must come from Studio or a server
+ *    holding a secret key. Anything other than `standard` (including a missing
+ *    value from a cast) is refused: fail closed.
+ * 2. Then the `ai:decide` capability (admin satisfies it).
+ */
 export function authorizeDecision(grant: DecisionGrant): void {
-  if (!grant.allowed || !satisfiesCapability(grant.capabilities, DECISION_CAPABILITY)) {
-    throw new DecisionGovernanceError('FORBIDDEN', `The ${DECISION_CAPABILITY} capability is required.`);
+  if (grant.callerClass === 'publishable_api_key') {
+    throw refused(PUBLISHABLE_KEY_DECISION_MESSAGE, 'publishable_api_key');
   }
+  if (grant.callerClass === 'frontend_session') {
+    throw refused(FRONTEND_SESSION_DECISION_MESSAGE, 'frontend_session');
+  }
+  if (grant.callerClass !== 'standard') {
+    throw refused('The caller could not be classified.', 'unclassified_caller');
+  }
+  const message = `The ${DECISION_CAPABILITY} capability is required.`;
+  if (!grant.allowed) throw refused(message, grantDenialReason(grant.code));
+  if (!satisfiesCapability(grant.capabilities, DECISION_CAPABILITY)) throw refused(message, 'capability_missing');
 }
 
 // ---------------------------------------------------------------------------
@@ -469,19 +568,23 @@ export class DecisionGovernanceService {
     }
 
     let inputTokens: number;
+    let outputTokens: number;
     try {
       const size = assertDecisionInputBudget(request, configured.limits);
       accounting.inputBytes = size.bytes;
       accounting.estimatedInputTokens = size.estimatedTokens;
       inputTokens = size.estimatedTokens;
+      // `llm` reserves exactly the cap it sends upstream (thinking headroom
+      // included) and throws its output 413 here, before any counter moves.
+      outputTokens = configured.outputAllowance?.(request) ?? estimateDecisionOutputTokens(request);
     } catch (error) {
       return fail(error as Error);
     }
 
-    const outputTokens = estimateDecisionOutputTokens(request);
     const perAttempt = inputTokens + outputTokens;
-    // Worst case: every retry is sent and billed.
-    const reserve = perAttempt * (configured.limits.maxRetries + 1);
+    // Worst case: every attempt the provider can send is sent and billed.
+    // Jev/OpenRouter retry (maxRetries + 1); `llm` sends one request.
+    const reserve = perAttempt * (configured.maxAttempts ?? configured.limits.maxRetries + 1);
     const now = this.deps.now ?? Date.now;
     const ledger = new DecisionQuotaLedger(
       this.deps.cache,
@@ -589,6 +692,11 @@ export interface DecisionAuditContext {
   siteId: string;
   requestId: string | null;
   principal: AuthenticatedPrincipalRef | null;
+  /**
+   * Bounds authorization refusals (#564). Request paths get it from
+   * `decisionAuditContextForRequest`; without it every refusal writes a row.
+   */
+  refusal?: DecisionRefusalStore;
 }
 
 export interface DecisionAuditRecord {
@@ -600,15 +708,30 @@ export interface DecisionAuditRecord {
   provider?: string;
   model?: string;
   accounting?: DecisionAccounting;
+  /** Why authorization refused (`outcome: 'FORBIDDEN'`): `DecisionGovernanceError.reason`. */
+  refusalReason?: DecisionRefusalReason;
+  /** Set by the refusal aggregator only. */
+  refusal?: DecisionRefusalSummary;
+  /** Keyed hash of the client IP (refusal rows only); never the IP itself. */
+  clientIpHash?: string | null;
 }
 
 /**
- * One `ai_decision` audit event per call (#511). It records who, which
+ * One `ai_decision` audit event per call (#511), except authorization
+ * refusals (`outcome: 'FORBIDDEN'`), which are aggregated per site, subject
+ * and reason over a window (#564, `decision-refusal-audit.ts`) so a flood of
+ * refused requests cannot flood the audit log. It records who, which
  * provider/model, a rubric fingerprint, the outcome, latency and usage — never
  * state, instructions, criteria, answers, the actor's email or the client IP.
+ * Refusal events carry a keyed hash of the IP (`clientIpHash`), not the IP.
  * Retention follows the audit log (`LUMIBASE_AUDIT_RETENTION_DAYS`).
  */
 export async function writeDecisionAudit(audit: DecisionAuditContext, record: DecisionAuditRecord): Promise<void> {
+  if (record.outcome === 'FORBIDDEN') return recordDecisionRefusal(audit, record, writeDecisionAuditRow);
+  return writeDecisionAuditRow(audit, record);
+}
+
+async function writeDecisionAuditRow(audit: DecisionAuditContext, record: DecisionAuditRecord): Promise<void> {
   const { db, siteId, principal } = audit;
   if (!db) return;
   await new AuditLogger({ db, siteId }).write({
@@ -630,6 +753,8 @@ export async function writeDecisionAudit(audit: DecisionAuditContext, record: De
       latencyMs: Date.now() - record.startedAt,
       usage: record.data?.usage ?? null,
       ...(record.accounting ?? {}),
+      ...(record.refusal ? { refusal: record.refusal } : {}),
+      ...(record.clientIpHash !== undefined ? { clientIpHash: record.clientIpHash } : {}),
     },
   });
 }

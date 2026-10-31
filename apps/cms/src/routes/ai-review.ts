@@ -35,6 +35,7 @@ import { Hono, type Context } from 'hono';
 import type { ZodError } from 'zod';
 import type { AppEnv } from '../env';
 import { createDecisionProvider, type DecisionProviderEnv } from '../services/decision-provider';
+import { decisionAuditContextForRequest } from '../services/decision-refusal-audit';
 import {
   authorizeDecision,
   decisionQuotaFromEnv,
@@ -42,7 +43,6 @@ import {
   reviewRolloutMode,
   runGovernedDecision,
   writeDecisionAudit,
-  type DecisionAuditContext,
   type DecisionGovernanceError,
   type DecisionQuotaEnv,
 } from '../services/decision-governance';
@@ -75,16 +75,6 @@ function pilotDisabled(c: Context<AppEnv>, collection: string): Response {
 
 type Gate = { principal: ReviewPrincipal } | { denied: Response };
 
-function auditContext(c: Context<AppEnv>): DecisionAuditContext {
-  const siteId = c.get('siteId');
-  return {
-    db: c.get('db'),
-    siteId,
-    requestId: c.get('requestId') ?? null,
-    principal: principalRefFromAuth(c.get('auth'), siteId),
-  };
-}
-
 function forbidden(c: Context<AppEnv>, message: string): Response {
   return c.json({ errors: [{ code: 'FORBIDDEN', message }] }, 403);
 }
@@ -100,14 +90,23 @@ async function gate(c: Context<AppEnv>, need: 'decide' | 'admin', audit = false)
   if (need === 'admin') {
     if (!grant.allowed || !grant.controlPlaneAdmin || !ref) return { denied: forbidden(c, 'Admin role required.') };
   } else {
-    let message: string | null = null;
+    let refusal: DecisionGovernanceError | null = null;
     try {
       authorizeDecision(grant);
     } catch (err) {
-      message = (err as DecisionGovernanceError).message;
+      refusal = err as DecisionGovernanceError;
     }
-    if (message !== null || !ref) {
-      if (audit) await writeDecisionAudit(auditContext(c), { outcome: 'FORBIDDEN', status: 403, startedAt: Date.now() });
+    const message = refusal?.message ?? null;
+    if (refusal !== null || !ref) {
+      // Refusals are aggregated per window (#564), so a flood cannot flood the audit log.
+      if (audit) {
+        await writeDecisionAudit(decisionAuditContextForRequest(c), {
+          outcome: 'FORBIDDEN',
+          status: 403,
+          startedAt: Date.now(),
+          refusalReason: refusal?.reason ?? 'principal_unresolved',
+        });
+      }
       return { denied: forbidden(c, message ?? 'The ai:decide capability is required.') };
     }
   }
@@ -121,7 +120,7 @@ function service(c: Context<AppEnv>): ReviewService {
   const siteId = c.get('siteId');
   const env = c.env as unknown as DecisionProviderEnv & DecisionQuotaEnv;
   const configured = createDecisionProvider(env);
-  const audit = auditContext(c);
+  const audit = decisionAuditContextForRequest(c);
   return new ReviewService({
     store: reviewStoreFor(db),
     siteId,
@@ -241,7 +240,7 @@ aiReviewRouter.post('/reviews', async (c) => {
   try {
     // Pilot rollout (J09): reviews run only on pilot collections in assisted mode.
     if ((await rolloutMode(c, parsed.data.collection)) !== 'assisted') {
-      await writeDecisionAudit(auditContext(c), { outcome: 'DECISION_DISABLED', status: 403, startedAt: Date.now() });
+      await writeDecisionAudit(decisionAuditContextForRequest(c), { outcome: 'DECISION_DISABLED', status: 403, startedAt: Date.now() });
       return pilotDisabled(c, parsed.data.collection);
     }
     const result = await service(c).runReview(parsed.data, {

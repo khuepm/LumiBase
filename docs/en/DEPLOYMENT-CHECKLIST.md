@@ -1,11 +1,11 @@
 ---
-version: 3
-lastUpdated: 2026-10-15T22:44:20.713Z
+version: 7
+lastUpdated: 2026-10-31T17:56:46.242Z
 sourceLang: en
-contentHash: ec8fbb57ca052907
-codeVerified: 2026-10-15T22:44:20.713Z
-codeVerifiedHash: ec8fbb57ca052907
-codeVerifiedClaims: 26
+contentHash: ccd23a962e4574a2
+codeVerified: 2026-10-31T17:56:46.242Z
+codeVerifiedHash: ccd23a962e4574a2
+codeVerifiedClaims: 30
 ---
 
 # LumiBase Production Deployment Checklist
@@ -185,7 +185,28 @@ pnpm -F @lumibase/database migrate
 
 ### Database Security
 
-- [ ] Row Level Security (RLS) enabled
+- [ ] Choose the RLS mode. The backstop only enforces anything with `LUMIBASE_DB_RLS=enforce`; the full procedure is in [Request-path RLS scope](features/rls-request-scope.md).
+  - `off` (default): the app connects with a role that bypasses RLS (a role with `BYPASSRLS`; a superuser also bypasses it). The table owner is not exempt: `rls-policies.sql` sets `FORCE ROW LEVEL SECURITY`, so a non-superuser owner sees no rows. Applying the file changes nothing in this mode.
+  - `enforce`: two roles. `DATABASE_URL` (or `HYPERDRIVE`) is an app role created `NOSUPERUSER NOBYPASSRLS`; never a superuser or a `BYPASSRLS` role, or the backstop enforces nothing. `DATABASE_SYSTEM_URL` (or the `HYPERDRIVE_SYSTEM` binding) is a system role with `BYPASSRLS`, preferably not a superuser, for workers, cron and system routes. Both roles get `USAGE` on the schema and `SELECT, INSERT, UPDATE, DELETE` on all tables (re-grant after migrations that add tables).
+- [ ] With `enforce`: the Docker startup log shows `[db-rls] request-path RLS scope: enforce (…)` and no `[db-rls] WARNING`; `GET /health/ready` is 200 (it probes both connections).
+- [ ] Row Level Security (RLS) enabled: apply `packages/database/migrations/rls-policies.sql` as the database owner (not the app role). `pnpm db:migrate` does not apply it; re-apply after every upgrade.
+  ```bash
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \
+    -f packages/database/migrations/rls-policies.sql
+  ```
+- [ ] RLS policies verified: the query below returns 2 rows per table (`site_isolation` RESTRICTIVE, `site_isolation_permit` PERMISSIVE).
+  ```sql
+  SELECT tablename, policyname, permissive FROM pg_policies
+   WHERE policyname IN ('site_isolation', 'site_isolation_permit')
+   ORDER BY 1, 2;
+  ```
+- [ ] RLS smoke test as a role without BYPASSRLS: the count is > 0 for a site that has settings, and 0 when `app.site_id` is not set. This test opens its own transaction; it proves the policies, not that the application is scoped. For the application, run the two-site check in [Request-path RLS scope](features/rls-request-scope.md#enable-it).
+  ```sql
+  BEGIN;
+  SELECT set_config('app.site_id', '<site id>', true);
+  SELECT count(*) FROM lumibase_settings;
+  COMMIT;
+  ```
 - [ ] No public schema access
 - [ ] Audit logging enabled
 - [ ] Backup schedule configured
