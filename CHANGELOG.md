@@ -10,6 +10,37 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Added
+- **Flows run on Cloudflare Workers (B118).** The Worker `queue()` export is
+  now a dispatcher (`processCloudflareQueue`) that routes by queue name to
+  `agent-runs`, `flow-runs` and `flow-events`. The flow handlers run the same
+  `registerFlowRunsWorker` / `registerFlowEventWorker` code as Docker, with the
+  same cache, key provider and string-only provider env, so manual runs
+  (including J10 `ai:decision` and the J11 Jev automation flows), async AI chat
+  and event/schedule runs (including a scheduled J12 `drift-scan`) execute on
+  Workers. A new `* * * * *` cron sweeps due schedule flows. `wrangler.toml`
+  adds `FLOW_RUNS_QUEUE` / `FLOW_EVENTS_QUEUE` producers, consumers
+  (`max_retries = 2`, same 3 deliveries as Docker) and `-dlq` dead-letter
+  queues in all five profiles. A tripwire
+  (`worker-queue-consumers.wiring.test.ts`) fails when a queue is consumed on
+  only one entrypoint or with a different provider set; DoD §2b gains the
+  matching checklist line. Verified by unit tests, `wrangler deploy --dry-run`
+  for every profile, `verify:worker-bundle`, `verify:worker-startup` and a local
+  `wrangler dev` run with a stub decision provider; not on a deployed Worker.
+  **Upgrade note (Cloudflare only):** create the four Flows queues for each
+  named profile **before** deploying this version — a consumer bound to a
+  missing queue makes the deploy fail. From `apps/cms`:
+
+  ```bash
+  for profile in staging production dev demo; do
+    for q in flow-runs flow-events; do
+      pnpm exec wrangler queues create "lumibase-$q-$profile"
+      pnpm exec wrangler queues create "lumibase-$q-$profile-dlq"
+    done
+  done
+  ```
+
+  Docker/Node needs no change. See `docs/{en,vi}/features/flows-automation.md`
+  › Cloudflare Workers: Flows queues.
 - **Request-path RLS scope, opt-in (B130).** `LUMIBASE_DB_RLS=enforce`
   (default `off`) makes the Postgres RLS backstop from `rls-policies.sql`
   enforce on the request path: every request statement runs as
@@ -263,7 +294,19 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `aiDecisions.enabled` + `aiDecisions.drift`). `ai:decision` still refuses
   event/schedule runs (no principal). A source-scan tripwire requires every
   `registerFlow*Worker` in `serve.ts` to receive `cache`, `env` and `keys`.
-  Cloudflare Workers still has no `flow-events` consumer (B118).
+  Cloudflare Workers still has no `flow-events` consumer (B118) — fixed, see
+  Added.
+- **Manual flow runs and async AI chat no longer fail on a Worker without the
+  `flow-runs` binding (B118).** `POST /api/v1/flows/:id/run` used to enqueue,
+  throw `Queue binding not found`, return 500 and leave its `pending` run row
+  behind; it now runs inline (`LUMIBASE_FLOW_SYNC_TIMEOUT`), and AI chat
+  `Prefer: respond-async` falls back to the sync path. Event dispatch and the
+  schedule sweep skip when `flow-events` is not bound, without consuming
+  schedule slots. Docker is unchanged (BullMQ accepts any queue name).
+- **A due schedule flow is enqueued once per tick, not twice (B132).** Docker
+  ran the schedule sweep from two leader-locked crons with different locks, and
+  advanced `next_run_at` unconditionally. The advance is now conditional
+  (still due → advance and enqueue; already advanced → skip).
 - **A 50/50 noul is unknown, not `true` (#518, J10 follow-up).** With
   `noulThreshold: 0.5` (the lowest allowed), an answer of exactly 0.5 met
   both sides and took the `true` branch, which Jev automation then acted on.

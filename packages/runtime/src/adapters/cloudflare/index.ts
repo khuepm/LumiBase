@@ -39,6 +39,10 @@ interface CloudflareEnv {
   QUEUES?: Record<string, CloudflareQueue>;
   REALTIME_QUEUE?: CloudflareQueue;
   AGENT_RUNS_QUEUE?: CloudflareQueue;
+  /** Producer for manual flow runs and async AI chat (logical `flow-runs`, B118). */
+  FLOW_RUNS_QUEUE?: CloudflareQueue;
+  /** Producer for event and schedule flow runs (logical `flow-events`, B118). */
+  FLOW_EVENTS_QUEUE?: CloudflareQueue;
   MEDIA_BASE_URL?: string;
   /** Zone id for global edge purge (#392). Absent → colo-local purge only. */
   CF_PURGE_ZONE_ID?: string;
@@ -57,9 +61,25 @@ interface CloudflareEnv {
  * generic `_health`/`default` alias so callers that don't know the concrete
  * binding name (e.g. the health probe) still resolve a queue.
  */
+/** Dedicated producer binding → logical queue name the business code enqueues on. */
+const LOGICAL_QUEUE_BINDINGS = [
+  ['AGENT_RUNS_QUEUE', 'agent-runs'],
+  ['FLOW_RUNS_QUEUE', 'flow-runs'],
+  ['FLOW_EVENTS_QUEUE', 'flow-events'],
+] as const;
+
+function logicalQueues(cfEnv: CloudflareEnv): Record<string, CloudflareQueue> {
+  const queues: Record<string, CloudflareQueue> = {};
+  for (const [binding, logical] of LOGICAL_QUEUE_BINDINGS) {
+    const queue = cfEnv[binding];
+    if (queue) queues[logical] = queue;
+  }
+  return queues;
+}
+
 function collectQueues(env: Record<string, unknown>): Record<string, CloudflareQueue> {
   const cfEnv = env as unknown as CloudflareEnv;
-  if (cfEnv.QUEUES) return { ...cfEnv.QUEUES, ...(cfEnv.AGENT_RUNS_QUEUE ? { 'agent-runs': cfEnv.AGENT_RUNS_QUEUE } : {}) };
+  if (cfEnv.QUEUES) return { ...cfEnv.QUEUES, ...logicalQueues(cfEnv) };
 
   const queues: Record<string, CloudflareQueue> = {};
   for (const [key, value] of Object.entries(env)) {
@@ -69,7 +89,7 @@ function collectQueues(env: Record<string, unknown>): Record<string, CloudflareQ
   }
 
   // Business code addresses logical queues; binding names are platform config.
-  if (cfEnv.AGENT_RUNS_QUEUE) queues['agent-runs'] = cfEnv.AGENT_RUNS_QUEUE;
+  Object.assign(queues, logicalQueues(cfEnv));
 
   // Provide generic aliases pointing at the first available queue so health
   // probes and queue-agnostic callers work without hardcoding a binding name.
