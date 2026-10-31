@@ -12,7 +12,8 @@ import type { ExtensionsService } from './extensions-service';
 import type { IntentService } from './intent-service';
 import { runFlow, type FlowGraph } from './flow-service';
 import { ContentVersionService } from './content-version-service';
-import type { ConfiguredLLM } from './llm-provider';
+import { completeWithInstructions, type ConfiguredLLM } from './llm-provider';
+import { redactSettingRow } from './settings-redaction';
 import type { CacheProvider, KeyProvider, QueueProvider } from '@lumibase/runtime';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentAutonomousOpsTotal } from './agent-metrics';
@@ -327,10 +328,10 @@ async function completeJson<T = unknown>(
   }
   let content: string | null;
   try {
-    const response = await llm.provider.chat([
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ]);
+    // System slot + no tools (#579): with plain `chat`, the Copilot prompt and
+    // its write tools were offered here, and `system` was demoted to a user turn
+    // on Gemini/Anthropic.
+    const response = await completeWithInstructions(llm.provider, system, user);
     content = response.content;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -1772,7 +1773,10 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       handler: async (args) => {
         if (!configService) return { settings: [] };
-        return { settings: await configService.listSettings(args['scope'] as string | undefined) };
+        // Same redaction as `GET /api/v1/settings` (#579). Tool output reaches
+        // Copilot clients and, over governed MCP, an external model's context.
+        const rows = await configService.listSettings(args['scope'] as string | undefined);
+        return { settings: rows.map(redactSettingRow) };
       },
     },
 
