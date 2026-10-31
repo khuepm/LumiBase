@@ -2,7 +2,221 @@
 
 Append-only history of automated EN ⇄ VI documentation syncs. Each run records language detection, preserved content and translation actions so no source content is silently lost.
 
-## 2026-10-17T15:55:07.206Z — mode `plan` (effective `plan`)
+## 2026-10-31T20:26:56.396Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-31T16:32:44.648Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-31T14:38:01.315Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-31T14:37:51.986Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-31T14:37:44.740Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-31T14:33:47.828Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-31T14:24:14.635Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-31T14:24:06.856Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-31T14:23:54.971Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-31T14:07:04.434Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-31T14:06:52.374Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-29T09:09:25.947Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-29T08:47:31.029Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-29T08:43:09.606Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-29T08:41:19.267Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-29T08:18:33.251Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-29T08:12:46.843Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-27T01:34:56.348Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-26T16:33:46.017Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-26T15:56:14.799Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-26T15:56:03.837Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-26T15:55:03.893Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned: 1
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `features/permissions-rbac.md` | vi → en | source changed since last sync |
+
+---
+
+## 2026-10-26T04:57:50.273Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-18T12:38:55.436Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-17T19:37:29.030Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-17T18:13:28.150Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-17T18:10:32.904Z — mode `preserve-only` (effective `preserve-only`)
 
 Engine: `claude` · API key: absent · files scanned: 157
 
@@ -10,7 +224,31 @@ Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned:
 
 ---
 
-## 2026-10-17T15:52:25.553Z — mode `plan` (effective `plan`)
+## 2026-10-15T22:39:13.764Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 157
+
+Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-15T22:28:26.680Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 157
+
+Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-15T22:27:57.279Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 157
+
+Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-15T22:25:27.195Z — mode `plan` (effective `plan`)
 
 Engine: `claude` · API key: absent · files scanned: 157
 

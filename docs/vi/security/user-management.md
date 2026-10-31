@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-08-30T09:36:15.719Z
+version: 5
+lastUpdated: 2026-10-17T16:36:21.237Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 644f0f4b2f32179b
+sourceHash: fd79a2e1fafb6df3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-30T09:36:15.719Z
-codeVerifiedHash: 644f0f4b2f32179b
+codeVerified: 2026-10-17T16:36:21.237Z
+codeVerifiedHash: fd79a2e1fafb6df3
 codeVerifiedClaims: 112
 ---
 
@@ -69,7 +69,8 @@ api_keys → api_key_roles/policies  ← integration principals, scoped per site
 ```
 
 - Luật domain: mọi bảng domain có `site_id` và mọi query lọc theo nó (Strict
-  Rule #2). RLS (`withRls`) là lớp phòng thủ chiều sâu dự phòng.
+  Rule #2). Postgres RLS là lớp phòng thủ chiều sâu dự phòng khi
+  `LUMIBASE_DB_RLS=enforce` (B130; mặc định tắt).
 - **`subscriber`** là role frontend đặc quyền tối thiểu. Nó không cấp gì cho
   tới khi bạn gắn quyền đọc nội dung vào nó (ví dụ `articles::read WHERE
   status = 'published'`). Nó được tạo idempotent ở lần đăng ký đầu tiên

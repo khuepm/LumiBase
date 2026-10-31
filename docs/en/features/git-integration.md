@@ -1,11 +1,11 @@
 ---
 title: Git Integration (GitHub / GitLab)
-version: 1
-lastUpdated: 2026-07-28T10:20:15.614Z
+version: 3
+lastUpdated: 2026-10-17T16:36:19.750Z
 sourceLang: en
-contentHash: 00b92c1afa81ad18
-codeVerified: 2026-07-28T10:20:15.614Z
-codeVerifiedHash: 00b92c1afa81ad18
+contentHash: b872b017b31245db
+codeVerified: 2026-10-17T16:36:19.750Z
+codeVerifiedHash: b872b017b31245db
 codeVerifiedClaims: 10
 ---
 
@@ -84,9 +84,12 @@ down (cascade-delete) on close/merge, with a TTL cleanup.
   `where(eq(table.siteId, siteId))`; all six are registered for RLS
   `site_isolation` in `packages/database/migrations/rls-policies.sql`.
 - **Webhook routing:** the public receiver embeds `siteId` + `integrationId` in
-  the URL and sets the RLS session var to that `siteId` before reading — it can
-  only ever touch that one site's rows, and the per-integration secret signature
-  is the authenticity gate.
+  the URL and scopes its reads by that `siteId` — it can only ever touch that
+  one site's rows, and the per-integration secret signature is the
+  authenticity gate. Its queries run on `scopedDbFor(c, siteId)`, so with
+  `LUMIBASE_DB_RLS=enforce` the database scopes them to that site too (B130).
+  Preview provisioning scopes each query to the site it acts on (base or
+  ephemeral).
 - **Preview:** the ephemeral site id is derived from the base `siteId`
   (`${siteId}__pr-${n}`); preview content lives in its own `sites` row, isolated
   from the base site's production content. Provisioning is a deliberate

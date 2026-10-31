@@ -147,6 +147,10 @@ export interface DecideOptions {
  * server. Rejects with `LumiError` on non-2xx — e.g. 503 with
  * `DECISION_NOT_CONFIGURED` when the CMS has no `DECISION_PROVIDER`.
  *
+ * Call it from a server with a secret API key or from Studio: a publishable
+ * API key (`lbk_pub_…`) or a frontend session gets 403 `FORBIDDEN`, even when
+ * its role grants `ai:decide`.
+ *
  * The caller needs the `ai:decide` capability (403 `FORBIDDEN`), the site
  * must have opted in (403 `DECISION_DISABLED`), and each site has hourly,
  * concurrency and daily budgets (429 `DECISION_QUOTA_EXCEEDED` /

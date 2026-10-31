@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 2
-lastUpdated: 2026-09-07T15:23:17.206Z
+version: 5
+lastUpdated: 2026-10-17T16:36:20.390Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6029fc9470a0c3a9
+sourceHash: 59729a48912c6d74
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-10T02:17:10.994Z
-codeVerifiedHash: 6029fc9470a0c3a9
+codeVerified: 2026-10-17T16:36:20.390Z
+codeVerifiedHash: 59729a48912c6d74
 codeVerifiedClaims: 72
 ---
 
@@ -157,9 +157,22 @@ tra role của chính nó vẫn không thể bị non-admin tiếp cận.
 **Best practice:** đừng chỉ dựa vào bộ lọc `site_id` ở tầng ứng dụng — enforce cô
 lập trong database để một `.where()` bị thiếu không làm rò rỉ dữ liệu.
 
-- `packages/database/migrations/rls-policies.sql` áp các policy row-level-security
-  RESTRICTIVE (`site_id = app_site_id()`) kèm `WITH CHECK` khi ghi. Request bind
-  `SET LOCAL app.site_id` mỗi request.
+- `packages/database/migrations/rls-policies.sql` cấp cho mỗi bảng có scope một
+  cặp policy row-level-security cùng predicate (`site_id = app_site_id()`) kèm
+  `WITH CHECK` khi ghi: `site_isolation` (RESTRICTIVE) và `site_isolation_permit`
+  (PERMISSIVE). Postgres không cho role thiếu BYPASSRLS thấy dòng nào trừ khi có
+  một policy permissive đúng; nửa restrictive chặn mọi policy permissive khác nới
+  rộng quyền. Khi `app.site_id` chưa set hoặc rỗng thì không dòng nào hiện ra và
+  mọi lệnh ghi đều bị từ chối. Với `LUMIBASE_DB_RLS=enforce`, `withDb()` set
+  `app.site_id` trong transaction của mọi câu của request, và worker dùng một
+  system connection `BYPASSRLS` (B130). Khi tắt cờ (mặc định), ứng dụng phải
+  kết nối bằng role bypass RLS. Xem
+  [Scope RLS trên request path](../features/rls-request-scope.md).
+- Áp file bằng owner của database (không phải role ứng dụng), và áp lại sau mỗi
+  lần upgrade: `psql "$DATABASE_URL" -v ON_ERROR_STOP=1
+  --single-transaction -f packages/database/migrations/rls-policies.sql`.
+  `pnpm db:migrate` không áp file này. Trước B125, file chỉ tạo policy
+  restrictive nên role ứng dụng non-superuser không đọc và không ghi được gì.
 - Tầng ứng dụng bổ sung việc scope mọi query theo `siteId` (`CLAUDE.md` quy tắc
   bất di bất dịch #2) — defense-in-depth chồng trên RLS.
 - Xem **[idor-testing.md](./idor-testing.md)** cho ma trận test chéo tenant (IDOR).

@@ -63,8 +63,13 @@ export const withControlPlaneAccessGuard = (): MiddlewareHandler<AppEnv> => asyn
   );
 };
 
-export function isControlPlanePath(path: string): boolean {
-  return CONTROL_PLANE_PATHS.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+/**
+ * `prefixes` exists only so tripwire tests can run this exact matcher against
+ * a scratch list (decision-governance.wiring.test.ts); the guard always uses
+ * the default.
+ */
+export function isControlPlanePath(path: string, prefixes: readonly string[] = CONTROL_PLANE_PATHS): boolean {
+  return prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }
 
 /**

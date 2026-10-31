@@ -1,15 +1,18 @@
 ---
-version: 2
-lastUpdated: 2026-07-27T23:50:23.218Z
+version: 6
+lastUpdated: 2026-10-17T16:36:19.548Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 00f15e0eb7ed5ea0
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-27T23:50:23.218Z
-codeVerifiedHash: 00f15e0eb7ed5ea0
-codeVerifiedClaims: 6
+sourceHash: 11872c1d86999172
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-10-17T16:36:19.548Z
+codeVerifiedHash: 11872c1d86999172
+codeVerifiedClaims: 8
 ---
+
+<!-- check-parity: allow code-fences -->
+<!-- Recorded by stamp-pair --allow-structure-drift on 2026-10-15T22:27:56.523Z. See commit history for rationale. -->
 
 # Cloudflare Access & Custom JWT Authentication
 
@@ -134,16 +137,21 @@ How a user's permissions are checked:
    - By default, after a successful sign-in an end-user is assigned the `member` role bound to the request's `site_id`.
 
 ### B. Multi-tenancy security (row-level security)
-LumiBase enforces strict multi-tenancy at the database layer, using Hono's `withRls()` middleware together with PostgreSQL row-level security (RLS):
+LumiBase designs a database-layer multi-tenancy backstop, using Hono's `withRls()` middleware together with PostgreSQL row-level security (RLS). The primary gate is the application-level `site_id` filter; the RLS backstop applies when `LUMIBASE_DB_RLS=enforce` (B130, off by default):
 
 1. **Resolve the site**: the `withTenant()` middleware reads the `X-Lumi-Site` header to get the current `siteId`.
-2. **Set the DB context**: `withRls()` executes:
+2. **Set the DB context**: with `LUMIBASE_DB_RLS=enforce`, `withDb()` runs the statement below inside the same transaction as each request statement (`BEGIN; …; <query>; COMMIT`), with the site id as a bound parameter. Because `is_local = true`, the setting ends with that transaction and cannot leak to another request; `withRls()` fails closed if the request db is not scoped:
    ```sql
    SELECT set_config('app.site_id', '<siteId>', true);
    ```
-3. **RLS policy**: every subsequent query (via Drizzle ORM) is filtered automatically by Postgres according to:
+3. **RLS policy**: Postgres filters each query through the policy pair that `packages/database/migrations/rls-policies.sql` creates on each table, based on the `app.site_id` of the transaction that runs it:
    ```sql
-   CREATE POLICY tenant_isolation_policy ON <table_name>
-   FOR ALL USING (site_id = current_setting('app.site_id'));
+   CREATE POLICY site_isolation ON <table_name>
+     AS RESTRICTIVE FOR ALL TO PUBLIC
+     USING (site_id = app_site_id()) WITH CHECK (site_id = app_site_id());
+   CREATE POLICY site_isolation_permit ON <table_name>
+     AS PERMISSIVE FOR ALL TO PUBLIC
+     USING (site_id = app_site_id()) WITH CHECK (site_id = app_site_id());
    ```
-   *This means a user or admin of one site cannot read or write another site's data at all — even if some code is buggy and omits its WHERE clause.*
+   `app_site_id()` returns `NULLIF(current_setting('app.site_id', true), '')`, so with no scope set no row is visible and every write is refused.
+   *With `enforce` and a NOBYPASSRLS app role, a user or admin of one site cannot read or write another site's data at all — even if some code is buggy and omits its WHERE clause. Workers and system routes use a separate `BYPASSRLS` system connection; see [Request-path RLS scope](rls-request-scope.md).*

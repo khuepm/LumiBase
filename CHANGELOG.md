@@ -10,6 +10,15 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Added
+- **Request-path RLS scope, opt-in (B130).** `LUMIBASE_DB_RLS=enforce`
+  (default `off`) makes the Postgres RLS backstop from `rls-policies.sql`
+  enforce on the request path: every request statement runs as
+  `BEGIN; set_config('app.site_id', $1, true); <query>; COMMIT` on one
+  connection. New, additive configuration: `DATABASE_SYSTEM_URL` (+ `_FILE`,
+  Docker) and the optional `HYPERDRIVE_SYSTEM` binding (Workers) for the
+  BYPASSRLS system role used by workers, cron and system routes. Docker refuses
+  to start when `enforce` lacks a BYPASSRLS system role; any value other than
+  `off`/`enforce` fails closed. See `docs/en/features/rls-request-scope.md`.
 - **Studio: Flows, semantic drift and automation status in Settings → AI
   decisions (#518, #519).** Site admins switch `aiDecisions.flows` and
   `aiDecisions.drift` there. Jev automation is shown read-only (configured
@@ -214,8 +223,33 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   endpoint get `403 DECISION_DISABLED` until they opt in. New optional env
   ceilings `DECISION_SITE_REQUESTS_PER_HOUR`, `DECISION_SITE_MAX_CONCURRENT`,
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
+- **Shell: `tauri-plugin-updater` 2.13.1 → 2.14.1 in `Cargo.lock`, with
+  `@tauri-apps/plugin-updater` `^2.14.1` (2.14.1 resolved).** The grouped
+  Dependabot update #573 moves the npm package to 2.14, and `pnpm tauri:check`
+  refuses a different minor on the crate side; Dependabot does not update
+  `Cargo.lock`. Both sides now move together on `main`, so #573 passes the
+  check after a rebase. The crate update also brings `zip` 4 → 9 and
+  `minisign-verify` 0.2 → 0.3 (updater signature check), and Cargo re-resolves
+  some Windows-only crates from `windows-sys` 0.61 to 0.60. Desktop
+  `cargo check --locked` passes; the Android target is checked by
+  `shell-check.yml`.
 
 ### Fixed
+- **`GET /api/v1/deployments` returns the newest deployments first (#568,
+  B162).** The list had no `ORDER BY`, so with `limit` Postgres could return
+  any rows rather than the most recent ones. It is now ordered by `createdAt`
+  descending, with `id` descending as tie-breaker. The same order applies to
+  the `listDeployments` AI skill. An invalid `limit` now returns `400 VALIDATION`.
+  Before, `?limit=abc` and `?limit=-5` returned every deployment of the site
+  with no limit, and `?limit=1.5` failed with `500`. `0` still returns an
+  empty list and values above 200 are still capped at 200. The `{ data }`
+  response shape is unchanged. `apps/cms/openapi.yaml` now documents the
+  `limit` parameter, the `400` response and the order as well (B164).
+- **Deployments API documented in the API spec (B55).** `docs/{en,vi}/api/hono-api-spec.md`
+  gains section 7c covering `/api/v1/deployments/*`: target CRUD, manual trigger,
+  deployment list/detail/logs/refresh, the inbound webhook, the per-target
+  trigger rate limit (`429 RATE_LIMITED` + `Retry-After`) and webhook signature
+  verification (`401 INVALID_SIGNATURE`). Docs only; no API change.
 - **Benchmark CLI: validated merges and frozen thresholds across runs (#513).**
   `bench:jev --merge` now validates each report file (schema, generator,
   `mode`, `split`, dataset, rubric, protocol, seed, sample counts, runs)
@@ -294,6 +328,50 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   keys. API rate-limit windows and decision quotas on Cloudflare now reset on
   their own window instead of every flush. Existing DOs add the `expires_at`
   column on wake; no wrangler migration.
+- **LLM decision errors are classified like Jev's, and never leak upstream
+  bodies (#510).** The LLM adapters now raise `LLMHttpError` (with the
+  status), `LLMNetworkError` (fetch rejected without an abort) or
+  `LLMResponseError` (2xx body unusable), keeping their original messages, so
+  `/ai/chat` and the Copilot are unchanged. With `DECISION_PROVIDER=llm`,
+  `POST /api/v1/ai/decisions` maps them to the same codes as Jev
+  (`DECISION_AUTH`, `DECISION_VALIDATION`, `DECISION_RATE_LIMITED`,
+  `DECISION_UNAVAILABLE`, `DECISION_PARSE_FAILED`, `DECISION_UPSTREAM`) instead
+  of `500 INTERNAL`, with fixed messages; any other error (a custom provider's
+  `TypeError` included) is `DECISION_UPSTREAM`, not a network failure. Jev error
+  messages no longer carry the upstream body either, so it is never logged.
+- **LLM decisions get a per-request output budget (#510).** The answer size is
+  estimated from the questions and checked against
+  `DECISION_LLM_MAX_OUTPUT_TOKENS` (default 4096) before the call (`413`, before
+  any quota is reserved), so a schema-valid 32-question request is no longer
+  truncated by the fixed 1024 cap into `502 DECISION_PARSE_FAILED`. Gemini/Vertex
+  get `DECISION_LLM_THINKING_TOKENS` (default 1024) of headroom, and their usage
+  now includes `thoughtsTokenCount`. Governance reserves the cap actually sent
+  upstream. Copilot calls keep sending 1024. Both variables are optional.
+- **LLM decisions reserve quota for one attempt, not for retries (#510).** The
+  daily decision budget was reserved as `(input + output cap) ×
+  (DECISION_MAX_RETRIES + 1)` for every provider, but `DECISION_PROVIDER=llm`
+  sends exactly one request, so a site near its `budgetPerDay` got `429
+  DECISION_QUOTA_EXCEEDED` early. `llm` now reserves `input + output cap`.
+  Jev and OpenRouter, which do retry, reserve exactly as before. Charging and
+  refunds are unchanged. No route, error code, setting or counter key changes.
+- **Decision quota fails closed on non-finite counter values (#511).** A counter
+  backend that answers without a numeric value (for example a Durable Object
+  reply with no `value`) now returns `503 DECISION_QUOTA_UNAVAILABLE` instead of
+  admitting the request.
+- Synchronous audit-log inserts now use uuidv7 ids, like the queue path. Older
+  rows keep their `nanoid` ids; audit cursors accept both.
+- `Retry-After` is exposed through CORS (`Access-Control-Expose-Headers`), so
+  cross-origin Studio, the desktop shell and browser SDK callers can read the
+  decision `429` hint.
+- The Studio policy editor lists the AI decision permission ("AI usage → AI
+  decisions", `lumibase_ai_decisions` → `create`), so site admins can grant
+  `ai:decide` without the API.
+- The Definition of Done §2c gains a line: request/worker paths that call a
+  paid AI decision provider go through `authorizeDecision` +
+  `runGovernedDecision`, locked by `decision-governance.wiring.test.ts`.
+  Principal-less system passes (the J12 semantic drift scan) are listed
+  explicitly and must still go through `runGovernedDecision`. No
+  migration and no upgrade step for any of the entries above.
 - **P2 queue recovery and governed write parity (B93, B87).** Queue submission
   failures settle only unclaimed runs, preserve masked tasks for explicit retries,
   and expire stale queued runs across origins. Flow, extension and CDC skills now
@@ -309,6 +387,10 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   queues and stale-run quarantine. Provision the environment-specific queue before
   deployment; see `docs/en/features/async-agent-runs.md`. No database migration.
 
+
+- Desktop release workflow passes `uploadUpdaterJson` to `tauri-action@v1`.
+  The old `includeUpdaterJson` input was reported as unsupported and ignored,
+  so `latest.json` for the in-app updater depended on the action's default (#451).
 
 - Raise the `sharp` override floor to 0.35.5 for GHSA-wq5f-xc86-pv6w (high), fixing the bundled librsvg dependency used by Next.js and Miniflare.
 
@@ -402,7 +484,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   target. Repo-wide parity drops from 37 problems in 30 pairs to 35 in 29. A link
   that is dead in both locales still compares equal, as it did before: parity is
   not a dead-link check, and reporting it as a locale mismatch would mislead.
-- **Docs command guard and parity follow-ups (B133).** `pnpm --filter
+- **Docs command guard and parity follow-ups (B168).** `pnpm --filter
   @lumibase/cms deploy` in `deployment/overview.md` and the enterprise CI recipe
   in `enterprise/private-submodule.md` ran pnpm's builtin `deploy` (which fails
   with `ERR_PNPM_INVALID_DEPLOY_TARGET`), not the package's deploy script; both
@@ -443,6 +525,146 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 - The release Docker smoke test now fails when the image reports a version
   other than its tag, or when `/setup` does not serve the Studio.
+
+### Security
+
+- **AI decisions refuse publishable API keys and frontend sessions (#562,
+  B144).** `POST /api/v1/ai/decisions`, every `ai:decide` route under
+  `/api/v1/ai/review-profiles` and `/api/v1/ai/reviews`, and Flows
+  `ai:decision` nodes now return `403 FORBIDDEN` for publishable API keys
+  (`lbk_pub_…`) and `frontend`-audience sessions, even when a role or policy
+  grants `create` on `lumibase_ai_decisions` or admin access. These
+  credentials live in browsers and apps, so anyone holding one could spend the
+  site's paid decision budget. The check runs in the shared
+  `authorizeDecision`, before the body is read, quota is reserved or the
+  provider is called. The refusal writes the same single `ai_decision` audit
+  event as other refusals. The error code is unchanged (`FORBIDDEN`); only the
+  message names the caller type.
+  **Upgrade note:** this narrows the #529 contract for misconfigured callers
+  only. Move browser or app callers behind your own server with a secret API
+  key, or use Studio. Secret keys and Studio users with the grant are
+  unaffected. No migration. The Definition of Done §2c gains a line for this
+  class: client-held credentials never use a paid capability, and the refusal
+  lives in the shared authorization function, not per route.
+
+- **Dependency advisories cleared; `pnpm audit --prod --audit-level high`
+  passes again** (0 findings of any severity, from 22 plus 5 seroval findings
+  published later). All fixes stay inside
+  the major already in use:
+  - `next` 16.3.8 → 16.4.3 (`apps/landing`, `apps/consumer`, with
+    `eslint-config-next` in lockstep):
+    [GHSA-2464-fhr4-w9xw](https://github.com/advisories/GHSA-2464-fhr4-w9xw)
+    and [GHSA-673q-mjm6-r5xr](https://github.com/advisories/GHSA-673q-mjm6-r5xr)
+    (critical, RCE),
+    [GHSA-p3m5-59mp-jv5r](https://github.com/advisories/GHSA-p3m5-59mp-jv5r)
+    (high, DoS).
+  - `dompurify` 3.4.16 → 3.4.17 (`apps/docs`, `apps/studio` and the override):
+    GHSA-cg2g-xh64-v4q7 (critical), GHSA-mrv2-3pqr-j5jr (high),
+    GHSA-c6gr-qvv4-5v3f (low).
+  - `zod` 4.6.5 → 4.6.7 (CMS validation, `@lumibase/contracts`,
+    `@lumibase/ai-skills`, `@lumibase/extensions`, `@lumibase/mcp-server`,
+    Studio): GHSA-mrhx-c7xc-m3w5 (high, memory exhaustion on oversized input).
+    The published packages now declare `zod ^4.6.7`, so their consumers
+    resolve the patched version.
+  - `body-parser` 2.3.0 → 2.4.0 through a new `body-parser@2` override
+    (`@lumibase/mcp-server` via `@modelcontextprotocol/sdk` → `express`):
+    GHSA-27r3-jxmh-p828 (high, DoS).
+  - `undici` 7.29.1 → 7.30.1 (override floor; `miniflare` pins `7.29.1`):
+    GHSA-xjj6-f33q-929c (high), GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472
+    (moderate).
+  - `nodemailer` 10.0.14 → 10.1.7 (`apps/cms`): GHSA-8c8m-p3m8-cjg8,
+    GHSA-m943-m63m-w62w, GHSA-85x2-q946-cp5h (moderate).
+  - `fast-uri` 4.1.5 → 4.2.3 (override, now a floor instead of an exact pin):
+    GHSA-w74x-v6f9-j3xg, GHSA-wjr9-j795-jxcr (moderate), GHSA-xhq7-xmqj-769h,
+    GHSA-333x-w4r6-6crp (low).
+  - `ip-address` 10.7.3 → 10.7.5 (override floor `^10.7.4`):
+    GHSA-rxp7-6hxx-x8q5 (moderate).
+  - `seroval` 1.6.7 → 1.7.3 through a new `seroval` override (`apps/studio`
+    via `@tanstack/react-router` → `@tanstack/router-core`, which still
+    declares `^1.6.7`): GHSA-97r2-qh9m-474h, GHSA-wp97-x4hv-qvhp,
+    GHSA-7rv5-mrxv-xcr9 (high), GHSA-9wx9-5pv9-3349, GHSA-f86p-h4j2-7qgj
+    (moderate). Published after the first audit run on this change.
+  - `qs` override floor `^6.16.0` → `^6.16.1` (6.16.1), the range
+    `body-parser@2.4.0` declares. Not an advisory.
+
+  No migration and no upgrade step. Rationale and removal conditions for each
+  override: `docs/{en,vi}/security/dependency-overrides.md`.
+
+- **Bounded audit volume for refused AI decisions (#564, B147).** Every
+  refused `ai:decide` request used to write one `ai_decision` audit row, so a
+  cheap or public credential (a publishable key, a frontend session, a member
+  without the grant) could turn free requests into audit-table writes on the
+  shared database and bury real events. Authorization refusals (`403
+  FORBIDDEN`) are now aggregated per site, refusal reason and subject (the
+  principal, or a keyed hash of the client IP when there is none): the first
+  refusal in each window writes an event, later ones write again only at counts
+  10, 100, 1000 …, and the first event of the next window carries the exact
+  count of the previous one. Refusal events carry `metadata.refusal`
+  (`reason`, `count`, `dedup`, `windowStart`, `windowSeconds`,
+  `previousWindowCount`) and `clientIpHash` (HMAC-SHA256 keyed by
+  `JWT_SECRET`), never the IP. If the counter store is down, every refusal
+  still writes an event. Two new metrics give the exact totals:
+  `lumibase_ai_decision_refusals_total{reason,principal,audit}` and
+  `lumibase_ai_ip_rate_limited_total`. A per-client-IP, per-site limit on
+  `/api/v1/ai/*` (default 300 requests per minute) runs before authentication
+  and answers `429 RATE_LIMITED` with `Retry-After`. New optional env vars:
+  `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` (default `300`, `0` = one event per
+  refusal) and `LUMIBASE_AI_IP_RATE_LIMIT` (default `300`, `0` = off). The API
+  spec recommends a Cloudflare WAF rate-limiting rule for `/api/v1/ai/*` as the
+  outer defence.
+  **Behaviour change:** refused-authorization `ai_decision` events are no
+  longer one per request; read `refusal.count` (or the metric) for volume.
+  Admitted calls and calls refused after authorization still write one event
+  each. No migration, no backfill. Behind a reverse proxy on Docker, the proxy
+  must overwrite `CF-Connecting-IP` with the real client IP for the IP limit to
+  apply. The Definition of Done §2c gains a line for this class: an audited
+  refusal path reachable by untrusted callers must be aggregated, counted in a
+  metric and rate-limited before authentication.
+- **RLS backstop no longer hides every row (B125).** Every `site_isolation`
+  policy in `packages/database/migrations/rls-policies.sql` was RESTRICTIVE and
+  the file created no PERMISSIVE policy. Postgres shows a role without
+  BYPASSRLS no rows unless a permissive policy passes, so the non-superuser app
+  role the file requires saw 0 rows and wrote 0 rows on every scoped table.
+  Each table now gets a pair with the same predicate: `site_isolation`
+  (RESTRICTIVE) and `site_isolation_permit` (PERMISSIVE). The permissive half
+  is not `USING (true)`, and the restrictive half stops any other permissive
+  policy from widening access. With `app.site_id` unset or empty, no row is
+  visible and every write is refused. `lumibase_extensions` keeps its global
+  rows (`site_id IS NULL`) visible, as before. `app_site_id()` is now
+  `SECURITY INVOKER` with a pinned `search_path` (B128), and the
+  `ALTER DATABASE` default uses `current_database()` instead of the hardcoded
+  name `lumibase`. Tested as a NOSUPERUSER NOBYPASSRLS role in
+  `apps/cms/src/__tests__/rls-policies.db.integration.test.ts`, plus a static
+  tripwire in `rls-policies.wiring.test.ts`.
+
+  **Upgrade:** operators who already applied the old `rls-policies.sql` MUST
+  re-apply the new file, as the database owner:
+  `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f packages/database/migrations/rls-policies.sql`.
+  It is idempotent and converges from the restrictive-only version. Then check
+  that `SELECT tablename, policyname, permissive FROM pg_policies WHERE policyname IN ('site_isolation', 'site_isolation_permit') ORDER BY 1, 2;`
+  returns two rows per table. A `USING (true)` permissive policy added by hand
+  as a workaround can be dropped afterwards (it is harmless if kept). No schema
+  migration and no backfill. Deployments that never applied the file are not
+  affected.
+
+  **Fixed (B130):** `withRls` used to run `set_config` as a standalone
+  autocommit statement, so the setting ended with that statement and no
+  request query was scoped. With `LUMIBASE_DB_RLS=enforce` every request
+  statement now runs in its own transaction with `app.site_id` set
+  (`createSiteScopedSql`), routers that learn the site in the handler scope
+  themselves, and workers, cron, queue consumers and system routes use a
+  BYPASSRLS system connection (`DATABASE_SYSTEM_URL` / `HYPERDRIVE_SYSTEM`).
+  `withRls` fails closed with `503 RLS_UNAVAILABLE` on an unscoped request db.
+  Cost measured on a local Docker Postgres: 1000 sequential list requests p50
+  2.11–2.31 ms with the flag off and 3.42–3.85 ms with it on (three runs;
+  Hyperdrive not measured). With the flag off (default) the app still needs a
+  role that bypasses RLS, and the table owner is not exempt (`FORCE ROW LEVEL
+  SECURITY`).
+  **Upgrade note:** nothing to do for default deployments; with the flag off
+  `withRls` no longer runs its per-request `set_config` round trip. To turn the
+  backstop on, follow `docs/en/features/rls-request-scope.md` (two roles, the
+  new variables, no migration, no backfill; roll back with
+  `LUMIBASE_DB_RLS=off`).
 
 
 ## [1.0.0-rc.4] - 2026-09-29

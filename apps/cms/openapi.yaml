@@ -3471,7 +3471,10 @@ paths:
         `lumibase_ai_decisions`; admins have it), the site must opt in via the
         `aiDecisions` setting, `state` must respect its field allowlist, and
         the site's hourly, concurrency and daily token budgets apply. Each call
-        writes an `ai_decision` audit event without content.
+        writes an `ai_decision` audit event without content, except 403
+        FORBIDDEN refusals, which are audited in aggregate per window (#564).
+        Every /api/v1/ai/* request also counts against a per-client-IP limit
+        (LUMIBASE_AI_IP_RATE_LIMIT, default 300/min) checked before auth.
       parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
       requestBody:
         required: true
@@ -3562,7 +3565,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '413':
-          description: Over the input byte or estimated token budget (DECISION_INPUT_TOO_LARGE)
+          description: Over the input byte or estimated token budget, or (llm) the estimated answer is over DECISION_LLM_MAX_OUTPUT_TOKENS (DECISION_INPUT_TOO_LARGE)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3575,10 +3578,12 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '429':
           description: >
-            Decision provider rate limit (DECISION_RATE_LIMITED), or a site
-            budget used up (DECISION_QUOTA_EXCEEDED, DECISION_CONCURRENCY_LIMITED).
-            Site budgets set Retry-After in seconds, except when one request's
-            worst-case reservation exceeds the whole daily budget (never admissible).
+            Decision provider rate limit (DECISION_RATE_LIMITED), a site
+            budget used up (DECISION_QUOTA_EXCEEDED, DECISION_CONCURRENCY_LIMITED),
+            or the per-client-IP limit on /api/v1/ai/* (RATE_LIMITED, #564).
+            Site budgets and the IP limit set Retry-After in seconds, except when
+            one request's worst-case reservation exceeds the whole daily budget
+            (never admissible).
           headers:
             Retry-After:
               schema: { type: integer }
@@ -5189,11 +5194,24 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
   /deployments:
     get:
-      summary: List deployments (filterable)
+      summary: List deployments (filterable, newest first)
+      description: >-
+        Returns deployments newest first, ordered by `createdAt` descending
+        with `id` descending as the tie-breaker, so `limit` returns the most
+        recent N.
       parameters:
         - { $ref: '#/components/parameters/SiteHeader' }
         - { name: targetId, in: query, required: false, schema: { type: string } }
         - { name: status, in: query, required: false, schema: { type: string, enum: [queued, building, ready, error, canceled] } }
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            Maximum number of deployments to return. Must be a non-negative
+            integer; `0` returns an empty list. Values above 200 are not
+            rejected but clamped to 200. An empty or omitted value uses the
+            default of 50.
+          schema: { type: integer, minimum: 0, default: 50 }
       responses:
         '200':
           description: OK
@@ -5205,6 +5223,11 @@ paths:
                   data:
                     type: array
                     items: { $ref: '#/components/schemas/Deployment' }
+        '400':
+          description: '`VALIDATION` — `limit` is not a non-negative integer (non-numeric, negative or fractional)'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /deployments/{id}:
     get:
       summary: Get a single deployment

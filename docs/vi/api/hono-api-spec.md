@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 22
-lastUpdated: 2026-10-15T17:37:48.226Z
+version: 29
+lastUpdated: 2026-10-31T14:37:43.205Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 01f214f866e04a3e
+sourceHash: 8bd42dc1dd644fb3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T17:37:48.226Z
-codeVerifiedHash: 01f214f866e04a3e
-codeVerifiedClaims: 436
+codeVerified: 2026-10-31T14:37:43.205Z
+codeVerifiedHash: 8bd42dc1dd644fb3
+codeVerifiedClaims: 456
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -630,6 +630,85 @@ Authorization: Bearer <token>
 
 ---
 
+## 7c. Deployments
+
+Deployment target theo site (Vercel / Netlify), kích hoạt deploy thủ công,
+trạng thái build và log (spec `deployment-integrations`). Mọi route trừ inbound
+webhook đều yêu cầu site admin (`requireSiteAdmin`): `400 TENANT_REQUIRED` khi
+không resolve được site, `403 FORBIDDEN` khi không có quyền admin. Token của
+Provider được mã hoá khi ghi và không bao giờ được trả về. Body được xác thực bằng
+`DeploymentTargetCreateSchema` / `DeploymentTargetUpdateSchema` /
+`DeployTriggerSchema` (`@lumibase/contracts`); parse lỗi trả về
+`400 VALIDATION`. `400 UNKNOWN_PROVIDER` nghĩa là target đã lưu ghi một
+Provider không được đăng ký trong deployment này (chỉ có `vercel` và
+`netlify`).
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `GET` | `/api/v1/deployments/targets` | Liệt kê target của site (bỏ các cột token) |
+| `POST` | `/api/v1/deployments/targets` | Tạo `{ provider (vercel\|netlify), name, projectId, token, defaultBranch?, productionUrl? }` → `201`. Token được kiểm với Provider trước khi lưu bất cứ thứ gì: `400 TOKEN_INVALID` |
+| `PATCH` | `/api/v1/deployments/targets/:id` | Cập nhật `{ name?, projectId?, token?, defaultBranch?, productionUrl?, status? (active\|inactive) }`. Có `token` thì token được kiểm lại và mã hoá lại (rotation). `404 NOT_FOUND`, `400 TOKEN_INVALID`, `400 UNKNOWN_PROVIDER` (chỉ khi có gửi `token`) |
+| `DELETE` | `/api/v1/deployments/targets/:id` | Xoá target (các deployment của nó bị xoá theo cascade) → `{ data: null }`. `404 NOT_FOUND` |
+| `POST` | `/api/v1/deployments/targets/:id/deploy` | Kích hoạt build `{ branch?, reason? }` → `201` kèm dòng deployment mới (`triggerSource: "manual"`). `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `400 UNKNOWN_PROVIDER`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (gọi Provider thất bại; vẫn ghi một dòng `error`) |
+| `GET` | `/api/v1/deployments` | Liệt kê deployment, mới nhất trước (`createdAt` giảm dần, `id` giảm dần để phân định khi trùng). Lọc `?targetId=&status=&limit=`. `limit` phải là số nguyên không âm: mặc định 50 khi vắng hoặc rỗng, `0` trả danh sách rỗng, giá trị trên 200 bị giới hạn ở 200. Mọi giá trị khác (`abc`, `-5`, `1.5`) trả `400 VALIDATION`. Không có `meta` |
+| `GET` | `/api/v1/deployments/:id` | Lấy một deployment. `404 NOT_FOUND` |
+| `GET` | `/api/v1/deployments/:id/logs` | Lấy build log từ Provider, đã che secret → `{ data: { log } }`. `404 NOT_FOUND` khi deployment không tồn tại hoặc chưa có id phía Provider, `400 UNKNOWN_PROVIDER` khi target hoặc Provider của nó không khả dụng |
+| `POST` | `/api/v1/deployments/:id/refresh` | Ép đồng bộ trạng thái từ Provider (không làm gì khi trạng thái đã là terminal). `404 NOT_FOUND` khi deployment không tồn tại. Khi chưa có id phía Provider, hoặc target hay Provider không khả dụng, dòng được trả về nguyên trạng (`200`, không bao giờ `UNKNOWN_PROVIDER`) |
+
+Công khai (không có phiên; xác thực bằng chữ ký):
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `POST` | `/api/v1/deployments/webhook/:provider` | Inbound status webhook (`vercel` \| `netlify`). Tenant lấy từ `withTenant` (`X-Lumi-Site` hoặc host mapping). `404 UNKNOWN_PROVIDER`, `401 INVALID_SIGNATURE`; còn lại `200 { data: null }`, kể cả khi body không khớp deployment nào |
+
+**Shape của target** (`data` của các route target): `{ id, provider, name, projectId, defaultBranch, productionUrl, status, createdAt, updatedAt }`.
+
+**Shape của deployment** (`data` của các route deployment và của trigger): `{ id, siteId, targetId, provider, providerDeploymentId, status (queued|building|ready|error|canceled), branch, commitSha, commitMessage, url, triggeredBy, triggerSource (manual|auto|agent), errorMessage, logExcerpt, createdAt, updatedAt, completedAt }`.
+
+**Giới hạn tần suất trigger:** mỗi target có ngân sách hai tầng, 5 trigger mỗi 60 s và 30 mỗi 3600 s, khoá theo site và target (`apps/cms/src/services/deployment/trigger-rate-limit.ts`). Giới hạn áp cho mọi `triggerSource` (`manual`, `auto`, `agent`). Một auto trigger được gộp (coalesced) dùng lại build gần đây và không tiêu ngân sách. Khi backend của limiter không truy cập được thì trigger được cho qua (fail-open). Trigger bị từ chối không tạo dòng nào và trả về:
+
+```json
+{
+  "errors": [
+    {
+      "code": "RATE_LIMITED",
+      "message": "Too many deploy triggers for this target. Please try again later.",
+      "retryAfterSeconds": 42
+    }
+  ]
+}
+```
+
+kèm header `Retry-After: 42` tương ứng.
+
+**Chữ ký webhook:** secret là setting theo site `deployment.webhook.<provider>` (giá trị `{ "secret": "…" }`), không bao giờ lấy từ request header. Secret rỗng hoặc vắng thì mọi request bị từ chối (fail-closed). Vercel gửi `x-vercel-signature`, là HMAC-SHA1 dạng hex chữ thường của raw body. Netlify gửi `x-webhook-signature`, một JWS compact (HS256) có claim `sha256` phải bằng SHA-256 hex digest của raw body (JWS có payload chính là raw body cũng được chấp nhận). Cả hai phép so sánh đều thời gian hằng số.
+
+**Kích hoạt một deploy:**
+```bash
+POST /api/v1/deployments/targets/dpt_abc123/deploy
+Content-Type: application/json
+Authorization: Bearer <token>
+X-Lumi-Site: <siteId>
+
+{ "branch": "main", "reason": "Homepage copy update" }
+```
+
+**Response (`201`, rút gọn):**
+```json
+{
+  "data": {
+    "id": "dep_def456",
+    "targetId": "dpt_abc123",
+    "provider": "vercel",
+    "status": "queued",
+    "branch": "main",
+    "triggerSource": "manual"
+  }
+}
+```
+
+---
+
 ## 8. AI Copilot
 
 | Phương thức | Đường dẫn | Mô tả |
@@ -732,7 +811,7 @@ Authorization: Bearer <token>
 }
 ```
 
-Lỗi: `403 FORBIDDEN` (không có `ai:decide`), `403 DECISION_DISABLED`, `422 DECISION_FIELD_NOT_ALLOWED`, `429 DECISION_QUOTA_EXCEEDED` / `DECISION_CONCURRENCY_LIMITED`, `503 DECISION_QUOTA_UNAVAILABLE` (xem phần Governance bên dưới), `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (vượt budget byte hoặc token; message chỉ nêu kích thước), `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream quá tải hoặc không kết nối được), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (client đã đóng request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
+Lỗi: `403 FORBIDDEN` (không có `ai:decide`, hoặc caller là publishable API key hay session `frontend`), `403 DECISION_DISABLED`, `422 DECISION_FIELD_NOT_ALLOWED`, `429 DECISION_QUOTA_EXCEEDED` / `DECISION_CONCURRENCY_LIMITED`, `503 DECISION_QUOTA_UNAVAILABLE` (xem phần Governance bên dưới), `400 VALIDATION`, `413 DECISION_INPUT_TOO_LARGE` (vượt budget byte hoặc token; message chỉ nêu kích thước), `503 DECISION_NOT_CONFIGURED` (chưa đặt `DECISION_PROVIDER`), `429 DECISION_RATE_LIMITED`, `503 DECISION_UNAVAILABLE` (upstream quá tải hoặc không kết nối được), `504 DECISION_TIMEOUT`, `499 DECISION_CANCELLED` (client đã đóng request), `422 DECISION_VALIDATION`, `502 DECISION_AUTH` / `DECISION_UPSTREAM` / `DECISION_PARSE_FAILED`.
 
 Deadline và retry: mỗi decision có một deadline tổng (`DECISION_TIMEOUT_MS`, mặc định 20 giây) bao gồm mọi lần retry và thời gian chờ backoff, và mỗi lần gọi upstream có timeout riêng (`DECISION_ATTEMPT_TIMEOUT_MS`, mặc định 8 giây, không vượt phần còn lại của deadline). Chỉ `429`/`503`/`529`, lỗi mạng và timeout của một lần gọi mới được retry, tối đa `DECISION_MAX_RETRIES` lần (mặc định 2), với exponential backoff có full jitter và tôn trọng `Retry-After`. Lần chờ nào sẽ vượt deadline thì không bắt đầu. Lỗi auth, validation và parse không bao giờ được retry. Khi client ngắt kết nối, lần gọi upstream đang chạy bị huỷ và không retry nữa. Provider `llm` bị giới hạn bởi cùng deadline và budget nhưng chỉ gọi một lần; deadline và việc client ngắt kết nối sẽ huỷ request LLM đó.
 
@@ -740,16 +819,16 @@ Số token là ước lượng, không phải tokenizer của provider: khoảng
 
 CMS kiểm tra câu trả lời upstream trước khi trả về: giá trị bắt buộc phải hữu hạn và nằm trong miền hợp lệ, phân phối Choice/Score phải có đúng các phương án/mức đã khai báo và có tổng bằng 1 với sai số tuyệt đối tối đa `1e-6`, Score phải nằm trong `0..N-1`. Câu trả lời thiếu hoặc sai định dạng trả `502 DECISION_PARSE_FAILED`; giá trị không bị ép miền hoặc gán mặc định thành quyết định. Choice/Score bắt buộc có confidence, không suy ra từ xác suất của phương án thắng. Provider LLM áp dụng cùng validation.
 
-**`DECISION_PROVIDER=llm`** là provider tương đương do bạn chọn qua cấu hình; nó **không** phải cơ chế tự động chuyển khi lỗi (failover), và không có gì tự chuyển sang nó khi Jev lỗi. Nó gọi `LLM_PROVIDER` ở chế độ decision có cấu trúc: system prompt riêng cho decision, không có skill của Copilot và không cho tool calling. Câu trả lời Score từ LLM là mức kỳ vọng có trọng số `Σ i·p(i)` tính từ xác suất các mức đã được kiểm tra, cùng thang `0..N-1` với Jev và không làm tròn; mức mà model tự nêu bị bỏ qua, nên cùng một phân phối cho cùng một score trên mọi adapter. Vì xác suất không được hiệu chuẩn, không dùng nguyên ngưỡng đã chỉnh cho Jev cho `llm`. Câu trả lời chỉ có tool call hoặc không phải JSON sẽ lỗi `502 DECISION_PARSE_FAILED`.
+**`DECISION_PROVIDER=llm`** là provider tương đương do bạn chọn qua cấu hình; nó **không** phải cơ chế tự động chuyển khi lỗi (failover), và không có gì tự chuyển sang nó khi Jev lỗi. Nó gọi `LLM_PROVIDER` ở chế độ decision có cấu trúc: system prompt riêng cho decision, không có skill của Copilot và không cho tool calling. Câu trả lời Score từ LLM là mức kỳ vọng có trọng số `Σ i·p(i)` tính từ xác suất các mức đã được kiểm tra, cùng thang `0..N-1` với Jev và không làm tròn; mức mà model tự nêu bị bỏ qua, nên cùng một phân phối cho cùng một score trên mọi adapter. Vì xác suất không được hiệu chuẩn, không dùng nguyên ngưỡng đã chỉnh cho Jev cho `llm`. Câu trả lời chỉ có tool call hoặc không phải JSON sẽ lỗi `502 DECISION_PARSE_FAILED`. Với `llm`, kích thước ước lượng của câu trả lời đầy đủ cũng được so với `DECISION_LLM_MAX_OUTPUT_TOKENS` trước khi gọi (`413 DECISION_INPUT_TOO_LARGE`), câu trả lời 2xx không phải JSON hoặc sai envelope là `502 DECISION_PARSE_FAILED` (giống Jev), provider không kết nối được là `503 DECISION_UNAVAILABLE`, status HTTP của upstream được map sang cùng mã như Jev, và body lỗi của upstream không bao giờ được ghi log hay trả về.
 
 **Governance (#511).** Mọi cổng dưới đây chạy trước khi gọi provider, theo đúng thứ tự này; request bị chặn ở một cổng thì không bao giờ tới provider:
 
-1. **Capability `ai:decide`.** Cấp bằng permission `create` của policy trên collection dành riêng `lumibase_ai_decisions`; site admin đã có sẵn. Permission này không cấp thêm quyền nào khác (không có `items:write`). Không có → `403 FORBIDDEN`. Caller ẩn danh, member không có capability và principal của site khác đều bị từ chối ở bước này.
+1. **Capability `ai:decide`.** Cấp bằng permission `create` của policy trên collection dành riêng `lumibase_ai_decisions`; site admin đã có sẵn. Permission này không cấp thêm quyền nào khác (không có `items:write`). Không có → `403 FORBIDDEN`. Caller ẩn danh, member không có capability và principal của site khác đều bị từ chối ở bước này. Publishable API key (`lbk_pub_…`) và session có audience `frontend` luôn bị từ chối ở bước này với `403 FORBIDDEN`, kể cả khi role hay policy cấp `create` trên `lumibase_ai_decisions` hoặc quyền admin (#562). Các credential này nằm trong trình duyệt và app, nên lời gọi decision trả phí phải đến từ người dùng Studio hoặc từ một server giữ secret API key. Việc từ chối xảy ra trước khi đọc body. Nó áp dụng cho mọi route `ai:decide` (decisions, review profiles, reviews, feedback, rollout, sessions) và cho node Flows `ai:decision`. Các lần từ chối ở bước này được ghi audit gộp, không phải một event mỗi request (xem đoạn audit bên dưới).
 2. **Đã cấu hình provider** → nếu chưa thì `503 DECISION_NOT_CONFIGURED`.
 3. **Site opt-in.** Site chỉ gửi nội dung tới provider sau khi site admin lưu setting `aiDecisions` với `enabled: true` (`POST /api/v1/settings`). Mặc định là tắt, và giá trị sai định dạng được coi là tắt. Đặt lại `false` (hoặc xoá key) là kill switch theo site: request kế tiếp nhận `403 DECISION_DISABLED`. Chỉ các endpoint decision, draft review và node Flows `ai:decision` đọc setting này, nên việc soạn thảo, publish và chat Copilot không bị ảnh hưởng. Bỏ đặt `DECISION_PROVIDER` là công tắc cho toàn nền tảng.
 4. **Danh sách field được phép.** Khi đặt `allowedStateFields`, `state` phải là object và mọi key cấp đầu đều nằm trong danh sách; nếu không thì `422 DECISION_FIELD_NOT_ALLOWED`.
 5. **Budget đầu vào** → `413 DECISION_INPUT_TOO_LARGE` (ở trên).
-6. **Quota theo site**, hạch toán atomic bằng counter của runtime (Redis `INCRBY` trên Docker, Durable Object `PageviewCounter` theo site trên Cloudflare): số decision được nhận mỗi giờ, số decision đang chạy, và số token ước lượng mỗi ngày UTC. Lượng token giữ chỗ là trường hợp xấu nhất, tính cả mọi lần retry: (input ước lượng + output ước lượng) × (`DECISION_MAX_RETRIES` + 1). Khi provider trả lời, site bị tính usage đã báo cộng với ước lượng cho mỗi lần gọi lỗi trước đó, phần còn lại được hoàn. Số token không biết được tính theo ước lượng, không bao giờ coi là miễn phí. Timeout hoặc lỗi sau khi đã gửi request thì tính theo từng lần gọi; request chưa tới provider được hoàn toàn bộ. Nếu sẽ vượt giới hạn → `429 DECISION_QUOTA_EXCEEDED` hoặc `429 DECISION_CONCURRENCY_LIMITED` kèm `Retry-After`. Request mà riêng lượng giữ chỗ xấu nhất đã vượt budget token cả ngày thì không bao giờ được nhận, nên `429 DECISION_QUOTA_EXCEEDED` của nó không kèm `Retry-After`. Nếu backend counter không hoạt động, request bị chặn (fail closed) với `503 DECISION_QUOTA_UNAVAILABLE`.
+6. **Quota theo site**, hạch toán atomic bằng counter của runtime (Redis `INCRBY` trên Docker, Durable Object `PageviewCounter` theo site trên Cloudflare): số decision được nhận mỗi giờ, số decision đang chạy, và số token ước lượng mỗi ngày UTC. Lượng token giữ chỗ là trường hợp xấu nhất, tính cả mọi lần gọi mà provider có thể gửi: với Jev/OpenRouter là (input ước lượng + output ước lượng) × (`DECISION_MAX_RETRIES` + 1); với `llm`, vốn chỉ gửi một request và không bao giờ retry, là input ước lượng + trần output gửi lên upstream (đã gồm headroom thinking). Khi provider trả lời, site bị tính usage đã báo cộng với ước lượng cho mỗi lần gọi lỗi trước đó, phần còn lại được hoàn. Số token không biết được tính theo ước lượng, không bao giờ coi là miễn phí. Timeout hoặc lỗi sau khi đã gửi request thì tính theo từng lần gọi; request chưa tới provider được hoàn toàn bộ. Nếu sẽ vượt giới hạn → `429 DECISION_QUOTA_EXCEEDED` hoặc `429 DECISION_CONCURRENCY_LIMITED` kèm `Retry-After`. Request mà riêng lượng giữ chỗ xấu nhất đã vượt budget token cả ngày thì không bao giờ được nhận, nên `429 DECISION_QUOTA_EXCEEDED` của nó không kèm `Retry-After`. Nếu backend counter không hoạt động hoặc trả về giá trị không phải số, request bị chặn (fail closed) với `503 DECISION_QUOTA_UNAVAILABLE`. `Retry-After` có trong `Access-Control-Expose-Headers`, nên caller cross-origin (Studio trên Pages, shell desktop, SDK trên trình duyệt) đọc được nó.
 
 Setting `aiDecisions` của site có thể siết các mức trần của nền tảng, nhưng không thể nâng lên:
 
@@ -757,7 +836,13 @@ Setting `aiDecisions` của site có thể siết các mức trần của nền 
 { "key": "aiDecisions", "value": { "enabled": true, "allowedStateFields": ["title", "body"], "requestsPerHour": 100, "maxConcurrent": 2, "budgetPerDay": 200000 } }
 ```
 
-Mỗi lần gọi ghi một audit event `ai_decision` gồm request ID, principal (loại và ID), provider, model, dấu vân tay rubric (`sha256:` của questions, nên cùng rubric thì cùng version), loại câu hỏi, outcome, HTTP status, latency, usage đã báo, số lần gọi, và số token đã giữ chỗ và đã tính. Event không bao giờ ghi `state`, instructions, criteria, câu trả lời, email của người gọi hay IP của client. Audit tuân theo thời hạn lưu của audit log (`LUMIBASE_AUDIT_RETENTION_DAYS`, mặc định 90 ngày). `POST /ai/decisions` không lưu nội dung decision. Các lần review bản nháp (bên dưới) lưu câu trả lời, không bao giờ lưu nội dung được review. Việc provider giữ lại gì do điều khoản của chính provider quy định.
+Mỗi lần gọi được nhận, và mỗi lần gọi bị từ chối sau bước đầu tiên này, ghi một audit event `ai_decision` gồm request ID, principal (loại và ID), provider, model, dấu vân tay rubric (`sha256:` của questions, nên cùng rubric thì cùng version), loại câu hỏi, outcome, HTTP status, latency, usage đã báo, số lần gọi, và số token đã giữ chỗ và đã tính. Event không bao giờ ghi `state`, instructions, criteria, câu trả lời, email của người gọi hay IP của client. Audit tuân theo thời hạn lưu của audit log (`LUMIBASE_AUDIT_RETENTION_DAYS`, mặc định 90 ngày). `POST /ai/decisions` không lưu nội dung decision. Các lần review bản nháp (bên dưới) lưu câu trả lời, không bao giờ lưu nội dung được review. Việc provider giữ lại gì do điều khoản của chính provider quy định.
+
+**Lần từ chối được ghi audit gộp (#564).** Một `403 FORBIDDEN` ở bước 1 không ghi một event cho mỗi request, nên một loạt request bị từ chối không thể làm ngập audit log. Lần từ chối được đếm theo site, lý do từ chối và chủ thể: principal (loại và ID), hoặc hash có khoá của IP client khi không có principal. Lần từ chối đầu tiên trong mỗi cửa sổ `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` (mặc định 300 giây) ghi một event với `refusal.count: 1`. Các lần từ chối sau trong cùng cửa sổ chỉ ghi lại khi bộ đếm đạt 10, 100, 1000, v.v. Event đầu tiên của cửa sổ kế tiếp mang `refusal.previousWindowCount`, số đếm chính xác của cửa sổ trước. Nếu không có lần từ chối nào tiếp theo, số đếm của event cuối là cận dưới, còn metric `lumibase_ai_decision_refusals_total{reason,principal,audit}` có số chính xác của mọi lần từ chối. Nếu kho bộ đếm không dùng được, mọi lần từ chối đều ghi event (không bao giờ bỏ bằng chứng). `0` tắt việc gộp. Mỗi event từ chối có `metadata.refusal` (`reason`, `count`, `dedup`: `first` / `checkpoint` / `unbounded`, `windowStart`, `windowSeconds`) và `clientIpHash`: HMAC-SHA256 của site và IP với khoá `JWT_SECRET`, 16 ký tự hex, hoặc `null` khi không biết IP. Cột `ip` để trống. Đổi `JWT_SECRET` thì hash đổi theo. `refusal.reason` là một trong `publishable_api_key`, `frontend_session`, `unclassified_caller`, `capability_missing`, `principal_unresolved`, `principal_site_mismatch`, `principal_not_found`, `principal_inactive`, `principal_not_member`, `api_key_revoked`, `api_key_expired`, `dev_principal_forbidden`, `principal_denied`, `other`. Key của site khác được báo là `principal_not_found`.
+
+**Giới hạn chống lạm dụng cho `/api/v1/ai/*` (#564).** Mọi request dưới `/api/v1/ai` được tính vào giới hạn theo IP client và theo site, `LUMIBASE_AI_IP_RATE_LIMIT` (mặc định 300 mỗi phút, cửa sổ 60 giây, `0` = tắt). Nó chạy sau bước kiểm tra site và trước xác thực, nên request bị chặn không tốn kiểm tra token hay API key, không giữ chỗ quota, không gọi provider và không ghi audit event. Vượt giới hạn → `429 RATE_LIMITED` kèm `Retry-After` (có trong `Access-Control-Expose-Headers`); bộ đếm là `lumibase_ai_ip_rate_limited_total`. Nếu kho của limiter không dùng được, request được cho qua, hoặc nhận `503 RATE_LIMIT_UNAVAILABLE` khi `LUMIBASE_RATE_LIMIT_FAIL_CLOSED=true` (cùng quy tắc với các limiter khác). Giới hạn được bỏ qua khi không xác định được IP client. Trên Docker sau reverse proxy, proxy phải **ghi đè** `CF-Connecting-IP` bằng IP thật của client: CMS tin header này đúng như được gửi, nên không bao giờ được để giá trị do client gửi đi qua.
+
+Làm lớp phòng thủ bên ngoài, thêm một rule rate limiting của Cloudflare WAF trước Worker hoặc origin Docker: biểu thức `(http.request.uri.path wildcard "/api/v1/ai/*")` (tuỳ chọn thêm `and http.request.method eq "POST"`), đếm theo IP, ví dụ 120 request mỗi 1 phút, hành động **Block** trong 1 phút (chặn, không phải challenge, vì caller là API). Các giới hạn của CMS vẫn có hiệu lực phía sau.
 
 **Review bản nháp (#512).** Review profile là một rubric có phiên bản: các field cấp cao nhất mà review đọc và các câu hỏi Decision mà nó hỏi (cùng dạng như trên). Một lần review (run) áp một phiên bản profile lên một item, hoặc lên một bản nháp chưa lưu, qua đường đi có governance ở trên (nên capability `ai:decide`, opt-in của site, allowlist field, các budget và audit event `ai_decision` đều áp dụng), rồi lưu câu trả lời cùng provenance. Review chỉ đề xuất: không endpoint nào ở đây thay đổi item.
 
@@ -1181,6 +1266,7 @@ Các biến có thể điều chỉnh (env): `LUMIBASE_DELIVER_SMAXAGE` (giây, 
 | Upload File | 100 req/phút mỗi người dùng |
 | Kết nối Realtime | 50 đồng thời mỗi site |
 | AI Chat | 60 req/phút mỗi người dùng |
+| Route AI (`/api/v1/ai/*`), trước xác thực | 300 req/phút mỗi IP client mỗi site (`LUMIBASE_AI_IP_RATE_LIMIT`) |
 
 Header rate limit:
 ```

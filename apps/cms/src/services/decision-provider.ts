@@ -35,7 +35,15 @@
  *   DECISION_MAX_INPUT_TOKENS   — estimated token budget for the same payload
  */
 
-import { createConfiguredLLMProvider, type LLMProvider, type LLMProviderEnv, type LLMResponse } from './llm-provider';
+import {
+  createConfiguredLLMProvider,
+  LLMHttpError,
+  LLMNetworkError,
+  LLMResponseError,
+  type LLMProvider,
+  type LLMProviderEnv,
+  type LLMResponse,
+} from './llm-provider';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
@@ -112,7 +120,8 @@ export interface DecisionCallOptions {
   /**
    * Called right before each upstream request is sent, retries included, so
    * a caller can account for attempts that failed or timed out. Not called
-   * for a request rejected locally (cancelled, over the input budget).
+   * for a request rejected locally (cancelled, over the input or output
+   * budget). Must not throw; a throwing hook is swallowed with a warning.
    */
   onAttempt?: () => void;
 }
@@ -132,6 +141,11 @@ export interface DecisionLimits {
   maxInputBytes: number;
   /** Cap on the estimated token count of the same payload (see estimateDecisionTokens). */
   maxInputTokens: number;
+  /**
+   * `llm` only: cap on the estimated answer size (estimateDecisionAnswerTokens).
+   * Same on every provider; Gemini/Vertex thinking headroom is added after it.
+   */
+  maxOutputTokens: number;
 }
 
 /**
@@ -145,6 +159,7 @@ export const DEFAULT_DECISION_LIMITS: DecisionLimits = {
   maxRetries: 2,
   maxInputBytes: 131_072,
   maxInputTokens: 24_000,
+  maxOutputTokens: 4_096,
 };
 
 export type DecisionErrorCode =
@@ -348,6 +363,100 @@ export function assertDecisionInputBudget(request: DecisionRequest, limits: Deci
 }
 
 // ---------------------------------------------------------------------------
+// Output budget
+// ---------------------------------------------------------------------------
+
+/** Placeholder for every probability/confidence in the worst-case answer skeleton. */
+const SKELETON_PROBABILITY = 0.123456;
+
+/** Floor of the output cap sent upstream: a tiny request still leaves room for fences/whitespace. */
+const DECISION_MIN_OUTPUT_TOKENS = 256;
+
+function tokenWeight(text: string): { ascii: number; other: number } {
+  let ascii = 0;
+  let other = 0;
+  for (const char of text) {
+    if (char.codePointAt(0)! < 0x80) ascii += 1;
+    else other += 1;
+  }
+  return { ascii, other };
+}
+
+/** Longest option key by token weight; ties broken lexicographically so key order never matters. */
+function heaviestKey(keys: string[]): string {
+  let best = '';
+  let bestWeight = -1;
+  for (const key of keys) {
+    const { ascii, other } = tokenWeight(key);
+    const weight = ascii / 2 + other;
+    if (weight > bestWeight || (weight === bestWeight && key > best)) {
+      best = key;
+      bestWeight = weight;
+    }
+  }
+  return best;
+}
+
+/**
+ * Estimates the output tokens of a complete decision answer, without a
+ * tokenizer. It serializes the worst-case answer skeleton the decision prompt
+ * asks for — real question and option keys, every probability as `0.123456`,
+ * the heaviest option as `choice` — then counts ~2 ASCII characters per token
+ * (JSON is punctuation- and digit-dense), one token per non-ASCII code point,
+ * ×1.25 safety margin and +32 for whitespace/fences. Deterministic and
+ * independent of key order; it over-counts rather than under-counts.
+ */
+export function estimateDecisionAnswerTokens(questions: DecisionRequest['questions']): number {
+  const answers: Record<string, unknown> = {};
+  for (const [key, question] of Object.entries(questions)) {
+    if (question.type === 'noul') {
+      answers[key] = { noul: SKELETON_PROBABILITY };
+      continue;
+    }
+    const options = question.type === 'choice'
+      ? Object.keys(question.criteria)
+      : question.criteria.map((_, i) => String(i));
+    const probabilities = Object.fromEntries(options.map((option) => [option, SKELETON_PROBABILITY]));
+    answers[key] = question.type === 'choice'
+      ? { choice: heaviestKey(options), probabilities, confidence: SKELETON_PROBABILITY }
+      : { probabilities, confidence: SKELETON_PROBABILITY };
+  }
+  const { ascii, other } = tokenWeight(JSON.stringify({ answers }));
+  return Math.ceil(1.25 * (Math.ceil(ascii / 2) + other)) + 32;
+}
+
+/**
+ * `llm` output cap for one request. The estimated answer size alone is
+ * compared with `limits.maxOutputTokens` (413 before any upstream call);
+ * Gemini/Vertex thinking headroom is added only to the value sent upstream.
+ * Returns that value: `max(need, 256) + thinkingTokens`.
+ */
+export function assertDecisionOutputBudget(
+  request: DecisionRequest,
+  limits: DecisionLimits,
+  thinkingTokens: number,
+): number {
+  const need = estimateDecisionAnswerTokens(request.questions);
+  if (need > limits.maxOutputTokens) {
+    throw new DecisionProviderError(
+      'DECISION_INPUT_TOO_LARGE',
+      `Decision answers need ~${need} output tokens (estimated); the limit is ${limits.maxOutputTokens}.`,
+    );
+  }
+  return Math.max(need, DECISION_MIN_OUTPUT_TOKENS) + thinkingTokens;
+}
+
+/** Runs the caller's attempt hook; a throwing hook must never break a decision. */
+function notifyAttempt(options: DecisionCallOptions): void {
+  if (!options.onAttempt) return;
+  try {
+    options.onAttempt();
+  } catch (error) {
+    console.warn('[decision] onAttempt hook threw; ignored', error instanceof Error ? error.name : typeof error);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Deadline, cancellation and retry helpers
 // ---------------------------------------------------------------------------
 
@@ -505,7 +614,7 @@ export class SystemOneDecisionProvider implements DecisionProvider {
       if (remaining <= 0) throw timeoutError(this.limits.deadlineMs);
 
       throwIfCancelled(signal);
-      options.onAttempt?.();
+      notifyAttempt(options);
       const outcome = await this.attempt(body, Math.min(this.limits.attemptTimeoutMs, remaining), signal);
       if (outcome.kind === 'ok') return this.parse(request, outcome.data);
 
@@ -572,10 +681,11 @@ export class SystemOneDecisionProvider implements DecisionProvider {
     if (outcome.kind === 'network') {
       return new DecisionProviderError('DECISION_UNAVAILABLE', `${this.name} decision API is unreachable.`);
     }
-    const detail = outcome.text.slice(0, 500);
+    // The upstream body may echo the request (state, criteria): never carry it
+    // into the message, which the route logs.
     return new DecisionProviderError(
       errorCodeForStatus(outcome.status),
-      `${this.name} decision API error ${outcome.status}${detail ? `: ${detail}` : ''}`,
+      `${this.name} decision API error ${outcome.status}`,
       outcome.status,
     );
   }
@@ -588,18 +698,48 @@ export class SystemOneDecisionProvider implements DecisionProvider {
       );
     }
     const usage = isRecord(data.usage) ? data.usage : {};
+    const answers = normalizeAnswers(request, data.answers);
+    this.warnOnScoreDrift(request, answers);
 
     return {
       provider: this.name,
       model: typeof data.model === 'string' ? data.model : this.model,
       calibrated: true,
-      answers: normalizeAnswers(request, data.answers),
+      answers,
       usage: {
         inputTokens: toCount(usage.input_tokens),
         outputTokens: toCount(usage.output_tokens),
       },
     };
   }
+
+  /**
+   * Jev ↔ LLM consistency rests on Jev's score being Σ i·p(i) (unverified).
+   * Detect drift without changing the returned score; logs only the shape.
+   */
+  private warnOnScoreDrift(request: DecisionRequest, answers: Record<string, DecisionAnswer>): void {
+    if (scoreDriftWarned) return;
+    for (const [key, answer] of Object.entries(answers)) {
+      const question = request.questions[key];
+      if (answer.type !== 'score' || question?.type !== 'score') continue;
+      const levels = question.criteria.length;
+      const delta = Math.abs(answer.score - weightedScore(answer.probabilities, levels));
+      if (delta > SCORE_DRIFT_TOLERANCE) {
+        scoreDriftWarned = true;
+        console.warn('[decision] upstream score differs from Σ i·p(i)', { provider: this.name, levels, delta });
+        return;
+      }
+    }
+  }
+}
+
+const SCORE_DRIFT_TOLERANCE = 1e-6;
+/** One warning per isolate: drift is a property of the upstream, not of a request. */
+let scoreDriftWarned = false;
+
+/** @internal Test-only: re-arm the once-per-isolate warnings. */
+export function resetDecisionProviderWarningsForTests(): void {
+  scoreDriftWarned = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -614,6 +754,27 @@ Reply with ONLY a JSON object of the form {"answers": {"<question key>": <answer
 - score  → {"probabilities": {"<0-based level index>": 0..1, ...}, "confidence": 0..1}
 Include every option key / level index in "probabilities"; each set must sum to 1.
 Do not call tools. Do not add any text outside the JSON object.`;
+
+/**
+ * Maps an adapter failure to the same codes Jev uses for the same upstream
+ * condition. Classification comes from the adapter (where the error
+ * happened), never from JS error types: a malformed 2xx body also throws a
+ * TypeError. Messages are fixed — the adapter's message carries the upstream
+ * body, which may echo the request.
+ */
+function llmFailure(error: unknown): DecisionProviderError {
+  if (error instanceof DecisionProviderError) return error;
+  if (error instanceof LLMHttpError) {
+    return new DecisionProviderError(errorCodeForStatus(error.status), `LLM provider error ${error.status}.`, error.status);
+  }
+  if (error instanceof LLMNetworkError) {
+    return new DecisionProviderError('DECISION_UNAVAILABLE', 'LLM provider is unreachable.');
+  }
+  if (error instanceof LLMResponseError) {
+    return new DecisionProviderError('DECISION_PARSE_FAILED', 'LLM provider returned an unusable response.');
+  }
+  return new DecisionProviderError('DECISION_UPSTREAM', 'LLM provider request failed.');
+}
 
 function extractJsonObject(content: string): unknown {
   const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -637,11 +798,19 @@ export class LLMDecisionProvider implements DecisionProvider {
   private readonly llm: LLMProvider;
   private readonly model: string;
   private readonly limits: DecisionLimits;
+  /** Extra output headroom for models that count thinking inside the output cap (Gemini/Vertex). */
+  private readonly thinkingTokens: number;
 
-  constructor(llm: LLMProvider, model: string, limits: Partial<DecisionLimits> = {}) {
+  constructor(llm: LLMProvider, model: string, limits: Partial<DecisionLimits> = {}, thinkingTokens = 0) {
     this.llm = llm;
     this.model = model;
     this.limits = { ...DEFAULT_DECISION_LIMITS, ...limits };
+    this.thinkingTokens = thinkingTokens;
+  }
+
+  /** The output cap this provider sends for `request` (413 when the answer cannot fit). */
+  outputCap(request: DecisionRequest): number {
+    return assertDecisionOutputBudget(request, this.limits, this.thinkingTokens);
   }
 
   /**
@@ -654,13 +823,15 @@ export class LLMDecisionProvider implements DecisionProvider {
   async decide(request: DecisionRequest, options: DecisionCallOptions = {}): Promise<DecisionResponse> {
     throwIfCancelled(options.signal);
     assertDecisionInputBudget(request, this.limits);
+    // Before the attempt hook and the fetch: an answer that cannot fit is a 413, not a truncated 502.
+    const maxOutputTokens = this.outputCap(request);
+    notifyAttempt(options);
 
     const controller = new AbortController();
     const abort = () => controller.abort();
     options.signal?.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(abort, this.limits.deadlineMs);
     let response: LLMResponse;
-    options.onAttempt?.();
     try {
       response = await withDeadline(
         this.llm.chat(
@@ -670,7 +841,7 @@ export class LLMDecisionProvider implements DecisionProvider {
               content: `STATE:\n${JSON.stringify(request.state)}\n\nQUESTIONS:\n${JSON.stringify(request.questions)}`,
             },
           ],
-          { systemPrompt: LLM_DECISION_PROMPT, tools: false, signal: controller.signal },
+          { systemPrompt: LLM_DECISION_PROMPT, tools: false, signal: controller.signal, maxOutputTokens },
         ),
         this.limits.deadlineMs,
         options.signal,
@@ -679,7 +850,7 @@ export class LLMDecisionProvider implements DecisionProvider {
       // Our own abort surfaces from the adapter as a raw AbortError: map it.
       if (options.signal?.aborted) throw cancelledError();
       if (controller.signal.aborted) throw timeoutError(this.limits.deadlineMs);
-      throw error;
+      throw llmFailure(error);
     } finally {
       clearTimeout(timer);
       options.signal?.removeEventListener('abort', abort);
@@ -745,8 +916,11 @@ export interface DecisionProviderEnv extends LLMProviderEnv {
   DECISION_MAX_RETRIES?: string;
   DECISION_MAX_INPUT_BYTES?: string;
   DECISION_MAX_INPUT_TOKENS?: string;
+  DECISION_LLM_MAX_OUTPUT_TOKENS?: string;
+  DECISION_LLM_THINKING_TOKENS?: string;
 }
 
+/** Parses an integer env bound; invalid values fall back with a warning. */
 export function readBound(raw: string | undefined, fallback: number, min: number, max: number, name: string): number {
   if (raw === undefined || raw.trim() === '') return fallback;
   const value = Number(raw);
@@ -768,8 +942,17 @@ export function decisionLimitsFromEnv(env: DecisionProviderEnv): DecisionLimits 
     maxRetries: readBound(env.DECISION_MAX_RETRIES, d.maxRetries, 0, 5, 'DECISION_MAX_RETRIES'),
     maxInputBytes: readBound(env.DECISION_MAX_INPUT_BYTES, d.maxInputBytes, 1_024, 1_048_576, 'DECISION_MAX_INPUT_BYTES'),
     maxInputTokens: readBound(env.DECISION_MAX_INPUT_TOKENS, d.maxInputTokens, 256, 1_000_000, 'DECISION_MAX_INPUT_TOKENS'),
+    maxOutputTokens: readBound(
+      env.DECISION_LLM_MAX_OUTPUT_TOKENS, d.maxOutputTokens, 256, 32_768, 'DECISION_LLM_MAX_OUTPUT_TOKENS',
+    ),
   };
 }
+
+/** Default Gemini/Vertex thinking headroom; uncalibrated until the J06 live smoke. */
+export const DEFAULT_DECISION_THINKING_TOKENS = 1024;
+
+/** LLM adapters whose models count thinking tokens inside the output cap. */
+const THINKING_LLM_PROVIDERS = new Set(['gemini', 'vertex']);
 
 export interface ConfiguredDecisionProvider {
   provider: DecisionProvider;
@@ -779,6 +962,21 @@ export interface ConfiguredDecisionProvider {
   model: string;
   /** Bounds the provider enforces; governance reserves quota against them. */
   limits: DecisionLimits;
+  /**
+   * `llm` only: output tokens one attempt of `request` may use, i.e. exactly
+   * the cap sent upstream (thinking headroom included). Throws the same 413
+   * (`DECISION_INPUT_TOO_LARGE`) when the answer cannot fit, so governance
+   * can refuse before reserving quota. Undefined for Jev/OpenRouter, where
+   * governance keeps its own estimate (`estimateDecisionOutputTokens` in decision-governance).
+   */
+  outputAllowance?(request: DecisionRequest): number;
+  /**
+   * Most upstream requests one decision can send, which governance reserves
+   * quota for. Undefined → `limits.maxRetries + 1` (Jev/OpenRouter retry in
+   * the provider). `llm` is 1: LLMDecisionProvider never retries, so
+   * reserving for retries would refuse a site near its budget for no reason.
+   */
+  maxAttempts?: number;
 }
 
 /**
@@ -831,11 +1029,20 @@ export function createDecisionProvider(
       const llm = createConfiguredLLMProvider(env);
       if (!llm) return null;
       const model = `${llm.name}:${llm.model}`;
+      const thinkingTokens = THINKING_LLM_PROVIDERS.has(llm.name)
+        ? readBound(
+          env.DECISION_LLM_THINKING_TOKENS, DEFAULT_DECISION_THINKING_TOKENS, 0, 32_768, 'DECISION_LLM_THINKING_TOKENS',
+        )
+        : 0;
+      const provider = new LLMDecisionProvider(llm.provider, model, limits, thinkingTokens);
       return {
         name,
         model,
         limits,
-        provider: new LLMDecisionProvider(llm.provider, model, limits),
+        outputAllowance: (request) => provider.outputCap(request),
+        // `decide` sends exactly one request (see LLMDecisionProvider.decide).
+        maxAttempts: 1,
+        provider,
       };
     }
 

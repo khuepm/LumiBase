@@ -94,7 +94,7 @@ const HASH_COMMENT_LANGS = new Set([
  * (the old behaviour). An escaped space (`foo\ # bar`) is part of the word, so
  * the `#` after it is code.
  *
- * Known over-strip (B140): quote state is per line, so a ` # ` inside the
+ * Known over-strip (B169): quote state is per line, so a ` # ` inside the
  * continuation of a multi-line quoted string, a heredoc body or a TOML `"""`
  * block is cut as if it were a comment. Hiding a real difference this way needs
  * both locales to differ ONLY after that `#`; no such fence exists today.
@@ -214,7 +214,7 @@ function inlineCode(body) {
  * sends readers to the English copy (`../en/getting-started.md`) of a page
  * that has a Vietnamese one is reported, not matched against the EN page's
  * `./getting-started.md`. Backlog B67, the false positive B37(d) recorded, and
- * the own-tree rule B133.
+ * the own-tree rule B168.
  */
 export function linkTargets(body, from = null) {
   const files = [];
@@ -263,7 +263,7 @@ export function resolveDocLink(target, { rel, locale }) {
   // Present in only some: each side has to agree on one real file (B67).
   // Only inside the linking doc's own locale tree: a link that crosses into
   // the other locale stays locale-specific, so `../en/x.md` from a VI page
-  // never compares equal to `./x.md` from the EN page (B133).
+  // never compares equal to `./x.md` from the EN page (B168).
   const collapse = targetLocale === locale && (present === LOCALES.length || present === 0);
   return (collapse ? `docs/*/${inner}` : resolved) + fragment;
 }

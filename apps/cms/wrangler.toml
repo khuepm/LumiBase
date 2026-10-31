@@ -27,6 +27,13 @@ compatibility_flags = ["nodejs_compat"]
 # binding = "HYPERDRIVE"
 # id = "REPLACE_WITH_HYPERDRIVE_ID"
 
+# Optional system-role Hyperdrive (B130). Only needed with LUMIBASE_DB_RLS=enforce:
+# point it at a role with BYPASSRLS; scheduled/queue handlers and system routes use it.
+# Leave commented out otherwise (a Hyperdrive binding needs a real config id).
+# [[hyperdrive]]
+# binding = "HYPERDRIVE_SYSTEM"
+# id = "REPLACE_WITH_SYSTEM_HYPERDRIVE_ID"
+
 # Cloudflare KV for caching configurations and permissions (Strict Rule #4).
 # [[kv_namespaces]]
 # binding = "CONFIG_CACHE"
@@ -190,6 +197,13 @@ new_sqlite_classes = ["PageviewCounter"]
 # binding = "HYPERDRIVE"
 # id = "REPLACE_WITH_STAGING_HYPERDRIVE_ID"
 
+# Optional system-role Hyperdrive (B130). Only needed with LUMIBASE_DB_RLS=enforce:
+# point it at a role with BYPASSRLS; scheduled/queue handlers and system routes use it.
+# Leave commented out otherwise (a Hyperdrive binding needs a real config id).
+# [[env.staging.hyperdrive]]
+# binding = "HYPERDRIVE_SYSTEM"
+# id = "REPLACE_WITH_STAGING_SYSTEM_HYPERDRIVE_ID"
+
 # [[env.staging.kv_namespaces]]
 # binding = "CONFIG_CACHE"
 # id = "REPLACE_WITH_STAGING_KV_ID"
@@ -288,6 +302,13 @@ new_sqlite_classes = ["PageviewCounter"]
 [[env.production.hyperdrive]]
 binding = "HYPERDRIVE"
 id = "6ab50691143d4cfaa338d103125b77f3"
+
+# Optional system-role Hyperdrive (B130). Only needed with LUMIBASE_DB_RLS=enforce:
+# point it at a role with BYPASSRLS; scheduled/queue handlers and system routes use it.
+# Leave commented out otherwise (a Hyperdrive binding needs a real config id).
+# [[env.production.hyperdrive]]
+# binding = "HYPERDRIVE_SYSTEM"
+# id = "REPLACE_WITH_PRODUCTION_SYSTEM_HYPERDRIVE_ID"
 
 [[env.production.kv_namespaces]]
 binding = "CONFIG_CACHE"

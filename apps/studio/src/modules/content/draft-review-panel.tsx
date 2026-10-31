@@ -171,8 +171,8 @@ function ProfileReview({
   const snapshotMode = itemId === undefined || dirty;
   const snapshot = snapshotMode ? projectReviewFields(values, snapshotFields) : undefined;
   const target: DraftReviewTarget = snapshot
-    ? { ...(itemId ? { itemId } : {}), snapshot, projected: snapshot }
-    : { itemId, projected: projectedDraft };
+    ? { ...(itemId ? { itemId } : {}), snapshot, projected: snapshot, draft: values }
+    : { itemId, projected: projectedDraft, draft: values };
   const notSent = snapshotMode ? profile.fields.filter((f) => !snapshotFields.includes(f)) : [];
   const empty = snapshot !== undefined && Object.keys(snapshot).length === 0;
 
@@ -597,7 +597,7 @@ function Suggestion({
       {feedback?.status === 'saved' && !feedback.earlier && (
         <p role="status" className="mt-1 text-[11px] text-emerald-700">
           {t(`verdict.${feedback.verdict}`)}
-          {feedback.verdict !== 'reject' && targetField && (feedback.verdict === 'edit' || acceptValue !== null)
+          {!feedback.applyBlocked && feedback.verdict !== 'reject' && targetField && (feedback.verdict === 'edit' || acceptValue !== null)
             ? ` · ${t('verdict.applied', { field: targetField })}`
             : ''}
         </p>

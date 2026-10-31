@@ -1,10 +1,10 @@
 ---
-version: 5
+version: 6
 sourceLang: en
-lastUpdated: 2026-10-15T17:06:40.300Z
-contentHash: b8be829eacd43b1c
-codeVerified: 2026-10-15T17:06:40.300Z
-codeVerifiedHash: b8be829eacd43b1c
+lastUpdated: 2026-10-26T15:54:52.810Z
+contentHash: 9b1d272fce3172f7
+codeVerified: 2026-10-26T15:54:52.810Z
+codeVerifiedHash: 9b1d272fce3172f7
 codeVerifiedClaims: 22
 ---
 
@@ -61,7 +61,7 @@ For unsaved drafts, feedback carries the hash of the draft as you see it now, so
 |---|---|
 | Not set up | no active profile for the collection, `REVIEW_PROFILE_NOT_FOUND`, or `DECISION_NOT_CONFIGURED` |
 | Turned off | `DECISION_DISABLED` for the site |
-| No permission | `FORBIDDEN` (the `ai:decide` capability is missing) |
+| No permission | `FORBIDDEN` (the `ai:decide` capability is missing, or the caller is a publishable API key or a frontend session) |
 | Budget used up | `DECISION_QUOTA_EXCEEDED`, `DECISION_CONCURRENCY_LIMITED` or `DECISION_RATE_LIMITED`, with the `Retry-After` wait when present |
 | Timed out | `DECISION_TIMEOUT` |
 | Provider unavailable | `DECISION_UNAVAILABLE`, `DECISION_UPSTREAM`, `DECISION_AUTH`, `DECISION_PARSE_FAILED`, `DECISION_VALIDATION` or `DECISION_QUOTA_UNAVAILABLE` |

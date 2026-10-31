@@ -1,11 +1,11 @@
 ---
-version: 10
-lastUpdated: 2026-10-11T23:27:46.581Z
+version: 13
+lastUpdated: 2026-10-27T01:30:34.850Z
 sourceLang: en
-contentHash: 2467802388e8c9ae
-codeVerified: 2026-10-11T23:27:46.581Z
-codeVerifiedHash: 2467802388e8c9ae
-codeVerifiedClaims: 74
+contentHash: 025e6c3a1657ee3e
+codeVerified: 2026-10-29T08:43:08.605Z
+codeVerifiedHash: 025e6c3a1657ee3e
+codeVerifiedClaims: 80
 ---
 
 # Environment Variables Reference
@@ -116,6 +116,8 @@ rather than a typed error.
 | `DATABASE_POOL_MIN` | ✗ | Minimum DB pool connections (default: `2`) |
 | `DATABASE_POOL_MAX` | ✗ | Maximum DB pool connections (default: `10`) |
 | `DATABASE_SSL` | ✗ | `true` to require SSL for DB connection |
+| `LUMIBASE_DB_RLS` | ✗ | Request-path RLS scope: `off` (default) or `enforce`. Any other value fails closed (startup error on Docker, `503 RLS_MISCONFIGURED` on Workers). See [Request-path RLS scope](../features/rls-request-scope.md) |
+| `DATABASE_SYSTEM_URL` | With `LUMIBASE_DB_RLS=enforce` (Docker) | Connection string of the system role (`BYPASSRLS`) used by workers, cron and system routes. Unset: those paths use `DATABASE_URL`. Also read from `DATABASE_SYSTEM_URL_FILE` |
 
 For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](#cloudflare-bindings)).
 
@@ -191,12 +193,15 @@ Backs `POST /api/v1/ai/decisions`: typed `noul` / `choice` / `score` answers wit
 | `DECISION_MAX_RETRIES` | ✗ | Retries after the first attempt for 429/503/529, network errors and attempt timeouts (default `2`, range 0–5). |
 | `DECISION_MAX_INPUT_BYTES` | ✗ | UTF-8 byte cap on the serialized state + questions (default `131072`). Over the cap → `413 DECISION_INPUT_TOO_LARGE` before any provider call. |
 | `DECISION_MAX_INPUT_TOKENS` | ✗ | Estimated token budget for the same payload (default `24000`). The estimate counts ~4 ASCII chars or 1 non-ASCII code point per token; it is not the provider's tokenizer. |
+| `DECISION_LLM_MAX_OUTPUT_TOKENS` | ✗ | `llm` only: cap on the estimated size of the complete answer (default `4096`, range 256–32768), the same on every provider. Over it → `413 DECISION_INPUT_TOO_LARGE` before the call. The cap sent upstream is that estimate, at least 256 tokens. |
+| `DECISION_LLM_THINKING_TOKENS` | ✗ | `llm` on Gemini/Vertex only: thinking headroom added to the cap sent upstream, not part of the 413 check (default `1024`, range 0–32768). Raise it when `DECISION_PARSE_FAILED` repeats on Gemini/Vertex; keep the sum of both variables below the model's output limit (an upstream `400` is `422 DECISION_VALIDATION`). Headroom is 0 for OpenAI/NVIDIA/Anthropic/Workers AI, whose default models do not reason; a reasoning `LLM_MODEL` shares the same cap and may fail with `DECISION_PARSE_FAILED` — not supported in this version. |
 | `DECISION_SITE_REQUESTS_PER_HOUR` | ✗ | Platform ceiling on admitted decisions per site per clock hour (default `600`, range 0–1000000). Over it → `429 DECISION_QUOTA_EXCEEDED`. |
 | `DECISION_SITE_MAX_CONCURRENT` | ✗ | Platform ceiling on decisions in flight per site (default `4`, range 1–1000). Over it → `429 DECISION_CONCURRENCY_LIMITED`. |
 | `DECISION_SITE_TOKENS_PER_DAY` | ✗ | Platform ceiling on estimated tokens per site per UTC day, every attempt included (default `2000000`, range 0–1000000000). |
 | `DECISION_REVIEW_RETENTION_DAYS` | ✗ | Days a draft review run and its feedback are kept before the hourly purge deletes them (default `180`, range 1–3650; empty or invalid → default). Review profiles are kept. |
+| `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` | ✗ | Window for aggregating refused (`403 FORBIDDEN`) decision requests in the audit log (#564): one `ai_decision` event per site, caller and reason per window, then at counts 10, 100, 1000 … (default `300`, range 0–86400; `0` = one event per refusal). The exact total is in `lumibase_ai_decision_refusals_total`. See [Hono API spec — AI decisions](../api/hono-api-spec.md). |
 
-Invalid values in these eight variables are ignored with a warning and the default applies. A site can tighten the three `DECISION_SITE_*` ceilings, never raise them, through its `aiDecisions` setting. Decisions are also off for a site until a site admin opts in there (see [API spec → Governance](../api/hono-api-spec.md)).
+Invalid values in these variables are ignored with a warning and the default applies. A site can tighten the three `DECISION_SITE_*` ceilings, never raise them, through its `aiDecisions` setting. Decisions are also off for a site until a site admin opts in there (see [API spec → Governance](../api/hono-api-spec.md)).
 
 ---
 
@@ -244,6 +249,7 @@ Large imports can trip the default budget. Raise `LUMIBASE_RATE_LIMIT_MAX` and p
 | `LUMIBASE_RATE_LIMIT_WINDOW_S` | ✗ | `60` | Window length in seconds. |
 | `LUMIBASE_RATE_LIMIT_DISABLED` | ✗ | (unset) | Set to `true` to disable the throttle entirely. |
 | `LUMIBASE_DELIVER_RATE_LIMIT` | ✗ | `1200` | Max requests per minute per client IP on the public Delivery API (`/api/v1/deliver/*`). `0` disables. See [Caching — penetration](../features/caching.md). |
+| `LUMIBASE_AI_IP_RATE_LIMIT` | ✗ | `300` | Max requests per minute per client IP per site on `/api/v1/ai/*`, checked before authentication (#564). Over it → `429 RATE_LIMITED` with `Retry-After`. `0` disables; skipped when the client IP is unknown. Store failure follows `LUMIBASE_RATE_LIMIT_FAIL_CLOSED`. |
 | `LUMIBASE_NEGATIVE_CACHE_TTL` | ✗ | `30` | Tombstone TTL (seconds) for confirmed absences on public read paths, before ±20% jitter. `0` disables. |
 
 ---
@@ -277,6 +283,7 @@ Configure these in `apps/cms/wrangler.toml` (not environment variables):
 | Binding | Type | Purpose |
 |---------|------|---------|
 | `HYPERDRIVE` | Hyperdrive | Pooled PostgreSQL connections |
+| `HYPERDRIVE_SYSTEM` | Hyperdrive (optional) | System role (`BYPASSRLS`) for scheduled/queue handlers and system routes; required with `LUMIBASE_DB_RLS=enforce` |
 | `CONFIG_CACHE` | KV Namespace | Schema, permission, and settings cache |
 | `MEDIA` | R2 Bucket | Media/file object storage |
 | `SITE_ROOM` | Durable Object | Per-site WebSocket coordination (realtime) |
