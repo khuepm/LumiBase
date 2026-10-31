@@ -233,7 +233,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   Before, `?limit=abc` and `?limit=-5` returned every deployment of the site
   with no limit, and `?limit=1.5` failed with `500`. `0` still returns an
   empty list and values above 200 are still capped at 200. The `{ data }`
-  response shape is unchanged.
+  response shape is unchanged. `apps/cms/openapi.yaml` now documents the
+  `limit` parameter, the `400` response and the order as well (B164).
 - **Deployments API documented in the API spec (B55).** `docs/{en,vi}/api/hono-api-spec.md`
   gains section 7c covering `/api/v1/deployments/*`: target CRUD, manual trigger,
   deployment list/detail/logs/refresh, the inbound webhook, the per-target
