@@ -16,12 +16,14 @@
  */
 
 import * as Sentry from '@sentry/cloudflare';
-import { createDb } from '@lumibase/database';
 import { createCloudflareRuntime } from '@lumibase/runtime';
 import app from './index';
+import { processCloudflareAgentQueue } from './cloudflare-agent-queue';
+import { createCloudflareSystemDb } from './cloudflare-system-db';
 import type { Bindings } from './env';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
+import { runScheduledReviewRunPurge } from './services/review-run-retention';
 import { runScheduledPageviewFlush } from './modules/pageviews/scheduled';
 import { resolveSentryOptions } from './observability/sentry';
 import { withWorkerRuntimeDefault } from './worker-runtime-default';
@@ -54,6 +56,8 @@ import { withWorkerRuntimeDefault } from './worker-runtime-default';
 export default Sentry.withSentry(
   (env: Bindings) => resolveSentryOptions(env),
   {
+  queue: processCloudflareAgentQueue,
+
   fetch: (request: Request, env: Bindings, ctx: ExecutionContext) =>
     app.fetch(request, withWorkerRuntimeDefault(env), ctx),
 
@@ -61,10 +65,11 @@ export default Sentry.withSentry(
    * Cloudflare Cron Trigger handler (design §10.2). Fires on the
    * `[triggers] crons` schedule in wrangler.toml (`0 * * * *`, hourly).
    *
-   * Builds a Drizzle client from the Hyperdrive binding — the SAME fallback
-   * path `middleware/db.ts` uses (`createDb(hyperdrive.connectionString)`) —
-   * and runs the shared `runScheduledRotation`, wrapped in `ctx.waitUntil`
-   * so the isolate stays alive until the prune completes.
+   * Builds a Drizzle client on the SYSTEM connection (`HYPERDRIVE_SYSTEM`,
+   * else `HYPERDRIVE` while `LUMIBASE_DB_RLS` is off — B130): the sweeps
+   * below cross sites with no site scope — and runs the shared
+   * `runScheduledRotation`, wrapped in `ctx.waitUntil` so the isolate stays
+   * alive until the prune completes.
    *
    * Never throws: `runScheduledRotation` is best-effort, and the missing-
    * binding branch logs + returns rather than raising, so a misconfigured
@@ -75,16 +80,12 @@ export default Sentry.withSentry(
     env: Bindings,
     ctx: ExecutionContext,
   ): Promise<void> {
-    const hyperdrive = env.HYPERDRIVE;
-    if (!hyperdrive) {
-      console.error(
-        '[lumibase-cms] scheduled work skipped: HYPERDRIVE binding ' +
-          'is not configured.',
-      );
+    const system = createCloudflareSystemDb(env);
+    if (!system.db) {
+      console.error(`[lumibase-cms] scheduled work skipped: ${system.error}`);
       return;
     }
-
-    const db = createDb(hyperdrive.connectionString);
+    const db = system.db;
 
     // Two triggers share this handler (wrangler [triggers] crons):
     //   "*/5 * * * *"  → pageview flush (every 5 min)
@@ -118,9 +119,17 @@ export default Sentry.withSentry(
         }),
     );
 
+    // Quarantine executions interrupted by a Worker eviction; never replay writes.
+    ctx.waitUntil(
+      import('./services/agent-run-service')
+        .then(({ sweepStaleRuns }) => sweepStaleRuns({ db }))
+        .catch(() => console.error('[agent-run-sweep] failed')),
+    );
+
     if (controller.cron === '0 * * * *') {
       ctx.waitUntil(runScheduledRotation(db));
       ctx.waitUntil(runScheduledRefreshTokenPrune(db));
+      ctx.waitUntil(runScheduledReviewRunPurge(db, env.DECISION_REVIEW_RETENTION_DAYS));
     }
   },
   } satisfies ExportedHandler<Bindings>,

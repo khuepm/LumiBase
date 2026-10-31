@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-08-30T09:36:15.719Z
+version: 5
+lastUpdated: 2026-10-17T16:36:21.237Z
 sourceLang: en
-contentHash: 644f0f4b2f32179b
-codeVerified: 2026-08-30T09:36:15.719Z
-codeVerifiedHash: 644f0f4b2f32179b
+contentHash: fd79a2e1fafb6df3
+codeVerified: 2026-10-17T16:36:21.237Z
+codeVerifiedHash: fd79a2e1fafb6df3
 codeVerifiedClaims: 112
 ---
 
@@ -66,7 +66,8 @@ api_keys → api_key_roles/policies  ← integration principals, scoped per site
 ```
 
 - Domain rule: every domain table has `site_id` and every query filters by
-  it (Strict Rule #2). RLS (`withRls`) is the defense-in-depth backstop.
+  it (Strict Rule #2). Postgres RLS is the defense-in-depth backstop when
+  `LUMIBASE_DB_RLS=enforce` (B130; off by default).
 - **`subscriber`** is the least-privilege frontend role. It grants nothing
   until you attach content permissions to it (e.g. `articles::read WHERE
   status = 'published'`). It is created idempotently on first registration

@@ -9,7 +9,26 @@ import type { RuntimeContext } from '@lumibase/runtime';
  * - MEDIA: R2 bucket for asset storage.
  */
 export interface Bindings {
+  /** Producer for governed asynchronous agent runs. */
+  AGENT_RUNS_QUEUE?: Queue;
   HYPERDRIVE?: Hyperdrive;
+  /**
+   * Optional second Hyperdrive config for the system role (BYPASSRLS), used by
+   * scheduled/queue handlers and system routes when `LUMIBASE_DB_RLS=enforce`
+   * (B130). Unset: system paths use `HYPERDRIVE`.
+   */
+  HYPERDRIVE_SYSTEM?: Hyperdrive;
+  /**
+   * Request-path RLS scope (B130): `off` (default) or `enforce`. With
+   * `enforce` every request statement runs in its own transaction with
+   * `app.site_id` set. Any other value fails closed.
+   */
+  LUMIBASE_DB_RLS?: string;
+  /**
+   * Connection string for the system role (BYPASSRLS) in Docker mode. Required
+   * when `LUMIBASE_DB_RLS=enforce`; unset means system paths use `DATABASE_URL`.
+   */
+  DATABASE_SYSTEM_URL?: string;
   /** @deprecated Use `c.get('runtime').cache` (CacheProvider) instead of accessing KV directly. */
   CONFIG_CACHE?: KVNamespace;
   /** @deprecated Use `c.get('runtime').storage` (StorageProvider) instead of accessing R2 directly. */
@@ -120,6 +139,8 @@ export interface Bindings {
   LUMIBASE_DELIVER_RATE_LIMIT?: string;
   /** Authenticated API rate limit (req/min per principal). Default 600; `0` = off. */
   LUMIBASE_API_RATE_LIMIT?: string;
+  /** /api/v1/ai/* rate limit per client IP per site, req/min (default 300; `0` = off). Runs before auth (#564). */
+  LUMIBASE_AI_IP_RATE_LIMIT?: string;
   /** Debounce window (seconds) for API-key `lastUsedAt` writes. Default 60; `0` = touch every request. */
   LUMIBASE_APIKEY_TOUCH_INTERVAL?: string;
   /** Max JSON request body in bytes for the app-level guard. Default 1 MiB. */
@@ -183,6 +204,41 @@ export interface Bindings {
   WORKERS_AI_API_TOKEN?: string;
   /** Optional Workers AI gateway URL override. */
   WORKERS_AI_GATEWAY?: string;
+  // ── Decision Provider (services/decision-provider.ts) ──────────────────
+  /** `'typesafe'` | `'openrouter'` | `'llm'`. Unset disables `/ai/decisions`. */
+  DECISION_PROVIDER?: string;
+  /** Decision model override (default `jev-latest` / `~typesafe/jev-latest`). */
+  DECISION_MODEL?: string;
+  /** TypeSafe API key for Jev (System One API). */
+  TYPESAFE_API_KEY?: string;
+  /** Optional TypeSafe endpoint override. Defaults to `https://api.typesafe.ai/v1`. */
+  TYPESAFE_BASE_URL?: string;
+  /** OpenRouter API key, used when DECISION_PROVIDER = 'openrouter'. */
+  OPENROUTER_API_KEY?: string;
+  /** Total decision deadline in ms, retries included (default 20000, 1000–120000). */
+  DECISION_TIMEOUT_MS?: string;
+  /** Timeout of one upstream attempt in ms (default 8000, 500–120000). */
+  DECISION_ATTEMPT_TIMEOUT_MS?: string;
+  /** Retries after the first attempt (default 2, 0–5). */
+  DECISION_MAX_RETRIES?: string;
+  /** UTF-8 byte cap on serialized state + questions (default 131072). */
+  DECISION_MAX_INPUT_BYTES?: string;
+  /** Estimated token budget on the same payload (default 24000). */
+  DECISION_MAX_INPUT_TOKENS?: string;
+  /** `llm` only: cap on the estimated answer size in tokens (default 4096, 256–32768). */
+  DECISION_LLM_MAX_OUTPUT_TOKENS?: string;
+  /** `llm` + Gemini/Vertex only: thinking headroom added to the sent cap (default 1024, 0–32768). */
+  DECISION_LLM_THINKING_TOKENS?: string;
+  /** Platform ceiling: admitted decisions per site per hour (default 600). A site may only tighten it. */
+  DECISION_SITE_REQUESTS_PER_HOUR?: string;
+  /** Platform ceiling: decisions in flight per site (default 4). */
+  DECISION_SITE_MAX_CONCURRENT?: string;
+  /** Platform ceiling: estimated tokens per site per UTC day, retries included (default 2,000,000). */
+  DECISION_SITE_TOKENS_PER_DAY?: string;
+  /** Dedup window (s) for refused-decision audit rows (default 300; `0` = one row per refusal) (#564). */
+  DECISION_REFUSAL_AUDIT_WINDOW_SECONDS?: string;
+  /** Days a draft review run (and its feedback) is kept before the hourly purge (default 180). */
+  DECISION_REVIEW_RETENTION_DAYS?: string;
   // ── Custom domains / Cloudflare for SaaS (services/domains/*) ───────────
   /** API token with `SSL and Certificates: Edit` on the SaaS zone. */
   CLOUDFLARE_API_TOKEN?: string;
@@ -241,6 +297,12 @@ export interface AuthPrincipal {
  */
 export interface Variables {
   db: Database;
+  /**
+   * Memoised system-role db (BYPASSRLS, unscoped). Set by `withSystemDb()` /
+   * `systemDbFor(c)` in `middleware/db.ts`; only for system routes and writes
+   * that legitimately cross sites (B130).
+   */
+  systemDb?: Database;
   /** Active site id (Strict Rule #2). Set by `withTenant`. */
   siteId: string;
   /** Authenticated principal. Set by `withAuth`. */

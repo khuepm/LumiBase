@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import { presets, scopeSite } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -198,7 +199,7 @@ presetsRouter.patch('/:id', async (c) => {
   const siteId = c.get('siteId');
   const db = c.get('db');
   const body = await c.req.json();
-  const parsed = presetSchema.partial().parse(body);
+  const parsed = patchSchema(presetSchema).parse(body);
 
   const [existing] = await db
     .select()

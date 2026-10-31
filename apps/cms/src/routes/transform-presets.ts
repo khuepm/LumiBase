@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 /**
  * /transform-presets — CRUD for named image-transform presets.
  *
@@ -92,7 +93,7 @@ transformPresetsRouter.post('/', async (c) => {
 transformPresetsRouter.patch('/:id', async (c) => {
   const forbidden = await requirePermission(c, 'update');
   if (forbidden) return forbidden;
-  const parsed = presetSchema.partial().safeParse(await c.req.json());
+  const parsed = patchSchema(presetSchema).safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json(
       { errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) },

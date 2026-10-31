@@ -168,7 +168,14 @@ export type SystemContextReason =
   /** Background queue worker executing already-authorized work (veto commit, agent run). */
   | 'background-worker'
   /** GDPR erasure / SAR — gated by admin + dual-control at the service layer. */
-  | 'compliance-erasure';
+  | 'compliance-erasure'
+  /**
+   * Semantic drift pass of a Content Intent scan (J12, #519). Reads only the
+   * fields a site-admin-pinned review profile lists, minus pinned fields, and
+   * writes nothing to items (only drift rows). Sending content to the provider
+   * is gated by the site's `aiDecisions.enabled` + `aiDecisions.drift`.
+   */
+  | 'semantic-drift-scan';
 
 /**
  * Construct an ItemService that intentionally runs with system privileges

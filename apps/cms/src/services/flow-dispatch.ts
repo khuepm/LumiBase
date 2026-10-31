@@ -1,5 +1,5 @@
 import { flows, flowRuns, type Database } from '@lumibase/database';
-import type { KeyProvider, QueueProvider } from '@lumibase/runtime';
+import type { CacheProvider, KeyProvider, QueueProvider } from '@lumibase/runtime';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { and, eq } from 'drizzle-orm';
 import { runFlow, type FlowGraph } from './flow-service';
@@ -110,11 +110,18 @@ export async function dispatchItemEvent(deps: FlowDispatchDeps, event: ItemEvent
  * Execute one enqueued flow job: re-check the flow is still active (it may
  * have been deactivated between enqueue and consume), record the run, execute,
  * persist the outcome. Shared by the Docker worker and the CF queue consumer.
+ *
+ * `extras` carries the same runtime providers a manual run gets (B121): the
+ * cache (decision quota) and the process env (provider config). Without them
+ * a scheduled `drift-scan` reports its semantic pass `unavailable`. They are
+ * runtime providers, not a principal: `ai:decision` still refuses an event or
+ * schedule run because it has no principal to act as.
  */
 export async function processFlowEventJob(
   db: Database,
   job: FlowEventJob,
   keys?: KeyProvider,
+  extras: { cache?: CacheProvider; processEnv?: Record<string, string | undefined> } = {},
 ): Promise<void> {
   const [flow] = await db
     .select()
@@ -133,6 +140,8 @@ export async function processFlowEventJob(
     siteId: job.siteId,
     keys,
     runId: run!.id,
+    ...(extras.cache ? { cache: extras.cache } : {}),
+    ...(extras.processEnv ? { processEnv: extras.processEnv } : {}),
   });
 
   await db
@@ -145,17 +154,20 @@ export interface FlowEventWorkerDeps {
   db: Database;
   queue?: QueueProvider;
   keys?: KeyProvider;
+  /** Same providers as the manual-run worker (`registerFlowRunsWorker`), B121. */
+  cache?: CacheProvider;
+  env?: Record<string, string | undefined>;
 }
 
 /** Registers the flow-events consumer on a long-lived runtime (Docker/Node). */
 export function registerFlowEventWorker(deps: FlowEventWorkerDeps): void {
-  const { db, queue, keys } = deps;
+  const { db, queue, keys, cache, env } = deps;
   if (!queue) return;
 
   queue.process<FlowEventJob>(FLOW_EVENTS_QUEUE, async (job) => {
     try {
       if (job.name === 'flow:event' || job.name === 'flow:scheduled') {
-        await processFlowEventJob(db, job.data, keys);
+        await processFlowEventJob(db, job.data, keys, { cache, processEnv: env });
       }
     } catch (err) {
       // A failed flow run must not crash the worker; the queue applies its

@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import {
   permissions as permissionsTable,
   policies,
@@ -79,7 +80,7 @@ const policyCreate = z.object({
   rules: z.record(z.string(), z.unknown()).optional(),
 });
 
-const policyPatch = policyCreate.partial();
+const policyPatch = patchSchema(policyCreate);
 
 const permissionUpsert = z.object({
   collection: z.string().min(1).max(64),
@@ -90,7 +91,7 @@ const permissionUpsert = z.object({
   fields: z.array(z.string()).optional(),
 });
 
-const permissionPatch = permissionUpsert.partial();
+const permissionPatch = patchSchema(permissionUpsert);
 
 const attachUser = z.object({
   userId: z.string(),

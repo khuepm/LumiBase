@@ -6,6 +6,7 @@ import {
   NvidiaProvider,
   OpenAIProvider,
   VertexProvider,
+  WorkersAIProvider,
   createLLMProvider,
 } from '../llm-provider';
 
@@ -251,5 +252,39 @@ describe('VertexProvider', () => {
     await provider.chat([{ role: 'user', content: 'hi' }]);
 
     expect(fetchMock.mock.calls[0]![0]).toContain('us-central1-aiplatform.googleapis.com');
+  });
+});
+
+describe('specialized LLM callers', () => {
+  it.each([
+    ['openai', () => new OpenAIProvider('key'), { choices: [{ message: { content: 'ok' } }] }],
+    ['nvidia', () => new NvidiaProvider('key'), { choices: [{ message: { content: 'ok' } }] }],
+    ['anthropic', () => new AnthropicProvider('key'), { content: [{ type: 'text', text: 'ok' }] }],
+    ['gemini', () => new GeminiProvider('key'), { candidates: [] }],
+    [
+      'vertex',
+      () => new VertexProvider({ accessToken: 'key', projectId: 'project' }),
+      { candidates: [] },
+    ],
+    [
+      'workers-ai',
+      () => new WorkersAIProvider({ accountId: 'account', apiToken: 'key' }),
+      { result: { response: 'ok' } },
+    ],
+  ] as const)('%s replaces the system prompt and omits tools', async (_name, create, response) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response)));
+    vi.stubGlobal('fetch', fetchMock);
+    await create().chat([{ role: 'user', content: 'state' }], {
+      systemPrompt: 'Return decision JSON only.',
+      tools: false,
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    expect(body.tools).toBeUndefined();
+    expect(body.tool_choice).toBeUndefined();
+    expect(body.toolConfig).toBeUndefined();
+    const system =
+      body.system ?? body.systemInstruction?.parts[0]?.text ?? body.messages[0]?.content;
+    expect(system).toBe('Return decision JSON only.');
+    expect(JSON.stringify(body)).not.toContain('LumiBase AI Copilot');
   });
 });

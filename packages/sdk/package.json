@@ -30,10 +30,12 @@
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && pnpm run typecheck:examples",
+    "typecheck:examples": "tsc -p tsconfig.examples.json",
     "clean": "rm -rf .turbo dist"
   },
   "devDependencies": {
+    "@lumibase/contracts": "workspace:*",
     "tsup": "^8.5.1",
     "typescript": "^5.6.2",
     "vitest": "^5.0.3"

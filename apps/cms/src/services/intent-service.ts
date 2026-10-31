@@ -1,7 +1,9 @@
+import { patchSchema } from '../utils/patch-schema';
 import { contentIntents, type Database } from '@lumibase/database';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ConfiguredLLM } from './llm-provider';
+import { semanticRuleIdentity } from './semantic-drift';
 
 /**
  * IntentService — CRUD and natural-language compilation for content intents
@@ -46,6 +48,24 @@ const ruleSchema = z.discriminatedUnion('type', [
     glossary: z.string().min(1).optional(),
     fields: z.array(z.string().min(1)).optional(),
   }),
+  // Semantic drift (Jev J12, #519): judged by a pinned review profile version
+  // in a separate, budgeted pass of the drift scan. The deterministic rules
+  // above stay code-evaluated. Semantics: `semantic-drift.ts`.
+  z
+    .object({
+      type: z.literal('semantic'),
+      key: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, 'key must be lowercase letters, digits, "_" or "-"'),
+      version: z.number().int().min(1).max(1_000_000),
+      profileKey: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, 'profileKey must be a review profile key'),
+      profileVersion: z.number().int().positive(),
+      questionKey: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'questionKey must be a profile question key'),
+      threshold: z.number().min(0.5).max(1),
+      fields: z.array(z.string().min(1).max(128)).min(1).max(64).optional(),
+      contextSource: z
+        .union([z.literal('intent'), z.string().regex(/^field:[A-Za-z0-9_-]{1,128}$/, 'contextSource must be "intent" or "field:<name>"')])
+        .default('intent'),
+    })
+    .strict(),
 ]);
 
 export type IntentRule = z.infer<typeof ruleSchema>;
@@ -73,10 +93,26 @@ const maintenanceWindowSchema = z.object({
 /** Standard 5-field cron expression (minute hour dom month dow). */
 const CRON_PATTERN = /^(\S+\s+){4}\S+$/;
 
+/** Semantic rule keys identify a rule across versions, so they must be unique within an intent. */
+const rulesSchema = z
+  .array(ruleSchema)
+  .min(1)
+  .max(50)
+  .superRefine((rules, ctx) => {
+    const seen = new Set<string>();
+    rules.forEach((rule, index) => {
+      if (rule.type !== 'semantic') return;
+      if (seen.has(rule.key)) {
+        ctx.addIssue({ code: 'custom', path: [index, 'key'], message: `Duplicate semantic rule key "${rule.key}".` });
+      }
+      seen.add(rule.key);
+    });
+  });
+
 export const intentInputSchema = z.object({
   name: z.string().min(1).max(120),
   collection: z.string().min(1).max(120),
-  rules: z.array(ruleSchema).min(1).max(50),
+  rules: rulesSchema,
   schedule: z.string().regex(CRON_PATTERN, 'schedule must be a 5-field cron expression'),
   budget: budgetSchema.prefault({}),
   autonomyCap: z.number().int().min(0).max(4).default(2),
@@ -89,6 +125,33 @@ export class IntentServiceError extends Error {
   constructor(public code: string, message: string, public status = 400) {
     super(message);
     this.name = 'IntentServiceError';
+  }
+}
+
+/**
+ * A semantic rule's drift fingerprint is `<key>@v<version>:<profileVersion>:<contentHash>`
+ * (J12, #519). Changing which profile, question, context or fields the rule
+ * uses without bumping `version` would keep the fingerprint, so the answer
+ * given under the old definition would stand for the new one. Such an edit is
+ * refused; a version bump (or a new key) is a new evaluation.
+ */
+export function assertSemanticVersionBumps(stored: unknown, next: readonly IntentRule[]): void {
+  const previous = new Map<string, Extract<IntentRule, { type: 'semantic' }>>();
+  for (const rule of Array.isArray(stored) ? stored : []) {
+    const parsed = ruleSchema.safeParse(rule);
+    if (parsed.success && parsed.data.type === 'semantic') previous.set(parsed.data.key, parsed.data);
+  }
+  for (const rule of next) {
+    if (rule.type !== 'semantic') continue;
+    const before = previous.get(rule.key);
+    if (!before || before.version !== rule.version) continue;
+    if (semanticRuleIdentity(before) !== semanticRuleIdentity(rule)) {
+      throw new IntentServiceError(
+        'SEMANTIC_RULE_VERSION_REQUIRED',
+        `Semantic rule "${rule.key}" changed its profile, question, context or fields; bump its version (currently ${rule.version}).`,
+        422,
+      );
+    }
   }
 }
 
@@ -144,8 +207,9 @@ export class IntentService {
   }
 
   async update(id: string, input: Partial<IntentInput>) {
-    await this.get(id);
-    const parsed = intentInputSchema.partial().parse(input);
+    const current = await this.get(id);
+    const parsed = patchSchema(intentInputSchema).parse(input);
+    if (parsed.rules !== undefined) assertSemanticVersionBumps(current.rules, parsed.rules);
     const [intent] = await this.deps.db
       .update(contentIntents)
       .set({

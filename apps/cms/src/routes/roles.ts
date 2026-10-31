@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import {
   rolePolicies,
   roles,
@@ -58,7 +59,7 @@ const roleCreate = z.object({
   appAccess: z.boolean().optional(),
 });
 
-const rolePatch = roleCreate.partial();
+const rolePatch = patchSchema(roleCreate);
 
 const attachPolicy = z.object({
   policyId: z.string(),

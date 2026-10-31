@@ -1,3 +1,4 @@
+import { patchSchema } from '../utils/patch-schema';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
@@ -87,7 +88,7 @@ intentsRouter.post('/', async (c) => {
 
 intentsRouter.patch('/:id', async (c) => {
   if (!canWriteIntents(c)) return forbidden(c);
-  const parsed = intentInputSchema.partial().safeParse(await c.req.json().catch(() => null));
+  const parsed = patchSchema(intentInputSchema).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return handleError(c, parsed.error);
   try {
     const data = await service(c).update(c.req.param('id'), parsed.data);
@@ -153,9 +154,22 @@ intentsRouter.post('/:id/scan', async (c) => {
     const { DriftService, DriftServiceError } = await import('../services/drift-service');
     const { ReconcilerService } = await import('../services/reconciler-service');
     const { GoalDispatchService } = await import('../services/goal-dispatch-service');
+    const { semanticDriftRuntimeFromEnv } = await import('../services/semantic-drift-scan');
     const deps = { db: c.get('db'), siteId: c.get('siteId') };
+    const runtime = c.get('runtime');
+    // Semantic rules (J12) run as the site, not as the caller: the scan is a
+    // site job, and sending content is gated by aiDecisions.enabled + .drift.
+    const semantic = semanticDriftRuntimeFromEnv({
+      ...deps,
+      cache: runtime?.cache,
+      keys: runtime?.keys,
+      processEnv: {
+        ...(typeof process !== 'undefined' ? process.env : {}),
+        ...(c.env as unknown as Record<string, string | undefined>),
+      },
+    });
     try {
-      const scan = await new DriftService(deps).scanIntent(c.req.param('id'));
+      const scan = await new DriftService({ ...deps, semantic }).scanIntent(c.req.param('id'));
       const reconcile = await new ReconcilerService(deps).reconcileIntent(c.req.param('id'));
       // Goal creation alone used to be the end of the cycle (#455): the goal was
       // created, the drift flipped to `assigned`, and nothing ever executed it —

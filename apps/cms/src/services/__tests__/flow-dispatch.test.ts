@@ -5,8 +5,11 @@ import {
   dispatchItemEvent,
   findActiveEventFlows,
   processFlowEventJob,
+  registerFlowEventWorker,
   type FlowEventJob,
 } from '../flow-dispatch';
+import { registerHandler } from '../flow-service';
+import { semanticDriftRuntimeFromEnv } from '../semantic-drift-scan';
 
 /**
  * Flow event trigger (visual-flow-builder task 3.4).
@@ -129,6 +132,40 @@ describe('processFlowEventJob (Req 1.4)', () => {
     });
     expect(updates[0]).toMatchObject({ status: 'success' });
     expect(updates[0]?.finishedAt).toBeInstanceOf(Date);
+  });
+
+  it('hands the cache and provider env to the run, as the manual worker does (B121)', async () => {
+    let seen: Record<string, unknown> | null = null;
+    registerHandler('test:capture-event-env', async (c) => {
+      seen = c.env;
+      return { ok: true };
+    });
+    const row = { ...flow('f1', {}), graph: { entry: 'n1', nodes: [{ id: 'n1', key: 'test:capture-event-env' }] } };
+    const { db } = makeDb([row]);
+    const cache = { marker: 'cache' } as never;
+    await processFlowEventJob(db, job, undefined, { cache, processEnv: { DECISION_PROVIDER: 'typesafe' } });
+    expect(seen).toMatchObject({ siteId: 's1', runId: 'run_1', cache, processEnv: { DECISION_PROVIDER: 'typesafe' } });
+    // No principal is added: ai:decision still refuses an event run.
+    expect(seen).not.toHaveProperty('principal');
+    // With those providers the drift-scan semantic pass has a runtime (it was `unavailable` before).
+    expect(semanticDriftRuntimeFromEnv({ db, siteId: 's1', cache: seen!['cache'] as never, processEnv: seen!['processEnv'] as never })).not.toBeNull();
+    expect(semanticDriftRuntimeFromEnv({ db, siteId: 's1' })).toBeNull();
+  });
+
+  it('the registered worker passes its cache and env to every job', async () => {
+    let seen: Record<string, unknown> | null = null;
+    registerHandler('test:capture-worker-env', async (c) => {
+      seen = c.env;
+      return { ok: true };
+    });
+    const row = { ...flow('f1', {}), graph: { entry: 'n1', nodes: [{ id: 'n1', key: 'test:capture-worker-env' }] } };
+    const { db } = makeDb([row]);
+    const { queue } = makeQueue();
+    const cache = { marker: 'cache' } as never;
+    registerFlowEventWorker({ db, queue, cache, env: { DECISION_PROVIDER: 'typesafe' } });
+    const handler = (queue.process as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![1] as (j: unknown) => Promise<void>;
+    await handler({ name: 'flow:scheduled', data: job });
+    expect(seen).toMatchObject({ cache, processEnv: { DECISION_PROVIDER: 'typesafe' } });
   });
 
   it('skips flows deactivated between enqueue and consume', async () => {

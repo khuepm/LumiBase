@@ -282,37 +282,24 @@ describe('newly governed tools · routing', () => {
   });
 });
 
-describe('tools this change measured and did NOT route', () => {
-  it('each carries the reason it stays on REST', () => {
-    expect(UNGOVERNED_MUTATIONS['create_cdc_subscription']).toMatch(
-      /^contract-narrower-than-tool: payload_mode/,
-    );
-    expect(UNGOVERNED_MUTATIONS['create_flow']).toMatch(/^skill-weaker-than-rest: /);
-    expect(UNGOVERNED_MUTATIONS['install_extension']).toMatch(/^skill-weaker-than-rest: /);
-    expect(UNGOVERNED_MUTATIONS['update_extension']).toMatch(/^skill-weaker-than-rest: /);
-    for (const tool of ['create_cdc_subscription', 'create_flow', 'install_extension', 'update_extension']) {
-      expect(GOVERNED_TOOLS[tool], `${tool} is in exactly one table`).toBeUndefined();
-    }
-  });
-
-  it('`create_cdc_subscription` is narrower for a real reason: the contract has no payload mode', () => {
-    // If a later change teaches the handler `payloadMode` and adds it to the
-    // contract, this fails and the tool can be moved into GOVERNED_TOOLS.
-    expect(canonical['createCdcSubscription']!.properties).not.toContain('payloadMode');
-  });
-
-  it('mode `on` refuses them with the declared reason and issues no REST call', async () => {
+describe('P2 governed write parity bindings', () => {
+  it('routes the four repaired skills and preserves snapshot payload mode', async () => {
     const { handlers, calls } = governedRegistry();
-    for (const tool of ['create_cdc_subscription', 'create_flow', 'install_extension', 'update_extension']) {
+    const cases = [
+      { tool: 'create_flow', skill: 'createFlow', args: { name: 'scheduled', triggerType: 'schedule', graph: {} } },
+      { tool: 'install_extension', skill: 'installExtension', args: { name: 'panel', version: '1', type: 'panel', bundleUrl: 'https://example.com/panel.js' } },
+      { tool: 'update_extension', skill: 'updateExtension', args: { id: 'ext1', enabled: false } },
+      { tool: 'create_cdc_subscription', skill: 'createCdcSubscription', args: { name: 'feed', kind: 'pull', payload_mode: 'snapshot' } },
+    ];
+    for (const { tool, skill, args } of cases) {
+      expect(UNGOVERNED_MUTATIONS[tool]).toBeUndefined();
       const before = calls.length;
-      const result = (await handlers.get(tool)!({ confirm: true })) as {
-        isError?: boolean;
-        content: Array<{ type: string; text?: string }>;
-      };
-      expect(result.isError, tool).toBe(true);
-      expect(result.content[0]!.text, tool).toContain(`Known gap: ${UNGOVERNED_MUTATIONS[tool]}`);
-      expect(calls.slice(before), tool).toEqual([]);
+      await handlers.get(tool)!(args);
+      const sent = calls.slice(before);
+      expect(sent.filter((call) => REST_MUTATIONS.has(call.method))).toEqual([]);
+      expect(toolsCalls(sent)).toEqual([{ name: skill, arguments: args }]);
     }
+    expect(canonical['createCdcSubscription']!.properties).toContain('payload_mode');
   });
 
   it('every declared reason uses one of the documented prefixes', () => {

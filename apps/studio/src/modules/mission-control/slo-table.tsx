@@ -7,6 +7,14 @@ import { missionControlApi, type ContentIntent } from './api';
  * SLO health table (content-os-ui task 3.2/6.1; Req 2.4, 5.1).
  * Health = share of an intent's detected drifts that are resolved. A
  * collection with open drifts is out of SLO; no drifts means healthy.
+ * `unevaluated` drifts (semantic rules that could not be judged, J12) are
+ * neither healthy nor open: they are left out of the health ratio and shown
+ * as a separate count, so an outage never reads as a clean intent.
+ * Health is unknown (`null`), not 100 %, when nothing conclusive backs it:
+ * the drifts failed to load, every row is `unevaluated`, or the intent has
+ * semantic rules and no conclusive row at all — a clean semantic answer and a
+ * semantic pass that was off or unavailable both leave no row, so an empty
+ * list cannot tell them apart.
  * Shared by the dashboard summary and the intents page — rows link to the
  * intent detail when `linkBase` is given.
  */
@@ -15,7 +23,10 @@ export interface SloRow {
   intent: ContentIntent;
   open: number;
   total: number;
-  health: number;
+  /** Percent of conclusive drifts that are not open; `null` = unknown (see above). */
+  health: number | null;
+  /** Semantic drift rows that could not be judged (J12). Not in `total`. */
+  unevaluated: number;
 }
 
 export function useSloRows(): { rows: SloRow[]; isLoading: boolean } {
@@ -31,18 +42,65 @@ export function useSloRows(): { rows: SloRow[]; isLoading: boolean } {
   });
 
   const rows = intents.map((intent, i): SloRow => {
-    const drifts = driftQueries[i]?.data ?? [];
+    const query = driftQueries[i];
+    const drifts = query?.data ?? [];
     const open = drifts.filter((d) => d.status === 'open' || d.status === 'assigned').length;
-    const total = drifts.length;
+    const unevaluated = drifts.filter((d) => d.status === 'unevaluated').length;
+    const total = drifts.length - unevaluated;
+    const unknown =
+      query?.isError === true || (total === 0 && (unevaluated > 0 || hasSemanticRules(intent)));
     return {
       intent,
       open,
       total,
-      health: total === 0 ? 100 : Math.round(((total - open) / total) * 100),
+      health: unknown ? null : total === 0 ? 100 : Math.round(((total - open) / total) * 100),
+      unevaluated,
     };
   });
 
   return { rows, isLoading: intentsQuery.isLoading };
+}
+
+/**
+ * The dashboard's SLO health: the mean health of active intents. Intents
+ * whose health is unknown (J12: nothing conclusive backs it) stay out of the
+ * mean and are counted in `unknown`, so they never lift it toward green.
+ * `health` is null when no active intent has a known health. `partial`
+ * counts active intents whose health is known but which also have
+ * `unevaluated` rows: their health covers only the rows that were judged.
+ */
+export function sloSummary(rows: readonly SloRow[]): { health: number | null; unknown: number; partial: number } {
+  const active = rows.filter((row) => row.intent.status === 'active');
+  const known = active.flatMap((row) => (row.health === null ? [] : [row.health]));
+  return {
+    health: known.length === 0 ? null : Math.round(known.reduce((sum, health) => sum + health, 0) / known.length),
+    unknown: active.length - known.length,
+    partial: active.filter((row) => row.health !== null && row.unevaluated > 0).length,
+  };
+}
+
+/**
+ * Label and tone of the dashboard's SLO health card. An intent that is only
+ * partly evaluated never makes the card read as plainly healthy: it is
+ * counted in the label and the card is flagged, even at 100 %.
+ */
+export function sloHealthCard(summary: ReturnType<typeof sloSummary>): { value: string; label: string; tone: 'alert' | 'ok' } {
+  const notes = [
+    ...(summary.unknown > 0 ? [`${summary.unknown} unknown`] : []),
+    ...(summary.partial > 0 ? [`${summary.partial} partly not evaluated`] : []),
+  ];
+  return {
+    value: summary.health === null ? '—' : `${summary.health}%`,
+    label: notes.length > 0 ? `SLO health (active intents, ${notes.join(', ')})` : 'SLO health (active intents)',
+    tone: (summary.health !== null && summary.health < 90) || summary.partial > 0 ? 'alert' : 'ok',
+  };
+}
+
+/** Whether the intent declares a semantic rule (J12). */
+export function hasSemanticRules(intent: ContentIntent): boolean {
+  return intent.rules.some(
+    (rule) => typeof rule === 'object' && rule !== null && (rule as { type?: unknown }).type === 'semantic',
+  );
 }
 
 export function IntentStatusBadge({ status }: { status: string }) {
@@ -60,7 +118,14 @@ export function IntentStatusBadge({ status }: { status: string }) {
   );
 }
 
-export function HealthBar({ health }: { health: number }) {
+export function HealthBar({ health }: { health: number | null }) {
+  if (health === null) {
+    return (
+      <span className="text-xs text-muted-foreground" title="No conclusive evaluation backs a health value.">
+        unknown
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-center gap-2">
       <span className="h-2 w-24 overflow-hidden rounded-full bg-muted">
@@ -98,7 +163,7 @@ export function SloTable({ rows, linkBase }: { rows: SloRow[]; linkBase?: string
         </tr>
       </thead>
       <tbody>
-        {rows.map(({ intent, open, health }) => (
+        {rows.map(({ intent, open, health, unevaluated }) => (
           <tr key={intent.id} className="border-b last:border-0">
             <td className="py-2 font-medium">
               {linkBase ? (
@@ -115,7 +180,14 @@ export function SloTable({ rows, linkBase }: { rows: SloRow[]; linkBase?: string
             <td>
               <IntentStatusBadge status={intent.status} />
             </td>
-            <td>{open}</td>
+            <td>
+              {open}
+              {unevaluated > 0 && (
+                <span className="ml-1 rounded-full bg-sky-100 px-1.5 py-0.5 text-xs text-sky-900">
+                  {unevaluated} not evaluated
+                </span>
+              )}
+            </td>
             <td>
               <HealthBar health={health} />
             </td>

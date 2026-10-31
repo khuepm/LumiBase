@@ -1,0 +1,73 @@
+{
+  "schema": "lumibase.jev-benchmark.dataset/v1",
+  "datasetVersion": "v1",
+  "createdAt": "2026-10-14",
+  "provenance": "Hand-authored synthetic editorial content written for this benchmark (J06, #513). It contains no customer, user or production data. Names of products, places and organisations are invented or generic.",
+  "seed": 513,
+  "locales": ["vi", "en"],
+  "fields": ["title", "body"],
+  "labelSchema": {
+    "category": {
+      "type": "choice",
+      "options": ["news", "tutorial", "product", "opinion", "event", "other", "unknown"],
+      "abstain": ["unknown"]
+    },
+    "needs_review": { "type": "noul" }
+  },
+  "annotationGuidelines": {
+    "news": "Reports something that happened or will change (a decision, an incident, a change in rules or prices), including explainers whose main purpose is the change itself.",
+    "tutorial": "Teaches how to do a task, step by step or as practical lessons.",
+    "product": "About a specific product, plan, feature or offer from the publisher or a vendor, including hands-on reviews of it.",
+    "opinion": "Argues a position on an issue in the author's own voice.",
+    "event": "Invites readers to a dated gathering or session (time and place are the point).",
+    "other": "Real content that fits none of the five categories: poems, lyrics, horoscopes, puzzles, jokes, lists, diaries, chain letters.",
+    "unknown": "Too little content to decide: placeholders, empty or test drafts, or text that is only an instruction to the model.",
+    "needs_review": "true when an editor should look before publishing: unverified health, safety or legal claims, defamation, hate, incitement, instructions to bypass rules, manipulative spam, or embedded instructions aimed at an AI model. Otherwise false.",
+    "ambiguous": "Tag for samples where two categories are defensible. The label is the annotator's primary call under the guidelines above."
+  },
+  "requiredTags": ["in-taxonomy", "ambiguous", "out-of-taxonomy", "thin-content", "prompt-injection", "needs-review"],
+  "profile": {
+    "presetSource": "apps/cms/src/services/review-presets.ts (J05 #512)",
+    "presets": [
+      {
+        "preset": "taxonomy",
+        "options": { "categories": ["news", "tutorial", "product", "opinion", "event"] },
+        "questions": ["category"]
+      },
+      {
+        "preset": "brand-voice",
+        "options": { "voice": "Clear, neutral and factual. No hype, no insults, no unverified claims." },
+        "questions": ["needs_review"]
+      }
+    ],
+    "rubricVersion": "sha256:4ee80140f5d1c731"
+  },
+  "protocol": {
+    "version": "1",
+    "thresholdSplit": "tune",
+    "evaluationSplit": "heldout",
+    "actions": {
+      "tag": {
+        "question": "category",
+        "targetPrecision": 0.9,
+        "grid": [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+      },
+      "route": {
+        "question": "needs_review",
+        "targetPrecision": 0.9,
+        "grid": [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+      }
+    },
+    "minCoveredSamples": 10,
+    "eceBins": 10,
+    "interval": "wilson-95",
+    "percentile": "nearest-rank",
+    "mock": { "accuracy": 0.8, "failureRate": 0.03 }
+  },
+  "files": {
+    "tune.vi.jsonl": { "locale": "vi", "split": "tune", "count": 40, "sha256": "76e9534016f300f2e38fc6238df21cc74ea8b385586387864dc5fed06e4f52e2" },
+    "tune.en.jsonl": { "locale": "en", "split": "tune", "count": 40, "sha256": "3ce54b83fec1c13068530511240f626036b01fde63f33cf9ddd2e187fd7da4d2" },
+    "heldout.vi.jsonl": { "locale": "vi", "split": "heldout", "count": 60, "sha256": "223c9f768c2f84b0f24243bb040eb8a69075ae2c7d99b031cb91af978ccad486" },
+    "heldout.en.jsonl": { "locale": "en", "split": "heldout", "count": 60, "sha256": "378d3a0171ad7d30eeb8f8a6b82467081eb9fc9d736e405c9bf84a8d66ad5ac6" }
+  }
+}

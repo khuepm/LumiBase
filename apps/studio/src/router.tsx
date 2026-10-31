@@ -61,6 +61,7 @@ const EncryptionSettingsPage = lazy(() => import('./modules/settings/encryption-
 const SecuritySettingsPage = lazy(() => import('./modules/settings/security-page').then((m) => ({ default: m.SecuritySettingsPage })));
 const ExtensionsPage = lazy(() => import('./modules/settings/extensions-page').then((m) => ({ default: m.ExtensionsPage })));
 const UploadsSettingsPage = lazy(() => import('./modules/settings/uploads-page').then((m) => ({ default: m.UploadsSettingsPage })));
+const AiDecisionsSettingsPage = lazy(() => import('./modules/settings/ai-decisions-settings').then((m) => ({ default: m.AiDecisionsSettingsPage })));
 const MarketplacePage = lazy(() => import('./modules/settings/marketplace-page').then((m) => ({ default: m.MarketplacePage })));
 const UpdatesPage = lazy(() => import('./modules/settings/updates-page').then((m) => ({ default: m.UpdatesPage })));
 const AgentHarnessPage = lazy(() => import('./modules/settings/agent-harness-page').then((m) => ({ default: m.AgentHarnessPage })));
@@ -705,6 +706,11 @@ const uploadsSettingsRoute = createRoute({
   path: 'uploads',
   component: withSuspense(UploadsSettingsPage),
 });
+const aiDecisionsSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'ai-decisions',
+  component: withSuspense(AiDecisionsSettingsPage),
+});
 
 const marketplaceRoute = createRoute({
   getParentRoute: () => settingsRoute,
@@ -848,6 +854,11 @@ const adminPathUploadsSettingsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'uploads',
   component: withSuspense(UploadsSettingsPage),
+});
+const adminPathAiDecisionsSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'ai-decisions',
+  component: withSuspense(AiDecisionsSettingsPage),
 });
 
 const adminPathUpdatesRoute = createRoute({
@@ -1284,6 +1295,7 @@ const routeTree = rootRoute.addChildren([
       securitySettingsRoute,
       extensionsRoute,
       uploadsSettingsRoute,
+      aiDecisionsSettingsRoute,
       marketplaceRoute,
       updatesRoute,
       agentHarnessRoute,
@@ -1353,6 +1365,7 @@ const routeTree = rootRoute.addChildren([
       adminPathSecuritySettingsRoute,
       adminPathExtensionsRoute,
       adminPathUploadsSettingsRoute,
+      adminPathAiDecisionsSettingsRoute,
       adminPathMarketplaceRoute,
       adminPathUpdatesRoute,
       adminPathAgentHarnessRoute,

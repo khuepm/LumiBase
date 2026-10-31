@@ -26,4 +26,24 @@ describe('Cloudflare database initialization', () => {
     expect(connect).toHaveBeenCalledTimes(2);
     expect(connect).toHaveBeenCalledWith(binding.connectionString, { max: 5, prepare: false });
   });
+
+  it('without HYPERDRIVE_SYSTEM the system connection is the main connection (B130)', () => {
+    const provider = new CloudflareDatabaseProvider({ connectionString: 'postgresql://app@h/db' });
+    expect(provider.hasSystemConnection()).toBe(false);
+    expect(provider.getSystemConnection()).toBe(provider.getConnection());
+    expect(connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('with HYPERDRIVE_SYSTEM the system connection is a distinct, lazy client (B130)', () => {
+    const provider = new CloudflareDatabaseProvider(
+      { connectionString: 'postgresql://app@h/db' },
+      { connectionString: 'postgresql://sys@h/db' },
+    );
+    expect(connect).not.toHaveBeenCalled();
+    expect(provider.hasSystemConnection()).toBe(true);
+    const sys = provider.getSystemConnection();
+    expect(sys).toBe(provider.getSystemConnection());
+    expect(sys).not.toBe(provider.getConnection());
+    expect(connect).toHaveBeenCalledWith('postgresql://sys@h/db', { max: 5, prepare: false });
+  });
 });

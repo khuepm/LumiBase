@@ -9,18 +9,378 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Added
+- **Request-path RLS scope, opt-in (B130).** `LUMIBASE_DB_RLS=enforce`
+  (default `off`) makes the Postgres RLS backstop from `rls-policies.sql`
+  enforce on the request path: every request statement runs as
+  `BEGIN; set_config('app.site_id', $1, true); <query>; COMMIT` on one
+  connection. New, additive configuration: `DATABASE_SYSTEM_URL` (+ `_FILE`,
+  Docker) and the optional `HYPERDRIVE_SYSTEM` binding (Workers) for the
+  BYPASSRLS system role used by workers, cron and system routes. Docker refuses
+  to start when `enforce` lacks a BYPASSRLS system role; any value other than
+  `off`/`enforce` fails closed. See `docs/en/features/rls-request-scope.md`.
+- **Studio: Flows, semantic drift and automation status in Settings → AI
+  decisions (#518, #519).** Site admins switch `aiDecisions.flows` and
+  `aiDecisions.drift` there. Jev automation is shown read-only (configured
+  mode, gate record present, thresholds per locale; an unreadable block shows
+  as shadow) with a **Return to shadow** action that keeps the thresholds and
+  gate. Studio still never turns automation live. Other `aiDecisions` keys are
+  kept as stored; an absent `flows`/`drift` flag stays absent until set.
+- **Draft review profiles and runs (#512).** Versioned review profiles
+  (`/api/v1/ai/review-profiles`, admin-managed, immutable versions; presets
+  `taxonomy`, `brand-voice`, `brief-alignment`) and item-bound review runs
+  (`POST /api/v1/ai/reviews`) that read the item with the caller's own row and
+  field permissions, or validate an unsaved snapshot field by field, then ask
+  the governed decision model. Runs record provider, model, `calibrated`,
+  profile version, revision and a content hash, report `stale` once the item
+  changes, and are idempotent per `Idempotency-Key` and caller (keys never
+  cross principals). A run that ended in `error`, or was left `running` for
+  five minutes, is retried in place and rebound to the content, revision and
+  profile version the retry reviewed. Editors record accept/edit/reject
+  feedback (one row per question and editor; the first verdict is final and is
+  what the response returns); accepting a stale run needs `acknowledgeStale`. Suggest-only: nothing writes to items.
+  Runs and feedback are purged after `DECISION_REVIEW_RETENTION_DAYS`
+  (default 180). **Migration** `0019_jev_review_profiles_runs` adds three
+  tables (additive, no backfill).
+- **SDK: typed draft review (#514).** `@lumibase/sdk` adds
+  `listReviewProfiles`, `getReviewProfile`, `reviewDraft`, `getReview`,
+  `listReviews` and `submitReviewFeedback`. Each takes `{ signal }` and has
+  types for profiles, runs (`status`, `stale`/`staleReason`, `calibrated`,
+  nullable `usage`) and feedback. `reviewContentHash(values)` computes the
+  same `sha256:<hex>` content hash as the CMS (WebCrypto, no request), so a
+  client can send the hash of the draft it shows now with snapshot feedback
+  (a changed draft then gets 409 `REVIEW_STALE`) and derive idempotency keys
+  that change with the content. A parity test checks it against the CMS
+  implementation. The new `decisionErrorCode(err)` helper reads the typed code
+  off a `LumiError`. `LumiError.retryAfter` exposes `Retry-After` in seconds,
+  or `null` when the response has none. Existing exports and the
+  `LumiError(status, body)` constructor are unchanged. The SDK keeps zero
+  runtime dependencies. A type-equality test against `@lumibase/contracts`, a
+  devDependency only, fails the SDK typecheck if the mirrored types drift.
+  **Type-level note:** `DecisionErrorCode` gains 9 `REVIEW_*` members. Code
+  that maps it exhaustively (a `Record<DecisionErrorCode, …>`, or a `switch`
+  with a `never` check) stops compiling until it handles the new codes.
+  Runtime behaviour is unchanged.
+- **Studio: draft review in the editor (#515).** The item editor and the
+  new-item form get a **Draft review** panel that runs a site review profile on
+  the content being edited and lists one suggestion per question: the suggested
+  category, each criterion level with its probability, "not enough
+  information", and the provider/model with a calibrated badge. No rationale is
+  shown (Jev returns none). Accept / Edit / Reject record feedback; for a
+  `choice` question whose key is a collection field, Accept and Edit also set
+  that field in the draft, only after the feedback is stored. Nothing is saved
+  or published by the panel: the existing Save and editorial actions are
+  unchanged. Pinned and non-writable fields are read-only. A change to the
+  reviewed content after a review started makes the result stale (Accept/Edit
+  disabled, "Run again"), as does a 409 `REVIEW_STALE`. Failures map to explicit
+  states (turned off, not set up, no permission, budget used up with
+  `Retry-After`, timed out, provider unavailable) and never read as a pass;
+  Cancel and leaving the editor abort the request. Copy ships in EN and VI.
+  Guide: `docs/{en,vi}/features/draft-review.md`. No migration, env or setup
+  step.
+- **Jev benchmark harness (#513).** `pnpm -F @lumibase/cms bench:jev` scores a
+  decision provider (`typesafe`, `openrouter`, `llm`, or a seeded `mock`) on a
+  versioned dataset of 200 hand-authored synthetic editorial samples (100 VI,
+  100 EN; taxonomy, ambiguous, out-of-taxonomy, thin, prompt-injection and
+  needs-review cases) using the shipped review presets. Reports keep VI and EN
+  apart and give per-label precision/recall, coverage/abstention, Brier/ECE
+  (not a correctness probability), p50/p95 latency, usage/cost when reported,
+  failures/timeouts and Wilson 95% intervals. Thresholds are derived only on
+  the tune split; a held-out run loads them frozen and cannot write them. Mock
+  reports are flagged and cannot be merged with live ones. An opt-in live smoke
+  test covers both Jev endpoints and is skipped without keys. Lives in
+  `apps/cms/eval/`, outside the Worker bundle. **No measured results yet**: no
+  live run has been recorded, so there is no automation go/no-go. Guide:
+  `docs/{en,vi}/features/jev-benchmark.md`. No migration, env or setup step.
+- **Draft-review pilot: rollout controls, timing and metrics (#516).** The
+  `aiDecisions` setting gains `review: { enabled, pilotCollections, mode:
+  'baseline' | 'assisted' }` (off when absent or malformed). Studio adds
+  **Settings → AI decisions** with the opt-in, the pilot collections and mode,
+  and a **Turn everything off** kill switch. Turning it off hides and blocks the
+  entry points and deletes nothing: runs, feedback, sessions and history stay
+  readable. Editors' sessions (open → first save) on pilot collections are
+  timed in both modes through `POST /api/v1/ai/reviews/sessions`;
+  `GET /api/v1/ai/reviews/rollout` reports a collection's mode. Site admins
+  read `GET /api/v1/ai/reviews/metrics?from=&to=`: time per item (baseline vs
+  assisted p50/p95), accept/edit/reject rates over viewed suggestions only,
+  coverage, errors, latency, tokens per run, splits by locale, provider and
+  profile version, and the pre-registered criteria of protocol `jev-pilot-v1`
+  with `insufficientSample` flags and distinct editor/item counts. API calls
+  are never counted as user value: only signed-in users record sessions (API
+  keys and the dev principal get `403`), and metrics drop non-user sessions and
+  verdicts. The page caps the pilot at 100 collections, the server limit.
+  `pnpm -F @lumibase/cms pilot:report` turns the metrics into a versioned
+  report. **No pilot data yet**: the committed report is an empty template and
+  there is no go/no-go. Guide: `docs/{en,vi}/features/jev-draft-review-pilot.md`.
+  **Migration** `0020_jev_review_sessions` adds one table (additive, no
+  backfill); `lumibase_review_sessions` is added to `rls-policies.sql`.
+- **Flows: explicit branches and the `ai:decision` operation (#517).** A flow
+  node may declare `branches` (branch key → next node, `null` ends the run).
+  The runner follows the branch the operation returned and never falls
+  through to `next`; a returned branch with no mapping is a run error. Legacy
+  `next`-only graphs run unchanged, and `condition` also returns
+  `branch: 'true' | 'false'` next to `pass`. The new `ai:decision` operation
+  runs one review with a pinned profile version on one item and returns
+  `true`/`false`/`unknown` (noul threshold), a choice key or `unknown` (minimum
+  confidence, abstention), or `error`. Forbidden, disabled, quota, timeout,
+  cancel and provider failures take the `error` branch when mapped and fail the
+  node otherwise; they are never `true`. At execution time the worker
+  re-resolves the principal of the manual run, checks `ai:decide` and re-reads
+  the site switches, so a revoked grant or a later kill switch stops queued
+  runs. Re-executing a run replays the stored decision (key
+  `flow:<runId>:<nodeId>`) with no second provider call; nodes after a decision
+  must be idempotent, because the runner has no step-level resume. A cancelled
+  or timed-out run now starts no further node. Studio adds an **AI Decision**
+  palette block with true/false/unknown/error handles, and run history shows
+  each decision, the branch taken and an explicit unknown state. **Off by
+  default:** it needs the new `aiDecisions.flows: true` as well as
+  `aiDecisions.enabled`. Event, schedule and webhook runs carry no principal
+  and are refused. Verified on the Docker/Node worker path only: Cloudflare
+  Workers has no `flow-runs` consumer. No migration.
+- **Jev automation: shadow-first tagging and review-queue routing (#518).**
+  New flow operations `ai:apply-tags` and `editorial:route` read an upstream
+  `ai:decision` and record one action per flow run, node and item in
+  `lumibase_ai_automation_actions` (unique, so a redelivered job proposes
+  nothing twice). They are **shadow by default**: the proposal is recorded and
+  nothing is written. A proposal goes live only when the admin-written
+  `aiDecisions.automation` has `mode: 'live'`, a gate record (`approvedBy`,
+  `approvedAt`, `evidenceRef`) and a per-locale, per-action threshold whose
+  provider, model, profile key, profile version and question match the
+  decision, and the confidence is in that zone; a malformed block or any
+  mismatch forces shadow. The decision's value and confidence are read from
+  the stored review run, which must be about the item the node acts on; a
+  step output that disagrees with the run, a cut outside the `ai:decision`
+  option range, or a run about another item, is skipped and recorded. A live
+  proposal goes through `AISecureHarness` (`updateItem`, agent
+  `jev-automation`, `autonomyCap: 1`, the run principal's RBAC, agent
+  provenance, pinned fields, kill switch), so it always becomes an approval
+  (or is refused at L0); automation never writes on its own authority. Only
+  the target field is proposed: never `status`, deletes or schema, and the
+  `submit_review` transition is proposed only. Stale decisions, editor
+  overrides, pinned and unreadable fields are skipped and recorded. New
+  control-plane routes under `/api/v1/ai/automation` (site admin): templates
+  (`taxonomy-tagging`, `editorial-routing`) and a build endpoint that writes
+  nothing, action history with the audit chain (revision → review run →
+  action → feedback), accept/override/reject feedback (an override is stored
+  as the decision's value, mapped back from the tag or queue), revert of an applied
+  action (refused when the field changed since), and shadow metrics
+  (precision and coverage in the auto-action zone, protocol
+  `jev-automation-v1`, `insufficientSample`/`shadowRequired`). Studio adds
+  **Flows → Create from template** (saves a draft manual flow) and
+  **Automation suggestions** in the editorial review queue. No live
+  configuration ships and no precision has been measured, so every site stays
+  in shadow. **Migration** `0021_jev_automation_actions` adds one table
+  (additive, idempotent, no backfill).
+- **Content Intents: semantic drift rules (#519).** An intent rule of type
+  `semantic` (`key`, `version`, `profileKey`, `profileVersion`, `questionKey`,
+  `threshold`, optional `fields`, `contextSource` `intent` or `field:<name>`)
+  is judged by one `noul` question of a pinned review profile version through
+  the governed decision path. The drift scan runs these rules in a separate
+  pass after the deterministic ones, with its own item budget
+  (`maxSemanticItems`, default 25) and cursor, as the system principal: only
+  the rule's fields minus pinned fields, plus the context field, are read and
+  sent. The fingerprint includes the rule version, profile version and content
+  hash, so a retry on unchanged content replays the stored run (no provider
+  call, no duplicate drift or goal) and a rubric, intent or content change is
+  re-evaluated. A provider outage, an answer between the thresholds or a
+  missing profile records the new drift status `unevaluated`, which never
+  resolves earlier drift and never creates a goal; the deterministic pass no
+  longer touches semantic rows. Open semantic drift becomes a reconciler
+  review goal carrying the run id, model and profile version, and the
+  dispatcher blocks it as `HUMAN_REVIEW_REQUIRED` (no repair skill, nothing
+  edited). Mission Control shows the rule and profile versions, model,
+  revision and the uncertainty state. The SLO health ratio leaves unevaluated
+  rows out and reads `unknown` (not 100 %) when nothing conclusive backs it
+  (every row unevaluated, drifts failed to load, or a semantic intent with no
+  row); the dashboard card averages only known health. Changing a stored
+  semantic rule's profile, question, context or fields without a `version`
+  bump returns `422 SEMANTIC_RULE_VERSION_REQUIRED`. Rows of removed semantic
+  rules resolve on the next scan (`semanticOrphansResolved`), and switching
+  `aiDecisions.drift` off stops a running pass at the next item. The benchmark gains `--task drift` with 40 synthetic
+  VI/EN fixtures (true drift, false-positive traps, prompt injection); only
+  mock runs exist. **Off by default:** it needs `aiDecisions.drift: true` as
+  well as `aiDecisions.enabled`. **Migration** `0022_semantic_drift_cursor`
+  adds one nullable column (additive, idempotent, no backfill). Event and
+  schedule Flows runs report the semantic pass as `unavailable`.
+
+### Changed
+- **Draft review needs the pilot (#516).** The Studio draft review panel shows
+  only while the collection is in the pilot in `assisted` mode, and
+  `POST /api/v1/ai/reviews` plus new feedback return `403 DECISION_DISABLED`
+  otherwise. **Upgrade step:** a site already using reviews adds
+  `"review": { "enabled": true, "pilotCollections": ["<collection>"], "mode":
+  "assisted" }` to its `aiDecisions` setting, or uses Settings → AI decisions.
+- **Governed decisions (#511).** `POST /api/v1/ai/decisions` now requires the
+  `ai:decide` capability (a policy permission `create` on
+  `lumibase_ai_decisions`; site admins have it) and a per-site opt-in: decisions
+  stay off until a site admin stores the `aiDecisions` setting with
+  `enabled: true`, and turning it off is the site kill switch. An optional
+  `allowedStateFields` list restricts what `state` may send. Hourly, in-flight
+  and daily token budgets per site are reserved atomically before the provider
+  is called (retries included, unknown usage charged at the estimate) and fail
+  closed when the counter is down. Each call writes an `ai_decision` audit event
+  without content, email or IP. **Upgrade:** sites that already call the
+  endpoint get `403 DECISION_DISABLED` until they opt in. New optional env
+  ceilings `DECISION_SITE_REQUESTS_PER_HOUR`, `DECISION_SITE_MAX_CONCURRENT`,
+  `DECISION_SITE_TOKENS_PER_DAY`. No migration.
+
 ### Fixed
 - **Deployments API documented in the API spec (B55).** `docs/{en,vi}/api/hono-api-spec.md`
   gains section 7c covering `/api/v1/deployments/*`: target CRUD, manual trigger,
   deployment list/detail/logs/refresh, the inbound webhook, the per-target
   trigger rate limit (`429 RATE_LIMITED` + `Retry-After`) and webhook signature
   verification (`401 INVALID_SIGNATURE`). Docs only; no API change.
+- **Benchmark CLI: validated merges and frozen thresholds across runs (#513).**
+  `bench:jev --merge` now validates each report file (schema, generator,
+  `mode`, `split`, dataset, rubric, protocol, seed, sample counts, runs)
+  before the mode check, so a hand-edited report without `mode` is refused.
+  A tune run refuses (exit 2) to overwrite a `thresholds.json` that a
+  held-out report in the same output was scored with. A `report.heldout*.json`
+  that cannot be read also counts as frozen (exit 2), so a corrupted or
+  hand-edited report no longer switches the guard off. A source-scan test
+  keeps every module under `apps/cms/eval/` out of the CMS runtime.
+- **Mission Control SLO card no longer reads a partly evaluated intent as
+  healthy (#519).** An active intent with a resolved row and `unevaluated`
+  rows showed 100 % with an ok tone. The card now counts such intents as
+  "partly not evaluated" in its label and is flagged. Adds a DB integration
+  test that the `aiDecisions.drift` switch is re-read at the provider call
+  (switched off mid-pass: `DECISION_DISABLED`, recorded `unevaluated`,
+  nothing resolved).
+- **Scheduled and event Flows get the decision runtime (#519, B121).** The
+  Docker/Node `flow-events` worker now passes the cache and process env to
+  each run, like the manual-run worker, so a scheduled `drift-scan` runs its
+  semantic pass instead of reporting `unavailable` (still gated by
+  `aiDecisions.enabled` + `aiDecisions.drift`). `ai:decision` still refuses
+  event/schedule runs (no principal). A source-scan tripwire requires every
+  `registerFlow*Worker` in `serve.ts` to receive `cache`, `env` and `keys`.
+  Cloudflare Workers still has no `flow-events` consumer (B118).
+- **A 50/50 noul is unknown, not `true` (#518, J10 follow-up).** With
+  `noulThreshold: 0.5` (the lowest allowed), an answer of exactly 0.5 met
+  both sides and took the `true` branch, which Jev automation then acted on.
+  `ai:decision` now returns `unknown` (`between_thresholds`) and the J12
+  semantic drift pass records `unevaluated` for the same tie. Stored flows
+  with 0.5 stay valid. Also adds a DB integration test for the worker-path
+  content access that decides which fields reach the provider.
+- **Orphaned live automation claims are settled (#518, B120).** A live Jev
+  automation row claimed `pending` by a process that died before the harness
+  call linked an approval stayed `pending` forever. A redelivery more than
+  five minutes later now settles it `denied` with reason `orphaned` (DB clock,
+  conditional update) and still proposes nothing. No migration.
+- **An approved Jev automation write re-checks the field (#518, B119).**
+  `updateItem` accepts an optional `expect` precondition (field → value the
+  item must still hold); the harness re-reads those fields when the update
+  runs, including after an approval, and refuses with
+  `ITEM_PRECONDITION_FAILED` before writing. Jev automation sends the value
+  each proposal was computed from, so a human edit made while the proposal
+  waited is kept: the approval is settled `failed` with that reason and the
+  automation row reads `denied` / `stale_at_approval`. Additive for every
+  other caller; no migration.
+- **RLS backstop for draft review profiles, runs and feedback (#516, B114).**
+  `lumibase_review_profiles`, `lumibase_review_runs` and
+  `lumibase_review_feedback` are added to the `site_isolation` list in
+  `packages/database/migrations/rls-policies.sql`, and the review-run
+  retention purge now deletes site by site inside a transaction that sets
+  `app.site_id`, so it keeps working where the policies are applied.
+  Operators who applied `rls-policies.sql` re-run it (it is idempotent); no
+  schema migration.
+- **A late review completion no longer overwrites a reclaimed run (#515,
+  #516).** A review call that outlived the five-minute orphan timeout could
+  still complete the run after a retry had reclaimed it, writing answers about
+  the old content over the retry's binding (draft staleness and pilot metrics
+  read that run). `completeRun` now writes only while the attempt's claim
+  holds (`status = 'running'` and the claim's `created_at`); the late call
+  returns the run as stored. No migration.
+- **Draft review keeps the stored verdict on a feedback retry (#515).** When a
+  feedback request failed after the CMS had stored it, a retry with a
+  different action applied the new value to the draft while the CMS kept the
+  first verdict. The panel now reads the stored row, shows "Earlier feedback
+  was already recorded" and does not change the field. Applying a choice that
+  is also a reviewed field now says why the rest of the run went stale.
+- **Studio renders in the user's or the site's language (#515, B112).** The
+  Studio i18n instance started in English and never switched, so the
+  Vietnamese draft review copy only rendered in tests. After sign-in the
+  Studio now uses the user's `language` preference, else the site's default
+  language (Settings → Site), else English; `vi-VN` selects `vi`, other
+  languages fall back. The browser language is not used. No migration.
+- **Cloudflare counters expire (#511).** The `PageviewCounter` Durable Object
+  now honours the `increment` TTL (window armed on create, like Redis `EXPIRE NX`)
+  and prunes expired rows, and the 5-minute pageview flush drains only `pv`
+  keys. API rate-limit windows and decision quotas on Cloudflare now reset on
+  their own window instead of every flush. Existing DOs add the `expires_at`
+  column on wake; no wrangler migration.
+- **LLM decision errors are classified like Jev's, and never leak upstream
+  bodies (#510).** The LLM adapters now raise `LLMHttpError` (with the
+  status), `LLMNetworkError` (fetch rejected without an abort) or
+  `LLMResponseError` (2xx body unusable), keeping their original messages, so
+  `/ai/chat` and the Copilot are unchanged. With `DECISION_PROVIDER=llm`,
+  `POST /api/v1/ai/decisions` maps them to the same codes as Jev
+  (`DECISION_AUTH`, `DECISION_VALIDATION`, `DECISION_RATE_LIMITED`,
+  `DECISION_UNAVAILABLE`, `DECISION_PARSE_FAILED`, `DECISION_UPSTREAM`) instead
+  of `500 INTERNAL`, with fixed messages; any other error (a custom provider's
+  `TypeError` included) is `DECISION_UPSTREAM`, not a network failure. Jev error
+  messages no longer carry the upstream body either, so it is never logged.
+- **LLM decisions get a per-request output budget (#510).** The answer size is
+  estimated from the questions and checked against
+  `DECISION_LLM_MAX_OUTPUT_TOKENS` (default 4096) before the call (`413`, before
+  any quota is reserved), so a schema-valid 32-question request is no longer
+  truncated by the fixed 1024 cap into `502 DECISION_PARSE_FAILED`. Gemini/Vertex
+  get `DECISION_LLM_THINKING_TOKENS` (default 1024) of headroom, and their usage
+  now includes `thoughtsTokenCount`. Governance reserves the cap actually sent
+  upstream. Copilot calls keep sending 1024. Both variables are optional.
+- **LLM decisions reserve quota for one attempt, not for retries (#510).** The
+  daily decision budget was reserved as `(input + output cap) ×
+  (DECISION_MAX_RETRIES + 1)` for every provider, but `DECISION_PROVIDER=llm`
+  sends exactly one request, so a site near its `budgetPerDay` got `429
+  DECISION_QUOTA_EXCEEDED` early. `llm` now reserves `input + output cap`.
+  Jev and OpenRouter, which do retry, reserve exactly as before. Charging and
+  refunds are unchanged. No route, error code, setting or counter key changes.
+- **Decision quota fails closed on non-finite counter values (#511).** A counter
+  backend that answers without a numeric value (for example a Durable Object
+  reply with no `value`) now returns `503 DECISION_QUOTA_UNAVAILABLE` instead of
+  admitting the request.
+- Synchronous audit-log inserts now use uuidv7 ids, like the queue path. Older
+  rows keep their `nanoid` ids; audit cursors accept both.
+- `Retry-After` is exposed through CORS (`Access-Control-Expose-Headers`), so
+  cross-origin Studio, the desktop shell and browser SDK callers can read the
+  decision `429` hint.
+- The Studio policy editor lists the AI decision permission ("AI usage → AI
+  decisions", `lumibase_ai_decisions` → `create`), so site admins can grant
+  `ai:decide` without the API.
+- The Definition of Done §2c gains a line: request/worker paths that call a
+  paid AI decision provider go through `authorizeDecision` +
+  `runGovernedDecision`, locked by `decision-governance.wiring.test.ts`.
+  Principal-less system passes (the J12 semantic drift scan) are listed
+  explicitly and must still go through `runGovernedDecision`. No
+  migration and no upgrade step for any of the entries above.
+- **P2 queue recovery and governed write parity (B93, B87).** Queue submission
+  failures settle only unclaimed runs, preserve masked tasks for explicit retries,
+  and expire stale queued runs across origins. Flow, extension and CDC skills now
+  share REST validation, signature/permission checks, scheduling, cache invalidation
+  and audit behavior. No migration. See `docs/en/features/governed-write-parity.md`
+  and `docs/en/features/async-agent-runs.md`.
+
+- **P1 governance and async execution (B85, B86, B92, B10).** PATCH validates only
+  supplied fields without resetting intent autonomy/budgets, webhook configuration,
+  flows or extensions. Async goals retain their budget through queue execution,
+  including older jobs via the stored run budget. Cloudflare now binds and consumes
+  `agent-runs` with provider parity, individual acknowledgement/retry, dead-letter
+  queues and stale-run quarantine. Provision the environment-specific queue before
+  deployment; see `docs/en/features/async-agent-runs.md`. No database migration.
+
 
 - Raise the `sharp` override floor to 0.35.5 for GHSA-wq5f-xc86-pv6w (high), fixing the bundled librsvg dependency used by Next.js and Miniflare.
 
 - Cloudflare Sentry upgrades to 11.x: remove the obsolete `enableLogs` option and explicitly retain the v10 data-collection baseline, so the upgrade does not enable user data, cookies, HTTP bodies, AI content, database query data, queue payloads, or GraphQL documents/variables. No environment changes are required.
 
 - Dependency updates unblock the production audit gate and align the Tauri JavaScript packages with their Rust crates. Security overrides are declared in both pnpm settings files; Vite and ws overrides now match the grouped dependency updates.
+
+- Decision providers reject missing, malformed or out-of-range answers and invalid
+  probability distributions with `DECISION_PARSE_FAILED`, instead of turning them
+  into zero-valued or clamped decisions. Choice/Score confidence is required.
+  The Definition of Done now requires shared upstream AI-output validation and
+  regression coverage for this failure class.
+- CMS and Studio test suites cap isolated workers at four to prevent excessive
+  concurrent imports from causing test timeouts and worker startup failures.
 
 - Next.js starters carry PostCSS security overrides for both npm and pnpm;
   fresh-install smoke checks now include Next.js and audit its production dependencies.
@@ -69,10 +429,187 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - **`lumibase init` suggests the release it pins.** When the package manager
   cannot be spawned, the hint now reads `npm create lumibase@<cli version>`
   instead of `@latest`, which pointed at a different major.
+- **Six more documented commands that never ran (B69).** The guard written for
+  the `pnpm -F @lumibase/database db:migrate` family found a second one on its
+  first run: `pnpm lumibase typegen` (the root `lumibase` script is
+  `turbo run dev`, so it started two dev servers and ignored the argument),
+  `pnpm -F @lumibase/sdk typegen` (that package has build/test/typecheck/clean)
+  and a CI snippet running `pnpm typegen`, which is not a root script either.
+  All six now name what exists — `pnpm -F @lumibase/cms typegen` in the
+  monorepo, `npx lumibase types --check` for a consumer's CI — including the
+  docstring in `apps/cms/scripts/typegen.ts` the wrong form had spread from.
+  `pnpm docs:cmd:check` (`scripts/check-docs-commands.mjs`, in `check:all`) now
+  resolves every `pnpm` command in a docs code fence against the package it
+  names, and fails when the script does not exist. It tokenises options
+  (`--filter=`, `-C`, `-r`, `--if-present`, flags such as `--silent`), resolves
+  the script after `pnpm run` instead of skipping it, and follows `cd` into a
+  workspace package. On its first run it found two more commands that could not
+  work as written: `pnpm landing:build` after a `cd apps/docs` in
+  `deployment/cloudflare-pages-ci.md` (the docs deploy now uses
+  `--cwd apps/docs`, as CI does), and `pnpm run deploy:production` in
+  `features/async-agent-runs.md`, which only exists in `apps/cms` (the block now
+  starts with `cd apps/cms`).
+- **Three dead Vietnamese links, and the reason they were invisible (B67).**
+  `docs/vi/README.md`, `docs/vi/agent-setup/index.md` and `docs/vi/mcp/index.md`
+  linked `./llms.txt` and `../agent-setup/mcp-config.json`, which resolve under
+  `docs/vi/` where neither file exists. The parity checker could not see it: it
+  compared link *text*, so a VI link pointing at a missing file matched an EN
+  link pointing at a real one perfectly. It now compares the file a link
+  **resolves** to, collapsing the locale segment only when both trees have that
+  file — which also stops it flagging a legitimately different path for the same
+  target. Repo-wide parity drops from 37 problems in 30 pairs to 35 in 29. A link
+  that is dead in both locales still compares equal, as it did before: parity is
+  not a dead-link check, and reporting it as a locale mismatch would mislead.
+- **The Docker production override is documented as the local trap it is
+  (B47c).** `docs/{en,vi}/deployment/docker.md` now says to set
+  `DATABASE_SSL_MODE=disable` when trying that stack locally: the override
+  defaults to `require`, which is right for a managed database and cannot
+  connect to the compose PostgreSQL, which serves no TLS — so the CMS fails with
+  a connection error rather than a configuration one.
 ### Changed
 
 - The release Docker smoke test now fails when the image reports a version
   other than its tag, or when `/setup` does not serve the Studio.
+
+### Security
+
+- **AI decisions refuse publishable API keys and frontend sessions (#562,
+  B144).** `POST /api/v1/ai/decisions`, every `ai:decide` route under
+  `/api/v1/ai/review-profiles` and `/api/v1/ai/reviews`, and Flows
+  `ai:decision` nodes now return `403 FORBIDDEN` for publishable API keys
+  (`lbk_pub_…`) and `frontend`-audience sessions, even when a role or policy
+  grants `create` on `lumibase_ai_decisions` or admin access. These
+  credentials live in browsers and apps, so anyone holding one could spend the
+  site's paid decision budget. The check runs in the shared
+  `authorizeDecision`, before the body is read, quota is reserved or the
+  provider is called. The refusal writes the same single `ai_decision` audit
+  event as other refusals. The error code is unchanged (`FORBIDDEN`); only the
+  message names the caller type.
+  **Upgrade note:** this narrows the #529 contract for misconfigured callers
+  only. Move browser or app callers behind your own server with a secret API
+  key, or use Studio. Secret keys and Studio users with the grant are
+  unaffected. No migration. The Definition of Done §2c gains a line for this
+  class: client-held credentials never use a paid capability, and the refusal
+  lives in the shared authorization function, not per route.
+
+- **Dependency advisories cleared; `pnpm audit --prod --audit-level high`
+  passes again** (0 findings of any severity, from 22 plus 5 seroval findings
+  published later). All fixes stay inside
+  the major already in use:
+  - `next` 16.3.8 → 16.4.3 (`apps/landing`, `apps/consumer`, with
+    `eslint-config-next` in lockstep):
+    [GHSA-2464-fhr4-w9xw](https://github.com/advisories/GHSA-2464-fhr4-w9xw)
+    and [GHSA-673q-mjm6-r5xr](https://github.com/advisories/GHSA-673q-mjm6-r5xr)
+    (critical, RCE),
+    [GHSA-p3m5-59mp-jv5r](https://github.com/advisories/GHSA-p3m5-59mp-jv5r)
+    (high, DoS).
+  - `dompurify` 3.4.16 → 3.4.17 (`apps/docs`, `apps/studio` and the override):
+    GHSA-cg2g-xh64-v4q7 (critical), GHSA-mrv2-3pqr-j5jr (high),
+    GHSA-c6gr-qvv4-5v3f (low).
+  - `zod` 4.6.5 → 4.6.7 (CMS validation, `@lumibase/contracts`,
+    `@lumibase/ai-skills`, `@lumibase/extensions`, `@lumibase/mcp-server`,
+    Studio): GHSA-mrhx-c7xc-m3w5 (high, memory exhaustion on oversized input).
+    The published packages now declare `zod ^4.6.7`, so their consumers
+    resolve the patched version.
+  - `body-parser` 2.3.0 → 2.4.0 through a new `body-parser@2` override
+    (`@lumibase/mcp-server` via `@modelcontextprotocol/sdk` → `express`):
+    GHSA-27r3-jxmh-p828 (high, DoS).
+  - `undici` 7.29.1 → 7.30.1 (override floor; `miniflare` pins `7.29.1`):
+    GHSA-xjj6-f33q-929c (high), GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472
+    (moderate).
+  - `nodemailer` 10.0.14 → 10.1.7 (`apps/cms`): GHSA-8c8m-p3m8-cjg8,
+    GHSA-m943-m63m-w62w, GHSA-85x2-q946-cp5h (moderate).
+  - `fast-uri` 4.1.5 → 4.2.3 (override, now a floor instead of an exact pin):
+    GHSA-w74x-v6f9-j3xg, GHSA-wjr9-j795-jxcr (moderate), GHSA-xhq7-xmqj-769h,
+    GHSA-333x-w4r6-6crp (low).
+  - `ip-address` 10.7.3 → 10.7.5 (override floor `^10.7.4`):
+    GHSA-rxp7-6hxx-x8q5 (moderate).
+  - `seroval` 1.6.7 → 1.7.3 through a new `seroval` override (`apps/studio`
+    via `@tanstack/react-router` → `@tanstack/router-core`, which still
+    declares `^1.6.7`): GHSA-97r2-qh9m-474h, GHSA-wp97-x4hv-qvhp,
+    GHSA-7rv5-mrxv-xcr9 (high), GHSA-9wx9-5pv9-3349, GHSA-f86p-h4j2-7qgj
+    (moderate). Published after the first audit run on this change.
+  - `qs` override floor `^6.16.0` → `^6.16.1` (6.16.1), the range
+    `body-parser@2.4.0` declares. Not an advisory.
+
+  No migration and no upgrade step. Rationale and removal conditions for each
+  override: `docs/{en,vi}/security/dependency-overrides.md`.
+
+- **Bounded audit volume for refused AI decisions (#564, B147).** Every
+  refused `ai:decide` request used to write one `ai_decision` audit row, so a
+  cheap or public credential (a publishable key, a frontend session, a member
+  without the grant) could turn free requests into audit-table writes on the
+  shared database and bury real events. Authorization refusals (`403
+  FORBIDDEN`) are now aggregated per site, refusal reason and subject (the
+  principal, or a keyed hash of the client IP when there is none): the first
+  refusal in each window writes an event, later ones write again only at counts
+  10, 100, 1000 …, and the first event of the next window carries the exact
+  count of the previous one. Refusal events carry `metadata.refusal`
+  (`reason`, `count`, `dedup`, `windowStart`, `windowSeconds`,
+  `previousWindowCount`) and `clientIpHash` (HMAC-SHA256 keyed by
+  `JWT_SECRET`), never the IP. If the counter store is down, every refusal
+  still writes an event. Two new metrics give the exact totals:
+  `lumibase_ai_decision_refusals_total{reason,principal,audit}` and
+  `lumibase_ai_ip_rate_limited_total`. A per-client-IP, per-site limit on
+  `/api/v1/ai/*` (default 300 requests per minute) runs before authentication
+  and answers `429 RATE_LIMITED` with `Retry-After`. New optional env vars:
+  `DECISION_REFUSAL_AUDIT_WINDOW_SECONDS` (default `300`, `0` = one event per
+  refusal) and `LUMIBASE_AI_IP_RATE_LIMIT` (default `300`, `0` = off). The API
+  spec recommends a Cloudflare WAF rate-limiting rule for `/api/v1/ai/*` as the
+  outer defence.
+  **Behaviour change:** refused-authorization `ai_decision` events are no
+  longer one per request; read `refusal.count` (or the metric) for volume.
+  Admitted calls and calls refused after authorization still write one event
+  each. No migration, no backfill. Behind a reverse proxy on Docker, the proxy
+  must overwrite `CF-Connecting-IP` with the real client IP for the IP limit to
+  apply. The Definition of Done §2c gains a line for this class: an audited
+  refusal path reachable by untrusted callers must be aggregated, counted in a
+  metric and rate-limited before authentication.
+- **RLS backstop no longer hides every row (B125).** Every `site_isolation`
+  policy in `packages/database/migrations/rls-policies.sql` was RESTRICTIVE and
+  the file created no PERMISSIVE policy. Postgres shows a role without
+  BYPASSRLS no rows unless a permissive policy passes, so the non-superuser app
+  role the file requires saw 0 rows and wrote 0 rows on every scoped table.
+  Each table now gets a pair with the same predicate: `site_isolation`
+  (RESTRICTIVE) and `site_isolation_permit` (PERMISSIVE). The permissive half
+  is not `USING (true)`, and the restrictive half stops any other permissive
+  policy from widening access. With `app.site_id` unset or empty, no row is
+  visible and every write is refused. `lumibase_extensions` keeps its global
+  rows (`site_id IS NULL`) visible, as before. `app_site_id()` is now
+  `SECURITY INVOKER` with a pinned `search_path` (B128), and the
+  `ALTER DATABASE` default uses `current_database()` instead of the hardcoded
+  name `lumibase`. Tested as a NOSUPERUSER NOBYPASSRLS role in
+  `apps/cms/src/__tests__/rls-policies.db.integration.test.ts`, plus a static
+  tripwire in `rls-policies.wiring.test.ts`.
+
+  **Upgrade:** operators who already applied the old `rls-policies.sql` MUST
+  re-apply the new file, as the database owner:
+  `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f packages/database/migrations/rls-policies.sql`.
+  It is idempotent and converges from the restrictive-only version. Then check
+  that `SELECT tablename, policyname, permissive FROM pg_policies WHERE policyname IN ('site_isolation', 'site_isolation_permit') ORDER BY 1, 2;`
+  returns two rows per table. A `USING (true)` permissive policy added by hand
+  as a workaround can be dropped afterwards (it is harmless if kept). No schema
+  migration and no backfill. Deployments that never applied the file are not
+  affected.
+
+  **Fixed (B130):** `withRls` used to run `set_config` as a standalone
+  autocommit statement, so the setting ended with that statement and no
+  request query was scoped. With `LUMIBASE_DB_RLS=enforce` every request
+  statement now runs in its own transaction with `app.site_id` set
+  (`createSiteScopedSql`), routers that learn the site in the handler scope
+  themselves, and workers, cron, queue consumers and system routes use a
+  BYPASSRLS system connection (`DATABASE_SYSTEM_URL` / `HYPERDRIVE_SYSTEM`).
+  `withRls` fails closed with `503 RLS_UNAVAILABLE` on an unscoped request db.
+  Cost measured on a local Docker Postgres: 1000 sequential list requests p50
+  2.11–2.31 ms with the flag off and 3.42–3.85 ms with it on (three runs;
+  Hyperdrive not measured). With the flag off (default) the app still needs a
+  role that bypasses RLS, and the table owner is not exempt (`FORCE ROW LEVEL
+  SECURITY`).
+  **Upgrade note:** nothing to do for default deployments; with the flag off
+  `withRls` no longer runs its per-request `set_config` round trip. To turn the
+  backstop on, follow `docs/en/features/rls-request-scope.md` (two roles, the
+  new variables, no migration, no backfill; roll back with
+  `LUMIBASE_DB_RLS=off`).
 
 
 ## [1.0.0-rc.4] - 2026-09-29

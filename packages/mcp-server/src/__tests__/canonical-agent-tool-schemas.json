@@ -27,6 +27,7 @@
       "kind",
       "name",
       "operations",
+      "payload_mode",
       "webhookId"
     ],
     "required": [
@@ -407,6 +408,7 @@
     "properties": [
       "collection",
       "data",
+      "expect",
       "id",
       "status"
     ],

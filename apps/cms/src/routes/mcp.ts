@@ -10,7 +10,7 @@ import { ExtensionsService } from '../services/extensions-service';
 import { getContentOsFlags } from '../services/feature-flags';
 import { approvalRequesterFromAuth, resolveRequestCapabilities } from '../services/governed-capabilities';
 import { IntentService } from '../services/intent-service';
-import { itemServiceForRequest } from '../services/item-service-factory';
+import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
 import { createConfiguredLLMProvider } from '../services/llm-provider';
 import { McpService, type McpHarnessPort } from '../services/mcp-service';
 import { SchemaService } from '../services/schema-service';
@@ -55,13 +55,17 @@ mcpRouter.post('/', async (c) => {
     accessService: new AccessService({ db, siteId, userId: auth.userId ?? null, cache: runtime.cache }),
     intentService: new IntentService({ db, siteId, userId: auth.userId ?? null, llm }),
     configService: new ConfigService({ db, siteId }),
-    extensionsService: new ExtensionsService({ db, siteId, userId: auth.userId ?? null }),
+    extensionsService: new ExtensionsService({
+      db, siteId, userId: auth.userId ?? null, cache: runtime.cache, env: c.env,
+      permissionCtx: buildRequestPermissionContext({ auth, siteId, headers: c.req.header(), ip: c.get('ip') ?? null }),
+    }),
     llm,
     queue: runtime.queue,
     notify: buildAgentNotifier(c),
     // Deployment skills are part of the MCP tool surface; the KeyProvider is
     // what lets them decrypt target tokens (capabilities still gate access).
     keys: runtime.keys,
+    cache: runtime.cache,
   });
 
   const port: McpHarnessPort = {

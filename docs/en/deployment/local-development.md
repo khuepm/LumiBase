@@ -1,39 +1,44 @@
 ---
-version: 3
-lastUpdated: 2026-09-21T05:44:46.672Z
+version: 5
+lastUpdated: 2026-10-13T21:43:49.229Z
 sourceLang: en
-contentHash: 530a0dc7e3480800
-codeVerified: 2026-09-21T05:44:46.672Z
-codeVerifiedHash: 530a0dc7e3480800
-codeVerifiedClaims: 6
+contentHash: 1e3d2d3993956138
+codeVerified: 2026-10-13T21:43:49.229Z
+codeVerifiedHash: 1e3d2d3993956138
+codeVerifiedClaims: 8
 ---
 
 # Local Development
 
-> **Prerequisites:** Node.js ≥ 22, pnpm ≥ 9, Docker + Docker Compose, Git ≥ 2.40
+> **Prerequisites:** Node.js 22.22.2+ (22.x), 24.15.0+ (24.x), or 26+, pnpm 9.12.0, Docker + Docker Compose, Git ≥ 2.40
 
 ## Quick start
 
 ```bash
-# 1. Clone the repository
+# 1. Clone and install
 git clone https://github.com/khuepm/lumibase.git
 cd lumibase
-
-# 2. Install dependencies
 pnpm install
 
-# 3. Copy and configure environment
-cp .env.example .env
-# Edit .env — see docs/en/deployment/environment-variables.md
+# 2. Start infrastructure only; the CMS runs on the host below
+docker compose -f docker/docker-compose.yml up -d postgres redis minio minio-init meilisearch imgproxy
 
-# 4. Start infrastructure (PostgreSQL, Redis, MinIO, MeiliSearch, imgproxy)
-docker compose -f docker/docker-compose.yml up -d
+# 3. Save the environment block below as .env.local, then export it
+set -a
+. ./.env.local
+set +a
 
-# 5. Run database migrations
+# 4. Apply migrations to your local development database
 pnpm db:migrate
 
-# 6. Start all dev servers
-pnpm dev
+# 5. Run the Node CMS (:1989) in this terminal
+pnpm -F @lumibase/cms exec tsx src/serve.ts
+```
+
+There is no root `.env.example`. Create the gitignored `.env.local` from the [environment block](#environment-file) below. These commands assume the default Compose ports and a local development database. `docker/.env.example` uses container hostnames and is not a host-process environment file. In a second terminal, from the repository root, start Studio:
+
+```bash
+pnpm -F @lumibase/studio exec vite --host 127.0.0.1 --port 2026
 ```
 
 **Services running:**
@@ -42,11 +47,10 @@ pnpm dev
 |---------|-----|-------------|
 | CMS API | http://localhost:1989 | Hono REST + WebSocket API |
 | Studio | http://localhost:2026 | Admin SPA |
-| Docs viewer | http://localhost:5174 | This docs site |
+| Docs viewer (optional) | http://localhost:5174 | Start separately with `pnpm docs:dev` |
 | PostgreSQL | localhost:5432 | Database |
 | Redis | localhost:6379 | Cache + queues |
 | MeiliSearch | http://localhost:7700 | Search |
-| Bull Board | http://localhost:3001 | Queue dashboard |
 | MinIO | http://localhost:9000 (console :9001) | S3-compatible object storage |
 | imgproxy | http://localhost:8080 | Image transformation |
 
@@ -56,10 +60,10 @@ pnpm dev
 
 ```bash
 # CMS API only
-pnpm -F @lumibase/cms dev        # Hono with hot-reload (port 1989)
+pnpm -F @lumibase/cms exec tsx src/serve.ts # Load .env.local first (port 1989)
 
 # Studio only
-pnpm -F @lumibase/studio dev     # Vite SPA (port 2026)
+pnpm -F @lumibase/studio exec vite --host 127.0.0.1 --port 2026
 
 # Docs only
 pnpm -F @lumibase/docs dev       # Vite docs (port 5174)
@@ -69,7 +73,7 @@ pnpm -F @lumibase/docs dev       # Vite docs (port 5174)
 
 ## First-time setup wizard
 
-On first run, the CMS API detects an empty database and activates the setup wizard. Visit http://localhost:1989/setup to:
+On first run, the CMS API detects an empty database and activates the setup wizard. Visit http://localhost:2026/setup to:
 
 1. Create the first admin user
 2. Set the site name and default language
@@ -79,34 +83,25 @@ On first run, the CMS API detects an empty database and activates the setup wiza
 
 ## Environment file
 
-Minimum `.env` for local dev:
+Save this as `.env.local` at the repository root. Re-run `set -a; . ./.env.local; set +a` in each terminal that runs migrations or the Node CMS; those commands do not load it automatically. Use these credentials only for local development:
 
 ```env
-# Runtime
 LUMIBASE_ENV=development
 LUMIBASE_RUNTIME=docker
-LUMIBASE_DEV_AUTH=true         # Skip Logto auth locally
+LUMIBASE_DEV_AUTH=true
 JWT_SECRET=local-dev-secret-min-32-chars-long
-
-# Database
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/lumibase
-
-# Cache
+DATABASE_URL=postgresql://lumibase:lumibase_dev@localhost:5432/lumibase
 REDIS_URL=redis://localhost:6379
-
-# Search
-MEILISEARCH_URL=http://localhost:7700
-MEILISEARCH_API_KEY=masterKey
-
-# AI (optional for local dev)
-LLM_PROVIDER=echo              # Use echo mock — no API key needed
-# Optional real provider smoke tests:
-# LLM_PROVIDER=openai
-# LLM_MODEL=gpt-4.1-nano
-# OPENAI_API_KEY=...
-# LLM_PROVIDER=gemini
-# LLM_MODEL=gemini-3.5-flash
-# GEMINI_API_KEY=...
+S3_ENDPOINT=http://localhost:9000
+S3_ACCESS_KEY=minioadmin
+S3_SECRET_KEY=minioadmin
+S3_BUCKET=lumibase-media
+MEILISEARCH_HOST=http://localhost:7700
+MEILISEARCH_API_KEY=lumibase_dev_key
+IMGPROXY_URL=http://localhost:8080
+IMGPROXY_KEY=736563726574
+IMGPROXY_SALT=736563726574
+LLM_PROVIDER=echo
 ```
 
 ---
@@ -159,17 +154,15 @@ pnpm lint
 ## Simulating Cloudflare Workers locally
 
 ```bash
-# The CMS dev server already runs under Wrangler
+# Alternative to the Node CMS; stop it first to free port 1989
 pnpm -F @lumibase/cms dev
-
-# This uses wrangler.toml and miniflare for:
-# - KV (CONFIG_CACHE) → in-memory
-# - R2 (MEDIA) → local ./tmp/r2
-# - Durable Objects (SITE_ROOM) → local simulation
-# - Hyperdrive → direct DB connection (no pooling)
 ```
 
-> Note: `LUMIBASE_RUNTIME` is automatically set to `cloudflare` when using Wrangler.
+For this alternative, put secrets such as `DATABASE_URL` and `JWT_SECRET` in
+`apps/cms/.dev.vars`. Wrangler uses `apps/cms/wrangler.toml` and local binding
+emulation; the Docker environment above does not configure R2/KV bindings.
+Without the corresponding bindings, storage/cache checks in `/health` can fail.
+Use the Node CMS path above when working with Docker infrastructure.
 
 ---
 
@@ -188,7 +181,7 @@ Studio's dev port is set in `apps/studio/vite.config.ts` (`server.port: 2026`)
 and has no environment-variable override. Pass the port to Vite instead:
 
 ```bash
-pnpm -F @lumibase/studio dev -- --port 2027
+pnpm -F @lumibase/studio exec vite --host 127.0.0.1 --port 2027
 ```
 
 ### Docker not starting
@@ -198,7 +191,7 @@ pnpm -F @lumibase/studio dev -- --port 2027
 docker compose -f docker/docker-compose.yml logs
 
 # Force recreate
-docker compose -f docker/docker-compose.yml up -d --force-recreate
+docker compose -f docker/docker-compose.yml up -d --force-recreate postgres redis minio minio-init meilisearch imgproxy
 ```
 
 ### Type errors after `git pull`

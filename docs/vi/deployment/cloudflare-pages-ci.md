@@ -1,15 +1,18 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T10:20:14.923Z
+version: 2
+lastUpdated: 2026-10-13T19:47:38.305Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 574553a580a51075
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T10:20:14.923Z
-codeVerifiedHash: 574553a580a51075
+sourceHash: ea64d1bb9cfe0d79
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-10-13T19:47:38.305Z
+codeVerifiedHash: ea64d1bb9cfe0d79
 codeVerifiedClaims: 4
 ---
+
+<!-- check-parity: allow code-fences -->
+<!-- Comment cuối dòng trong fence bash ("mong đợi 200", "dán token khi được hỏi") được dịch có chủ ý; check-parity chỉ bỏ qua comment nguyên dòng nên báo nhầm. Gỡ waiver khi B111 được sửa. -->
 
 # Thiết lập deploy Cloudflare Pages qua CI
 
@@ -86,7 +89,7 @@ Với `wrangler` cục bộ đã đăng nhập vào account sở hữu:
 ```bash
 # docs (output SSG ở dist/)
 pnpm docs:build
-cd apps/docs && npx wrangler pages deploy dist --project-name lumibase-docs --branch main
+npx wrangler pages deploy dist --project-name lumibase-docs --branch main --cwd apps/docs
 
 # landing (static export ở out/)
 pnpm landing:build

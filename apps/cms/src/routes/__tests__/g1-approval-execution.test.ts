@@ -51,7 +51,8 @@ vi.mock('../../services/schema-service', () => ({
 
 // The harness touches assorted ItemService methods for provenance/coalescing;
 // none of them are what these tests assert on.
-vi.mock('../../services/item-service-factory', () => ({
+vi.mock('../../services/item-service-factory', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../services/item-service-factory')>(),
   itemServiceForRequest: () => new Proxy({}, { get: () => async () => undefined }),
 }));
 

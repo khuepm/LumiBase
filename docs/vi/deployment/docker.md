@@ -1,16 +1,19 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 1
-lastUpdated: 2026-08-02T19:21:08.504Z
+version: 2
+lastUpdated: 2026-10-10T05:00:15.277Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 562cf0016bbc6d0f
+sourceHash: 6552429e41352200
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:21:08.504Z
-codeVerifiedHash: 562cf0016bbc6d0f
+codeVerified: 2026-10-13T19:22:02.312Z
+codeVerifiedHash: 6552429e41352200
 codeVerifiedClaims: 9
 ---
+
+<!-- check-parity: allow code-fences headings -->
+<!-- Recorded by stamp-pair --allow-structure-drift on 2026-10-10T05:00:15.277Z. See commit history for rationale. -->
 
 <!-- check-parity: allow inline-code -->
 
@@ -38,6 +41,14 @@ cp docker/.env.example docker/.env
 ```
 
 Cập nhật giá trị production cho database, Redis, object storage, JWT và admin authentication trước khi start stack.
+
+> **Nếu bạn chỉ thử stack này ở local, hãy đặt `DATABASE_SSL_MODE=disable`.**
+> Bản override production để default là `require`
+> (`DATABASE_SSL_MODE: ${DATABASE_SSL_MODE:-require}` trong
+> `docker/docker-compose.prod.yml`) — đúng cho một database managed, nhưng không
+> kết nối được tới container PostgreSQL của compose gốc vì container đó không
+> phục vụ TLS, nên CMS chết lúc khởi động bằng một lỗi kết nối thay vì một lỗi
+> cấu hình. Với deployment thật thì giữ nguyên default `require`.
 
 ## Chạy production
 
