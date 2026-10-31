@@ -204,6 +204,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   schedule Flows runs report the semantic pass as `unavailable`.
 
 ### Changed
+- **LLM calls outside the Copilot keep their own instructions (#579).**
+  Generation skills, the constitution compiler and judge, and the intent
+  compiler now send their instructions in the provider's system slot with tools
+  disabled (`completeWithInstructions`). Before, they received the Copilot
+  prompt and the full tool list, and Gemini/Anthropic demoted their rules to a
+  user turn. The constitution judge sends the content under review as the only
+  user turn, inside an `<untrusted>` block.
 - **Draft review needs the pilot (#516).** The Studio draft review panel shows
   only while the collection is in the pilot in `assisted` mode, and
   `POST /api/v1/ai/reviews` plus new feedback return `403 DECISION_DISABLED`
@@ -235,6 +242,16 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `shell-check.yml`.
 
 ### Fixed
+- **Copilot conversations belong to their owner (#579).** The
+  `/api/v1/ai/conversations/:id/messages` and `DELETE /api/v1/ai/conversations/:id`
+  routes, and `POST /api/v1/ai/chat` with a `conversationId`, checked only the
+  site. Another member who had a conversation id could read it, delete it, or
+  append to it, and an append became part of the owner's next model turn. They
+  now get `404`, a no-op delete, or a new conversation of their own. API-key
+  callers list only conversations they created.
+- **`listSettings` redacts secrets (#579).** The agent skill now applies the
+  same secret-field redaction as `GET /api/v1/settings`. Before, governed MCP
+  clients received raw values such as `media.signedTransform.secret`.
 - **`GET /api/v1/deployments` returns the newest deployments first (#568,
   B162).** The list had no `ORDER BY`, so with `limit` Postgres could return
   any rows rather than the most recent ones. It is now ordered by `createdAt`

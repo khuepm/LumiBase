@@ -1,8 +1,15 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
-sourceLang: vi
+version: 2
+lastUpdated: 2026-10-31T23:41:40.096Z
+sourceLang: en
 contentHash: d3a62a6ea64bb371
+translatedFrom: en
+sourceHash: 020f29ddf81d0497
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-10-31T23:41:40.096Z
+codeVerifiedHash: 020f29ddf81d0497
+codeVerifiedClaims: 28
 ---
 
 # AI Copilot (HITL)
@@ -158,6 +165,14 @@ Hệ thống hỗ trợ nhiều LLM providers (cấu hình qua `LLM_PROVIDER` en
 Bảng `ai_conversations` và `ai_messages` được dùng để lưu trữ trạng thái các luồng trò chuyện:
 - Mỗi khi gửi message lên `/api/v1/ai/chat`, hệ thống sẽ load tối đa **20 messages gần nhất** để làm ngữ cảnh (context window) truyền vào LLM.
 - Hỗ trợ đầy đủ các API quản lý: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
+- Một hội thoại thuộc về user đã tạo nó (#579). Thành viên khác của site nhận `404` khi đọc messages, `DELETE` không xoá gì, và `POST /chat` với `conversationId` đó sẽ mở một hội thoại mới cho người gọi. Caller dùng API key chỉ sở hữu các hội thoại do chính nó tạo (không có user id).
+
+### Ranh giới tin cậy (#579)
+
+- **Chỉ dẫn và dữ liệu.** Chỉ Copilot chat dùng system prompt của Copilot và danh sách tool. Mọi lời gọi model khác (skill sinh nội dung, constitution compiler và judge, intent compiler, decisions) gửi chỉ dẫn riêng vào system slot của provider và tắt tool (`completeWithInstructions`). Constitution judge gửi nội dung cần chấm làm user turn duy nhất, trong một khối `<untrusted>`. Một test source-scan sẽ fail khi có lời gọi mới bỏ qua quy tắc này.
+- **Mỗi lượt một tool call, output của tool không vào prompt.** `POST /chat` chỉ thực thi tool call đầu tiên mà model trả về, và kết quả tool trả cho client chứ không quay lại model. Một tấn công nhiều bước vì vậy cần một lượt user cho mỗi bước, và mỗi lượt được phân quyền riêng.
+- **Model không cấp quyền.** Harness kiểm capability, input schema chuẩn, và quyền theo row và field của người gọi ở mọi tool call, bất kể model yêu cầu gì. `apps/cms/eval/prompt-injection/dataset.v1.json` liệt kê các tấn công và benign control, được chạy lại như thể model làm theo kẻ tấn công.
+- **Redaction.** `listSettings` che các field chứa secret theo cùng quy tắc với `GET /api/v1/settings`.
 
 ### 3. RAG Skills (`aiSuggestField` và `aiContentAssist`)
 Tích hợp dịch vụ sinh vector embeddings (`embedding-service.ts`) hỗ trợ OpenAI `text-embedding-3-small` và Workers AI `@cf/baai/bge-base-en-v1.5`:
