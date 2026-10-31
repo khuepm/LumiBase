@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-09-07T03:34:14.317Z
+version: 3
+lastUpdated: 2026-10-13T22:13:10.671Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1767648d90471727
+sourceHash: 169f7e93758006ec
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-07T03:34:14.317Z
-codeVerifiedHash: 1767648d90471727
+codeVerified: 2026-10-13T22:13:10.671Z
+codeVerifiedHash: 169f7e93758006ec
 codeVerifiedClaims: 10
 ---
 
@@ -52,7 +52,7 @@ Vì Studio sau đó gọi CMS từ một origin khác, CMS phải cho phép orig
 
 | Target | Package | Output | Deploy command |
 | --- | --- | --- | --- |
-| CMS API Worker | `@lumibase/cms` | Worker bundle | `pnpm --filter @lumibase/cms deploy` |
+| CMS API Worker | `@lumibase/cms` | Worker bundle | `pnpm --filter @lumibase/cms run deploy` |
 | Documentation site | `@lumibase/docs` | `apps/docs/dist` | `pnpm docs:deploy` |
 | Landing site | `@lumibase/landing` | `apps/landing/out` | `pnpm landing:deploy` |
 | Marketplace site | `@lumibase/marketplace` | `apps/marketplace/out` | `pnpm marketplace:deploy` |
@@ -85,7 +85,7 @@ Các secret như `JWT_SECRET`, các giá trị Cloudflare Access và chứng th�
 2. Chạy `pnpm --filter @lumibase/docs build` cho trang tài liệu.
 3. Chạy `pnpm --filter @lumibase/cms build` để dry-run gói Worker.
 4. Triển khai tài liệu với `pnpm docs:deploy`.
-5. Triển khai CMS Worker với `pnpm --filter @lumibase/cms deploy` sau khi các binding và secret production được cấu hình.
+5. Triển khai CMS Worker với `pnpm --filter @lumibase/cms run deploy` sau khi các binding và secret production được cấu hình.
 
 Xem [Cloudflare deployment](./cloudflare.md) để biết các lệnh Worker và Pages chi tiết.
 Xem [Private admin path](./private-admin-path.md) để biết chính sách không chuyển hướng ở production giúp giữ bí mật điểm truy cập Studio.

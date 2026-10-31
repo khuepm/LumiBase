@@ -254,6 +254,16 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   endpoint get `403 DECISION_DISABLED` until they opt in. New optional env
   ceilings `DECISION_SITE_REQUESTS_PER_HOUR`, `DECISION_SITE_MAX_CONCURRENT`,
   `DECISION_SITE_TOKENS_PER_DAY`. No migration.
+- **Shell: `tauri-plugin-updater` 2.13.1 → 2.14.1 in `Cargo.lock`, with
+  `@tauri-apps/plugin-updater` `^2.14.1` (2.14.1 resolved).** The grouped
+  Dependabot update #573 moves the npm package to 2.14, and `pnpm tauri:check`
+  refuses a different minor on the crate side; Dependabot does not update
+  `Cargo.lock`. Both sides now move together on `main`, so #573 passes the
+  check after a rebase. The crate update also brings `zip` 4 → 9 and
+  `minisign-verify` 0.2 → 0.3 (updater signature check), and Cargo re-resolves
+  some Windows-only crates from `windows-sys` 0.61 to 0.60. Desktop
+  `cargo check --locked` passes; the Android target is checked by
+  `shell-check.yml`.
 
 ### Fixed
 - **`GET /api/v1/deployments` returns the newest deployments first (#568,
@@ -421,6 +431,10 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   deployment; see `docs/en/features/async-agent-runs.md`. No database migration.
 
 
+- Desktop release workflow passes `uploadUpdaterJson` to `tauri-action@v1`.
+  The old `includeUpdaterJson` input was reported as unsupported and ignored,
+  so `latest.json` for the in-app updater depended on the action's default (#451).
+
 - Raise the `sharp` override floor to 0.35.5 for GHSA-wq5f-xc86-pv6w (high), fixing the bundled librsvg dependency used by Next.js and Miniflare.
 
 - Cloudflare Sentry upgrades to 11.x: remove the obsolete `enableLogs` option and explicitly retain the v10 data-collection baseline, so the upgrade does not enable user data, cookies, HTTP bodies, AI content, database query data, queue payloads, or GraphQL documents/variables. No environment changes are required.
@@ -508,11 +522,42 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `docs/vi/` where neither file exists. The parity checker could not see it: it
   compared link *text*, so a VI link pointing at a missing file matched an EN
   link pointing at a real one perfectly. It now compares the file a link
-  **resolves** to, collapsing the locale segment only when both trees have that
-  file — which also stops it flagging a legitimately different path for the same
+  **resolves** to, collapsing the locale segment only for links inside the
+  doc's own locale tree when both trees have that file — which also stops it flagging a legitimately different path for the same
   target. Repo-wide parity drops from 37 problems in 30 pairs to 35 in 29. A link
   that is dead in both locales still compares equal, as it did before: parity is
   not a dead-link check, and reporting it as a locale mismatch would mislead.
+- **Docs command guard and parity follow-ups (B168).** `pnpm --filter
+  @lumibase/cms deploy` in `deployment/overview.md` and the enterprise CI recipe
+  in `enterprise/private-submodule.md` ran pnpm's builtin `deploy` (which fails
+  with `ERR_PNPM_INVALID_DEPLOY_TARGET`), not the package's deploy script; both
+  now say `run deploy`, and the guard reports a builtin that shadows a script of
+  the target package. The guard also follows pnpm 9's fallback to a
+  `node_modules/.bin` binary (root and directory form only — `--filter`/`-r`
+  get an `exec` hint instead), resolves scope-less `--filter` names to their
+  unique `@scope/<name>` (ambiguous names are reported), joins `\`-continued
+  lines before parsing, tracks fence markers per CommonMark, and scans only
+  shell-like fences, so a SQL `-- … pnpm …` comment is no longer a command. No
+  documented command lost coverage: on the unchanged docs the guard checks the
+  same 183 script commands as before. The parity checker no longer
+  treats a link into the other locale's tree as equal to an own-locale link; on
+  its first run that found `docs/vi/deployment/google-cloud-vm.md` sending
+  readers to the English Devpost draft although a Vietnamese one exists, now
+  fixed together with a drifted `git clone` line in the same pair.
+- **Docs parity no longer reads a translated trailing comment as code drift
+  (B111).** `check-parity` stripped only whole-line comments from code fences,
+  so `gh secret set X  # paste the token` against its Vietnamese copy was
+  reported as changed code. It now also strips a trailing `  # …` in shell and
+  YAML-like fences (`bash`, `sh`, `yaml`, `toml`, `env`, …), only when the `#`
+  has whitespace on both sides, sits outside quotes and does not follow an
+  escaped space, so URL fragments, `"#fff"`, `${#arr}` and `foo\ # bar` stay
+  code and a difference before the `#` is still reported. Dockerfile fences are
+  deliberately excluded: there only a leading `#` is a comment (B139). The two blanket `allow code-fences` waivers this
+  forced (`docs/vi/deployment/cloudflare-pages-ci.md`,
+  `docs/vi/enterprise/private-submodule.md`) are removed, so code changes in
+  those pairs are checked again. Repo-wide parity drops from 28 problems in 23
+  pairs to 25 in 20: three more pairs whose only difference was translated
+  trailing comments now pass, and no hidden drift surfaced.
 - **The Docker production override is documented as the local trap it is
   (B47c).** `docs/{en,vi}/deployment/docker.md` now says to set
   `DATABASE_SSL_MODE=disable` when trying that stack locally: the override
