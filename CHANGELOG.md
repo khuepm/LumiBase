@@ -235,6 +235,23 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `shell-check.yml`.
 
 ### Fixed
+- **Staging deploy check now separates boot from readiness, and `/health/ready`
+  reaches the Worker on dev/staging/demo (#461).** On the shared-domain
+  hostnames only `/health` was routed to the CMS Worker. A Cloudflare route
+  without a trailing `*` matches one path, so `/health/ready` fell through to
+  Pages and answered 200 with Studio's `index.html`. `wrangler.toml` now routes
+  `<env>.lumibase.dev/health/*` as well. The `Verify deployment health` step of
+  `deploy-cms.yml` runs `scripts/verify-cms-deploy.mjs`. It fails when
+  `/health` or `/health/ready` is not the Worker's JSON, or when the release
+  channel is wrong. A `503` from `/health/ready` is a warning that lists each
+  dependency, unless the GitHub environment variable `CMS_REQUIRE_READY=true`
+  makes it fail the step. Before, the step passed on a staging Worker whose
+  database, cache and storage were all unhealthy. The remaining staging 500s
+  (`/api/v1/setup/*`) come from missing Hyperdrive/KV/R2 bindings, which need
+  an owner with Cloudflare access. The runbook is in
+  `docs/en/deployment/shared-domain-environments.md` (step 2b and
+  "Troubleshooting"). **Upgrade note:** none for self-hosted installs. The next
+  deploy of each shared-domain env adds the `/health/*` route.
 - **`GET /api/v1/deployments` returns the newest deployments first (#568,
   B162).** The list had no `ORDER BY`, so with `limit` Postgres could return
   any rows rather than the most recent ones. It is now ordered by `createdAt`

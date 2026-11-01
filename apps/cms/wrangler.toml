@@ -136,6 +136,12 @@ dead_letter_queue = "lumibase-agent-runs-local-dlq"
 # and `/scim/*` reach the Worker while every other path (the SPA) is served by
 # Pages. `/test-auth` is intentionally NOT routed — it is a local-dev helper.
 #
+# A route without a trailing `*` matches ONE path exactly, so `/health` alone
+# does not cover `/health/ready`: on staging that path fell through to Pages and
+# answered 200 with Studio's index.html (#461), which hid the one endpoint that
+# reports dependency readiness. Every CMS path with sub-paths needs a `/*`
+# route; `shared-domain-worker-routes.test.ts` enforces it.
+#
 # Because Studio and CMS share an origin here, the SPA calls `/api/...`
 # same-origin and CORS is unnecessary, so CORS_ALLOWED_ORIGINS is empty.
 # (Production still uses split origins studio.lumibase.dev + api.lumibase.dev
@@ -167,6 +173,9 @@ zone_name = "lumibase.dev"
 
 [[env.staging.routes]]
 pattern = "staging.lumibase.dev/health"
+zone_name = "lumibase.dev"
+[[env.staging.routes]]
+pattern = "staging.lumibase.dev/health/*"
 zone_name = "lumibase.dev"
 
 [[env.staging.routes]]
@@ -360,6 +369,9 @@ zone_name = "lumibase.dev"
 [[env.dev.routes]]
 pattern = "dev.lumibase.dev/health"
 zone_name = "lumibase.dev"
+[[env.dev.routes]]
+pattern = "dev.lumibase.dev/health/*"
+zone_name = "lumibase.dev"
 
 [[env.dev.routes]]
 pattern = "dev.lumibase.dev/metrics"
@@ -423,6 +435,9 @@ zone_name = "lumibase.dev"
 
 [[env.demo.routes]]
 pattern = "demo.lumibase.dev/health"
+zone_name = "lumibase.dev"
+[[env.demo.routes]]
+pattern = "demo.lumibase.dev/health/*"
 zone_name = "lumibase.dev"
 
 [[env.demo.routes]]
