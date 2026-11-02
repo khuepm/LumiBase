@@ -235,6 +235,19 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `shell-check.yml`.
 
 ### Fixed
+- **`aiContentAssist` sends sample content only, and embedding primitives fail
+  on mixed dimensions (#581).** The skill's context samples used to be whole
+  item rows, so site and collection ids, user ids and the wrapped DEK went to
+  the model provider. It now sends each sample's `status` and `data`, and it no
+  longer runs a `count(*)` over the collection for a 3-row sample (at 100k
+  items: 8.5 ms vs 0.15 ms per call, single client, local Postgres 17). In
+  `embedding-service.ts`, `cosineSimilarity` throws
+  `EMBEDDING_DIMENSION_MISMATCH` instead of scoring 0, providers reject a
+  response with the wrong number or size of vectors, and the OpenAI provider
+  reports the dimension of its configured model. Nothing calls the embedding
+  service yet; the docs no longer say the skills run a vector search. Audit:
+  `docs/review-agent/2026-11-01-ai-audit-581-embedding-retrieval-baseline.md`;
+  baseline dataset `apps/cms/eval/retrieval/dataset.v1.json`.
 - **Staging deploy check now separates boot from readiness, and `/health/ready`
   reaches the Worker on dev/staging/demo (#461).** On the shared-domain
   hostnames only `/health` was routed to the CMS Worker. A Cloudflare route

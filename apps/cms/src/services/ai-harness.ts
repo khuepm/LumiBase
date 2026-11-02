@@ -1114,11 +1114,20 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
 
         // Retrieval context: sample existing items so generated content
         // matches the collection's real tone and structure.
+        // The samples are the 3 most recently updated items the caller may read
+        // (ItemService applies tenant, row and field rules); they do not depend on
+        // the instruction (#581).
         let samples: unknown[] = [];
         if (itemService) {
           try {
-            const listed = await itemService.list(collection, { limit: 3 });
-            samples = (listed as { data?: unknown[] }).data ?? [];
+            // No `count(*)`: the total is unused, and it scans the whole collection.
+            const listed = await itemService.list(collection, { limit: 3, withTotal: false });
+            // Send content only (#581). Whole rows also carried site/collection ids,
+            // user ids and the wrapped DEK to the model provider.
+            samples = ((listed as { data?: unknown[] }).data ?? []).map((row) => {
+              const r = row as { status?: unknown; data?: unknown };
+              return { status: r.status, data: r.data };
+            });
           } catch {
             // Collection may not exist or be empty; generate without samples.
           }

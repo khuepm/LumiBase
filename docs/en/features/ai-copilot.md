@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
+version: 2
+lastUpdated: 2026-11-02T20:55:02.648Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: d3a62a6ea64bb371
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: d1ada150ef8ac812
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-02T20:55:02.648Z
+codeVerifiedHash: d1ada150ef8ac812
+codeVerifiedClaims: 24
 ---
 
 # AI Copilot (HITL)
@@ -35,7 +38,7 @@ So the existing tables are seen as seeds:
 
 - `ai_approvals` → the precursor to a general approval gate for plan/tool/artifact.
 - `ai_conversations` + `ai_messages` → short-term context memory.
-- `ai_embeddings` → the RAG knowledge base by site/collection/item.
+- `ai_embeddings` → reserved for a RAG knowledge base by site/collection/item. Nothing reads or writes it yet (#581).
 - `CORE_SKILLS` → the precursor to a tool registry with an input schema, capability, rate limit, and risk policy.
 
 ## CORE_SKILLS registry
@@ -162,10 +165,11 @@ The `ai_conversations` and `ai_messages` tables store the state of conversation 
 - Whenever a message is sent to `/api/v1/ai/chat`, the system loads up to the **20 most recent messages** as the context window passed to the LLM.
 - Full management APIs are supported: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
 
-### 3. RAG Skills (`aiSuggestField` and `aiContentAssist`)
-Integrates a vector-embedding service (`embedding-service.ts`) supporting OpenAI `text-embedding-3-small` and Workers AI `@cf/baai/bge-base-en-v1.5`:
-- **`aiSuggestField`**: Analyzes the current schema and the admin's description, retrieves similar vectors from the database via cosine similarity to suggest an optimal field configuration.
-- **`aiContentAssist`**: Helps generate or revise field content based on RAG context from items already stored in the system.
+### 3. Generation skills with context (`aiSuggestField` and `aiContentAssist`)
+Neither skill runs a vector search today (#581). `embedding-service.ts` (OpenAI `text-embedding-3-small`, Workers AI `@cf/baai/bge-base-en-v1.5`) and the `ai_embeddings` table exist, but no code path calls or fills them.
+- **`aiSuggestField`**: sends the collection's existing field names and the admin's description to the model.
+- **`aiContentAssist`**: sends up to 3 sample items of the collection, the most recently updated items the caller may read. `ItemService` applies the tenant, row and field rules, so a hidden field, another site's item or an item outside the row rule never reaches the model. An update, a delete or a revoked permission takes effect on the next call. Only each sample's `status` and `data` are sent, not row metadata. The samples do not depend on the instruction. `apps/cms/eval/retrieval/dataset.v1.json` records the baseline on that dataset (Recall@3 0.5, MRR@3 0.46).
+- The embedding primitives throw `EMBEDDING_DIMENSION_MISMATCH` or `EMBEDDING_RESPONSE_INVALID` when vectors of different sizes are compared or a provider returns the wrong number or size of vectors.
 
 ## Property-based testing
 
