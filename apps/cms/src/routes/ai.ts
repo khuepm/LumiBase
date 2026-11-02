@@ -1,5 +1,5 @@
 import { aiApprovals, aiConversations, aiMessages } from '@lumibase/database';
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv, AuthPrincipal } from '../env';
@@ -34,11 +34,19 @@ import { createPendingRun, FLOW_RUNS_QUEUE } from '../services/flow-run-service'
  * site who had a conversation id could read its messages, delete it, or append
  * to it through `POST /chat`. Appending is the dangerous part: the next turn of
  * the owner feeds the appended message to the model as the owner's own history,
- * and any tool call it produces runs under the owner's rights. Callers without a
- * user id (API keys) own the conversations they created, which have no user id.
+ * and any tool call it produces runs under the owner's rights.
+ *
+ * Callers without a user id (API keys) own only the conversations recorded
+ * with their own `api_key_id`. Matching "user_id IS NULL" instead would let
+ * every API key of the site share one pool of conversations. A principal with
+ * neither id owns nothing.
  */
 function conversationOwnerClause(auth: AuthPrincipal | undefined) {
-  return auth?.userId ? eq(aiConversations.userId, auth.userId) : isNull(aiConversations.userId);
+  if (auth?.userId) return eq(aiConversations.userId, auth.userId);
+  if (auth?.apiKeyId) {
+    return and(isNull(aiConversations.userId), eq(aiConversations.apiKeyId, auth.apiKeyId))!;
+  }
+  return sql`false`;
 }
 
 // ---------------------------------------------------------------------------
@@ -265,7 +273,7 @@ aiRouter.post('/chat', async (c) => {
         message.length > 60 ? `${message.substring(0, 57)}...` : message;
       const [newConv] = await db
         .insert(aiConversations)
-        .values({ siteId, userId, title })
+        .values({ siteId, userId, apiKeyId: userId ? null : auth.apiKeyId ?? null, title })
         .returning();
       conversationId = newConv!.id;
     }

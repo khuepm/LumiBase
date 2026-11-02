@@ -1,14 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-10-31T23:41:40.096Z
+version: 3
+lastUpdated: 2026-11-02T21:42:52.144Z
 sourceLang: en
-contentHash: d3a62a6ea64bb371
 translatedFrom: en
-sourceHash: 020f29ddf81d0497
+sourceHash: ecc8983d3122446b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-31T23:41:40.096Z
-codeVerifiedHash: 020f29ddf81d0497
+codeVerified: 2026-11-02T21:42:52.144Z
+codeVerifiedHash: ecc8983d3122446b
 codeVerifiedClaims: 28
 ---
 
@@ -165,7 +164,7 @@ Hệ thống hỗ trợ nhiều LLM providers (cấu hình qua `LLM_PROVIDER` en
 Bảng `ai_conversations` và `ai_messages` được dùng để lưu trữ trạng thái các luồng trò chuyện:
 - Mỗi khi gửi message lên `/api/v1/ai/chat`, hệ thống sẽ load tối đa **20 messages gần nhất** để làm ngữ cảnh (context window) truyền vào LLM.
 - Hỗ trợ đầy đủ các API quản lý: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
-- Một hội thoại thuộc về user đã tạo nó (#579). Thành viên khác của site nhận `404` khi đọc messages, `DELETE` không xoá gì, và `POST /chat` với `conversationId` đó sẽ mở một hội thoại mới cho người gọi. Caller dùng API key chỉ sở hữu các hội thoại do chính nó tạo (không có user id).
+- Một hội thoại thuộc về user đã tạo nó (#579). Thành viên khác của site nhận `404` khi đọc messages, `DELETE` không xoá gì, và `POST /chat` với `conversationId` đó sẽ mở một hội thoại mới cho người gọi. Caller dùng API key chỉ sở hữu các hội thoại được ghi với chính key đó (`api_key_id`, migration `0023`), nên key này không list, đọc, xoá hay nối vào hội thoại của key khác được. Hội thoại không có user id tạo trước `0023` không ghi key nào nên không API key nào sở hữu chúng.
 
 ### Ranh giới tin cậy (#579)
 

@@ -38,6 +38,10 @@ caller's `role: 'system'` message to a user turn.
   Exploitation needs the conversation id (nanoid, not enumerable through the list route),
   which caps the rating below high.
 - A caller without a user id (API key) could also **list** every conversation on the site.
+- Review round 1 of PR #587 found that the first fix still let every API key of a site share the
+  user-less conversations (`user_id IS NULL`). Migration `0023_ai_conversation_api_key_owner`
+  records the key on conversations it starts, and an API key now owns only its own. A principal
+  with neither a user id nor a key id owns nothing.
 - **Fix:** `conversationOwnerClause` on all four routes. **Evidence:**
   `routes/__tests__/ai-conversation-ownership.db.integration.test.ts`. On the audited code,
   4 of its 5 cases fail (measured); with the fix, all 5 pass.

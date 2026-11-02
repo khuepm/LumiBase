@@ -1,14 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-10-31T23:41:40.096Z
+version: 3
+lastUpdated: 2026-11-02T21:42:52.144Z
 sourceLang: en
-translatedFrom: vi
-sourceHash: d3a62a6ea64bb371
-mtEngine: claude
-syncStatus: machine-translated
-contentHash: 020f29ddf81d0497
-codeVerified: 2026-10-31T23:41:40.096Z
-codeVerifiedHash: 020f29ddf81d0497
+contentHash: ecc8983d3122446b
+codeVerified: 2026-11-02T21:42:52.144Z
+codeVerifiedHash: ecc8983d3122446b
 codeVerifiedClaims: 28
 ---
 
@@ -165,7 +161,7 @@ The system supports multiple LLM providers (configured via the `LLM_PROVIDER` en
 The `ai_conversations` and `ai_messages` tables store the state of conversation threads:
 - Whenever a message is sent to `/api/v1/ai/chat`, the system loads up to the **20 most recent messages** as the context window passed to the LLM.
 - Full management APIs are supported: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
-- A conversation belongs to the user who started it (#579). Another member of the site gets `404` on its messages, a `DELETE` removes nothing, and a `POST /chat` with that `conversationId` starts a new conversation for the caller. API-key callers own only the conversations they created (those have no user id).
+- A conversation belongs to the user who started it (#579). Another member of the site gets `404` on its messages, a `DELETE` removes nothing, and a `POST /chat` with that `conversationId` starts a new conversation for the caller. An API-key caller owns only the conversations recorded with its own key (`api_key_id`, migration `0023`), so one key cannot list, read, delete or append to another key's conversation. User-less conversations created before `0023` have no recorded key and no API key owns them.
 
 ### Trust boundaries (#579)
 

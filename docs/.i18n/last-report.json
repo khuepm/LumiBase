@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-02T21:04:32.359Z",
+  "generatedAt": "2026-11-02T21:43:28.053Z",
   "mode": "plan",
   "effectiveMode": "plan",
   "engine": "claude",
@@ -8,8 +8,8 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 157,
-    "planned": 1
+    "upToDate": 158,
+    "planned": 0
   },
   "actions": [
     {
@@ -938,13 +938,13 @@
     },
     {
       "rel": "features/ai-copilot.md",
-      "type": "translate",
-      "reason": "source changed since last sync",
+      "type": "up-to-date",
+      "reason": "in sync",
       "enLang": "en",
       "viLang": "vi",
-      "sourceLocale": "vi",
-      "targetLocale": "en",
-      "willTranslate": true,
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0
     },

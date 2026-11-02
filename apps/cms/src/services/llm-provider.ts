@@ -149,7 +149,7 @@ export interface LLMProvider {
  * the caller's `system` message into a user turn, so the judge's or compiler's
  * instructions sat at the same trust level as the untrusted content they were
  * meant to judge. Callers outside the Copilot chat use this instead; a
- * source-scan tripwire (`llm-instruction-boundary.wiring.test.ts`) enforces it.
+ * source-scan tripwire (`services/__tests__/llm-instruction-boundary.test.ts`) enforces it.
  */
 export function completeWithInstructions(
   provider: LLMProvider,

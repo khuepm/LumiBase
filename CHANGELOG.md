@@ -278,8 +278,14 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   routes, and `POST /api/v1/ai/chat` with a `conversationId`, checked only the
   site. Another member who had a conversation id could read it, delete it, or
   append to it, and an append became part of the owner's next model turn. They
-  now get `404`, a no-op delete, or a new conversation of their own. API-key
-  callers list only conversations they created.
+  now get `404`, a no-op delete, or a new conversation of their own. A
+  conversation started by an API key records that key (`api_key_id`), and an
+  API key owns only its own conversations, so keys of the same site no longer
+  share them. **Migration** `0023_ai_conversation_api_key_owner` adds one
+  nullable column with an FK (`ON DELETE SET NULL`) and an index (additive,
+  idempotent, no backfill). **Upgrade note:** user-less conversations created
+  before `0023` have no recorded key, so no API key can list, read, delete or
+  append to them after the upgrade; they are removed with their site.
 - **`listSettings` redacts secrets (#579).** The agent skill now applies the
   same secret-field redaction as `GET /api/v1/settings`. Before, governed MCP
   clients received raw values such as `media.signedTransform.secret`.
