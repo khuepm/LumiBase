@@ -22,7 +22,7 @@
     "bullmq": "^6.5.1",
     "ioredis": "^6.0.0",
     "meilisearch": "^0.62.0",
-    "postgres": "^3.4.5",
+    "postgres": "^4.0.0",
     "prom-client": "^15.1.0"
   },
   "devDependencies": {

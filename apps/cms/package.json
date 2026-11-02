@@ -47,7 +47,7 @@
     "nanoid": "^6.0.2",
     "node-cron": "^4.6.0",
     "nodemailer": "10.2.1",
-    "postgres": "^3.4.9",
+    "postgres": "^4.0.0",
     "prom-client": "^15.1.0",
     "uuid": "^14.0.3",
     "ws": "^8.22.0",
