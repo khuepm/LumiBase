@@ -2,7 +2,7 @@
 
 - **Parent:** #577 (P1)
 - **Audited commit:** `5a92d6ea` (`origin/main`, 2026-11-01). The fix branch was rebased
-  onto `7335d21e` (#579 merged); none of the #579 changes touch the run lifecycle.
+  onto `ce4a9acb` (#579 and dependency bump #589 merged); neither touches the run lifecycle.
 - **Fix branch:** `feature/584-traces-idempotency-recovery`
 - **Model:** none. Every result below is deterministic. No live model was called, so this
   report claims **no model-sensitive results**, no token counts and no provider costs.
@@ -203,8 +203,10 @@ The 4 cases that pass on every revert are the reconstruction and masking control
   761 tests) on the fix: 760 passed and 1 failed, the fake-DB state-machine case for
   `cancelRun` metrics; the cancel kept the JS-merged metrics shape, after which that file
   passes (30/30 with the recovery and retry suites).
-- Typecheck, `pnpm check:all`, the DB integration suites and the full `apps/cms` run: recorded
-  in the PR body.
+- All DB integration + e2e suites on the rebased head (docker env): 51 files, 342/342.
+- Full `apps/cms` (`user-enum.timing` excluded): 4287 passed, 2 skipped, 1 failed
+  (`golden-path.e2e`, env-only; passes in the DB run above).
+- `pnpm typecheck` 18/18; `pnpm check:all` exit 0.
 
 ## 8. Acceptance criteria of #584
 
