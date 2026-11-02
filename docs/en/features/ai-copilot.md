@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
+version: 2
+lastUpdated: 2026-11-02T21:36:37.189Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: d3a62a6ea64bb371
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: c9f055853011e09b
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-02T21:36:37.189Z
+codeVerifiedHash: c9f055853011e09b
+codeVerifiedClaims: 26
 ---
 
 # AI Copilot (HITL)
@@ -159,7 +162,10 @@ The system supports multiple LLM providers (configured via the `LLM_PROVIDER` en
 
 ### 2. Context Memory (Conversation history)
 The `ai_conversations` and `ai_messages` tables store the state of conversation threads:
-- Whenever a message is sent to `/api/v1/ai/chat`, the system loads up to the **20 most recent messages** as the context window passed to the LLM.
+- Whenever a message is sent to `/api/v1/ai/chat`, the system loads up to the **20 most recent messages** as the context window passed to the LLM. Since #582 the synchronous route and the `Prefer: respond-async` worker share `loadCopilotHistory` (`apps/cms/src/services/copilot-history.ts`); before, both read the **oldest** 20 messages, so from the 21st message on the turn the user had just sent was not in the request.
+- The window always opens on a user turn (an assistant message at the cut is dropped) and ends with the turn just sent. The Copilot system prompt is sent separately and is never cut.
+- Current limits: a user message is at most 2000 characters; output is capped at 1024 tokens (Workers AI uses the model default); the whole tool catalogue (74 skills, ~24,200 characters of JSON, an estimated ~6,000 tokens) is sent on every turn. LumiBase does **not** count tokens or check the model's context window, so choose a model whose context fits the tool catalogue plus 20 messages.
+- When the model returns several tool calls, only the first one runs. Arguments that are not valid JSON return `500` once, with no retry and nothing written.
 - Full management APIs are supported: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
 
 ### 3. RAG Skills (`aiSuggestField` and `aiContentAssist`)

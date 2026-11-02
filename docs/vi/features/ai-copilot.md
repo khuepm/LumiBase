@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T13:05:48.000Z
+version: 2
+lastUpdated: 2026-11-02T21:36:37.189Z
 sourceLang: vi
-contentHash: d3a62a6ea64bb371
+contentHash: c9f055853011e09b
+codeVerified: 2026-11-02T21:36:37.189Z
+codeVerifiedHash: c9f055853011e09b
+codeVerifiedClaims: 26
 ---
 
 # AI Copilot (HITL)
@@ -156,7 +159,10 @@ Hệ thống hỗ trợ nhiều LLM providers (cấu hình qua `LLM_PROVIDER` en
 
 ### 2. Context Memory (Lịch sử hội thoại)
 Bảng `ai_conversations` và `ai_messages` được dùng để lưu trữ trạng thái các luồng trò chuyện:
-- Mỗi khi gửi message lên `/api/v1/ai/chat`, hệ thống sẽ load tối đa **20 messages gần nhất** để làm ngữ cảnh (context window) truyền vào LLM.
+- Mỗi khi gửi message lên `/api/v1/ai/chat`, hệ thống sẽ load tối đa **20 messages gần nhất** để làm ngữ cảnh (context window) truyền vào LLM. Từ #582 cả route đồng bộ lẫn worker `Prefer: respond-async` đều dùng chung `loadCopilotHistory` (`apps/cms/src/services/copilot-history.ts`); trước đó cả hai đọc 20 message **cũ nhất**, nên từ message thứ 21 trở đi lượt user vừa gửi không có trong request.
+- Cửa sổ luôn mở đầu bằng một lượt user (nếu cắt rơi vào message assistant thì bỏ message đó) và kết thúc bằng lượt user vừa gửi. System prompt của Copilot gửi riêng nên không bao giờ bị cắt.
+- Giới hạn hiện có: message user tối đa 2000 ký tự; output tối đa 1024 token (Workers AI dùng mặc định của model); toàn bộ catalogue tool (74 skill, ~24.200 ký tự JSON, ước lượng ~6.000 token) gửi kèm mỗi lượt. LumiBase **không** đếm token và không kiểm tra context window của model, nên hãy chọn model có context đủ lớn cho tool catalogue cộng 20 message.
+- Model trả nhiều tool call thì chỉ call đầu tiên được thực thi. Arguments không phải JSON hợp lệ trả `500` một lần, không retry và không ghi gì.
 - Hỗ trợ đầy đủ các API quản lý: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
 
 ### 3. RAG Skills (`aiSuggestField` và `aiContentAssist`)
