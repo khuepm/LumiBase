@@ -24,7 +24,7 @@ import { redactSettingRow } from './settings-redaction';
 import type { CacheProvider, KeyProvider, QueueProvider } from '@lumibase/runtime';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentAutonomousOpsTotal } from './agent-metrics';
-import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
+import { AgentRunService, runErrorMessage, type AgentRunEnvelope } from './agent-run-service';
 import {
   effectiveApprovalCapabilities,
   parseApprovalRequester,
@@ -2840,7 +2840,7 @@ export class AISecureHarness {
             toolCallId,
           };
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = runErrorMessage(err);
           await this.runService.finishToolCall(toolCallId, {
             status: 'failed',
             error: message,
@@ -2999,6 +2999,24 @@ export class AISecureHarness {
   }): Promise<HarnessExecutionResult> {
     const { skillName, args, contextMessage, run, toolCallId, startedAt } = input;
 
+    // Park the run while the approval is pending; the approval decision
+    // resumes it without re-running completed tool calls (Req 3.1/3.4).
+    //
+    // Parked FIRST, and only if the run is still in flight (#584 F2). Creating
+    // the approval and then writing `awaiting_approval` unconditionally revived
+    // a run cancelled during classification, and the approval then executed.
+    // Once parked, a later cancel is the ordinary cancel-while-parked case:
+    // the decision path re-checks `isCancelled` and refuses.
+    if (!(await this.runService.awaitApproval(run.runId))) {
+      const message = 'Run was cancelled';
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'denied',
+        error: message,
+        latencyMs: Date.now() - startedAt,
+      });
+      return { status: 'denied', message, ...run, toolCallId };
+    }
+
     const [record] = await this.db
       .insert(aiApprovals)
       .values({
@@ -3048,10 +3066,6 @@ export class AISecureHarness {
       approvalId: agentApproval!.id,
       latencyMs: Date.now() - startedAt,
     });
-
-    // Park the run while the approval is pending; the approval decision
-    // resumes it without re-running completed tool calls (Req 3.1/3.4).
-    await this.runService.awaitApproval(run.runId);
 
     return {
       status: 'pending_approval',
@@ -3164,8 +3178,7 @@ export class AISecureHarness {
       if (err instanceof ItemPreconditionFailedError) {
         return { success: false, error: `${err.code}: ${err.message}`, code: err.code };
       }
-      const message = err instanceof Error ? err.message : 'Unknown execution error';
-      return { success: false, error: message };
+      return { success: false, error: runErrorMessage(err) };
     } finally {
       // Tool-call boundary: writes that happened (even on failure) flush
       // their deferred invalidations exactly once per collection (Req 9.1).
@@ -3534,8 +3547,7 @@ export class AISecureHarness {
       // exception AFTER a successful mutation, e.g. while persisting the
       // legacy approval row.
       if (existingAgentApproval) {
-        const message = err instanceof Error ? err.message : String(err);
-        await this.settleFailedClaim(existingAgentApproval.id, message);
+        await this.settleFailedClaim(existingAgentApproval.id, runErrorMessage(err));
       }
       throw err;
     }
@@ -3606,7 +3618,7 @@ export class AISecureHarness {
       // A throwing skill must not strand the claim in `deciding`, where the
       // approval disappears from the operator's pending inbox — but it must
       // not be blindly re-offered either if it already reached a service.
-      const message = err instanceof Error ? err.message : String(err);
+      const message = runErrorMessage(err);
       if (existingAgentApproval) await this.settleFailedClaim(existingAgentApproval.id, message);
       await this.runService.finishToolCall(toolCallId, {
         status: 'failed',

@@ -256,6 +256,27 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `shell-check.yml`.
 
 ### Fixed
+- **Agent runs: truthful terminal states, no replay of an executed write, and no
+  query parameters in run errors (#584).** Four gaps in the run recovery path,
+  each reproduced on Postgres (`agent-run-recovery.db.integration.test.ts`):
+  - `cancelRun` re-checks the status in its UPDATE. A cancel that raced the
+    run's completion used to rewrite `succeeded` as `cancelled`, which made the
+    run retryable; it now answers `409 NOT_CANCELLABLE` and the outcome stays.
+  - A run cancelled while the harness classifies a call that needs approval is
+    no longer parked. The harness parks the run before creating the approval,
+    and only if the run is still in flight; before, the cancelled run came back
+    as `awaiting_approval` and its approval executed when approved.
+  - `POST /api/v1/agent/runs/:id/retry` refuses a run whose tool call is
+    recorded `executed` (the skill ran, saving the outcome failed) with
+    `409 RUN_EFFECT_RECORDED`. It used to re-execute it: two items for one
+    request. Other retry behaviour is unchanged.
+  - Run and tool call errors no longer contain Drizzle's `params:` list. A
+    failed statement is recorded as `Database query failed (SQLSTATE <code>):
+    <driver message>`; before, item content and secret-keyed values that the
+    tool call input masks reached `GET /api/v1/agent/runs` and run
+    notifications.
+  Operator guidance for reading a run's rows is in
+  `docs/{en,vi}/features/async-agent-runs.md`. No migration, no new setting.
 - **Staging deploy check now separates boot from readiness, and `/health/ready`
   reaches the Worker on dev/staging/demo (#461).** On the shared-domain
   hostnames only `/health` was routed to the CMS Worker. A Cloudflare route

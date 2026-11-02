@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-10-13T19:46:03.541Z
+version: 5
+lastUpdated: 2026-11-02T23:11:31.332Z
 sourceLang: en
-contentHash: 7cbba410d113f4c5
-codeVerified: 2026-10-13T19:46:03.541Z
-codeVerifiedHash: 7cbba410d113f4c5
+contentHash: 0736292eaaea0c63
+codeVerified: 2026-11-02T23:11:31.332Z
+codeVerifiedHash: 0736292eaaea0c63
 codeVerifiedClaims: 8
 ---
 
@@ -87,6 +87,33 @@ This timeout may expire work during a long queue backlog; recovery is an explici
 retry, never automatic replay. Running executions retain their separate
 `stale_unverified` quarantine because their side effects may have happened.
 
+## Reconstructing a run and recovery decisions
+
+Every outcome is recorded on rows that reference each other: the goal, its
+runs (`retryOfRunId` points at the attempt a retry replaces), each run's tool
+calls (`status`, `error`, masked `input`/`output`, `latencyMs`), the approval
+rows (`runId`, `subjectId` = tool call id), the content revision
+(`createdByRunId`), and `agent_run.retried` in activity, which names who
+asked for the retry. Read the tool call status before the run status:
+
+| Run | Tool call | What happened | What to do |
+| --- | --- | --- | --- |
+| `succeeded` | `executed` | The skill ran and its result was saved. | Nothing. Not retryable. |
+| `failed` | `denied` | Refused before execution (capabilities, policy, autonomy). | Fix the cause, then retry. |
+| `failed` | `failed` | The skill returned an error. | Inspect the error and retry if the write cannot have partly happened. |
+| `failed` | `executed` | The skill ran; saving the outcome failed afterwards (`stopReason: worker_error`). | The effect happened. Retry is refused with `409 RUN_EFFECT_RECORDED`. |
+| `failed` | `running` | The process stopped mid-execution (`stopReason: stale_unverified`). | Unknown. Check the content, then retry or leave it. |
+| `cancelled` | none, or `denied` | Cancelled before the next tool call started. | Retry if still wanted. |
+
+A cancel never rewrites a settled run: cancelling a run that finished at the
+same moment returns `409 NOT_CANCELLABLE` and the run keeps its outcome. A run
+cancelled while the harness is classifying a call that needs approval is not parked, and
+no approval is created for it.
+
+Run and tool call errors name the failure but never the values of a failed
+database statement: they read `Database query failed (SQLSTATE <code>): <driver
+message>`.
+
 ## Multi-tenancy
 
 Queues and provider credentials are shared by the deployment. Each job retains
@@ -104,6 +131,7 @@ run against a disposable test database:
 
 ```bash
 pnpm -F @lumibase/cms exec vitest run src/services/__tests__/p1-governance.db.integration.test.ts
+pnpm -F @lumibase/cms exec vitest run src/services/__tests__/agent-run-recovery.db.integration.test.ts
 pnpm -F @lumibase/cms exec vitest run src/__tests__/cloudflare-agent-queue.test.ts
 pnpm -F @lumibase/runtime exec vitest run src/__tests__/cloudflare-agent-queue.test.ts
 ```
