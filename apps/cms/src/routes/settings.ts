@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { requireSiteAdmin } from '../middleware/site-admin';
+import { redactSettingRow } from '../services/settings-redaction';
 
 export const settingsRouter = new Hono<AppEnv>();
 
@@ -14,37 +15,13 @@ export const settingsRouter = new Hono<AppEnv>();
 // (e.g. `PUT /uploads/config`). Reads stay open to members: non-admin editors
 // legitimately read keys like `locales`. Secret-bearing fields in the value
 // (e.g. `media.signedTransform.secret`) are redacted on read (see
-// `redactSecrets` below).
+// `services/settings-redaction.ts`).
 settingsRouter.post('*', requireSiteAdmin());
 settingsRouter.delete('*', requireSiteAdmin());
 
-// Field names whose values are secrets and must never be returned by the read
-// API. Server-side consumers that need the real value read it directly from the
-// DB (e.g. `media.ts` `loadSignedTransformPolicy`), so the HTTP read path never
-// needs to return a secret to anyone -- redact for every caller.
-const SECRET_TOKENS = ['secret', 'token', 'password', 'passwd', 'apikey', 'privatekey', 'accesskey', 'credential', 'passphrase'];
-const REDACTED = '[redacted]';
-
-function isSecretField(key: string): boolean {
-  const norm = key.toLowerCase().replace(/[^a-z]/g, '');
-  return SECRET_TOKENS.some((t) => norm.includes(t));
-}
-
-function redactSecrets(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactSecrets);
-  if (value !== null && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = isSecretField(k) ? REDACTED : redactSecrets(v);
-    }
-    return out;
-  }
-  return value;
-}
-
-function redactRow<T extends { value: unknown }>(row: T): T {
-  return { ...row, value: redactSecrets(row.value) };
-}
+// Secret-bearing fields are redacted for every caller. The rule is shared with
+// the `listSettings` agent skill (`services/settings-redaction.ts`, #579).
+const redactRow = redactSettingRow;
 
 settingsRouter.get('/', async (c) => {
   const siteId = c.get('siteId');
