@@ -249,6 +249,16 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `shell-check.yml`.
 
 ### Fixed
+- **Copilot sends the newest conversation history, not the oldest (#582).**
+  `POST /api/v1/ai/chat` and its `Prefer: respond-async` worker loaded history
+  with `ORDER BY created_at ASC LIMIT 20`, so from the 21st message of a
+  conversation on, the turn the user had just sent was missing from the model
+  request: the model answered the first ten turns again, and a tool call it
+  returned ran with the user's rights. Both paths now share
+  `loadCopilotHistory`: the newest 20 messages, oldest first, opening on a user
+  turn. The 20-message limit and the system prompt are unchanged. No migration
+  or configuration change. Audit report:
+  `docs/review-agent/2026-11-01-ai-audit-582-token-budgets-grounding.md`.
 - **Staging deploy check now separates boot from readiness, and `/health/ready`
   reaches the Worker on dev/staging/demo (#461).** On the shared-domain
   hostnames only `/health` was routed to the CMS Worker. A Cloudflare route
