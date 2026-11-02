@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-09-26T03:57:31.179Z
+version: 4
+lastUpdated: 2026-10-31T22:50:44.414Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b473a29de49b4910
+sourceHash: e12f22cc231fb868
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-26T03:57:31.179Z
-codeVerifiedHash: b473a29de49b4910
+codeVerified: 2026-10-31T22:50:44.414Z
+codeVerifiedHash: e12f22cc231fb868
 codeVerifiedClaims: 20
 ---
 
@@ -235,6 +235,7 @@ Roadmap chi tiết theo checklist nằm ở [Roadmap triển khai Agent Harness 
 1. **Lifecycle DB + service** — thêm `agent_goals`, `agent_runs`, `agent_plans`, `agent_tool_calls` và `AgentRunService` để mọi hành động agent có trạng thái, audit và retry.
 2. **Tool Registry** — nâng `CORE_SKILLS` thành registry có input/output schema, capabilities, rate limits, risk policy và owner.
 3. **Approval tổng quát** — mở rộng HITL từ skill nguy hiểm sang plan/tool/artifact approval, có diff/eval summary trước khi duyệt.
+   Item CRUD nay cũng được phân loại theo tác động (#578): `createItem` với `status: 'published'`, `updateItem` đổi status của item, và `updateItem` trên item đang published đi qua cùng approval và autonomy gradient như một skill nguy hiểm; ghi draft không đổi. Xem [governed tool contract §3a](../mcp/governed-tool-contract.md#3a-item-write-được-phân-loại-theo-tác-động-578).
 4. **Artifact Store** — thêm `agent_artifacts` để output không chỉ là text chat mà là page/component/dataset/config/migration/API spec versioned.
 5. **Evaluation Gate** — thêm eval trước khi commit artifact: schema validation, permission diff, migration dry-run, generated app smoke test, policy lint.
 6. **Memory có kiểm soát** — xây RAG/memory theo scope, provenance, expiry, field mask và redaction.
