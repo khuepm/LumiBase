@@ -204,6 +204,20 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   schedule Flows runs report the semantic pass as `unavailable`.
 
 ### Changed
+- **Agent item writes are classified by impact (#578).** `createItem` with
+  `status: 'published'`, an `updateItem` that changes the item's status, and an
+  `updateItem` on a published item now take the same approval and autonomy
+  gradient as dangerous skills (default: pending approval; L3 stages data
+  patches in the veto window; L4 executes). Draft writes are unchanged. The tool
+  call output carries `riskReason` (`publication_change`, `live_content`,
+  `unknown_state`). An intent capped at L0 now refuses dangerous skills with
+  `AUTONOMY_SHADOW` instead of parking an approval. See
+  `docs/en/mcp/governed-tool-contract.md` §3a.
+- **Editorial gate on create (#578).** On a collection with
+  `editorialWorkflow: true`, creating an item as `published` returns
+  `409 EDITORIAL_GATE_REQUIRED`, the same as publishing a draft through PATCH.
+  Applies to REST, GraphQL and agents. Create items as drafts and publish
+  through the editorial workflow.
 - **LLM calls outside the Copilot keep their own instructions (#579).**
   Generation skills, the constitution compiler and judge, and the intent
   compiler now send their instructions in the provider's system slot with tools
@@ -242,6 +256,23 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `shell-check.yml`.
 
 ### Fixed
+- **Staging deploy check now separates boot from readiness, and `/health/ready`
+  reaches the Worker on dev/staging/demo (#461).** On the shared-domain
+  hostnames only `/health` was routed to the CMS Worker. A Cloudflare route
+  without a trailing `*` matches one path, so `/health/ready` fell through to
+  Pages and answered 200 with Studio's `index.html`. `wrangler.toml` now routes
+  `<env>.lumibase.dev/health/*` as well. The `Verify deployment health` step of
+  `deploy-cms.yml` runs `scripts/verify-cms-deploy.mjs`. It fails when
+  `/health` or `/health/ready` is not the Worker's JSON, or when the release
+  channel is wrong. A `503` from `/health/ready` is a warning that lists each
+  dependency, unless the GitHub environment variable `CMS_REQUIRE_READY=true`
+  makes it fail the step. Before, the step passed on a staging Worker whose
+  database, cache and storage were all unhealthy. The remaining staging 500s
+  (`/api/v1/setup/*`) come from missing Hyperdrive/KV/R2 bindings, which need
+  an owner with Cloudflare access. The runbook is in
+  `docs/en/deployment/shared-domain-environments.md` (step 2b and
+  "Troubleshooting"). **Upgrade note:** none for self-hosted installs. The next
+  deploy of each shared-domain env adds the `/health/*` route.
 - **Copilot conversations belong to their owner (#579).** The
   `/api/v1/ai/conversations/:id/messages` and `DELETE /api/v1/ai/conversations/:id`
   routes, and `POST /api/v1/ai/chat` with a `conversationId`, checked only the
