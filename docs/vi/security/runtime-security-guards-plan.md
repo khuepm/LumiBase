@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 3
-lastUpdated: 2026-10-14T20:40:50.164Z
+version: 4
+lastUpdated: 2026-11-01T09:45:54.310Z
 sourceLang: en
 translatedFrom: en
-sourceHash: de43a5f3879ebf93
+sourceHash: be3e5da7d54ac7da
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-14T20:40:50.164Z
-codeVerifiedHash: de43a5f3879ebf93
+codeVerified: 2026-11-01T09:45:54.310Z
+codeVerifiedHash: be3e5da7d54ac7da
 codeVerifiedClaims: 36
 ---
 
@@ -155,7 +155,7 @@ và **fail CI** nếu có `new ItemService(...)` trực tiếp ngoài factory (t
 | `graphql/context.ts` | request | GraphQL kế thừa nguyên governance của REST |
 | `services/scheduler-worker.ts` | system `scheduler` | cron retention sweep, không có user principal |
 | `services/veto-commit-worker.ts` | system `background-worker` | commit sau khi veto window đã chốt quyết định human |
-| `services/agent-run-worker.ts` | system `background-worker` | governed agent run — HITL/autonomy gate ở harness, không phải RBAC user |
+| `services/agent-run-worker.ts` | principal (`itemServiceForPrincipal`) khi job mang principal; nếu không thì system `background-worker` | job có principal áp RBAC row/field của principal đó, giống đường request (#580); job reconciler (agent-role) và job legacy chỉ có snapshot capability không có principal và được harness chặn (HITL/autonomy, agent role) |
 | `services/erasure-service.ts` | system `compliance-erasure` | erasure/SAR gated admin + dual-control ở tầng service |
 | `services/review-content-access.ts` (`reviewContentAccessForDriftScan`) | system `semantic-drift-scan` | pass drift ngữ nghĩa (J12): chỉ đọc các field của rule trừ field đã ghim, không ghi item nào; việc gửi nội dung bị chặn bởi `aiDecisions.enabled` + `aiDecisions.drift` |
 

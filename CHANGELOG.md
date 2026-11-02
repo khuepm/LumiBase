@@ -235,6 +235,17 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `shell-check.yml`.
 
 ### Fixed
+- **Queued Agent API runs enforce the requester's row and field rules (#580).**
+  The `agent-runs` worker re-resolved the job's principal at pickup (#472) but
+  then executed the skill with a system `ItemService`, so a queued
+  `POST /api/v1/agent/goals` (`execution: 'async'`) or `/runs/:id/retry` could
+  write collections and fields the principal may not write, and read masked
+  fields back, while the same call through Copilot or governed MCP was refused.
+  The worker now binds `ItemService` to the principal's permission context.
+  Reconciler (agent-role) jobs and legacy capability-snapshot jobs have no
+  principal and keep the system posture. Audit report:
+  `docs/review-agent/2026-11-01-ai-audit-580-authz-parity.md`. No migration,
+  env or setup step.
 - **`GET /api/v1/deployments` returns the newest deployments first (#568,
   B162).** The list had no `ORDER BY`, so with `limit` Postgres could return
   any rows rather than the most recent ones. It is now ordered by `createdAt`
