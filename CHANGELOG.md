@@ -559,6 +559,23 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Security
 
+- **Permission bundle cache is keyed per principal and skips request-bound
+  policies (#583).** The cache key of a compiled permission bundle named only
+  the role when the context carried both a user and a role.
+  `EffectiveCapabilityService`, which resolves capabilities for Copilot tool
+  calls, MCP, the Agent API, the `agent-runs` worker, approvals and Flows
+  `ai:decision`, passes both. Two members of one role therefore shared a bundle
+  for up to 60 s, including policies granted to one of them directly (for
+  example admin access), and a share link for that role read the same entry.
+  The key now names the API key, the user and the role
+  (`perm:{site}:v{n}:user:{id}|role:{id}`). Separately, a bundle compiled from
+  a policy with an IP allow/deny list or a validity window was cached under a
+  key without the ip, so a request from a denied address was granted the policy
+  for up to 60 s. Such principals are now compiled per request; others keep the
+  cache. No migration or configuration change. Old cache entries are no longer
+  addressed and expire within 60 s. Test:
+  `permission-cache-principal-scope.db.integration.test.ts`. Report:
+  `docs/review-agent/2026-11-01-ai-audit-583-model-routing-cache-isolation.md`.
 - **AI decisions refuse publishable API keys and frontend sessions (#562,
   B144).** `POST /api/v1/ai/decisions`, every `ai:decide` route under
   `/api/v1/ai/review-profiles` and `/api/v1/ai/reviews`, and Flows
