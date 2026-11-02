@@ -1,10 +1,10 @@
 ---
-version: 8
-lastUpdated: 2026-10-31T22:50:41.679Z
-sourceLang: en
-contentHash: 4f411aaa72bbc641
-codeVerified: 2026-10-31T22:50:41.679Z
-codeVerifiedHash: 8431450c18c2e01f
+version: 9
+lastUpdated: 2026-11-02T20:48:27.500Z
+sourceLang: vi
+contentHash: 552573785394b136
+codeVerified: 2026-11-02T20:48:27.500Z
+codeVerifiedHash: 552573785394b136
 codeVerifiedClaims: 36
 translatedFrom: en
 sourceHash: 8431450c18c2e01f
