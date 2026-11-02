@@ -91,13 +91,21 @@ capabilities on the other transports are already covered and were re-run (§5).
   `secrets` row is written, `internalNote` is overwritten, and the list output contains the
   canary.
 - **Fix:** the worker binds the ItemService to `capabilities.permissionContext` with
-  `itemServiceForPrincipal` when the job carries a principal. Reconciler (`agentRole`) jobs and
-  legacy capability-snapshot jobs have no principal to bind and keep the declared system
-  posture. The ExtensionsService in the same worker already received the principal context.
+  `itemServiceForPrincipal` when the job carries a user or API-key principal. Reconciler
+  (`agentRole`) jobs and legacy capability-snapshot jobs have no principal to bind and keep the
+  declared system posture. The ExtensionsService in the same worker already received the
+  principal context.
+- **Development principals (review R1).** The first version of the fix also bound `dev`
+  principals. `EffectiveCapabilityService.resolveDev` admits them only in the development
+  runtime with the `admin` role and grants a full admin bundle, but their permission context
+  has no user, role or API key, so `PermissionService` resolves no grants and every write was
+  denied. That broke queued dev-admin runs (`agent-run-retry.db.integration.test.ts` › "queues
+  the retry…", red in CI run 41510960129). The worker now keeps the system posture for `dev`
+  principals only; a tripwire pins that exemption to exactly `principal?.type !== 'dev'`.
 
 ## 5. Controls verified correct (no change)
 
-| Control | Evidence (existing suites, re-run on this branch) |
+| Control | Evidence (existing suites; all `*.integration*` suites re-run on this branch, §6) |
 |---|---|
 | One capability resolver for every transport; `auth.roles` never used as capabilities | `__tests__/governed-capabilities.wiring.test.ts`, `services/__tests__/g2-governed-capabilities.test.ts` |
 | Queued work re-resolves the principal at pickup; revoked key / deactivated user denied | `effective-capability-service.db.integration.test.ts`, new revocation case |
@@ -129,6 +137,27 @@ Measured on this branch (`--maxWorkers=1 --no-file-parallelism`, Postgres 17 + p
 - **Tripwire** `governed-capabilities.wiring.test.ts` › "workers that re-resolve a principal
   bind ItemService to it (#580)": passes with the fix and fails on the audited worker (see
   the PR body for the count).
+
+After review R1 (dev exemption), measured on the new head with the same local Postgres, one
+suite at a time:
+
+- `agent-run-retry.db.integration.test.ts`: 13 of 13 pass. With the exemption removed
+  (`bindPrincipal = true`): 1 of 13 fails, "queues the retry…" with `expected 'failed' to be
+  'succeeded'`, the same failure as CI run 41510960129.
+- `authz-parity-agent-run.db.integration.test.ts`: 6 of 6 pass.
+- Tripwire "the agent-run worker exempts only development principals from binding": 6 of 6
+  wiring cases pass. Each of three mutations of the worker makes exactly that case fail
+  (1 failed / 5 passed): a second exemption (`&& type !== 'api_key'`), a widened condition
+  (`|| Boolean(payload.userId)`) and no exemption at all.
+- All DB integration suites (`vitest --run integration` with the env of CI job
+  `db-integration`): 642 of 643 pass in 63 files. The one failure is
+  `g3-dispatch-reliability` › "R3: two concurrent dispatch passes…" (`expected +0 to be 1`),
+  the known flake B126; that file then passed 19 of 19 in three separate runs.
+- Full `apps/cms` run (no `DATABASE_URL`, so DB suites self-skip; `user-enum.timing.test.ts`
+  excluded for local load): 382 files passed, 46 skipped; 3918 tests passed, 289 skipped,
+  0 failed.
+- `pnpm typecheck` 18 of 18 tasks; `pnpm check:all` exit 0; docs pair re-stamped
+  `--verified` (36 claims), parity 0 problems, `docs:i18n:detect` 158 of 158 up to date.
 
 All values are synthetic canaries. No model is involved, so no repeat counts apply.
 

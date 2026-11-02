@@ -241,9 +241,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `POST /api/v1/agent/goals` (`execution: 'async'`) or `/runs/:id/retry` could
   write collections and fields the principal may not write, and read masked
   fields back, while the same call through Copilot or governed MCP was refused.
-  The worker now binds `ItemService` to the principal's permission context.
-  Reconciler (agent-role) jobs and legacy capability-snapshot jobs have no
-  principal and keep the system posture. Audit report:
+  The worker now binds `ItemService` to the principal's permission context for
+  user and API-key principals. Reconciler (agent-role) jobs and legacy
+  capability-snapshot jobs have no principal and keep the system posture, as do
+  development (`dev`) principals: they exist only in the development runtime
+  with the `admin` role and have no persisted role a permission context could
+  resolve. Audit report:
   `docs/review-agent/2026-11-01-ai-audit-580-authz-parity.md`. No migration,
   env or setup step.
 - **`GET /api/v1/deployments` returns the newest deployments first (#568,

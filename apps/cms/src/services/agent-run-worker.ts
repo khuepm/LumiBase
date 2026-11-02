@@ -254,6 +254,15 @@ export async function processAgentRunJob(
   // Reconciler runs (agent role, no principal) and legacy capability-snapshot
   // jobs have no principal to bind, so they keep the named system posture:
   // their boundary is the agent role / intent, enforced by the harness.
+  //
+  // Development principals (`type: 'dev'`) also keep the system posture. They
+  // resolve only in the development runtime and only with the `admin` role
+  // (`EffectiveCapabilityService.resolveDev`), so their grant is a full admin
+  // bundle. Their `permissionContext` has no user, role or API key, which
+  // `PermissionService` resolves to *no* grants: binding it would deny every
+  // write a dev admin is allowed to make. User and API-key principals never
+  // take this branch.
+  const bindPrincipal = payload.principal?.type !== 'dev';
   const itemDeps = {
     db: deps.db,
     siteId: payload.siteId,
@@ -262,7 +271,7 @@ export async function processAgentRunJob(
     search: deps.search,
     queue: deps.queue,
   };
-  const itemService = capabilities.permissionContext
+  const itemService = bindPrincipal && capabilities.permissionContext
     ? itemServiceForPrincipal(itemDeps, capabilities.permissionContext)
     : itemServiceForSystem(itemDeps, 'background-worker');
 

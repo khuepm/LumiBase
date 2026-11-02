@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 4
-lastUpdated: 2026-11-01T09:45:54.310Z
+version: 5
+lastUpdated: 2026-11-02T20:22:43.297Z
 sourceLang: en
 translatedFrom: en
-sourceHash: be3e5da7d54ac7da
+sourceHash: 0b4d8fa32947d4c3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-01T09:45:54.310Z
-codeVerifiedHash: be3e5da7d54ac7da
+codeVerified: 2026-11-02T20:22:43.297Z
+codeVerifiedHash: 0b4d8fa32947d4c3
 codeVerifiedClaims: 36
 ---
 
@@ -155,7 +155,7 @@ và **fail CI** nếu có `new ItemService(...)` trực tiếp ngoài factory (t
 | `graphql/context.ts` | request | GraphQL kế thừa nguyên governance của REST |
 | `services/scheduler-worker.ts` | system `scheduler` | cron retention sweep, không có user principal |
 | `services/veto-commit-worker.ts` | system `background-worker` | commit sau khi veto window đã chốt quyết định human |
-| `services/agent-run-worker.ts` | principal (`itemServiceForPrincipal`) khi job mang principal; nếu không thì system `background-worker` | job có principal áp RBAC row/field của principal đó, giống đường request (#580); job reconciler (agent-role) và job legacy chỉ có snapshot capability không có principal và được harness chặn (HITL/autonomy, agent role) |
+| `services/agent-run-worker.ts` | principal (`itemServiceForPrincipal`) khi job mang principal user hoặc API key; nếu không thì system `background-worker` | job có principal user hoặc API key áp RBAC row/field của principal đó, giống đường request (#580); job reconciler (agent-role) và job legacy chỉ có snapshot capability không có principal và được harness chặn (HITL/autonomy, agent role); principal `dev` (chỉ ở runtime development + role `admin`) resolve thành bundle admin đầy đủ, không có role lưu trong DB, nên giữ posture system |
 | `services/erasure-service.ts` | system `compliance-erasure` | erasure/SAR gated admin + dual-control ở tầng service |
 | `services/review-content-access.ts` (`reviewContentAccessForDriftScan`) | system `semantic-drift-scan` | pass drift ngữ nghĩa (J12): chỉ đọc các field của rule trừ field đã ghim, không ghi item nào; việc gửi nội dung bị chặn bởi `aiDecisions.enabled` + `aiDecisions.drift` |
 

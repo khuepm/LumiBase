@@ -172,4 +172,19 @@ describe('governed capability resolution wiring (#472)', () => {
     });
     expect(offences).toEqual([]);
   });
+
+  it('the agent-run worker exempts only development principals from binding (#580)', () => {
+    // Dev principals resolve only in development with the admin role and carry a
+    // context PermissionService cannot resolve, so they keep the system posture.
+    // Any wider exemption (a user or API-key principal) reopens the #580 bypass.
+    const worker = FILES.find((f) => f.path.endsWith('services/agent-run-worker.ts'))!;
+    const exemptions = worker.code.match(/principal\?\.type\s*!==\s*'[a-z_]+'/g) ?? [];
+    expect(exemptions).toEqual(["principal?.type !== 'dev'"]);
+    // The whole declaration is pinned, so `|| other` / `&& other` cannot widen it.
+    expect(worker.code).toMatch(/const bindPrincipal = payload\.principal\?\.type !== 'dev';/);
+    expect(worker.code.match(/\bbindPrincipal\b/g)).toHaveLength(2);
+    expect(worker.code).toMatch(
+      /bindPrincipal\s*&&\s*capabilities\.permissionContext\s*\?\s*itemServiceForPrincipal\(/,
+    );
+  });
 });
