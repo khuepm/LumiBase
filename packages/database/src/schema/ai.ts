@@ -13,6 +13,7 @@ import {
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
 import { sites, users } from './core';
+import { apiKeys } from './access';
 
 /**
  * AI-First CMS Engine tables. Stores approval records for the
@@ -59,12 +60,20 @@ export const aiConversations = pgTable(
       .notNull()
       .references(() => sites.id, { onDelete: 'cascade' }),
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * API key that started the conversation when the caller has no user id
+     * (#579). Without it every API key of a site shared one pool of
+     * user-less conversations. Null for user conversations and for rows
+     * created before migration 0023 (those have no owner any more).
+     */
+    apiKeyId: text('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
     title: text('title').default('New conversation').notNull(),
     createdAt: createdAt(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (t) => ({
     siteUserIdx: index('ai_conversations_site_user_idx').on(t.siteId, t.userId),
+    siteApiKeyIdx: index('ai_conversations_site_api_key_idx').on(t.siteId, t.apiKeyId),
   }),
 );
 

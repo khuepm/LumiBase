@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-11-02T20:58:42.995Z",
-  "mode": "preserve-only",
-  "effectiveMode": "preserve-only",
+  "generatedAt": "2026-11-02T21:43:28.053Z",
+  "mode": "plan",
+  "effectiveMode": "plan",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
@@ -942,8 +942,8 @@
       "reason": "in sync",
       "enLang": "en",
       "viLang": "vi",
-      "sourceLocale": "vi",
-      "targetLocale": "en",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
       "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0
