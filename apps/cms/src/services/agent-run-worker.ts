@@ -11,7 +11,7 @@ import {
   resolvePrincipalCapabilities,
   type GovernedCapabilityResolution,
 } from './governed-capabilities';
-import { itemServiceForSystem } from './item-service-factory';
+import { itemServiceForPrincipal, itemServiceForSystem } from './item-service-factory';
 import { createConfiguredLLMProvider, type LLMProviderEnv } from './llm-provider';
 import { SchemaService } from './schema-service';
 
@@ -227,20 +227,6 @@ export async function processAgentRunJob(
     siteId: payload.siteId,
     cache: deps.cache,
   });
-  // System context: a governed agent run enforces autonomy/HITL gating in the
-  // AISecureHarness (write/delete skills route to approvals), not via per-user
-  // row/field RBAC — the run executes with system privileges under that gate.
-  const itemService = itemServiceForSystem(
-    {
-      db: deps.db,
-      siteId: payload.siteId,
-      userId: payload.userId ?? null,
-      cache: deps.cache,
-      search: deps.search,
-      queue: deps.queue,
-    },
-    'background-worker',
-  );
 
   // Capabilities are resolved HERE, not at enqueue (#472). A queued job can sit
   // for minutes; re-reading the grant at pickup is what makes a revoked API key
@@ -254,6 +240,31 @@ export async function processAgentRunJob(
     );
     return;
   }
+
+  // ItemService must be PRINCIPAL-BOUND when the job carries a principal (#580).
+  //
+  // Capabilities are only the coarse gate; row rules and field masks live in
+  // `ItemService` and apply only with a `permissionCtx`. This worker used to
+  // build a system ItemService for every job, so a run enqueued by a principal
+  // re-resolved its capabilities at pickup (#472) and then wrote with system
+  // privileges: a principal allowed to create `posts` alone resolves to
+  // `items:write` and could write any collection or field through the queue.
+  // The same class was closed for `ai-chat-run-worker.ts` (B72).
+  //
+  // Reconciler runs (agent role, no principal) and legacy capability-snapshot
+  // jobs have no principal to bind, so they keep the named system posture:
+  // their boundary is the agent role / intent, enforced by the harness.
+  const itemDeps = {
+    db: deps.db,
+    siteId: payload.siteId,
+    userId: payload.userId ?? null,
+    cache: deps.cache,
+    search: deps.search,
+    queue: deps.queue,
+  };
+  const itemService = capabilities.permissionContext
+    ? itemServiceForPrincipal(itemDeps, capabilities.permissionContext)
+    : itemServiceForSystem(itemDeps, 'background-worker');
 
   const harness = new AISecureHarness({
     db: deps.db,

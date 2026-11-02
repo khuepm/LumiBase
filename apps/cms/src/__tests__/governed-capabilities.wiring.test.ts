@@ -157,4 +157,19 @@ describe('governed capability resolution wiring (#472)', () => {
     const ai = FILES.find((f) => f.path.endsWith('routes/ai.ts'))!;
     expect(ai.source).toMatch(/principal: principalRefFromAuth\(auth, siteId\)/);
   });
+
+  it('workers that re-resolve a principal bind ItemService to it (#580)', () => {
+    // Re-resolving capabilities is only the coarse half. A worker that then
+    // builds a system ItemService writes with no row or field rules, so the same
+    // tool call is refused through Copilot/MCP and executed through the queue.
+    // Both skill-executing workers must use the principal context when they
+    // have one (B72 for the Copilot worker, #580 for the Agent API worker).
+    const WORKERS = ['services/agent-run-worker.ts', 'services/ai-chat-run-worker.ts'];
+    const offences = WORKERS.filter((rel) => {
+      const file = FILES.find((f) => f.path.endsWith(rel));
+      if (!file) return true;
+      return !/itemServiceForPrincipal\([^)]*permissionContext\)/.test(file.code);
+    });
+    expect(offences).toEqual([]);
+  });
 });
