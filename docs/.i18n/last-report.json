@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-31T20:36:52.436Z",
+  "generatedAt": "2026-11-02T22:59:03.842Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -942,8 +942,8 @@
       "reason": "in sync",
       "enLang": "en",
       "viLang": "vi",
-      "sourceLocale": "vi",
-      "targetLocale": "en",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
       "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0
