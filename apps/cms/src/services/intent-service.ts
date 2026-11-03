@@ -2,7 +2,7 @@ import { patchSchema } from '../utils/patch-schema';
 import { contentIntents, type Database } from '@lumibase/database';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import type { ConfiguredLLM } from './llm-provider';
+import { completeWithInstructions, type ConfiguredLLM } from './llm-provider';
 import { semanticRuleIdentity } from './semantic-drift';
 
 /**
@@ -281,22 +281,20 @@ export class IntentService {
 
     let content: string | null;
     try {
-      const response = await this.deps.llm.provider.chat([
-        {
-          role: 'system',
-          content:
-            'You compile content quality requirements into machine rules. Reply with ONLY JSON: ' +
-            '{"rules": [...], "schedule": "cron"}. Allowed rule shapes: ' +
-            '{"type":"required_fields","fields":[string]} | ' +
-            '{"type":"freshness","maxAgeDays":number} | ' +
-            '{"type":"translations","locales":[string],"fields":[string]?} | ' +
-            '{"type":"link_health","fields":[string]?} | ' +
-            '{"type":"field_constraint","field":string,"minLength":number?,"maxLength":number?,"pattern":string?} | ' +
-            '{"type":"glossary_compliance","glossary":string?,"fields":[string]?}. ' +
-            'schedule is a 5-field cron; default "0 6 * * *" when the user does not specify timing.',
-        },
-        { role: 'user', content: `Collection: ${collection}\nRequirement: ${description}` },
-      ]);
+      // System slot + no tools (#579): see `completeWithInstructions`.
+      const response = await completeWithInstructions(
+        this.deps.llm.provider,
+        'You compile content quality requirements into machine rules. Reply with ONLY JSON: ' +
+          '{"rules": [...], "schedule": "cron"}. Allowed rule shapes: ' +
+          '{"type":"required_fields","fields":[string]} | ' +
+          '{"type":"freshness","maxAgeDays":number} | ' +
+          '{"type":"translations","locales":[string],"fields":[string]?} | ' +
+          '{"type":"link_health","fields":[string]?} | ' +
+          '{"type":"field_constraint","field":string,"minLength":number?,"maxLength":number?,"pattern":string?} | ' +
+          '{"type":"glossary_compliance","glossary":string?,"fields":[string]?}. ' +
+          'schedule is a 5-field cron; default "0 6 * * *" when the user does not specify timing.',
+        `Collection: ${collection}\nRequirement: ${description}`,
+      );
       content = response.content;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

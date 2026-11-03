@@ -26,7 +26,12 @@ const SAFE_SKILL_NAMES = Object.entries(CORE_SKILLS)
   .filter(([name, skill]) => {
     const requiresSchemaWrite = skill.requiredCapabilities.some((capability) => capability.startsWith('schema:') && capability !== 'schema:read');
     const startsWithDelete = name.startsWith('delete');
-    return !requiresSchemaWrite && !startsWithDelete && !skill.dangerous;
+    // `updateItem` is not unconditionally safe since #578: its risk depends on
+    // the target item's status, and this mock DB cannot answer that read, so
+    // the harness fails closed and parks it. Impact-aware escalation has its
+    // own suite (`ai-harness-item-impact.test.ts`).
+    const stateDependent = name === 'updateItem';
+    return !requiresSchemaWrite && !startsWithDelete && !skill.dangerous && !stateDependent;
   })
   .map(([name]) => name);
 
