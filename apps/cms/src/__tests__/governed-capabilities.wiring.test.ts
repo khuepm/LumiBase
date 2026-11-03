@@ -178,13 +178,28 @@ describe('governed capability resolution wiring (#472)', () => {
     // context PermissionService cannot resolve, so they keep the system posture.
     // Any wider exemption (a user or API-key principal) reopens the #580 bypass.
     const worker = FILES.find((f) => f.path.endsWith('services/agent-run-worker.ts'))!;
-    const exemptions = worker.code.match(/principal\?\.type\s*!==\s*'[a-z_]+'/g) ?? [];
-    expect(exemptions).toEqual(["principal?.type !== 'dev'"]);
+    const exemptions = worker.code.match(/principal\??\.type\s*!==\s*'[a-z_]+'/g) ?? [];
+    expect(exemptions).toEqual(["principal.type !== 'dev'"]);
     // The whole declaration is pinned, so `|| other` / `&& other` cannot widen it.
-    expect(worker.code).toMatch(/const bindPrincipal = payload\.principal\?\.type !== 'dev';/);
-    expect(worker.code.match(/\bbindPrincipal\b/g)).toHaveLength(2);
+    expect(worker.code).toMatch(
+      /const bindPrincipal = !!payload\.principal && payload\.principal\.type !== 'dev';/,
+    );
+    expect(worker.code.match(/\bbindPrincipal\b/g)).toHaveLength(3);
     expect(worker.code).toMatch(
       /bindPrincipal\s*&&\s*capabilities\.permissionContext\s*\?\s*itemServiceForPrincipal\(/,
     );
+  });
+
+  it('the agent-run worker fails closed before it can fall back to a system ItemService (#580 R2)', () => {
+    // `permissionContext` is optional on the resolution. A user/API-key job that
+    // resolves without one must stop the run, not reach `itemServiceForSystem`.
+    const worker = FILES.find((f) => f.path.endsWith('services/agent-run-worker.ts'))!;
+    const guard = worker.code.search(
+      /if \(bindPrincipal && !capabilities\.permissionContext\) \{[^}]*failRun\([^}]*'PERMISSION_CONTEXT_MISSING'\s*\}\s*,?\s*\);\s*return;\s*\}/,
+    );
+    const fallback = worker.code.search(/itemServiceForSystem\(itemDeps, 'background-worker'\)/);
+    expect(guard).toBeGreaterThan(-1);
+    expect(fallback).toBeGreaterThan(guard);
+    expect(worker.code.match(/itemServiceForSystem\(/g)).toHaveLength(1);
   });
 });

@@ -263,7 +263,20 @@ export async function processAgentRunJob(
   // `PermissionService` resolves to *no* grants: binding it would deny every
   // write a dev admin is allowed to make. User and API-key principals never
   // take this branch.
-  const bindPrincipal = payload.principal?.type !== 'dev';
+  const bindPrincipal = !!payload.principal && payload.principal.type !== 'dev';
+  // Fail closed (#580 review R2). `permissionContext` is optional on the
+  // resolution type; a user or API-key job that came back without one must not
+  // fall through to the system ItemService below, which is the bypass this
+  // binding removes. Only jobs with no principal (reconciler, legacy) and dev
+  // principals reach `itemServiceForSystem`.
+  if (bindPrincipal && !capabilities.permissionContext) {
+    await runService.failRun(
+      payload.runId,
+      'The principal resolved without a permission context; refusing to execute with system privileges.',
+      { stopReason: 'capabilities_denied', code: 'PERMISSION_CONTEXT_MISSING' },
+    );
+    return;
+  }
   const itemDeps = {
     db: deps.db,
     siteId: payload.siteId,
