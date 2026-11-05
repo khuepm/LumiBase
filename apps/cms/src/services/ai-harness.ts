@@ -838,16 +838,6 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       requiredCapabilities: ['items:write'],
       service: 'items',
       dangerous: true,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          collection: { type: 'string' },
-          itemId: { type: 'string' },
-          key: { type: 'string' },
-          name: { type: 'string' },
-        },
-        required: ['collection', 'itemId', 'key', 'name'],
-      },
       handler: async (args) => {
         const svc = contentVersionService();
         if (!svc) return { created: true };
@@ -867,17 +857,6 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       requiredCapabilities: ['items:write'],
       service: 'items',
       dangerous: true,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          collection: { type: 'string' },
-          itemId: { type: 'string' },
-          key: { type: 'string' },
-          data: { type: 'object' },
-          name: { type: 'string' },
-        },
-        required: ['collection', 'itemId', 'key'],
-      },
       handler: async (args) => {
         const svc = contentVersionService();
         if (!svc) return { updated: true };
@@ -899,15 +878,6 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       description: 'Delete a version branch (does not touch main).',
       requiredCapabilities: ['items:write'],
       service: 'items',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          collection: { type: 'string' },
-          itemId: { type: 'string' },
-          key: { type: 'string' },
-        },
-        required: ['collection', 'itemId', 'key'],
-      },
       handler: async (args) => {
         const svc = contentVersionService();
         if (!svc) return { deleted: true };
@@ -923,15 +893,6 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       requiredCapabilities: ['items:write'],
       service: 'items',
       dangerous: true,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          collection: { type: 'string' },
-          itemId: { type: 'string' },
-          key: { type: 'string' },
-        },
-        required: ['collection', 'itemId', 'key'],
-      },
       handler: async (args) => {
         const svc = contentVersionService();
         if (!svc) return { promoted: true };
@@ -966,18 +927,6 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         'Translate one item field into a missing locale and store the result in a named version branch (no live content change).',
       requiredCapabilities: ['items:read', 'items:write', 'translations:write'],
       service: 'items',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          collection: { type: 'string' },
-          itemId: { type: 'string' },
-          field: { type: 'string', description: 'Item field holding a locale-keyed object.' },
-          locale: { type: 'string', description: 'Locale to fill in.' },
-          versionKey: { type: 'string', description: 'Deterministic draft branch key for this drift.' },
-          sourceLocale: { type: 'string', description: 'Locale to translate from; inferred when omitted.' },
-        },
-        required: ['collection', 'itemId', 'field', 'locale', 'versionKey'],
-      },
       handler: async (args) => {
         const svc = contentVersionService();
         if (!svc) {

@@ -70,6 +70,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: AI audit deterministic regression gate
+        run: pnpm -F @lumibase/cms eval:ai
+
       # One aggregate step so the local pre-commit hook and CI cannot drift
       # apart: `.husky/pre-commit` runs this same `pnpm check:all`. Adding a
       # guard to the script therefore arms it in both places at once. Covers
@@ -300,6 +303,9 @@ jobs:
           count=$(find apps/cms/src -name '*.integration.test.ts' | wc -l)
           echo "found $count integration suite(s)"
           test "$count" -ge 20
+
+      - name: AI audit persisted-state regression gate
+        run: pnpm -F @lumibase/cms eval:ai --database
 
       - name: Run integration suites against Postgres
         run: pnpm --filter @lumibase/cms exec vitest --run integration
