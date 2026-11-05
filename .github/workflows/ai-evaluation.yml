@@ -1,0 +1,44 @@
+name: AI provider evaluation
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+permissions:
+  contents: read
+jobs:
+  live:
+    name: Live Jev heldout quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+      - run: pnpm install --frozen-lockfile
+      - name: Require provider dependency
+        run: |
+          if [ -z "$TYPESAFE_API_KEY" ]; then
+            echo 'Provider unavailable: TYPESAFE_API_KEY is required; no quality pass is claimed.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+      - name: Tune and freeze thresholds
+        run: pnpm -F @lumibase/cms bench:jev -- --provider typesafe --split tune
+      - name: Evaluate heldout samples
+        run: pnpm -F @lumibase/cms bench:jev -- --provider typesafe --split heldout
+      - name: Enforce candidate quality floors
+        run: pnpm -F @lumibase/cms exec tsx scripts/jev-quality-gate.ts eval/jev-benchmark/reports/v1/typesafe/report.heldout.json
+      - name: Retain metrics and per-sample failures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ai-evaluation-${{ github.sha }}
+          path: apps/cms/eval/jev-benchmark/reports/
+          retention-days: 30
+          if-no-files-found: warn
