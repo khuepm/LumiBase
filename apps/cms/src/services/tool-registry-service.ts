@@ -85,6 +85,23 @@ export function overrideNarrowsSchema(core: unknown, override: unknown): boolean
   return true;
 }
 
+/**
+ * Capabilities of a tool after a site override (#585).
+ *
+ * Same rule as {@link overrideNarrowsSchema}: an `agent_tools` row may only
+ * tighten a core skill, never loosen it. The override used to REPLACE the core
+ * list, so a row with `requiredCapabilities: []` dropped the capability check
+ * for that skill, and because `evaluateRisk` reads the same list, a row on
+ * `createCollection` (dangerous only through `schema:create`) also turned off
+ * HITL. The core capabilities are therefore always kept; the override can add
+ * more. A tool that exists only in the DB has nothing to keep.
+ */
+export function mergeOverrideCapabilities(core: readonly string[] | undefined, override: unknown): string[] {
+  const extra = normalizeCapabilities(override);
+  if (!core) return extra;
+  return [...new Set([...core, ...extra])];
+}
+
 function normalizeRateLimit(value: unknown): AgentToolDefinition['rateLimit'] {
   if (!value || typeof value !== 'object') {
     return {};
@@ -186,8 +203,8 @@ export class ToolRegistryService {
       description: override.description,
       inputSchema: this.resolveOverrideSchema(base.inputSchema, override.inputSchema, override.name),
       outputSchema: (override.outputSchema as Record<string, unknown>) ?? {},
-      requiredCapabilities: normalizeCapabilities(override.requiredCapabilities),
-      riskPolicy: normalizeRiskPolicy(override.riskPolicy),
+      requiredCapabilities: mergeOverrideCapabilities(core?.requiredCapabilities, override.requiredCapabilities),
+      riskPolicy: base.riskPolicy.level === 'dangerous' ? base.riskPolicy : normalizeRiskPolicy(override.riskPolicy),
       rateLimit: normalizeRateLimit(override.rateLimit),
       enabled: override.enabled,
       owner: override.owner,
@@ -216,8 +233,11 @@ export class ToolRegistryService {
         description: override.description,
         inputSchema: this.resolveOverrideSchema(base.inputSchema, override.inputSchema, override.name),
         outputSchema: (override.outputSchema as Record<string, unknown>) ?? {},
-        requiredCapabilities: normalizeCapabilities(override.requiredCapabilities),
-        riskPolicy: normalizeRiskPolicy(override.riskPolicy),
+        requiredCapabilities: mergeOverrideCapabilities(
+          this.coreSkills[override.name]?.requiredCapabilities,
+          override.requiredCapabilities,
+        ),
+        riskPolicy: base.riskPolicy.level === 'dangerous' ? base.riskPolicy : normalizeRiskPolicy(override.riskPolicy),
         rateLimit: normalizeRateLimit(override.rateLimit),
         enabled: override.enabled,
         owner: override.owner,
