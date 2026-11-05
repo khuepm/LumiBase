@@ -3,6 +3,7 @@ import type { CacheProvider, KeyProvider, QueueProvider } from '@lumibase/runtim
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { and, eq } from 'drizzle-orm';
 import { runFlow, type FlowGraph } from './flow-service';
+import { queueAccepts } from './queue-routing';
 
 /**
  * Flow event trigger (visual-flow-builder Req 1).
@@ -84,13 +85,16 @@ export interface FlowDispatchDeps {
  * is non-critical to the mutation that triggered it.
  */
 export async function dispatchItemEvent(deps: FlowDispatchDeps, event: ItemEvent): Promise<void> {
-  if (!deps.queue) return;
+  // No `flow-events` binding (Workers before the queue exists, B118): skip the
+  // lookup instead of querying flows and failing every enqueue.
+  const queue = deps.queue;
+  if (!queueAccepts(queue, FLOW_EVENTS_QUEUE)) return;
   try {
     const matched = await findActiveEventFlows(deps.db, deps.siteId, event.collection, event.action);
     if (matched.length === 0) return;
     await Promise.allSettled(
       matched.map((flow) =>
-        deps.queue!.enqueue<FlowEventJob>(FLOW_EVENTS_QUEUE, 'flow:event', {
+        queue.enqueue<FlowEventJob>(FLOW_EVENTS_QUEUE, 'flow:event', {
           siteId: deps.siteId,
           flowId: flow.id,
           event,

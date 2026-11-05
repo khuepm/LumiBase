@@ -235,3 +235,43 @@ describe('manual run carries the caller as a principal reference (J10, #517)', (
     expect(jobs[0]!.data).not.toHaveProperty('capabilities');
   });
 });
+describe('manual run without a flow-runs binding (B118)', () => {
+  function appWithQueue(supports: boolean, jobs: unknown[], updates: Record<string, unknown>[]) {
+    const manual = { ...WEBHOOK_FLOW, triggerType: 'manual' };
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('db', fakeDb({ flows: [manual], updates }));
+      c.set('siteId', '__default__');
+      c.set('auth', { roles: ['admin'], userId: 'usr_1' } as never);
+      c.set('runtime', {
+        keys: undefined,
+        queue: {
+          supportsQueue: (name: string) => (name === 'flow-runs' ? supports : true),
+          enqueue: async (...args: unknown[]) => void jobs.push(args),
+        },
+      } as never);
+      await next();
+    });
+    app.route('/api/v1/flows', flowsRouter);
+    return app;
+  }
+
+  it('runs inline instead of enqueueing onto a queue the runtime cannot deliver to', async () => {
+    const jobs: unknown[] = [];
+    const updates: Record<string, unknown>[] = [];
+    const res = await post(appWithQueue(false, jobs, updates), '/api/v1/flows/f1/run', {});
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { runId: string; status: string } };
+    expect(body.data).toMatchObject({ runId: 'row_1', status: 'success' });
+    expect(jobs).toHaveLength(0);
+    // The pending row is settled, not left behind.
+    expect(updates.map((u) => u['status'])).toEqual(['running', 'success']);
+  });
+
+  it('still enqueues when the binding exists', async () => {
+    const jobs: unknown[] = [];
+    const res = await post(appWithQueue(true, jobs, []), '/api/v1/flows/f1/run', {});
+    expect(res.status).toBe(202);
+    expect(jobs).toHaveLength(1);
+  });
+});

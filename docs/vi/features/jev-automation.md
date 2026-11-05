@@ -1,14 +1,14 @@
 ---
-version: 8
+version: 9
 sourceLang: en
-lastUpdated: 2026-10-15T19:22:12.818Z
+lastUpdated: 2026-10-15T22:44:19.957Z
 translatedFrom: en
-sourceHash: 9169c4051130c9d5
+sourceHash: 55c9ac717ef220fe
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T19:22:12.818Z
-codeVerifiedHash: 9169c4051130c9d5
-codeVerifiedClaims: 14
+codeVerified: 2026-10-15T22:44:19.957Z
+codeVerifiedHash: 55c9ac717ef220fe
+codeVerifiedClaims: 16
 ---
 
 # Tự động hoá Jev: gắn tag và phân luồng hàng chờ duyệt (shadow trước)
@@ -151,6 +151,6 @@ Protocol `jev-automation-v1` yêu cầu ít nhất 30 đề xuất trong vùng �
 
 - **Chưa có precision đo được.** Chưa có dữ liệu thật, nên mọi site vẫn ở shadow.
 - **Chỉ run thủ công.** Trigger theo event và lịch không mang principal, nên các node từ chối chúng.
-- **Chỉ chạy trên Docker/Node.** Run thủ công của flow được thực thi bởi worker `flow-runs` trên Docker/Node. Cloudflare Workers chưa có consumer `flow-runs` hay `flow-events` (backlog B118), nên flow tự động hoá Jev không chạy trên bản triển khai Workers.
+- **Docker/Node và Cloudflare Workers.** Run thủ công của flow được thực thi bởi consumer `flow-runs`: `registerFlowRunsWorker` trên Docker/Node, còn trên Workers là queue handler `processCloudflareQueue`, chạy cùng đoạn đăng ký đó từ `apps/cms/src/cloudflare-flow-queue.ts` với cùng cache, key provider và env của provider. Trước khi backlog B118 được sửa, Workers không có consumer `flow-runs` hay `flow-events` và các flow này không chạy ở đó. Bản triển khai Workers phải tạo các queue của Flows trước khi deploy phiên bản này; xem [Cloudflare Workers: queue của Flows](./flows-automation.md#cloudflare-workers-queue-của-flows). Đã kiểm bằng unit test trên handler của Workers và một lần chạy `wrangler dev` cục bộ, chưa chạy trên một Worker đã deploy.
 - **Một lần giao bị crash không được đề xuất lại.** Một dòng live được giữ chỗ trước lời gọi harness. Nếu tiến trình chết ở giữa, dòng vẫn ở `pending` và không có approval. Lần giao lại trong vòng năm phút để nguyên dòng đó; sau năm phút nó chốt dòng thành `denied` với lý do `orphaned` và không đề xuất gì, vì tiến trình đã chết có thể đã tạo một approval mà chưa kịp liên kết. Chạy lại flow để đề xuất lần nữa.
 - **Chuyển trạng thái `submit_review` chỉ được đề xuất, không được thực hiện.** Người duyệt gửi item đi duyệt.
