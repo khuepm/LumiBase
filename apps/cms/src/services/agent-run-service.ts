@@ -125,6 +125,34 @@ export function maskSecrets(value: unknown): unknown {
   );
 }
 
+/**
+ * The message recorded (and returned by `GET /agent/runs`, and pushed in run
+ * notifications) for an error thrown during a run (#584 F4).
+ *
+ * Drizzle's `DrizzleQueryError` message is `Failed query: <sql>\nparams: <values>`,
+ * so recording `err.message` copied every bound value of the failed statement into
+ * the run: item content, and secret-keyed values that {@link maskSecrets} had just
+ * removed from the recorded input. The driver error on `cause` (its message and
+ * SQLSTATE) is what says why the write failed; the parameter list is never kept.
+ */
+export function runErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) return typeof err === 'string' ? stripQueryParams(err) : 'Unknown execution error';
+  const message = err.message ?? '';
+  if (message.startsWith('Failed query:')) {
+    const cause = (err as { cause?: unknown }).cause;
+    const code = (cause as { code?: unknown } | undefined)?.code;
+    const detail = cause instanceof Error && cause.message ? `: ${stripQueryParams(cause.message)}` : '';
+    return `Database query failed${typeof code === 'string' ? ` (SQLSTATE ${code})` : ''}${detail}`;
+  }
+  return stripQueryParams(message);
+}
+
+/** Drops a `params:` list that a wrapped query error carried into a message. */
+function stripQueryParams(message: string): string {
+  const index = message.indexOf('\nparams:');
+  return index === -1 ? message : message.slice(0, index);
+}
+
 /** True when {@link maskSecrets} replaced something inside `value`. */
 function containsMaskedValue(value: unknown): boolean {
   if (value === MASKED_VALUE) return true;
@@ -192,6 +220,7 @@ export type RetryRunRefusalCode =
   | 'NOT_FOUND'
   | 'RUN_NOT_RETRYABLE'
   | 'RUN_ACTIVE'
+  | 'RUN_EFFECT_RECORDED'
   | 'RETRY_SUPERSEDED'
   | 'GOAL_CLOSED'
   | 'GOAL_BUSY'
@@ -590,12 +619,28 @@ export class AgentRunService {
     return resumed.length > 0;
   }
 
-  /** Parks a run while a dangerous action waits for an approval (Req 3.1). */
-  async awaitApproval(runId: string): Promise<void> {
-    await this.db
+  /**
+   * Parks a run while a dangerous action waits for an approval (Req 3.1).
+   *
+   * Conditional on the run still being in flight (#584 F2). The write used to be
+   * unconditional, so a run cancelled while the harness was still classifying the
+   * call came back as `awaiting_approval`, and the approval it then created
+   * executed when a human approved it: the cancellation was lost. Returns false
+   * when the run is no longer in flight; the caller must not park anything.
+   */
+  async awaitApproval(runId: string, db: Pick<Database, 'update'> = this.db): Promise<boolean> {
+    const parked = await db
       .update(agentRuns)
       .set({ status: 'awaiting_approval', updatedAt: new Date() })
-      .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
+      .where(
+        and(
+          eq(agentRuns.id, runId),
+          eq(agentRuns.siteId, this.siteId),
+          inArray(agentRuns.status, IN_FLIGHT_RUN_STATES),
+        ),
+      )
+      .returning({ id: agentRuns.id });
+    return parked.length > 0;
   }
 
   /**
@@ -609,6 +654,10 @@ export class AgentRunService {
     if (!run || !['queued', 'running', 'awaiting_approval'].includes(run.status)) {
       return null;
     }
+    // The status is re-checked in the write (#584 F1). Between the read above and
+    // this UPDATE the run can reach a terminal state; overwriting a `succeeded`
+    // run with `cancelled` hid an effect that happened, and made the run
+    // retryable, so a retry repeated it.
     const metrics = {
       ...(run.metrics as Record<string, unknown>),
       stopReason: reason,
@@ -616,8 +665,17 @@ export class AgentRunService {
     const [updated] = await this.db
       .update(agentRuns)
       .set({ status: 'cancelled', metrics, finishedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)))
+      .where(
+        and(
+          eq(agentRuns.id, runId),
+          eq(agentRuns.siteId, this.siteId),
+          inArray(agentRuns.status, IN_FLIGHT_RUN_STATES),
+        ),
+      )
       .returning();
+    if (!updated) {
+      return null;
+    }
     agentRunsTotal.inc({
       agent: run.agentName,
       status: 'cancelled',
@@ -721,6 +779,29 @@ export class AgentRunService {
     }
     if (CLOSED_GOAL_STATES.includes(goal.status)) {
       return refuse('GOAL_CLOSED', `Goal is ${goal.status}; there is nothing left to retry for.`);
+    }
+
+    // A run whose tool call is recorded `executed` already had its effect: it
+    // failed (or was cancelled) only after the skill returned, for example when
+    // saving the outcome failed (#584 F3). Re-executing it is "do it again", the
+    // same reason `succeeded` is not retryable.
+    const [executedCall] = await this.db
+      .select({ id: agentToolCalls.id, toolName: agentToolCalls.toolName })
+      .from(agentToolCalls)
+      .where(
+        and(
+          eq(agentToolCalls.siteId, this.siteId),
+          eq(agentToolCalls.runId, original.id),
+          eq(agentToolCalls.status, 'executed'),
+        ),
+      )
+      .limit(1);
+    if (executedCall) {
+      return refuse(
+        'RUN_EFFECT_RECORDED',
+        `Tool call ${executedCall.id} ("${executedCall.toolName}") of this run is recorded as executed, ` +
+          'so its effect already happened; issue the request again if it should run twice.',
+      );
     }
 
     const task = await this.recoverRetryTask(original, goal);

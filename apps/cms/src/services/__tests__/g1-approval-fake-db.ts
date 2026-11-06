@@ -108,6 +108,9 @@ export function createFakeDb(seed: Record<string, Row[]> = {}): FakeDb {
   }
 
   const db = {
+    // Transactional behavior is verified against real Postgres; this fake only
+    // supplies the callback API for approval round-trip unit tests.
+    transaction: async <T>(callback: (tx: Database) => Promise<T>): Promise<T> => callback(db as unknown as Database),
     select: (_projection?: unknown) => ({
       from: (table: unknown) => {
         const state = stateFor(tableName(table));

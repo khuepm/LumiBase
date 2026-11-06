@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-10-31T22:50:44.414Z
+version: 5
+lastUpdated: 2026-11-02T23:11:39.085Z
 sourceLang: en
 translatedFrom: en
-sourceHash: e12f22cc231fb868
+sourceHash: 5532a3a79274f69d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-31T22:50:44.414Z
-codeVerifiedHash: e12f22cc231fb868
+codeVerified: 2026-11-02T23:11:39.085Z
+codeVerifiedHash: 5532a3a79274f69d
 codeVerifiedClaims: 20
 ---
 
@@ -193,7 +193,8 @@ thử lại đồng thời được tuần tự hoá trên hàng goal và bên t
 
 Phản hồi: `201` kèm `{ goalId, runId, agentName, status: 'queued', retryOfRunId }`;
 `404` cho run không tồn tại hoặc thuộc tenant khác; `409` cho `RUN_NOT_RETRYABLE`,
-`RUN_ACTIVE`, `RETRY_SUPERSEDED`, `GOAL_CLOSED`, `GOAL_BUSY`, `INTENT_NOT_ACTIVE`
+`RUN_ACTIVE`, `RUN_EFFECT_RECORDED` (một tool call của run đã được ghi `executed`, tức
+tác động đã xảy ra), `RETRY_SUPERSEDED`, `GOAL_CLOSED`, `GOAL_BUSY`, `INTENT_NOT_ACTIVE`
 hoặc `RETRY_UNRECOVERABLE` (input đã ghi có giá trị secret bị che, hoặc run không
 ghi tool call nào); `423` `FROZEN`; `400` `ASYNC_UNAVAILABLE`; `503`
 `ENQUEUE_FAILED`, khi đó run thử lại được chốt ở `failed`. Một run bị cách ly với

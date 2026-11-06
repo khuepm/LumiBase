@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-10-13T19:46:03.541Z
+version: 6
+lastUpdated: 2026-11-06T02:09:06.984Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7cbba410d113f4c5
+sourceHash: b657655b2141df34
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-13T19:46:03.541Z
-codeVerifiedHash: 7cbba410d113f4c5
+codeVerified: 2026-11-06T02:09:06.984Z
+codeVerifiedHash: b657655b2141df34
 codeVerifiedClaims: 8
 ---
 
@@ -90,6 +90,37 @@ Timeout này có thể hết hạn công việc khi queue tồn đọng lâu; c�
 không tự động replay. Run đang thực thi vẫn được cách ly riêng bằng
 `stale_unverified` vì có thể đã phát sinh tác động.
 
+## Dựng lại một run và quyết định phục hồi
+
+Mọi kết quả đều được ghi trên các hàng tham chiếu lẫn nhau: goal, các run của nó
+(`retryOfRunId` trỏ tới lần thử mà lần retry thay thế), các tool call của từng
+run (`status`, `error`, `input`/`output` đã che, `latencyMs`), các hàng approval
+(`runId`, `subjectId` = id của tool call), revision nội dung
+(`createdByRunId`), và `agent_run.retried` trong activity, ghi ai đã yêu cầu
+retry. Đọc trạng thái tool call trước trạng thái run:
+
+| Run | Tool call | Chuyện gì đã xảy ra | Cần làm gì |
+| --- | --- | --- | --- |
+| `succeeded` | `executed` | Skill đã chạy và kết quả đã được lưu. | Không cần gì. Không retry được. |
+| `failed` | `denied` | Bị từ chối trước khi thực thi (quyền, policy, autonomy). | Sửa nguyên nhân rồi retry. |
+| `failed` | `failed` | Skill trả về lỗi. | Xem lỗi và retry nếu thao tác ghi không thể đã chạy một phần. |
+| `failed` | `executed` | Skill đã chạy; việc lưu kết quả thất bại sau đó (`stopReason: worker_error`). | Tác động đã xảy ra. Retry bị từ chối với `409 RUN_EFFECT_RECORDED`. |
+| `failed` | `running` | Tiến trình dừng giữa lúc thực thi (`stopReason: stale_unverified`). | Không rõ. Kiểm tra nội dung rồi retry hoặc để nguyên. |
+| `cancelled` | không có, hoặc `denied` | Bị huỷ trước khi tool call kế tiếp bắt đầu. | Retry nếu vẫn cần. |
+
+Huỷ không bao giờ ghi đè một run đã chốt: huỷ một run vừa kết thúc cùng lúc sẽ
+trả `409 NOT_CANCELLABLE` và run giữ nguyên kết quả. Run bị huỷ trong lúc harness
+đang phân loại một lời gọi cần duyệt sẽ không bị chuyển sang chờ duyệt, và không
+có approval nào được tạo cho nó. Chuyển trạng thái có điều kiện sang `awaiting_approval`
+và hai lần insert approval được commit trong cùng một transaction. Nếu một insert
+thất bại, cả ba thao tác rollback; đường đồng bộ giữ run đang chạy để cơ chế cách ly
+run quá hạn xử lý, còn queue worker ghi nhận lỗi bằng cơ chế hiện có. Lệnh huỷ đến
+sau bước chuyển trạng thái phải chờ transaction, không thấy approval mới tạo một nửa.
+
+Lỗi của run và tool call nêu tên lỗi nhưng không bao giờ chứa giá trị của câu
+lệnh database bị lỗi: chúng có dạng `Database query failed (SQLSTATE <code>):
+<thông báo của driver>`.
+
 ## Đa tenant
 
 Hàng đợi và thông tin xác thực provider dùng chung toàn deployment. Mỗi job giữ
@@ -107,6 +138,7 @@ chạy trên DB kiểm thử có thể xoá:
 
 ```bash
 pnpm -F @lumibase/cms exec vitest run src/services/__tests__/p1-governance.db.integration.test.ts
+pnpm -F @lumibase/cms exec vitest run src/services/__tests__/agent-run-recovery.db.integration.test.ts
 pnpm -F @lumibase/cms exec vitest run src/__tests__/cloudflare-agent-queue.test.ts
 pnpm -F @lumibase/runtime exec vitest run src/__tests__/cloudflare-agent-queue.test.ts
 ```
