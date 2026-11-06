@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-11-02T23:11:31.332Z
+version: 6
+lastUpdated: 2026-11-06T02:09:06.984Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 0736292eaaea0c63
+sourceHash: b657655b2141df34
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-02T23:11:31.332Z
-codeVerifiedHash: 0736292eaaea0c63
+codeVerified: 2026-11-06T02:09:06.984Z
+codeVerifiedHash: b657655b2141df34
 codeVerifiedClaims: 8
 ---
 
@@ -111,7 +111,11 @@ retry. Đọc trạng thái tool call trước trạng thái run:
 Huỷ không bao giờ ghi đè một run đã chốt: huỷ một run vừa kết thúc cùng lúc sẽ
 trả `409 NOT_CANCELLABLE` và run giữ nguyên kết quả. Run bị huỷ trong lúc harness
 đang phân loại một lời gọi cần duyệt sẽ không bị chuyển sang chờ duyệt, và không
-có approval nào được tạo cho nó.
+có approval nào được tạo cho nó. Chuyển trạng thái có điều kiện sang `awaiting_approval`
+và hai lần insert approval được commit trong cùng một transaction. Nếu một insert
+thất bại, cả ba thao tác rollback; đường đồng bộ giữ run đang chạy để cơ chế cách ly
+run quá hạn xử lý, còn queue worker ghi nhận lỗi bằng cơ chế hiện có. Lệnh huỷ đến
+sau bước chuyển trạng thái phải chờ transaction, không thấy approval mới tạo một nửa.
 
 Lỗi của run và tool call nêu tên lỗi nhưng không bao giờ chứa giá trị của câu
 lệnh database bị lỗi: chúng có dạng `Database query failed (SQLSTATE <code>):

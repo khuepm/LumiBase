@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-11-02T23:11:31.332Z
+version: 6
+lastUpdated: 2026-11-06T02:09:06.984Z
 sourceLang: en
-contentHash: 0736292eaaea0c63
-codeVerified: 2026-11-02T23:11:31.332Z
-codeVerifiedHash: 0736292eaaea0c63
+contentHash: b657655b2141df34
+codeVerified: 2026-11-06T02:09:06.984Z
+codeVerifiedHash: b657655b2141df34
 codeVerifiedClaims: 8
 ---
 
@@ -108,7 +108,11 @@ asked for the retry. Read the tool call status before the run status:
 A cancel never rewrites a settled run: cancelling a run that finished at the
 same moment returns `409 NOT_CANCELLABLE` and the run keeps its outcome. A run
 cancelled while the harness is classifying a call that needs approval is not parked, and
-no approval is created for it.
+no approval is created for it. The guarded transition to `awaiting_approval` and both
+approval inserts commit in one transaction. If either insert fails, all three writes
+roll back; the synchronous path leaves the run in flight for stale-run quarantine,
+and the queue worker records failure through its existing error handler. A cancellation
+after the transition waits for the transaction and cannot expose a half-created approval.
 
 Run and tool call errors name the failure but never the values of a failed
 database statement: they read `Database query failed (SQLSTATE <code>): <driver
