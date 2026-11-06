@@ -2948,15 +2948,45 @@ export class AISecureHarness {
   }): Promise<HarnessExecutionResult> {
     const { skillName, args, contextMessage, run, toolCallId, startedAt } = input;
 
-    // Park the run while the approval is pending; the approval decision
-    // resumes it without re-running completed tool calls (Req 3.1/3.4).
-    //
-    // Parked FIRST, and only if the run is still in flight (#584 F2). Creating
-    // the approval and then writing `awaiting_approval` unconditionally revived
-    // a run cancelled during classification, and the approval then executed.
-    // Once parked, a later cancel is the ordinary cancel-while-parked case:
-    // the decision path re-checks `isCancelled` and refuses.
-    if (!(await this.runService.awaitApproval(run.runId))) {
+    // The guarded transition and both approval records are one durable unit.
+    // The status UPDATE locks the run until commit: cancellation either wins
+    // before it (no approvals), or observes a fully parked run afterwards.
+    // An insert failure rolls back the transition, leaving a running run that
+    // ordinary failure handling / stale-run quarantine can recover.
+    const parked = await this.db.transaction(async (tx) => {
+      if (!(await this.runService.awaitApproval(run.runId, tx))) return null;
+      const [record] = await tx
+        .insert(aiApprovals)
+        .values({
+          siteId: this.siteId,
+          agentName: run.agentName,
+          skillName,
+          arguments: args,
+          status: 'pending',
+          context: contextMessage ?? null,
+        })
+        .returning();
+
+      const [agentApproval] = await tx
+        .insert(agentApprovals)
+        .values({
+          runId: run.runId,
+          siteId: this.siteId,
+          legacyApprovalId: record!.id,
+          subjectType: 'tool_call',
+          subjectId: toolCallId,
+          status: 'pending',
+          approvalPolicy: input.approvalPolicy,
+          requestedByAgent: run.agentName,
+          // Provenance for the resume path (#472). Without it, the only identity
+          // available when a human approves is the decider's, so a requester who
+          // was revoked or demoted in the meantime still gets their action run.
+          requestedByPrincipal: input.requestedByPrincipal ?? null,
+        })
+        .returning();
+      return { record: record!, agentApproval: agentApproval! };
+    });
+    if (!parked) {
       const message = 'Run was cancelled';
       await this.runService.finishToolCall(toolCallId, {
         status: 'denied',
@@ -2965,36 +2995,7 @@ export class AISecureHarness {
       });
       return { status: 'denied', message, ...run, toolCallId };
     }
-
-    const [record] = await this.db
-      .insert(aiApprovals)
-      .values({
-        siteId: this.siteId,
-        agentName: run.agentName,
-        skillName,
-        arguments: args,
-        status: 'pending',
-        context: contextMessage ?? null,
-      })
-      .returning();
-
-    const [agentApproval] = await this.db
-      .insert(agentApprovals)
-      .values({
-        runId: run.runId,
-        siteId: this.siteId,
-        legacyApprovalId: record!.id,
-        subjectType: 'tool_call',
-        subjectId: toolCallId,
-        status: 'pending',
-        approvalPolicy: input.approvalPolicy,
-        requestedByAgent: run.agentName,
-        // Provenance for the resume path (#472). Without it, the only identity
-        // available when a human approves is the decider's, so a requester who
-        // was revoked or demoted in the meantime still gets their action run.
-        requestedByPrincipal: input.requestedByPrincipal ?? null,
-      })
-      .returning();
+    const { record, agentApproval } = parked;
 
     this.notify?.({
       kind: 'approval',

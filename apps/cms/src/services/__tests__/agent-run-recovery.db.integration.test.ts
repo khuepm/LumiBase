@@ -19,6 +19,7 @@ import type { QueueProvider, RuntimeContext } from '@lumibase/runtime';
 import type { AppEnv, AuthPrincipal } from '../../env';
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 import { agentRouter } from '../../routes/agent';
+import { AISecureHarness } from '../ai-harness';
 import { AgentRunService, type RetryRequester } from '../agent-run-service';
 import { processAgentRunJob, type AgentRunJobPayload } from '../agent-run-worker';
 
@@ -306,6 +307,68 @@ describe.skipIf(!hasDbIntegrationUrl)('#584 agent run recovery — DB integratio
     expect(await db.select().from(aiApprovals).where(eq(aiApprovals.siteId, SITE))).toHaveLength(0);
     expect(trace.calls.map((c) => c.status)).toEqual(['denied']);
     expect((await siteItems()).map((i) => i.id)).toEqual([item!.id]);
+  });
+
+  it.each(['lumibase_ai_approvals', 'lumibase_agent_approvals'])('F2 atomicity: %s insert failure rolls back parking and both approval records', async (table) => {
+    const run = await new AgentRunService(db, SITE).ensureRun({ title: 'sync approval failure' });
+    const notify = vi.fn();
+    const harness = new AISecureHarness({ db, siteId: SITE, enableAgentHarnessAudit: true, notify });
+    await db.execute(sql.raw(`
+      CREATE OR REPLACE FUNCTION lumibase_test_584_approval_reject() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.site_id = '${SITE}' THEN
+          RAISE EXCEPTION 'approval insert rejected' USING ERRCODE = 'P0584';
+        END IF;
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql;
+      CREATE TRIGGER lumibase_test_584_approval_reject BEFORE INSERT ON ${table}
+        FOR EACH ROW EXECUTE FUNCTION lumibase_test_584_approval_reject()`));
+    try {
+      await expect(harness.execute('createCollection', { name: 'atomic' }, ['*'], 'approval test', run)).rejects.toThrow();
+      const trace = await traceOf(run.goalId);
+      expect(trace.runs[0]!.status).toBe('running');
+      expect(trace.approvals).toHaveLength(0);
+      expect(await db.select().from(aiApprovals).where(eq(aiApprovals.siteId, SITE))).toHaveLength(0);
+      expect(notify.mock.calls.filter(([event]) => event.kind === 'approval')).toHaveLength(0);
+      // Sync callers have no worker catch: after rollback the stale-run guard
+      // can recover this run instead of leaving an approval-less parked run.
+      const quarantined = await new AgentRunService(db, SITE).quarantineStaleRuns(50, new Date(Date.now() + 20 * 60_000));
+      expect(quarantined.map((r) => r.runId)).toContain(run.runId);
+      expect((await traceOf(run.goalId)).runs[0]!.status).toBe('failed');
+    } finally {
+      await db.execute(sql.raw(`DROP TRIGGER IF EXISTS lumibase_test_584_approval_reject ON ${table}`));
+      await db.execute(sql.raw('DROP FUNCTION IF EXISTS lumibase_test_584_approval_reject()'));
+    }
+  });
+
+  it('F2 atomicity: cancellation after the park lock waits for complete approvals and stays cancelled', async () => {
+    const run = await new AgentRunService(db, SITE).ensureRun({ title: 'cancel while parking' });
+    const harness = new AISecureHarness({ db, siteId: SITE, enableAgentHarnessAudit: true });
+    let release!: () => void;
+    let locked!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const lockAcquired = new Promise<void>((resolve) => { locked = resolve; });
+    const realAwait = AgentRunService.prototype.awaitApproval;
+    vi.spyOn(AgentRunService.prototype, 'awaitApproval').mockImplementationOnce(async function (this: AgentRunService, id, connection) {
+      const result = await realAwait.call(this, id, connection);
+      locked();
+      await gate;
+      return result;
+    });
+    const parking = harness.execute('createCollection', { name: 'atomic' }, ['*'], 'approval test', run);
+    await lockAcquired;
+    const cancelling = new AgentRunService(db, SITE).cancelRun(run.runId);
+    release();
+    const [parked, cancelled] = await Promise.all([parking, cancelling]);
+    expect(parked.status).toBe('pending_approval');
+    expect(cancelled?.status).toBe('cancelled');
+    const trace = await traceOf(run.goalId);
+    expect(trace.runs[0]!.status).toBe('cancelled');
+    expect(trace.approvals).toHaveLength(1);
+    const legacy = await db.select().from(aiApprovals).where(eq(aiApprovals.siteId, SITE));
+    expect(legacy).toHaveLength(1);
+    expect(trace.approvals[0]!.legacyApprovalId).toBe(legacy[0]!.id);
+    expect(await db.select().from(collections).where(eq(collections.siteId, SITE))).toHaveLength(0);
   });
 
   // ── F3: an executed side effect must not be replayed by a retry ─────────────

@@ -628,8 +628,8 @@ export class AgentRunService {
    * executed when a human approved it: the cancellation was lost. Returns false
    * when the run is no longer in flight; the caller must not park anything.
    */
-  async awaitApproval(runId: string): Promise<boolean> {
-    const parked = await this.db
+  async awaitApproval(runId: string, db: Pick<Database, 'update'> = this.db): Promise<boolean> {
+    const parked = await db
       .update(agentRuns)
       .set({ status: 'awaiting_approval', updatedAt: new Date() })
       .where(
