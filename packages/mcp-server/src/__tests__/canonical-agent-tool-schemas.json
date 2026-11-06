@@ -176,6 +176,20 @@
       "value"
     ]
   },
+  "createVersion": {
+    "properties": [
+      "collection",
+      "itemId",
+      "key",
+      "name"
+    ],
+    "required": [
+      "collection",
+      "itemId",
+      "key",
+      "name"
+    ]
+  },
   "createWebhook": {
     "properties": [
       "actions",
@@ -292,6 +306,18 @@
       "id"
     ]
   },
+  "deleteVersion": {
+    "properties": [
+      "collection",
+      "itemId",
+      "key"
+    ],
+    "required": [
+      "collection",
+      "itemId",
+      "key"
+    ]
+  },
   "deleteWebhook": {
     "properties": [
       "id"
@@ -327,6 +353,18 @@
       "email"
     ]
   },
+  "promoteVersion": {
+    "properties": [
+      "collection",
+      "itemId",
+      "key"
+    ],
+    "required": [
+      "collection",
+      "itemId",
+      "key"
+    ]
+  },
   "removeTeamMember": {
     "properties": [
       "teamId",
@@ -345,12 +383,30 @@
       "id"
     ]
   },
+  "repairTranslation": {
+    "properties": [
+      "collection",
+      "field",
+      "itemId",
+      "locale",
+      "sourceLocale",
+      "versionKey"
+    ],
+    "required": [
+      "collection",
+      "field",
+      "itemId",
+      "locale",
+      "versionKey"
+    ]
+  },
   "replayCdcSubscription": {
     "properties": [
       "occurredAfter",
       "subscriptionId"
     ],
     "required": [
+      "occurredAfter",
       "subscriptionId"
     ]
   },
@@ -378,6 +434,16 @@
     ],
     "required": [
       "id"
+    ]
+  },
+  "triggerDeployment": {
+    "properties": [
+      "branch",
+      "reason",
+      "targetId"
+    ],
+    "required": [
+      "targetId"
     ]
   },
   "uninstallExtension": {
@@ -439,6 +505,20 @@
     ],
     "required": [
       "id"
+    ]
+  },
+  "updateVersion": {
+    "properties": [
+      "collection",
+      "data",
+      "itemId",
+      "key",
+      "name"
+    ],
+    "required": [
+      "collection",
+      "itemId",
+      "key"
     ]
   },
   "updateWebhook": {

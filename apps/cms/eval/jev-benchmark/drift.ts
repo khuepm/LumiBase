@@ -27,6 +27,7 @@ import { rate, summarizeCalls, type CallSummary, type Prices, type Rate } from '
 import { MOCK_NOTE } from './report';
 import { benchmarkRubricVersion } from './rubric';
 import { callRecords, runSamples, type SampleResult } from './runner';
+import { UNKNOWN_SOURCE, sourceNotes, type SourceRevision } from './source';
 import type { BenchmarkMode } from './thresholds';
 
 export const DRIFT_MANIFEST = 'drift.manifest.json';
@@ -216,6 +217,9 @@ export interface DriftReport {
   /** Set for mock runs: the numbers say nothing about any model. */
   note: string | null;
   generatedAt: string;
+  /** Code the report was produced from (#585). */
+  source: SourceRevision;
+  notes: string[];
   datasetVersion: string;
   manifestSha256: string;
   rubricVersion: string;
@@ -235,6 +239,7 @@ export async function runDriftBenchmark(input: {
   generatedAt: string;
   concurrency?: number;
   prices?: Prices | null;
+  source?: SourceRevision;
 }): Promise<{ report: DriftReport; results: SampleResult[] }> {
   const { manifest } = input.dataset;
   const samples = asRunnerSamples(manifest, input.dataset.samples);
@@ -255,6 +260,8 @@ export async function runDriftBenchmark(input: {
       mode: input.mode,
       note: input.mode === 'mock' ? MOCK_NOTE : null,
       generatedAt: input.generatedAt,
+      source: input.source ?? UNKNOWN_SOURCE,
+      notes: sourceNotes(input.source ?? UNKNOWN_SOURCE),
       datasetVersion: manifest.datasetVersion,
       manifestSha256: input.dataset.manifestSha256,
       rubricVersion: manifest.rubricVersion,
