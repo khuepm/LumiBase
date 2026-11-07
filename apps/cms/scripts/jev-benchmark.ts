@@ -34,6 +34,7 @@ import { MOCK_MODEL, MOCK_PROVIDER, MockOracleProvider } from '../eval/jev-bench
 import { buildProviderRun, buildReport, mergeReports, parseBenchmarkReport } from '../eval/jev-benchmark/report';
 import { benchmarkRubricVersion, buildBenchmarkQuestions } from '../eval/jev-benchmark/rubric';
 import { runSamples } from '../eval/jev-benchmark/runner';
+import { readSourceRevision } from '../eval/jev-benchmark/source';
 import {
   assertThresholdsMatch,
   assertThresholdsNotFrozen,
@@ -45,6 +46,8 @@ import {
 } from '../eval/jev-benchmark/thresholds';
 
 const CMS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// Recorded in every report so a number can be tied to the code that produced it (#585).
+const SOURCE = readSourceRevision(CMS_ROOT);
 const LIVE_PROVIDERS = ['typesafe', 'openrouter', 'llm'] as const;
 
 const USAGE = `Usage:
@@ -165,6 +168,7 @@ if (values.task === 'drift') {
     mode: resolved.mode,
     generatedAt: new Date().toISOString(),
     concurrency: concurrencyDrift,
+    source: SOURCE,
   });
   const dir = resolve(values.out ?? join(CMS_ROOT, 'eval/jev-benchmark/reports', driftManifest.datasetVersion, name));
   const reportPath = join(dir, 'report.drift.json');
@@ -282,6 +286,7 @@ const report = buildReport({
   generatedAt: new Date().toISOString(),
   results,
   run,
+  source: SOURCE,
 });
 
 const reportPath = join(outDir, `report.${split}.json`);

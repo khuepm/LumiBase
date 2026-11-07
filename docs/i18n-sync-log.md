@@ -2,6 +2,158 @@
 
 Append-only history of automated EN ⇄ VI documentation syncs. Each run records language detection, preserved content and translation actions so no source content is silently lost.
 
+## 2026-11-07T15:26:44.797Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 159
+
+Summary — up-to-date: 159, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-06T02:40:03.384Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 159
+
+Summary — up-to-date: 159, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-06T02:11:43.477Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 159
+
+Summary — up-to-date: 159, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-06T02:06:18.958Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 159
+
+Summary — up-to-date: 159, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-05T15:53:38.600Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 159
+
+Summary — up-to-date: 159, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-02T22:59:03.842Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-02T21:43:28.053Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-02T21:42:53.769Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-02T21:04:32.359Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned: 1
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `features/ai-copilot.md` | vi → en | source changed since last sync |
+
+---
+
+## 2026-11-02T20:58:42.995Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-02T20:48:29.113Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-02T20:26:44.702Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned: 1
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `mcp/governed-tool-contract.md` | vi → en | source changed since last sync |
+
+---
+
+## 2026-11-02T20:11:09.119Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-10-31T23:48:27.675Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned: 1
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `features/ai-copilot.md` | vi → en | source changed since last sync |
+
+---
+
+## 2026-10-31T23:42:47.635Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 157, translated: 0, preserved: 0, conflicts: 0, planned: 1
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `features/ai-copilot.md` | vi → en | source changed since last sync |
+
+---
+
+## 2026-10-31T22:37:28.921Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 158
+
+Summary — up-to-date: 158, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
 ## 2026-10-31T20:36:52.436Z — mode `preserve-only` (effective `preserve-only`)
 
 Engine: `claude` · API key: absent · files scanned: 158

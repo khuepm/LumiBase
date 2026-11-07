@@ -122,16 +122,17 @@ jobs:
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
         run: pnpm --filter @lumibase/cms run "deploy:${TARGET_ENV}"
 
+      # Boot + route ownership (/health is the Worker's JSON, not Pages HTML) and
+      # the release channel always gate the step. Dependency readiness
+      # (/health/ready 503) is a warning unless the GitHub environment sets the
+      # variable CMS_REQUIRE_READY=true. See scripts/verify-cms-deploy.mjs (#461).
       - name: Verify deployment health
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
         shell: bash
+        env:
+          CMS_REQUIRE_READY: ${{ vars.CMS_REQUIRE_READY }}
         run: |
           set -euo pipefail
-          BASE_URL="https://${TARGET_ENV}.lumibase.dev"
-          curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-            "${BASE_URL}/health" > /tmp/lumibase-cms-health.json
-
-          VERSION_JSON="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-            "${BASE_URL}/api/v1/system/version")"
-          RUNNING_CHANNEL="$(node -e "const d = JSON.parse(process.argv[1]); console.log(d.releaseChannel ?? '')" "$VERSION_JSON")"
-          test "$RUNNING_CHANNEL" = "$TARGET_ENV"
+          ARGS=(--base-url "https://${TARGET_ENV}.lumibase.dev" --channel "${TARGET_ENV}")
+          if [ "${CMS_REQUIRE_READY:-}" = "true" ]; then ARGS+=(--require-ready); fi
+          node scripts/verify-cms-deploy.mjs "${ARGS[@]}"

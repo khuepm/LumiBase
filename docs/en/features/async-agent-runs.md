@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-10-15T22:44:20.548Z
+version: 8
+lastUpdated: 2026-11-07T17:57:18.483Z
 sourceLang: en
-contentHash: 53154b975e36b1e6
-codeVerified: 2026-10-15T22:44:20.548Z
-codeVerifiedHash: 53154b975e36b1e6
+contentHash: 6ef1425fd61bee3b
+codeVerified: 2026-11-06T02:09:06.984Z
+codeVerifiedHash: b657655b2141df34
 codeVerifiedClaims: 8
 ---
 
@@ -91,6 +91,37 @@ This timeout may expire work during a long queue backlog; recovery is an explici
 retry, never automatic replay. Running executions retain their separate
 `stale_unverified` quarantine because their side effects may have happened.
 
+## Reconstructing a run and recovery decisions
+
+Every outcome is recorded on rows that reference each other: the goal, its
+runs (`retryOfRunId` points at the attempt a retry replaces), each run's tool
+calls (`status`, `error`, masked `input`/`output`, `latencyMs`), the approval
+rows (`runId`, `subjectId` = tool call id), the content revision
+(`createdByRunId`), and `agent_run.retried` in activity, which names who
+asked for the retry. Read the tool call status before the run status:
+
+| Run | Tool call | What happened | What to do |
+| --- | --- | --- | --- |
+| `succeeded` | `executed` | The skill ran and its result was saved. | Nothing. Not retryable. |
+| `failed` | `denied` | Refused before execution (capabilities, policy, autonomy). | Fix the cause, then retry. |
+| `failed` | `failed` | The skill returned an error. | Inspect the error and retry if the write cannot have partly happened. |
+| `failed` | `executed` | The skill ran; saving the outcome failed afterwards (`stopReason: worker_error`). | The effect happened. Retry is refused with `409 RUN_EFFECT_RECORDED`. |
+| `failed` | `running` | The process stopped mid-execution (`stopReason: stale_unverified`). | Unknown. Check the content, then retry or leave it. |
+| `cancelled` | none, or `denied` | Cancelled before the next tool call started. | Retry if still wanted. |
+
+A cancel never rewrites a settled run: cancelling a run that finished at the
+same moment returns `409 NOT_CANCELLABLE` and the run keeps its outcome. A run
+cancelled while the harness is classifying a call that needs approval is not parked, and
+no approval is created for it. The guarded transition to `awaiting_approval` and both
+approval inserts commit in one transaction. If either insert fails, all three writes
+roll back; the synchronous path leaves the run in flight for stale-run quarantine,
+and the queue worker records failure through its existing error handler. A cancellation
+after the transition waits for the transaction and cannot expose a half-created approval.
+
+Run and tool call errors name the failure but never the values of a failed
+database statement: they read `Database query failed (SQLSTATE <code>): <driver
+message>`.
+
 ## Multi-tenancy
 
 Queues and provider credentials are shared by the deployment. Each job retains
@@ -108,9 +139,45 @@ run against a disposable test database:
 
 ```bash
 pnpm -F @lumibase/cms exec vitest run src/services/__tests__/p1-governance.db.integration.test.ts
+pnpm -F @lumibase/cms exec vitest run src/services/__tests__/agent-run-recovery.db.integration.test.ts
 pnpm -F @lumibase/cms exec vitest run src/__tests__/cloudflare-agent-queue.test.ts
 pnpm -F @lumibase/runtime exec vitest run src/__tests__/cloudflare-agent-queue.test.ts
 ```
 
 A dry-run build verifies bundling and configuration. It does not verify that
 production queues, secrets and Hyperdrive connectivity are provisioned.
+
+
+## Recovering uncertain outcomes and tracing requests
+
+A 30-second skill deadline stops waiting, not the underlying handler. A timed-out
+run records `metrics.outcomeUnknown: true` before returning
+`EXECUTION_OUTCOME_UNKNOWN`. Its tool may still finish a write later. Retry and
+approval resume return `RUN_OUTCOME_UNKNOWN`; cancellation cannot undo a write
+already issued. If persisting the marker fails or the process crashes, a running
+tool-call row also prevents replay. Inspect content, revisions, provider receipts
+and tool calls before creating new work; never treat this status as rollback.
+
+Use the opaque HTTP request ID to find `goal.metadata.requestId` and
+`run.metrics.requestId`, then follow run IDs through tool calls, approvals,
+artifacts, evaluations and revisions. A retry retains `retryOfRunId` and
+`metrics.originRequestId`, records its new request ID and includes it in the retry
+activity and queue job. IDs outside letters, digits, `_` and `-` or longer than
+64 characters are omitted; do not send personal data as request IDs.
+
+Trace input/output redacts credential and personal-data keys (including email,
+phone and address), plus email addresses in text. Database errors retain SQLSTATE
+without query parameters or driver detail. This is defense in depth, not a
+classifier for all possible personal prose: keep secrets and personal data out of
+free-form goal titles and request IDs. Redacted input cannot safely be replayed;
+create a new reviewed request with the required values instead.
+
+Agent and tool metric labels use a finite vocabulary; unknown names are grouped
+as `custom`, unknown reasons/statuses as `other`. Generation tool calls record
+provider token counts when available, otherwise a text token estimate. Estimated
+USD is emitted only with complete provider counts and both optional nonnegative
+`LLM_PRICE_INPUT_PER_MTOK` and `LLM_PRICE_OUTPUT_PER_MTOK` prices (USD per million
+tokens). Configure prices for the selected model; absent pricing means unknown
+cost, not zero. These tool counters do not represent all chat/planning calls or a
+provider invoice. Shared approval decisions record latency across the agent,
+Copilot and reviewer entry points. Counters are process-local and reset on restart.
