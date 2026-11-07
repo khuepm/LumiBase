@@ -848,14 +848,18 @@ export interface LLMProviderEnv {
  */
 export function createLLMProvider(env: LLMProviderEnv): LLMProvider {
   const provider = createRawLLMProvider(env);
-  const configured = env.LLM_CONTEXT_WINDOW_TOKENS;
+  // A missing or invalid window is refused per model call, not at construction:
+  // routes build providers eagerly (MCP, agent, intents, decisions), and a throw
+  // here would fail requests that never call a model.
+  const refuse: LLMProvider = { chat: () => Promise.reject(new LLMContextLimitError()) };
+  // Blank counts as unset: compose files pass `${VAR:-}` through as "".
+  const configured = env.LLM_CONTEXT_WINDOW_TOKENS?.trim() || undefined;
   if (configured === undefined) {
     const knownModels = [...Object.values(PROVIDER_DEFAULT_MODELS), 'gpt-4.1-nano', 'claude-3-5-haiku-latest'];
-    if (env.LLM_MODEL && !knownModels.includes(env.LLM_MODEL)) throw new LLMContextLimitError();
-    return provider;
+    return env.LLM_MODEL && !knownModels.includes(env.LLM_MODEL) ? refuse : provider;
   }
   const contextWindowTokens = Number(configured);
-  if (!Number.isSafeInteger(contextWindowTokens) || contextWindowTokens < 1) throw new LLMContextLimitError();
+  if (!Number.isSafeInteger(contextWindowTokens) || contextWindowTokens < 1) return refuse;
   return { chat: (messages, options) => provider.chat(messages, { ...options, contextWindowTokens }) };
 }
 

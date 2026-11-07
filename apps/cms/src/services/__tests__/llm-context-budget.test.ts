@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { boundLLMContext, createLLMProvider, LLMContextLimitError } from '../llm-provider';
+import { boundLLMContext, createConfiguredLLMProvider, createLLMProvider, LLMContextLimitError } from '../llm-provider';
 
 describe('#582 context input and output budget', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -30,9 +30,33 @@ describe('#582 context input and output budget', () => {
   it.each([0, -1, 2048, Infinity, 2.5])('rejects invalid output reserve %s', (maxOutputTokens) => {
     expect(() => boundLLMContext([], { ...options, maxOutputTokens })).toThrow(LLMContextLimitError);
   });
-  it('requires an explicitly configured window for custom model names', () => {
-    expect(() => createLLMProvider({ LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'synthetic', LLM_MODEL: 'private-small-model' })).toThrow(LLMContextLimitError);
-    expect(() => createLLMProvider({ LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'synthetic', LLM_MODEL: 'private-small-model', LLM_CONTEXT_WINDOW_TOKENS: '4096' })).not.toThrow();
+  it.each([
+    { LLM_MODEL: 'private-small-model' },
+    { LLM_CONTEXT_WINDOW_TOKENS: 'not-a-number' },
+    { LLM_CONTEXT_WINDOW_TOKENS: '0' },
+  ])('refuses model calls without a usable window (%o) before network I/O', async (extra) => {
+    const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
+    const provider = createLLMProvider({ LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'synthetic', ...extra });
+    await expect(provider.chat([{ role: 'user', content: 'hi' }])).rejects.toBeInstanceOf(LLMContextLimitError);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('builds providers eagerly without throwing, so routes that never call a model keep working', () => {
+    const env = { LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'synthetic', LLM_MODEL: 'private-small-model' };
+    expect(() => createLLMProvider(env)).not.toThrow();
+    expect(createConfiguredLLMProvider(env)).not.toBeNull();
+  });
+  it.each(['', '   '])('treats a blank window (%j, as compose passes it) as unset for a known model', async (blank) => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] })));
+    vi.stubGlobal('fetch', fetcher);
+    const provider = createLLMProvider({ LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'synthetic', LLM_MODEL: '', LLM_CONTEXT_WINDOW_TOKENS: blank });
+    await expect(provider.chat([{ role: 'user', content: 'hi' }], { tools: false })).resolves.toMatchObject({ content: 'ok' });
+  });
+  it('accepts a custom model name once its window is configured', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] })));
+    vi.stubGlobal('fetch', fetcher);
+    const provider = createLLMProvider({ LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'synthetic', LLM_MODEL: 'private-small-model', LLM_CONTEXT_WINDOW_TOKENS: '16384' });
+    await expect(provider.chat([{ role: 'user', content: 'hi' }], { tools: false })).resolves.toMatchObject({ content: 'ok' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -1,14 +1,14 @@
 ---
-version: 7
-lastUpdated: 2026-11-07T20:23:23.582Z
+version: 8
+lastUpdated: 2026-11-07T22:02:15.899Z
 sourceLang: vi
 contentHash: ecc8983d3122446b
-codeVerified: 2026-11-07T20:23:23.582Z
-codeVerifiedHash: 66aeecc2155cf7f6
+codeVerified: 2026-11-07T22:02:15.899Z
+codeVerifiedHash: 80e544c4c41dcb0c
 codeVerifiedClaims: 30
 
 translatedFrom: vi
-sourceHash: 66aeecc2155cf7f6
+sourceHash: 80e544c4c41dcb0c
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -198,7 +198,9 @@ The system has 15 property tests (fast-check, ≥100 iterations) fully listed in
 
 Set `LLM_CONTEXT_WINDOW_TOKENS` to the supported window of the deployed model.
 Known model configurations use a conservative application ceiling of 32,768 when
-no override is set. Custom model names require a configured window. Before a
+no override is set. Custom model names require a configured window. A missing or
+invalid window makes each model call return `LLM_CONTEXT_LIMIT` before any network
+call; routes that never call a model (for example MCP `tools/list`) keep working. Before a
 network call, the provider counts serialized UTF-8 bytes as a conservative text
 token bound, reserves output (normally 1,024 tokens) and accounts for tool and
 message framing. Older history is removed first. System policy, tool definitions

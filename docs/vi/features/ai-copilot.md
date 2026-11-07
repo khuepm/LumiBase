@@ -1,16 +1,16 @@
 ---
-version: 7
-lastUpdated: 2026-11-07T20:23:23.582Z
+version: 8
+lastUpdated: 2026-11-07T22:02:15.899Z
 sourceLang: vi
 translatedFrom: en
 sourceHash: ecc8983d3122446b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-07T20:23:23.582Z
-codeVerifiedHash: 66aeecc2155cf7f6
+codeVerified: 2026-11-07T22:02:15.899Z
+codeVerifiedHash: 80e544c4c41dcb0c
 codeVerifiedClaims: 30
 
-contentHash: 66aeecc2155cf7f6
+contentHash: 80e544c4c41dcb0c
 ---
 
 # AI Copilot (HITL)
@@ -198,7 +198,9 @@ Hệ thống có 15 property tests (fast-check, ≥100 iterations) được li�
 
 Đặt `LLM_CONTEXT_WINDOW_TOKENS` theo cửa sổ mà mô hình triển khai hỗ trợ.
 Nếu chưa đặt, mô hình đã biết dùng mức trần ứng dụng 32.768. Tên mô hình tùy
-chỉnh cần khai báo cửa sổ. Trước khi gọi mạng, provider tính byte UTF-8 sau
+chỉnh cần khai báo cửa sổ. Thiếu cửa sổ hoặc giá trị không hợp lệ thì mỗi lần
+gọi mô hình trả `LLM_CONTEXT_LIMIT` trước khi gọi mạng; route không gọi mô hình
+(ví dụ MCP `tools/list`) vẫn chạy bình thường. Trước khi gọi mạng, provider tính byte UTF-8 sau
 serialize làm cận trên thận trọng cho token văn bản, chừa đầu ra (thường 1.024
 token) và tính cả công cụ, phần đóng gói message. Hệ thống bỏ lịch sử cũ trước,
 giữ chính sách hệ thống, định nghĩa công cụ và yêu cầu mới nhất. Yêu cầu quá dài
