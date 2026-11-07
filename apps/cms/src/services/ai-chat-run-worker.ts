@@ -1,17 +1,15 @@
 import type { Database } from '@lumibase/database';
 import { aiMessages } from '@lumibase/database';
 import type { CacheProvider, KeyProvider } from '@lumibase/runtime';
-import { asc, eq } from 'drizzle-orm';
 import { AISecureHarness } from './ai-harness';
+import { loadCopilotHistory } from './copilot-history';
 import { ExtensionsService } from './extensions-service';
 import { EffectiveCapabilityService } from './effective-capability-service';
 import { resolvePrincipalCapabilities } from './governed-capabilities';
 import { itemServiceForPrincipal, itemServiceForSystem } from './item-service-factory';
-import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from './llm-provider';
+import { createConfiguredLLMProvider, createLLMProvider } from './llm-provider';
 import { SchemaService } from './schema-service';
 import { markRunRunning, persistAiChatOutcome, type AiChatRunJob } from './flow-run-service';
-
-const MAX_CONTEXT_MESSAGES = 20;
 
 /**
  * Worker path for `Prefer: respond-async` AI chat (high-load §10.3).
@@ -29,17 +27,8 @@ export async function executeAiChatRun(
   const envRecord = env ?? {};
 
   try {
-    const historyRows = await db
-      .select({ role: aiMessages.role, content: aiMessages.content })
-      .from(aiMessages)
-      .where(eq(aiMessages.conversationId, job.conversationId))
-      .orderBy(asc(aiMessages.createdAt))
-      .limit(MAX_CONTEXT_MESSAGES);
-
-    const llmMessages: LLMMessage[] = historyRows.map((row) => ({
-      role: row.role as LLMMessage['role'],
-      content: row.content,
-    }));
+    // Same newest-first window as the synchronous route (#582).
+    const llmMessages = await loadCopilotHistory(db, job.conversationId);
 
     const llmProvider = createLLMProvider(envRecord);
     const llmResponse = await llmProvider.chat(llmMessages);

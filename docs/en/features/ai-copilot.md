@@ -1,13 +1,14 @@
 ---
-version: 4
-lastUpdated: 2026-11-07T15:50:32.223Z
+version: 5
+lastUpdated: 2026-11-07T19:56:21.536Z
 sourceLang: vi
 contentHash: ecc8983d3122446b
-codeVerified: 2026-11-07T15:50:32.223Z
-codeVerifiedHash: e4b0a90c3c2e2af9
-codeVerifiedClaims: 28
+codeVerified: 2026-11-07T19:56:21.536Z
+codeVerifiedHash: d65dcabd5360fe44
+codeVerifiedClaims: 30
+
 translatedFrom: vi
-sourceHash: e4b0a90c3c2e2af9
+sourceHash: d65dcabd5360fe44
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -163,7 +164,10 @@ The system supports multiple LLM providers (configured via the `LLM_PROVIDER` en
 
 ### 2. Context Memory (Conversation history)
 The `ai_conversations` and `ai_messages` tables store the state of conversation threads:
-- Whenever a message is sent to `/api/v1/ai/chat`, the system loads up to the **20 most recent messages** as the context window passed to the LLM.
+- Whenever a message is sent to `/api/v1/ai/chat`, the system loads up to the **20 most recent messages** as the context window passed to the LLM. Since #582 the synchronous route and the `Prefer: respond-async` worker share `loadCopilotHistory` (`apps/cms/src/services/copilot-history.ts`); before, both read the **oldest** 20 messages, so from the 21st message on the turn the user had just sent was not in the request.
+- The window always opens on a user turn (an assistant message at the cut is dropped) and ends with the turn just sent. The Copilot system prompt is sent separately and is never cut.
+- Current limits: a user message is at most 2000 characters; output is capped at 1024 tokens (Workers AI uses the model default); the whole tool catalogue (74 skills, ~24,200 characters of JSON, an estimated ~6,000 tokens) is sent on every turn. LumiBase does **not** count tokens or check the model's context window, so choose a model whose context fits the tool catalogue plus 20 messages.
+- When the model returns several tool calls, only the first one runs. Arguments that are not valid JSON return `500` once, with no retry and nothing written.
 - Full management APIs are supported: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
 - A conversation belongs to the user who started it (#579). Another member of the site gets `404` on its messages, a `DELETE` removes nothing, and a `POST /chat` with that `conversationId` starts a new conversation for the caller. An API-key caller owns only the conversations recorded with its own key (`api_key_id`, migration `0023`), so one key cannot list, read, delete or append to another key's conversation. User-less conversations created before `0023` have no recorded key and no API key owns them.
 

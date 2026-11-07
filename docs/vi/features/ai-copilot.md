@@ -1,15 +1,16 @@
 ---
-version: 4
-lastUpdated: 2026-11-07T15:50:32.223Z
+version: 5
+lastUpdated: 2026-11-07T19:56:21.536Z
 sourceLang: vi
 translatedFrom: en
 sourceHash: ecc8983d3122446b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-07T15:50:32.223Z
-codeVerifiedHash: e4b0a90c3c2e2af9
-codeVerifiedClaims: 28
-contentHash: e4b0a90c3c2e2af9
+codeVerified: 2026-11-07T19:56:21.536Z
+codeVerifiedHash: d65dcabd5360fe44
+codeVerifiedClaims: 30
+
+contentHash: d65dcabd5360fe44
 ---
 
 # AI Copilot (HITL)
@@ -163,7 +164,10 @@ Hệ thống hỗ trợ nhiều LLM providers (cấu hình qua `LLM_PROVIDER` en
 
 ### 2. Context Memory (Lịch sử hội thoại)
 Bảng `ai_conversations` và `ai_messages` được dùng để lưu trữ trạng thái các luồng trò chuyện:
-- Mỗi khi gửi message lên `/api/v1/ai/chat`, hệ thống sẽ load tối đa **20 messages gần nhất** để làm ngữ cảnh (context window) truyền vào LLM.
+- Mỗi khi gửi message lên `/api/v1/ai/chat`, hệ thống sẽ load tối đa **20 messages gần nhất** để làm ngữ cảnh (context window) truyền vào LLM. Từ #582 cả route đồng bộ lẫn worker `Prefer: respond-async` đều dùng chung `loadCopilotHistory` (`apps/cms/src/services/copilot-history.ts`); trước đó cả hai đọc 20 message **cũ nhất**, nên từ message thứ 21 trở đi lượt user vừa gửi không có trong request.
+- Cửa sổ luôn mở đầu bằng một lượt user (nếu cắt rơi vào message assistant thì bỏ message đó) và kết thúc bằng lượt user vừa gửi. System prompt của Copilot gửi riêng nên không bao giờ bị cắt.
+- Giới hạn hiện có: message user tối đa 2000 ký tự; output tối đa 1024 token (Workers AI dùng mặc định của model); toàn bộ catalogue tool (74 skill, ~24.200 ký tự JSON, ước lượng ~6.000 token) gửi kèm mỗi lượt. LumiBase **không** đếm token và không kiểm tra context window của model, nên hãy chọn model có context đủ lớn cho tool catalogue cộng 20 message.
+- Model trả nhiều tool call thì chỉ call đầu tiên được thực thi. Arguments không phải JSON hợp lệ trả `500` một lần, không retry và không ghi gì.
 - Hỗ trợ đầy đủ các API quản lý: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
 - Một hội thoại thuộc về user đã tạo nó (#579). Thành viên khác của site nhận `404` khi đọc messages, `DELETE` không xoá gì, và `POST /chat` với `conversationId` đó sẽ mở một hội thoại mới cho người gọi. Caller dùng API key chỉ sở hữu các hội thoại được ghi với chính key đó (`api_key_id`, migration `0023`), nên key này không list, đọc, xoá hay nối vào hội thoại của key khác được. Hội thoại không có user id tạo trước `0023` không ghi key nào nên không API key nào sở hữu chúng.
 
