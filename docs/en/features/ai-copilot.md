@@ -1,14 +1,14 @@
 ---
-version: 5
-lastUpdated: 2026-11-07T19:56:21.536Z
+version: 7
+lastUpdated: 2026-11-07T20:23:23.582Z
 sourceLang: vi
 contentHash: ecc8983d3122446b
-codeVerified: 2026-11-07T19:56:21.536Z
-codeVerifiedHash: d65dcabd5360fe44
+codeVerified: 2026-11-07T20:23:23.582Z
+codeVerifiedHash: 66aeecc2155cf7f6
 codeVerifiedClaims: 30
 
 translatedFrom: vi
-sourceHash: d65dcabd5360fe44
+sourceHash: 66aeecc2155cf7f6
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -166,7 +166,7 @@ The system supports multiple LLM providers (configured via the `LLM_PROVIDER` en
 The `ai_conversations` and `ai_messages` tables store the state of conversation threads:
 - Whenever a message is sent to `/api/v1/ai/chat`, the system loads up to the **20 most recent messages** as the context window passed to the LLM. Since #582 the synchronous route and the `Prefer: respond-async` worker share `loadCopilotHistory` (`apps/cms/src/services/copilot-history.ts`); before, both read the **oldest** 20 messages, so from the 21st message on the turn the user had just sent was not in the request.
 - The window always opens on a user turn (an assistant message at the cut is dropped) and ends with the turn just sent. The Copilot system prompt is sent separately and is never cut.
-- Current limits: a user message is at most 2000 characters; output is capped at 1024 tokens (Workers AI uses the model default); the whole tool catalogue (74 skills, ~24,200 characters of JSON, an estimated ~6,000 tokens) is sent on every turn. LumiBase does **not** count tokens or check the model's context window, so choose a model whose context fits the tool catalogue plus 20 messages.
+- Each chat message is limited to 2,000 characters. Model input and output follow the context policy below.
 - When the model returns several tool calls, only the first one runs. Arguments that are not valid JSON return `500` once, with no retry and nothing written.
 - Full management APIs are supported: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
 - A conversation belongs to the user who started it (#579). Another member of the site gets `404` on its messages, a `DELETE` removes nothing, and a `POST /chat` with that `conversationId` starts a new conversation for the caller. An API-key caller owns only the conversations recorded with its own key (`api_key_id`, migration `0023`), so one key cannot list, read, delete or append to another key's conversation. User-less conversations created before `0023` have no recorded key and no API key owns them.
@@ -192,3 +192,30 @@ The system has 15 property tests (fast-check, ≥100 iterations) fully listed in
 - `apps/cms/src/routes/__tests__/ai-*.property.test.ts` — Properties 9-12 (Module C).
 - `apps/studio/src/modules/settings/__tests__/` — Properties 13-14 (Module D).
 - `packages/database/src/__tests__/` — Property 15 (round-trip).
+
+
+## Context budgets and grounded extraction
+
+Set `LLM_CONTEXT_WINDOW_TOKENS` to the supported window of the deployed model.
+Known model configurations use a conservative application ceiling of 32,768 when
+no override is set. Custom model names require a configured window. Before a
+network call, the provider counts serialized UTF-8 bytes as a conservative text
+token bound, reserves output (normally 1,024 tokens) and accounts for tool and
+message framing. Older history is removed first. System policy, tool definitions
+and the newest user request are preserved. An oversized request returns HTTP 413
+with `LLM_CONTEXT_LIMIT`. Rate limits, invalid responses and unavailable upstreams
+have actionable error codes and do not trigger a tool write or automatic repair.
+
+For extractive assistance pass `grounded: true` to `aiContentAssist`. Only current
+permitted sample fields enter the evidence set. Accepted text consists entirely
+of exact cited quotes. A citation identifies the sampled field and its item ID.
+Missing evidence produces an empty answer with `abstained: true`; fabricated,
+stale or uncited text fails validation. Exact quotes establish provenance, not
+the truth or relevance of a source. Conflicting or irrelevant samples should
+lead to abstention. The free-form writing mode remains available by default.
+
+Run `pnpm -F @lumibase/cms eval:grounding` for the versioned synthetic runtime
+contract baseline. v1 requires all 12 cases to pass, including English and
+Vietnamese excerpts, altered facts, stale and foreign sources, conflicting
+sources and abstention. The results measure the validator, not a model accuracy
+rate on editorial work.
