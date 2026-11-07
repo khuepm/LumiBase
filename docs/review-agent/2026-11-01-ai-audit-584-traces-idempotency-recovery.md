@@ -216,3 +216,26 @@ The 4 cases that pass on every revert are the reconstruction and masking control
 | Automated tests prove retries/duplicate resume do not duplicate side effects and partial failures do not report full success | **done**: existing claim/approval/retry suites plus F1–F3 cases. Skill timeout remains (B188). |
 | Synthetic secret/PII canaries do not appear in exported traces/logs; necessary audit evidence remains useful | **done** for run/tool call rows and `GET /agent/runs` (F4 + control case); errors keep the SQLSTATE and driver reason. |
 | Recovery semantics and operator guidance are documented; scoped fixes cover confirmed gaps | **done**: `docs/{en,vi}/features/async-agent-runs.md` "Reconstructing a run and recovery decisions"; retry code in the API spec and harness docs. |
+
+
+## Completion addendum — 2026-11-07
+
+The sections above describe the original audit snapshot. B188–B190 are now
+resolved: timeouts persist an unknown-outcome marker and block retry/resume;
+running tool rows also block replay after a crash or failed marker write.
+Request IDs survive goal/run creation, queued execution and audited retries.
+Metric labels are bounded; generation usage is observed with optional explicit
+model pricing, and shared approval decisions measure latency across entry points.
+
+Real PostgreSQL regression evidence includes a write completing after timeout,
+marker-write failure, request correlation across failure/recovery, privacy
+canaries, cancellation races, atomic approval failures and duplicate delivery.
+Provider usage tests use deterministic synthetic responses, not paid live calls.
+Trace redaction now removes email/phone/credential fields and email text; database
+errors retain only SQLSTATE. Operator guidance and limitations are documented in
+both locales of `features/async-agent-runs.md`.
+
+Timeout is not cancellation or rollback. Arbitrary personal prose is not fully
+classified, process-local metrics reset, and tool-cost counters do not include
+all chat/planning calls. These limits are explicit rather than reported as zero
+cost or proof of no side effects.
