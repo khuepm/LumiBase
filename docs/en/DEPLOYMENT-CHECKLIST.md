@@ -1,8 +1,8 @@
 ---
-version: 7
-lastUpdated: 2026-10-31T17:56:46.242Z
+version: 8
+lastUpdated: 2026-11-07T17:58:40.753Z
 sourceLang: en
-contentHash: ccd23a962e4574a2
+contentHash: 538fb6c776c5272d
 codeVerified: 2026-10-31T17:56:46.242Z
 codeVerifiedHash: ccd23a962e4574a2
 codeVerifiedClaims: 30
@@ -13,6 +13,8 @@ codeVerifiedClaims: 30
 > Complete checklist for deploying LumiBase to production. Supports both **Cloudflare Workers** (edge) and **Docker** (self-hosted) deployments.
 
 ---
+
+The CMS deploy and release workflows ensure missing flow queues and their dead-letter queues before deployment using `scripts/ensure-flow-queues.mjs`. Existing queues are preserved. The deploy token needs Queues edit permission. Local/manual deployment still uses the queue creation commands below.
 
 ## Table of Contents
 

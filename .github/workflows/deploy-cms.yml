@@ -118,6 +118,10 @@ jobs:
             echo "::notice::Skipping ${TARGET_ENV} deploy because CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not configured for this environment."
           fi
 
+      - name: Ensure flow queues
+        if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
+        run: node scripts/ensure-flow-queues.mjs "${TARGET_ENV}"
+
       - name: Deploy CMS
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
         run: pnpm --filter @lumibase/cms run "deploy:${TARGET_ENV}"

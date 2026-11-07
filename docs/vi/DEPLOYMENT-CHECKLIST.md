@@ -1,9 +1,9 @@
 ---
-version: 6
-lastUpdated: 2026-10-31T17:56:46.242Z
+version: 7
+lastUpdated: 2026-11-07T17:58:40.753Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ccd23a962e4574a2
+sourceHash: 538fb6c776c5272d
 mtEngine: manual
 syncStatus: human-translated
 codeVerified: 2026-10-31T17:56:46.242Z
@@ -16,6 +16,8 @@ codeVerifiedClaims: 30
 > Checklist đầy đủ để deploy LumiBase lên production. Hỗ trợ cả **Cloudflare Workers** (edge) và **Docker** (self-hosted).
 
 ---
+
+Workflow triển khai CMS và phát hành tạo các flow queue cùng dead-letter queue còn thiếu trước khi triển khai bằng `scripts/ensure-flow-queues.mjs`. Queue đã có được giữ nguyên. Token triển khai cần quyền chỉnh sửa Queues. Triển khai thủ công/cục bộ vẫn dùng các lệnh tạo queue bên dưới.
 
 ## Mục lục
 
