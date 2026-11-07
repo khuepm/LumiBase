@@ -2,7 +2,7 @@ import type { Database } from '@lumibase/database';
 import type { CacheProvider, KeyProvider, QueueProvider, SearchProvider } from '@lumibase/runtime';
 import { AISecureHarness } from './ai-harness';
 import { ExtensionsService } from './extensions-service';
-import { AgentRunService } from './agent-run-service';
+import { AgentRunService, runErrorMessage } from './agent-run-service';
 import {
   EffectiveCapabilityService,
   type AuthenticatedPrincipalRef,
@@ -28,6 +28,7 @@ import { SchemaService } from './schema-service';
 export const AGENT_RUNS_QUEUE = 'agent-runs';
 
 export interface AgentRunJobPayload {
+  requestId?: string;
   siteId: string;
   goalId: string;
   runId: string;
@@ -300,6 +301,7 @@ export async function processAgentRunJob(
       capabilities.capabilities,
       payload.contextMessage,
       {
+        requestId: payload.requestId,
         goalId: payload.goalId,
         runId: payload.runId,
         // The governance envelope has to survive the queue hop (#455). Dropping
@@ -336,8 +338,9 @@ export async function processAgentRunJob(
   } catch (err) {
     // The harness records expected failures itself; this guards the worker
     // against unexpected throws so the run never sticks in `running`.
-    const message = err instanceof Error ? err.message : String(err);
-    await runService.failRun(payload.runId, message, { stopReason: 'worker_error' });
+    // `runErrorMessage`, not `err.message`: a failed query's message carries its
+    // bound parameters, and this string is returned by `GET /agent/runs` (#584 F4).
+    await runService.failRun(payload.runId, runErrorMessage(err), { stopReason: 'worker_error' });
   }
 }
 

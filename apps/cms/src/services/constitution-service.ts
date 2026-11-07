@@ -1,7 +1,12 @@
 import { activity, agentRuns, constitutions } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import { and, desc, eq } from 'drizzle-orm';
-import type { ConfiguredLLM, LLMMessage } from './llm-provider';
+import {
+  completeWithInstructions,
+  UNTRUSTED_CONTENT_RULE,
+  untrustedBlock,
+  type ConfiguredLLM,
+} from './llm-provider';
 
 /**
  * Constitution service (content-os task 16; Req 15.1-15.6).
@@ -394,21 +399,19 @@ export class ConstitutionService {
         503,
       );
     }
-    const messages: LLMMessage[] = [
-      {
-        role: 'system',
-        content: [
-          'Translate content-policy text into a JSON array of constitution evaluators.',
-          'Allowed shapes:',
-          '{"id":"<slug>","type":"rule","blocking":true|false,"description":"...","rule":{"field":"<field>","op":"required|equals|max_length|min_length|regex|contains|not_contains","value":<any>}}',
-          '{"id":"<slug>","type":"llm_judge","blocking":true|false,"description":"...","prompt":"..."}',
-          'Prefer deterministic rule evaluators; use llm_judge only for genuinely subjective judgements.',
-          'Reply with the JSON array only.',
-        ].join('\n'),
-      },
-      { role: 'user', content: text },
-    ];
-    const response = await this.deps.llm.provider.chat(messages);
+    // System slot + no tools (#579): see `completeWithInstructions`.
+    const response = await completeWithInstructions(
+      this.deps.llm.provider,
+      [
+        'Translate content-policy text into a JSON array of constitution evaluators.',
+        'Allowed shapes:',
+        '{"id":"<slug>","type":"rule","blocking":true|false,"description":"...","rule":{"field":"<field>","op":"required|equals|max_length|min_length|regex|contains|not_contains","value":<any>}}',
+        '{"id":"<slug>","type":"llm_judge","blocking":true|false,"description":"...","prompt":"..."}',
+        'Prefer deterministic rule evaluators; use llm_judge only for genuinely subjective judgements.',
+        'Reply with the JSON array only.',
+      ].join('\n'),
+      text,
+    );
     let parsed: unknown;
     try {
       const raw = (response.content ?? '').replace(/```(?:json)?/g, '').trim();
@@ -442,18 +445,22 @@ export class ConstitutionService {
       return { ...base, status: 'error', message: 'LLM_NOT_CONFIGURED: llm_judge evaluators need a configured provider.' };
     }
     try {
-      const messages: LLMMessage[] = [
-        {
-          role: 'system',
-          content:
-            'You are a content constitution judge. Reply with exactly PASS or FAIL followed by a one-line reason.',
-        },
-        {
-          role: 'user',
-          content: `${evaluator.prompt}\n\nContent:\n${JSON.stringify(content).slice(0, 6000)}`,
-        },
-      ];
-      const response = await this.deps.llm.provider.chat(messages);
+      // Trust boundary (#579). The evaluator prompt is admin-authored policy, so
+      // it goes in the system slot with the judge rules. The content under
+      // review is the agent's output, possibly derived from untrusted text, so
+      // it is the only thing in the user turn, inside an untrusted block. It
+      // used to share one user turn with the policy (and on Gemini/Anthropic
+      // with the demoted judge rules too), next to the Copilot prompt and tools.
+      const response = await completeWithInstructions(
+        this.deps.llm.provider,
+        [
+          'You are a content constitution judge. Reply with exactly PASS or FAIL followed by a one-line reason.',
+          UNTRUSTED_CONTENT_RULE,
+          'Policy to apply:',
+          evaluator.prompt,
+        ].join('\n'),
+        untrustedBlock('content-under-review', JSON.stringify(content).slice(0, 6000)),
+      );
       const verdict = (response.content ?? '').trim().toUpperCase();
       if (verdict.startsWith('PASS')) return { ...base, status: 'pass' };
       if (verdict.startsWith('FAIL')) {

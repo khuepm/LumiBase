@@ -108,6 +108,9 @@ export function createFakeDb(seed: Record<string, Row[]> = {}): FakeDb {
   }
 
   const db = {
+    // Transactional behavior is verified against real Postgres; this fake only
+    // supplies the callback API for approval round-trip unit tests.
+    transaction: async <T>(callback: (tx: Database) => Promise<T>): Promise<T> => callback(db as unknown as Database),
     select: (_projection?: unknown) => ({
       from: (table: unknown) => {
         const state = stateFor(tableName(table));
@@ -123,9 +126,10 @@ export function createFakeDb(seed: Record<string, Row[]> = {}): FakeDb {
         return Object.assign(result(), {
           where: (condition?: unknown) => {
             const ids = collectEqValues(condition, 'id');
-            if (ids.length > 0) {
+            const statuses = collectEqValues(condition, 'status');
+            if (ids.length > 0 || statuses.length > 0) {
               const rows = state.rows
-                .filter((row) => state.match(row) && ids.includes(String(row['id'])))
+                .filter((row) => state.match(row) && (ids.length === 0 || ids.includes(String(row['id']))) && (statuses.length === 0 || statuses.includes(String(row['status']))))
                 .map((row) => ({ ...row }));
               return Object.assign(Promise.resolve(rows), {
                 limit: async () => rows,

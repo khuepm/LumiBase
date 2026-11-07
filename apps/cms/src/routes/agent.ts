@@ -11,13 +11,13 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { agentApprovalLatency, agentApprovalsTotal } from '../services/agent-metrics';
+import { observeApprovalDecision } from '../services/agent-metrics';
 import { AGENT_RUNS_QUEUE, type AgentRunJobPayload } from '../services/agent-run-worker';
 import { AgentArtifactService } from '../services/agent-artifact-service';
 import { AgentEvaluationService } from '../services/agent-evaluation-service';
 import { AgentMemoryService } from '../services/agent-memory-service';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
-import { maskSecrets, AgentRunService, type RetryRunRefusalCode } from '../services/agent-run-service';
+import { safeRequestId, maskSecrets, AgentRunService, type RetryRunRefusalCode } from '../services/agent-run-service';
 import { CORE_SKILLS } from '../services/ai-harness';
 import {
   principalRefFromAuth,
@@ -136,12 +136,13 @@ agentRouter.post('/goals', async (c) => {
     assigneeAgent: parsed.data.assigneeAgent,
     priority: parsed.data.priority,
     successCriteria: parsed.data.successCriteria,
-    ...(parsed.data.execution === 'async' ? { metadata: { asyncTask: maskSecrets(parsed.data.task) } } : {}),
+    metadata: { requestId: safeRequestId(c.get('requestId')), ...(parsed.data.execution === 'async' ? { asyncTask: maskSecrets(parsed.data.task) } : {}) },
   }).returning();
 
   if (parsed.data.execution === 'async') {
     const runService = new AgentRunService(db, siteId, queue, buildAgentNotifier(c));
     const run = await runService.ensureRun({
+    requestId: c.get('requestId'),
       goalId: goal!.id,
       agentName: parsed.data.assigneeAgent,
       title: parsed.data.title,
@@ -151,6 +152,7 @@ agentRouter.post('/goals', async (c) => {
       status: 'queued',
     });
     const payload: AgentRunJobPayload = {
+      requestId: safeRequestId(c.get('requestId')) ?? undefined,
       siteId,
       goalId: goal!.id,
       runId: run.runId,
@@ -635,6 +637,8 @@ const RETRY_REFUSAL_STATUS: Record<RetryRunRefusalCode, 400 | 404 | 409 | 423 | 
   NOT_FOUND: 404,
   RUN_NOT_RETRYABLE: 409,
   RUN_ACTIVE: 409,
+  RUN_OUTCOME_UNKNOWN: 409,
+  RUN_EFFECT_RECORDED: 409,
   RETRY_SUPERSEDED: 409,
   GOAL_CLOSED: 409,
   GOAL_BUSY: 409,
@@ -672,6 +676,7 @@ agentRouter.post('/runs/:id/retry', async (c) => {
   const result = await service.retryRun(c.req.param('id'), {
     principal,
     userId: auth.userId ?? null,
+    requestId: c.get('requestId'),
   });
   if (!result.ok) {
     return c.json(
@@ -828,14 +833,6 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
     return c.json({ errors: [{ code: 'EXPIRED', message: 'Approval expired' }] }, 409);
   }
 
-  const observe = (row: typeof agentApprovals.$inferSelect) => {
-    agentApprovalsTotal.inc({ subject_type: row.subjectType, status: row.status });
-    agentApprovalLatency.observe(
-      { subject_type: row.subjectType, status: row.status },
-      (Date.now() - row.createdAt.getTime()) / 1000,
-    );
-  };
-
   if (body.data.decision === 'approved') {
     if (!existing.legacyApprovalId) {
       // Without the stored action there is nothing to execute, and reporting
@@ -896,7 +893,6 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
         .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)));
     }
 
-    observe(row);
     return c.json({
       data: row,
       meta: { execution: { status: result.status, runId: result.runId, toolCallId: result.toolCallId } },
@@ -934,7 +930,6 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
         .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, siteId)));
     }
 
-    observe(row);
     return c.json({ data: row });
   }
 
@@ -959,7 +954,7 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
     return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
   }
 
-  observe(record);
+  observeApprovalDecision(record);
   return c.json({ data: record });
 });
 
@@ -1147,6 +1142,7 @@ agentRouter.post('/generate-app', async (c) => {
   const evaluationService = new AgentEvaluationService(db, siteId);
 
   const run = await runService.ensureRun({
+    requestId: c.get('requestId'),
     agentName: 'lumibase-app-generator',
     title: `Generate ${parsed.data.targetApp}`,
     contextMessage: `Generate app from ${parsed.data.collections.join(', ')}`,

@@ -139,7 +139,7 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
       },
       required: ['collection', 'data'],
     },
-    requiredCapabilities: ['items:create'],
+    requiredCapabilities: ['items:write'],
   },
 
   updateItem: {
@@ -188,7 +188,7 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
       },
       required: ['collection', 'id'],
     },
-    requiredCapabilities: ['items:delete'],
+    requiredCapabilities: ['items:write'],
   },
 
   // ── Content versions — named parallel draft branches of an item ────────────

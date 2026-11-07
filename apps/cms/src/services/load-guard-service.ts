@@ -1,4 +1,5 @@
 import {
+  metricReason,
   agentBackpressureActivationsTotal,
   agentCoalescedWritesTotal,
   agentWriteBudgetDenialsTotal,
@@ -191,7 +192,7 @@ export class BackpressureController {
       if (!this.paused) {
         this.paused = true;
         this.activationCounter += 1;
-        agentBackpressureActivationsTotal.inc({ reason: input.reason ?? 'overload' });
+        agentBackpressureActivationsTotal.inc({ reason: metricReason(input.reason ?? 'overload') });
       }
       return;
     }

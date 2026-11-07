@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-10-13T19:46:03.541Z
+version: 7
+lastUpdated: 2026-11-07T14:18:27.861Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7cbba410d113f4c5
+sourceHash: 8cbdfe5cd63c69bb
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-13T19:46:03.541Z
-codeVerifiedHash: 7cbba410d113f4c5
+codeVerified: 2026-11-06T02:09:06.984Z
+codeVerifiedHash: b657655b2141df34
 codeVerifiedClaims: 8
 ---
 
@@ -90,6 +90,37 @@ Timeout này có thể hết hạn công việc khi queue tồn đọng lâu; c�
 không tự động replay. Run đang thực thi vẫn được cách ly riêng bằng
 `stale_unverified` vì có thể đã phát sinh tác động.
 
+## Dựng lại một run và quyết định phục hồi
+
+Mọi kết quả đều được ghi trên các hàng tham chiếu lẫn nhau: goal, các run của nó
+(`retryOfRunId` trỏ tới lần thử mà lần retry thay thế), các tool call của từng
+run (`status`, `error`, `input`/`output` đã che, `latencyMs`), các hàng approval
+(`runId`, `subjectId` = id của tool call), revision nội dung
+(`createdByRunId`), và `agent_run.retried` trong activity, ghi ai đã yêu cầu
+retry. Đọc trạng thái tool call trước trạng thái run:
+
+| Run | Tool call | Chuyện gì đã xảy ra | Cần làm gì |
+| --- | --- | --- | --- |
+| `succeeded` | `executed` | Skill đã chạy và kết quả đã được lưu. | Không cần gì. Không retry được. |
+| `failed` | `denied` | Bị từ chối trước khi thực thi (quyền, policy, autonomy). | Sửa nguyên nhân rồi retry. |
+| `failed` | `failed` | Skill trả về lỗi. | Xem lỗi và retry nếu thao tác ghi không thể đã chạy một phần. |
+| `failed` | `executed` | Skill đã chạy; việc lưu kết quả thất bại sau đó (`stopReason: worker_error`). | Tác động đã xảy ra. Retry bị từ chối với `409 RUN_EFFECT_RECORDED`. |
+| `failed` | `running` | Tiến trình dừng giữa lúc thực thi (`stopReason: stale_unverified`). | Không rõ. Kiểm tra nội dung rồi retry hoặc để nguyên. |
+| `cancelled` | không có, hoặc `denied` | Bị huỷ trước khi tool call kế tiếp bắt đầu. | Retry nếu vẫn cần. |
+
+Huỷ không bao giờ ghi đè một run đã chốt: huỷ một run vừa kết thúc cùng lúc sẽ
+trả `409 NOT_CANCELLABLE` và run giữ nguyên kết quả. Run bị huỷ trong lúc harness
+đang phân loại một lời gọi cần duyệt sẽ không bị chuyển sang chờ duyệt, và không
+có approval nào được tạo cho nó. Chuyển trạng thái có điều kiện sang `awaiting_approval`
+và hai lần insert approval được commit trong cùng một transaction. Nếu một insert
+thất bại, cả ba thao tác rollback; đường đồng bộ giữ run đang chạy để cơ chế cách ly
+run quá hạn xử lý, còn queue worker ghi nhận lỗi bằng cơ chế hiện có. Lệnh huỷ đến
+sau bước chuyển trạng thái phải chờ transaction, không thấy approval mới tạo một nửa.
+
+Lỗi của run và tool call nêu tên lỗi nhưng không bao giờ chứa giá trị của câu
+lệnh database bị lỗi: chúng có dạng `Database query failed (SQLSTATE <code>):
+<thông báo của driver>`.
+
 ## Đa tenant
 
 Hàng đợi và thông tin xác thực provider dùng chung toàn deployment. Mỗi job giữ
@@ -107,9 +138,47 @@ chạy trên DB kiểm thử có thể xoá:
 
 ```bash
 pnpm -F @lumibase/cms exec vitest run src/services/__tests__/p1-governance.db.integration.test.ts
+pnpm -F @lumibase/cms exec vitest run src/services/__tests__/agent-run-recovery.db.integration.test.ts
 pnpm -F @lumibase/cms exec vitest run src/__tests__/cloudflare-agent-queue.test.ts
 pnpm -F @lumibase/runtime exec vitest run src/__tests__/cloudflare-agent-queue.test.ts
 ```
 
 Build dry-run kiểm tra đóng gói và cấu hình. Nó không xác nhận
 queue production, secret và kết nối Hyperdrive đã được thiết lập.
+
+
+## Khôi phục kết quả chưa xác định và truy vết yêu cầu
+
+Thời hạn kỹ năng 30 giây chỉ dừng chờ, không dừng trình xử lý bên dưới. Run hết
+thời gian lưu `metrics.outcomeUnknown: true` trước khi trả về
+`EXECUTION_OUTCOME_UNKNOWN`. Công cụ vẫn có thể hoàn tất ghi dữ liệu sau đó. Thử
+lại và tiếp tục phê duyệt trả `RUN_OUTCOME_UNKNOWN`; hủy không thể hoàn tác một
+lệnh ghi đã gửi. Nếu không lưu được cờ hoặc tiến trình dừng đột ngột, bản ghi
+lời gọi công cụ đang chạy cũng ngăn phát lại. Kiểm tra nội dung, phiên bản, biên
+nhận nhà cung cấp và lời gọi công cụ trước khi tạo công việc mới; không coi trạng
+thái này là đã hoàn tác.
+
+Dùng mã yêu cầu HTTP không chứa nội dung để tìm `goal.metadata.requestId` và
+`run.metrics.requestId`, rồi theo mã run qua công cụ, phê duyệt, artifact, đánh
+giá và phiên bản. Lần thử lại giữ `retryOfRunId` và `metrics.originRequestId`, ghi
+mã yêu cầu mới vào hoạt động thử lại và tác vụ hàng đợi. Mã có ký tự ngoài chữ
+cái, chữ số, `_`, `-` hoặc dài hơn 64 ký tự sẽ bị bỏ qua; không gửi dữ liệu cá
+nhân làm mã yêu cầu.
+
+Đầu vào/đầu ra truy vết che khóa thông tin xác thực và dữ liệu cá nhân (gồm email,
+số điện thoại, địa chỉ), cùng địa chỉ email trong văn bản. Lỗi cơ sở dữ liệu giữ
+SQLSTATE nhưng bỏ tham số truy vấn và chi tiết từ driver. Đây là bảo vệ nhiều lớp,
+không phải bộ phân loại mọi thông tin cá nhân trong văn xuôi: tránh đưa bí mật và
+dữ liệu cá nhân vào tiêu đề mục tiêu tự do hoặc mã yêu cầu. Đầu vào đã che không
+thể phát lại an toàn; hãy tạo yêu cầu mới đã kiểm tra với các giá trị cần thiết.
+
+Nhãn metric agent và công cụ dùng tập hữu hạn; tên lạ gộp vào `custom`, lý do và
+trạng thái lạ vào `other`. Công cụ sinh nội dung ghi số token nhà cung cấp nếu có,
+nếu không dùng ước lượng từ văn bản. Chỉ xuất USD ước tính khi có đủ số token nhà
+cung cấp và cả hai giá tùy chọn không âm `LLM_PRICE_INPUT_PER_MTOK` và
+`LLM_PRICE_OUTPUT_PER_MTOK` (USD mỗi triệu token). Cấu hình giá theo mô hình đang
+chọn; thiếu giá nghĩa là chưa biết chi phí, không phải bằng không. Các bộ đếm công
+cụ này không đại diện mọi cuộc gọi trò chuyện/lập kế hoạch hay hóa đơn nhà cung
+cấp. Luồng quyết định phê duyệt dùng chung ghi độ trễ qua các điểm vào agent,
+Copilot và reviewer. Bộ đếm nằm trong tiến trình và khởi tạo lại khi tiến trình
+khởi động lại.

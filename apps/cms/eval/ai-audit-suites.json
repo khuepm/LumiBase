@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "deterministic": [
+    "src/services/__tests__/tool-contract-parity.test.ts",
+    "src/services/__tests__/g2-agent-tool-schemas.test.ts",
+    "src/services/__tests__/capability-injection.property.test.ts",
+    "src/services/__tests__/decision-provider.test.ts",
+    "src/services/__tests__/decision-budgets.test.ts",
+    "src/services/__tests__/decision-governance.test.ts",
+    "eval/jev-benchmark/__tests__"
+  ],
+  "database": [
+    "src/services/__tests__/tool-contract-parity.db.integration.test.ts",
+    "src/services/__tests__/prompt-injection-compromised-model.db.integration.test.ts",
+    "src/services/__tests__/g3-repair-loop.db.integration.test.ts",
+    "src/services/__tests__/g1-approval-concurrency.db.integration.test.ts"
+  ]
+}

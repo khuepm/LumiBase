@@ -28,7 +28,8 @@
     "lint": "echo \"(lint not configured)\" && exit 0",
     "test": "vitest --run",
     "k6:login-brute": "k6 run k6/login-brute-force.js",
-    "clean": "rm -rf .turbo .wrangler dist"
+    "clean": "rm -rf .turbo .wrangler dist",
+    "eval:ai": "tsx scripts/ai-audit.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
@@ -40,21 +41,21 @@
     "@sentry/cloudflare": "^11.10.0",
     "drizzle-orm": "^0.45.4",
     "graphql": "^17.0.2",
-    "graphql-yoga": "^5.24.1",
+    "graphql-yoga": "^6.0.1",
     "hono": "^4.13.14",
     "jose": "^6.2.13",
     "maxmind": "5.0.7",
     "nanoid": "^6.0.2",
     "node-cron": "^4.6.0",
-    "nodemailer": "10.2.1",
-    "postgres": "^3.4.9",
+    "nodemailer": "10.3.1",
+    "postgres": "^4.0.0",
     "prom-client": "^15.1.0",
     "uuid": "^14.0.3",
     "ws": "^8.22.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261028.1",
+    "@cloudflare/workers-types": "^5.20261029.1",
     "@types/node": "^26.6.6",
     "@types/nodemailer": "8.0.2",
     "@types/ws": "^8.18.2",
@@ -63,6 +64,6 @@
     "tsx": "^4.23.15",
     "typescript": "^5.6.2",
     "vitest": "^5.0.5",
-    "wrangler": "^4.154.0"
+    "wrangler": "^4.156.0"
   }
 }

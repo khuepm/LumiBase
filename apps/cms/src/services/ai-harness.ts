@@ -1,7 +1,14 @@
-import { agentApprovals, aiApprovals, flowRuns, flows } from '@lumibase/database';
+import {
+  agentApprovals,
+  aiApprovals,
+  collections as collectionsTable,
+  flowRuns,
+  flows,
+  items as itemsTable,
+} from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import { agentToolNamesWithSchema, jsonSchemaFor, validateAgentToolInput } from '@lumibase/contracts';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { SchemaService } from './schema-service';
 import type { ItemService } from './item-service';
 import type { MagicContext } from './permission-dsl';
@@ -12,11 +19,12 @@ import type { ExtensionsService } from './extensions-service';
 import type { IntentService } from './intent-service';
 import { runFlow, type FlowGraph } from './flow-service';
 import { ContentVersionService } from './content-version-service';
-import type { ConfiguredLLM } from './llm-provider';
+import { completeWithInstructions, type ConfiguredLLM } from './llm-provider';
+import { redactSettingRow } from './settings-redaction';
 import type { CacheProvider, KeyProvider, QueueProvider } from '@lumibase/runtime';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
-import { agentAutonomousOpsTotal } from './agent-metrics';
-import { AgentRunService, type AgentRunEnvelope } from './agent-run-service';
+import { agentAutonomousOpsTotal, observeApprovalDecision } from './agent-metrics';
+import { AgentRunService, runErrorMessage, type AgentRunEnvelope } from './agent-run-service';
 import {
   effectiveApprovalCapabilities,
   parseApprovalRequester,
@@ -214,7 +222,7 @@ export function extractJson(text: string): unknown {
 
 interface LLMJsonResult<T> {
   value: T;
-  meta: { provider: string; model: string; estimatedTokens: number };
+  meta: { provider: string; model: string; estimatedTokens: number; tokens?: number; inputTokens?: number | null; outputTokens?: number | null; usd?: number; usageSource?: string };
 }
 
 /** A skill counts against the write budget when it mutates data or schema. */
@@ -276,6 +284,54 @@ function primaryDangerousCapability(
   return caps.find((cap) => /:(write|update|create|delete)$/.test(cap)) ?? caps[0] ?? skillName;
 }
 
+/** The item status the Delivery API serves to anonymous readers. */
+const LIVE_ITEM_STATUS = 'published';
+
+/**
+ * Why an item write is escalated to the dangerous (HITL + autonomy) gradient.
+ *
+ * - `publication_change`: the write changes what the public sees by status —
+ *   `createItem` with `status: 'published'`, or `updateItem` that sets a status
+ *   different from the item's current one (publish, unpublish, archive).
+ * - `live_content`: an `updateItem` data patch on an item that is currently
+ *   published, so the change is visible on the Delivery API immediately.
+ * - `unknown_state`: the current status could not be read, so the write is
+ *   treated as live (fail closed).
+ */
+export type ItemWriteImpact = 'publication_change' | 'live_content' | 'unknown_state';
+
+/**
+ * Impact-aware risk for item CRUD (#578).
+ *
+ * `evaluateRisk` classifies by tool name and capability only, which is right
+ * for control-plane skills but blind to what an item write actually does:
+ * `createItem {status:'published'}` and a patch on a published item executed
+ * directly at the default level (L2), the same as editing a draft. This pure
+ * function adds the content state to the decision. It does NOT make a skill
+ * control-plane: `isControlPlaneSkill` (and the MCP admin backstop that uses
+ * it) is unchanged.
+ *
+ * `currentStatus` is the item's status before the write: a string, `null` when
+ * the item does not exist (the handler then reports NOT_FOUND), or `undefined`
+ * when it could not be read.
+ */
+export function classifyItemWriteImpact(
+  skillName: string,
+  args: Record<string, unknown>,
+  currentStatus: string | null | undefined,
+): ItemWriteImpact | null {
+  if (skillName === 'createItem') {
+    return args['status'] === LIVE_ITEM_STATUS ? 'publication_change' : null;
+  }
+  if (skillName !== 'updateItem') return null;
+  if (currentStatus === undefined) return 'unknown_state';
+  if (currentStatus === null) return null;
+  const nextStatus = args['status'];
+  if (typeof nextStatus === 'string' && nextStatus !== currentStatus) return 'publication_change';
+  if (currentStatus === LIVE_ITEM_STATUS) return 'live_content';
+  return null;
+}
+
 /**
  * Only single-item data patches stage into the veto window in v1 — the
  * staged delta has a well-defined before/after and commit path.
@@ -300,6 +356,19 @@ function isStageableItemPatch(skillName: string, args: Record<string, unknown>):
  * Lifts LLM usage metadata returned by generation skills into run metrics
  * (model + estimated tokens/cost; Req 2.3).
  */
+class OutcomePersistenceError extends Error {}
+
+function skillUsage(data: unknown): Record<string, unknown> {
+  const meta = data && typeof data === 'object' ? (data as { meta?: unknown }).meta : undefined;
+  if (!meta || typeof meta !== 'object') return {};
+  const usage: Record<string, unknown> = {};
+  for (const key of ['tokens', 'estimatedTokens', 'inputTokens', 'outputTokens', 'usd', 'usageSource']) {
+    const value = (meta as Record<string, unknown>)[key];
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0 || key === 'usageSource' && typeof value === 'string') usage[key] = value;
+  }
+  return usage;
+}
+
 function extractLLMMeta(data: unknown): Record<string, unknown> {
   if (data && typeof data === 'object' && 'meta' in data) {
     const meta = (data as { meta?: unknown }).meta;
@@ -326,12 +395,14 @@ async function completeJson<T = unknown>(
     );
   }
   let content: string | null;
+  let usage: { inputTokens: number | null; outputTokens: number | null } | undefined;
   try {
-    const response = await llm.provider.chat([
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ]);
+    // System slot + no tools (#579): with plain `chat`, the Copilot prompt and
+    // its write tools were offered here, and `system` was demoted to a user turn
+    // on Gemini/Anthropic.
+    const response = await completeWithInstructions(llm.provider, system, user);
     content = response.content;
+    usage = response.usage;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(`LLM_PROVIDER_ERROR: ${message}`);
@@ -345,6 +416,12 @@ async function completeJson<T = unknown>(
       provider: llm.name,
       model: llm.model,
       estimatedTokens: estimateTokens(system, user, content),
+      usageSource: usage ? 'provider' : 'estimated',
+      ...(usage ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens } : {}),
+      ...(usage?.inputTokens != null && usage.outputTokens != null ? {
+        tokens: usage.inputTokens + usage.outputTokens,
+        ...(llm.pricing ? { usd: (usage.inputTokens * llm.pricing.inputPerMillion + usage.outputTokens * llm.pricing.outputPerMillion) / 1_000_000 } : {}),
+      } : {}),
     },
   };
 }
@@ -782,16 +859,6 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       requiredCapabilities: ['items:write'],
       service: 'items',
       dangerous: true,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          collection: { type: 'string' },
-          itemId: { type: 'string' },
-          key: { type: 'string' },
-          name: { type: 'string' },
-        },
-        required: ['collection', 'itemId', 'key', 'name'],
-      },
       handler: async (args) => {
         const svc = contentVersionService();
         if (!svc) return { created: true };
@@ -811,17 +878,6 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       requiredCapabilities: ['items:write'],
       service: 'items',
       dangerous: true,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          collection: { type: 'string' },
-          itemId: { type: 'string' },
-          key: { type: 'string' },
-          data: { type: 'object' },
-          name: { type: 'string' },
-        },
-        required: ['collection', 'itemId', 'key'],
-      },
       handler: async (args) => {
         const svc = contentVersionService();
         if (!svc) return { updated: true };
@@ -843,15 +899,6 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       description: 'Delete a version branch (does not touch main).',
       requiredCapabilities: ['items:write'],
       service: 'items',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          collection: { type: 'string' },
-          itemId: { type: 'string' },
-          key: { type: 'string' },
-        },
-        required: ['collection', 'itemId', 'key'],
-      },
       handler: async (args) => {
         const svc = contentVersionService();
         if (!svc) return { deleted: true };
@@ -867,15 +914,6 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       requiredCapabilities: ['items:write'],
       service: 'items',
       dangerous: true,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          collection: { type: 'string' },
-          itemId: { type: 'string' },
-          key: { type: 'string' },
-        },
-        required: ['collection', 'itemId', 'key'],
-      },
       handler: async (args) => {
         const svc = contentVersionService();
         if (!svc) return { promoted: true };
@@ -910,18 +948,6 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         'Translate one item field into a missing locale and store the result in a named version branch (no live content change).',
       requiredCapabilities: ['items:read', 'items:write', 'translations:write'],
       service: 'items',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          collection: { type: 'string' },
-          itemId: { type: 'string' },
-          field: { type: 'string', description: 'Item field holding a locale-keyed object.' },
-          locale: { type: 'string', description: 'Locale to fill in.' },
-          versionKey: { type: 'string', description: 'Deterministic draft branch key for this drift.' },
-          sourceLocale: { type: 'string', description: 'Locale to translate from; inferred when omitted.' },
-        },
-        required: ['collection', 'itemId', 'field', 'locale', 'versionKey'],
-      },
       handler: async (args) => {
         const svc = contentVersionService();
         if (!svc) {
@@ -1772,7 +1798,10 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
       service: 'access',
       handler: async (args) => {
         if (!configService) return { settings: [] };
-        return { settings: await configService.listSettings(args['scope'] as string | undefined) };
+        // Same redaction as `GET /api/v1/settings` (#579). Tool output reaches
+        // Copilot clients and, over governed MCP, an external model's context.
+        const rows = await configService.listSettings(args['scope'] as string | undefined);
+        return { settings: rows.map(redactSettingRow) };
       },
     },
 
@@ -2421,6 +2450,46 @@ export class AISecureHarness {
     return isControlPlaneSkill(skill, skillName);
   }
 
+  /**
+   * Impact-aware escalation for item writes (#578): see
+   * {@link classifyItemWriteImpact}. Only `updateItem` reads the database, and
+   * only the item's status column, scoped to this site. A read that fails is
+   * reported as `unknown_state`, which escalates (fail closed).
+   */
+  async evaluateItemWriteImpact(
+    skillName: string,
+    args: Record<string, unknown>,
+  ): Promise<ItemWriteImpact | null> {
+    if (skillName !== 'createItem' && skillName !== 'updateItem') return null;
+    let currentStatus: string | null | undefined = null;
+    if (skillName === 'updateItem') {
+      currentStatus = await this.readItemStatus(String(args['collection']), String(args['id']));
+    }
+    return classifyItemWriteImpact(skillName, args, currentStatus);
+  }
+
+  private async readItemStatus(collection: string, id: string): Promise<string | null | undefined> {
+    try {
+      const [row] = await this.db
+        .select({ status: itemsTable.status })
+        .from(itemsTable)
+        .innerJoin(collectionsTable, eq(collectionsTable.id, itemsTable.collectionId))
+        .where(
+          and(
+            eq(itemsTable.siteId, this.siteId),
+            eq(collectionsTable.siteId, this.siteId),
+            eq(collectionsTable.name, collection),
+            eq(itemsTable.id, id),
+            isNull(itemsTable.deletedAt),
+          ),
+        )
+        .limit(1);
+      return row ? row.status : null;
+    } catch {
+      return undefined;
+    }
+  }
+
   // ---------- Input validation ----------
 
   /**
@@ -2637,8 +2706,15 @@ export class AISecureHarness {
       }
     }
 
-    // Step 3: Evaluate risk
-    const isDangerous = this.evaluateRisk(tool, skillName) || policy.risk === 'dangerous' || policy.risk === 'review_required';
+    // Step 3: Evaluate risk. Name/capability classification first, then the
+    // content state of item writes (#578): publishing, unpublishing or editing
+    // live content goes through the same gradient as a dangerous skill.
+    const itemImpact = await this.evaluateItemWriteImpact(skillName, args);
+    const isDangerous =
+      this.evaluateRisk(tool, skillName) ||
+      policy.risk === 'dangerous' ||
+      policy.risk === 'review_required' ||
+      itemImpact !== null;
     const isWrite = isWriteSkill(tool);
 
     if (isDangerous) {
@@ -2654,6 +2730,21 @@ export class AISecureHarness {
         intentCap: envelope.autonomyCap ?? null,
         irreversible: IRREVERSIBLE_SKILLS.has(skillName),
       });
+
+      // L0 shadow: no side effects, not even approvable ones (#578). This branch
+      // used to fall through to `parkForApproval`, so a dangerous action under an
+      // L0 cap became a pending approval that a human could release — the write
+      // gate below already refused the same case for plain writes.
+      if (level === AUTONOMY_LEVELS.SHADOW) {
+        const message = `autonomy_shadow: L0 cannot write; "${skillName}" was not executed`;
+        await this.runService.finishToolCall(toolCallId, {
+          status: 'denied',
+          error: message,
+          latencyMs: Date.now() - startedAt,
+        });
+        await this.runService.failRun(run.runId, message, { stopReason: 'autonomy_shadow' });
+        return { status: 'denied', code: 'AUTONOMY_SHADOW', message, ...run, toolCallId };
+      }
 
       // L3 veto window: stageable item writes execute into staging and
       // auto-commit at the deadline unless a human vetoes (Req 13.1).
@@ -2719,7 +2810,7 @@ export class AISecureHarness {
             toolCallId,
           };
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = runErrorMessage(err);
           await this.runService.finishToolCall(toolCallId, {
             status: 'failed',
             error: message,
@@ -2738,6 +2829,7 @@ export class AISecureHarness {
           await this.runService.finishToolCall(toolCallId, {
             status: 'executed',
             output: result.data,
+            cost: skillUsage(result.data),
             latencyMs: Date.now() - startedAt,
           });
           await this.runService.closeRun(run.runId, {
@@ -2754,7 +2846,7 @@ export class AISecureHarness {
           latencyMs: Date.now() - startedAt,
         });
         await this.runService.failRun(run.runId, result.error, { toolCalls: 1 });
-        return { status: 'denied', message: result.error, ...run, toolCallId };
+        return { status: 'denied', code: result.code, message: result.error, ...run, toolCallId };
       }
 
       // ≤L2 (or L3 without a stageable patch): classic pre-execute HITL.
@@ -2764,9 +2856,10 @@ export class AISecureHarness {
         contextMessage,
         run,
         toolCallId,
-        approvalPolicy: policy.approvalPolicy,
+        approvalPolicy: policy.approvalPolicy === 'none' ? 'before_execute' : policy.approvalPolicy,
         startedAt,
         requestedByPrincipal: envelope.requestedByPrincipal ?? null,
+        riskReason: itemImpact,
       });
     }
 
@@ -2831,6 +2924,7 @@ export class AISecureHarness {
       await this.runService.finishToolCall(toolCallId, {
         status: 'executed',
         output: result.data,
+        cost: skillUsage(result.data),
         latencyMs: Date.now() - startedAt,
       });
       await this.runService.closeRun(run.runId, {
@@ -2846,7 +2940,7 @@ export class AISecureHarness {
       latencyMs: Date.now() - startedAt,
     });
     await this.runService.failRun(run.runId, result.error, { toolCalls: 1 });
-    return { status: 'denied', message: result.error, ...run, toolCallId };
+    return { status: 'denied', code: result.code, message: result.error, ...run, toolCallId };
   }
 
   /**
@@ -2872,38 +2966,59 @@ export class AISecureHarness {
     approvalPolicy?: string | undefined;
     startedAt: number;
     requestedByPrincipal?: ApprovalRequester | null | undefined;
+    /** Set when an item write was escalated by its content impact (#578). */
+    riskReason?: ItemWriteImpact | null | undefined;
   }): Promise<HarnessExecutionResult> {
     const { skillName, args, contextMessage, run, toolCallId, startedAt } = input;
 
-    const [record] = await this.db
-      .insert(aiApprovals)
-      .values({
-        siteId: this.siteId,
-        agentName: run.agentName,
-        skillName,
-        arguments: args,
-        status: 'pending',
-        context: contextMessage ?? null,
-      })
-      .returning();
+    // The guarded transition and both approval records are one durable unit.
+    // The status UPDATE locks the run until commit: cancellation either wins
+    // before it (no approvals), or observes a fully parked run afterwards.
+    // An insert failure rolls back the transition, leaving a running run that
+    // ordinary failure handling / stale-run quarantine can recover.
+    const parked = await this.db.transaction(async (tx) => {
+      if (!(await this.runService.awaitApproval(run.runId, tx))) return null;
+      const [record] = await tx
+        .insert(aiApprovals)
+        .values({
+          siteId: this.siteId,
+          agentName: run.agentName,
+          skillName,
+          arguments: args,
+          status: 'pending',
+          context: contextMessage ?? null,
+        })
+        .returning();
 
-    const [agentApproval] = await this.db
-      .insert(agentApprovals)
-      .values({
-        runId: run.runId,
-        siteId: this.siteId,
-        legacyApprovalId: record!.id,
-        subjectType: 'tool_call',
-        subjectId: toolCallId,
-        status: 'pending',
-        approvalPolicy: input.approvalPolicy,
-        requestedByAgent: run.agentName,
-        // Provenance for the resume path (#472). Without it, the only identity
-        // available when a human approves is the decider's, so a requester who
-        // was revoked or demoted in the meantime still gets their action run.
-        requestedByPrincipal: input.requestedByPrincipal ?? null,
-      })
-      .returning();
+      const [agentApproval] = await tx
+        .insert(agentApprovals)
+        .values({
+          runId: run.runId,
+          siteId: this.siteId,
+          legacyApprovalId: record!.id,
+          subjectType: 'tool_call',
+          subjectId: toolCallId,
+          status: 'pending',
+          approvalPolicy: input.approvalPolicy,
+          requestedByAgent: run.agentName,
+          // Provenance for the resume path (#472). Without it, the only identity
+          // available when a human approves is the decider's, so a requester who
+          // was revoked or demoted in the meantime still gets their action run.
+          requestedByPrincipal: input.requestedByPrincipal ?? null,
+        })
+        .returning();
+      return { record: record!, agentApproval: agentApproval! };
+    });
+    if (!parked) {
+      const message = 'Run was cancelled';
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'denied',
+        error: message,
+        latencyMs: Date.now() - startedAt,
+      });
+      return { status: 'denied', message, ...run, toolCallId };
+    }
+    const { record, agentApproval } = parked;
 
     this.notify?.({
       kind: 'approval',
@@ -2916,14 +3031,14 @@ export class AISecureHarness {
 
     await this.runService.finishToolCall(toolCallId, {
       status: 'pending_approval',
-      output: { approvalId: record!.id, agentApprovalId: agentApproval!.id },
+      output: {
+        approvalId: record!.id,
+        agentApprovalId: agentApproval!.id,
+        ...(input.riskReason ? { riskReason: input.riskReason } : {}),
+      },
       approvalId: agentApproval!.id,
       latencyMs: Date.now() - startedAt,
     });
-
-    // Park the run while the approval is pending; the approval decision
-    // resumes it without re-running completed tool calls (Req 3.1/3.4).
-    await this.runService.awaitApproval(run.runId);
 
     return {
       status: 'pending_approval',
@@ -2956,7 +3071,9 @@ export class AISecureHarness {
       return { status: 'denied', code: 'VALIDATION', message: inputError };
     }
 
-    const isDangerous = this.evaluateRisk(skill, skillName);
+    const isDangerous =
+      this.evaluateRisk(skill, skillName) ||
+      (await this.evaluateItemWriteImpact(skillName, args)) !== null;
     if (isDangerous) {
       const [record] = await this.db
         .insert(aiApprovals)
@@ -3018,27 +3135,43 @@ export class AISecureHarness {
     this.itemService?.beginWriteCoalescing();
 
     const TIMEOUT_MS = 30_000;
-
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+    const pending = Promise.resolve().then(() => skill.handler(args));
+    // A timeout cannot stop an already-issued database/provider write. Flush
+    // writes that finish late as well as those seen at the response boundary.
+    const flushLate = async () => {
+      if (timedOut) await this.itemService?.flushCoalescedWrites().catch(() => {});
+    };
+    void pending.then(flushLate, flushLate);
     try {
       const result = await Promise.race([
-        skill.handler(args),
+        pending,
         new Promise<never>((_resolve, reject) => {
-          setTimeout(() => {
-            reject(new Error(`Skill execution timed out after ${TIMEOUT_MS}ms`));
+          timer = setTimeout(() => {
+            timedOut = true;
+            reject(new Error('EXECUTION_OUTCOME_UNKNOWN: Skill timed out; its effects may still complete. Inspect the run before issuing new work.'));
           }, TIMEOUT_MS);
         }),
       ]);
-
       return { success: true, data: result };
     } catch (err: unknown) {
+      if (timedOut) {
+        this.serviceTouch.markTouched();
+        if (runContext?.runId) {
+          try { await this.runService.markOutcomeUnknown(runContext.runId); } catch {
+            // Keep the running tool row as durable evidence when the marker write fails.
+            throw new OutcomePersistenceError('EXECUTION_OUTCOME_UNKNOWN: timeout evidence could not be finalized; inspect the running tool call.');
+          }
+        }
+        return { success: false, error: 'EXECUTION_OUTCOME_UNKNOWN: Skill timed out; its effects may still complete. Inspect the run before issuing new work.', code: 'EXECUTION_OUTCOME_UNKNOWN' };
+      }
       if (err instanceof ItemPreconditionFailedError) {
         return { success: false, error: `${err.code}: ${err.message}`, code: err.code };
       }
-      const message = err instanceof Error ? err.message : 'Unknown execution error';
-      return { success: false, error: message };
+      return { success: false, error: runErrorMessage(err) };
     } finally {
-      // Tool-call boundary: writes that happened (even on failure) flush
-      // their deferred invalidations exactly once per collection (Req 9.1).
+      clearTimeout(timer);
       await this.itemService?.flushCoalescedWrites().catch(() => {});
     }
   }
@@ -3333,6 +3466,9 @@ export class AISecureHarness {
     const persistedRun = existingAgentApproval
       ? await this.runService.getRun(existingAgentApproval.runId)
       : null;
+    if (persistedRun && await this.runService.hasUnknownExecution(persistedRun.id, persistedRun.metrics)) {
+      return { status: 'denied', code: 'RUN_OUTCOME_UNKNOWN', message: 'Timed-out execution has unverified effects. Inspect the run before issuing new work.', runId: persistedRun!.id };
+    }
     const run = existingAgentApproval
       ? {
           goalId: persistedRun?.goalId ?? '',
@@ -3404,8 +3540,7 @@ export class AISecureHarness {
       // exception AFTER a successful mutation, e.g. while persisting the
       // legacy approval row.
       if (existingAgentApproval) {
-        const message = err instanceof Error ? err.message : String(err);
-        await this.settleFailedClaim(existingAgentApproval.id, message);
+        await this.settleFailedClaim(existingAgentApproval.id, runErrorMessage(err));
       }
       throw err;
     }
@@ -3473,10 +3608,11 @@ export class AISecureHarness {
         { runId: run.runId },
       );
     } catch (err) {
+      if (err instanceof OutcomePersistenceError) throw err;
       // A throwing skill must not strand the claim in `deciding`, where the
       // approval disappears from the operator's pending inbox — but it must
       // not be blindly re-offered either if it already reached a service.
-      const message = err instanceof Error ? err.message : String(err);
+      const message = runErrorMessage(err);
       if (existingAgentApproval) await this.settleFailedClaim(existingAgentApproval.id, message);
       await this.runService.finishToolCall(toolCallId, {
         status: 'failed',
@@ -3519,6 +3655,7 @@ export class AISecureHarness {
         await this.runService.finishToolCall(toolCallId, {
           status: 'executed',
           output: result.data,
+          cost: skillUsage(result.data),
           approvalId: existingAgentApproval?.id ?? null,
           latencyMs: Date.now() - startedAt,
         });
@@ -3556,10 +3693,12 @@ export class AISecureHarness {
       await this.runService.finishToolCall(toolCallId, {
         status: 'executed',
         output: result.data,
+        cost: skillUsage(result.data),
         approvalId: existingAgentApproval?.id ?? null,
         latencyMs: Date.now() - startedAt,
       });
       await this.runService.closeRun(run.runId, { approvedBy: userId, ...extractLLMMeta(result.data) });
+      observeApprovalDecision({ subjectType: existingAgentApproval?.subjectType, status: 'approved', createdAt: existingAgentApproval?.createdAt ?? record.createdAt });
       return {
         status: 'executed',
         data: result.data,
@@ -3748,6 +3887,10 @@ export class AISecureHarness {
       )
       .returning({ id: aiApprovals.id });
 
+    if (rejected.length > 0) {
+      const linked = await this.loadAgentApprovalFor(approvalId);
+      if (linked) observeApprovalDecision({ ...linked, status: 'rejected' });
+    }
     return rejected.length > 0;
   }
 }
