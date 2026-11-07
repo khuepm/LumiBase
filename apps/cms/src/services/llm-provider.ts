@@ -103,10 +103,19 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Bound the full upstream exchange, including body reads. The fetch signal
+ * remains active after headers arrive. Decision callers can supply a shorter
+ * deadline and keep control of their own bounded retry policy. */
+export const LLM_REQUEST_TIMEOUT_MS = 20_000;
+function upstreamSignal(caller?: AbortSignal): AbortSignal {
+  const deadline = AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS);
+  return caller ? AbortSignal.any([caller, deadline]) : deadline;
+}
+
 /** Wraps only the transport: an abort keeps its original error path. */
 async function sendLLMRequest(url: string, init: RequestInit, signal?: AbortSignal): Promise<Response> {
   try {
-    return await fetch(url, init);
+    return await fetch(url, { ...init, signal: upstreamSignal(signal) });
   } catch (error) {
     if (signal?.aborted) throw error;
     throw new LLMNetworkError(messageOf(error));
