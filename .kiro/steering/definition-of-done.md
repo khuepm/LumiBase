@@ -40,6 +40,9 @@ Với MỌI feature đụng tới dữ liệu, hàng đợi, cache, realtime, ba
 
   > Sinh sau B125: mọi `site_isolation` từng là RESTRICTIVE và không có policy PERMISSIVE nào, nên role non-superuser mà file yêu cầu thấy 0 dòng trên mọi bảng. Backstop trông đúng nhưng không bao giờ cho phép gì, và mọi suite DB đều kết nối bằng superuser (bypass RLS) nên không suite nào thấy.
 - [ ] **Khoá hạ tầng có tiền tố tenant**: cache key, search index name, Durable Object name, queue dedup key, lock key — đều chứa `siteId`. Không có khoá "trần" dùng chung giữa tenant.
+- [ ] **Cache dữ liệu phân quyền mang đủ đầu vào của phép tính**: key phải nêu mọi định danh mà giá trị được tính từ đó (API key, user, role), và giá trị phụ thuộc request (ip, đồng hồ) thì không được phục vụ lại cho request khác. Kiểm bằng test hành vi với hai principal dùng chung một cache thật.
+
+  > #583: key bundle quyền chỉ mang role khi context có cả user lẫn role, nên hai thành viên cùng role dùng chung bundle (kể cả policy admin cấp riêng cho một người) trên mọi đường AI governed; policy có IP guard bị phục vụ cho địa chỉ bị chặn tới 60 s. Gate: `permission-cache-principal-scope.db.integration.test.ts`.
 - [ ] **Ghi dữ liệu được cache theo tag**: feature có đường ghi làm dữ liệu tenant được cache (theo tag hoặc version pointer) → PHẢI gọi `invalidateByTag` / `bumpVersion` / `forgetNegative` tương ứng sau commit **và** có test hành vi chứng minh entry cũ không còn được phục vụ (không chỉ unit test hàm invalidate).
 
   > Sinh sau sự cố high-load-cache-readiness: `PermissionService.invalidate()` là dead code — đổi quyền chỉ có hiệu lực sau TTL 60s; CDC `CacheInvalidator` viết nhưng không wire. Cơ giới hóa bằng integration test (vd `permission-cache-revocation.integration.test.ts`, Properties P6/P9) — test hành vi fail nếu ai tháo lời gọi bump/purge sau mutation.

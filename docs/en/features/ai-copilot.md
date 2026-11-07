@@ -1,11 +1,16 @@
 ---
-version: 3
-lastUpdated: 2026-11-02T21:42:52.144Z
-sourceLang: en
+version: 5
+lastUpdated: 2026-11-07T19:56:21.536Z
+sourceLang: vi
 contentHash: ecc8983d3122446b
-codeVerified: 2026-11-02T21:42:52.144Z
-codeVerifiedHash: ecc8983d3122446b
-codeVerifiedClaims: 28
+codeVerified: 2026-11-07T19:56:21.536Z
+codeVerifiedHash: d65dcabd5360fe44
+codeVerifiedClaims: 30
+
+translatedFrom: vi
+sourceHash: d65dcabd5360fe44
+mtEngine: manual
+syncStatus: human-translated
 ---
 
 # AI Copilot (HITL)
@@ -35,7 +40,7 @@ So the existing tables are seen as seeds:
 
 - `ai_approvals` → the precursor to a general approval gate for plan/tool/artifact.
 - `ai_conversations` + `ai_messages` → short-term context memory.
-- `ai_embeddings` → the RAG knowledge base by site/collection/item.
+- `ai_embeddings` → reserved for a RAG knowledge base by site/collection/item. Nothing reads or writes it yet (#581).
 - `CORE_SKILLS` → the precursor to a tool registry with an input schema, capability, rate limit, and risk policy.
 
 ## CORE_SKILLS registry
@@ -159,7 +164,10 @@ The system supports multiple LLM providers (configured via the `LLM_PROVIDER` en
 
 ### 2. Context Memory (Conversation history)
 The `ai_conversations` and `ai_messages` tables store the state of conversation threads:
-- Whenever a message is sent to `/api/v1/ai/chat`, the system loads up to the **20 most recent messages** as the context window passed to the LLM.
+- Whenever a message is sent to `/api/v1/ai/chat`, the system loads up to the **20 most recent messages** as the context window passed to the LLM. Since #582 the synchronous route and the `Prefer: respond-async` worker share `loadCopilotHistory` (`apps/cms/src/services/copilot-history.ts`); before, both read the **oldest** 20 messages, so from the 21st message on the turn the user had just sent was not in the request.
+- The window always opens on a user turn (an assistant message at the cut is dropped) and ends with the turn just sent. The Copilot system prompt is sent separately and is never cut.
+- Current limits: a user message is at most 2000 characters; output is capped at 1024 tokens (Workers AI uses the model default); the whole tool catalogue (74 skills, ~24,200 characters of JSON, an estimated ~6,000 tokens) is sent on every turn. LumiBase does **not** count tokens or check the model's context window, so choose a model whose context fits the tool catalogue plus 20 messages.
+- When the model returns several tool calls, only the first one runs. Arguments that are not valid JSON return `500` once, with no retry and nothing written.
 - Full management APIs are supported: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
 - A conversation belongs to the user who started it (#579). Another member of the site gets `404` on its messages, a `DELETE` removes nothing, and a `POST /chat` with that `conversationId` starts a new conversation for the caller. An API-key caller owns only the conversations recorded with its own key (`api_key_id`, migration `0023`), so one key cannot list, read, delete or append to another key's conversation. User-less conversations created before `0023` have no recorded key and no API key owns them.
 
@@ -170,10 +178,11 @@ The `ai_conversations` and `ai_messages` tables store the state of conversation 
 - **The model grants no rights.** The harness checks capabilities, the canonical input schema, and the caller's row and field permissions on every tool call, whatever the model asked for. `apps/cms/eval/prompt-injection/dataset.v1.json` lists attacks and benign controls that are replayed as if the model followed the attacker.
 - **Redaction.** `listSettings` redacts secret-bearing fields with the same rule as `GET /api/v1/settings`.
 
-### 3. RAG Skills (`aiSuggestField` and `aiContentAssist`)
-Integrates a vector-embedding service (`embedding-service.ts`) supporting OpenAI `text-embedding-3-small` and Workers AI `@cf/baai/bge-base-en-v1.5`:
-- **`aiSuggestField`**: Analyzes the current schema and the admin's description, retrieves similar vectors from the database via cosine similarity to suggest an optimal field configuration.
-- **`aiContentAssist`**: Helps generate or revise field content based on RAG context from items already stored in the system.
+### 3. Generation skills with context (`aiSuggestField` and `aiContentAssist`)
+Neither skill runs a vector search today (#581). `embedding-service.ts` (OpenAI `text-embedding-3-small`, Workers AI `@cf/baai/bge-base-en-v1.5`) and the `ai_embeddings` table exist, but no code path calls or fills them.
+- **`aiSuggestField`**: sends the collection's existing field names and the admin's description to the model.
+- **`aiContentAssist`**: sends up to 3 sample items of the collection, the most recently updated items the caller may read. `ItemService` applies the tenant, row and field rules, so a hidden field, another site's item or an item outside the row rule never reaches the model. An update, a delete or a revoked permission takes effect on the next call. Only each sample's `status` and `data` are sent, not row metadata. The samples do not depend on the instruction. `apps/cms/eval/retrieval/dataset.v1.json` records the baseline on that dataset (Recall@3 0.5, MRR@3 0.46).
+- The embedding primitives throw `EMBEDDING_DIMENSION_MISMATCH` or `EMBEDDING_RESPONSE_INVALID` when vectors of different sizes are compared or a provider returns the wrong number or size of vectors.
 
 ## Property-based testing
 

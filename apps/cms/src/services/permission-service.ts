@@ -140,7 +140,7 @@ const PROCESS_CACHE_TTL_MS = 5_000;
  * segment: two tenants cannot collide, and a stale entry cannot be addressed
  * once the version moves.
  */
-const processBundleStore: ProcessCacheStore<PermissionBundle> = new Map();
+const processBundleStore: ProcessCacheStore<CachedPermissionBundle> = new Map();
 
 /** Test seam: drop process-cached bundles between cases. */
 export function __resetPermissionProcessCacheForTests(): void {
@@ -155,6 +155,16 @@ export function __resetPermissionProcessCacheForTests(): void {
  * the 60s entry TTL, which doubles as the safety net when a bump write fails
  * or is still propagating through KV's eventual-consistency window.
  */
+/**
+ * Cached form of a bundle. `contextBound` marks a principal whose bundle
+ * depends on the request itself: one of its candidate policies has an IP
+ * guard or a validity window, so the compiled result changes with `ctx.ip`
+ * and `ctx.now`. Such an entry is never served as is; it only records that
+ * the principal must be compiled per request (#583 F2). The marker never
+ * leaves this service.
+ */
+type CachedPermissionBundle = PermissionBundle & { contextBound?: true };
+
 const versionKey = (siteId: string) => `perm-ver:${siteId}`;
 
 const cacheKey = (siteId: string, version: number, principal: string) =>
@@ -172,11 +182,13 @@ async function readPermissionVersion(cache: CacheProvider, siteId: string): Prom
 
 export class PermissionService {
   private compiled: PermissionBundle | null = null;
-  private bundleSwr: SwrCache<PermissionBundle> | null = null;
+  private bundleSwr: SwrCache<CachedPermissionBundle> | null = null;
+  /** Last bundle compiled by this instance, i.e. for this request's ctx. */
+  private lastCompiled: CachedPermissionBundle | null = null;
 
   constructor(private readonly deps: PermissionServiceDeps) {}
 
-  private getBundleSwr(): SwrCache<PermissionBundle> | null {
+  private getBundleSwr(): SwrCache<CachedPermissionBundle> | null {
     if (!this.deps.cache) return null;
     if (!this.bundleSwr) {
       this.bundleSwr = withProcessCache(
@@ -184,7 +196,11 @@ export class PermissionService {
           cache: this.deps.cache,
           softTtl: 30,
           hardTtl: CACHE_TTL_SECONDS,
-          compute: async () => this.compile(),
+          compute: async () => {
+            const compiled = await this.compile();
+            this.lastCompiled = compiled;
+            return compiled;
+          },
         }),
         {
           store: processBundleStore,
@@ -201,12 +217,23 @@ export class PermissionService {
     return this.bundleSwr;
   }
 
-  /** Stable principal id used for cache keys ("anon" when no user yet). */
+  /**
+   * Principal part of the cache key ("anon" when there is no identity).
+   *
+   * It names every identity input `compile()` reads: the API key, the user
+   * and the direct role. Keying on the role alone when a user is present let
+   * two members of the same role share one bundle, including policies granted
+   * to one user directly, and let a share link or the public role read a
+   * member's bundle (#583 F1). `EffectiveCapabilityService` passes both the
+   * user and the membership role, so every governed AI call took that path.
+   */
   private get principalKey(): string {
+    const parts: string[] = [];
     const apiKeyId = this.deps.ctx.apiKey?.id;
-    if (typeof apiKeyId === 'string' && apiKeyId.length > 0) return `api_key:${apiKeyId}`;
-    if (this.deps.ctx.roleId) return `role:${this.deps.ctx.roleId}`;
-    return this.deps.ctx.userId ?? 'anon';
+    if (typeof apiKeyId === 'string' && apiKeyId.length > 0) parts.push(`api_key:${apiKeyId}`);
+    if (this.deps.ctx.userId) parts.push(`user:${this.deps.ctx.userId}`);
+    if (this.deps.ctx.roleId) parts.push(`role:${this.deps.ctx.roleId}`);
+    return parts.length > 0 ? parts.join('|') : 'anon';
   }
 
   /** Resolve and memoise the bundle for the request's principal. */
@@ -218,12 +245,17 @@ export class PermissionService {
     if (cache && swr) {
       const version = await readPermissionVersion(cache, this.deps.ctx.siteId);
       const key = cacheKey(this.deps.ctx.siteId, version, this.principalKey);
-      this.compiled = await swr.get(key);
+      this.lastCompiled = null;
+      let cached = await swr.get(key);
+      // An IP- or time-guarded bundle was compiled for another request's ip
+      // and clock; compile it for this one (#583 F2).
+      if (cached.contextBound) cached = this.lastCompiled ?? (await this.compile());
+      this.compiled = publicBundle(cached);
       await this.hydrateMagicContext(this.compiled);
       return this.compiled;
     }
 
-    this.compiled = await this.compile();
+    this.compiled = publicBundle(await this.compile());
     return this.compiled;
   }
 
@@ -304,7 +336,7 @@ export class PermissionService {
 
   // ---------- internals ----------
 
-  private async compile(): Promise<PermissionBundle> {
+  private async compile(): Promise<CachedPermissionBundle> {
     const { db, ctx } = this.deps;
 
     const userRow = ctx.userId
@@ -445,6 +477,9 @@ export class PermissionService {
       .from(policies)
       .where(and(scopeSite(policies.siteId, ctx.siteId), inArray(policies.id, policyIds)));
     const activePolicies = policyMeta.filter((p) => isPolicyActive(p, ctx));
+    // Any guarded candidate makes the result depend on ip/now, including one
+    // that is inactive for this request.
+    const bound = policyMeta.some(isPolicyContextBound) ? { contextBound: true as const } : {};
     const allowedPolicyIds = activePolicies.map((p) => p.id);
     const activePolicyNames = new Map(activePolicies.map((p) => [p.id, p.name]));
     const activePolicyBundle = activePolicies.map((p) => ({ id: p.id, name: p.name, key: p.key }));
@@ -460,11 +495,11 @@ export class PermissionService {
     const tfaRequired = activePolicies.some((p) => p.enforceTfa);
 
     if (admin) {
-      return { admin: true, appAccess, tfaRequired, byKey: {}, roles: roleRows, policies: activePolicyBundle };
+      return { admin: true, appAccess, tfaRequired, byKey: {}, roles: roleRows, policies: activePolicyBundle, ...bound };
     }
 
     if (!allowedPolicyIds.length) {
-      return { admin: false, appAccess, tfaRequired, byKey: {}, roles: roleRows, policies: [] };
+      return { admin: false, appAccess, tfaRequired, byKey: {}, roles: roleRows, policies: [], ...bound };
     }
 
     const permRows = await db
@@ -497,7 +532,7 @@ export class PermissionService {
       byKey[key] = existing ? mergePermission(existing, incoming) : incoming;
     }
 
-    return { admin: false, appAccess, tfaRequired, byKey, roles: roleRows, policies: activePolicyBundle };
+    return { admin: false, appAccess, tfaRequired, byKey, roles: roleRows, policies: activePolicyBundle, ...bound };
   }
 
   private async hydrateMagicContext(bundle: PermissionBundle): Promise<void> {
@@ -560,6 +595,22 @@ interface PolicyGuardRow {
   ipAllow?: unknown;
   ipDeny?: unknown;
   rules?: unknown;
+}
+
+/** Strips the cache-only marker so it never reaches callers or responses. */
+function publicBundle(bundle: CachedPermissionBundle): PermissionBundle {
+  if (!bundle.contextBound) return bundle;
+  const { contextBound: _bound, ...rest } = bundle;
+  return rest;
+}
+
+/** True when a policy's activity depends on the request ip or clock. */
+function isPolicyContextBound(policy: PolicyGuardRow): boolean {
+  const rules = (policy.rules as PolicyGuard | null | undefined) ?? {};
+  if (policy.validFrom ?? rules.validFrom) return true;
+  if (policy.validUntil ?? rules.validUntil) return true;
+  const { ipAllow, ipDeny } = resolvePolicyIpGuards(policy.ipAllow, policy.ipDeny, rules);
+  return Boolean(ipAllow?.length || ipDeny?.length);
 }
 
 function isPolicyActive(policy: PolicyGuardRow, ctx: MagicContext): boolean {

@@ -1,0 +1,41 @@
+{
+  "version": "retrieval-baseline@1",
+  "issue": "#581",
+  "auditedCommit": "f3ae224c",
+  "retriever": "aiContentAssist samples: ItemService.list(collection, { limit: 3, withTotal: false }), default sort updated_at DESC, after tenant/row/field rules",
+  "k": 3,
+  "model": "none (a recording provider captures the prompt; no live model is called)",
+  "permittedScope": {
+    "site": "A",
+    "collection": "articles",
+    "rowRule": { "status": { "_eq": "published" } },
+    "fields": ["title", "body"],
+    "excluded": ["internalNote field (not granted)", "draft items (row rule)", "site B items (tenant)"]
+  },
+  "corpus": [
+    { "key": "c1", "status": "published", "updatedRank": 7, "title": "Solar panel cleaning schedule", "body": "Rinse panels every three months; avoid abrasive brushes." },
+    { "key": "c2", "status": "published", "updatedRank": 6, "title": "Inverter fault codes explained", "body": "Code E21 means grid overvoltage; E30 is an isolation fault." },
+    { "key": "c3", "status": "published", "updatedRank": 5, "title": "Choosing a heat pump", "body": "Compare SCOP ratings and noise levels before buying." },
+    { "key": "c4", "status": "published", "updatedRank": 4, "title": "Solar panel warranty claims", "body": "Dirty panels can void a performance warranty; keep cleaning records." },
+    { "key": "c5", "status": "published", "updatedRank": 3, "title": "Winter heat pump efficiency", "body": "Efficiency drops below -7C; size the unit for the coldest week." },
+    { "key": "c6", "status": "published", "updatedRank": 2, "title": "Battery storage sizing", "body": "Size the battery to evening load, usually 5-10 kWh for a home." },
+    { "key": "c7", "status": "draft", "updatedRank": 1, "title": "Draft solar roadmap", "body": "Unreleased plan; must never reach the model for this principal." }
+  ],
+  "otherSite": [
+    { "key": "b1", "status": "published", "title": "Solar panel cleaning (site B)", "body": "CANARY-581-SITE-B" }
+  ],
+  "queries": [
+    { "id": "Q1", "instruction": "Write an intro on keeping solar panels clean", "relevant": ["c1", "c4"] },
+    { "id": "Q2", "instruction": "Explain inverter error codes for installers", "relevant": ["c2"] },
+    { "id": "Q3", "instruction": "Heat pump buying advice for cold climates", "relevant": ["c3", "c5"] },
+    { "id": "Q4", "instruction": "How big should a home battery be", "relevant": ["c6"] }
+  ],
+  "baseline": {
+    "note": "Measured on the audited retriever. It ignores the instruction, so every query gets the same 3 most recently updated permitted items (c6, c5, c4). The metric reflects corpus recency, not relevance; no threshold is set (see the #581 report, section 5).",
+    "retrievedForEveryQuery": ["c6", "c5", "c4"],
+    "recallAtK": { "Q1": 0.5, "Q2": 0, "Q3": 0.5, "Q4": 1 },
+    "meanRecallAtK": 0.5,
+    "reciprocalRank": { "Q1": 0.3333, "Q2": 0, "Q3": 0.5, "Q4": 1 },
+    "mrrAtK": 0.4583
+  }
+}

@@ -1,14 +1,16 @@
 ---
-version: 3
-lastUpdated: 2026-11-02T21:42:52.144Z
-sourceLang: en
+version: 5
+lastUpdated: 2026-11-07T19:56:21.536Z
+sourceLang: vi
 translatedFrom: en
 sourceHash: ecc8983d3122446b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-02T21:42:52.144Z
-codeVerifiedHash: ecc8983d3122446b
-codeVerifiedClaims: 28
+codeVerified: 2026-11-07T19:56:21.536Z
+codeVerifiedHash: d65dcabd5360fe44
+codeVerifiedClaims: 30
+
+contentHash: d65dcabd5360fe44
 ---
 
 # AI Copilot (HITL)
@@ -38,7 +40,7 @@ Vì vậy các bảng hiện có được xem như seed:
 
 - `ai_approvals` → tiền thân của approval gate tổng quát cho plan/tool/artifact.
 - `ai_conversations` + `ai_messages` → context memory ngắn hạn.
-- `ai_embeddings` → RAG knowledge base theo site/collection/item.
+- `ai_embeddings` → dành cho RAG knowledge base theo site/collection/item. Hiện chưa có code nào đọc hoặc ghi bảng này (#581).
 - `CORE_SKILLS` → tiền thân của tool registry có input schema, capability, rate limit và risk policy.
 
 ## CORE_SKILLS registry
@@ -162,7 +164,10 @@ Hệ thống hỗ trợ nhiều LLM providers (cấu hình qua `LLM_PROVIDER` en
 
 ### 2. Context Memory (Lịch sử hội thoại)
 Bảng `ai_conversations` và `ai_messages` được dùng để lưu trữ trạng thái các luồng trò chuyện:
-- Mỗi khi gửi message lên `/api/v1/ai/chat`, hệ thống sẽ load tối đa **20 messages gần nhất** để làm ngữ cảnh (context window) truyền vào LLM.
+- Mỗi khi gửi message lên `/api/v1/ai/chat`, hệ thống sẽ load tối đa **20 messages gần nhất** để làm ngữ cảnh (context window) truyền vào LLM. Từ #582 cả route đồng bộ lẫn worker `Prefer: respond-async` đều dùng chung `loadCopilotHistory` (`apps/cms/src/services/copilot-history.ts`); trước đó cả hai đọc 20 message **cũ nhất**, nên từ message thứ 21 trở đi lượt user vừa gửi không có trong request.
+- Cửa sổ luôn mở đầu bằng một lượt user (nếu cắt rơi vào message assistant thì bỏ message đó) và kết thúc bằng lượt user vừa gửi. System prompt của Copilot gửi riêng nên không bao giờ bị cắt.
+- Giới hạn hiện có: message user tối đa 2000 ký tự; output tối đa 1024 token (Workers AI dùng mặc định của model); toàn bộ catalogue tool (74 skill, ~24.200 ký tự JSON, ước lượng ~6.000 token) gửi kèm mỗi lượt. LumiBase **không** đếm token và không kiểm tra context window của model, nên hãy chọn model có context đủ lớn cho tool catalogue cộng 20 message.
+- Model trả nhiều tool call thì chỉ call đầu tiên được thực thi. Arguments không phải JSON hợp lệ trả `500` một lần, không retry và không ghi gì.
 - Hỗ trợ đầy đủ các API quản lý: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
 - Một hội thoại thuộc về user đã tạo nó (#579). Thành viên khác của site nhận `404` khi đọc messages, `DELETE` không xoá gì, và `POST /chat` với `conversationId` đó sẽ mở một hội thoại mới cho người gọi. Caller dùng API key chỉ sở hữu các hội thoại được ghi với chính key đó (`api_key_id`, migration `0023`), nên key này không list, đọc, xoá hay nối vào hội thoại của key khác được. Hội thoại không có user id tạo trước `0023` không ghi key nào nên không API key nào sở hữu chúng.
 
@@ -173,10 +178,11 @@ Bảng `ai_conversations` và `ai_messages` được dùng để lưu trữ tr�
 - **Model không cấp quyền.** Harness kiểm capability, input schema chuẩn, và quyền theo row và field của người gọi ở mọi tool call, bất kể model yêu cầu gì. `apps/cms/eval/prompt-injection/dataset.v1.json` liệt kê các tấn công và benign control, được chạy lại như thể model làm theo kẻ tấn công.
 - **Redaction.** `listSettings` che các field chứa secret theo cùng quy tắc với `GET /api/v1/settings`.
 
-### 3. RAG Skills (`aiSuggestField` và `aiContentAssist`)
-Tích hợp dịch vụ sinh vector embeddings (`embedding-service.ts`) hỗ trợ OpenAI `text-embedding-3-small` và Workers AI `@cf/baai/bge-base-en-v1.5`:
-- **`aiSuggestField`**: Phân tích schema hiện tại và mô tả của admin, truy xuất vector tương tự từ database thông qua cosine similarity để gợi ý cấu hình field tối ưu.
-- **`aiContentAssist`**: Hỗ trợ sinh hoặc hiệu chỉnh nội dung field dựa trên RAG context từ các item đã lưu trong hệ thống.
+### 3. Skill sinh nội dung có context (`aiSuggestField` và `aiContentAssist`)
+Hiện cả hai skill đều không chạy vector search (#581). `embedding-service.ts` (OpenAI `text-embedding-3-small`, Workers AI `@cf/baai/bge-base-en-v1.5`) và bảng `ai_embeddings` có tồn tại, nhưng chưa có đường code nào gọi hoặc ghi vào chúng.
+- **`aiSuggestField`**: gửi cho model tên các field hiện có của collection và mô tả của admin.
+- **`aiContentAssist`**: gửi tối đa 3 item mẫu của collection, là các item cập nhật gần nhất mà caller được đọc. `ItemService` áp quy tắc tenant, row và field, nên field bị ẩn, item của site khác hay item ngoài row rule không bao giờ tới model. Một lần cập nhật, xoá hay thu hồi quyền có hiệu lực ngay ở lần gọi kế tiếp. Chỉ `status` và `data` của từng mẫu được gửi, không gửi metadata của row. Các mẫu không phụ thuộc vào instruction. `apps/cms/eval/retrieval/dataset.v1.json` ghi baseline trên dataset đó (Recall@3 0.5, MRR@3 0.46).
+- Các primitive embedding throw `EMBEDDING_DIMENSION_MISMATCH` hoặc `EMBEDDING_RESPONSE_INVALID` khi so sánh vector khác kích thước hoặc khi provider trả sai số lượng hay kích thước vector.
 
 ## Property-based testing
 

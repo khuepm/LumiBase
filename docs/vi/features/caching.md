@@ -2,15 +2,15 @@
 title: Caching
 description: HTTP cache ở edge, CacheProvider tầng ứng dụng, và các lớp phòng thủ cache penetration
 translatedFrom: en
-sourceHash: 218e2a3a0ef0179c
-version: 4
-lastUpdated: 2026-08-10T20:04:00.102Z
+sourceHash: cc3daccd63dfd6e2
+version: 5
+lastUpdated: 2026-11-02T22:29:19.496Z
 sourceLang: en
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-10T20:04:00.102Z
-codeVerifiedHash: 218e2a3a0ef0179c
-codeVerifiedClaims: 16
+codeVerified: 2026-11-02T22:29:19.496Z
+codeVerifiedHash: cc3daccd63dfd6e2
+codeVerifiedClaims: 18
 ---
 
 # Caching
@@ -63,6 +63,10 @@ Hiện chỉ áp cho **một** thứ: compiled permission bundle, thứ được
 Store nằm ở cấp module và có chặn trên (256 entry, TTL 5s). Cả hai đều quan trọng: store theo từng request sẽ không bao giờ hit, còn store không chặn thì rò rỉ — process Docker sống lâu, và isolate Workers được tái dùng cho request của **nhiều tenant khác nhau**. Mọi key đều mang `siteId`, nên không tầng nào phía trên phải tách tenant hộ.
 
 `lumibase_cache_operations_total{backend="process"}` báo hit và miss, nên việc tầng này có đáng giữ hay không là thứ đo được chứ không phải tin.
+
+**`{principal}` gồm những gì.** Segment principal nêu đủ mọi đầu vào định danh mà bundle được compile từ đó: `api_key:{id}`, `user:{id}` và `role:{id}`, nối bằng `|` khi có nhiều hơn một (ví dụ `user:{id}|role:{id}` khi resolve capability trên các đường AI), và là `anon` khi không có cái nào. Trước #583, một context mang cả user lẫn role chỉ được key theo role, nên hai thành viên của cùng một role dùng chung một bundle, kể cả policy cấp trực tiếp cho một user.
+
+**Policy phụ thuộc request không được phục vụ từ cache.** Một policy có danh sách IP allow/deny hoặc khoảng hiệu lực (`ip_allow`, `ip_deny`, `valid_from`, `valid_until`, hoặc cùng các key đó trong `rules`) có hiệu lực hay không tuỳ vào ip và đồng hồ của request. Khi bất kỳ policy ứng viên nào của một principal có guard như vậy, entry trong cache chỉ ghi lại điều đó, và bundle được compile cho từng request. Principal không có guard vẫn đi đường cache. Trên một lần chạy pg17 cục bộ của `apps/cms/eval/permission-cache/bench.ts` (500 lần resolve, 3 lượt, cache in-process), một lần resolve có cache mất p95 2.0–2.8 ms, không cache 22.8–31.9 ms, và principal có IP guard 8.1–10.0 ms.
 
 ## URL media và lời hứa `immutable`
 

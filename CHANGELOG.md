@@ -287,6 +287,43 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `shell-check.yml`.
 
 ### Fixed
+- **`aiContentAssist` sends sample content only, and embedding primitives fail
+  on mixed dimensions (#581).** The skill's context samples used to be whole
+  item rows, so site and collection ids, user ids and the wrapped DEK went to
+  the model provider. It now sends each sample's `status` and `data`, and it no
+  longer runs a `count(*)` over the collection for a 3-row sample (at 100k
+  items: 8.5 ms vs 0.15 ms per call, single client, local Postgres 17). In
+  `embedding-service.ts`, `cosineSimilarity` throws
+  `EMBEDDING_DIMENSION_MISMATCH` instead of scoring 0, providers reject a
+  response with the wrong number or size of vectors, and the OpenAI provider
+  reports the dimension of its configured model. Nothing calls the embedding
+  service yet; the docs no longer say the skills run a vector search. Audit:
+  `docs/review-agent/2026-11-01-ai-audit-581-embedding-retrieval-baseline.md`;
+  baseline dataset `apps/cms/eval/retrieval/dataset.v1.json`.
+- **Copilot sends the newest conversation history, not the oldest (#582).**
+  `POST /api/v1/ai/chat` and its `Prefer: respond-async` worker loaded history
+  with `ORDER BY created_at ASC LIMIT 20`, so from the 21st message of a
+  conversation on, the turn the user had just sent was missing from the model
+  request: the model answered the first ten turns again, and a tool call it
+  returned ran with the user's rights. Both paths now share
+  `loadCopilotHistory`: the newest 20 messages, oldest first, opening on a user
+  turn. The 20-message limit and the system prompt are unchanged. No migration
+  or configuration change. Audit report:
+  `docs/review-agent/2026-11-01-ai-audit-582-token-budgets-grounding.md`.
+- **Queued Agent API runs enforce the requester's row and field rules (#580).**
+  The `agent-runs` worker re-resolved the job's principal at pickup (#472) but
+  then executed the skill with a system `ItemService`, so a queued
+  `POST /api/v1/agent/goals` (`execution: 'async'`) or `/runs/:id/retry` could
+  write collections and fields the principal may not write, and read masked
+  fields back, while the same call through Copilot or governed MCP was refused.
+  The worker now binds `ItemService` to the principal's permission context for
+  user and API-key principals. Reconciler (agent-role) jobs and legacy
+  capability-snapshot jobs have no principal and keep the system posture, as do
+  development (`dev`) principals: they exist only in the development runtime
+  with the `admin` role and have no persisted role a permission context could
+  resolve. Audit report:
+  `docs/review-agent/2026-11-01-ai-audit-580-authz-parity.md`. No migration,
+  env or setup step.
 - **Agent runs: truthful terminal states, no replay of an executed write, and no
   query parameters in run errors (#584).** Four gaps in the run recovery path,
   each reproduced on Postgres (`agent-run-recovery.db.integration.test.ts`):
@@ -646,6 +683,23 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Security
 
+- **Permission bundle cache is keyed per principal and skips request-bound
+  policies (#583).** The cache key of a compiled permission bundle named only
+  the role when the context carried both a user and a role.
+  `EffectiveCapabilityService`, which resolves capabilities for Copilot tool
+  calls, MCP, the Agent API, the `agent-runs` worker, approvals and Flows
+  `ai:decision`, passes both. Two members of one role therefore shared a bundle
+  for up to 60 s, including policies granted to one of them directly (for
+  example admin access), and a share link for that role read the same entry.
+  The key now names the API key, the user and the role
+  (`perm:{site}:v{n}:user:{id}|role:{id}`). Separately, a bundle compiled from
+  a policy with an IP allow/deny list or a validity window was cached under a
+  key without the ip, so a request from a denied address was granted the policy
+  for up to 60 s. Such principals are now compiled per request; others keep the
+  cache. No migration or configuration change. Old cache entries are no longer
+  addressed and expire within 60 s. Test:
+  `permission-cache-principal-scope.db.integration.test.ts`. Report:
+  `docs/review-agent/2026-11-01-ai-audit-583-model-routing-cache-isolation.md`.
 - **AI decisions refuse publishable API keys and frontend sessions (#562,
   B144).** `POST /api/v1/ai/decisions`, every `ai:decide` route under
   `/api/v1/ai/review-profiles` and `/api/v1/ai/reviews`, and Flows
