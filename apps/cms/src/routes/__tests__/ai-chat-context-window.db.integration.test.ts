@@ -271,7 +271,7 @@ describe.skipIf(!hasDbIntegrationUrl)('#582 Copilot context window — DB integr
     const own = await seedItem(SITE, collectionId, 'v1');
     toolAnswer([{ name: 'updateItem', arguments: '{"collection":"posts","id":"' }]);
     const res = await chat('rename it');
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(502);
     expect(sent).toHaveLength(1);
     expect(await itemTitle(own)).toBe('v1');
     const assistant = await db

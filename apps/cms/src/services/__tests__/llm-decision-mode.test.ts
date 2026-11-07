@@ -421,7 +421,7 @@ describe('/ai/chat keeps its error contract (regression)', () => {
     expect((error as Error).message).toBe(original);
   });
 
-  it('Copilot still sends max 1024 on OpenAI/Anthropic/Gemini and nothing on Workers AI', async () => {
+  it('Copilot sends its reserved 1024-token output cap on each provider', async () => {
     for (const index of [0, 2, 3]) {
       const fetchMock = stubFetch(adapters[index]!.wire('hello'));
       await adapters[index]!.make().chat([{ role: 'user', content: 'hi' }]);
@@ -432,7 +432,7 @@ describe('/ai/chat keeps its error contract (regression)', () => {
     }
     const fetchMock = stubFetch(adapters[5]!.wire('hello'));
     await adapters[5]!.make().chat([{ role: 'user', content: 'hi' }]);
-    expect(sentBody(fetchMock)).not.toHaveProperty('max_tokens');
+    expect(sentBody(fetchMock)).toHaveProperty('max_tokens', 1024);
   });
 });
 

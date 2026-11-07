@@ -9,6 +9,19 @@
       "userId"
     ]
   },
+  "aiContentAssist": {
+    "properties": [
+      "collection",
+      "currentContent",
+      "fieldName",
+      "grounded",
+      "instruction",
+      "itemId"
+    ],
+    "required": [
+      "collection"
+    ]
+  },
   "createApiKey": {
     "properties": [
       "description",
