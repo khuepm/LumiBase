@@ -218,6 +218,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `409 EDITORIAL_GATE_REQUIRED`, the same as publishing a draft through PATCH.
   Applies to REST, GraphQL and agents. Create items as drafts and publish
   through the editorial workflow.
+- **LLM calls outside the Copilot keep their own instructions (#579).**
+  Generation skills, the constitution compiler and judge, and the intent
+  compiler now send their instructions in the provider's system slot with tools
+  disabled (`completeWithInstructions`). Before, they received the Copilot
+  prompt and the full tool list, and Gemini/Anthropic demoted their rules to a
+  user turn. The constitution judge sends the content under review as the only
+  user turn, inside an `<untrusted>` block.
 - **Draft review needs the pilot (#516).** The Studio draft review panel shows
   only while the collection is in the pilot in `assisted` mode, and
   `POST /api/v1/ai/reviews` plus new feedback return `403 DECISION_DISABLED`
@@ -259,6 +266,27 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   turn. The 20-message limit and the system prompt are unchanged. No migration
   or configuration change. Audit report:
   `docs/review-agent/2026-11-01-ai-audit-582-token-budgets-grounding.md`.
+- **Agent runs: truthful terminal states, no replay of an executed write, and no
+  query parameters in run errors (#584).** Four gaps in the run recovery path,
+  each reproduced on Postgres (`agent-run-recovery.db.integration.test.ts`):
+  - `cancelRun` re-checks the status in its UPDATE. A cancel that raced the
+    run's completion used to rewrite `succeeded` as `cancelled`, which made the
+    run retryable; it now answers `409 NOT_CANCELLABLE` and the outcome stays.
+  - A run cancelled while the harness classifies a call that needs approval is
+    no longer parked. The harness parks the run before creating the approval,
+    and only if the run is still in flight; before, the cancelled run came back
+    as `awaiting_approval` and its approval executed when approved.
+  - `POST /api/v1/agent/runs/:id/retry` refuses a run whose tool call is
+    recorded `executed` (the skill ran, saving the outcome failed) with
+    `409 RUN_EFFECT_RECORDED`. It used to re-execute it: two items for one
+    request. Other retry behaviour is unchanged.
+  - Run and tool call errors no longer contain Drizzle's `params:` list. A
+    failed statement is recorded as `Database query failed (SQLSTATE <code>):
+    <driver message>`; before, item content and secret-keyed values that the
+    tool call input masks reached `GET /api/v1/agent/runs` and run
+    notifications.
+  Operator guidance for reading a run's rows is in
+  `docs/{en,vi}/features/async-agent-runs.md`. No migration, no new setting.
 - **Staging deploy check now separates boot from readiness, and `/health/ready`
   reaches the Worker on dev/staging/demo (#461).** On the shared-domain
   hostnames only `/health` was routed to the CMS Worker. A Cloudflare route
@@ -276,6 +304,22 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `docs/en/deployment/shared-domain-environments.md` (step 2b and
   "Troubleshooting"). **Upgrade note:** none for self-hosted installs. The next
   deploy of each shared-domain env adds the `/health/*` route.
+- **Copilot conversations belong to their owner (#579).** The
+  `/api/v1/ai/conversations/:id/messages` and `DELETE /api/v1/ai/conversations/:id`
+  routes, and `POST /api/v1/ai/chat` with a `conversationId`, checked only the
+  site. Another member who had a conversation id could read it, delete it, or
+  append to it, and an append became part of the owner's next model turn. They
+  now get `404`, a no-op delete, or a new conversation of their own. A
+  conversation started by an API key records that key (`api_key_id`), and an
+  API key owns only its own conversations, so keys of the same site no longer
+  share them. **Migration** `0023_ai_conversation_api_key_owner` adds one
+  nullable column with an FK (`ON DELETE SET NULL`) and an index (additive,
+  idempotent, no backfill). **Upgrade note:** user-less conversations created
+  before `0023` have no recorded key, so no API key can list, read, delete or
+  append to them after the upgrade; they are removed with their site.
+- **`listSettings` redacts secrets (#579).** The agent skill now applies the
+  same secret-field redaction as `GET /api/v1/settings`. Before, governed MCP
+  clients received raw values such as `media.signedTransform.secret`.
 - **`GET /api/v1/deployments` returns the newest deployments first (#568,
   B162).** The list had no `ORDER BY`, so with `limit` Postgres could return
   any rows rather than the most recent ones. It is now ordered by `createdAt`

@@ -61,7 +61,9 @@ describe('AgentToolSchemas', () => {
     expect(validateAgentToolInput('addTeamMember', { id: 't1', userId: 'u1' }).ok).toBe(false);
     expect(validateAgentToolInput('addTeamMember', { teamId: 't1', userId: 'u1' }).ok).toBe(true);
     expect(validateAgentToolInput('replayCdcSubscription', { id: 'c1' }).ok).toBe(false);
-    expect(validateAgentToolInput('replayCdcSubscription', { subscriptionId: 'c1' }).ok).toBe(true);
+    expect(
+      validateAgentToolInput('replayCdcSubscription', { subscriptionId: 'c1', occurredAfter: '2026-01-01T00:00:00.000Z' }).ok,
+    ).toBe(true);
   });
 
   it('skill chưa có schema thì fail-open có chủ ý (không phá hành vi read)', () => {

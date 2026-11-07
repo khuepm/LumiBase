@@ -320,6 +320,7 @@ function governedDb(options: { grants?: Array<{ agentRole: string; capability: s
   }
 
   const db = {
+    transaction: async <T>(callback: (tx: Database) => Promise<T>): Promise<T> => callback(db as unknown as Database),
     select: () => selectChain(),
     insert: (t: unknown) => {
       const table = getTableName(t as Parameters<typeof getTableName>[0]);

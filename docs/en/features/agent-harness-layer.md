@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-10-31T22:50:44.414Z
+version: 5
+lastUpdated: 2026-11-02T23:11:39.085Z
 sourceLang: en
-contentHash: e12f22cc231fb868
-codeVerified: 2026-10-31T22:50:44.414Z
-codeVerifiedHash: e12f22cc231fb868
+contentHash: 5532a3a79274f69d
+codeVerified: 2026-11-02T23:11:39.085Z
+codeVerifiedHash: 5532a3a79274f69d
 codeVerifiedClaims: 20
 ---
 
@@ -109,7 +109,7 @@ Run status follows `queued → running → awaiting_approval → succeeded | fai
 - The queue worker (`registerAgentRunWorker`, wired in the Node entrypoint) drives queued runs through the same harness codepath — capability checks, risk policy, budgets and audit apply identically. Capabilities are captured from the enqueuing session and never widened.
 - When a dangerous action creates an approval, the run parks as `awaiting_approval`. An approval decision resumes it and executes only the stored skill — completed tool calls are never re-run.
 - `POST /api/v1/agent/runs/:id/cancel` cancels `queued`/`running`/`awaiting_approval` runs. Cancellation takes effect at the next tool-call boundary (the harness re-checks before every tool call), wins over late approvals, and is recorded with `stopReason` in run metrics.
-- `POST /api/v1/agent/runs/:id/retry` re-executes a `failed` or `cancelled` run as a **new** `queued` run whose `retryOfRunId` points at the original, and enqueues it on `agent-runs` — the same worker claim, harness, approvals and kill switch as any async run. The task is recovered from the run's recorded tool call and the governance envelope (role, intent, autonomy cap, budget) from its goal; the retry executes under the **requester's** re-resolved rights, never the original requester's. Only the goal's latest attempt can be retried, and only while nothing on the goal is in flight, so one request yields at most one new execution: concurrent retries serialize on the goal row and the loser gets `409`. Responses: `201` with `{ goalId, runId, agentName, status: 'queued', retryOfRunId }`; `404` for an unknown or other-tenant run; `409` for `RUN_NOT_RETRYABLE`, `RUN_ACTIVE`, `RETRY_SUPERSEDED`, `GOAL_CLOSED`, `GOAL_BUSY`, `INTENT_NOT_ACTIVE` or `RETRY_UNRECOVERABLE` (the recorded input has masked secrets, or no tool call was recorded); `423` `FROZEN`; `400` `ASYNC_UNAVAILABLE`; `503` `ENQUEUE_FAILED`, with the retry row settled `failed`. A run quarantined as `stale_unverified` may already have had its effect — retrying it is the deliberate human decision to run it again, and is recorded as `agent_run.retried` in activity.
+- `POST /api/v1/agent/runs/:id/retry` re-executes a `failed` or `cancelled` run as a **new** `queued` run whose `retryOfRunId` points at the original, and enqueues it on `agent-runs` — the same worker claim, harness, approvals and kill switch as any async run. The task is recovered from the run's recorded tool call and the governance envelope (role, intent, autonomy cap, budget) from its goal; the retry executes under the **requester's** re-resolved rights, never the original requester's. Only the goal's latest attempt can be retried, and only while nothing on the goal is in flight, so one request yields at most one new execution: concurrent retries serialize on the goal row and the loser gets `409`. Responses: `201` with `{ goalId, runId, agentName, status: 'queued', retryOfRunId }`; `404` for an unknown or other-tenant run; `409` for `RUN_NOT_RETRYABLE`, `RUN_ACTIVE`, `RUN_EFFECT_RECORDED` (a tool call of the run is recorded `executed`, so its effect already happened), `RETRY_SUPERSEDED`, `GOAL_CLOSED`, `GOAL_BUSY`, `INTENT_NOT_ACTIVE` or `RETRY_UNRECOVERABLE` (the recorded input has masked secrets, or no tool call was recorded); `423` `FROZEN`; `400` `ASYNC_UNAVAILABLE`; `503` `ENQUEUE_FAILED`, with the retry row settled `failed`. A run quarantined as `stale_unverified` may already have had its effect — retrying it is the deliberate human decision to run it again, and is recorded as `agent_run.retried` in activity.
 
 ### Multi-agent org: roles and capability narrowing (Module C)
 

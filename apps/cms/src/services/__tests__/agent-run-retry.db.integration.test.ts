@@ -119,7 +119,7 @@ describe.skipIf(!hasDbIntegrationUrl)('agent run retry — DB integration', () =
   ): Promise<{ runId: string; goalId: string }> {
     const service = new AgentRunService(db, SITE);
     const run = await service.ensureRun({ title: `seed ${status}`, status: 'queued' });
-    await service.appendToolCall({ runId: run.runId, toolName: 'createItem', input });
+    await service.appendToolCall({ runId: run.runId, toolName: 'createItem', input, status: 'failed' });
     await db.update(agentRuns).set({ status }).where(eq(agentRuns.id, run.runId));
     return { runId: run.runId, goalId: run.goalId };
   }
@@ -388,7 +388,7 @@ describe.skipIf(!hasDbIntegrationUrl)('agent run retry — DB integration', () =
       budget: { maxWritesPerMinute: 5 },
     });
     const args = { collection: COLLECTION, itemId: 'itm_1', field: 'title', locale: 'vi', versionKey: 'drift-repair:fp_retry' };
-    await service.appendToolCall({ runId: run.runId, toolName: 'repairTranslation', input: args });
+    await service.appendToolCall({ runId: run.runId, toolName: 'repairTranslation', input: args, status: 'failed' });
     await service.failRun(run.runId, 'provider timeout');
 
     const queue = memoryQueue();
@@ -439,7 +439,7 @@ describe.skipIf(!hasDbIntegrationUrl)('agent run retry — DB integration', () =
       .returning();
     const service = new AgentRunService(db, SITE);
     const run = await service.ensureRun({ goalId: goal!.id, agentName: 'translator', status: 'queued' });
-    await service.appendToolCall({ runId: run.runId, toolName: 'repairTranslation', input: { collection: COLLECTION } });
+    await service.appendToolCall({ runId: run.runId, toolName: 'repairTranslation', input: { collection: COLLECTION }, status: 'failed' });
     await service.failRun(run.runId, 'boom');
 
     const queue = memoryQueue();

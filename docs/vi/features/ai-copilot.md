@@ -1,11 +1,16 @@
 ---
-version: 2
-lastUpdated: 2026-11-02T21:36:37.189Z
+version: 4
+lastUpdated: 2026-11-07T15:51:35.870Z
 sourceLang: vi
-contentHash: c9f055853011e09b
-codeVerified: 2026-11-02T21:36:37.189Z
-codeVerifiedHash: c9f055853011e09b
-codeVerifiedClaims: 26
+translatedFrom: en
+sourceHash: ecc8983d3122446b
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-07T15:51:35.870Z
+codeVerifiedHash: 31aa6123a129c788
+codeVerifiedClaims: 30
+
+contentHash: 31aa6123a129c788
 ---
 
 # AI Copilot (HITL)
@@ -164,6 +169,14 @@ Bảng `ai_conversations` và `ai_messages` được dùng để lưu trữ tr�
 - Giới hạn hiện có: message user tối đa 2000 ký tự; output tối đa 1024 token (Workers AI dùng mặc định của model); toàn bộ catalogue tool (74 skill, ~24.200 ký tự JSON, ước lượng ~6.000 token) gửi kèm mỗi lượt. LumiBase **không** đếm token và không kiểm tra context window của model, nên hãy chọn model có context đủ lớn cho tool catalogue cộng 20 message.
 - Model trả nhiều tool call thì chỉ call đầu tiên được thực thi. Arguments không phải JSON hợp lệ trả `500` một lần, không retry và không ghi gì.
 - Hỗ trợ đầy đủ các API quản lý: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
+- Một hội thoại thuộc về user đã tạo nó (#579). Thành viên khác của site nhận `404` khi đọc messages, `DELETE` không xoá gì, và `POST /chat` với `conversationId` đó sẽ mở một hội thoại mới cho người gọi. Caller dùng API key chỉ sở hữu các hội thoại được ghi với chính key đó (`api_key_id`, migration `0023`), nên key này không list, đọc, xoá hay nối vào hội thoại của key khác được. Hội thoại không có user id tạo trước `0023` không ghi key nào nên không API key nào sở hữu chúng.
+
+### Ranh giới tin cậy (#579)
+
+- **Chỉ dẫn và dữ liệu.** Chỉ Copilot chat dùng system prompt của Copilot và danh sách tool. Mọi lời gọi model khác (skill sinh nội dung, constitution compiler và judge, intent compiler, decisions) gửi chỉ dẫn riêng vào system slot của provider và tắt tool (`completeWithInstructions`). Constitution judge gửi nội dung cần chấm làm user turn duy nhất, trong một khối `<untrusted>`. Một test source-scan sẽ fail khi có lời gọi mới bỏ qua quy tắc này.
+- **Mỗi lượt một tool call, output của tool không vào prompt.** `POST /chat` chỉ thực thi tool call đầu tiên mà model trả về, và kết quả tool trả cho client chứ không quay lại model. Một tấn công nhiều bước vì vậy cần một lượt user cho mỗi bước, và mỗi lượt được phân quyền riêng.
+- **Model không cấp quyền.** Harness kiểm capability, input schema chuẩn, và quyền theo row và field của người gọi ở mọi tool call, bất kể model yêu cầu gì. `apps/cms/eval/prompt-injection/dataset.v1.json` liệt kê các tấn công và benign control, được chạy lại như thể model làm theo kẻ tấn công.
+- **Redaction.** `listSettings` che các field chứa secret theo cùng quy tắc với `GET /api/v1/settings`.
 
 ### 3. RAG Skills (`aiSuggestField` và `aiContentAssist`)
 Tích hợp dịch vụ sinh vector embeddings (`embedding-service.ts`) hỗ trợ OpenAI `text-embedding-3-small` và Workers AI `@cf/baai/bge-base-en-v1.5`:

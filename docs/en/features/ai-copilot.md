@@ -1,14 +1,16 @@
 ---
-version: 2
-lastUpdated: 2026-11-02T21:36:37.189Z
+version: 4
+lastUpdated: 2026-11-07T15:51:35.870Z
 sourceLang: vi
+contentHash: ecc8983d3122446b
+codeVerified: 2026-11-07T15:51:35.870Z
+codeVerifiedHash: 31aa6123a129c788
+codeVerifiedClaims: 30
+
 translatedFrom: vi
-sourceHash: c9f055853011e09b
+sourceHash: 31aa6123a129c788
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-02T21:36:37.189Z
-codeVerifiedHash: c9f055853011e09b
-codeVerifiedClaims: 26
 ---
 
 # AI Copilot (HITL)
@@ -167,6 +169,14 @@ The `ai_conversations` and `ai_messages` tables store the state of conversation 
 - Current limits: a user message is at most 2000 characters; output is capped at 1024 tokens (Workers AI uses the model default); the whole tool catalogue (74 skills, ~24,200 characters of JSON, an estimated ~6,000 tokens) is sent on every turn. LumiBase does **not** count tokens or check the model's context window, so choose a model whose context fits the tool catalogue plus 20 messages.
 - When the model returns several tool calls, only the first one runs. Arguments that are not valid JSON return `500` once, with no retry and nothing written.
 - Full management APIs are supported: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
+- A conversation belongs to the user who started it (#579). Another member of the site gets `404` on its messages, a `DELETE` removes nothing, and a `POST /chat` with that `conversationId` starts a new conversation for the caller. An API-key caller owns only the conversations recorded with its own key (`api_key_id`, migration `0023`), so one key cannot list, read, delete or append to another key's conversation. User-less conversations created before `0023` have no recorded key and no API key owns them.
+
+### Trust boundaries (#579)
+
+- **Instructions vs data.** Only the Copilot chat uses the Copilot system prompt and the tool list. Every other model call (generation skills, constitution compiler and judge, intent compiler, decisions) sends its own instructions in the provider's system slot with tools disabled (`completeWithInstructions`). The constitution judge sends the content under review as the only user turn, inside an `<untrusted>` block. A source-scan test fails when a new call skips this.
+- **One tool call per turn, no tool output in the prompt.** `POST /chat` executes at most the first tool call the model returns, and tool results go to the client, not back to the model. A multi-step attack therefore needs one user turn per step, and each turn is authorized on its own.
+- **The model grants no rights.** The harness checks capabilities, the canonical input schema, and the caller's row and field permissions on every tool call, whatever the model asked for. `apps/cms/eval/prompt-injection/dataset.v1.json` lists attacks and benign controls that are replayed as if the model followed the attacker.
+- **Redaction.** `listSettings` redacts secret-bearing fields with the same rule as `GET /api/v1/settings`.
 
 ### 3. RAG Skills (`aiSuggestField` and `aiContentAssist`)
 Integrates a vector-embedding service (`embedding-service.ts`) supporting OpenAI `text-embedding-3-small` and Workers AI `@cf/baai/bge-base-en-v1.5`:
