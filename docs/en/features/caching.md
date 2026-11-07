@@ -1,12 +1,12 @@
 ---
 title: Caching
 description: Edge HTTP cache, application CacheProvider, and cache-penetration defences
-version: 5
-lastUpdated: 2026-11-02T22:29:19.496Z
+version: 6
+lastUpdated: 2026-11-07T20:27:23.488Z
 sourceLang: en
-contentHash: cc3daccd63dfd6e2
-codeVerified: 2026-11-02T22:29:19.496Z
-codeVerifiedHash: cc3daccd63dfd6e2
+contentHash: dd1708ac3642ecaa
+codeVerified: 2026-11-07T20:27:23.488Z
+codeVerifiedHash: dd1708ac3642ecaa
 codeVerifiedClaims: 18
 ---
 
@@ -136,3 +136,10 @@ Cache penetration keys follow the same shared-vs-isolated split as the rest of t
 | Shape guard | n/a | Pure regex, no storage | Same 404 body/headers as a real miss — never an oracle for valid shapes |
 
 **How to verify:** unit/integration Properties P17–P20 in `apps/cms/src/__tests__/cache-penetration.test.ts` (two-site tombstone isolation + credential bypass); wiring tripwire for `withDeliverRateLimit` in `security-guards.wiring.test.ts`.
+
+
+### Model routing, deadlines and workload checks
+
+All six network model adapters share a 20-second upstream deadline through response-body consumption. Caller cancellation and shorter decision deadlines still apply. Ordinary chat sends one request. An upstream outage returns a failure without switching providers or executing a tool. Explicit echo configuration and missing-credential fallback retain the normal harness authorization checks. Generation skills require a configured provider.
+
+Run `pnpm -F @lumibase/cms bench:model-routing` to measure local serialization, parsing and fallback overhead with synthetic provider responses. The workload emits p50/p95/p99, attempt/error counts, synthetic usage and estimated USD from explicit fixture prices. Each scenario must stay below 100 ms local p95, send exactly one upstream attempt per configured-provider request, and send zero for echo. Use `apps/cms/eval/permission-cache/bench.ts` against disposable PostgreSQL for separate cache-hit/miss capability-resolution measurements. These baselines describe local overhead and test prices. Production provider latency and invoices require independent measurements.

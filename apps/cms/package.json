@@ -2,7 +2,7 @@
   "name": "@lumibase/cms",
   "version": "1.0.0-rc.4",
   "private": true,
-  "description": "LumiBase CMS API — Hono.js on Cloudflare Workers.",
+  "description": "LumiBase CMS API \u2014 Hono.js on Cloudflare Workers.",
   "type": "module",
   "main": "src/index.ts",
   "bin": {
@@ -29,7 +29,8 @@
     "test": "vitest --run",
     "k6:login-brute": "k6 run k6/login-brute-force.js",
     "clean": "rm -rf .turbo .wrangler dist",
-    "eval:ai": "tsx scripts/ai-audit.ts"
+    "eval:ai": "tsx scripts/ai-audit.ts",
+    "bench:model-routing": "tsx eval/model-routing/bench.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",

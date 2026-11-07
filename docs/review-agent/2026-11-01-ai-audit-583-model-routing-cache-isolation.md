@@ -191,3 +191,10 @@ figure exists for model calls because there is no model-response cache.
 | Automated tests prove no cross-tenant/principal cache leakage or stale authorization/content results | done for the permission cache (F1, F2 fixed; §3, §4). Content is not cached on AI paths. |
 | Failure injection proves retries are bounded and fallback never relaxes required policy | retries bounded (existing decision tests, 0 on LLM paths); fallback goes through the harness (§1). Timeouts unbounded on non-decision paths: **partial**, B185. |
 | Reproducible workload reports latency percentiles, token/cost estimates and thresholds; confirmed gaps fixed | latency percentiles and threshold for capability resolution (§5). Token/cost: **N/A without a live model** (B184/B173). |
+
+
+## Completion verification (2026-11-08)
+
+On base `a59d11c9`, six network adapters receive one bounded 20-second deadline through body consumption. Earlier caller cancellation survives. Ordinary chat performs no repair retry or provider switch on an outage. The permission-cache tests prove positive and negative cache isolation and grant invalidation. Content samples are queried per request; there is no model-output cache to invalidate on content or provider configuration changes. Tenant, role and approval controls remain on the execution path.
+
+`apps/cms/eval/model-routing/baseline.v1.json` records the actual local workload of 120 requests per scenario. Success p50/p95/p99 were 0.084/0.498/0.895 ms, outage 0.163/0.466/2.192 ms, echo 0.001/0.005/0.012 ms. Threshold p95 <100 ms catches a large local overhead regression. Input/output token counts were synthetic (11,520 / 1,440 cumulative on successes). At explicit illustrative $2/$8 per million, estimated total was $0.03456. Errors and echo record unknown usage/cost. See §5 for the independent real-DB authorization/cache measurements. This does not measure live provider speed or invoices.
