@@ -30,7 +30,7 @@
   "dependencies": {
     "drizzle-orm": "^0.45.4",
     "nanoid": "^6.0.2",
-    "postgres": "^3.4.5"
+    "postgres": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

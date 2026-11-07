@@ -1,8 +1,8 @@
 import { aiApprovals, aiConversations, aiMessages } from '@lumibase/database';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import type { AppEnv } from '../env';
+import type { AppEnv, AuthPrincipal } from '../env';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
 import { AISecureHarness } from '../services/ai-harness';
 import { AccessService } from '../services/access-service';
@@ -26,6 +26,28 @@ import {
 } from '../services/decision-governance';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { createPendingRun, FLOW_RUNS_QUEUE } from '../services/flow-run-service';
+
+/**
+ * A Copilot conversation belongs to the user who started it (#579).
+ *
+ * Every conversation route used to check only `site_id`, so any member of the
+ * site who had a conversation id could read its messages, delete it, or append
+ * to it through `POST /chat`. Appending is the dangerous part: the next turn of
+ * the owner feeds the appended message to the model as the owner's own history,
+ * and any tool call it produces runs under the owner's rights.
+ *
+ * Callers without a user id (API keys) own only the conversations recorded
+ * with their own `api_key_id`. Matching "user_id IS NULL" instead would let
+ * every API key of the site share one pool of conversations. A principal with
+ * neither id owns nothing.
+ */
+function conversationOwnerClause(auth: AuthPrincipal | undefined) {
+  if (auth?.userId) return eq(aiConversations.userId, auth.userId);
+  if (auth?.apiKeyId) {
+    return and(isNull(aiConversations.userId), eq(aiConversations.apiKeyId, auth.apiKeyId))!;
+  }
+  return sql`false`;
+}
 
 // ---------------------------------------------------------------------------
 // Zod Schemas
@@ -229,7 +251,7 @@ aiRouter.post('/chat', async (c) => {
     let conversationId = inputConversationId;
 
     if (conversationId) {
-      // Verify conversation belongs to this site
+      // Verify the conversation belongs to this site AND this caller (#579).
       const [conv] = await db
         .select({ id: aiConversations.id })
         .from(aiConversations)
@@ -237,6 +259,7 @@ aiRouter.post('/chat', async (c) => {
           and(
             eq(aiConversations.id, conversationId),
             eq(aiConversations.siteId, siteId),
+            conversationOwnerClause(auth),
           ),
         );
       if (!conv) {
@@ -250,7 +273,7 @@ aiRouter.post('/chat', async (c) => {
         message.length > 60 ? `${message.substring(0, 57)}...` : message;
       const [newConv] = await db
         .insert(aiConversations)
-        .values({ siteId, userId, title })
+        .values({ siteId, userId, apiKeyId: userId ? null : auth.apiKeyId ?? null, title })
         .returning();
       conversationId = newConv!.id;
     }
@@ -380,6 +403,7 @@ aiRouter.post('/chat', async (c) => {
         // Provenance for anything this call parks (#472). A capability snapshot
         // would go stale while the approval waits; a reference is re-resolved at
         // the moment a human approves.
+        requestId: c.get('requestId'),
         requestedByPrincipal: approvalRequesterFromAuth(c.get('auth'), siteId),
       },
     );
@@ -451,7 +475,8 @@ aiRouter.get('/conversations', async (c) => {
     .where(
       and(
         eq(aiConversations.siteId, siteId),
-        ...(auth.userId ? [eq(aiConversations.userId, auth.userId)] : []),
+        // A caller without a user id used to list every conversation of the site.
+        conversationOwnerClause(auth),
       ),
     )
     .orderBy(desc(aiConversations.updatedAt))
@@ -469,7 +494,8 @@ aiRouter.get('/conversations/:id/messages', async (c) => {
   const siteId = c.get('siteId');
   const conversationId = c.req.param('id');
 
-  // Verify conversation belongs to this site
+  // Verify the conversation belongs to this site AND this caller (#579). Another
+  // user's conversation answers 404, the same as one that does not exist.
   const [conv] = await db
     .select({ id: aiConversations.id })
     .from(aiConversations)
@@ -477,6 +503,7 @@ aiRouter.get('/conversations/:id/messages', async (c) => {
       and(
         eq(aiConversations.id, conversationId),
         eq(aiConversations.siteId, siteId),
+        conversationOwnerClause(c.get('auth')),
       ),
     );
 
@@ -512,6 +539,9 @@ aiRouter.delete('/conversations/:id', async (c) => {
       and(
         eq(aiConversations.id, conversationId),
         eq(aiConversations.siteId, siteId),
+        // Owner only (#579). Idempotent 204 either way, so the response does
+        // not reveal whether another user's conversation exists.
+        conversationOwnerClause(c.get('auth')),
       ),
     );
 

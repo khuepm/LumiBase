@@ -1,3 +1,4 @@
+import { qualityGate } from '../quality-gate';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,6 +10,7 @@ import { MOCK_MODEL, MockOracleProvider } from '../mock-provider';
 import { MOCK_NOTE, ReportMergeError, buildProviderRun, buildReport, mergeReports, parseBenchmarkReport, type BenchmarkReport } from '../report';
 import { benchmarkRubricVersion, buildBenchmarkQuestions } from '../rubric';
 import { runSamples, type SampleResult } from '../runner';
+import { DIRTY_SOURCE_NOTE, UNKNOWN_DIRTY_NOTE, UNKNOWN_SOURCE_NOTE, readSourceRevision, sourceNotes, type SourceRevision } from '../source';
 import {
   LeakageError,
   assertThresholdsMatch,
@@ -116,7 +118,12 @@ describe('leakage guard', () => {
   });
 });
 
-function reportFor(results: SampleResult[], split: 'tune' | 'heldout', overrides: Partial<ThresholdIdentity> = {}): BenchmarkReport {
+function reportFor(
+  results: SampleResult[],
+  split: 'tune' | 'heldout',
+  overrides: Partial<ThresholdIdentity> = {},
+  source?: SourceRevision,
+): BenchmarkReport {
   const thresholds = deriveThresholds(manifest, identity, tuneResults);
   const id = { ...identity, ...overrides };
   return buildReport({
@@ -137,6 +144,7 @@ function reportFor(results: SampleResult[], split: 'tune' | 'heldout', overrides
       thresholdSource: split === 'tune' ? 'derived-on-this-tune-run' : 'frozen-from-tune',
       prices: null,
     }),
+    ...(source ? { source } : {}),
   });
 }
 
@@ -273,4 +281,80 @@ describe('bench:jev CLI', () => {
     expect(result.status).toBe(2);
     expect(result.stderr).toMatch(/TYPESAFE_API_KEY/);
   }, 60_000);
+});
+
+describe('source revision (#585)', () => {
+  const SHA = 'a'.repeat(40);
+  const git = (answers: Record<string, string | Error>) => (args: string[]) => {
+    const answer = answers[args[0]!];
+    if (answer === undefined || answer instanceof Error) throw answer ?? new Error('no git');
+    return answer;
+  };
+
+  it('reads HEAD and the dirty flag, and never guesses', () => {
+    expect(readSourceRevision('.', git({ 'rev-parse': `${SHA}\n`, status: '' }))).toEqual({ commit: SHA, dirty: false });
+    expect(readSourceRevision('.', git({ 'rev-parse': SHA, status: ' M apps/cms/x.ts\n' }))).toEqual({ commit: SHA, dirty: true });
+    expect(readSourceRevision('.', git({ 'rev-parse': SHA, status: new Error('boom') }))).toEqual({ commit: SHA, dirty: null });
+    expect(readSourceRevision('.', git({ 'rev-parse': new Error('not a repo') }))).toEqual({ commit: null, dirty: null });
+    expect(readSourceRevision('.', git({ 'rev-parse': 'HEAD\n', status: '' }))).toEqual({ commit: null, dirty: null });
+  });
+
+  it('the real checkout resolves to a commit', () => {
+    expect(readSourceRevision(resolve(dirname(fileURLToPath(import.meta.url)))).commit).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('an unknown or dirty source is stated in the notes', () => {
+    expect(sourceNotes({ commit: SHA, dirty: false })).toEqual([]);
+    expect(sourceNotes({ commit: SHA, dirty: true })).toEqual([DIRTY_SOURCE_NOTE]);
+    expect(sourceNotes({ commit: SHA, dirty: null })).toEqual([UNKNOWN_DIRTY_NOTE]);
+    expect(sourceNotes({ commit: null, dirty: null })).toEqual([UNKNOWN_SOURCE_NOTE]);
+  });
+
+  it('a report records its source, and says so when it is unknown', () => {
+    const clean = reportFor(heldoutResults, 'heldout', {}, { commit: SHA, dirty: false });
+    expect(clean.source).toEqual({ commit: SHA, dirty: false });
+    expect(clean.notes).not.toContain(UNKNOWN_SOURCE_NOTE);
+    const unknown = reportFor(heldoutResults, 'heldout');
+    expect(unknown.source).toEqual({ commit: null, dirty: null });
+    expect(unknown.notes).toContain(UNKNOWN_SOURCE_NOTE);
+  });
+
+  it('a merge of runs from different commits does not claim one commit', () => {
+    const a = reportFor(heldoutResults, 'heldout', {}, { commit: SHA, dirty: false });
+    const b = reportFor(heldoutResults, 'heldout', { provider: 'other', model: 'other-model' }, { commit: 'b'.repeat(40), dirty: false });
+    const merged = mergeReports([a, b], '2026-11-03T00:00:00.000Z');
+    expect(merged.source).toEqual({ commit: null, dirty: null });
+    expect(merged.notes.some((n) => n.includes(SHA) && n.includes('b'.repeat(40)))).toBe(true);
+    const same = mergeReports([a, reportFor(heldoutResults, 'heldout', { provider: 'other', model: 'm2' }, { commit: SHA, dirty: false })], 'x');
+    expect(same.source).toEqual({ commit: SHA, dirty: false });
+  });
+});
+
+
+describe('live quality gate', () => {
+  it('rejects mock evidence, unknown source and missing measurements', () => {
+    const report = reportFor(heldoutResults, 'heldout');
+    expect(qualityGate(report)).toContain('requires live heldout evidence');
+    expect(qualityGate(report)).toContain('requires a clean, known source commit');
+    report.mode = 'live';
+    report.source = { commit: 'a'.repeat(40), dirty: false };
+    report.runs[0]!.locales = {};
+    expect(qualityGate(report)).toHaveLength(2);
+  });
+  it('fails a deliberate quality regression after a passing control', () => {
+    const report = reportFor(heldoutResults, 'heldout');
+    report.mode = 'live';
+    report.source = { commit: 'a'.repeat(40), dirty: false };
+    for (const locale of Object.values(report.runs[0]!.locales)) {
+      locale!.calls.failures.k = 0;
+      for (const action of Object.values(locale!.actions)) {
+        action.atThreshold = structuredClone(action.raw);
+        action.atThreshold.selectivePrecision.value = 0.95;
+        action.atThreshold.coverage.value = 0.6;
+      }
+    }
+    expect(qualityGate(report)).toEqual([]);
+    report.runs[0]!.locales.en!.actions.tag!.atThreshold!.selectivePrecision.value = 0.89;
+    expect(qualityGate(report)).toContain('en/tag: precision < 0.90 or coverage < 0.50, or missing threshold');
+  });
 });

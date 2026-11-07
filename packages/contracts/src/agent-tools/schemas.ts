@@ -135,6 +135,40 @@ export const AgentToolSchemas = {
     .strict(),
   deleteItem: z.object({ collection: slug, id }).strict(),
 
+  // ── content versions (#585) ──────────────────────────────────────────────
+  // These skills advertised a hand-written schema on `tools/list` but had no
+  // canonical entry, so the harness never validated them: `deleteVersion {}`
+  // parked an approval that could never execute, and `updateVersion` accepted
+  // a non-object `data`. Same fields and required lists as the old hand-written
+  // schemas (and the `@lumibase/ai-skills` descriptors).
+  createVersion: z.object({ collection: id, itemId: id, key: id, name: z.string().min(1) }).strict(),
+  updateVersion: z
+    .object({ collection: id, itemId: id, key: id, data: record.optional(), name: z.string().min(1).optional() })
+    .strict(),
+  deleteVersion: z.object({ collection: id, itemId: id, key: id }).strict(),
+  promoteVersion: z.object({ collection: id, itemId: id, key: id }).strict(),
+  /** The reconciler's draft step (`goal-dispatch-service.ts`) sends exactly these keys. */
+  repairTranslation: z
+    .object({
+      collection: id,
+      itemId: id,
+      field: z.string().min(1).describe('Item field holding a locale-keyed object.'),
+      locale: z.string().min(1).describe('Locale to fill in.'),
+      versionKey: id.describe('Deterministic draft branch key for this drift.'),
+      sourceLocale: z.string().min(1).optional().describe('Locale to translate from; inferred when omitted.'),
+    })
+    .strict(),
+
+  // ── deployments (#585) ───────────────────────────────────────────────────
+  /**
+   * `targetId` is required: without it the dangerous skill parked an approval
+   * for `trigger('')`, which can never run. Strict also refuses `__runId`, a key
+   * the handler read into `triggeredBy` although no caller is meant to set it.
+   */
+  triggerDeployment: z
+    .object({ targetId: id, branch: z.string().optional(), reason: z.string().optional() })
+    .strict(),
+
   // ── schema ───────────────────────────────────────────────────────────────
   createCollection: z.object({ name: slug, singleton: z.boolean().optional() }).strict(),
   deleteCollection: z.object({ name: slug }).strict(),
@@ -354,8 +388,14 @@ export const AgentToolSchemas = {
         });
       }
     }),
+  /**
+   * The handler only rewinds by time (`replay(id, { occurredAfter })`), so
+   * `occurredAfter` is required, with the same `datetime` check as REST's
+   * `occurred_after` (#585). Optional, a call without it parked an approval for
+   * `new Date('')`, which can never execute.
+   */
   replayCdcSubscription: z
-    .object({ subscriptionId: id, occurredAfter: z.string().optional() })
+    .object({ subscriptionId: id, occurredAfter: z.string().datetime() })
     .strict(),
   deleteCdcSubscription: z.object({ subscriptionId: id }).strict(),
 } as const satisfies Record<string, z.ZodType>;

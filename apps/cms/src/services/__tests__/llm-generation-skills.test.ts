@@ -128,6 +128,18 @@ describe('generation skills with a configured provider', () => {
     }
   });
 
+  it('preserves provider token counts and uses only configured prices for cost', async () => {
+    const llm = fakeLLM('{"content":"generated"}');
+    llm.provider.chat = async () => ({ content: '{"content":"generated"}', toolCalls: [], usage: { inputTokens: 100, outputTokens: 25 } });
+    llm.pricing = { inputPerMillion: 2, outputPerMillion: 8 };
+    const result = await makeHarness(llm).runSkill('aiContentAssist', { collection: 'products', fieldName: 'description', instruction: 'write' });
+    expect(result.success).toBe(true);
+    if (result.success) expect((result.data as { meta: unknown }).meta).toMatchObject({ tokens: 125, inputTokens: 100, outputTokens: 25, usd: 0.0004, usageSource: 'provider' });
+    delete llm.pricing;
+    const unpriced = await makeHarness(llm).runSkill('aiContentAssist', { collection: 'products', fieldName: 'description', instruction: 'write' });
+    if (unpriced.success) expect((unpriced.data as { meta: unknown }).meta).not.toHaveProperty('usd');
+  });
+
   it('aiSuggestField filters duplicates of existing fields and respects maxSuggestions', async () => {
     const harness = makeHarness(
       fakeLLM(

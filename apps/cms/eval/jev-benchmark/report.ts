@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { BENCHMARK_BUNDLE_MARKER, SPLITS, countBy, type DatasetManifest, type Locale, type Split } from './dataset';
 import { CALIBRATION_NOTE, summarizeCalls, type CallSummary, type Prices, type QuestionMetrics, type Rate } from './metrics';
 import { callRecords, type SampleResult } from './runner';
+import { UNKNOWN_SOURCE, sourceNotes, type SourceRevision } from './source';
 import { BENCHMARK_MODES, evaluateAction, thresholdFor, type BenchmarkMode, type ThresholdFile } from './thresholds';
 
 export const MOCK_NOTE =
@@ -62,6 +63,8 @@ export interface BenchmarkReport {
   mode: BenchmarkMode;
   split: Split;
   generatedAt: string;
+  /** Code the report was produced from (#585). */
+  source: SourceRevision;
   dataset: { version: string; manifestSha256: string; provenance: string };
   rubric: { version: string; presets: DatasetManifest['profile']['presets'] };
   protocol: DatasetManifest['protocol'];
@@ -139,11 +142,14 @@ export interface ReportInput {
   generatedAt: string;
   results: readonly SampleResult[];
   run: ProviderRun;
+  /** Defaults to unknown; the CLI reads it from git. */
+  source?: SourceRevision;
 }
 
 export function buildReport(input: ReportInput): BenchmarkReport {
   const counts = countBy(input.results, (r) => r.locale);
-  const notes = [DATASET_NOTE, CALIBRATION_NOTE];
+  const source = input.source ?? UNKNOWN_SOURCE;
+  const notes = [DATASET_NOTE, CALIBRATION_NOTE, ...sourceNotes(source)];
   if (input.split === 'tune') notes.push(TUNE_NOTE);
   if (input.mode === 'mock') notes.unshift(MOCK_NOTE);
   return {
@@ -152,6 +158,7 @@ export function buildReport(input: ReportInput): BenchmarkReport {
     mode: input.mode,
     split: input.split,
     generatedAt: input.generatedAt,
+    source,
     dataset: {
       version: input.manifest.datasetVersion,
       manifestSha256: input.manifestSha256,
@@ -238,10 +245,20 @@ export function mergeReports(reports: readonly BenchmarkReport[], generatedAt: s
     if (seen.has(key)) throw new ReportMergeError(`Provider ${key} appears in more than one report.`);
     seen.add(key);
   }
+  // Runs measured at different commits stay comparable on data and protocol,
+  // but the merged file must not claim one commit for all of them.
+  const commits = [...new Set(reports.map((r) => r.source?.commit ?? 'unknown'))];
+  const mixed = commits.length > 1;
   return {
     ...first,
+    source: mixed ? UNKNOWN_SOURCE : { commit: first.source?.commit ?? null, dirty: reports.some((r) => r.source?.dirty === true) ? true : reports.some((r) => r.source?.dirty == null) ? null : false },
     generatedAt,
     runs,
-    notes: [...new Set(reports.flatMap((r) => r.notes))],
+    notes: [
+      ...new Set([
+        ...reports.flatMap((r) => r.notes),
+        ...(mixed ? [`Merged runs come from different source revisions: ${commits.join(', ')}.`] : []),
+      ]),
+    ],
   };
 }
