@@ -1,8 +1,8 @@
 ---
-version: 5
-lastUpdated: 2026-11-02T20:22:43.297Z
+version: 6
+lastUpdated: 2026-11-07T20:13:02.148Z
 sourceLang: en
-contentHash: 0b4d8fa32947d4c3
+contentHash: 80808d4cc8186154
 codeVerified: 2026-11-07T15:45:38.286Z
 codeVerifiedHash: 0b4d8fa32947d4c3
 codeVerifiedClaims: 36
@@ -197,3 +197,15 @@ re-introduce a fail-open path without a reviewer noticing.
 - No production file (outside the factory + allowlist) calls `new ItemService(...)` directly — guaranteed by the source-scan test.
 - The AI and MCP endpoints enforce row/field RBAC exactly like `/items` (LLM skills cannot exceed the token's privileges).
 - Every system context declares an explicit, greppable `reason` present in the audit table.
+
+
+### Authorization parity completion (#580)
+
+The execution matrix includes Copilot, queued Agent API, governed MCP and standalone
+REST passthroughs. PostgreSQL regression tests now cover site-admin backup/restore,
+marketplace installation and separate media read/create/delete permissions. They
+verify revocation before execution, tenant isolation, binary-byte preservation and
+absence of writes on denial. Standalone tool tests verify the original tenant and
+bearer credential reach the REST boundary and a refusal is returned without retry.
+The authorization audit and exact test scopes are recorded in
+`docs/review-agent/2026-11-01-ai-audit-580-authz-parity.md`.
