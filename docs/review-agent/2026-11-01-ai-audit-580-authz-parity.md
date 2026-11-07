@@ -183,3 +183,34 @@ All values are synthetic canaries. No model is involved, so no repeat counts app
 | Positive/negative integration tests cover every supported route and prove no unauthorized reads/writes | done for the queued Agent API path (new suite); other transports covered by the existing suites in §5 |
 | Revocation between planning, approval and execution is enforced; failed authorization leaves no partial side effects | done: pickup re-resolution (new revocation case), approval re-resolution (#472 suites); F1 closes the row/field half at execution |
 | Reuse existing evidence; fix only confirmed remaining gaps with regression coverage | F1 fixed with a negative-checked DB suite; no other gap confirmed |
+
+
+## Completion verification — 2026-11-08
+
+Base commit `a59d11c9` includes the queued-principal fix from #595. The remaining
+REST passthrough authorization matrix is now exercised by
+`authz-passthrough.db.integration.test.ts` with real PostgreSQL permission rows.
+
+| Transport / resource | Allowed | Refused / isolation | Side-effect evidence |
+|---|---|---|---|
+| REST / standalone backup | site-bound user admin exports | role alone, missing identity, other site, revoked binding | denied export returns no bundle |
+| REST / standalone restore | site-bound admin restores collection | missing admin and revoked binding | denied calls create no row; supplied foreign site ID is replaced by active site |
+| REST / standalone marketplace install | explicit extensions install policy | missing grant, foreign site, revoked binding, missing identity | one installation in allowed site, zero in foreign site; denied calls never invoke verifier |
+| REST media binary upload/download/delete and standalone list/delete | independent create/read/delete policies | absent action, other site, revoked binding, missing identity | storage write ledger contains only two authorized operations; exact binary bytes round-trip |
+
+`packages/mcp-server/src/__tests__/passthrough-authz.test.ts` invokes the actual
+registered handlers and HTTP client for backup export/restore, marketplace install,
+media list/delete. All preserve the bearer credential and tenant header, propagate
+403, and send exactly one HTTP call. Binary upload is available through REST and
+has no standalone tool. Signature verification in the install authorization test
+is isolated with a successful verifier response; the real signature verifier has
+its own tests. Storage uses a byte-preserving in-memory adapter and real policy
+resolution. No test bypasses permission compilation.
+
+The earlier Copilot/governed MCP/Agent API/queued/retry/resume matrix remains
+covered by the suites in §5. The combined focused database and authorization run
+passes 50 cases and the standalone forwarding suite passes 5 cases. Authentication,
+site membership, account restrictions and signature boundaries are exercised by
+the existing focused boundary suites. This completes the missing authorization
+evidence, with no additional production-code defect confirmed. Human pilot
+measurement is tracked separately in #548.
