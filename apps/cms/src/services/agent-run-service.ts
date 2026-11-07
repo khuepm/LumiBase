@@ -401,8 +401,8 @@ export class AgentRunService {
     observeAgentCost(await this.toolNameForCall(toolCallId), patch.cost);
   }
 
-  async hasUnknownExecution(runId: string, metrics: Record<string, unknown> | null): Promise<boolean> {
-    if (metrics?.['outcomeUnknown'] === true) return true;
+  async hasUnknownExecution(runId: string, metrics: unknown): Promise<boolean> {
+    if (metrics && typeof metrics === 'object' && 'outcomeUnknown' in metrics && metrics.outcomeUnknown === true) return true;
     const [running] = await this.db.select({ id: agentToolCalls.id }).from(agentToolCalls)
       .where(and(eq(agentToolCalls.siteId, this.siteId), eq(agentToolCalls.runId, runId), eq(agentToolCalls.status, 'running'))).limit(1);
     return Boolean(running);
