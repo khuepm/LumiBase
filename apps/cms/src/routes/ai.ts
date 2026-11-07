@@ -403,6 +403,7 @@ aiRouter.post('/chat', async (c) => {
         // Provenance for anything this call parks (#472). A capability snapshot
         // would go stale while the approval waits; a reference is re-resolved at
         // the moment a human approves.
+        requestId: c.get('requestId'),
         requestedByPrincipal: approvalRequesterFromAuth(c.get('auth'), siteId),
       },
     );

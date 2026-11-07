@@ -13,6 +13,7 @@ import type { ApprovalRequester } from './approval-requester';
 import type { AgentRunJobPayload } from './agent-run-worker';
 import type { AuthenticatedPrincipalRef } from './effective-capability-service';
 import {
+  metricTool, metricAgent, metricReason, metricStatus,
   agentDeadLettersTotal,
   agentRunsTotal,
   agentToolLatency,
@@ -47,7 +48,13 @@ export const RUN_STALE_MS = 15 * 60_000;
 /** `metrics.stopReason` for a run abandoned mid-flight; needs a human. */
 export const STALE_RUN_STOP_REASON = 'stale_unverified';
 
+/** Only opaque request identifiers enter trace metadata. */
+export function safeRequestId(value: unknown): string | null {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : null;
+}
+
 export interface AgentRunEnvelope {
+  requestId?: string;
   goalId?: string;
   runId?: string;
   agentName?: string;
@@ -104,12 +111,13 @@ export interface ToolCallInput {
   approvalId?: string | null;
 }
 
-const SECRET_KEY_RE = /(secret|token|password|api[_-]?key|authorization|credential)/i;
+const SECRET_KEY_RE = /(secret|token|password|api[_-]?key|authorization|credential|email|phone|ssn|birthdate|address)/i;
 
 /** What {@link maskSecrets} writes in place of a secret-looking value. */
 const MASKED_VALUE = '[masked]';
 
 export function maskSecrets(value: unknown): unknown {
+  if (typeof value === 'string') return redactTraceText(value);
   if (Array.isArray(value)) {
     return value.map((entry) => maskSecrets(entry));
   }
@@ -132,25 +140,30 @@ export function maskSecrets(value: unknown): unknown {
  * Drizzle's `DrizzleQueryError` message is `Failed query: <sql>\nparams: <values>`,
  * so recording `err.message` copied every bound value of the failed statement into
  * the run: item content, and secret-keyed values that {@link maskSecrets} had just
- * removed from the recorded input. The driver error on `cause` (its message and
- * SQLSTATE) is what says why the write failed; the parameter list is never kept.
+ * removed from the recorded input. Only the driver's SQLSTATE is retained; driver detail may also quote private
+ * values, so neither that detail nor the parameter list is kept.
  */
 export function runErrorMessage(err: unknown): string {
-  if (!(err instanceof Error)) return typeof err === 'string' ? stripQueryParams(err) : 'Unknown execution error';
+  if (!(err instanceof Error)) return typeof err === 'string' ? redactTraceText(stripQueryParams(err)) : 'Unknown execution error';
   const message = err.message ?? '';
   if (message.startsWith('Failed query:')) {
     const cause = (err as { cause?: unknown }).cause;
     const code = (cause as { code?: unknown } | undefined)?.code;
-    const detail = cause instanceof Error && cause.message ? `: ${stripQueryParams(cause.message)}` : '';
-    return `Database query failed${typeof code === 'string' ? ` (SQLSTATE ${code})` : ''}${detail}`;
+    return `Database query failed${typeof code === 'string' && /^[A-Z0-9]{5}$/.test(code) ? ` (SQLSTATE ${code})` : ''}`;
   }
   return stripQueryParams(message);
+}
+
+export function redactTraceText(value: string): string {
+  return value
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[masked]')
+    .replace(/((?:api[_-]?key|token|password|secret|authorization)\s*[:=]\s*)[^\s,;]+/gi, '$1[masked]');
 }
 
 /** Drops a `params:` list that a wrapped query error carried into a message. */
 function stripQueryParams(message: string): string {
   const index = message.indexOf('\nparams:');
-  return index === -1 ? message : message.slice(0, index);
+  return redactTraceText(index === -1 ? message : message.slice(0, index));
 }
 
 /** True when {@link maskSecrets} replaced something inside `value`. */
@@ -212,6 +225,7 @@ const MAX_RETRY_CHAIN_DEPTH = 20;
 
 /** Who is asking for a retry. The retry executes with this principal's rights. */
 export interface RetryRequester {
+  requestId?: string;
   principal: AuthenticatedPrincipalRef;
   userId: string | null;
 }
@@ -220,6 +234,7 @@ export type RetryRunRefusalCode =
   | 'NOT_FOUND'
   | 'RUN_NOT_RETRYABLE'
   | 'RUN_ACTIVE'
+  | 'RUN_OUTCOME_UNKNOWN'
   | 'RUN_EFFECT_RECORDED'
   | 'RETRY_SUPERSEDED'
   | 'GOAL_CLOSED'
@@ -294,7 +309,7 @@ export class AgentRunService {
           origin: envelope.origin ?? 'user',
           intentId: envelope.intentId ?? null,
           agentRole: envelope.agentRole ?? null,
-          metadata: { transient: true },
+          metadata: { transient: true, requestId: safeRequestId(envelope.requestId) },
         })
         .returning();
       goalId = goal!.id;
@@ -315,6 +330,7 @@ export class AgentRunService {
         budget: envelope.budget ?? {},
         policySnapshotHash: envelope.policySnapshotHash ?? null,
         status: envelope.status ?? 'running',
+        metrics: { requestId: safeRequestId(envelope.requestId) },
       })
       .returning();
 
@@ -378,11 +394,25 @@ export class AgentRunService {
 
     if (patch.latencyMs !== undefined) {
       agentToolLatency.observe(
-        { tool: await this.toolNameForCall(toolCallId), status: patch.status },
+        { tool: metricTool(await this.toolNameForCall(toolCallId)), status: metricStatus(patch.status) },
         patch.latencyMs / 1000,
       );
     }
     observeAgentCost(await this.toolNameForCall(toolCallId), patch.cost);
+  }
+
+  async hasUnknownExecution(runId: string, metrics: Record<string, unknown> | null): Promise<boolean> {
+    if (metrics?.['outcomeUnknown'] === true) return true;
+    const [running] = await this.db.select({ id: agentToolCalls.id }).from(agentToolCalls)
+      .where(and(eq(agentToolCalls.siteId, this.siteId), eq(agentToolCalls.runId, runId), eq(agentToolCalls.status, 'running'))).limit(1);
+    return Boolean(running);
+  }
+
+  async markOutcomeUnknown(runId: string): Promise<void> {
+    await this.db.update(agentRuns).set({
+      metrics: sql`coalesce(${agentRuns.metrics}, '{}'::jsonb) || '{"outcomeUnknown":true,"stopReason":"execution_timeout"}'::jsonb`,
+      updatedAt: new Date(),
+    }).where(and(eq(agentRuns.siteId, this.siteId), eq(agentRuns.id, runId)));
   }
 
   async closeRun(runId: string, metrics: Record<string, unknown> = {}): Promise<void> {
@@ -392,12 +422,12 @@ export class AgentRunService {
       .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
     await this.db
       .update(agentRuns)
-      .set({ status: 'succeeded', metrics, finishedAt: new Date(), updatedAt: new Date() })
+      .set({ status: 'succeeded', metrics: sql`coalesce(${agentRuns.metrics}, '{}'::jsonb) || ${JSON.stringify(metrics)}::jsonb`, finishedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
     agentRunsTotal.inc({
-      agent: run?.agentName ?? 'unknown',
+      agent: metricAgent(run?.agentName ?? 'unknown'),
       status: 'succeeded',
-      stop_reason: String(metrics['stopReason'] ?? 'completed'),
+      stop_reason: metricReason(String(metrics['stopReason'] ?? 'completed')),
     });
     this.notify?.({
       kind: 'run',
@@ -416,13 +446,13 @@ export class AgentRunService {
       .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
     await this.db
       .update(agentRuns)
-      .set({ status: 'failed', error, metrics, finishedAt: new Date(), updatedAt: new Date() })
+      .set({ status: 'failed', error, metrics: sql`coalesce(${agentRuns.metrics}, '{}'::jsonb) || ${JSON.stringify(metrics)}::jsonb`, finishedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
-    const stopReason = String(metrics['stopReason'] ?? 'error');
+    const stopReason = String(metrics['stopReason'] ?? (run?.metrics as Record<string, unknown> | null)?.['stopReason'] ?? 'error');
     agentRunsTotal.inc({
-      agent: run?.agentName ?? 'unknown',
+      agent: metricAgent(run?.agentName ?? 'unknown'),
       status: 'failed',
-      stop_reason: stopReason,
+      stop_reason: metricReason(stopReason),
     });
     if (run) {
       await this.enqueueDeadLetterIfRepeatedFailure(run, error, stopReason);
@@ -677,9 +707,9 @@ export class AgentRunService {
       return null;
     }
     agentRunsTotal.inc({
-      agent: run.agentName,
+      agent: metricAgent(run.agentName),
       status: 'cancelled',
-      stop_reason: reason,
+      stop_reason: metricReason(reason),
     });
     return updated ?? null;
   }
@@ -745,6 +775,10 @@ export class AgentRunService {
         'RUN_NOT_RETRYABLE',
         `Run is ${original.status}; only failed or cancelled runs can be retried.`,
       );
+    }
+
+    if (await this.hasUnknownExecution(runId, original.metrics)) {
+      return refuse('RUN_OUTCOME_UNKNOWN', 'Execution may still be running or have partially completed. Inspect its effects before issuing new work.');
     }
 
     // No queue adapter: refuse before writing anything, as `POST /goals` does for
@@ -892,6 +926,7 @@ export class AgentRunService {
             budget: original.budget as Record<string, unknown>,
             policySnapshotHash: original.policySnapshotHash,
             retryOfRunId: original.id,
+            metrics: { requestId: safeRequestId(requester.requestId), originRequestId: (original.metrics as Record<string, unknown>)?.['requestId'] ?? null },
             // `queued`, never `running`: the worker's claim is the only thing
             // allowed to start a run, which is what makes redelivery harmless.
             status: 'queued',
@@ -922,6 +957,7 @@ export class AgentRunService {
           userId: requester.userId,
           payload: {
             runId: retry!.id,
+            requestId: safeRequestId(requester.requestId),
             retryOfRunId: original.id,
             goalId: goal.id,
             agentName: original.agentName,
@@ -951,6 +987,7 @@ export class AgentRunService {
       siteId: this.siteId,
       goalId: goal.id,
       runId: retryRunId,
+      requestId: safeRequestId(requester.requestId) ?? undefined,
       skillName: task.skillName,
       arguments: task.arguments,
       principal: requester.principal,
@@ -1156,7 +1193,7 @@ export class AgentRunService {
       failedRuns: failedRuns.length,
       enqueuedAt: new Date().toISOString(),
     });
-    agentDeadLettersTotal.inc({ agent: run.agentName, reason: stopReason });
+    agentDeadLettersTotal.inc({ agent: metricAgent(run.agentName), reason: metricReason(stopReason) });
   }
 }
 
