@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-10-14T20:40:50.164Z
+version: 5
+lastUpdated: 2026-11-02T20:22:43.297Z
 sourceLang: en
-contentHash: de43a5f3879ebf93
-codeVerified: 2026-10-14T20:40:50.164Z
-codeVerifiedHash: de43a5f3879ebf93
+contentHash: 0b4d8fa32947d4c3
+codeVerified: 2026-11-07T15:45:38.286Z
+codeVerifiedHash: 0b4d8fa32947d4c3
 codeVerifiedClaims: 36
 ---
 
@@ -181,7 +181,7 @@ re-introduce a fail-open path without a reviewer noticing.
 | `graphql/context.ts` | request | GraphQL inherits the REST surface's governance |
 | `services/scheduler-worker.ts` | system `scheduler` | cron retention sweep, no user principal |
 | `services/veto-commit-worker.ts` | system `background-worker` | commit after the veto window locked in the human decision |
-| `services/agent-run-worker.ts` | system `background-worker` | governed agent run — HITL/autonomy gated in the harness, not per-user RBAC |
+| `services/agent-run-worker.ts` | principal (`itemServiceForPrincipal`) when the job carries a user or API-key principal; otherwise system `background-worker` | a job with a user or API-key principal enforces that principal's row/field RBAC, as the request path does (#580); reconciler (agent-role) and legacy capability-snapshot jobs have no principal and are gated by the harness (HITL/autonomy, agent role); a `dev` principal (development runtime + `admin` role only) resolves to a full admin bundle with no persisted role, so it keeps the system posture |
 | `services/erasure-service.ts` | system `compliance-erasure` | erasure/SAR gated by admin + dual-control at the service layer |
 | `services/review-content-access.ts` (`reviewContentAccessForDriftScan`) | system `semantic-drift-scan` | semantic drift pass (J12): reads only the rule's fields minus pinned fields, writes no item; sending content is gated by `aiDecisions.enabled` + `aiDecisions.drift` |
 

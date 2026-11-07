@@ -269,6 +269,20 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   service yet; the docs no longer say the skills run a vector search. Audit:
   `docs/review-agent/2026-11-01-ai-audit-581-embedding-retrieval-baseline.md`;
   baseline dataset `apps/cms/eval/retrieval/dataset.v1.json`.
+- **Queued Agent API runs enforce the requester's row and field rules (#580).**
+  The `agent-runs` worker re-resolved the job's principal at pickup (#472) but
+  then executed the skill with a system `ItemService`, so a queued
+  `POST /api/v1/agent/goals` (`execution: 'async'`) or `/runs/:id/retry` could
+  write collections and fields the principal may not write, and read masked
+  fields back, while the same call through Copilot or governed MCP was refused.
+  The worker now binds `ItemService` to the principal's permission context for
+  user and API-key principals. Reconciler (agent-role) jobs and legacy
+  capability-snapshot jobs have no principal and keep the system posture, as do
+  development (`dev`) principals: they exist only in the development runtime
+  with the `admin` role and have no persisted role a permission context could
+  resolve. Audit report:
+  `docs/review-agent/2026-11-01-ai-audit-580-authz-parity.md`. No migration,
+  env or setup step.
 - **Agent runs: truthful terminal states, no replay of an executed write, and no
   query parameters in run errors (#584).** Four gaps in the run recovery path,
   each reproduced on Postgres (`agent-run-recovery.db.integration.test.ts`):
