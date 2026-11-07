@@ -1,16 +1,16 @@
 ---
-version: 4
-lastUpdated: 2026-11-07T15:51:35.870Z
+version: 5
+lastUpdated: 2026-11-07T19:56:21.536Z
 sourceLang: vi
 translatedFrom: en
 sourceHash: ecc8983d3122446b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-07T15:51:35.870Z
-codeVerifiedHash: 31aa6123a129c788
+codeVerified: 2026-11-07T19:56:21.536Z
+codeVerifiedHash: d65dcabd5360fe44
 codeVerifiedClaims: 30
 
-contentHash: 31aa6123a129c788
+contentHash: d65dcabd5360fe44
 ---
 
 # AI Copilot (HITL)
@@ -40,7 +40,7 @@ Vì vậy các bảng hiện có được xem như seed:
 
 - `ai_approvals` → tiền thân của approval gate tổng quát cho plan/tool/artifact.
 - `ai_conversations` + `ai_messages` → context memory ngắn hạn.
-- `ai_embeddings` → RAG knowledge base theo site/collection/item.
+- `ai_embeddings` → dành cho RAG knowledge base theo site/collection/item. Hiện chưa có code nào đọc hoặc ghi bảng này (#581).
 - `CORE_SKILLS` → tiền thân của tool registry có input schema, capability, rate limit và risk policy.
 
 ## CORE_SKILLS registry
@@ -178,10 +178,11 @@ Bảng `ai_conversations` và `ai_messages` được dùng để lưu trữ tr�
 - **Model không cấp quyền.** Harness kiểm capability, input schema chuẩn, và quyền theo row và field của người gọi ở mọi tool call, bất kể model yêu cầu gì. `apps/cms/eval/prompt-injection/dataset.v1.json` liệt kê các tấn công và benign control, được chạy lại như thể model làm theo kẻ tấn công.
 - **Redaction.** `listSettings` che các field chứa secret theo cùng quy tắc với `GET /api/v1/settings`.
 
-### 3. RAG Skills (`aiSuggestField` và `aiContentAssist`)
-Tích hợp dịch vụ sinh vector embeddings (`embedding-service.ts`) hỗ trợ OpenAI `text-embedding-3-small` và Workers AI `@cf/baai/bge-base-en-v1.5`:
-- **`aiSuggestField`**: Phân tích schema hiện tại và mô tả của admin, truy xuất vector tương tự từ database thông qua cosine similarity để gợi ý cấu hình field tối ưu.
-- **`aiContentAssist`**: Hỗ trợ sinh hoặc hiệu chỉnh nội dung field dựa trên RAG context từ các item đã lưu trong hệ thống.
+### 3. Skill sinh nội dung có context (`aiSuggestField` và `aiContentAssist`)
+Hiện cả hai skill đều không chạy vector search (#581). `embedding-service.ts` (OpenAI `text-embedding-3-small`, Workers AI `@cf/baai/bge-base-en-v1.5`) và bảng `ai_embeddings` có tồn tại, nhưng chưa có đường code nào gọi hoặc ghi vào chúng.
+- **`aiSuggestField`**: gửi cho model tên các field hiện có của collection và mô tả của admin.
+- **`aiContentAssist`**: gửi tối đa 3 item mẫu của collection, là các item cập nhật gần nhất mà caller được đọc. `ItemService` áp quy tắc tenant, row và field, nên field bị ẩn, item của site khác hay item ngoài row rule không bao giờ tới model. Một lần cập nhật, xoá hay thu hồi quyền có hiệu lực ngay ở lần gọi kế tiếp. Chỉ `status` và `data` của từng mẫu được gửi, không gửi metadata của row. Các mẫu không phụ thuộc vào instruction. `apps/cms/eval/retrieval/dataset.v1.json` ghi baseline trên dataset đó (Recall@3 0.5, MRR@3 0.46).
+- Các primitive embedding throw `EMBEDDING_DIMENSION_MISMATCH` hoặc `EMBEDDING_RESPONSE_INVALID` khi so sánh vector khác kích thước hoặc khi provider trả sai số lượng hay kích thước vector.
 
 ## Property-based testing
 

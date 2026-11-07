@@ -4,6 +4,12 @@
  * Provides vector embedding generation for RAG (Retrieval Augmented
  * Generation) in AI skills. Supports OpenAI embeddings and Workers AI
  * embeddings, with a fallback echo provider for testing.
+ *
+ * Status (#581 audit): nothing in the CMS calls this module or reads/writes
+ * `lumibase_ai_embeddings` yet. The `aiContentAssist` "RAG" context is a live
+ * `ItemService.list` sample, not a vector search. The primitives below fail
+ * loudly on a model/dimension mismatch so that whoever wires them later cannot
+ * silently compare vectors from two models.
  */
 
 // ---------------------------------------------------------------------------
@@ -15,6 +21,37 @@ export interface EmbeddingProvider {
   embed(texts: string[]): Promise<number[][]>;
   /** Dimension of the output vectors. */
   dimensions: number;
+  /** Model id the vectors came from; store it next to every vector. */
+  model: string;
+}
+
+/**
+ * Checks a provider response: one finite vector of `dimensions` numbers per
+ * input text. A short, empty or wrong-sized answer throws instead of reaching
+ * storage or a similarity score.
+ */
+export function assertEmbeddings(
+  vectors: unknown,
+  expectedCount: number,
+  dimensions: number,
+  source: string,
+): number[][] {
+  if (!Array.isArray(vectors) || vectors.length !== expectedCount) {
+    const got = Array.isArray(vectors) ? vectors.length : typeof vectors;
+    throw new Error(`EMBEDDING_RESPONSE_INVALID: ${source} returned ${got} vectors for ${expectedCount} inputs`);
+  }
+  vectors.forEach((vector, index) => {
+    if (!Array.isArray(vector) || vector.length !== dimensions) {
+      const got = Array.isArray(vector) ? vector.length : typeof vector;
+      throw new Error(
+        `EMBEDDING_DIMENSION_MISMATCH: ${source} vector ${index} has ${got} dimensions, expected ${dimensions}`,
+      );
+    }
+    if (!vector.every((n) => typeof n === 'number' && Number.isFinite(n))) {
+      throw new Error(`EMBEDDING_RESPONSE_INVALID: ${source} vector ${index} has a non-finite value`);
+    }
+  });
+  return vectors as number[][];
 }
 
 export interface EmbeddingProviderEnv {
@@ -31,9 +68,16 @@ export interface EmbeddingProviderEnv {
 /**
  * Computes cosine similarity between two vectors.
  * Returns a value between -1 and 1, where 1 = identical direction.
+ *
+ * Vectors of different lengths come from different models (or a truncated
+ * response) and have no meaningful similarity, so this throws
+ * `EMBEDDING_DIMENSION_MISMATCH` instead of returning 0. A silent 0 would rank
+ * the item as merely "unrelated" and hide a mixed index.
  */
 export function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) return 0;
+  if (a.length !== b.length || a.length === 0) {
+    throw new Error(`EMBEDDING_DIMENSION_MISMATCH: cannot compare ${a.length}- and ${b.length}-dimension vectors`);
+  }
 
   let dotProduct = 0;
   let normA = 0;
@@ -54,14 +98,27 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 // OpenAI Embedding Provider
 // ---------------------------------------------------------------------------
 
+/** Native output size of the OpenAI embedding models this provider accepts. */
+export const OPENAI_EMBEDDING_DIMENSIONS: Readonly<Record<string, number>> = {
+  'text-embedding-3-small': 1536,
+  'text-embedding-3-large': 3072,
+  'text-embedding-ada-002': 1536,
+};
+
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
-  readonly dimensions = 1536;
+  readonly dimensions: number;
+  readonly model: string;
   private readonly apiKey: string;
-  private readonly model: string;
 
   constructor(apiKey: string, model = 'text-embedding-3-small') {
+    const dimensions = OPENAI_EMBEDDING_DIMENSIONS[model];
+    if (dimensions === undefined) {
+      // A hardcoded 1536 for every model made `dimensions` wrong for -large.
+      throw new Error(`EMBEDDING_MODEL_UNKNOWN: no known dimension for OpenAI model "${model}"`);
+    }
     this.apiKey = apiKey;
     this.model = model;
+    this.dimensions = dimensions;
   }
 
   async embed(texts: string[]): Promise<number[][]> {
@@ -89,9 +146,10 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     };
 
     // Sort by index to maintain order
-    return data.data
-      .sort((a, b) => a.index - b.index)
-      .map((d) => d.embedding);
+    const vectors = Array.isArray(data?.data)
+      ? [...data.data].sort((a, b) => a.index - b.index).map((d) => d.embedding)
+      : undefined;
+    return assertEmbeddings(vectors, texts.length, this.dimensions, `openai:${this.model}`);
   }
 }
 
@@ -101,9 +159,9 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
 export class WorkersAIEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions = 768;
+  readonly model: string;
   private readonly accountId: string;
   private readonly apiToken: string;
-  private readonly model: string;
 
   constructor(opts: {
     accountId: string;
@@ -138,7 +196,8 @@ export class WorkersAIEmbeddingProvider implements EmbeddingProvider {
       result?: { data?: number[][] };
     };
 
-    return data.result?.data ?? [];
+    // `?? []` used to turn a malformed answer into "no vectors" for N inputs.
+    return assertEmbeddings(data.result?.data, texts.length, this.dimensions, `workers-ai:${this.model}`);
   }
 }
 
@@ -148,6 +207,7 @@ export class WorkersAIEmbeddingProvider implements EmbeddingProvider {
 
 export class EchoEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions = 8;
+  readonly model = 'echo';
 
   async embed(texts: string[]): Promise<number[][]> {
     // Return deterministic pseudo-embeddings based on text hash
