@@ -1,5 +1,43 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createLLMProvider, LLM_REQUEST_TIMEOUT_MS } from '../llm-provider';
+import { createLLMProvider, LLM_REQUEST_TIMEOUT_MS, LLMNetworkError, LLMResponseError } from '../llm-provider';
+
+/** Headers arrive at once; the body stalls until the request signal aborts. */
+function stallingBodyFetch() {
+  return vi.fn((_url: unknown, init: RequestInit) => Promise.resolve(new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"choices":'));
+      init.signal!.addEventListener('abort', () => controller.error(init.signal!.reason), { once: true });
+    },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+}
+
+describe('#583 aborts while the body streams are transport outcomes', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  it.each(environments)('$LLM_PROVIDER maps the provider deadline mid-body to a network failure', async (env) => {
+    const deadline = new AbortController();
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal);
+    const fetcher = stallingBodyFetch();
+    vi.stubGlobal('fetch', fetcher);
+    const pending = createLLMProvider(env).chat([{ role: 'user', content: 'read' }]);
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    deadline.abort(new DOMException('synthetic deadline', 'TimeoutError'));
+    await expect(pending).rejects.toBeInstanceOf(LLMNetworkError);
+  });
+  it('keeps caller cancellation mid-body on its original error path', async () => {
+    const caller = new AbortController();
+    const fetcher = stallingBodyFetch();
+    vi.stubGlobal('fetch', fetcher);
+    const pending = createLLMProvider(environments[0]!).chat([{ role: 'user', content: 'read' }], { signal: caller.signal });
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    const reason = new Error('caller cancelled');
+    caller.abort(reason);
+    await expect(pending).rejects.toBe(reason);
+  });
+  it('still reports a truncated body without an abort as an unusable response', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"choices":', { status: 200 })));
+    await expect(createLLMProvider(environments[0]!).chat([{ role: 'user', content: 'read' }])).rejects.toBeInstanceOf(LLMResponseError);
+  });
+});
 
 const environments = [
   { LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'test' },
