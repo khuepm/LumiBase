@@ -107,6 +107,8 @@ services:
       # real Gemini path locally before deploying.
       LLM_PROVIDER: ${LLM_PROVIDER:-echo}
       LLM_MODEL: ${LLM_MODEL:-}
+      # Context window of LLM_MODEL in tokens; required for custom model names.
+      LLM_CONTEXT_WINDOW_TOKENS: ${LLM_CONTEXT_WINDOW_TOKENS:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # Decision model for POST /api/ai/decisions (TypeSafe Jev). Unset = off.
       DECISION_PROVIDER: ${DECISION_PROVIDER:-}
