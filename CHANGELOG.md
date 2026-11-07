@@ -287,6 +287,18 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `shell-check.yml`.
 
 ### Fixed
+- **Model calls are bounded to 20 seconds, including the response body
+  (#583).** The OpenAI, NVIDIA, Anthropic, Gemini, Vertex and Workers AI
+  adapters used to wait on an unresponsive upstream with no limit outside the
+  decision path. Each request now carries one 20-second deadline that stays
+  active while the body streams; a shorter caller deadline still wins. A
+  deadline hit, before or during the body, is a network failure
+  (`DECISION_UNAVAILABLE` on decisions), not an unparseable response, and
+  caller cancellation keeps its own error. An outage sends one attempt and runs
+  no fallback tool. `apps/cms/eval/model-routing` adds a reproducible local
+  overhead workload with p50/p95/p99, synthetic token counts and illustrative
+  cost; it does not measure live provider latency or billing. Audit:
+  `docs/review-agent/2026-11-01-ai-audit-583-model-routing-cache-isolation.md`.
 - **`aiContentAssist` sends sample content only, and embedding primitives fail
   on mixed dimensions (#581).** The skill's context samples used to be whole
   item rows, so site and collection ids, user ids and the wrapped DEK went to
