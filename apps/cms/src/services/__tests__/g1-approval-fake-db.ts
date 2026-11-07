@@ -126,9 +126,10 @@ export function createFakeDb(seed: Record<string, Row[]> = {}): FakeDb {
         return Object.assign(result(), {
           where: (condition?: unknown) => {
             const ids = collectEqValues(condition, 'id');
-            if (ids.length > 0) {
+            const statuses = collectEqValues(condition, 'status');
+            if (ids.length > 0 || statuses.length > 0) {
               const rows = state.rows
-                .filter((row) => state.match(row) && ids.includes(String(row['id'])))
+                .filter((row) => state.match(row) && (ids.length === 0 || ids.includes(String(row['id']))) && (statuses.length === 0 || statuses.includes(String(row['status']))))
                 .map((row) => ({ ...row }));
               return Object.assign(Promise.resolve(rows), {
                 limit: async () => rows,
