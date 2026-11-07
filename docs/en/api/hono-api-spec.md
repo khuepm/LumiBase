@@ -1,10 +1,10 @@
 ---
-version: 30
-lastUpdated: 2026-10-31T14:37:43.205Z
+version: 31
+lastUpdated: 2026-11-02T23:11:42.905Z
 sourceLang: en
-contentHash: 8bd42dc1dd644fb3
-codeVerified: 2026-10-31T14:37:43.205Z
-codeVerifiedHash: 8bd42dc1dd644fb3
+contentHash: 032adb202d9fe79f
+codeVerified: 2026-11-02T23:11:42.905Z
+codeVerifiedHash: 032adb202d9fe79f
 codeVerifiedClaims: 456
 ---
 
@@ -985,7 +985,7 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `GET/POST` | `/api/v1/agent/goals` | List / create goals (`execution: 'async'` enqueues a queued run) |
 | `POST` | `/api/v1/agent/goals/:id/decompose` | Planner: create role-scoped sub-goals inheriting remaining budget |
 | `POST` | `/api/v1/agent/goals/:id/settle` | Settle a parent goal from its children's terminal states |
-| `POST` | `/api/v1/agent/runs/:id/retry` | Re-execute a `failed`/`cancelled` run as a new `queued` run (`retryOfRunId` → the original), enqueued on `agent-runs` under the requester's re-resolved rights. Only the goal's latest attempt, only while nothing on the goal is in flight — at most one new execution per request. `201` `{ goalId, runId, agentName, status, retryOfRunId }`; `404` unknown or other-tenant run; `409` not retryable, in flight, superseded, goal closed or busy, intent not active, or task unrecoverable; `423` frozen; `400` no queue adapter; `503` enqueue failed. See [agent harness](../features/agent-harness-layer.md) |
+| `POST` | `/api/v1/agent/runs/:id/retry` | Re-execute a `failed`/`cancelled` run as a new `queued` run (`retryOfRunId` → the original), enqueued on `agent-runs` under the requester's re-resolved rights. Only the goal's latest attempt, only while nothing on the goal is in flight — at most one new execution per request. `201` `{ goalId, runId, agentName, status, retryOfRunId }`; `404` unknown or other-tenant run; `409` not retryable, in flight, effect already recorded (`RUN_EFFECT_RECORDED`), superseded, goal closed or busy, intent not active, or task unrecoverable; `423` frozen; `400` no queue adapter; `503` enqueue failed. See [agent harness](../features/agent-harness-layer.md) |
 | `GET/POST/PATCH/DELETE` | `/api/v1/agent/roles[/:name]` | Agent role library CRUD (admin) — seeded with Planner, Writer, … |
 | `GET` | `/api/v1/agent/autonomy` | Trust ledger: grants + open incidents |
 | `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Promotion proposals; `POST :id/decide` is the only path to a higher level (admin) |

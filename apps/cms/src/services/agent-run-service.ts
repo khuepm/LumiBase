@@ -13,6 +13,7 @@ import type { ApprovalRequester } from './approval-requester';
 import type { AgentRunJobPayload } from './agent-run-worker';
 import type { AuthenticatedPrincipalRef } from './effective-capability-service';
 import {
+  metricTool, metricAgent, metricReason, metricStatus,
   agentDeadLettersTotal,
   agentRunsTotal,
   agentToolLatency,
@@ -47,7 +48,13 @@ export const RUN_STALE_MS = 15 * 60_000;
 /** `metrics.stopReason` for a run abandoned mid-flight; needs a human. */
 export const STALE_RUN_STOP_REASON = 'stale_unverified';
 
+/** Only opaque request identifiers enter trace metadata. */
+export function safeRequestId(value: unknown): string | null {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : null;
+}
+
 export interface AgentRunEnvelope {
+  requestId?: string;
   goalId?: string;
   runId?: string;
   agentName?: string;
@@ -104,12 +111,13 @@ export interface ToolCallInput {
   approvalId?: string | null;
 }
 
-const SECRET_KEY_RE = /(secret|token|password|api[_-]?key|authorization|credential)/i;
+const SECRET_KEY_RE = /(secret|token|password|api[_-]?key|authorization|credential|email|phone|ssn|birthdate|address)/i;
 
 /** What {@link maskSecrets} writes in place of a secret-looking value. */
 const MASKED_VALUE = '[masked]';
 
 export function maskSecrets(value: unknown): unknown {
+  if (typeof value === 'string') return redactTraceText(value);
   if (Array.isArray(value)) {
     return value.map((entry) => maskSecrets(entry));
   }
@@ -123,6 +131,39 @@ export function maskSecrets(value: unknown): unknown {
       SECRET_KEY_RE.test(key) ? MASKED_VALUE : maskSecrets(entry),
     ]),
   );
+}
+
+/**
+ * The message recorded (and returned by `GET /agent/runs`, and pushed in run
+ * notifications) for an error thrown during a run (#584 F4).
+ *
+ * Drizzle's `DrizzleQueryError` message is `Failed query: <sql>\nparams: <values>`,
+ * so recording `err.message` copied every bound value of the failed statement into
+ * the run: item content, and secret-keyed values that {@link maskSecrets} had just
+ * removed from the recorded input. Only the driver's SQLSTATE is retained; driver detail may also quote private
+ * values, so neither that detail nor the parameter list is kept.
+ */
+export function runErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) return typeof err === 'string' ? redactTraceText(stripQueryParams(err)) : 'Unknown execution error';
+  const message = err.message ?? '';
+  if (message.startsWith('Failed query:')) {
+    const cause = (err as { cause?: unknown }).cause;
+    const code = (cause as { code?: unknown } | undefined)?.code;
+    return `Database query failed${typeof code === 'string' && /^[A-Z0-9]{5}$/.test(code) ? ` (SQLSTATE ${code})` : ''}`;
+  }
+  return stripQueryParams(message);
+}
+
+export function redactTraceText(value: string): string {
+  return value
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[masked]')
+    .replace(/((?:api[_-]?key|token|password|secret|authorization)\s*[:=]\s*)[^\s,;]+/gi, '$1[masked]');
+}
+
+/** Drops a `params:` list that a wrapped query error carried into a message. */
+function stripQueryParams(message: string): string {
+  const index = message.indexOf('\nparams:');
+  return redactTraceText(index === -1 ? message : message.slice(0, index));
 }
 
 /** True when {@link maskSecrets} replaced something inside `value`. */
@@ -184,6 +225,7 @@ const MAX_RETRY_CHAIN_DEPTH = 20;
 
 /** Who is asking for a retry. The retry executes with this principal's rights. */
 export interface RetryRequester {
+  requestId?: string;
   principal: AuthenticatedPrincipalRef;
   userId: string | null;
 }
@@ -192,6 +234,8 @@ export type RetryRunRefusalCode =
   | 'NOT_FOUND'
   | 'RUN_NOT_RETRYABLE'
   | 'RUN_ACTIVE'
+  | 'RUN_OUTCOME_UNKNOWN'
+  | 'RUN_EFFECT_RECORDED'
   | 'RETRY_SUPERSEDED'
   | 'GOAL_CLOSED'
   | 'GOAL_BUSY'
@@ -265,7 +309,7 @@ export class AgentRunService {
           origin: envelope.origin ?? 'user',
           intentId: envelope.intentId ?? null,
           agentRole: envelope.agentRole ?? null,
-          metadata: { transient: true },
+          metadata: { transient: true, requestId: safeRequestId(envelope.requestId) },
         })
         .returning();
       goalId = goal!.id;
@@ -286,6 +330,7 @@ export class AgentRunService {
         budget: envelope.budget ?? {},
         policySnapshotHash: envelope.policySnapshotHash ?? null,
         status: envelope.status ?? 'running',
+        metrics: { requestId: safeRequestId(envelope.requestId) },
       })
       .returning();
 
@@ -349,11 +394,25 @@ export class AgentRunService {
 
     if (patch.latencyMs !== undefined) {
       agentToolLatency.observe(
-        { tool: await this.toolNameForCall(toolCallId), status: patch.status },
+        { tool: metricTool(await this.toolNameForCall(toolCallId)), status: metricStatus(patch.status) },
         patch.latencyMs / 1000,
       );
     }
     observeAgentCost(await this.toolNameForCall(toolCallId), patch.cost);
+  }
+
+  async hasUnknownExecution(runId: string, metrics: unknown): Promise<boolean> {
+    if (metrics && typeof metrics === 'object' && 'outcomeUnknown' in metrics && metrics.outcomeUnknown === true) return true;
+    const [running] = await this.db.select({ id: agentToolCalls.id }).from(agentToolCalls)
+      .where(and(eq(agentToolCalls.siteId, this.siteId), eq(agentToolCalls.runId, runId), eq(agentToolCalls.status, 'running'))).limit(1);
+    return Boolean(running);
+  }
+
+  async markOutcomeUnknown(runId: string): Promise<void> {
+    await this.db.update(agentRuns).set({
+      metrics: sql`coalesce(${agentRuns.metrics}, '{}'::jsonb) || '{"outcomeUnknown":true,"stopReason":"execution_timeout"}'::jsonb`,
+      updatedAt: new Date(),
+    }).where(and(eq(agentRuns.siteId, this.siteId), eq(agentRuns.id, runId)));
   }
 
   async closeRun(runId: string, metrics: Record<string, unknown> = {}): Promise<void> {
@@ -363,12 +422,12 @@ export class AgentRunService {
       .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
     await this.db
       .update(agentRuns)
-      .set({ status: 'succeeded', metrics, finishedAt: new Date(), updatedAt: new Date() })
+      .set({ status: 'succeeded', metrics: sql`coalesce(${agentRuns.metrics}, '{}'::jsonb) || ${JSON.stringify(metrics)}::jsonb`, finishedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
     agentRunsTotal.inc({
-      agent: run?.agentName ?? 'unknown',
+      agent: metricAgent(run?.agentName ?? 'unknown'),
       status: 'succeeded',
-      stop_reason: String(metrics['stopReason'] ?? 'completed'),
+      stop_reason: metricReason(String(metrics['stopReason'] ?? 'completed')),
     });
     this.notify?.({
       kind: 'run',
@@ -387,13 +446,13 @@ export class AgentRunService {
       .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
     await this.db
       .update(agentRuns)
-      .set({ status: 'failed', error, metrics, finishedAt: new Date(), updatedAt: new Date() })
+      .set({ status: 'failed', error, metrics: sql`coalesce(${agentRuns.metrics}, '{}'::jsonb) || ${JSON.stringify(metrics)}::jsonb`, finishedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
-    const stopReason = String(metrics['stopReason'] ?? 'error');
+    const stopReason = String(metrics['stopReason'] ?? (run?.metrics as Record<string, unknown> | null)?.['stopReason'] ?? 'error');
     agentRunsTotal.inc({
-      agent: run?.agentName ?? 'unknown',
+      agent: metricAgent(run?.agentName ?? 'unknown'),
       status: 'failed',
-      stop_reason: stopReason,
+      stop_reason: metricReason(stopReason),
     });
     if (run) {
       await this.enqueueDeadLetterIfRepeatedFailure(run, error, stopReason);
@@ -590,12 +649,28 @@ export class AgentRunService {
     return resumed.length > 0;
   }
 
-  /** Parks a run while a dangerous action waits for an approval (Req 3.1). */
-  async awaitApproval(runId: string): Promise<void> {
-    await this.db
+  /**
+   * Parks a run while a dangerous action waits for an approval (Req 3.1).
+   *
+   * Conditional on the run still being in flight (#584 F2). The write used to be
+   * unconditional, so a run cancelled while the harness was still classifying the
+   * call came back as `awaiting_approval`, and the approval it then created
+   * executed when a human approved it: the cancellation was lost. Returns false
+   * when the run is no longer in flight; the caller must not park anything.
+   */
+  async awaitApproval(runId: string, db: Pick<Database, 'update'> = this.db): Promise<boolean> {
+    const parked = await db
       .update(agentRuns)
       .set({ status: 'awaiting_approval', updatedAt: new Date() })
-      .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
+      .where(
+        and(
+          eq(agentRuns.id, runId),
+          eq(agentRuns.siteId, this.siteId),
+          inArray(agentRuns.status, IN_FLIGHT_RUN_STATES),
+        ),
+      )
+      .returning({ id: agentRuns.id });
+    return parked.length > 0;
   }
 
   /**
@@ -609,6 +684,10 @@ export class AgentRunService {
     if (!run || !['queued', 'running', 'awaiting_approval'].includes(run.status)) {
       return null;
     }
+    // The status is re-checked in the write (#584 F1). Between the read above and
+    // this UPDATE the run can reach a terminal state; overwriting a `succeeded`
+    // run with `cancelled` hid an effect that happened, and made the run
+    // retryable, so a retry repeated it.
     const metrics = {
       ...(run.metrics as Record<string, unknown>),
       stopReason: reason,
@@ -616,12 +695,21 @@ export class AgentRunService {
     const [updated] = await this.db
       .update(agentRuns)
       .set({ status: 'cancelled', metrics, finishedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)))
+      .where(
+        and(
+          eq(agentRuns.id, runId),
+          eq(agentRuns.siteId, this.siteId),
+          inArray(agentRuns.status, IN_FLIGHT_RUN_STATES),
+        ),
+      )
       .returning();
+    if (!updated) {
+      return null;
+    }
     agentRunsTotal.inc({
-      agent: run.agentName,
+      agent: metricAgent(run.agentName),
       status: 'cancelled',
-      stop_reason: reason,
+      stop_reason: metricReason(reason),
     });
     return updated ?? null;
   }
@@ -689,6 +777,10 @@ export class AgentRunService {
       );
     }
 
+    if (await this.hasUnknownExecution(runId, original.metrics)) {
+      return refuse('RUN_OUTCOME_UNKNOWN', 'Execution may still be running or have partially completed. Inspect its effects before issuing new work.');
+    }
+
     // No queue adapter: refuse before writing anything, as `POST /goals` does for
     // async execution. A retry row with no job is exactly the defect being fixed.
     const queue = this.queue;
@@ -721,6 +813,29 @@ export class AgentRunService {
     }
     if (CLOSED_GOAL_STATES.includes(goal.status)) {
       return refuse('GOAL_CLOSED', `Goal is ${goal.status}; there is nothing left to retry for.`);
+    }
+
+    // A run whose tool call is recorded `executed` already had its effect: it
+    // failed (or was cancelled) only after the skill returned, for example when
+    // saving the outcome failed (#584 F3). Re-executing it is "do it again", the
+    // same reason `succeeded` is not retryable.
+    const [executedCall] = await this.db
+      .select({ id: agentToolCalls.id, toolName: agentToolCalls.toolName })
+      .from(agentToolCalls)
+      .where(
+        and(
+          eq(agentToolCalls.siteId, this.siteId),
+          eq(agentToolCalls.runId, original.id),
+          eq(agentToolCalls.status, 'executed'),
+        ),
+      )
+      .limit(1);
+    if (executedCall) {
+      return refuse(
+        'RUN_EFFECT_RECORDED',
+        `Tool call ${executedCall.id} ("${executedCall.toolName}") of this run is recorded as executed, ` +
+          'so its effect already happened; issue the request again if it should run twice.',
+      );
     }
 
     const task = await this.recoverRetryTask(original, goal);
@@ -811,6 +926,7 @@ export class AgentRunService {
             budget: original.budget as Record<string, unknown>,
             policySnapshotHash: original.policySnapshotHash,
             retryOfRunId: original.id,
+            metrics: { requestId: safeRequestId(requester.requestId), originRequestId: (original.metrics as Record<string, unknown>)?.['requestId'] ?? null },
             // `queued`, never `running`: the worker's claim is the only thing
             // allowed to start a run, which is what makes redelivery harmless.
             status: 'queued',
@@ -841,6 +957,7 @@ export class AgentRunService {
           userId: requester.userId,
           payload: {
             runId: retry!.id,
+            requestId: safeRequestId(requester.requestId),
             retryOfRunId: original.id,
             goalId: goal.id,
             agentName: original.agentName,
@@ -870,6 +987,7 @@ export class AgentRunService {
       siteId: this.siteId,
       goalId: goal.id,
       runId: retryRunId,
+      requestId: safeRequestId(requester.requestId) ?? undefined,
       skillName: task.skillName,
       arguments: task.arguments,
       principal: requester.principal,
@@ -1075,7 +1193,7 @@ export class AgentRunService {
       failedRuns: failedRuns.length,
       enqueuedAt: new Date().toISOString(),
     });
-    agentDeadLettersTotal.inc({ agent: run.agentName, reason: stopReason });
+    agentDeadLettersTotal.inc({ agent: metricAgent(run.agentName), reason: metricReason(stopReason) });
   }
 }
 

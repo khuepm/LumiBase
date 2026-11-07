@@ -1,3 +1,4 @@
+import { CORE_SKILLS } from '@lumibase/ai-skills';
 import { Counter, Gauge, Histogram } from 'prom-client';
 import { register } from '../routes/metrics';
 
@@ -63,12 +64,12 @@ export function observeAgentCost(toolName: string, cost: Record<string, unknown>
   if (!cost) return;
   const tokens = Number(cost['tokens'] ?? cost['totalTokens'] ?? cost['estimatedTokens']);
   if (Number.isFinite(tokens) && tokens > 0) {
-    agentEstimatedTokensTotal.inc({ tool: toolName }, tokens);
+    agentEstimatedTokensTotal.inc({ tool: metricTool(toolName) }, tokens);
   }
 
   const usd = Number(cost['usd'] ?? cost['estimatedUsd'] ?? cost['costUsd']);
   if (Number.isFinite(usd) && usd > 0) {
-    agentEstimatedCostUsdTotal.inc({ tool: toolName }, usd);
+    agentEstimatedCostUsdTotal.inc({ tool: metricTool(toolName) }, usd);
   }
 }
 
@@ -141,3 +142,26 @@ export const intentBreakerTripsTotal = new Counter({
   help: 'Reconciler circuit-breaker trips (intent moved to error)',
   registers: [register],
 });
+
+/** Fixed vocabulary keeps user-controlled agent/tool names out of time series. */
+export function metricTool(value: string): string {
+  return Object.hasOwn(CORE_SKILLS, value) ? value : 'custom';
+}
+export function metricAgent(value: string): string {
+  return value === 'lumibase-copilot' ? value : 'custom';
+}
+export function metricReason(value: string): string {
+  return ['completed', 'error', 'execution_timeout', 'worker_error', 'cancelled_by_user', 'killed_by_user', 'stale_unverified', 'enqueue_failed', 'queue_timeout', 'overload'].includes(value) ? value : 'other';
+}
+export function metricKind(value: string): string {
+  return ['tool_call', 'artifact', 'schema_validation', 'migration_dry_run', 'api_spec_validation', 'prompt_safety', 'json_schema_validation'].includes(value) ? value : 'other';
+}
+export function metricStatus(value: string): string {
+  return ['approved', 'rejected', 'failed', 'executed', 'pending_approval', 'denied', 'succeeded', 'cancelled', 'pass', 'fail'].includes(value) ? value : 'other';
+}
+export function observeApprovalDecision(row: { subjectType?: string; status: string; createdAt: Date }): void {
+  const labels = { subject_type: metricKind(row.subjectType ?? 'tool_call'), status: metricStatus(row.status) };
+  agentApprovalsTotal.inc(labels);
+  const latency = (Date.now() - row.createdAt.getTime()) / 1000;
+  if (Number.isFinite(latency)) agentApprovalLatency.observe(labels, Math.max(0, latency));
+}

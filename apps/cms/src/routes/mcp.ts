@@ -80,6 +80,7 @@ mcpRouter.post('/', async (c) => {
       harness.execute(skillName, args, capabilities, contextMessage, {
         // Provenance for anything this call parks (#472), so approving it later
         // re-reads the caller's grant instead of trusting the decider's.
+        requestId: c.get('requestId'),
         requestedByPrincipal: approvalRequesterFromAuth(c.get('auth'), siteId),
       }),
   };
