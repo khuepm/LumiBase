@@ -12,7 +12,8 @@ import { approvalRequesterFromAuth, principalRefFromAuth, resolveRequestCapabili
 import { IntentService } from '../services/intent-service';
 import { SchemaService } from '../services/schema-service';
 import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
-import { createConfiguredLLMProvider, createLLMProvider, type LLMMessage } from '../services/llm-provider';
+import { createConfiguredLLMProvider, createLLMProvider } from '../services/llm-provider';
+import { loadCopilotHistory } from '../services/copilot-history';
 import { createDecisionProvider, type DecisionProviderEnv } from '../services/decision-provider';
 import { decisionAuditContextForRequest } from '../services/decision-refusal-audit';
 import {
@@ -110,9 +111,6 @@ export const decisionRequestSchema = z.object({
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-/** Max messages to load from conversation history as LLM context. */
-const MAX_CONTEXT_MESSAGES = 20;
 
 // ---------------------------------------------------------------------------
 // Router
@@ -318,18 +316,8 @@ aiRouter.post('/chat', async (c) => {
       );
     }
 
-    // Step 4: Load conversation history for LLM context
-    const historyRows = await db
-      .select({ role: aiMessages.role, content: aiMessages.content })
-      .from(aiMessages)
-      .where(eq(aiMessages.conversationId, conversationId))
-      .orderBy(asc(aiMessages.createdAt))
-      .limit(MAX_CONTEXT_MESSAGES);
-
-    const llmMessages: LLMMessage[] = historyRows.map((row) => ({
-      role: row.role as LLMMessage['role'],
-      content: row.content,
-    }));
+    // Step 4: Load conversation history for LLM context (newest window, #582)
+    const llmMessages = await loadCopilotHistory(db, conversationId);
 
     // Step 5: Call LLM
     const llmProvider = createLLMProvider(

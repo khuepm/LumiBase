@@ -269,6 +269,16 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   service yet; the docs no longer say the skills run a vector search. Audit:
   `docs/review-agent/2026-11-01-ai-audit-581-embedding-retrieval-baseline.md`;
   baseline dataset `apps/cms/eval/retrieval/dataset.v1.json`.
+- **Copilot sends the newest conversation history, not the oldest (#582).**
+  `POST /api/v1/ai/chat` and its `Prefer: respond-async` worker loaded history
+  with `ORDER BY created_at ASC LIMIT 20`, so from the 21st message of a
+  conversation on, the turn the user had just sent was missing from the model
+  request: the model answered the first ten turns again, and a tool call it
+  returned ran with the user's rights. Both paths now share
+  `loadCopilotHistory`: the newest 20 messages, oldest first, opening on a user
+  turn. The 20-message limit and the system prompt are unchanged. No migration
+  or configuration change. Audit report:
+  `docs/review-agent/2026-11-01-ai-audit-582-token-budgets-grounding.md`.
 - **Queued Agent API runs enforce the requester's row and field rules (#580).**
   The `agent-runs` worker re-resolved the job's principal at pickup (#472) but
   then executed the skill with a system `ItemService`, so a queued
