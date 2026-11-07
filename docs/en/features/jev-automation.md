@@ -1,11 +1,11 @@
 ---
-version: 8
+version: 9
 sourceLang: en
-lastUpdated: 2026-10-15T19:22:12.818Z
-contentHash: 9169c4051130c9d5
-codeVerified: 2026-10-15T19:22:12.818Z
-codeVerifiedHash: 9169c4051130c9d5
-codeVerifiedClaims: 14
+lastUpdated: 2026-10-15T22:44:19.957Z
+contentHash: 55c9ac717ef220fe
+codeVerified: 2026-10-15T22:44:19.957Z
+codeVerifiedHash: 55c9ac717ef220fe
+codeVerifiedClaims: 16
 ---
 
 # Jev automation: tagging and review-queue routing (shadow-first)
@@ -148,6 +148,6 @@ Protocol `jev-automation-v1` requires at least 30 reviewed in-zone proposals per
 
 - **No measured precision yet.** There is no real data, so every site stays in shadow.
 - **Manual runs only.** Event and schedule triggers carry no principal, so the nodes refuse them.
-- **Docker/Node only.** Manual flow runs execute on the Docker/Node `flow-runs` worker. Cloudflare Workers has no `flow-runs` or `flow-events` consumer yet (backlog B118), so Jev automation flows do not run on a Workers deployment.
+- **Docker/Node and Cloudflare Workers.** Manual flow runs execute on the `flow-runs` consumer: `registerFlowRunsWorker` on Docker/Node, and on Workers the queue handler `processCloudflareQueue`, which runs the same registration from `apps/cms/src/cloudflare-flow-queue.ts` with the same cache, key provider and provider env. Until backlog B118 was fixed, Workers had no `flow-runs` or `flow-events` consumer and these flows did not run there. A Workers deployment must create the Flows queues before it deploys this version; see [Cloudflare Workers: Flows queues](./flows-automation.md#cloudflare-workers-flows-queues). Verified by unit tests against the Workers handler and a local `wrangler dev` run, not on a deployed Worker.
 - **A crashed delivery is not proposed again.** A live row is claimed before the harness call. If the process dies in between, the row stays `pending` with no approval. A redelivery within five minutes leaves it alone; after that it settles the row `denied` with reason `orphaned` and proposes nothing, because the dead process may already have parked an approval it did not link. Re-run the flow to propose again.
 - **The `submit_review` transition is proposed, not performed.** A reviewer submits the item for review.

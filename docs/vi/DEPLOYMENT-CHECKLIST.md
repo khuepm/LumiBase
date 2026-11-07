@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-10-17T16:36:18.899Z
+version: 7
+lastUpdated: 2026-11-07T17:58:40.753Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 55533cd9fd73e735
+sourceHash: 538fb6c776c5272d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-17T16:36:18.899Z
-codeVerifiedHash: 55533cd9fd73e735
+codeVerified: 2026-10-31T17:56:46.242Z
+codeVerifiedHash: ccd23a962e4574a2
 codeVerifiedClaims: 30
 ---
 
@@ -16,6 +16,8 @@ codeVerifiedClaims: 30
 > Checklist đầy đủ để deploy LumiBase lên production. Hỗ trợ cả **Cloudflare Workers** (edge) và **Docker** (self-hosted).
 
 ---
+
+Workflow triển khai CMS và phát hành tạo các flow queue cùng dead-letter queue còn thiếu trước khi triển khai bằng `scripts/ensure-flow-queues.mjs`. Queue đã có được giữ nguyên. Token triển khai cần quyền chỉnh sửa Queues. Triển khai thủ công/cục bộ vẫn dùng các lệnh tạo queue bên dưới.
 
 ## Mục lục
 
@@ -76,6 +78,16 @@ codeVerifiedClaims: 30
 - [ ] Đã tạo Queue (cho realtime):
   ```bash
   wrangler queues create lumibase-realtime
+  ```
+- [ ] Đã tạo queue cho agent run và Flows, kèm dead-letter queue, cho mọi profile có tên mà bạn deploy (xem [queue của Flows](features/flows-automation.md#cloudflare-workers-queue-của-flows)):
+  ```bash
+  cd apps/cms
+  for profile in staging production dev demo; do
+    for q in agent-runs flow-runs flow-events; do
+      pnpm exec wrangler queues create "lumibase-$q-$profile"
+      pnpm exec wrangler queues create "lumibase-$q-$profile-dlq"
+    done
+  done
   ```
 - [ ] Đã cập nhật `wrangler.toml` với các binding ID
 

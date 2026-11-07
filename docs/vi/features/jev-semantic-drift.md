@@ -1,14 +1,14 @@
 ---
-version: 6
-lastUpdated: 2026-10-15T18:13:43.858Z
+version: 7
+lastUpdated: 2026-10-15T22:44:20.177Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 89692a826174d607
+sourceHash: 4966e3c190fcbd9e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-15T18:13:43.858Z
-codeVerifiedHash: 89692a826174d607
-codeVerifiedClaims: 14
+codeVerified: 2026-10-15T22:44:20.177Z
+codeVerifiedHash: 4966e3c190fcbd9e
+codeVerifiedClaims: 16
 ---
 
 # Drift ngữ nghĩa Jev cho Content Intent
@@ -97,5 +97,5 @@ Trang chi tiết intent liệt kê drift ngữ nghĩa kèm key và phiên bản 
 ## Giới hạn
 
 - Chưa có benchmark live, nên chưa có số đo precision, recall hay tỉ lệ false-positive của drift.
-- Trên worker Docker/Node, lần chạy Flows theo event và theo lịch nhận cùng cache và cấu hình provider như lần chạy thủ công (`registerFlowEventWorker` trong `serve.ts`), nên một `drift-scan` theo lịch chạy pass ngữ nghĩa ở đó; nó vẫn bị chặn bởi `aiDecisions.enabled` và `aiDecisions.drift`. Cloudflare Workers chưa có consumer `flow-events` (backlog B118), nên flow theo event và theo lịch hoàn toàn không chạy ở đó.
-- Đã kiểm bằng unit test và một bộ integration trên Postgres, chưa chạy trên một Cloudflare Worker đã deploy.
+- Trên worker Docker/Node, lần chạy Flows theo event và theo lịch nhận cùng cache và cấu hình provider như lần chạy thủ công (`registerFlowEventWorker` trong `serve.ts`), nên một `drift-scan` theo lịch chạy pass ngữ nghĩa ở đó; nó vẫn bị chặn bởi `aiDecisions.enabled` và `aiDecisions.drift`. Cloudflare Workers tiêu thụ `flow-events` qua cùng đoạn đăng ký đó (`apps/cms/src/cloudflare-flow-queue.ts`) và quét các flow theo lịch đến hạn bằng cron `* * * * *`. Trước khi backlog B118 được sửa, flow theo event và theo lịch hoàn toàn không chạy trên Workers. Trên cả hai runtime, lần chạy theo event và theo lịch vẫn không mang principal.
+- Đã kiểm bằng unit test, một bộ integration trên Postgres và một lần chạy `wrangler dev` cục bộ, chưa chạy trên một Cloudflare Worker đã deploy.

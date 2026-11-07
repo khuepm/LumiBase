@@ -1,8 +1,8 @@
 ---
-version: 7
-lastUpdated: 2026-11-07T14:18:27.861Z
+version: 8
+lastUpdated: 2026-11-07T17:57:18.483Z
 sourceLang: en
-contentHash: 8cbdfe5cd63c69bb
+contentHash: 6ef1425fd61bee3b
 codeVerified: 2026-11-06T02:09:06.984Z
 codeVerifiedHash: b657655b2141df34
 codeVerifiedClaims: 8
@@ -36,6 +36,7 @@ For production, run from `apps/cms`:
 ```bash
 cd apps/cms
 pnpm exec wrangler queues create lumibase-agent-runs-production
+pnpm exec wrangler queues create lumibase-agent-runs-production-dlq
 pnpm run deploy:production
 ```
 
@@ -46,6 +47,9 @@ The queue handler needs `HYPERDRIVE`; local development may use `DATABASE_URL`
 when `LUMIBASE_ENV=development`. Configure the same LLM and encryption secrets
 used by synchronous execution. The worker receives cache, search, queue and key
 providers from the Cloudflare runtime.
+The same Worker `queue()` handler (`processCloudflareQueue`) also routes the
+`flow-runs` and `flow-events` queues; see
+[Cloudflare Workers: Flows queues](./flows-automation.md#cloudflare-workers-flows-queues).
 
 ## Execution and recovery
 

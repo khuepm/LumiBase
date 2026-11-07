@@ -150,6 +150,13 @@ jobs:
             echo "::notice::Skipping CMS Worker deployment because CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not configured."
           fi
 
+      - name: Ensure production flow queues
+        if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
+        run: node scripts/ensure-flow-queues.mjs production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Deploy CMS Worker
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
         run: pnpm --filter @lumibase/cms run deploy

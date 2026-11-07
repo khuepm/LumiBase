@@ -1,11 +1,11 @@
 ---
-version: 6
-lastUpdated: 2026-10-15T18:13:43.858Z
+version: 7
+lastUpdated: 2026-10-15T22:44:20.177Z
 sourceLang: en
-contentHash: 89692a826174d607
-codeVerified: 2026-10-15T18:13:43.858Z
-codeVerifiedHash: 89692a826174d607
-codeVerifiedClaims: 14
+contentHash: 4966e3c190fcbd9e
+codeVerified: 2026-10-15T22:44:20.177Z
+codeVerifiedHash: 4966e3c190fcbd9e
+codeVerifiedClaims: 16
 ---
 
 # Jev semantic drift for Content Intents
@@ -94,5 +94,5 @@ The intent detail lists semantic drift with the rule key and version, the profil
 ## Limitations
 
 - No live benchmark yet, so no measured drift precision, recall or false-positive rate.
-- Event and schedule Flows runs get the same cache and provider configuration as manual runs on the Docker/Node worker (`registerFlowEventWorker` in `serve.ts`), so a scheduled `drift-scan` runs the semantic pass there; it is still gated by `aiDecisions.enabled` and `aiDecisions.drift`. Cloudflare Workers has no `flow-events` consumer yet (backlog B118), so event and schedule flows do not run there at all.
-- Tested with unit tests and a Postgres integration suite, not on a deployed Cloudflare Worker.
+- Event and schedule Flows runs get the same cache and provider configuration as manual runs on the Docker/Node worker (`registerFlowEventWorker` in `serve.ts`), so a scheduled `drift-scan` runs the semantic pass there; it is still gated by `aiDecisions.enabled` and `aiDecisions.drift`. Cloudflare Workers consumes `flow-events` through the same registration (`apps/cms/src/cloudflare-flow-queue.ts`) and sweeps due schedule flows on a `* * * * *` cron. Before backlog B118 was fixed, event and schedule flows did not run on Workers at all. Event and schedule runs still carry no principal on either runtime.
+- Tested with unit tests, a Postgres integration suite and a local `wrangler dev` run, not on a deployed Cloudflare Worker.
