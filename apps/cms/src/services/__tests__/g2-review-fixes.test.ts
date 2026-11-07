@@ -1,4 +1,5 @@
-import { getTableName } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import { getTableName, type SQL } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Database } from '@lumibase/database';
 import { memberRbac, selectForRbac } from '../../test-utils/rbac-principal-db';
@@ -117,7 +118,8 @@ describe('review fix · invalid input settles an already-running run', () => {
     );
     expect(failed).toHaveLength(1);
     expect(failed[0]!.set['error']).toContain('collection');
-    expect((failed[0]!.set['metrics'] as Record<string, unknown>)['stopReason']).toBe('invalid_input');
+    const patch = new PgDialect().sqlToQuery(failed[0]!.set['metrics'] as SQL);
+    expect(patch.params).toContain(JSON.stringify({ stopReason: 'invalid_input' }));
 
     // Still no run and no tool call CREATED — the property GP5 pins is intact.
     expect(inserts.filter((i) => i.table === 'lumibase_agent_runs')).toHaveLength(0);

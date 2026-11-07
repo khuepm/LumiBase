@@ -100,6 +100,7 @@ describe.skipIf(!hasDbIntegrationUrl)('#584 agent run recovery — DB integratio
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -242,6 +243,85 @@ describe.skipIf(!hasDbIntegrationUrl)('#584 agent run recovery — DB integratio
     });
     expect(trace.revisions.map((r) => r.createdByRunId)).toEqual([trace.runs[1]!.id]);
     expect(await siteItems()).toHaveLength(1);
+  });
+
+  it('B188: a timed-out write can finish late, but durable uncertainty prevents replay', async () => {
+    await createArticles();
+    const service = new AgentRunService(db, SITE);
+    const run = await service.ensureRun({ title: 'late effect', requestId: 'req_584_timeout' });
+    const harness = new AISecureHarness({ db, siteId: SITE, enableAgentHarnessAudit: true });
+    const skill = harness.validateSkill('createItem')!;
+    const [collection] = await db.select().from(collections).where(eq(collections.siteId, SITE));
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    let settled!: () => void;
+    const late = new Promise<void>((resolve) => { settled = resolve; });
+    vi.spyOn(skill, 'handler').mockImplementation(async (args) => {
+      entered();
+      await gate;
+      try {
+        const [item] = await db.insert(items).values({ siteId: SITE, collectionId: collection!.id, data: args.data as Record<string, unknown> }).returning();
+        return { item };
+      } finally { settled(); }
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const execution = harness.execute('createItem', { collection: COLLECTION, data: { title: 'late' } }, ['*'], 'timeout', run);
+    await started;
+    await vi.advanceTimersByTimeAsync(30_000);
+    const result = await execution;
+    expect(result.message).toContain('EXECUTION_OUTCOME_UNKNOWN');
+    expect((await service.getRun(run.runId))!.metrics).toMatchObject({ outcomeUnknown: true, requestId: 'req_584_timeout' });
+    const queue = memoryQueue();
+    const retryService = new AgentRunService(db, SITE, queue.provider);
+    expect(await retryService.retryRun(run.runId, requester)).toMatchObject({ ok: false, code: 'RUN_OUTCOME_UNKNOWN' });
+    release();
+    await late;
+    vi.useRealTimers();
+    expect(await siteItems()).toHaveLength(1);
+    expect(await retryService.retryRun(run.runId, requester)).toMatchObject({ ok: false, code: 'RUN_OUTCOME_UNKNOWN' });
+    expect(queue.jobs).toHaveLength(0);
+  });
+
+  it('B188: marker persistence failure keeps running-call evidence and prevents retry', async () => {
+    const service = new AgentRunService(db, SITE);
+    const run = await service.ensureRun({ title: 'marker write failure' });
+    const harness = new AISecureHarness({ db, siteId: SITE, enableAgentHarnessAudit: true });
+    let entered!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(harness.validateSkill('listCollections')!, 'handler').mockImplementation(async () => { entered(); await gate; return []; });
+    vi.spyOn(AgentRunService.prototype, 'markOutcomeUnknown').mockRejectedValueOnce(new Error('database unavailable'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const execution = harness.execute('listCollections', {}, ['*'], 'timeout', run);
+    const rejected = expect(execution).rejects.toThrow('EXECUTION_OUTCOME_UNKNOWN');
+    await started;
+    await vi.advanceTimersByTimeAsync(30_000);
+    await rejected;
+    await service.failRun(run.runId, 'worker recovered');
+    expect(await service.hasUnknownExecution(run.runId, {})).toBe(true);
+    const queue = memoryQueue();
+    expect(await new AgentRunService(db, SITE, queue.provider).retryRun(run.runId, requester)).toMatchObject({ ok: false, code: 'RUN_OUTCOME_UNKNOWN' });
+    release();
+    vi.useRealTimers();
+  });
+
+  it('B189: correlation survives failure, retry, worker execution and completion', async () => {
+    const service = new AgentRunService(db, SITE);
+    const run = await service.ensureRun({ title: 'correlation', status: 'queued', requestId: 'req_original' });
+    await processAgentRunJob(workerDeps(), job(run, 'createItem', { collection: COLLECTION, data: { title: 'recovered' } }, { requestId: 'req_original' }));
+    await createArticles();
+    const queue = memoryQueue();
+    expect(await new AgentRunService(db, SITE, queue.provider).retryRun(run.runId, { ...requester, requestId: 'req_retry' })).toMatchObject({ ok: true });
+    expect(queue.jobs[0]!.payload.requestId).toBe('req_retry');
+    await processAgentRunJob(workerDeps(), queue.jobs[0]!.payload);
+    const trace = await traceOf(run.goalId);
+    expect(trace.goal.metadata).toMatchObject({ requestId: 'req_original' });
+    expect(trace.runs[0]!.metrics).toMatchObject({ requestId: 'req_original' });
+    expect(trace.runs[1]!.metrics).toMatchObject({ requestId: 'req_retry', originRequestId: 'req_original' });
+    expect(trace.audit[0]!.payload).toMatchObject({ requestId: 'req_retry' });
   });
 
   // ── F1: a cancel racing completion must not rewrite the outcome ──────────────
@@ -464,7 +544,7 @@ describe.skipIf(!hasDbIntegrationUrl)('#584 agent run recovery — DB integratio
       const trace = await traceOf(run.goalId);
       expect(trace.runs[0]!.status).toBe('failed');
       expect(trace.calls.map((c) => c.status)).toEqual(['failed']);
-      expect(trace.calls[0]!.error).toBe('Database query failed (SQLSTATE P0584): rejected by test trigger');
+      expect(trace.calls[0]!.error).toBe('Database query failed (SQLSTATE P0584)');
       expect(trace.runs[0]!.error).toBe(trace.calls[0]!.error);
       expect(JSON.stringify({ runs: trace.runs, calls: trace.calls })).not.toContain(SECRET_CANARY);
 
@@ -491,8 +571,9 @@ describe.skipIf(!hasDbIntegrationUrl)('#584 agent run recovery — DB integratio
     const trace = await traceOf(run.goalId);
     expect(trace.runs[0]!.status).toBe('succeeded');
     expect(JSON.stringify(trace.calls)).not.toContain(SECRET_CANARY);
-    // Non-secret content stays as audit evidence (and is what a retry replays).
-    expect((trace.calls[0]!.input as { data: { email: string } }).data.email).toBe(PII_CANARY);
+    // Personal data is redacted alongside credentials; useful item IDs remain.
+    expect(JSON.stringify(trace.calls)).not.toContain(PII_CANARY);
+    expect((trace.calls[0]!.input as { data: { email: string } }).data.email).toBe('[masked]');
     const listing = await (await appFor(SITE, undefined).request('/agent/runs')).text();
     expect(listing).not.toContain(SECRET_CANARY);
     expect(listing).not.toContain(PII_CANARY);

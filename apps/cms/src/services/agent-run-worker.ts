@@ -28,6 +28,7 @@ import { SchemaService } from './schema-service';
 export const AGENT_RUNS_QUEUE = 'agent-runs';
 
 export interface AgentRunJobPayload {
+  requestId?: string;
   siteId: string;
   goalId: string;
   runId: string;
@@ -280,6 +281,7 @@ export async function processAgentRunJob(
       capabilities.capabilities,
       payload.contextMessage,
       {
+        requestId: payload.requestId,
         goalId: payload.goalId,
         runId: payload.runId,
         // The governance envelope has to survive the queue hop (#455). Dropping

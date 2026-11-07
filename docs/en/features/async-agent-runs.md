@@ -1,8 +1,8 @@
 ---
-version: 6
-lastUpdated: 2026-11-06T02:09:06.984Z
+version: 7
+lastUpdated: 2026-11-07T14:18:27.861Z
 sourceLang: en
-contentHash: b657655b2141df34
+contentHash: 8cbdfe5cd63c69bb
 codeVerified: 2026-11-06T02:09:06.984Z
 codeVerifiedHash: b657655b2141df34
 codeVerifiedClaims: 8
@@ -142,3 +142,38 @@ pnpm -F @lumibase/runtime exec vitest run src/__tests__/cloudflare-agent-queue.t
 
 A dry-run build verifies bundling and configuration. It does not verify that
 production queues, secrets and Hyperdrive connectivity are provisioned.
+
+
+## Recovering uncertain outcomes and tracing requests
+
+A 30-second skill deadline stops waiting, not the underlying handler. A timed-out
+run records `metrics.outcomeUnknown: true` before returning
+`EXECUTION_OUTCOME_UNKNOWN`. Its tool may still finish a write later. Retry and
+approval resume return `RUN_OUTCOME_UNKNOWN`; cancellation cannot undo a write
+already issued. If persisting the marker fails or the process crashes, a running
+tool-call row also prevents replay. Inspect content, revisions, provider receipts
+and tool calls before creating new work; never treat this status as rollback.
+
+Use the opaque HTTP request ID to find `goal.metadata.requestId` and
+`run.metrics.requestId`, then follow run IDs through tool calls, approvals,
+artifacts, evaluations and revisions. A retry retains `retryOfRunId` and
+`metrics.originRequestId`, records its new request ID and includes it in the retry
+activity and queue job. IDs outside letters, digits, `_` and `-` or longer than
+64 characters are omitted; do not send personal data as request IDs.
+
+Trace input/output redacts credential and personal-data keys (including email,
+phone and address), plus email addresses in text. Database errors retain SQLSTATE
+without query parameters or driver detail. This is defense in depth, not a
+classifier for all possible personal prose: keep secrets and personal data out of
+free-form goal titles and request IDs. Redacted input cannot safely be replayed;
+create a new reviewed request with the required values instead.
+
+Agent and tool metric labels use a finite vocabulary; unknown names are grouped
+as `custom`, unknown reasons/statuses as `other`. Generation tool calls record
+provider token counts when available, otherwise a text token estimate. Estimated
+USD is emitted only with complete provider counts and both optional nonnegative
+`LLM_PRICE_INPUT_PER_MTOK` and `LLM_PRICE_OUTPUT_PER_MTOK` prices (USD per million
+tokens). Configure prices for the selected model; absent pricing means unknown
+cost, not zero. These tool counters do not represent all chat/planning calls or a
+provider invoice. Shared approval decisions record latency across the agent,
+Copilot and reviewer entry points. Counters are process-local and reset on restart.

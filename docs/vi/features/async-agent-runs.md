@@ -1,9 +1,9 @@
 ---
-version: 6
-lastUpdated: 2026-11-06T02:09:06.984Z
+version: 7
+lastUpdated: 2026-11-07T14:18:27.861Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b657655b2141df34
+sourceHash: 8cbdfe5cd63c69bb
 mtEngine: manual
 syncStatus: human-translated
 codeVerified: 2026-11-06T02:09:06.984Z
@@ -145,3 +145,40 @@ pnpm -F @lumibase/runtime exec vitest run src/__tests__/cloudflare-agent-queue.t
 
 Build dry-run kiểm tra đóng gói và cấu hình. Nó không xác nhận
 queue production, secret và kết nối Hyperdrive đã được thiết lập.
+
+
+## Khôi phục kết quả chưa xác định và truy vết yêu cầu
+
+Thời hạn kỹ năng 30 giây chỉ dừng chờ, không dừng trình xử lý bên dưới. Run hết
+thời gian lưu `metrics.outcomeUnknown: true` trước khi trả về
+`EXECUTION_OUTCOME_UNKNOWN`. Công cụ vẫn có thể hoàn tất ghi dữ liệu sau đó. Thử
+lại và tiếp tục phê duyệt trả `RUN_OUTCOME_UNKNOWN`; hủy không thể hoàn tác một
+lệnh ghi đã gửi. Nếu không lưu được cờ hoặc tiến trình dừng đột ngột, bản ghi
+lời gọi công cụ đang chạy cũng ngăn phát lại. Kiểm tra nội dung, phiên bản, biên
+nhận nhà cung cấp và lời gọi công cụ trước khi tạo công việc mới; không coi trạng
+thái này là đã hoàn tác.
+
+Dùng mã yêu cầu HTTP không chứa nội dung để tìm `goal.metadata.requestId` và
+`run.metrics.requestId`, rồi theo mã run qua công cụ, phê duyệt, artifact, đánh
+giá và phiên bản. Lần thử lại giữ `retryOfRunId` và `metrics.originRequestId`, ghi
+mã yêu cầu mới vào hoạt động thử lại và tác vụ hàng đợi. Mã có ký tự ngoài chữ
+cái, chữ số, `_`, `-` hoặc dài hơn 64 ký tự sẽ bị bỏ qua; không gửi dữ liệu cá
+nhân làm mã yêu cầu.
+
+Đầu vào/đầu ra truy vết che khóa thông tin xác thực và dữ liệu cá nhân (gồm email,
+số điện thoại, địa chỉ), cùng địa chỉ email trong văn bản. Lỗi cơ sở dữ liệu giữ
+SQLSTATE nhưng bỏ tham số truy vấn và chi tiết từ driver. Đây là bảo vệ nhiều lớp,
+không phải bộ phân loại mọi thông tin cá nhân trong văn xuôi: tránh đưa bí mật và
+dữ liệu cá nhân vào tiêu đề mục tiêu tự do hoặc mã yêu cầu. Đầu vào đã che không
+thể phát lại an toàn; hãy tạo yêu cầu mới đã kiểm tra với các giá trị cần thiết.
+
+Nhãn metric agent và công cụ dùng tập hữu hạn; tên lạ gộp vào `custom`, lý do và
+trạng thái lạ vào `other`. Công cụ sinh nội dung ghi số token nhà cung cấp nếu có,
+nếu không dùng ước lượng từ văn bản. Chỉ xuất USD ước tính khi có đủ số token nhà
+cung cấp và cả hai giá tùy chọn không âm `LLM_PRICE_INPUT_PER_MTOK` và
+`LLM_PRICE_OUTPUT_PER_MTOK` (USD mỗi triệu token). Cấu hình giá theo mô hình đang
+chọn; thiếu giá nghĩa là chưa biết chi phí, không phải bằng không. Các bộ đếm công
+cụ này không đại diện mọi cuộc gọi trò chuyện/lập kế hoạch hay hóa đơn nhà cung
+cấp. Luồng quyết định phê duyệt dùng chung ghi độ trễ qua các điểm vào agent,
+Copilot và reviewer. Bộ đếm nằm trong tiến trình và khởi tạo lại khi tiến trình
+khởi động lại.

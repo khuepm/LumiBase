@@ -764,6 +764,8 @@ export class EchoProvider implements LLMProvider {
 // ---------------------------------------------------------------------------
 
 export interface LLMProviderEnv {
+  LLM_PRICE_INPUT_PER_MTOK?: string;
+  LLM_PRICE_OUTPUT_PER_MTOK?: string;
   LLM_PROVIDER?: string;
   LLM_MODEL?: string;
   OPENAI_API_KEY?: string;
@@ -883,6 +885,7 @@ const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
 };
 
 export interface ConfiguredLLM {
+  pricing?: { inputPerMillion: number; outputPerMillion: number };
   provider: LLMProvider;
   /** Provider name from LLM_PROVIDER (e.g. 'openai'). */
   name: string;
@@ -909,7 +912,13 @@ export function createConfiguredLLMProvider(env: LLMProviderEnv): ConfiguredLLM 
     (name === 'workers-ai' && Boolean(env.WORKERS_AI_ACCOUNT_ID) && Boolean(env.WORKERS_AI_API_TOKEN));
   if (!hasCredentials) return null;
 
+  const inputPrice = Number(env.LLM_PRICE_INPUT_PER_MTOK);
+  const outputPrice = Number(env.LLM_PRICE_OUTPUT_PER_MTOK);
+  const pricing = env.LLM_PRICE_INPUT_PER_MTOK?.trim() && env.LLM_PRICE_OUTPUT_PER_MTOK?.trim()
+    && Number.isFinite(inputPrice) && inputPrice >= 0 && Number.isFinite(outputPrice) && outputPrice >= 0
+    ? { inputPerMillion: inputPrice, outputPerMillion: outputPrice } : undefined;
   return {
+    ...(pricing ? { pricing } : {}),
     provider: createLLMProvider(env),
     name,
     model: env.LLM_MODEL ?? PROVIDER_DEFAULT_MODELS[name] ?? 'default',
