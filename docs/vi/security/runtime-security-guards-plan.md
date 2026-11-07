@@ -1,10 +1,10 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 5
-lastUpdated: 2026-11-02T20:22:43.297Z
+version: 6
+lastUpdated: 2026-11-07T20:13:02.148Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 0b4d8fa32947d4c3
+sourceHash: 80808d4cc8186154
 mtEngine: manual
 syncStatus: human-translated
 codeVerified: 2026-11-07T15:45:38.286Z
@@ -171,3 +171,15 @@ và **fail CI** nếu có `new ItemService(...)` trực tiếp ngoài factory (t
 - Không file production nào (ngoài factory + allowlist) gọi `new ItemService(...)` trực tiếp — bảo đảm bằng test source-scan.
 - Endpoint AI và MCP enforce row/field RBAC đúng như `/items` (skill LLM không leo quyền vượt token).
 - Mọi system context khai báo `reason` tường minh, greppable, có mặt trong bảng audit.
+
+
+### Hoàn tất đối chiếu phân quyền (#580)
+
+Ma trận thực thi bao gồm Copilot, Agent API qua hàng đợi, MCP có quản trị và các
+lời gọi REST chuyển tiếp của MCP độc lập. Kiểm thử PostgreSQL bao phủ sao lưu/khôi
+phục theo quyền quản trị site, cài đặt marketplace và quyền đọc/tạo/xóa media riêng
+biệt. Các ca kiểm tra thu hồi quyền trước thực thi, cô lập tenant, bảo toàn byte
+nhị phân và không ghi dữ liệu khi bị từ chối. Kiểm thử công cụ độc lập xác nhận mã
+tenant và thông tin bearer gốc được chuyển tới REST, đồng thời trả từ chối mà
+không tự thử lại. Báo cáo phân quyền và phạm vi từng kiểm thử được ghi tại
+`docs/review-agent/2026-11-01-ai-audit-580-authz-parity.md`.
