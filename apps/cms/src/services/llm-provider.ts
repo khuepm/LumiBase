@@ -122,20 +122,47 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Bound the full upstream exchange, including body reads. The fetch signal
+ * remains active after headers arrive. Decision callers can supply a shorter
+ * deadline and keep control of their own bounded retry policy. */
+export const LLM_REQUEST_TIMEOUT_MS = 20_000;
+function upstreamSignal(caller?: AbortSignal): AbortSignal {
+  const deadline = AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS);
+  return caller ? AbortSignal.any([caller, deadline]) : deadline;
+}
+
 /** Wraps only the transport: an abort keeps its original error path. */
 async function sendLLMRequest(url: string, init: RequestInit, signal?: AbortSignal): Promise<Response> {
   try {
-    return await fetch(url, init);
+    return await fetch(url, { ...init, signal: upstreamSignal(signal) });
   } catch (error) {
     if (signal?.aborted) throw error;
     throw new LLMNetworkError(messageOf(error));
   }
 }
 
-/** Reads and maps a 2xx body; any failure in between is an unusable response. */
-async function readLLMBody<T, R>(res: Response, map: (data: T) => R): Promise<R> {
+function isAbortError(error: unknown): boolean {
+  const name = typeof error === 'object' && error !== null && 'name' in error ? error.name : undefined;
+  return name === 'AbortError' || name === 'TimeoutError';
+}
+
+/**
+ * Reads and maps a 2xx body. The upstream signal stays active while the body
+ * streams, so an abort here is a transport outcome, not an unusable response:
+ * caller cancellation keeps its original error and the provider deadline is a
+ * network failure. Only an unparseable or wrongly shaped body is a response error.
+ */
+async function readLLMBody<T, R>(res: Response, map: (data: T) => R, signal?: AbortSignal): Promise<R> {
+  let data: T;
   try {
-    return map((await res.json()) as T);
+    data = (await res.json()) as T;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    if (isAbortError(error)) throw new LLMNetworkError(messageOf(error));
+    throw new LLMResponseError(messageOf(error));
+  }
+  try {
+    return map(data);
   } catch (error) {
     throw new LLMResponseError(messageOf(error));
   }
@@ -462,7 +489,7 @@ export class OpenAIProvider implements LLMProvider {
         toolCalls,
         ...(usage ? { usage } : {}),
       };
-    });
+    }, options.signal);
   }
 }
 
@@ -559,7 +586,7 @@ export class AnthropicProvider implements LLMProvider {
 
       const usage = readUsage(data.usage?.input_tokens, data.usage?.output_tokens);
       return { content, toolCalls, ...(usage ? { usage } : {}) };
-    });
+    }, options.signal);
   }
 }
 
@@ -599,7 +626,7 @@ export class GeminiProvider implements LLMProvider {
       throw new LLMHttpError(res.status, `Gemini API error ${res.status}: ${err}`);
     }
 
-    return readLLMBody(res, parseGeminiResponse);
+    return readLLMBody(res, parseGeminiResponse, options.signal);
   }
 }
 
@@ -659,7 +686,7 @@ export class VertexProvider implements LLMProvider {
       throw new LLMHttpError(res.status, `Vertex AI API error ${res.status}: ${err}`);
     }
 
-    return readLLMBody(res, parseGeminiResponse);
+    return readLLMBody(res, parseGeminiResponse, options.signal);
   }
 }
 
@@ -744,7 +771,7 @@ export class WorkersAIProvider implements LLMProvider {
         toolCalls,
         ...(usage ? { usage } : {}),
       };
-    });
+    }, options.signal);
   }
 }
 

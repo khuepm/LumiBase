@@ -2,14 +2,14 @@
 title: Caching
 description: HTTP cache ở edge, CacheProvider tầng ứng dụng, và các lớp phòng thủ cache penetration
 translatedFrom: en
-sourceHash: cc3daccd63dfd6e2
-version: 5
-lastUpdated: 2026-11-02T22:29:19.496Z
+sourceHash: dd1708ac3642ecaa
+version: 6
+lastUpdated: 2026-11-07T20:27:23.488Z
 sourceLang: en
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-02T22:29:19.496Z
-codeVerifiedHash: cc3daccd63dfd6e2
+codeVerified: 2026-11-07T20:27:23.488Z
+codeVerifiedHash: dd1708ac3642ecaa
 codeVerifiedClaims: 18
 ---
 
@@ -139,3 +139,10 @@ Khoá cache penetration theo đúng cách chia shared-vs-isolated như phần c�
 | Shape guard | n/a | Thuần regex, không lưu trữ | Cùng body/header 404 như một miss thật — không bao giờ là oracle cho hình dạng hợp lệ |
 
 **Kiểm chứng thế nào:** Properties P17–P20 mức unit/integration trong `apps/cms/src/__tests__/cache-penetration.test.ts` (cô lập tombstone hai site + bypass khi có credential); wiring tripwire cho `withDeliverRateLimit` trong `security-guards.wiring.test.ts`.
+
+
+### Định tuyến mô hình, thời hạn và kiểm tra tải
+
+Cả sáu adapter mô hình qua mạng dùng thời hạn upstream 20 giây cho đến khi đọc xong nội dung phản hồi. Hủy từ caller và thời hạn quyết định ngắn hơn vẫn có hiệu lực. Chat thông thường gửi một yêu cầu. Khi upstream lỗi, hệ thống trả lỗi trước khi chuyển provider hoặc thực thi công cụ. Echo cấu hình rõ và fallback khi thiếu thông tin xác thực vẫn đi qua kiểm tra phân quyền của harness. Kỹ năng sinh nội dung cần provider đã cấu hình.
+
+Chạy `pnpm -F @lumibase/cms bench:model-routing` để đo chi phí đóng gói, phân tích phản hồi và fallback cục bộ với phản hồi provider tổng hợp. Tải thử xuất p50/p95/p99, số lần gọi/lỗi, token tổng hợp và USD ước lượng theo đơn giá fixture. Mỗi kịch bản cần p95 cục bộ dưới 100 ms, đúng một lần gọi upstream cho mỗi yêu cầu provider và không gọi upstream với echo. Dùng `apps/cms/eval/permission-cache/bench.ts` trên PostgreSQL dùng riêng để đo phân giải quyền khi cache hit/miss. Baseline mô tả chi phí cục bộ và giá kiểm thử. Độ trễ provider production và hóa đơn cần phép đo riêng.
