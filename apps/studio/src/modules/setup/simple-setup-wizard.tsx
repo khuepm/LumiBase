@@ -565,7 +565,7 @@ function EssentialsStep({
           Continue in advanced setup
         </button>
         <button type="button" onClick={onContinue} className={primaryButtonClass}>
-          Review security defaults
+          Next: Review security defaults
         </button>
       </div>
     </div>

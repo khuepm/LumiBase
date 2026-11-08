@@ -23,7 +23,7 @@ interface AccessLayoutProps {
  */
 export function AccessLayout({ children }: AccessLayoutProps) {
   const { location } = useRouterState();
-  const activeTab = TABS.find((t) => location.pathname.startsWith(t.to))?.id ?? 'roles';
+  const activeTab = location.pathname.match(/(?:^|\/)access\/([^/]+)/)?.[1] ?? 'roles';
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -39,6 +39,7 @@ export function AccessLayout({ children }: AccessLayoutProps) {
           <Link
             key={t.id}
             to={t.to}
+            aria-current={activeTab === t.id ? 'page' : undefined}
             className={cn(
               '-mb-px border-b-2 px-3 py-2 text-sm',
               activeTab === t.id
