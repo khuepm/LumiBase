@@ -775,6 +775,12 @@ const adminPathGitIntegrationsRoute = createRoute({
   component: withSuspense(GitIntegrationsPage),
 });
 
+const adminPathChangeFeedRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'change-feed',
+  component: withSuspense(ChangeFeedPage),
+});
+
 const adminPathDeploymentsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'deployments',
@@ -827,6 +833,12 @@ const adminPathActivityRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'activity',
   component: withSuspense(ActivityPage),
+});
+
+const adminPathEncryptionSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'encryption',
+  component: withSuspense(EncryptionSettingsPage),
 });
 
 // Mirrors `securitySettingsRoute` in the plain `/settings` tree. The sidebar
@@ -1356,12 +1368,14 @@ const routeTree = rootRoute.addChildren([
       adminPathKeyboardSettingsRoute,
       adminPathWebhooksRoute,
       adminPathGitIntegrationsRoute,
+      adminPathChangeFeedRoute,
       adminPathDeploymentsRoute,
       adminPathEmailSettingsRoute,
       adminPathNotificationsSettingsRoute,
       adminPathMaterializeSettingsRoute,
       adminPathTranslationMemoryRoute,
       adminPathActivityRoute,
+      adminPathEncryptionSettingsRoute,
       adminPathSecuritySettingsRoute,
       adminPathExtensionsRoute,
       adminPathUploadsSettingsRoute,
