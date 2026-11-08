@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Database, Plus } from 'lucide-react';
+import { Database, Plus, Sparkles } from 'lucide-react';
 import { getApiClient } from '@/lib/api';
 
 /**
@@ -26,13 +26,18 @@ export function CollectionsListPage() {
             Manage collections, fields, and relations for the active site.
           </p>
         </div>
-        <Link
-          to="/data-model/new"
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" />
-          New collection
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to="/data-model/mcp-setup" className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted">
+            <Sparkles className="h-4 w-4" /> Set up MCP for AI
+          </Link>
+          <Link
+            to="/data-model/new"
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" />
+            New collection
+          </Link>
+        </div>
       </header>
 
       {isLoading && (
