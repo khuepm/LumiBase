@@ -1,10 +1,10 @@
 ---
-version: 31
-lastUpdated: 2026-11-02T23:11:42.905Z
+version: 32
+lastUpdated: 2026-11-08T10:34:25.799Z
 sourceLang: en
-contentHash: 032adb202d9fe79f
-codeVerified: 2026-11-02T23:11:42.905Z
-codeVerifiedHash: 032adb202d9fe79f
+contentHash: 2b27f43393b9230a
+codeVerified: 2026-11-08T10:34:25.799Z
+codeVerifiedHash: 2b27f43393b9230a
 codeVerifiedClaims: 456
 ---
 
@@ -879,7 +879,7 @@ X-Lumi-Site: <siteId>
 { "decision": "approved" }
 ```
 
-**Decision request** (`POST /api/v1/ai/decisions`) — 1–32 questions keyed by `[A-Za-z0-9_-]{1,64}`; `noul` = yes/no, `choice` = 2–255 options, `score` = 2–10 rubric levels (lowest first). `state` is a string, object or array. The whole request (state, instructions, criteria and nesting) must fit the input budget: ≤ `DECISION_MAX_INPUT_BYTES` UTF-8 bytes (default 131,072) **and** ≤ `DECISION_MAX_INPUT_TOKENS` estimated tokens (default 24,000), checked before the provider is called. Read-only, so no HITL approval:
+**Decision request** (`POST /api/v1/ai/decisions`) — **Experimental in `1.0.0`** (along with `/api/v1/ai/review-profiles*`, `/api/v1/ai/reviews*`, and `/api/v1/ai/automation*`; outside the `1.0` semver freeze per [`contributing/versioning-policy.md`](../contributing/versioning-policy.md) until live-data validation `#548` completes). 1–32 questions keyed by `[A-Za-z0-9_-]{1,64}`; `noul` = yes/no, `choice` = 2–255 options, `score` = 2–10 rubric levels (lowest first). `state` is a string, object or array. The whole request (state, instructions, criteria and nesting) must fit the input budget: ≤ `DECISION_MAX_INPUT_BYTES` UTF-8 bytes (default 131,072) **and** ≤ `DECISION_MAX_INPUT_TOKENS` estimated tokens (default 24,000), checked before the provider is called. Read-only, so no HITL approval:
 ```json
 {
   "state": { "title": "Summer sale", "body": "Buy now!!!" },

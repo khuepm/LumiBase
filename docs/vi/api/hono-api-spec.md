@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 30
-lastUpdated: 2026-11-02T23:11:42.905Z
+version: 31
+lastUpdated: 2026-11-08T10:34:25.799Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 032adb202d9fe79f
+sourceHash: 2b27f43393b9230a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-02T23:11:42.905Z
-codeVerifiedHash: 032adb202d9fe79f
+codeVerified: 2026-11-08T10:34:25.799Z
+codeVerifiedHash: 2b27f43393b9230a
 codeVerifiedClaims: 456
 ---
 
@@ -770,7 +770,7 @@ X-Lumi-Site: <siteId>
 { "decision": "approved" }
 ```
 
-**Request decision** (`POST /api/v1/ai/decisions`) — 1–32 câu hỏi, key theo `[A-Za-z0-9_-]{1,64}`; `noul` = có/không, `choice` = 2–255 lựa chọn, `score` = 2–10 mức rubric (thấp nhất trước). `state` là string, object hoặc array. Toàn bộ request (state, instructions, criteria và cấu trúc lồng) phải nằm trong budget đầu vào: ≤ `DECISION_MAX_INPUT_BYTES` byte UTF-8 (mặc định 131,072) **và** ≤ `DECISION_MAX_INPUT_TOKENS` token ước lượng (mặc định 24,000), được kiểm tra trước khi gọi provider. Chỉ đọc nên không cần phê duyệt HITL:
+**Request decision** (`POST /api/v1/ai/decisions`) — **Experimental trong `1.0.0`** (cùng với `/api/v1/ai/review-profiles*`, `/api/v1/ai/reviews*` và `/api/v1/ai/automation*`; nằm ngoài cam kết semver freeze `1.0` theo [`contributing/versioning-policy.md`](../contributing/versioning-policy.md) cho tới khi hoàn tất nghiệm thu dữ liệu live `#548`). 1–32 câu hỏi, key theo `[A-Za-z0-9_-]{1,64}`; `noul` = có/không, `choice` = 2–255 lựa chọn, `score` = 2–10 mức rubric (thấp nhất trước). `state` là string, object hoặc array. Toàn bộ request (state, instructions, criteria và cấu trúc lồng) phải nằm trong budget đầu vào: ≤ `DECISION_MAX_INPUT_BYTES` byte UTF-8 (mặc định 131,072) **và** ≤ `DECISION_MAX_INPUT_TOKENS` token ước lượng (mặc định 24,000), được kiểm tra trước khi gọi provider. Chỉ đọc nên không cần phê duyệt HITL:
 ```json
 {
   "state": { "title": "Summer sale", "body": "Buy now!!!" },

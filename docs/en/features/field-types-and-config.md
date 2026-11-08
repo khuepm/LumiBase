@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:21:09.911Z
+version: 2
+lastUpdated: 2026-11-08T10:34:29.563Z
 sourceLang: en
-contentHash: cdfa0dc4c9c60641
-codeVerified: 2026-08-02T19:21:09.911Z
-codeVerifiedHash: cdfa0dc4c9c60641
-codeVerifiedClaims: 3
+contentHash: 078f22fa80b7aa40
+codeVerified: 2026-11-08T10:34:29.563Z
+codeVerifiedHash: 078f22fa80b7aa40
+codeVerifiedClaims: 6
 ---
 
 # Field Types And Configuration
@@ -120,7 +120,7 @@ Current Studio interfaces (Directus-parity set) include:
 - **Presentation / Group**: `presentation-divider`, `presentation-notice`, `presentation-header`, `presentation-links`, `group-raw`, `group-detail`, `group-accordion`.
 - **Special**: `json-raw`, `repeater`, `map` (GeoJSON), `seo`, `aio`, `translatable-text`.
 
-Relational multi-item interfaces (`relation-o2m`, `relation-m2m`, `relation-m2a`) expose **Create new** and **Add existing** actions via the shared `RelationDrawer` (`apps/studio/src/modules/content/interfaces/relation-drawer.tsx`) and support drag-to-reorder. The M2A Builder stores `Array<{ collection, id }>` and lets the editor pick the target collection per linked record. The form honors `field.width` (`half`/`full`/`fill`) and nests fields under `group-*` containers via `field.group`. The implementation source of truth is `apps/studio/src/modules/content/interfaces/registry.tsx`.
+Relational multi-item interfaces (`relation-o2m`, `relation-m2m`, `relation-m2a`) expose **Create new** and **Add existing** actions via the shared `RelationDrawer` (`apps/studio/src/modules/content/interfaces/relation-drawer.tsx`) and support drag-to-reorder. The M2A Builder (`relation-m2a`) is an **experimental Studio JSON helper** that stores `Array<{ collection, id }>` inside a `json` field and lets the editor pick the target collection per linked record; backend M2A relations (`POST /api/v1/relations` with `type: 'm2a'`) return `501 RELATION_TYPE_NOT_IMPLEMENTED` and remain reserved outside the `1.0` relational surface ([`contributing/versioning-policy.md`](../contributing/versioning-policy.md)). The form honors `field.width` (`half`/`full`/`fill`) and nests fields under `group-*` containers via `field.group`. The implementation source of truth is `apps/studio/src/modules/content/interfaces/registry.tsx`.
 
 ## 5. Display Registry
 

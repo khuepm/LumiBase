@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:56.250Z
+version: 2
+lastUpdated: 2026-11-08T10:34:22.156Z
 sourceLang: en
-contentHash: 3832be55c3103f37
+contentHash: 044d600787d055d0
+codeVerified: 2026-11-08T10:34:22.156Z
+codeVerifiedHash: 044d600787d055d0
+codeVerifiedClaims: 12
 ---
 
 # Versioning Policy
@@ -53,9 +56,9 @@ breaking change to any of these requires a major bump:
 - The detailed database schema and table layout (the migration *path* is
   guaranteed; the internal column shape is not).
 - Studio internals (component structure, internal routes, build output).
-- Anything documented as experimental, reserved, or "not yet implemented"
-  (e.g. M2A relations, which return `501 RELATION_TYPE_NOT_IMPLEMENTED` and are
-  reserved for a future release).
+- Anything documented as experimental, reserved, or "not yet implemented":
+  - **M2A relations**: backend relation creation (`POST /api/v1/relations` with `type: 'm2a'`) returns `501 RELATION_TYPE_NOT_IMPLEMENTED` and is reserved for a future release; Studio's `relation-m2a` ("Builder (M2A)") editor is an experimental Studio-only JSON field helper (`Array<{ collection, id }>`) and is not part of the frozen relational surface.
+  - **Jev decisions, draft review, and governed content automation**: `/api/v1/ai/decisions`, `/api/v1/ai/review-profiles*`, `/api/v1/ai/reviews*`, `/api/v1/ai/automation*`, the corresponding `@lumibase/sdk` methods, and the `ai:decision` / `ai:apply-tags` / `editorial:route` flow operations are **experimental** in `1.0.0` pending live-data validation (`#548`), and may evolve in `1.x` minor releases before graduating to the frozen surface.
 
 ### API version pinning
 

@@ -151,3 +151,9 @@ Standard commands: see **Environment setup** / **Testing** above and `docs/en/de
 ## Imported Claude Cowork project instructions
 
 Headless CMS đang được refactor thành Content OS dành cho Agent hoạt động
+
+## Git & PR workflow preferences
+
+- Always use the `khuepm` GitHub CLI account (`gh auth switch -u khuepm`).
+- Upon completing a task, automatically commit, push the feature branch, and open a PR without asking for confirmation.
+- Do **not** add `Co-Authored-By:` (Devin, Cursor, Claude, etc.) or `Generated with ...` trailers to commits or PR bodies. Commits must be authored only as the user's normal git identity.

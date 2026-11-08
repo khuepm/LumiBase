@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 1
-lastUpdated: 2026-08-02T19:21:09.911Z
+version: 2
+lastUpdated: 2026-11-08T10:34:29.563Z
 sourceLang: en
 translatedFrom: en
-sourceHash: cdfa0dc4c9c60641
+sourceHash: 078f22fa80b7aa40
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:21:09.911Z
-codeVerifiedHash: cdfa0dc4c9c60641
-codeVerifiedClaims: 3
+codeVerified: 2026-11-08T10:34:29.563Z
+codeVerifiedHash: 078f22fa80b7aa40
+codeVerifiedClaims: 6
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -70,7 +70,7 @@ Field definition có thể gồm:
     { "rule": "$.status == 'published'", "set": { "required": true } }
   ],
   "translations": {
-    "vi": { "label": "Ảnh bìa", "help": "Ảnh 16:9" }
+    "en": { "label": "Cover", "help": "16:9 image" }
   },
   "width": "full",
   "group": "media",
@@ -116,7 +116,17 @@ interface FieldInterface<TOptions> {
 }
 ```
 
-Studio hiện có input text, multiline, WYSIWYG, markdown, code, slug, color, number input, rating, dropdown choices, tags, toggle, date/datetime, relation editors, file, raw JSON, repeater, divider và notice interfaces. Source of truth là `apps/studio/src/modules/content/interfaces/registry.tsx`.
+Bộ interface hiện tại của Studio (tương đương Directus) gồm:
+
+- **Text & tiện ích**: `input`, `input-multiline`, `wysiwyg`, `markdown`, `code`, `slug`, `color`, `input-hash` (secret được băm khi lưu), `input-autocomplete-api` (gợi ý từ API).
+- **Number**: `input-number`, `rating`, `slider`.
+- **Choice**: `select-dropdown`, `select-multiple-dropdown`, `select-radio`, `select-multiple-checkbox`, `select-multiple-checkbox-tree`, `select-icon`, `tags`.
+- **Boolean / Date**: `toggle`, `datetime`.
+- **Relation**: `relation-m2o`, `relation-o2m`, `relation-m2m`, `relation-o2m-tree-view`, `relation-m2a` (**Builder** — liên kết qua nhiều collection), `collection-item-dropdown`, `file`, `files`.
+- **Presentation / Group**: `presentation-divider`, `presentation-notice`, `presentation-header`, `presentation-links`, `group-raw`, `group-detail`, `group-accordion`.
+- **Special**: `json-raw`, `repeater`, `map` (GeoJSON), `seo`, `aio`, `translatable-text`.
+
+Các interface quan hệ nhiều phần tử (`relation-o2m`, `relation-m2m`, `relation-m2a`) cung cấp thao tác **Create new** và **Add existing** qua `RelationDrawer` dùng chung (`apps/studio/src/modules/content/interfaces/relation-drawer.tsx`) và hỗ trợ kéo-thả sắp xếp. M2A Builder (`relation-m2a`) là **JSON helper thử nghiệm của Studio**, lưu `Array<{ collection, id }>` trong một field `json` và cho phép biên tập viên chọn collection đích cho từng bản ghi liên kết; quan hệ M2A ở backend (`POST /api/v1/relations` với `type: 'm2a'`) trả về `501 RELATION_TYPE_NOT_IMPLEMENTED` và vẫn được reserve ngoài relational surface `1.0` ([`contributing/versioning-policy.md`](../contributing/versioning-policy.md)). Form tôn trọng `field.width` (`half`/`full`/`fill`) và lồng các field dưới các khung `group-*` qua `field.group`. Nguồn chuẩn cài đặt là `apps/studio/src/modules/content/interfaces/registry.tsx`.
 
 ## 5. Display registry
 

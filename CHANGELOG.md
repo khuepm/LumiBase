@@ -287,6 +287,18 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `shell-check.yml`.
 
 ### Fixed
+- **Tenant domain, site config, and delivery-page routes enforce Studio and
+  admin guards (`v1.0.0` security review §1c).** `/api/v1/domains` is now in
+  `CONTROL_PLANE_PATHS` and `STUDIO_ACCESS_PATH_PREFIXES` and enforces
+  `requireSiteAdmin()` in-router; `PATCH /api/v1/site` now requires
+  `requireSiteAdmin()` (`GET /api/v1/site` remains readable by authenticated
+  site members); and `/api/v1/pages` is now in `STUDIO_ACCESS_PATH_PREFIXES` so
+  `frontend`-audience subscriber sessions and API keys without Studio access are
+  refused. `upgrade-path.e2e.test.ts` now also provisions an isolated
+  `0000_lumibase_init` (`v0.18.0`) database, seeds `0.x` rows, runs the
+  documented `0017` preflight, applies `0001`–`0023` via Drizzle's migrator, and
+  verifies schema parity and RBAC backfill. Audit:
+  `docs/review-agent/2026-11-08-v1-security-review-v0.18-to-rc.md`.
 - **Model calls are bounded to 20 seconds, including the response body
   (#583).** The OpenAI, NVIDIA, Anthropic, Gemini, Vertex and Workers AI
   adapters used to wait on an unresponsive upstream with no limit outside the

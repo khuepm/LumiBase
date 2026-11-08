@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-08T20:22:56.250Z
+version: 2
+lastUpdated: 2026-11-08T10:34:22.156Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3832be55c3103f37
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 044d600787d055d0
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-08T10:34:22.156Z
+codeVerifiedHash: 044d600787d055d0
+codeVerifiedClaims: 12
 ---
 
 # Versioning Policy
@@ -56,9 +59,9 @@ breaking change tới bất kỳ mục nào trong số này đều yêu cầu m�
 - Database schema chi tiết và table layout (migration *path* được đảm bảo;
   internal column shape thì không).
 - Studio internal (component structure, internal route, build output).
-- Bất cứ thứ gì được ghi là experimental, reserved, hoặc "not yet implemented"
-  (ví dụ M2A relation, trả về `501 RELATION_TYPE_NOT_IMPLEMENTED` và được
-  reserve cho một release tương lai).
+- Bất cứ thứ gì được ghi là experimental, reserved, hoặc "not yet implemented":
+  - **M2A relation**: tạo quan hệ ở backend (`POST /api/v1/relations` với `type: 'm2a'`) trả về `501 RELATION_TYPE_NOT_IMPLEMENTED` và được reserve cho một release tương lai; trình soạn thảo `relation-m2a` ("Builder (M2A)") của Studio là JSON field helper thử nghiệm chỉ dành cho Studio (`Array<{ collection, id }>`) và không thuộc relational surface đã freeze.
+  - **Jev decision, kiểm tra bản nháp và tự động hoá nội dung có quản trị**: `/api/v1/ai/decisions`, `/api/v1/ai/review-profiles*`, `/api/v1/ai/reviews*`, `/api/v1/ai/automation*`, các phương thức `@lumibase/sdk` tương ứng, và các node flow `ai:decision` / `ai:apply-tags` / `editorial:route` mang nhãn **experimental** trong `1.0.0` trong khi chờ nghiệm thu dữ liệu live (`#548`), và có thể thay đổi trong các bản `1.x` minor trước khi chuyển sang frozen surface.
 
 ### API version pinning
 
