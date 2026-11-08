@@ -4,18 +4,21 @@
 >
 > Trạng thái khảo sát nền (2026-07-06, tại v0.18.0): security audit 66/78 CWE mitigated, 9 partial, 3 not addressed (`docs/en/security/cwe-top-100-audit.md`); CI có version-check/typecheck/test/build/lint nhưng **chưa có E2E gate và dependency-audit gate**; M2A relations còn reserved-not-implemented.
 
-## Rà soát 2026-11-08 (tại `origin/main` `112bf50e`, sau `v1.0.0-rc.4`)
+## Rà soát 2026-11-08 (tại `origin/main` `83d82262`, sau `v1.0.0-rc.4`)
 
 Mỗi ô dưới đây được đối chiếu lại với code, workflow và lịch sử CI tại commit trên, không dựa vào checkbox cũ. Ô đã tick có bằng chứng ngay sau nó. Ô **(at-tag)** chỉ kiểm được khi cắt bản cuối, không phải thiếu sót hiện tại.
 
-**Còn chặn tag v1.0.0 (BẮT BUỘC, chưa xong):**
+**Còn chặn tag v1.0.0 (chỉ còn bước `(at-tag)` khi cắt release):**
 
-1. **§2 — 4 spec chưa phân loại** (`content-preview`, `dependency-upgrade-batch-2026-08`, `jev-content-decisions`, `nextjs-starter-contract`; 43 spec, `v1-scope-classification.md` mới phủ 39). Đề xuất ở §2, cần owner chốt.
-2. **§2 — Quyết định surface Jev.** Endpoint `/api/v1/ai/decisions` và `/api/v1/ai/review-profiles*` đã có trong `hono-api-spec.md`, không gắn nhãn experimental, nên sẽ bị freeze ở 1.0.0, trong khi go/no-go với dữ liệu thật (#548) chưa chạy. Chọn một: (a) gắn nhãn experimental (ngoài semver theo `versioning-policy.md`), hoặc (b) chạy #548 trước khi tag.
-3. **§2 — M2A Builder ở Studio.** Quan hệ M2A trả 501 và được tuyên bố reserved, nhưng Studio vẫn có interface `relation-m2a` ("Builder (M2A)", field `json`, `special: ['m2a']`, `apps/studio/src/modules/content/interfaces/catalogue.ts`). Cần nói rõ shape JSON của field này có thuộc public surface 1.0 hay không, hoặc ẩn interface khỏi bản 1.0.
-4. **§1c — Chạy lại security review** trên diff `v0.18.0` → RC: không tìm thấy bản ghi nào.
-5. **§4 — Test nâng cấp từ instance 0.x thật**: CI chỉ seed shape dữ liệu cũ lên schema mới nhất (backfill RBAC), chưa chạy migrate thật từ một bản 0.x đã cài.
-6. **(at-tag)** §5: CHANGELOG `[1.0.0]`, docs khớp code tại tag, tutorials, i18n, tag đúng commit.
+1. **(at-tag)** §5: CHANGELOG `[1.0.0]`, docs khớp code tại tag, tutorials, i18n, tag đúng commit.
+
+**Đã đóng toàn bộ 5 blocker pre-tag trong nhánh `chore/close-v1-release-blockers` (2026-11-08):**
+
+1. **§2 — Phân loại đủ 43/43 spec** trong `.kiro/steering/v1-scope-classification.md`: `dependency-upgrade-batch-2026-08` và `nextjs-starter-contract` vào nhóm hoàn tất; `jev-content-decisions` vào nhóm hoàn tất kèm deferral `#548`; `content-preview` vào nhóm proposal post-v1.
+2. **§2 — Quyết định surface Jev:** owner chốt gắn nhãn **experimental** cho `/api/v1/ai/decisions`, `/api/v1/ai/review-profiles*`, `/api/v1/ai/reviews*`, `/api/v1/ai/automation*` và các node flow Jev trong `docs/{en,vi}/api/hono-api-spec.md` và `docs/{en,vi}/contributing/versioning-policy.md` (ngoài cam kết semver 1.0 cho tới khi xong `#548`).
+3. **§2 — M2A Builder ở Studio:** owner chốt giữ UI trong Studio và ghi rõ trong `docs/{en,vi}/contributing/versioning-policy.md` + `docs/{en,vi}/features/field-types-and-config.md` rằng `relation-m2a` ("Builder (M2A)") là JSON field helper thử nghiệm của Studio (`Array<{ collection, id }>`), không thuộc relational surface 1.0 (backend `POST /api/v1/relations` với `type: 'm2a'` vẫn trả `501 RELATION_TYPE_NOT_IMPLEMENTED`).
+4. **§1c — Security review trên diff `v0.18.0` → RC:** đã chạy và lưu biên bản tại `docs/review-agent/2026-11-08-v1-security-review-v0.18-to-rc.md`; phát hiện và vá luôn 2 gap phân quyền (`S1`: thêm `requireSiteAdmin()` cho `/api/v1/domains` + `PATCH /api/v1/site` và đưa `/api/v1/domains` vào `CONTROL_PLANE_PATHS` + `STUDIO_ACCESS_PATH_PREFIXES`; `S2`: đưa `/api/v1/pages` vào `STUDIO_ACCESS_PATH_PREFIXES`), kèm test tripwire & hành vi.
+5. **§4 — Test nâng cấp từ instance 0.x thật:** `apps/cms/src/__tests__/upgrade-path.e2e.test.ts` nay dựng một database PostgreSQL độc lập từ đúng `0000_lumibase_init.sql` (`v0.18.0`), seed dữ liệu 0.x (sites, roles, users, collections, fields, items, revisions, flows, flow_runs, ai_conversations, agent_goals + 2 run `running`), chạy preflight + câu lệnh settle của migration `0017`, chạy Drizzle migrator thật qua toàn bộ `0001`–`0023`, đối chiếu bảng với schema 1.0, kiểm tra constraint `0012`/`0013`/`0017`, và chạy `backfillRolePolicyFlags`.
 
 **Đã sửa trong lần rà này** (branch `docs/v1-readiness-audit-2026-11-08`): `docs/{en,vi}/operations/upgrades.md` thêm nguồn `0.26.x`/`1.0.0-rc.x`, preflight migration `0017` (có thể fail khi một goal có hai run đang chạy), ghi rõ `0013` bỏ `NOT NULL`, rollback không xuống dưới `0.26.0`. `pages-deploy.yml` hạ token về `contents: read` (Scorecard alert #160). `rustls` 0.23.41 → 0.23.46 trong `apps/shell/src-tauri/Cargo.lock` (Dependabot, `cargo check --locked` pass).
 
@@ -55,19 +58,19 @@ Nguồn: `docs/en/security/cwe-top-100-audit.md`. Mỗi mục Partial/Not-addres
 
 - [x] Bảng audit không còn dòng nào thiếu verdict: mọi ⚠️/❌ hoặc đã chuyển ✅, hoặc có dòng "Accepted for v1.0 — lý do, owner, ngày".
   — 2026-11-08: scorecard 78/78 mitigated, 0 partial, 0 not addressed.
-- [ ] Chạy lại `/security-review` (hoặc tương đương) trên diff tổng từ v0.18.0 → release candidate.
-  — 2026-11-08: chưa có bản ghi. Epic #577 (audit AI agent) phủ phần AI, không thay cho lượt này.
+- [x] Chạy lại `/security-review` (hoặc tương đương) trên diff tổng từ v0.18.0 → release candidate.
+  — 2026-11-08: `docs/review-agent/2026-11-08-v1-security-review-v0.18-to-rc.md` (901 commit từ `v0.18.0` → `83d82262`, kết hợp 8 báo cáo AI audit `#577`/`#578`–`#585`). Đã xác nhận fix `/marketplace/publish`, `#469`, RBAC backfill collision; phát hiện và vá luôn `S1` (`/api/v1/domains` + `PATCH /api/v1/site` thiếu `requireSiteAdmin` / `CONTROL_PLANE_PATHS`) và `S2` (`/api/v1/pages` thiếu trong `STUDIO_ACCESS_PATH_PREFIXES`).
 
 ## 2. Scope freeze — BẮT BUỘC
 
-- [ ] **Quyết định M2A relations**: hiện `schema-service.ts` trả "reserved but not implemented". Hoặc ship trong v1, hoặc tuyên bố chính thức out-of-scope trong docs + roadmap (một dòng "coming in 1.x", không để mập mờ). Reserved-surface không được đổi shape sau v1 nếu đã public.
-  — 2026-11-08: quan hệ M2A đã chốt (501 `RELATION_TYPE_NOT_IMPLEMENTED`, ngoài public surface trong `docs/en/contributing/versioning-policy.md`). Còn mở: interface Studio "Builder (M2A)" (field `json`) vẫn lưu dữ liệu many-to-any; cần nói nó có thuộc surface hay ẩn đi.
-- [ ] **Rà `.kiro/specs/`**: mọi spec đang partial hoặc mở phải được phân loại **in-v1 / post-v1** — spec in-v1 phải qua đủ DoD; spec post-v1 ghi rõ vào roadmap. Không dùng checkbox tasks.md làm bằng chứng — đối chiếu Implementation-status footer + code. → Kết quả: `.kiro/steering/v1-scope-classification.md` (2026-07-16).
-  — 2026-11-08: 4 spec mới chưa có trong file phân loại. Đề xuất (cần owner chốt): `dependency-upgrade-batch-2026-08` → in-v1 hoàn tất (footer: "Hoàn tất 2026-08-21"); `content-preview` → post-v1 (0/33 task); `nextjs-starter-contract` → cần owner (chỉ có `design.md`; `examples/nextjs-blog` tồn tại); `jev-content-decisions` → phụ thuộc quyết định surface Jev ở phần rà soát đầu file.
+- [x] **Quyết định M2A relations**: hiện `schema-service.ts` trả "reserved but not implemented". Hoặc ship trong v1, hoặc tuyên bố chính thức out-of-scope trong docs + roadmap (một dòng "coming in 1.x", không để mập mờ). Reserved-surface không được đổi shape sau v1 nếu đã public.
+  — 2026-11-08: quan hệ M2A ở backend trả 501 `RELATION_TYPE_NOT_IMPLEMENTED`; interface Studio `relation-m2a` ("Builder (M2A)", field `json`) được tuyên bố rõ là JSON helper thử nghiệm của Studio, nằm ngoài relational surface 1.0 trong `docs/{en,vi}/contributing/versioning-policy.md` và `docs/{en,vi}/features/field-types-and-config.md`.
+- [x] **Rà `.kiro/specs/`**: mọi spec đang partial hoặc mở phải được phân loại **in-v1 / post-v1** — spec in-v1 phải qua đủ DoD; spec post-v1 ghi rõ vào roadmap. Không dùng checkbox tasks.md làm bằng chứng — đối chiếu Implementation-status footer + code. → Kết quả: `.kiro/steering/v1-scope-classification.md` (2026-07-16).
+  — 2026-11-08: đã phân loại đủ 43/43 spec trong `.kiro/steering/v1-scope-classification.md` (`dependency-upgrade-batch-2026-08` và `nextjs-starter-contract` → hoàn tất; `jev-content-decisions` → hoàn tất kèm deferral `#548` + gắn nhãn experimental cho surface Jev; `content-preview` → proposal post-v1).
 - [x] **Setup Impact Registry** (`.kiro/specs/admin-setup-wizard/setup-impact.md`) không còn feature in-v1 nào thiếu dòng registry.
-  — 2026-11-08: `registry:check` chạy trong CI (`check:all`); các PR gần nhất (#580–#585) đều có dòng (186–192). Đây là kiểm số thứ tự và rà theo PR, không phải kiểm tự động "feature nào thiếu dòng".
+  — 2026-11-08: `registry:check` chạy trong CI (`check:all`); các PR gần nhất (#580–#585 và nhánh đóng blocker v1) đều có dòng (186–193). Đây là kiểm số thứ tự và rà theo PR, không phải kiểm tự động "feature nào thiếu dòng".
 - [x] **API surface freeze**: chốt danh sách endpoint/params/response-shape công khai trong `docs/en/api/hono-api-spec.md` + GraphQL spec + chữ ký `@lumibase/sdk`. Từ thời điểm freeze, mọi thay đổi breaking dồn về v2 (xem mục 6).
-  — 2026-11-08: `versioning-policy.md` §Public surface định nghĩa surface là các spec trên + exports SDK. Việc docs khớp code thì kiểm lúc tag (§5). Lưu ý mục Jev ở phần rà soát đầu file.
+  — 2026-11-08: `versioning-policy.md` §Public surface định nghĩa surface là các spec trên + exports SDK; toàn bộ surface Jev (`/api/v1/ai/decisions`, `/api/v1/ai/review-profiles*`, `/api/v1/ai/reviews*`, `/api/v1/ai/automation*`) đã gắn nhãn experimental trong `hono-api-spec.md` và `versioning-policy.md`. Việc docs khớp code thì kiểm lúc tag (§5).
 
 ## 3. Quality gates — BẮT BUỘC
 
@@ -86,8 +89,8 @@ Hiện CI (`.github/workflows/ci.yml`) có: version-check, typecheck, test, buil
 
 ## 4. Upgrade path & data — BẮT BUỘC
 
-- [ ] **Migration path 0.x → 1.0 được test thật**: dựng instance từ bản 0.x cũ nhất còn hỗ trợ, chạy upgrade, verify dữ liệu nguyên vẹn. Lưu ý các mốc đã biết: v0.6.x cần backfill RBAC Administrator; v0.17.x table prefix là fresh-install-only — chính sách cho instance pre-0.17 phải được viết rõ (hỗ trợ migrate hay tuyên bố phải re-install).
-  — 2026-11-08: một phần. `upgrade-path.e2e.test.ts` (CI) seed shape RBAC cũ rồi chạy backfill thật, nhưng trên schema mới nhất. Chưa có lượt cài bản 0.x thật rồi chạy migration `0001…0023`. Chính sách pre-0.17 đã viết trong `upgrades.md`.
+- [x] **Migration path 0.x → 1.0 được test thật**: dựng instance từ bản 0.x cũ nhất còn hỗ trợ, chạy upgrade, verify dữ liệu nguyên vẹn. Lưu ý các mốc đã biết: v0.6.x cần backfill RBAC Administrator; v0.17.x table prefix là fresh-install-only — chính sách cho instance pre-0.17 phải được viết rõ (hỗ trợ migrate hay tuyên bố phải re-install).
+  — 2026-11-08: `apps/cms/src/__tests__/upgrade-path.e2e.test.ts` (chạy trong CI job `e2e-golden-path`) gồm 2 suite trên PostgreSQL thật: (1) RBAC role→policy backfill, post-check zero-row, chống đụng độ key, idempotency và rollback; (2) dựng database riêng từ đúng `0000_lumibase_init.sql` (`v0.18.0`), seed dữ liệu 0.x, chạy preflight + settle của `0017`, chạy Drizzle migrator thật qua `0001`–`0023`, đối chiếu danh sách bảng với schema 1.0, kiểm tra constraint `0012`/`0013`/`0017` và chạy RBAC backfill. Chính sách pre-0.17 đã viết trong `upgrades.md`.
 - [x] **`docs/en/operations/upgrades.md`** có mục "Upgrading to 1.0" hoàn chỉnh: từ version nào lên thẳng được, từ version nào phải qua bước trung gian, rollback thế nào.
   — 2026-11-08: đã cập nhật (EN + VI) nguồn `0.26.x`/`1.0.0-rc.x`, preflight `0017`, `0013` bỏ `NOT NULL`, mốc rollback `0.26.0`.
 - [x] Mọi migration trong khoảng 0.18 → 1.0 idempotent, đánh số không xung đột (nhắc: renumber khi merge các nhánh song song).

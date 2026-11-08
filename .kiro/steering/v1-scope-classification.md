@@ -3,10 +3,12 @@
 > Thực thi mục **2. Scope freeze** của `v1-release-criteria.md`: mọi spec trong `.kiro/specs/` được phân loại **in-v1** (đã ship, thuộc surface 1.0) hoặc **post-v1** (roadmap sau 1.0). Căn cứ: Implementation-status footer + tasks.md + đối chiếu code (khảo sát 2026-07-16 tại v0.23.0), không tin checkbox đơn thuần. File này là quyết định scope chính thức cho tag `v1.0.0`; item post-v1 chỉ được ship ở bản minor sau theo semver (additive-only).
 >
 > **Reconcile 2026-07-25 (tại v0.24.1, 38 specs):** ba spec trước đây không nằm ở nhóm nào đã được phân loại — `graphql-cost-limit` và `setup-complete-rate-brake` (cả hai 20/20 task, code + test có trên main) vào nhóm hoàn tất; `idempotency-keys` (0/29 task) vào nhóm proposal. Và `high-load-cache-readiness` chuyển từ "không còn việc mở" sang nhóm deferral: P0 đã ship thật nhưng tasks.md còn 83 item mở thuộc baseline đo đạc + P1/P2, nên xếp "không còn việc mở" là sai. Không mục nào trong lần reconcile này chặn tag.
+>
+> **Reconcile 2026-11-08 (tại `origin/main` `83d82262`, 43 specs):** phân loại 4 spec mới phát sinh sau v0.24.1 (`dependency-upgrade-batch-2026-08` và `nextjs-starter-contract` vào nhóm hoàn tất; `jev-content-decisions` vào nhóm hoàn tất kèm deferral #548 và gắn nhãn experimental cho surface Jev; `content-preview` vào nhóm proposal chưa bắt đầu). Cùng với `rls-request-scope` đã có ở bảng Post-v1, đủ 43/43 thư mục dưới `.kiro/specs/`.
 
 ## In-v1 — hoàn tất, không còn việc mở
 
-admin-setup-wizard · ai-first-cms-engine · auth-session-hardening · clickhouse-cdc · code-first-config · content-os · content-os-ui · content-versioning · docker-dual-deployment · external-jwt-auth · fk-dependent-records · graphql-cost-limit · image-transform-dsl · insights-dashboard · lumibase-docs-i18n · lumibase-docs-viewer · presets-inheritance · realtime-audience-channels · realtime-subscriptions · regulated-content-readiness · setup-complete-rate-brake · studio-ops-ui · translation-memory-ui · visual-flow-builder
+admin-setup-wizard · ai-first-cms-engine · auth-session-hardening · clickhouse-cdc · code-first-config · content-os · content-os-ui · content-versioning · dependency-upgrade-batch-2026-08 · docker-dual-deployment · external-jwt-auth · fk-dependent-records · graphql-cost-limit · image-transform-dsl · insights-dashboard · lumibase-docs-i18n · lumibase-docs-viewer · nextjs-starter-contract · presets-inheritance · realtime-audience-channels · realtime-subscriptions · regulated-content-readiness · setup-complete-rate-brake · studio-ops-ui · translation-memory-ui · visual-flow-builder
 
 ## In-v1 — hoàn tất, có deferral chính thức (ship sau ở 1.x)
 
@@ -22,6 +24,7 @@ Phần lớn item hoãn đã được ghi rõ trong chính spec. Ngoại lệ l�
 | content-releases | Zod schemas bổ sung cho release payload |
 | git-integration | 3.3 validateProductionConfig · 4.7 CRUD integration test (cần Postgres) · 12.1 notification dispatcher · 13.3 schema apply qua HITL + YAML · 14.3 git-sync agent loop |
 | upload-file-controls | F1 re-encode ảnh chống polyglot · F2 ClamAV (optional, regulated tenants) · F3 per-field `accept` UI |
+| jev-content-decisions | **Code J01–J12 (#508–#519) đã hoàn tất và merge lên `main`** (#504, #520, #526–#530, #538–#545, #547, #556). **Hoãn (#548):** đo benchmark/pilot trên dữ liệu biên tập live (VI/EN) và quyết định go/no-go cho automation live. Trong 1.0, toàn bộ surface Jev (`/api/v1/ai/decisions`, `/api/v1/ai/review-profiles*`, `/api/v1/ai/reviews*`, `/api/v1/ai/automation*`, node Flows `ai:decision`/`ai:apply-tags`/`editorial:route`) được gắn nhãn **experimental** trong `hono-api-spec.md` và `versioning-policy.md` — nằm ngoài cam kết semver freeze cho tới khi đóng #548 ở 1.x |
 | high-load-cache-readiness | **P0 đã ship** (ETag + `Cache-Control` cho Delivery API, permission-cache key versioning + bump tại mutation quyền, API-key `lastUsedAt` debounce, setup-state process cache, `meta=total_count` opt-in trên list, proxy/body limits). **Hoãn:** task 0 baseline đo đạc + 7.1/15.1/21.1 re-run k6 (cần môi trường tải, không chạy được trong CI hiện tại) · 1.3 `runtime.edgeCache` adapter · 2.3 integration test permission-revoke với Postgres thật · **P1 (task 8–15)** Cache Provider v2 tag/purge, content invalidation + revalidation, single-flight/SWR, middleware consolidation, async audit, distributed rate limiter, cache observability · **P2 (task 16–21)** worker role + leader lock, flow/AI async, DB index + transactional writes, CDC CacheInvalidator resolution, CI perf gate |
 
 ## Post-v1 — có việc mở thật, KHÔNG chặn tag (quyết định scope)
@@ -33,7 +36,7 @@ Phần lớn item hoãn đã được ghi rõ trong chính spec. Ngoại lệ l�
 
 ## Post-v1 — proposal/roadmap, chưa bắt đầu
 
-collection-create-modes · tenant-localization-config · db-view-introspection · cdc-feed-roadmap · idempotency-keys · project-configuration (chỉ có design.md)
+collection-create-modes · content-preview · tenant-localization-config · db-view-introspection · cdc-feed-roadmap · idempotency-keys · project-configuration (chỉ có design.md)
 
 Không spec nào trong nhóm này reserve public surface trong code (khác M2A — đã tuyên bố out-of-scope trong `docs/en/contributing/versioning-policy.md` và trả 501 `RELATION_TYPE_NOT_IMPLEMENTED`). Đã verify riêng cho `idempotency-keys`: không có chỗ nào trong `apps/`/`packages/` đọc header `Idempotency-Key` và không có bảng schema tương ứng, nên header này là surface **hoàn toàn mới** khi ship ở 1.x — additive, không phá contract 1.0.
 

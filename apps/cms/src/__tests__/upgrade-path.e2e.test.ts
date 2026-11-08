@@ -1,10 +1,16 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq, like, sql } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import postgres from 'postgres';
 import {
   LEGACY_POLICY_KEY_PREFIX,
   backfillRolePolicyFlags,
   createDb,
   deriveLegacyRoleKey,
+  detectHistoryMismatch,
   findUnbackfilledRoles,
   policies,
   rolePolicies,
@@ -221,4 +227,304 @@ describe('Upgrade path 0.6.x → 1.0: RBAC role→policy backfill', () => {
     const afterRollback = await findUnbackfilledRoles(db);
     expect(afterRollback.filter((r) => fixtureIds.has(r.id))).toHaveLength(flaggedIds.length);
   });
+});
+
+const MIGRATIONS_FOLDER = path.resolve(__dirname, '../../../../packages/database/drizzle');
+const UPGRADE_DB_NAME = 'lumibase_upgrade_0x_e2e';
+
+function withDatabaseName(connectionString: string, dbName: string): string {
+  const parsed = new URL(connectionString);
+  parsed.pathname = `/${dbName}`;
+  return parsed.toString();
+}
+
+describe('Real 0.18.0 (0000_lumibase_init) → 1.0 (0023) schema + data migration', () => {
+  let adminClient: ReturnType<typeof postgres> | null = null;
+  let upgClient: ReturnType<typeof postgres> | null = null;
+  let upgDb: Database | null = null;
+  let canConnect = false;
+
+  beforeAll(async () => {
+    if (!TEST_DATABASE_URL) {
+      return;
+    }
+    try {
+      adminClient = postgres(TEST_DATABASE_URL, { max: 1 });
+      await adminClient`SELECT 1`;
+      canConnect = true;
+    } catch {
+      canConnect = false;
+      if (adminClient) {
+        await adminClient.end().catch(() => undefined);
+        adminClient = null;
+      }
+      return;
+    }
+
+    await adminClient.unsafe(`DROP DATABASE IF EXISTS "${UPGRADE_DB_NAME}" WITH (FORCE)`);
+    await adminClient.unsafe(`CREATE DATABASE "${UPGRADE_DB_NAME}"`);
+
+    const upgUrl = withDatabaseName(TEST_DATABASE_URL, UPGRADE_DB_NAME);
+    upgClient = postgres(upgUrl, { max: 1 });
+    upgDb = createDb(upgUrl);
+  }, 60_000);
+
+  afterAll(async () => {
+    if (upgClient) {
+      await upgClient.end().catch(() => undefined);
+    }
+    // Close the pooled client inside `upgDb` before dropping the database.
+    if (upgDb) {
+      const internalClient = (upgDb as unknown as { $client?: { end?: () => Promise<void> } }).$client;
+      await internalClient?.end?.().catch(() => undefined);
+    }
+    if (adminClient && canConnect) {
+      await adminClient.unsafe(`DROP DATABASE IF EXISTS "${UPGRADE_DB_NAME}" WITH (FORCE)`).catch(() => undefined);
+      await adminClient.end().catch(() => undefined);
+    }
+  }, 30_000);
+
+  it('installs 0000_lumibase_init (v0.18.0), seeds 0.x data, runs 0017 preflight, applies 0001..0023, and backfills RBAC', async () => {
+    if (!canConnect || !upgClient || !upgDb) {
+      console.warn('Skipping real 0.18.0 → 1.0 migration E2E: no database connection.');
+      return;
+    }
+
+    const journal = JSON.parse(
+      fs.readFileSync(path.join(MIGRATIONS_FOLDER, 'meta', '_journal.json'), 'utf8'),
+    ) as { entries: Array<{ idx: number; when: number; tag: string }> };
+    const initEntry = journal.entries[0]!;
+    expect(initEntry.tag).toBe('0000_lumibase_init');
+
+    const initSql = fs.readFileSync(path.join(MIGRATIONS_FOLDER, `${initEntry.tag}.sql`), 'utf8');
+    const initHash = crypto.createHash('sha256').update(initSql).digest('hex');
+
+    // ── 1. Bootstrap a genuine v0.18.0 (0000_lumibase_init) database ─────────
+    for (const stmt of initSql.split('--> statement-breakpoint')) {
+      const trimmed = stmt.trim();
+      if (trimmed) {
+        await upgClient.unsafe(trimmed);
+      }
+    }
+    await upgClient.unsafe(`CREATE SCHEMA IF NOT EXISTS "drizzle"`);
+    await upgClient.unsafe(`
+      CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations" (
+        id SERIAL PRIMARY KEY,
+        hash text NOT NULL,
+        created_at bigint
+      )
+    `);
+    await upgClient`
+      INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
+      VALUES (${initHash}, ${initEntry.when})
+    `;
+
+    // Confirm post-0000 tables and columns do NOT exist yet.
+    const [preCheck] = await upgClient<
+      Array<{
+        domains_table: string | null;
+        reviews_table: string | null;
+        token_version_col: number;
+        api_key_owner_col: number;
+      }>
+    >`
+      SELECT
+        to_regclass('public.lumibase_site_domains')::text AS domains_table,
+        to_regclass('public.lumibase_review_profiles')::text AS reviews_table,
+        (SELECT count(*)::int FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'lumibase_users' AND column_name = 'token_version') AS token_version_col,
+        (SELECT count(*)::int FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'lumibase_ai_conversations' AND column_name = 'api_key_id') AS api_key_owner_col
+    `;
+    expect(preCheck).toEqual({
+      domains_table: null,
+      reviews_table: null,
+      token_version_col: 0,
+      api_key_owner_col: 0,
+    });
+
+    // ── 2. Seed representative 0.x data onto the 0000 schema ─────────────────
+    const siteId = 'site_018_real';
+    await upgClient`
+      INSERT INTO lumibase_sites (id, name, domain)
+      VALUES (${siteId}, 'Real 0.18 Instance', 'legacy.example.com')
+    `;
+    await upgClient`
+      INSERT INTO lumibase_roles (id, site_id, system_key, name, admin_access, app_access)
+      VALUES
+        ('r018_admin', ${siteId}, 'administrator', 'Administrator', true, true),
+        ('r018_editor', ${siteId}, 'editor-team', 'Editor A', false, true),
+        ('r018_editor_dup', ${siteId}, 'Editor Team', 'Editor B', true, false)
+    `;
+    await upgClient`
+      INSERT INTO lumibase_users (id, email, first_name, status, is_bootstrap)
+      VALUES ('u018_1', 'admin@legacy.example.com', 'Legacy Admin', 'active', true)
+    `;
+    await upgClient`
+      INSERT INTO lumibase_user_sites (user_id, site_id, role_id)
+      VALUES ('u018_1', ${siteId}, 'r018_admin')
+    `;
+    await upgClient`
+      INSERT INTO lumibase_collections (id, site_id, name)
+      VALUES ('c018_posts', ${siteId}, 'posts')
+    `;
+    await upgClient`
+      INSERT INTO lumibase_fields (id, site_id, collection_id, name, type, interface)
+      VALUES ('f018_title', ${siteId}, 'c018_posts', 'title', 'string', 'input')
+    `;
+    await upgClient`
+      INSERT INTO lumibase_items (id, site_id, collection_id, status, data)
+      VALUES ('itm018_1', ${siteId}, 'c018_posts', 'published', '{"title":"Hello from 0.18"}'::jsonb)
+    `;
+    await upgClient`
+      INSERT INTO lumibase_revisions (id, site_id, collection_id, item_id, delta)
+      VALUES ('01900000-0000-7000-8000-000000000001', ${siteId}, 'c018_posts', 'itm018_1', '{"title":"Hello from 0.18"}'::jsonb)
+    `;
+    await upgClient`
+      INSERT INTO lumibase_flows (id, site_id, name, status, trigger_type)
+      VALUES ('flw018_1', ${siteId}, 'Legacy Flow', 'active', 'manual')
+    `;
+    const legacyStartedAt = new Date('2026-07-06T12:00:00.000Z');
+    await upgClient`
+      INSERT INTO lumibase_flow_runs (id, site_id, flow_id, status, started_at)
+      VALUES ('frun018_1', ${siteId}, 'flw018_1', 'completed', ${legacyStartedAt})
+    `;
+    await upgClient`
+      INSERT INTO lumibase_ai_conversations (id, site_id, title)
+      VALUES ('conv018_anon', ${siteId}, 'Pre-0023 API-key chat')
+    `;
+
+    // Seed an agent goal with TWO active (`running`) runs to verify the
+    // documented migration 0017 preflight + settlement in upgrades.md.
+    await upgClient`
+      INSERT INTO lumibase_agent_goals (id, site_id, title, status, created_by)
+      VALUES ('goal018_1', ${siteId}, 'Legacy goal', 'running', 'u018_1')
+    `;
+    await upgClient`
+      INSERT INTO lumibase_agent_runs (id, site_id, goal_id, agent_name, status)
+      VALUES
+        ('arun018_old', ${siteId}, 'goal018_1', 'Writer', 'running'),
+        ('arun018_new', ${siteId}, 'goal018_1', 'Writer', 'running')
+    `;
+
+    // ── 3. Execute documented 0017 preflight & settlement before migrating ───
+    const dupGoals = await upgClient<Array<{ site_id: string; goal_id: string; count: number }>>`
+      SELECT site_id, goal_id, count(*)::int AS count
+      FROM lumibase_agent_runs
+      WHERE status IN ('queued', 'running')
+      GROUP BY site_id, goal_id
+      HAVING count(*) > 1
+    `;
+    expect(dupGoals).toEqual([{ site_id: siteId, goal_id: 'goal018_1', count: 2 }]);
+
+    await upgClient`
+      UPDATE lumibase_agent_runs
+      SET status = 'cancelled',
+          error = 'duplicate in-flight run settled before migration 0017',
+          metrics = coalesce(metrics, '{}'::jsonb) || '{"stopReason":"duplicate_dispatch"}'::jsonb,
+          finished_at = now(),
+          updated_at = now()
+      WHERE id = 'arun018_old'
+    `;
+
+    const dupAfterSettle = await upgClient`
+      SELECT site_id, goal_id
+      FROM lumibase_agent_runs
+      WHERE status IN ('queued', 'running')
+      GROUP BY site_id, goal_id
+      HAVING count(*) > 1
+    `;
+    expect(dupAfterSettle).toHaveLength(0);
+
+    // ── 4. Run Drizzle's real migrator across 0001..0023 ─────────────────────
+    await migrate(upgDb, { migrationsFolder: MIGRATIONS_FOLDER });
+
+    const appliedRows = await upgClient<Array<{ id: number; hash: string; created_at: string }>>`
+      SELECT id, hash, created_at
+      FROM drizzle.__drizzle_migrations
+      ORDER BY created_at ASC, id ASC
+    `;
+    expect(appliedRows).toHaveLength(journal.entries.length);
+
+    const localMeta = journal.entries.map((entry) => ({
+      tag: entry.tag,
+      hash: crypto
+        .createHash('sha256')
+        .update(fs.readFileSync(path.join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), 'utf8'))
+        .digest('hex'),
+    }));
+    expect(detectHistoryMismatch(localMeta, appliedRows)).toBeNull();
+
+    // ── 5. Verify post-migration schema, constraints, and data preservation ──
+    const [postCheck] = await upgClient<
+      Array<{
+        domains_table: string | null;
+        reviews_table: string | null;
+        automation_table: string | null;
+        token_version: number;
+        api_key_id: string | null;
+        flow_run_type: string;
+        flow_created_at: Date;
+        item_title: string;
+      }>
+    >`
+      SELECT
+        to_regclass('public.lumibase_site_domains')::text AS domains_table,
+        to_regclass('public.lumibase_review_profiles')::text AS reviews_table,
+        to_regclass('public.lumibase_ai_automation_actions')::text AS automation_table,
+        (SELECT token_version FROM lumibase_users WHERE id = 'u018_1') AS token_version,
+        (SELECT api_key_id FROM lumibase_ai_conversations WHERE id = 'conv018_anon') AS api_key_id,
+        (SELECT run_type FROM lumibase_flow_runs WHERE id = 'frun018_1') AS flow_run_type,
+        (SELECT created_at FROM lumibase_flow_runs WHERE id = 'frun018_1') AS flow_created_at,
+        (SELECT data->>'title' FROM lumibase_items WHERE id = 'itm018_1') AS item_title
+    `;
+    expect(postCheck).toMatchObject({
+      domains_table: 'lumibase_site_domains',
+      reviews_table: 'lumibase_review_profiles',
+      automation_table: 'lumibase_ai_automation_actions',
+      token_version: 0,
+      api_key_id: null,
+      flow_run_type: 'flow',
+      item_title: 'Hello from 0.18',
+    });
+    expect(postCheck!.flow_created_at).toBeInstanceOf(Date);
+
+    // Every public table in the upgraded 0.18 → 1.0 database matches the
+    // canonical migrated database.
+    const upgTables = await upgClient<Array<{ tablename: string }>>`
+      SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename ASC
+    `;
+    const mainTables = await adminClient!<Array<{ tablename: string }>>`
+      SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename ASC
+    `;
+    expect(upgTables.map((t) => t.tablename)).toEqual(mainTables.map((t) => t.tablename));
+
+    // 0012 CHECK constraint rejects elevating the `public` system role.
+    await expect(
+      upgClient`
+        INSERT INTO lumibase_roles (id, site_id, system_key, name, admin_access, app_access)
+        VALUES ('r018_bad_public', ${siteId}, 'public', 'Bad Public', true, false)
+      `,
+    ).rejects.toThrow(/roles_public_least_privilege/);
+
+    // 0013 dropped NOT NULL on flow_id + started_at for async AI chat runs.
+    await upgClient`
+      INSERT INTO lumibase_flow_runs (id, site_id, flow_id, run_type, status)
+      VALUES ('frun018_aichat', ${siteId}, null, 'ai_chat', 'queued')
+    `;
+
+    // 0017 unique partial index rejects a second active run on the same goal.
+    await expect(
+      upgClient`
+        INSERT INTO lumibase_agent_runs (id, site_id, goal_id, agent_name, status)
+        VALUES ('arun018_dup2', ${siteId}, 'goal018_1', 'Writer', 'queued')
+      `,
+    ).rejects.toThrow(/agent_runs_one_active_per_goal_idx/);
+
+    // ── 6. Run the RBAC role→policy backfill on the upgraded database ────────
+    expect(await findUnbackfilledRoles(upgDb)).toHaveLength(3);
+    const backfillResult = await backfillRolePolicyFlags(upgDb);
+    expect(backfillResult.legacyRoleCount).toBe(3);
+    expect(await findUnbackfilledRoles(upgDb)).toHaveLength(0);
+  }, 60_000);
 });

@@ -147,6 +147,7 @@ describe('security guard wiring — control-plane path coverage', () => {
     '/api/v1/agent',
     '/api/v1/ai/automation',
     '/api/v1/cdc',
+    '/api/v1/domains',
     '/api/v1/flows',
     '/api/v1/integrations/git',
     '/api/v1/permissions',
@@ -176,6 +177,13 @@ describe('security guard wiring — control-plane path coverage', () => {
   it('keeps /api/v1/ai/decisions on the content plane (capability-gated in DecisionGovernanceService)', () => {
     expect(isControlPlanePath('/api/v1/ai/decisions')).toBe(false);
     expect(isStudioAccessPath('/api/v1/ai/decisions')).toBe(false);
+  });
+
+  it('gates /api/v1/domains and /api/v1/pages behind Studio access, and /domains + PATCH /site behind requireSiteAdmin', () => {
+    expect(isStudioAccessPath('/api/v1/domains')).toBe(true);
+    expect(isStudioAccessPath('/api/v1/pages')).toBe(true);
+    expect(read('routes/domains.ts')).toMatch(/domainsRouter\.use\('\*',\s*requireSiteAdmin\(\)\)/);
+    expect(read('routes/site.ts')).toMatch(/siteRouter\.patch\('\/',\s*requireSiteAdmin\(\),/);
   });
 });
 
