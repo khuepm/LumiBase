@@ -9,6 +9,10 @@ name: Deploy CMS
 on:
   workflow_dispatch:
     inputs:
+      reserve_production_minute:
+        description: "Only remove staging's minute cron to reserve production quota"
+        type: boolean
+        default: false
       reclaim_dev_demo_crons:
         description: "Only clear dev/demo cron schedules to free production quota"
         type: boolean
@@ -37,7 +41,7 @@ env:
 
 jobs:
   cron-maintenance:
-    if: github.event_name == 'workflow_dispatch' && inputs.reclaim_dev_demo_crons
+    if: github.event_name == 'workflow_dispatch' && (inputs.reclaim_dev_demo_crons || inputs.reserve_production_minute)
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -47,10 +51,11 @@ jobs:
           node-version: 24
       - run: node scripts/reclaim-dev-demo-crons.mjs
         env:
+          RESERVE_PRODUCTION_MINUTE: ${{ inputs.reserve_production_minute }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
   resolve-env:
-    if: github.event_name != 'workflow_dispatch' || !inputs.reclaim_dev_demo_crons
+    if: github.event_name != 'workflow_dispatch' || (!inputs.reclaim_dev_demo_crons && !inputs.reserve_production_minute)
     name: Resolve target environment
     runs-on: ubuntu-latest
     outputs:

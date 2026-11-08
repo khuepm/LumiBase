@@ -290,7 +290,8 @@ max_retries = 2
 dead_letter_queue = "lumibase-flow-events-staging-dlq"
 
 [env.staging.triggers]
-crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]
+# Reserve the minute trigger for production on the shared Free account.
+crons = ["0 * * * *", "*/5 * * * *"]
 
 [env.production]
 name = "lumibase-cms-production"
