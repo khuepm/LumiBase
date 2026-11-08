@@ -9,6 +9,30 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [1.0.0] - 2026-11-09
+
+### Version
+- `v1.0.0`
+
+### Date
+- `2026-11-09`
+
+### Highlights
+- First stable Content OS release, with governed agent operations, multi-tenant content management, Studio, SDK and CLI on Cloudflare Workers and Docker.
+- Public REST and SDK contracts follow the documented 1.0 semantic versioning policy. Jev decision, review and automation surfaces and the Studio M2A JSON helper remain experimental.
+- Includes the changes from rc.1–rc.4 and the security, authorization and upgrade-path fixes listed below.
+
+### Upgrade notes
+- Read `docs/en/operations/upgrades.md` before upgrading a 0.x installation. Back up the database and run the migration 0017 preflight to settle duplicate active goal runs.
+- Migrations 0001–0023 are applied from the 0.18.0 baseline. Migration 0013 relaxes nullability. Rollback must not cross below 0.26.0.
+- Cloudflare installations must provision the documented flow queues before deployment. Backend M2A relation creation returns `501 RELATION_TYPE_NOT_IMPLEMENTED`.
+
+### Migrations
+- Includes the migration chain through 0023. The 0.18.0 → 1.0 schema and data upgrade is covered by the PostgreSQL upgrade-path E2E.
+
+
 ### Added
 - **Flows run on Cloudflare Workers (B118).** The Worker `queue()` export is
   now a dispatcher (`processCloudflareQueue`) that routes by queue name to
