@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-10-17T16:36:20.171Z
+version: 6
+lastUpdated: 2026-11-08T01:49:06.315Z
 sourceLang: en
-contentHash: f8a278e8d2b78c15
-codeVerified: 2026-10-17T16:36:20.171Z
-codeVerifiedHash: f8a278e8d2b78c15
+contentHash: ed15a6714963d33b
+codeVerified: 2026-11-08T01:49:06.315Z
+codeVerifiedHash: ed15a6714963d33b
 codeVerifiedClaims: 6
 ---
 
@@ -122,10 +122,10 @@ Run migrations deliberately and verify both schema and application behavior:
 
 | From | Path to 1.0.0 | Notes |
 |------|---------------|-------|
-| `0.18.x` – `0.25.x` | Direct. | Table prefix and RBAC model already match 1.0. Run the [migration checklist](#migration-checklist); no manual data step. Every migration in this range is additive — `CREATE TABLE` or `ADD COLUMN IF NOT EXISTS`, plus one `CHECK` constraint in `0012` (see [rollback](#rollback-from-10)) — with no `DROP` or `RENAME`. |
+| `0.18.x` – `0.26.x`, `1.0.0-rc.x` | Direct. | Table prefix and RBAC model already match 1.0. Run the [migration checklist](#migration-checklist) and the [0017 preflight](#preflight-for-migration-0017); no other manual data step. Migrations in this range add tables, columns and indexes (`IF NOT EXISTS`) and never drop or rename a table or column. Three change constraints: `0012` adds `CHECK` constraints (see [rollback](#rollback-from-10)), `0013` drops `NOT NULL` from `lumibase_flow_runs.flow_id` and `started_at`, and `0017` adds a unique index that can fail on existing data. |
 | `0.6.x` – `0.17.x` | Direct, **with the RBAC backfill below**. | Schema migrations are cumulative and idempotent. The one manual verification is the role→policy backfill (see [RBAC role→policy backfill](#rbac-rolepolicy-backfill)). |
 | Before `0.17.0` (unprefixed tables) | **Not supported as an in-place upgrade.** | The `0.17.x` table-prefix change is fresh-install-only. Instances created before `0.17.0` must export their data (collections, items, files, roles/policies/permissions, flows, webhooks) and re-import into a fresh `1.0.0` install. There is no forward migration for the unprefixed schema. |
-| Before `0.6.0` | Via an intermediate `0.17.x` – `0.25.x` release first. | Upgrade to a recent `0.x` (which applies the RBAC backfill and any prefix handling), verify, then upgrade to `1.0.0`. Do not skip directly. |
+| Before `0.6.0` | Via an intermediate `0.17.x` – `0.26.x` release first. | Upgrade to a recent `0.x` (which applies the RBAC backfill and any prefix handling), verify, then upgrade to `1.0.0`. Do not skip directly. |
 
 Determine your current version from `/api/v1/system/version` before choosing a row.
 
@@ -161,9 +161,23 @@ AND NOT EXISTS (
 
 Then confirm effective access is unchanged: a legacy admin role is still admin, a legacy app-only role can still enter Studio, and a role without app access still cannot. This whole path — pre-policy fixture → backfill → zero-row post-check → idempotent re-run → rollback — is exercised automatically in CI by `apps/cms/src/__tests__/upgrade-path.e2e.test.ts` (the `e2e-golden-path` job), so a green build is the release-gate evidence. Role flag columns stay in place through 1.0 for rollback; they are only scheduled to drop in a later release after `LUMIBASE_RBAC_LEGACY_ROLE_FLAGS=false` has shipped and been verified.
 
+### Preflight for migration 0017
+
+`0017_one_active_run_per_goal` adds the unique index `agent_runs_one_active_per_goal_idx`: at most one agent run per goal in `queued` or `running`. If your data already holds a goal with two such runs, index creation aborts and the migration stops. Run this before upgrading; it must return no rows:
+
+```sql
+SELECT site_id, goal_id, count(*), array_agg(id) AS run_ids
+FROM lumibase_agent_runs
+WHERE status IN ('queued', 'running')
+GROUP BY site_id, goal_id
+HAVING count(*) > 1;
+```
+
+For each group, keep the newest run and settle the others as `cancelled` with an `error` that names the reason. Do not delete them: a run that was `running` may have changed content, and its tool calls are the only record of what it did. The migration file carries the exact `UPDATE`.
+
 ### Rollback from 1.0
 
-- **Application:** roll back to the previous `0.25.x` deployment per [rollback app](#rollback-app). Every migration from `0.18.x` to `1.0.0` is additive, so the prior app version stays compatible with the 1.0 database — it simply ignores the tables and columns it does not know about.
+- **Application:** roll back to the previous `0.26.x` or `1.0.0-rc.x` deployment per [rollback app](#rollback-app). Migrations from `0.18.x` to `1.0.0` add tables, columns and indexes, so that app version ignores what it does not know about. Do not go below `0.26.0`: from migration `0013` on, AI chat runs are stored in `lumibase_flow_runs` with a null `flow_id`, which earlier releases were not built to read.
 - **The two constraints to know about:** migration `0012_public_role_least_privilege` adds `CHECK` constraints — `roles_public_least_privilege` on `lumibase_roles` (`system_key = 'public'` ⇒ `admin_access` and `app_access` both false) and `policies_public_least_privilege` on `lumibase_policies` (`key = 'public'` ⇒ those two plus `enforce_tfa` false). An elevation flag on the anonymous realm is an unauthenticated admin bypass, so it is pinned in the database rather than only in the service layer. They reject writes, they delete nothing, and a rollback has nothing to undo: the public role ships *with* `0.25.0`, so no earlier release created one to violate them. Two consequences worth knowing:
   - Postgres validates a `CHECK` against existing rows when it is added, so if an operator hand-created a policy keyed `public` with elevated flags before upgrading, the migration **fails** rather than silently relaxing. Clear the flags on that row, then re-run.
   - A rolled-back app version that tries to grant the public role elevated access gets a constraint violation instead of succeeding. That is the constraint working, not a rollback defect.
