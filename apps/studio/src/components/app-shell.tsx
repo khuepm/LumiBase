@@ -19,7 +19,7 @@ import {
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
@@ -190,6 +190,7 @@ export function AppShell({ children }: AppShellProps) {
   const [expandedNav, setExpandedNav] = useState(false);
   const [editingNav, setEditingNav] = useState(false);
   const [navigationError, setNavigationError] = useState('');
+  const navigationSave = useRef(Promise.resolve());
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -204,13 +205,15 @@ export function AppShell({ children }: AppShellProps) {
     setExpandedNav(prefsQuery.data.data?.navigationExpanded === true);
   }, [prefsQuery.data, setOverrides, setLoaded]);
 
-  async function saveNavigation(patch: { navigationOrder?: string[]; navigationExpanded?: boolean }) {
+  function saveNavigation(patch: { navigationOrder?: string[]; navigationExpanded?: boolean }) {
     setNavigationError('');
-    try {
-      await getApiClient().me.updatePreferences(patch);
-    } catch {
-      setNavigationError('Could not save navigation preferences.');
-    }
+    navigationSave.current = navigationSave.current.then(async () => {
+      try {
+        await getApiClient().me.updatePreferences(patch);
+      } catch {
+        setNavigationError('Could not save navigation preferences.');
+      }
+    });
   }
 
   function onModuleDragEnd(event: DragEndEvent) {
@@ -219,7 +222,7 @@ export function AppShell({ children }: AppShellProps) {
     const current = orderedModules(moduleOrder).map((module) => module.id);
     const next = arrayMove(current, current.indexOf(String(active.id)), current.indexOf(String(over.id)));
     setModuleOrder(next);
-    void saveNavigation({ navigationOrder: next });
+    saveNavigation({ navigationOrder: next });
   }
 
   const onAction = useCallback(
@@ -309,7 +312,7 @@ export function AppShell({ children }: AppShellProps) {
               <GripVertical className="h-4 w-4" />{expandedNav && <span className="text-xs">{editingNav ? 'Done reordering' : 'Reorder modules'}</span>}
             </button>
           )}
-          <button type="button" onClick={() => { const next = !expandedNav; setExpandedNav(next); void saveNavigation({ navigationExpanded: next }); }} aria-label={expandedNav ? 'Collapse module navigation' : 'Expand module navigation'} aria-expanded={expandedNav} className={cn('flex h-9 items-center rounded-md text-muted-foreground hover:bg-accent', expandedNav ? 'gap-3 px-2' : 'w-9 justify-center')}>
+          <button type="button" onClick={() => { const next = !expandedNav; setExpandedNav(next); saveNavigation({ navigationExpanded: next }); }} disabled={prefsQuery.isLoading} aria-label={expandedNav ? 'Collapse module navigation' : 'Expand module navigation'} aria-expanded={expandedNav} className={cn('flex h-9 items-center rounded-md text-muted-foreground hover:bg-accent disabled:opacity-50', expandedNav ? 'gap-3 px-2' : 'w-9 justify-center')}>
             {expandedNav ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}{expandedNav && <span className="text-xs">Collapse menu</span>}
           </button>
         </div>
