@@ -510,7 +510,8 @@ max_retries = 2
 dead_letter_queue = "lumibase-flow-events-dev-dlq"
 
 [env.dev.triggers]
-crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]
+# Reserve account cron capacity for production.
+crons = []
 
 # ─── Demo environment (demo.lumibase.dev, shared domain) ─────────────────────
 # Public demo / showcase. Deployed manually via workflow_dispatch. May be
@@ -599,4 +600,5 @@ max_retries = 2
 dead_letter_queue = "lumibase-flow-events-demo-dlq"
 
 [env.demo.triggers]
-crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]
+# Reserve account cron capacity for production.
+crons = []
