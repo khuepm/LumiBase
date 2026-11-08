@@ -372,12 +372,13 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
           description:
             'What to do with the content (e.g. "write a SEO-friendly title", "translate to Vietnamese", "make it shorter").',
         },
+        grounded: { type: 'boolean', description: 'Extract exact quotes with verified citations from current permitted samples, or abstain.' },
         currentContent: {
           type: 'string',
           description: 'The current content of the field, if editing.',
         },
       },
-      required: ['collection', 'fieldName', 'instruction'],
+      required: ['collection'],
     },
     requiredCapabilities: ['items:read'],
   },

@@ -1,16 +1,16 @@
 ---
-version: 5
-lastUpdated: 2026-11-07T19:56:21.536Z
+version: 8
+lastUpdated: 2026-11-07T22:02:15.899Z
 sourceLang: vi
 translatedFrom: en
 sourceHash: ecc8983d3122446b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-07T19:56:21.536Z
-codeVerifiedHash: d65dcabd5360fe44
+codeVerified: 2026-11-07T22:02:15.899Z
+codeVerifiedHash: 80e544c4c41dcb0c
 codeVerifiedClaims: 30
 
-contentHash: d65dcabd5360fe44
+contentHash: 80e544c4c41dcb0c
 ---
 
 # AI Copilot (HITL)
@@ -166,7 +166,7 @@ Hệ thống hỗ trợ nhiều LLM providers (cấu hình qua `LLM_PROVIDER` en
 Bảng `ai_conversations` và `ai_messages` được dùng để lưu trữ trạng thái các luồng trò chuyện:
 - Mỗi khi gửi message lên `/api/v1/ai/chat`, hệ thống sẽ load tối đa **20 messages gần nhất** để làm ngữ cảnh (context window) truyền vào LLM. Từ #582 cả route đồng bộ lẫn worker `Prefer: respond-async` đều dùng chung `loadCopilotHistory` (`apps/cms/src/services/copilot-history.ts`); trước đó cả hai đọc 20 message **cũ nhất**, nên từ message thứ 21 trở đi lượt user vừa gửi không có trong request.
 - Cửa sổ luôn mở đầu bằng một lượt user (nếu cắt rơi vào message assistant thì bỏ message đó) và kết thúc bằng lượt user vừa gửi. System prompt của Copilot gửi riêng nên không bao giờ bị cắt.
-- Giới hạn hiện có: message user tối đa 2000 ký tự; output tối đa 1024 token (Workers AI dùng mặc định của model); toàn bộ catalogue tool (74 skill, ~24.200 ký tự JSON, ước lượng ~6.000 token) gửi kèm mỗi lượt. LumiBase **không** đếm token và không kiểm tra context window của model, nên hãy chọn model có context đủ lớn cho tool catalogue cộng 20 message.
+- Mỗi tin nhắn chat tối đa 2.000 ký tự. Đầu vào và đầu ra mô hình tuân theo chính sách ngữ cảnh bên dưới.
 - Model trả nhiều tool call thì chỉ call đầu tiên được thực thi. Arguments không phải JSON hợp lệ trả `500` một lần, không retry và không ghi gì.
 - Hỗ trợ đầy đủ các API quản lý: `GET /conversations`, `GET /conversations/:id/messages`, `DELETE /conversations/:id`.
 - Một hội thoại thuộc về user đã tạo nó (#579). Thành viên khác của site nhận `404` khi đọc messages, `DELETE` không xoá gì, và `POST /chat` với `conversationId` đó sẽ mở một hội thoại mới cho người gọi. Caller dùng API key chỉ sở hữu các hội thoại được ghi với chính key đó (`api_key_id`, migration `0023`), nên key này không list, đọc, xoá hay nối vào hội thoại của key khác được. Hội thoại không có user id tạo trước `0023` không ghi key nào nên không API key nào sở hữu chúng.
@@ -192,3 +192,30 @@ Hệ thống có 15 property tests (fast-check, ≥100 iterations) được li�
 - `apps/cms/src/routes/__tests__/ai-*.property.test.ts` — Properties 9-12 (Module C).
 - `apps/studio/src/modules/settings/__tests__/` — Properties 13-14 (Module D).
 - `packages/database/src/__tests__/` — Property 15 (round-trip).
+
+
+## Ngân sách ngữ cảnh và trích dẫn nguồn
+
+Đặt `LLM_CONTEXT_WINDOW_TOKENS` theo cửa sổ mà mô hình triển khai hỗ trợ.
+Nếu chưa đặt, mô hình đã biết dùng mức trần ứng dụng 32.768. Tên mô hình tùy
+chỉnh cần khai báo cửa sổ. Thiếu cửa sổ hoặc giá trị không hợp lệ thì mỗi lần
+gọi mô hình trả `LLM_CONTEXT_LIMIT` trước khi gọi mạng; route không gọi mô hình
+(ví dụ MCP `tools/list`) vẫn chạy bình thường. Trước khi gọi mạng, provider tính byte UTF-8 sau
+serialize làm cận trên thận trọng cho token văn bản, chừa đầu ra (thường 1.024
+token) và tính cả công cụ, phần đóng gói message. Hệ thống bỏ lịch sử cũ trước,
+giữ chính sách hệ thống, định nghĩa công cụ và yêu cầu mới nhất. Yêu cầu quá dài
+trả HTTP 413 với `LLM_CONTEXT_LIMIT`. Giới hạn tần suất, phản hồi không hợp lệ và
+mất kết nối đều có mã lỗi để xử lý; không tự ghi hoặc tự sửa bằng lần gọi mới.
+
+Để yêu cầu trích dẫn, truyền `grounded: true` cho `aiContentAssist`. Chỉ trường
+mẫu hiện tại được phép đọc mới đi vào tập bằng chứng. Nội dung chấp nhận được
+gồm toàn bộ các đoạn trích đúng nguyên văn; trích dẫn chỉ ra trường và mã item.
+Khi thiếu bằng chứng, trả nội dung rỗng và `abstained: true`; nội dung bịa, cũ
+hoặc thiếu nguồn bị từ chối. Trích dẫn nguyên văn xác định xuất xứ; độ đúng của
+nguồn và mức phù hợp vẫn cần đánh giá. Nên từ chối trả lời khi nguồn mâu thuẫn
+hoặc không liên quan. Mặc định vẫn cho phép viết tự do.
+
+Chạy `pnpm -F @lumibase/cms eval:grounding` để tái lập baseline tổng hợp cho
+hợp đồng thực thi. v1 cần đạt 12/12 trường hợp, bao gồm trích đoạn Anh/Việt,
+số liệu bị sửa, nguồn cũ hoặc khác tenant, nguồn mâu thuẫn và từ chối trả lời.
+Kết quả đo bộ xác thực; độ chính xác trên công việc biên tập cần dữ liệu riêng.

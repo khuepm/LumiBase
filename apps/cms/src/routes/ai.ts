@@ -1,3 +1,4 @@
+import { publicLLMFailure } from '../services/llm-provider';
 import { aiApprovals, aiConversations, aiMessages } from '@lumibase/database';
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
@@ -435,6 +436,8 @@ aiRouter.post('/chat', async (c) => {
       200,
     );
   } catch (err: unknown) {
+    const failure = publicLLMFailure(err);
+    if (failure) return c.json({ errors: [{ code: failure.code, message: failure.message }] }, failure.status);
     const errorMessage = err instanceof Error ? err.message : 'Internal server error';
     console.error('[ai/chat] execution error', formatSafeError(err));
     return c.json(

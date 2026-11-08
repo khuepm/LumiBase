@@ -30,7 +30,8 @@
     "k6:login-brute": "k6 run k6/login-brute-force.js",
     "clean": "rm -rf .turbo .wrangler dist",
     "eval:ai": "tsx scripts/ai-audit.ts",
-    "bench:model-routing": "tsx eval/model-routing/bench.ts"
+    "bench:model-routing": "tsx eval/model-routing/bench.ts",
+    "eval:grounding": "tsx eval/grounding/run.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",

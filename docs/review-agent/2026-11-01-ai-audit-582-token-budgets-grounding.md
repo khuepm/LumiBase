@@ -144,3 +144,8 @@ tests run; measured):
 | Groundedness, citation validity and abstention have a versioned dataset and reproducible baseline | **abstention: met** by the Jev benchmark (#513). **Grounding/citations: N/A, justified** (no such feature, B180) |
 | Invalid structure or semantics cannot trigger a write; failures are actionable and retries bounded | **writes: met** (new cases). **Retries bounded: met.** **Actionable: not met** for Copilot provider failures (B182, owner decision) |
 | Record current behaviour/code paths, fix confirmed gaps and document supported limits | met: §1–§4, F1 fixed, limits in `ai-copilot.md` §2 |
+
+
+## Completion verification (2026-11-08)
+
+Completion baseline `a59d11c9`: provider calls now bound context, reserve output, keep policy and protect the newest request. Unknown model windows require configuration. Typed Copilot failures preserve actionable classification without exposing provider bodies. Malformed, conflicting or cross-tenant tool requests cannot bypass governed execution. Optional grounded content assistance validates the exact quotes and source references it returns from current permitted samples, with abstention on insufficient evidence. Versioned EN/VI synthetic corpus v1 passed 12/12 runtime contract cases. These are extractive guarantees, not a claim about editorial accuracy or model judgment on contradictory documents. See `docs/en/features/ai-copilot.md` for reproduction and supported limits.

@@ -7,7 +7,9 @@
     "src/services/__tests__/decision-provider.test.ts",
     "src/services/__tests__/decision-budgets.test.ts",
     "src/services/__tests__/decision-governance.test.ts",
-    "eval/jev-benchmark/__tests__"
+    "eval/jev-benchmark/__tests__",
+    "src/services/__tests__/llm-context-budget.test.ts",
+    "src/services/__tests__/grounded-content.test.ts"
   ],
   "database": [
     "src/services/__tests__/tool-contract-parity.db.integration.test.ts",
