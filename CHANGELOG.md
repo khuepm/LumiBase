@@ -711,6 +711,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Security
 
+- **Desktop shell `rustls` 0.23.41 → 0.23.46, and the Pages deploy workflow
+  token is read-only.** The Tauri shell lockfile picks up the patched `rustls`
+  (with `rustls-webpki` 0.103.16 and `aws-lc-rs` 1.19.0) for the open
+  Dependabot advisories, including Debug formatting that exposed TLS secrets
+  and TLS 1.3 handshake messages accepted across encryption levels.
+  `pages-deploy.yml` drops its top-level `contents: write` to `read`; it never
+  wrote to the repository.
 - **Permission bundle cache is keyed per principal and skips request-bound
   policies (#583).** The cache key of a compiled permission bundle named only
   the role when the context carried both a user and a role.

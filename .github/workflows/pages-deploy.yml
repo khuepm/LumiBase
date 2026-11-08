@@ -23,8 +23,10 @@ on:
         required: true
         type: string
 
+# Read-only: the job checks out a tag and deploys with the Cloudflare token; it
+# never writes to this repository (OpenSSF Scorecard TokenPermissions, alert #160).
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: pages-deploy-${{ inputs.tag || github.ref_name }}

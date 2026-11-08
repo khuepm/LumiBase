@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-10-17T16:36:20.171Z
+version: 6
+lastUpdated: 2026-11-08T01:49:06.315Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f8a278e8d2b78c15
+sourceHash: ed15a6714963d33b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-17T16:36:20.171Z
-codeVerifiedHash: f8a278e8d2b78c15
+codeVerified: 2026-11-08T01:49:06.315Z
+codeVerifiedHash: ed15a6714963d33b
 codeVerifiedClaims: 6
 ---
 
@@ -125,10 +125,10 @@ Chạy migration có chủ đích và xác minh cả schema lẫn hành vi ứng
 
 | Từ | Đường lên 1.0.0 | Ghi chú |
 |------|---------------|-------|
-| `0.18.x` – `0.25.x` | Trực tiếp. | Table prefix và mô hình RBAC đã khớp 1.0. Chạy [migration checklist](#migration-checklist); không có bước dữ liệu thủ công. Mọi migration trong dải này đều là additive — `CREATE TABLE` hoặc `ADD COLUMN IF NOT EXISTS`, cộng một constraint `CHECK` ở `0012` (xem [rollback](#rollback-từ-10)) — không có `DROP` hay `RENAME`. |
+| `0.18.x` – `0.26.x`, `1.0.0-rc.x` | Trực tiếp. | Table prefix và mô hình RBAC đã khớp 1.0. Chạy [migration checklist](#migration-checklist) và [kiểm tra trước 0017](#kiểm-tra-trước-migration-0017); ngoài ra không có bước dữ liệu thủ công. Migration trong dải này thêm bảng, cột và index (`IF NOT EXISTS`), không bao giờ xoá hay đổi tên bảng hoặc cột. Ba migration đổi constraint: `0012` thêm constraint `CHECK` (xem [rollback](#rollback-từ-10)), `0013` bỏ `NOT NULL` khỏi `lumibase_flow_runs.flow_id` và `started_at`, còn `0017` thêm một unique index có thể fail trên dữ liệu đang có. |
 | `0.6.x` – `0.17.x` | Trực tiếp, **kèm RBAC backfill bên dưới**. | Migration schema là cộng dồn và idempotent. Bước thủ công duy nhất là backfill role→policy (xem [RBAC backfill role→policy](#rbac-backfill-rolepolicy)). |
 | Trước `0.17.0` (bảng chưa có prefix) | **Không hỗ trợ nâng cấp tại chỗ.** | Thay đổi table-prefix ở `0.17.x` chỉ áp dụng cho fresh-install. Instance tạo trước `0.17.0` phải export dữ liệu (collections, items, files, roles/policies/permissions, flows, webhooks) và re-import vào một bản `1.0.0` mới. Không có migration tiến lên cho schema chưa prefix. |
-| Trước `0.6.0` | Qua một bản trung gian `0.17.x` – `0.25.x` trước. | Nâng lên một bản `0.x` gần đây (bản này áp dụng RBAC backfill và xử lý prefix), verify, rồi nâng lên `1.0.0`. Không nhảy thẳng. |
+| Trước `0.6.0` | Qua một bản trung gian `0.17.x` – `0.26.x` trước. | Nâng lên một bản `0.x` gần đây (bản này áp dụng RBAC backfill và xử lý prefix), verify, rồi nâng lên `1.0.0`. Không nhảy thẳng. |
 
 Xác định version hiện tại qua `/api/v1/system/version` trước khi chọn dòng phù hợp.
 
@@ -164,9 +164,23 @@ AND NOT EXISTS (
 
 Rồi xác nhận effective access không đổi: role admin legacy vẫn là admin, role chỉ-app legacy vẫn vào được Studio, và role không có app access vẫn không vào được. Toàn bộ đường này — fixture pre-policy → backfill → post-check không dòng nào → chạy lại idempotent → rollback — được chạy tự động trong CI bởi `apps/cms/src/__tests__/upgrade-path.e2e.test.ts` (job `e2e-golden-path`), nên một build xanh chính là bằng chứng cho release gate. Cột cờ role vẫn giữ nguyên qua 1.0 để rollback; chúng chỉ được lên lịch xoá ở một bản sau khi `LUMIBASE_RBAC_LEGACY_ROLE_FLAGS=false` đã ship và được verify.
 
+### Kiểm tra trước migration 0017
+
+`0017_one_active_run_per_goal` thêm unique index `agent_runs_one_active_per_goal_idx`: mỗi goal có tối đa một agent run ở trạng thái `queued` hoặc `running`. Nếu dữ liệu đã có goal mang hai run như vậy, việc tạo index bị huỷ và migration dừng lại. Chạy câu sau trước khi nâng cấp; kết quả phải không có dòng nào:
+
+```sql
+SELECT site_id, goal_id, count(*), array_agg(id) AS run_ids
+FROM lumibase_agent_runs
+WHERE status IN ('queued', 'running')
+GROUP BY site_id, goal_id
+HAVING count(*) > 1;
+```
+
+Với mỗi nhóm, giữ run mới nhất và chuyển các run còn lại sang `cancelled`, kèm `error` nêu lý do. Không xoá chúng: một run từng ở `running` có thể đã sửa nội dung, và tool call của nó là bản ghi duy nhất về việc nó đã làm. File migration có sẵn câu `UPDATE` chính xác.
+
 ### Rollback từ 1.0
 
-- **Application:** rollback về deployment `0.25.x` trước đó theo [rollback app](#rollback-app). Mọi migration từ `0.18.x` tới `1.0.0` đều là additive, nên app version cũ vẫn tương thích với database 1.0 — nó chỉ đơn giản bỏ qua những bảng và cột nó không biết.
+- **Application:** rollback về deployment `0.26.x` hoặc `1.0.0-rc.x` trước đó theo [rollback app](#rollback-app). Migration từ `0.18.x` tới `1.0.0` thêm bảng, cột và index, nên app version đó bỏ qua những gì nó không biết. Không lùi xuống dưới `0.26.0`: từ migration `0013`, run AI chat được lưu trong `lumibase_flow_runs` với `flow_id` null, mà các bản trước không được xây để đọc.
 - **Hai constraint cần biết:** migration `0012_public_role_least_privilege` thêm hai constraint `CHECK` — `roles_public_least_privilege` trên `lumibase_roles` (`system_key = 'public'` ⇒ `admin_access` và `app_access` đều false) và `policies_public_least_privilege` trên `lumibase_policies` (`key = 'public'` ⇒ hai cờ đó cộng `enforce_tfa` false). Một cờ elevation trên realm ẩn danh chính là unauthenticated admin bypass, nên nó được ghim ở tầng database chứ không chỉ ở service layer. Chúng từ chối ghi, không xoá gì, và rollback không có gì phải hoàn tác: role public ship *cùng* `0.25.0`, nên không bản nào trước đó tạo ra role vi phạm. Hai hệ quả cần biết:
   - Postgres validate một `CHECK` với các dòng đang có ngay khi thêm, nên nếu một operator từng tự tạo policy key `public` với cờ elevation trước khi nâng cấp thì migration **fail** thay vì âm thầm nới lỏng. Xoá cờ trên dòng đó rồi chạy lại.
   - App version đã rollback nếu cố cấp elevated access cho role public sẽ nhận constraint violation thay vì thành công. Đó là constraint đang làm việc, không phải lỗi rollback.
