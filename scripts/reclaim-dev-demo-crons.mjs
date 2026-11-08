@@ -17,7 +17,9 @@ async function schedules(worker, method = 'GET') {
 }
 for (const worker of ['lumibase-cms-dev', 'lumibase-cms-demo']) {
   console.log(worker, 'before', JSON.stringify(await schedules(worker)));
-  await schedules(worker, 'PUT');
+  const before = await schedules(worker);
+  const existing = Array.isArray(before) ? before : before.schedules;
+  if (existing?.length) await schedules(worker, 'PUT');
   const remaining = await schedules(worker);
   console.log(worker, 'after', JSON.stringify(remaining));
   const entries = Array.isArray(remaining) ? remaining : remaining.schedules;
