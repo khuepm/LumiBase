@@ -12,7 +12,13 @@ import {
   Radar,
   BarChart3,
   Search,
+  PanelLeftClose,
+  PanelLeftOpen,
+  GripVertical,
 } from 'lucide-react';
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -50,6 +56,53 @@ const MODULES: ModuleDef[] = [
   { id: 'cdc', label: 'CDC', icon: GitBranch, to: '/cdc' },
   { id: 'settings', label: 'Settings', icon: Settings, to: '/settings' },
 ];
+
+const DEFAULT_MODULE_ORDER = MODULES.map((module) => module.id);
+
+function orderedModules(order: string[]): ModuleDef[] {
+  const byId = new Map(MODULES.map((module) => [module.id, module]));
+  const seen = new Set<string>();
+  const result: ModuleDef[] = [];
+  for (const id of order) {
+    const module = byId.get(id);
+    if (module && !seen.has(id)) {
+      result.push(module);
+      seen.add(id);
+    }
+  }
+  return [...result, ...MODULES.filter((module) => !seen.has(module.id))];
+}
+
+function SortableModule({ module, active, adminBase, expanded, editing }: {
+  module: ModuleDef;
+  active: boolean;
+  adminBase: string;
+  expanded: boolean;
+  editing: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: module.id, disabled: !editing });
+  const Icon = module.icon;
+  const className = cn(
+    'relative flex h-10 items-center rounded-md transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
+    expanded ? 'w-full gap-3 px-3' : 'w-10 justify-center',
+    active && !editing ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent',
+    editing && 'cursor-grab active:cursor-grabbing',
+  );
+  const contents = <><Icon className="h-5 w-5 shrink-0" aria-hidden="true" />{expanded && <span className="truncate text-sm">{module.label}</span>}{module.id === 'mission-control' && !editing && <MissionControlBadge />}</>;
+  return (
+    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 10 : undefined }} className={cn('w-full', isDragging && 'opacity-70')}>
+      {editing ? (
+        <button type="button" aria-label={`Move ${module.label}`} className={className} {...attributes} {...listeners}>
+          {contents}
+        </button>
+      ) : (
+        <Link to={`${adminBase}${module.to === '/' ? '' : module.to}` || '/'} aria-label={module.label} aria-current={active ? 'page' : undefined} title={module.label} className={className}>
+          {contents}
+        </Link>
+      )}
+    </div>
+  );
+}
 
 /**
  * The modules surfaced directly in the mobile Bottom Nav (app-shell spec
@@ -127,12 +180,47 @@ export function AppShell({ children }: AppShellProps) {
     enabled: hasActiveToken(),
     staleTime: 5 * 60_000,
   });
+  const permissionsQuery = useQuery({
+    queryKey: ['me', 'permissions'],
+    queryFn: async () => (await getApiClient().permissions.me()).data,
+    enabled: hasActiveToken(),
+    staleTime: 5 * 60_000,
+  });
+  const [moduleOrder, setModuleOrder] = useState(DEFAULT_MODULE_ORDER);
+  const [expandedNav, setExpandedNav] = useState(false);
+  const [editingNav, setEditingNav] = useState(false);
+  const [navigationError, setNavigationError] = useState('');
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
   useEffect(() => {
     if (!prefsQuery.data) return;
     const keybindings = (prefsQuery.data.data?.keybindings ?? {}) as Record<string, string>;
     setOverrides(keybindings);
     setLoaded(true);
+    const order = prefsQuery.data.data?.navigationOrder;
+    if (Array.isArray(order)) setModuleOrder(order.filter((id): id is string => typeof id === 'string'));
+    setExpandedNav(prefsQuery.data.data?.navigationExpanded === true);
   }, [prefsQuery.data, setOverrides, setLoaded]);
+
+  async function saveNavigation(patch: { navigationOrder?: string[]; navigationExpanded?: boolean }) {
+    setNavigationError('');
+    try {
+      await getApiClient().me.updatePreferences(patch);
+    } catch {
+      setNavigationError('Could not save navigation preferences.');
+    }
+  }
+
+  function onModuleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const current = orderedModules(moduleOrder).map((module) => module.id);
+    const next = arrayMove(current, current.indexOf(String(active.id)), current.indexOf(String(over.id)));
+    setModuleOrder(next);
+    void saveNavigation({ navigationOrder: next });
+  }
 
   const onAction = useCallback(
     (actionId: string) => {
@@ -183,6 +271,8 @@ export function AppShell({ children }: AppShellProps) {
       window.location.assign(adminBase ? `${adminBase}/login` : '/');
     });
   };
+  const isAdmin = permissionsQuery.data?.admin === true;
+  const sidebarModules = orderedModules(moduleOrder);
 
   return (
     <div className="flex h-screen w-screen">
@@ -203,34 +293,29 @@ export function AppShell({ children }: AppShellProps) {
           Bottom Nav — app-shell spec §1.2) */}
       <nav
         aria-label="Module navigation"
-        className="hidden w-16 flex-col items-center gap-2 border-r bg-muted/30 py-4 md:flex"
+        className={cn('hidden shrink-0 flex-col border-r bg-muted/30 py-4 md:flex', expandedNav ? 'w-56' : 'w-16')}
       >
-        {MODULES.map(({ id, label, icon: Icon, to }) => {
-          const isActive = activeModule === id;
-          return (
-            <Link
-              key={id}
-              to={`${adminBase}${to === '/' ? '' : to}` || '/'}
-              aria-label={label}
-              aria-current={isActive ? 'page' : undefined}
-              title={label}
-              className={cn(
-                'relative flex h-10 w-10 items-center justify-center rounded-md transition',
-                'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
-                isActive
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent',
-              )}
-            >
-              <Icon className="h-5 w-5" aria-hidden="true" />
-              {id === 'mission-control' && <MissionControlBadge />}
-            </Link>
-          );
-        })}
-        <div className="mt-auto" aria-hidden="true" />
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onModuleDragEnd}>
+          <SortableContext items={sidebarModules.map((module) => module.id)} strategy={verticalListSortingStrategy}>
+            <div className={cn('flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3', !expandedNav && 'items-center')}>
+              {sidebarModules.map((module) => <SortableModule key={module.id} module={module} active={activeModule === module.id} adminBase={adminBase} expanded={expandedNav} editing={editingNav} />)}
+            </div>
+          </SortableContext>
+        </DndContext>
+        {navigationError && <p role="alert" className="px-2 text-xs text-destructive">{navigationError}</p>}
+        <div className={cn('mt-2 flex flex-col gap-1 border-t px-3 pt-2', !expandedNav && 'items-center')}>
+          {isAdmin && (
+            <button type="button" onClick={() => setEditingNav((value) => !value)} aria-label={editingNav ? 'Finish reordering modules' : 'Reorder modules'} aria-pressed={editingNav} className={cn('flex h-9 items-center rounded-md text-muted-foreground hover:bg-accent', expandedNav ? 'gap-3 px-2' : 'w-9 justify-center')}>
+              <GripVertical className="h-4 w-4" />{expandedNav && <span className="text-xs">{editingNav ? 'Done reordering' : 'Reorder modules'}</span>}
+            </button>
+          )}
+          <button type="button" onClick={() => { const next = !expandedNav; setExpandedNav(next); void saveNavigation({ navigationExpanded: next }); }} aria-label={expandedNav ? 'Collapse module navigation' : 'Expand module navigation'} aria-expanded={expandedNav} className={cn('flex h-9 items-center rounded-md text-muted-foreground hover:bg-accent', expandedNav ? 'gap-3 px-2' : 'w-9 justify-center')}>
+            {expandedNav ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}{expandedNav && <span className="text-xs">Collapse menu</span>}
+          </button>
+        </div>
       </nav>
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <header
           aria-label="LumiBase Studio header"
           className="flex h-14 items-center justify-between border-b px-4"
