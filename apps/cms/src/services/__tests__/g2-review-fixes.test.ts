@@ -211,7 +211,8 @@ vi.mock('../item-service-factory', () => ({
     return {};
   },
 }));
-vi.mock('../llm-provider', () => ({
+vi.mock('../llm-provider', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../llm-provider')>(),
   createConfiguredLLMProvider: () => null,
   createLLMProvider: () => ({
     chat: () =>

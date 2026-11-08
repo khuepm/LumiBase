@@ -140,6 +140,22 @@ describe('generation skills with a configured provider', () => {
     if (unpriced.success) expect((unpriced.data as { meta: unknown }).meta).not.toHaveProperty('usd');
   });
 
+  it('grounded mode verifies exact citations through the generation handler', async () => {
+    const sample = { id: 'public-item', status: 'published', data: { body: 'Returns accepted in 30 days.' } };
+    const reply = JSON.stringify({ content: 'Returns accepted in 30 days.', citations: [{ sourceId: 'sample-1-body', quote: 'Returns accepted in 30 days.' }], abstained: false });
+    const result = await makeHarness(fakeLLM(reply), [sample]).runSkill('aiContentAssist', { collection: 'products', grounded: true });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data).toMatchObject({ generatedContent: 'Returns accepted in 30 days.', citations: [{ itemId: 'public-item' }], abstained: false });
+    const forged = await makeHarness(fakeLLM(reply.replaceAll('30 days', '90 days')), [sample]).runSkill('aiContentAssist', { collection: 'products', grounded: true });
+    expect(forged.success).toBe(false);
+    if (!forged.success) expect(forged.error).toContain('LLM_GROUNDING_INVALID');
+  });
+
+  it('grounded mode abstains before model invocation with no permitted samples', async () => {
+    const result = await makeHarness(fakeLLM(() => { throw new Error('must not call model'); })).runSkill('aiContentAssist', { collection: 'products', grounded: true });
+    expect(result).toMatchObject({ success: true, data: { generatedContent: '', citations: [], abstained: true } });
+  });
+
   it('aiSuggestField filters duplicates of existing fields and respects maxSuggestions', async () => {
     const harness = makeHarness(
       fakeLLM(

@@ -98,6 +98,8 @@ services:
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       # Falls back to the provider default in llm-provider.ts when unset.
       LLM_MODEL: ${LLM_MODEL:-gemini-3.5-flash}
+      # Context window of LLM_MODEL in tokens; required for custom model names.
+      LLM_CONTEXT_WINDOW_TOKENS: ${LLM_CONTEXT_WINDOW_TOKENS:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
     ports:
       - "${CMS_PORT:-1989}:1989"

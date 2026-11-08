@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "mode": "synthetic-runtime-contract",
+  "scope": "Exact quotation and citation provenance, with safe abstention. This corpus does not measure live model factual accuracy or truth of source documents.",
+  "sources": [{"sourceId":"sample-1-body","text":"The return period is 30 days. Thời hạn đổi trả là 30 ngày."}],
+  "cases": [
+    {"id":"en-supported","candidate":{"content":"The return period is 30 days.","citations":[{"sourceId":"sample-1-body","quote":"The return period is 30 days."}],"abstained":false},"accepted":true},
+    {"id":"vi-supported","candidate":{"content":"Thời hạn đổi trả là 30 ngày.","citations":[{"sourceId":"sample-1-body","quote":"Thời hạn đổi trả là 30 ngày."}],"abstained":false},"accepted":true},
+    {"id":"invented-value","candidate":{"content":"The return period is 90 days.","citations":[{"sourceId":"sample-1-body","quote":"The return period is 90 days."}],"abstained":false},"accepted":false},
+    {"id":"missing-citation","candidate":{"content":"The return period is 30 days.","citations":[],"abstained":false},"accepted":false},
+    {"id":"foreign-source","candidate":{"content":"The return period is 30 days.","citations":[{"sourceId":"other-tenant-body","quote":"The return period is 30 days."}],"abstained":false},"accepted":false},
+    {"id":"unquoted-extra-claim","candidate":{"content":"The return period is 30 days. Free delivery forever.","citations":[{"sourceId":"sample-1-body","quote":"The return period is 30 days."}],"abstained":false},"accepted":false},
+    {"id":"stale-revision","sources":[{"sourceId":"sample-1-body","text":"The return period is 14 days."}],"candidate":{"content":"The return period is 30 days.","citations":[{"sourceId":"sample-1-body","quote":"The return period is 30 days."}],"abstained":false},"accepted":false},
+    {"id":"removed-permission","sources":[],"candidate":{"content":"The return period is 30 days.","citations":[{"sourceId":"sample-1-body","quote":"The return period is 30 days."}],"abstained":false},"accepted":false},
+    {"id":"insufficient-evidence-abstain","sources":[],"candidate":{"content":"","citations":[],"abstained":true},"accepted":true},
+    {"id":"conflicting-evidence-abstain","sources":[{"sourceId":"old","text":"Returns accepted in 30 days."},{"sourceId":"new","text":"Returns accepted in 14 days."}],"candidate":{"content":"","citations":[],"abstained":true},"accepted":true},
+    {"id":"false-abstention","candidate":{"content":"Unsupported assertion","citations":[],"abstained":true},"accepted":false},
+    {"id":"invalid-shape","candidate":{"content":3,"citations":null,"abstained":false},"accepted":false}
+  ]
+}

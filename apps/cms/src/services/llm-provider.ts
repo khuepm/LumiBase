@@ -66,6 +66,8 @@ export interface LLMChatOptions {
    * OpenAI/NVIDIA/Anthropic/Gemini/Vertex, and no cap at all for Workers AI.
    */
   maxOutputTokens?: number;
+  /** Configured supported context window, including output reserve. */
+  contextWindowTokens?: number;
 }
 
 /** Output cap of Copilot calls; decision mode passes its own per-request cap. */
@@ -97,6 +99,23 @@ export class LLMResponseError extends Error {
     super(message);
     this.name = 'LLMResponseError';
   }
+}
+
+export function publicLLMFailure(error: unknown): { code: string; message: string; status: 413 | 502 | 503 } | null {
+  if (error instanceof LLMContextLimitError) return { code: error.code, message: error.message, status: 413 };
+  if (error instanceof LLMHttpError && error.status === 429) {
+    return { code: 'LLM_RATE_LIMIT', message: 'Model provider rate limit reached. Retry after the provider limit resets.', status: 503 };
+  }
+  if (error instanceof LLMNetworkError) {
+    return { code: 'LLM_UNAVAILABLE', message: 'Model provider could not be reached. Check its endpoint and retry.', status: 503 };
+  }
+  if (error instanceof LLMResponseError) {
+    return { code: 'LLM_INVALID_RESPONSE', message: 'Model provider returned an incomplete or invalid response. No proposed action was executed.', status: 502 };
+  }
+  if (error instanceof LLMHttpError) {
+    return { code: 'LLM_PROVIDER_ERROR', message: 'Model provider rejected the request. Check the model configuration and provider credentials.', status: 502 };
+  }
+  return null;
 }
 
 function messageOf(error: unknown): string {
@@ -195,6 +214,39 @@ Rules:
 
 /** The Copilot system prompt, exported so eval datasets can pin its version (#579). */
 export const COPILOT_SYSTEM_PROMPT = SYSTEM_PROMPT;
+
+export class LLMContextLimitError extends Error {
+  readonly code = 'LLM_CONTEXT_LIMIT';
+  constructor() {
+    super('The latest request, system instructions and tools exceed the configured model context budget. Shorten the request or configure a compatible model context window.');
+    this.name = 'LLMContextLimitError';
+  }
+}
+
+export const DEFAULT_CONTEXT_WINDOW_TOKENS = 32_768;
+
+/** UTF-8 bytes conservatively bound text tokens, plus framing/tool overhead. */
+export function boundLLMContext(messages: LLMMessage[], options: LLMChatOptions): LLMMessage[] {
+  const window = options.contextWindowTokens ?? DEFAULT_CONTEXT_WINDOW_TOKENS;
+  const output = options.maxOutputTokens ?? DEFAULT_CHAT_MAX_OUTPUT_TOKENS;
+  if (!Number.isSafeInteger(window) || window < 1 || !Number.isSafeInteger(output) || output < 1 || output >= window) {
+    throw new LLMContextLimitError();
+  }
+  const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+  const tools = options.tools === false ? [] : skillsToOpenAITools();
+  const fixed = bytes(options.systemPrompt ?? SYSTEM_PROMPT) + bytes(tools) + output + 1024;
+  const kept = [...messages];
+  const size = () => fixed + kept.reduce((sum, message) => sum + bytes(message) + 64, 0);
+  while (size() > window) {
+    const lastUser = kept.map((message) => message.role).lastIndexOf('user');
+    const removable = kept.findIndex((message, index) => index < lastUser && message.role !== 'system');
+    if (removable === -1) throw new LLMContextLimitError();
+    kept.splice(removable, 1);
+  }
+  // Providers requiring a user-first history must not receive an orphaned reply.
+  while (kept[0]?.role === 'assistant') kept.shift();
+  return kept;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers — convert CORE_SKILLS to provider-specific tool schemas
@@ -361,6 +413,7 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
+    messages = boundLLMContext(messages, options);
     const body = {
       model: this.model,
       messages: [{ role: 'system', content: options.systemPrompt ?? SYSTEM_PROMPT }, ...messages],
@@ -453,6 +506,7 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
+    messages = boundLLMContext(messages, options);
     // Anthropic separates system from messages
     const userMessages = messages.map((m) => ({
       role: m.role === 'system' ? ('user' as const) : m.role,
@@ -523,6 +577,7 @@ export class GeminiProvider implements LLMProvider {
   }
 
   async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
+    messages = boundLLMContext(messages, options);
     const body = buildGeminiRequestBody(messages, options);
 
     const res = await sendLLMRequest(
@@ -581,6 +636,7 @@ export class VertexProvider implements LLMProvider {
   }
 
   async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
+    messages = boundLLMContext(messages, options);
     const body = buildGeminiRequestBody(messages, options);
 
     const url =
@@ -625,6 +681,7 @@ export class WorkersAIProvider implements LLMProvider {
   }
 
   async chat(messages: LLMMessage[], options: LLMChatOptions = {}): Promise<LLMResponse> {
+    messages = boundLLMContext(messages, options);
     const allMessages = [
       {
         role: 'system' as const,
@@ -649,8 +706,7 @@ export class WorkersAIProvider implements LLMProvider {
       body: JSON.stringify({
         messages: allMessages,
         ...(options.tools === false ? {} : { tools }),
-        // Copilot calls keep the model default; only an explicit cap is sent.
-        ...(options.maxOutputTokens === undefined ? {} : { max_tokens: options.maxOutputTokens }),
+        max_tokens: options.maxOutputTokens ?? DEFAULT_CHAT_MAX_OUTPUT_TOKENS,
       }),
       signal: options.signal,
     }, options.signal);
@@ -764,6 +820,7 @@ export class EchoProvider implements LLMProvider {
 // ---------------------------------------------------------------------------
 
 export interface LLMProviderEnv {
+  LLM_CONTEXT_WINDOW_TOKENS?: string;
   LLM_PRICE_INPUT_PER_MTOK?: string;
   LLM_PRICE_OUTPUT_PER_MTOK?: string;
   LLM_PROVIDER?: string;
@@ -790,6 +847,23 @@ export interface LLMProviderEnv {
  * Falls back to `EchoProvider` when no provider is configured.
  */
 export function createLLMProvider(env: LLMProviderEnv): LLMProvider {
+  const provider = createRawLLMProvider(env);
+  // A missing or invalid window is refused per model call, not at construction:
+  // routes build providers eagerly (MCP, agent, intents, decisions), and a throw
+  // here would fail requests that never call a model.
+  const refuse: LLMProvider = { chat: () => Promise.reject(new LLMContextLimitError()) };
+  // Blank counts as unset: compose files pass `${VAR:-}` through as "".
+  const configured = env.LLM_CONTEXT_WINDOW_TOKENS?.trim() || undefined;
+  if (configured === undefined) {
+    const knownModels = [...Object.values(PROVIDER_DEFAULT_MODELS), 'gpt-4.1-nano', 'claude-3-5-haiku-latest'];
+    return env.LLM_MODEL && !knownModels.includes(env.LLM_MODEL) ? refuse : provider;
+  }
+  const contextWindowTokens = Number(configured);
+  if (!Number.isSafeInteger(contextWindowTokens) || contextWindowTokens < 1) return refuse;
+  return { chat: (messages, options) => provider.chat(messages, { ...options, contextWindowTokens }) };
+}
+
+function createRawLLMProvider(env: LLMProviderEnv): LLMProvider {
   const provider = env.LLM_PROVIDER ?? 'echo';
 
   switch (provider) {

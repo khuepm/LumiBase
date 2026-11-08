@@ -1,3 +1,4 @@
+import { publicLLMFailure } from './llm-provider';
 import type { Database } from '@lumibase/database';
 import { aiMessages } from '@lumibase/database';
 import type { CacheProvider, KeyProvider } from '@lumibase/runtime';
@@ -173,7 +174,8 @@ export async function executeAiChatRun(
       'success',
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const failure = publicLLMFailure(err);
+    const message = failure ? `${failure.code}: ${failure.message}` : err instanceof Error ? err.message : String(err);
     await persistAiChatOutcome(
       db,
       job.runId,

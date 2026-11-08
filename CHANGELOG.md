@@ -287,6 +287,22 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `shell-check.yml`.
 
 ### Fixed
+- **Model calls fit a bounded context, and provider failures are actionable
+  (#582).** Every network provider now counts the system prompt, tool
+  definitions, history and output reserve against a context window before the
+  request leaves, drops the oldest history first, and never drops policy, tools
+  or the newest user turn. Workers AI now sends the same 1,024-token output cap
+  as the other providers. A request that cannot fit returns `413
+  LLM_CONTEXT_LIMIT`; rate limits, unreachable providers and unusable responses
+  return `LLM_RATE_LIMIT`, `LLM_UNAVAILABLE`, `LLM_INVALID_RESPONSE` or
+  `LLM_PROVIDER_ERROR` without the provider body and without running any
+  proposed tool. `aiContentAssist` gains an opt-in `grounded: true` mode that
+  only accepts exact quotes from the permitted samples, or an abstention.
+  **Upgrade note:** provider defaults keep a 32,768-token ceiling. If
+  `LLM_MODEL` names any other model, set `LLM_CONTEXT_WINDOW_TOKENS` to its
+  window; until then every model call returns `LLM_CONTEXT_LIMIT` (routes that
+  do not call a model are unaffected). Audit:
+  `docs/review-agent/2026-11-01-ai-audit-582-token-budgets-grounding.md`.
 - **`aiContentAssist` sends sample content only, and embedding primitives fail
   on mixed dimensions (#581).** The skill's context samples used to be whole
   item rows, so site and collection ids, user ids and the wrapped DEK went to

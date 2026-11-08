@@ -113,6 +113,10 @@ const CRON_5_FIELD = /^(\S+\s+){4}\S+$/;
  * không phá hành vi read đang chạy); xem `requiresValidation` bên dưới.
  */
 export const AgentToolSchemas = {
+  aiContentAssist: z.object({
+    collection: z.string().min(1), itemId: id.optional(), fieldName: z.string().optional(),
+    instruction: z.string().optional(), currentContent: z.string().optional(), grounded: z.boolean().optional(),
+  }).strict(),
   // ── items ────────────────────────────────────────────────────────────────
   createItem: z
     .object({
