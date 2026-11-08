@@ -40,6 +40,7 @@ const ItemDetailPage = lazy(() => import('./modules/content/item-detail').then((
 const ItemsListPage = lazy(() => import('./modules/content/items-list').then((m) => ({ default: m.ItemsListPage })));
 const ReviewQueuePage = lazy(() => import('./modules/editorial/review-queue').then((m) => ({ default: m.ReviewQueuePage })));
 const CollectionsListPage = lazy(() => import('./modules/data-model/list').then((m) => ({ default: m.CollectionsListPage })));
+const McpSetupPage = lazy(() => import('./modules/data-model/mcp-setup').then((m) => ({ default: m.McpSetupPage })));
 const CollectionDetailPage = lazy(() => import('./modules/data-model/detail').then((m) => ({ default: m.CollectionDetailPage })));
 const CollectionWizardPage = lazy(() => import('./modules/data-model/wizard').then((m) => ({ default: m.CollectionWizardPage })));
 const FilesPage = lazy(() => import('./modules/files').then((m) => ({ default: m.FilesPage })));
@@ -537,6 +538,12 @@ const dataModelNewRoute = createRoute({
   component: withSuspense(CollectionWizardPage),
 });
 
+const dataModelMcpSetupRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/data-model/mcp-setup',
+  component: withSuspense(McpSetupPage),
+});
+
 const dataModelDetailRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/data-model/$name',
@@ -553,6 +560,12 @@ const adminPathDataModelNewRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/data-model/new',
   component: withSuspense(CollectionWizardPage),
+});
+
+const adminPathDataModelMcpSetupRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/data-model/mcp-setup',
+  component: withSuspense(McpSetupPage),
 });
 
 const adminPathDataModelDetailRoute = createRoute({
@@ -1285,6 +1298,7 @@ const routeTree = rootRoute.addChildren([
     contentItemRoute,
     dataModelRoute,
     dataModelNewRoute,
+    dataModelMcpSetupRoute,
     dataModelDetailRoute,
     filesRoute,
     settingsRoute.addChildren([
@@ -1357,6 +1371,7 @@ const routeTree = rootRoute.addChildren([
     adminPathContentItemRoute,
     adminPathDataModelRoute,
     adminPathDataModelNewRoute,
+    adminPathDataModelMcpSetupRoute,
     adminPathDataModelDetailRoute,
     adminPathFilesRoute,
     adminPathSettingsRoute.addChildren([

@@ -34,14 +34,14 @@ export function AccessLayout({ children }: AccessLayoutProps) {
           matrix to audit and the sandbox to debug a verdict.
         </p>
       </header>
-      <nav className="flex gap-1 overflow-x-auto border-b">
+      <nav className="scrollbar-none flex gap-1 overflow-x-auto border-b">
         {TABS.map((t) => (
           <Link
             key={t.id}
             to={t.to}
             aria-current={activeTab === t.id ? 'page' : undefined}
             className={cn(
-              '-mb-px border-b-2 px-3 py-2 text-sm',
+                '-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm',
               activeTab === t.id
                 ? 'border-primary text-foreground'
                 : 'border-transparent text-muted-foreground hover:text-foreground',

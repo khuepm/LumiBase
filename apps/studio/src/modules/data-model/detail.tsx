@@ -26,7 +26,7 @@ const TABS: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
 ];
 
 export function CollectionDetailPage() {
-  const { name } = useParams({ from: '/admin-layout/data-model/$name' });
+  const { name } = useParams({ strict: false }) as { name: string };
   const [tab, setTab] = useState<Tab>('fields');
   const client = getApiClient();
   const queryClient = useQueryClient();
