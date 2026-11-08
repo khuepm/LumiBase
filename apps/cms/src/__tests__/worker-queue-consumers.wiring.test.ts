@@ -157,10 +157,16 @@ describe('every Workers consumer has a Docker twin and wrangler config in every 
     expect(configured.filter((q) => resolveLogicalQueue(q) === null)).toEqual([]);
   });
 
-  it('every profile fires the minute cron', () => {
+  it('active profiles fire the minute cron while dev/demo reserve account quota', () => {
     const crons = [...WRANGLER.matchAll(/^crons = (\[.*\])$/gm)].map((m) => JSON.parse(m[1]!) as string[]);
     expect(crons).toHaveLength(PROFILES.length);
-    for (const list of crons) expect(list).toContain('* * * * *');
+    for (const [index, profile] of PROFILES.entries()) {
+      if (profile === 'dev' || profile === 'demo') {
+        expect(crons[index]).toEqual([]);
+      } else {
+        expect(crons[index]).toContain('* * * * *');
+      }
+    }
   });
 });
 
