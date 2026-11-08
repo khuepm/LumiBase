@@ -70,6 +70,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check stable release production configuration
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if [[ "$VERSION" != *-* ]]; then
+            pnpm release:check
+          fi
+
       - name: AI audit deterministic regression gate
         run: pnpm -F @lumibase/cms eval:ai
 

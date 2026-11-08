@@ -26,7 +26,7 @@
  * Network is required. This is not part of `pnpm test` — it is a separate
  * command so the unit suite stays offline and fast.
  */
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -76,7 +76,24 @@ function run(command, args, cwd) {
  */
 const INSTALL_ARGS = { npm: ['install'], pnpm: ['install'] };
 
-function smoke({ template, pm, workdir }) {
+function packReleaseClients(workdir) {
+  const repoRoot = resolve(pkgRoot, '../..');
+  const build = run('pnpm', ['exec', 'turbo', 'run', 'build', '--filter=lumibase...'], repoRoot);
+  if (build.status !== 0) throw new Error(build.output);
+
+  const tarballs = {};
+  for (const directory of ['sdk', 'cli']) {
+    const packageDir = join(repoRoot, 'packages', directory);
+    const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'));
+    const packed = run('pnpm', ['pack', '--pack-destination', workdir], packageDir);
+    if (packed.status !== 0) throw new Error(packed.output);
+    const filename = manifest.name.replace('@', '').replace('/', '-') + '-' + manifest.version + '.tgz';
+    tarballs[manifest.name] = 'file:' + join(workdir, filename);
+  }
+  return tarballs;
+}
+
+function smoke({ template, pm, workdir, tarballs }) {
   const label = `${template} × ${pm}`;
   const projectName = `smoke-${template}-${pm}`;
   const projectDir = join(workdir, projectName);
@@ -102,6 +119,20 @@ function smoke({ template, pm, workdir }) {
   }
   if (!existsSync(join(projectDir, 'package.json'))) {
     return { label, step: 'scaffold', status: 1, output: 'no package.json was emitted' };
+  }
+
+  // Exercise the release clients before their version exists on npm.
+  // Pack real publish artifacts so exports and declaration files are checked too.
+  if (template === 'nextjs') {
+    const manifestPath = join(projectDir, 'package.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    manifest.dependencies.lumibase = tarballs.lumibase;
+    manifest.overrides = { ...manifest.overrides, '@lumibase/sdk': tarballs['@lumibase/sdk'] };
+    manifest.pnpm = {
+      ...manifest.pnpm,
+      overrides: { ...manifest.pnpm?.overrides, '@lumibase/sdk': tarballs['@lumibase/sdk'] },
+    };
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   }
 
   const install = run(pm, INSTALL_ARGS[pm], projectDir);
@@ -142,10 +173,11 @@ function main(argv) {
 
   const failures = [];
   try {
+    const tarballs = options.templates.includes('nextjs') ? packReleaseClients(workdir) : {};
     for (const template of options.templates) {
       for (const pm of options.pms) {
         process.stdout.write(`• ${template} × ${pm} … `);
-        const result = smoke({ template, pm, workdir });
+        const result = smoke({ template, pm, workdir, tarballs });
         if (result.status === 0) {
           console.log('ok');
         } else {
