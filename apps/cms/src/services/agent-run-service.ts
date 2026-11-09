@@ -54,6 +54,8 @@ export function safeRequestId(value: unknown): string | null {
 }
 
 export interface AgentRunEnvelope {
+  /** Attribution only; authorization is re-resolved from the stored principal. */
+  organizationId?: string;
   requestId?: string;
   goalId?: string;
   runId?: string;
@@ -309,7 +311,8 @@ export class AgentRunService {
           origin: envelope.origin ?? 'user',
           intentId: envelope.intentId ?? null,
           agentRole: envelope.agentRole ?? null,
-          metadata: { transient: true, requestId: safeRequestId(envelope.requestId) },
+          metadata: { transient: true, requestId: safeRequestId(envelope.requestId),
+            ...(envelope.organizationId ? { organizationId: envelope.organizationId } : {}) },
         })
         .returning();
       goalId = goal!.id;

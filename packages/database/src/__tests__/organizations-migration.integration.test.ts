@@ -62,7 +62,7 @@ describe.skipIf(!url)('organization RLS (non-superuser)', () => {
     const namespace = `org_rls_${nanoid(12).replace(/-/g, '_')}`;
     const role = `${namespace}_app`;
     const policies = readFileSync(new URL('../../migrations/rls-policies.sql', import.meta.url), 'utf8')
-      .split('-- Organization plane:')[1]!;
+      .split('-- Organization plane:')[1]!.split('-- Approval scope is exactly')[0]!;
     try {
       await db.unsafe(`CREATE SCHEMA "${namespace}"`);
       await db.unsafe(`CREATE ROLE "${role}" NOLOGIN NOSUPERUSER NOBYPASSRLS`);

@@ -374,8 +374,9 @@ describe('G2 regression · governed tools route through the harness', () => {
     }
     expect(byReason).toEqual({
       'contract-narrower-than-tool': 4,
-      'no-skill': 47,
+      'no-skill': 45,
     });
+    // run_panel and compile_intent are read-only query/preview tools.
     // The two tables partition the mutation inventory: nothing counted twice.
     expect(Object.keys(GOVERNED_TOOLS).filter((n) => UNGOVERNED_MUTATIONS[n] !== undefined)).toEqual([]);
     expect(Object.keys(GOVERNED_TOOLS).length + Object.keys(UNGOVERNED_MUTATIONS).length).toBe(mutations.length);

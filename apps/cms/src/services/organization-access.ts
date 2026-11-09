@@ -22,3 +22,7 @@ export function organizationRoleExpression(userId: string, siteId: string) {
     JOIN lumibase_sites os ON os.organization_id = om.organization_id
     WHERE os.id = ${siteId} AND om.user_id = ${userId} AND om.role IN ('owner','admin') LIMIT 1)`;
 }
+
+export function isMcpPath(path: string): boolean {
+  return path === '/api/v1/mcp' || path === '/api/v1/mcp/';
+}

@@ -1,3 +1,7 @@
+import { organizationApprovalsRouter } from './organization-approvals';
+import { OrganizationError as OrgError, organizationFail as fail, organizationKeyView as keyView,
+  lockOrganization as lockOrg, ensureAnotherOrganizationOwner as ensureAnotherOwner,
+  executeOrganizationMutation, organizationActorFromAuth } from '../services/organization-operations';
 import { Hono } from 'hono';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { organizations, organizationMembers, sites, users, apiKeys } from '@lumibase/database';
@@ -7,29 +11,11 @@ import type { AppEnv } from '../env';
 import { withOrganizationAccessGuard as guard } from '../middleware/organization-access-guard';
 import { systemDbFor } from '../middleware/db';
 import { isFrontendAudience, audienceValues, TOKEN_AUDIENCE } from '../services/auth/token-audience';
-import { provisionSite, finalizeSiteProvisioning, SiteProvisioningConflict } from '../services/site-provisioning';
+import { finalizeSiteProvisioning, SiteProvisioningConflict } from '../services/site-provisioning';
 import { createPlaintextToken } from '../services/api-key-token';
 import { AuditLogger } from '../modules/audit/logger';
 
 export const orgsRouter = new Hono<AppEnv>();
-class OrgError extends Error { constructor(readonly code: string, readonly status: 400 | 403 | 404 | 409) { super(code); } }
-const fail = (code: string, status: 400 | 403 | 404 | 409): never => { throw new OrgError(code, status); };
-const keyView = (key: typeof apiKeys.$inferSelect) => ({
-  id: key.id, scope: key.scope, organizationId: key.organizationId, name: key.name,
-  description: key.description, prefix: key.prefix, createdAt: key.createdAt,
-  expiresAt: key.expiresAt, revokedAt: key.revokedAt, lastUsedAt: key.lastUsedAt, rotatedAt: key.rotatedAt,
-});
-// A row lock serializes membership changes, site creation/deletion and transfers.
-async function lockOrg(tx: AppEnv['Variables']['db'], id: string) {
-  const [row] = await tx.select().from(organizations).where(eq(organizations.id, id)).for('update');
-  if (!row) fail('NOT_FOUND', 404);
-  return row;
-}
-async function ensureAnotherOwner(tx: AppEnv['Variables']['db'], orgId: string, userId: string) {
-  const owners = await tx.select({ id: organizationMembers.userId }).from(organizationMembers)
-    .where(and(eq(organizationMembers.organizationId, orgId), eq(organizationMembers.role, 'owner')));
-  if (!owners.some((m) => m.id !== userId)) fail('LAST_OWNER', 409);
-}
 orgsRouter.onError((error, c) => {
   if (error instanceof OrgError) return c.json({ errors: [{ code: error.code }] }, error.status);
   if (error instanceof SiteProvisioningConflict) return c.json({ errors: [{ code: 'CONFLICT' }] }, 409);
@@ -107,42 +93,24 @@ orgsRouter.get('/:orgId/sites', guard('org:read'), async (c) => c.json({ data: a
 orgsRouter.post('/:orgId/sites', guard('org:sites:create'), async (c) => {
   const input = OrgSiteCreateSchema.safeParse(await c.req.json().catch(() => null));
   if (!input.success) return c.json({ errors: [{ code: 'VALIDATION' }] }, 400);
-  const orgId = c.req.param('orgId');
-  // Provisioning writes roles/membership for a NEW site: a cross-site system operation.
-  const result = await systemDbFor(c).transaction(async (tx) => {
-    await lockOrg(tx as never, orgId);
-    return provisionSite(tx, { id: input.data.id ?? input.data.slug, name: input.data.name,
-      organizationId: orgId, creatorUserId: c.get('auth').userId });
-  });
-  await finalizeSiteProvisioning(systemDbFor(c), c.env, c.get('runtime'), result.site.id).catch(() => undefined);
-  return c.json({ data: result.site }, 201);
+  const result = await systemDbFor(c).transaction((tx) => executeOrganizationMutation(
+    tx, c.req.param('orgId'), 'create_site', input.data, organizationActorFromAuth(c.get('auth'))));
+  await finalizeSiteProvisioning(systemDbFor(c), c.env, c.get('runtime'), result.createdSiteId!).catch(() => undefined);
+  return c.json({ data: result.data }, 201);
 });
 orgsRouter.delete('/:orgId/sites/:siteId', guard('org:sites:delete'), async (c) => {
-  const orgId = c.req.param('orgId'), siteId = c.req.param('siteId');
+  const siteId = c.req.param('siteId');
   if (c.req.header('X-Confirm-Delete') !== siteId) fail('VALIDATION', 400);
-  await c.get('db').transaction(async (tx) => {
-    await lockOrg(tx as never, orgId);
-    const deleted = await tx.delete(sites).where(and(eq(sites.organizationId, orgId), eq(sites.id, siteId))).returning({ id: sites.id });
-    if (!deleted.length) fail('NOT_FOUND', 404);
-  });
-  return c.json({ data: { success: true } });
+  const result = await systemDbFor(c).transaction((tx) => executeOrganizationMutation(
+    tx, c.req.param('orgId'), 'delete_site', { siteId }, organizationActorFromAuth(c.get('auth'))));
+  return c.json({ data: result.data });
 });
 orgsRouter.post('/:orgId/sites/:siteId/transfer', guard('org:sites:transfer'), async (c) => {
   const input = OrgSiteTransferSchema.safeParse(await c.req.json().catch(() => null));
   if (!input.success) return c.json({ errors: [{ code: 'VALIDATION' }] }, 400);
-  const from = c.req.param('orgId'), to = input.data.toOrganizationId, auth = c.get('auth');
-  if (!auth.userId || auth.apiKeyId) fail('ORGANIZATION_FORBIDDEN', 403);
-  const row = await systemDbFor(c).transaction(async (tx) => {
-    for (const id of [...new Set([from, to])].sort()) await lockOrg(tx as never, id);
-    const memberships = await tx.select().from(organizationMembers).where(and(
-      eq(organizationMembers.userId, auth.userId!), inArray(organizationMembers.organizationId, [from, to]), eq(organizationMembers.role, 'owner')));
-    if (new Set(memberships.map((m) => m.organizationId)).size !== new Set([from, to]).size) fail('NOT_FOUND', 404);
-    const [moved] = await tx.update(sites).set({ organizationId: to, updatedAt: new Date() })
-      .where(and(eq(sites.id, c.req.param('siteId')), eq(sites.organizationId, from))).returning();
-    if (!moved) fail('NOT_FOUND', 404);
-    return moved;
-  });
-  return c.json({ data: row });
+  const result = await systemDbFor(c).transaction((tx) => executeOrganizationMutation(
+    tx, c.req.param('orgId'), 'transfer_site', { ...input.data, siteId: c.req.param('siteId') }, organizationActorFromAuth(c.get('auth'))));
+  return c.json({ data: result.data });
 });
 orgsRouter.get('/:orgId/members', guard('org:read'), async (c) => c.json({ data: await c.get('db')
   .select({ userId: organizationMembers.userId, role: organizationMembers.role, email: users.email, createdAt: organizationMembers.createdAt })
@@ -151,25 +119,9 @@ orgsRouter.get('/:orgId/members', guard('org:read'), async (c) => c.json({ data:
 orgsRouter.post('/:orgId/members', guard('org:members:manage'), async (c) => {
   const input = OrgMemberUpsertSchema.safeParse(await c.req.json().catch(() => null));
   if (!input.success) return c.json({ errors: [{ code: 'VALIDATION' }] }, 400);
-  const orgId = c.req.param('orgId'), role = c.get('organization')!.role;
-  const member = await c.get('db').transaction(async (tx) => {
-    await lockOrg(tx as never, orgId);
-    const [user] = await tx.select({ id: users.id }).from(users)
-      .where(input.data.userId ? eq(users.id, input.data.userId) : sql`lower(${users.email}) = ${input.data.email}`).limit(1);
-    let userId = user?.id;
-    if (!userId && input.data.email) {
-      const [created] = await tx.insert(users).values({ email: input.data.email, status: 'invited' }).returning({ id: users.id });
-      userId = created!.id;
-    }
-    if (!userId) fail('NOT_FOUND', 404);
-    const [existing] = await tx.select().from(organizationMembers).where(and(eq(organizationMembers.organizationId, orgId), eq(organizationMembers.userId, userId!)));
-    if (role !== 'owner' && (input.data.role === 'owner' || existing?.role === 'owner')) fail('ORGANIZATION_FORBIDDEN', 403);
-    if (existing?.role === 'owner' && input.data.role !== 'owner') await ensureAnotherOwner(tx as never, orgId, userId!);
-    const [saved] = await tx.insert(organizationMembers).values({ userId: userId!, organizationId: orgId, role: input.data.role })
-      .onConflictDoUpdate({ target: [organizationMembers.userId, organizationMembers.organizationId], set: { role: input.data.role } }).returning();
-    return saved;
-  });
-  return c.json({ data: member }, 201);
+  const result = await systemDbFor(c).transaction((tx) => executeOrganizationMutation(
+    tx, c.req.param('orgId'), 'invite_org_member', input.data, organizationActorFromAuth(c.get('auth'))));
+  return c.json({ data: result.data }, 201);
 });
 orgsRouter.patch('/:orgId/members/:userId', guard('org:members:manage'), async (c) => {
   const input = OrgMemberUpdateSchema.safeParse(await c.req.json().catch(() => null));
@@ -206,12 +158,10 @@ orgsRouter.get('/:orgId/keys', guard('org:read'), async (c) => c.json({ data: (a
   .where(and(eq(apiKeys.organizationId, c.req.param('orgId')), eq(apiKeys.scope, 'organization')))).map(keyView) }));
 orgsRouter.post('/:orgId/keys', guard('org:keys:manage'), async (c) => {
   const input = OrgKeyCreateSchema.safeParse(await c.req.json().catch(() => null));
-  if (!input.success || (input.data.expiresAt && new Date(input.data.expiresAt) <= new Date())) return c.json({ errors: [{ code: 'VALIDATION' }] }, 400);
-  const token = await createPlaintextToken({ scope: 'organization' });
-  const [key] = await c.get('db').insert(apiKeys).values({ ...input.data, expiresAt: input.data.expiresAt ? new Date(input.data.expiresAt) : null,
-    scope: 'organization', organizationId: c.req.param('orgId'), siteId: null,
-    createdBy: c.get('auth').userId ?? null, prefix: token.prefix, tokenHash: token.tokenHash }).returning();
-  return c.json({ data: { ...keyView(key!), token: token.token } }, 201);
+  if (!input.success) return c.json({ errors: [{ code: 'VALIDATION' }] }, 400);
+  const result = await systemDbFor(c).transaction((tx) => executeOrganizationMutation(
+    tx, c.req.param('orgId'), 'create_org_key', input.data, organizationActorFromAuth(c.get('auth'))));
+  return c.json({ data: result.data }, 201);
 });
 orgsRouter.post('/:orgId/keys/:keyId/rotate', guard('org:keys:manage'), async (c) => {
   const token = await createPlaintextToken({ scope: 'organization' });
@@ -227,3 +177,5 @@ orgsRouter.delete('/:orgId/keys/:keyId', guard('org:keys:manage'), async (c) => 
   if (!key) fail('NOT_FOUND', 404);
   return c.json({ data: keyView(key!) });
 });
+
+orgsRouter.route('/:orgId/approvals', organizationApprovalsRouter);

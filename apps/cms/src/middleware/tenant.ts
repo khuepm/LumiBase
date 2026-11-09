@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from 'hono';
-import { isOrganizationPath } from '../services/organization-access';
+import { isOrganizationPath, isMcpPath } from '../services/organization-access';
 import type { AppEnv } from '../env';
 import { getHostMapping } from '../services/domains/host-cache';
 import { isValidSiteId } from '../services/identifier-guard';
@@ -25,6 +25,8 @@ export const withTenant = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   }
 
   const headerSite = c.req.header('x-lumi-site');
+  // Prefix is only a routing hint. withAuth MUST verify the key before org MCP runs.
+  if (!headerSite && isMcpPath(path) && /^Bearer\s+lbo_/.test(c.req.header('authorization') ?? '')) return next();
   if (headerSite) {
     // Req 19.2: shape-check the explicit header before it becomes context.
     // 400 (not 404) — this is a client-supplied header, not a resource probe.

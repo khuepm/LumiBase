@@ -1,5 +1,5 @@
 import { classifyTokenPrefix } from '@lumibase/contracts';
-import { isOrganizationPath, organizationRoleForSite, organizationRoleExpression } from '../services/organization-access';
+import { isOrganizationPath, isMcpPath, organizationRoleForSite, organizationRoleExpression } from '../services/organization-access';
 import { auditSecurityGuardDenied } from './security-audit';
 import type { MiddlewareHandler } from 'hono';
 import { apiKeys, users, userSites } from '@lumibase/database';
@@ -348,7 +348,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
           await auditApiKeyUseDenied(c, apiKey, 'scope_prefix_mismatch');
           return c.json({ errors: [{ code: 'UNAUTHENTICATED' }] }, 401);
         }
-        if (!isOrganizationPath(path)) {
+        if (!isOrganizationPath(path) && !(isMcpPath(path) && !c.get('siteId'))) {
           const { sites } = await import('@lumibase/database');
           const [site] = await systemDbFor(c).select({ organizationId: sites.organizationId })
             .from(sites).where(eq(sites.id, c.get('siteId'))).limit(1);

@@ -1,4 +1,4 @@
-import { isOrganizationPath } from '../services/organization-access';
+import { isOrganizationPath, isMcpPath } from '../services/organization-access';
 import type { MiddlewareHandler } from 'hono';
 import { eq } from 'drizzle-orm';
 import { users } from '@lumibase/database';
@@ -61,6 +61,7 @@ const STUDIO_ACCESS_PATH_PREFIXES = [
 export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   // Organization authorization is independent of a site appAccess bundle.
   if (isOrganizationPath(c.req.path)) return next();
+  if (isMcpPath(c.req.path) && !c.get('siteId') && c.get('auth')?.apiKey?.scope === 'organization') return next();
   const studioClient = isStudioClientRequest(c.req.header(STUDIO_CLIENT_HEADER), c.req.header('user-agent'));
   if (!studioClient && !isStudioAccessPath(c.req.path)) {
     return next();
