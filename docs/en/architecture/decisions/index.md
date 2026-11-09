@@ -1,8 +1,8 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:08:03.859Z
+version: 3
+lastUpdated: 2026-11-09T10:47:36.155Z
 sourceLang: en
-contentHash: 5d9af79a03dae779
+contentHash: aa2693756b301230
 ---
 
 # Architecture Decision Records (ADR)
@@ -25,6 +25,7 @@ LumiBase follows the [ADR pattern](https://adr.github.io/) to document significa
 | [ADR-010](./adr-010-lumibase-table-prefix.md) | `lumibase_` prefix for all system tables | Accepted |
 | [ADR-011](./adr-011-user-management-realms.md) | User Management Realms (single store, role-scoped realms, token audiences) | Accepted |
 | [ADR-012](./adr-012-remove-cdc-cache-invalidator.md) | Remove CDC CacheInvalidator (superseded by tag purge at API write path) | Accepted |
+| [ADR-013](./adr-013-organization-plane.md) | Organization plane (tenant hierarchy and scope-typed credentials) | Proposed |
 
 ## Template
 
