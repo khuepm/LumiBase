@@ -33,6 +33,7 @@ import {
 import { and, eq } from 'drizzle-orm';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { stream } from 'hono/streaming';
+import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { reconcileOfficialExtensions } from '../services/official-extension-reconciler';
 import { PermissionService } from '../services/permission-service';
@@ -373,14 +374,63 @@ adminRouter.post('/restore', async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// site management for test runner / testing isolation
+// Site management for the k6 test runner (`apps/cms/k6/cross-site-leak.js`).
+//
+// These routes sit on a site-scoped router: `requireSiteAdmin` only proves the
+// caller administers the site named in `X-Lumi-Site`. Creating a site, or
+// deleting one other than that site, is a platform-level act, so it is refused
+// unless the instance opts in with `LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT=true`
+// (test/load environments only). This is a containment gate, not the long-term
+// control-plane model.
 // ---------------------------------------------------------------------------
+const createSiteSchema = z
+  .strictObject({
+    id: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[A-Za-z0-9_-]+$/, 'id may only contain letters, digits, _ and -'),
+    name: z.string().trim().min(1).max(255),
+  });
+
+function siteManagementEnabled(c: Context<AppEnv>): boolean {
+  return c.env?.LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT === 'true';
+}
+
+const SITE_MANAGEMENT_DISABLED = errorBody(
+  'FORBIDDEN',
+  'Site management through the admin API is disabled on this instance.',
+);
+
 adminRouter.post('/sites', async (c) => {
+  if (!siteManagementEnabled(c)) {
+    return c.json(SITE_MANAGEMENT_DISABLED, 403);
+  }
+
+  let raw: unknown;
+  try {
+    raw = await c.req.json();
+  } catch {
+    return c.json(errorBody('VALIDATION', 'Request body must be JSON.'), 400);
+  }
+  const parsed = createSiteSchema.safeParse(raw);
+  if (!parsed.success) {
+    return c.json(
+      {
+        errors: parsed.error.issues.map((issue) => ({
+          code: 'VALIDATION',
+          message: issue.message,
+          path: issue.path.join('.'),
+        })),
+      },
+      400,
+    );
+  }
+
   const db = c.get('db');
-  const body = await c.req.json();
   const [row] = await db
     .insert(sites)
-    .values({ id: body.id, name: body.name })
+    .values({ id: parsed.data.id, name: parsed.data.name })
     .returning();
 
   // Auto-install official `lumibase-*` extensions for the new site. Fail-soft:
@@ -398,8 +448,15 @@ adminRouter.post('/sites', async (c) => {
 });
 
 adminRouter.delete('/sites/:id', async (c) => {
-  const db = c.get('db');
   const id = c.req.param('id');
+  // Own site only, unless the instance opted into test-runner site management.
+  if (id !== c.get('siteId') && !siteManagementEnabled(c)) {
+    return c.json(
+      errorBody('FORBIDDEN', 'Only the site named in X-Lumi-Site can be deleted.'),
+      403,
+    );
+  }
+  const db = c.get('db');
   await db.delete(sites).where(eq(sites.id, id));
   return c.json({ data: { success: true } });
 });
