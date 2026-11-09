@@ -205,3 +205,20 @@ BEGIN
       WITH CHECK (%I = NULLIF(current_setting('lumibase.organization_id', true), ''))$policy$, tbl, target, target);
   END LOOP;
 END $$;
+
+-- Approval scope is exactly one site OR organization (0025). Keep a restrictive
+-- and permissive pair so another permissive policy cannot widen either plane.
+ALTER TABLE lumibase_ai_approvals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lumibase_ai_approvals FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS approval_isolation ON lumibase_ai_approvals;
+DROP POLICY IF EXISTS approval_isolation_permit ON lumibase_ai_approvals;
+CREATE POLICY approval_isolation ON lumibase_ai_approvals AS RESTRICTIVE FOR ALL
+  USING ((site_id = app_site_id() AND organization_id IS NULL) OR
+    (site_id IS NULL AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')))
+  WITH CHECK ((site_id = app_site_id() AND organization_id IS NULL) OR
+    (site_id IS NULL AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')));
+CREATE POLICY approval_isolation_permit ON lumibase_ai_approvals AS PERMISSIVE FOR ALL
+  USING ((site_id = app_site_id() AND organization_id IS NULL) OR
+    (site_id IS NULL AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')))
+  WITH CHECK ((site_id = app_site_id() AND organization_id IS NULL) OR
+    (site_id IS NULL AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')));

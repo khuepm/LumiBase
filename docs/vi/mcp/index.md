@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-10-10T05:01:03.738Z
+version: 8
+lastUpdated: 2026-11-09T16:44:36.282Z
 sourceLang: vi
-contentHash: 569d8b5541c89cde
-codeVerified: 2026-10-13T19:22:01.799Z
-codeVerifiedHash: 569d8b5541c89cde
+contentHash: 6d0cf95871559144
+codeVerified: 2026-11-09T16:44:36.282Z
+codeVerifiedHash: 6d0cf95871559144
 codeVerifiedClaims: 26
 ---
 
@@ -14,7 +14,7 @@ codeVerifiedClaims: 26
 
 ## TL;DR
 
-LumiBase phơi bày **hai bề mặt MCP**, cùng chạy qua một codepath harness duy nhất nên quyết định của một tool gọi qua MCP **giống hệt** khi gọi trực tiếp Agent API (bất biến "MCP parity", Property 14):
+LumiBase phơi bày **hai bề mặt MCP**, các tool site có quản trị dùng cùng harness site với Agent API (bất biến "MCP parity", Property 14). Tool organization dùng harness organization và ranh giới phê duyệt của người dùng:
 
 | Bề mặt | Transport | Vị trí | Dùng cho |
 |---|---|---|---|
@@ -52,6 +52,7 @@ Nguồn: [`apps/cms/src/services/tool-registry-service.ts`](../../../apps/cms/sr
 - `evaluatePolicy(tool, runId)` kiểm tra enabled/blocked + rate limit.
 - Audit: `agentToolCalls` (input/output/error/status/approvalId/cost/latency); approvals: `agentApprovals`.
 
+
 ## 2. Standalone MCP server — `@lumibase/mcp-server`
 
 Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (dựng trên `@modelcontextprotocol/sdk`; version lấy ở `package.json` của chính package — không pin lại ở đây để tránh thêm một chỗ trôi lệch).
@@ -60,6 +61,12 @@ Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (dựng trên `
 - **Entry:** `packages/mcp-server/src/index.ts` — `new McpServer({ name: 'lumibase', ... })`, đăng ký collection/field/item tools, `connect(StdioServerTransport)`.
 - **Client:** `LumiBaseClient` — HTTP tới `/api/v1` với Bearer token + site header.
 - **Config:** [`docs/en/agent-setup/mcp-config.json`](../../en/agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
+
+### Thông tin xác thực organization (ADR-013)
+
+Đặt `LUMIBASE_READ_ONLY=true` để chỉ công bố tool có annotation chỉ đọc. Với key `lbk_`, `LUMIBASE_SITE_ID` vẫn bắt buộc và danh sách tool site hiện có không đổi. Với key `lbo_`, bỏ site để có tám tool organization (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) cùng các tool site bắt buộc truyền đối số `site`. Ghim một site sẽ công bố các tool site cũ và hai tool đọc organization đầu tiên. Các lời gọi song song không dùng chung header site.
+
+Tool ghi organization luôn đi qua HTTP endpoint có quản trị, kể cả khi `LUMIBASE_MCP_GOVERNED=off`; không fallback sang REST. Bật setting organization `contentOs.mcp.allowOrganizationTools`; biến toàn cục `LUMIBASE_MCP_ORG_TOOLS=off` có quyền tắt ưu tiên. Mọi thay đổi organization đều chờ người duyệt. Đối số `confirm` chỉ xác nhận ý định, không thay thế phê duyệt. Owner/admin đọc `/api/v1/orgs/:orgId/approvals`, mở `/:approvalId`, rồi gửi `{"decision":"approved"}` hoặc `{"decision":"rejected"}` tới `/:approvalId/decide`. Thao tác dành riêng cho owner vẫn cần owner; chuyển site cần cùng một người là owner ở cả hai organization. API key không được duyệt hay đọc biên nhận. Token organization mới chỉ hiện trong biên nhận dành cho người duyệt. Quyền hiện tại của bên yêu cầu được kiểm tra lại khi duyệt; thao tác và biên nhận được commit nguyên tử. Approval organization có cha organization thật (migration `0025`), kể cả organization không có site.
 
 ### Tool cố định (CRUD + insights read-only)
 

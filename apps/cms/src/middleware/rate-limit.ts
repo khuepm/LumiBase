@@ -53,7 +53,8 @@ export function withRateLimit() {
     const runtime = c.get('runtime');
     const rateLimiter = runtime?.rateLimiter;
 
-    const siteId = c.get('siteId') ?? 'global';
+    const organizationId = c.get('auth')?.apiKey?.organizationId;
+    const siteId = c.get('siteId') ?? (typeof organizationId === 'string' ? `org:${organizationId}` : 'global');
     const principal = resolvePrincipalKey(c);
     const key = `rl:${siteId}:${principal}`;
 

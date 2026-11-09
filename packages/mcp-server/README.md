@@ -17,8 +17,9 @@ Point the server at your CMS with environment variables:
 | Variable | Required | Example |
 | --- | --- | --- |
 | `LUMIBASE_URL` | Yes | `https://api.mysite.lumibase.dev` or `http://localhost:1989` |
-| `LUMIBASE_SITE_ID` | Yes | `site_abc123` |
+| `LUMIBASE_SITE_ID` | Except unpinned `lbo_` | `site_abc123` |
 | `LUMIBASE_TOKEN` | Yes | Bearer token with the roles you want the agent to inherit |
+| `LUMIBASE_READ_ONLY` | No | `true` hides mutation tools; default `false` |
 
 Example MCP client config:
 
@@ -31,7 +32,8 @@ Example MCP client config:
       "env": {
         "LUMIBASE_URL": "https://api.mysite.lumibase.dev",
         "LUMIBASE_SITE_ID": "site_abc123",
-        "LUMIBASE_TOKEN": "<token>"
+        "LUMIBASE_TOKEN": "<token>",
+        "LUMIBASE_READ_ONLY": "true"
       }
     }
   }
@@ -53,7 +55,13 @@ Fixed CRUD + read-only groups registered by the stdio server, including:
 
 The token's roles are the permission floor: the MCP client can never do more than that same token can through the REST API.
 
-> LumiBase also exposes a **governed HTTP MCP endpoint** at `POST /api/v1/mcp` inside the CMS (feature-flagged). That path runs through the agent harness (HITL, autonomy, veto). This package is the **standalone stdio** server for local editor integration — a passthrough, not the harness.
+### Organization keys
+
+With an `lbo_` key, omit `LUMIBASE_SITE_ID` to expose eight organization tools plus the site tools. Each site tool then requires a `site` argument. Pin a site to expose the original site tools plus `get_organization` and `list_sites`; an `lbk_` key keeps the original site tool list. Site headers are isolated per call.
+
+Organization mutations always use governed HTTP MCP, even when `LUMIBASE_MCP_GOVERNED=off`. Enable `settings.contentOs.mcp.allowOrganizationTools` on the organization; `LUMIBASE_MCP_ORG_TOOLS=off` disables it globally. Every organization mutation requires human approval. `confirm` acknowledges intent and cannot bypass approval. A new organization key is available only in the human approval receipt, never in the agent response. Owners/admins use `/api/v1/orgs/:orgId/approvals/:approvalId/decide` with `{"decision":"approved"}` or `rejected`; API keys cannot read receipts or decide. The requesting principal is checked again at approval time.
+
+> LumiBase also exposes a **governed HTTP MCP endpoint** at `POST /api/v1/mcp` inside the CMS (feature-flagged). That path runs through the agent harness (HITL, autonomy, veto). This package is the **standalone stdio** server for local editor integration — site tools support governed dispatch; organization mutations always enter the organization harness.
 
 ## Docs
 

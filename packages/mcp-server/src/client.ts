@@ -1,6 +1,11 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { classifyTokenPrefix } from '@lumibase/contracts';
+
 export interface LumiBaseConfig {
   url: string;
-  siteId: string;
+  siteId?: string;
+  tokenKind?: 'site' | 'organization';
+  readOnly?: boolean;
   token: string;
 }
 
@@ -36,21 +41,37 @@ export class LumiBaseClient {
   private readonly baseUrl: string;
   private readonly origin: string;
   private readonly headers: Record<string, string>;
+  readonly tokenKind: 'site' | 'organization';
+  readonly siteId?: string;
+  readonly readOnly: boolean;
+  private readonly scope = new AsyncLocalStorage<{ siteId?: string }>();
 
   constructor(config: LumiBaseConfig) {
+    this.tokenKind = config.tokenKind ?? (classifyTokenPrefix(config.token) === 'organization' ? 'organization' : 'site');
+    this.siteId = config.siteId;
+    this.readOnly = config.readOnly ?? false;
     this.origin = config.url.replace(/\/$/, '');
     this.baseUrl = this.origin + '/api/v1';
     this.headers = {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.token}`,
-      'X-Lumi-Site': config.siteId,
     };
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  /** Each concurrent tool invocation owns its site scope; the client is never mutated. */
+  withSite<T>(siteId: string, run: () => T): T {
+    return this.scope.run({ siteId }, run);
+  }
+
+  private requestHeaders(siteOverride?: string, organization = false): Record<string, string> {
+    const siteId = siteOverride ?? this.scope.getStore()?.siteId ?? this.siteId;
+    return { ...this.headers, ...(!organization && siteId ? { 'X-Lumi-Site': siteId } : {}) };
+  }
+
+  private async request<T>(method: string, path: string, body?: unknown, siteOverride?: string): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method,
-      headers: this.headers,
+      headers: this.requestHeaders(siteOverride, path === '/orgs' || path.startsWith('/orgs/')),
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
@@ -65,24 +86,24 @@ export class LumiBaseClient {
     return json.data as T;
   }
 
-  get<T>(path: string) {
-    return this.request<T>('GET', path);
+  get<T>(path: string, siteOverride?: string) {
+    return this.request<T>('GET', path, undefined, siteOverride);
   }
 
-  post<T>(path: string, body: unknown) {
-    return this.request<T>('POST', path, body);
+  post<T>(path: string, body: unknown, siteOverride?: string) {
+    return this.request<T>('POST', path, body, siteOverride);
   }
 
-  patch<T>(path: string, body: unknown) {
-    return this.request<T>('PATCH', path, body);
+  patch<T>(path: string, body: unknown, siteOverride?: string) {
+    return this.request<T>('PATCH', path, body, siteOverride);
   }
 
-  put<T>(path: string, body: unknown) {
-    return this.request<T>('PUT', path, body);
+  put<T>(path: string, body: unknown, siteOverride?: string) {
+    return this.request<T>('PUT', path, body, siteOverride);
   }
 
-  delete<T = void>(path: string) {
-    return this.request<T>('DELETE', path);
+  delete<T = void>(path: string, siteOverride?: string) {
+    return this.request<T>('DELETE', path, undefined, siteOverride);
   }
 
   /**
@@ -98,10 +119,10 @@ export class LumiBaseClient {
    * @throws {McpUnavailableError} when the site has not enabled `contentOs.mcp`.
    * @throws {LumiBaseApiError} for transport/HTTP failures and JSON-RPC errors.
    */
-  async jsonRpc<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+  async jsonRpc<T>(method: string, params?: Record<string, unknown>, options: { siteOverride?: string; organization?: boolean } = {}): Promise<T> {
     const res = await fetch(`${this.baseUrl}/mcp`, {
       method: 'POST',
-      headers: this.headers,
+      headers: this.requestHeaders(options.siteOverride, options.organization),
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, ...(params ? { params } : {}) }),
     });
 
@@ -147,7 +168,7 @@ export class LumiBaseClient {
   }
 
   private async textRequest(url: string, method: string): Promise<string> {
-    const res = await fetch(url, { method, headers: this.headers });
+    const res = await fetch(url, { method, headers: this.requestHeaders() });
     const text = await res.text();
     if (!res.ok) {
       throw new LumiBaseApiError(res.status, [
@@ -164,7 +185,7 @@ export class LumiBaseClient {
   async postRaw<T>(path: string, body: string, contentType = 'application/x-ndjson'): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
-      headers: { ...this.headers, 'Content-Type': contentType },
+      headers: { ...this.requestHeaders(), 'Content-Type': contentType },
       body,
     });
     if (res.status === 204) return undefined as T;
@@ -181,11 +202,13 @@ export function configFromEnv(): LumiBaseConfig {
   const siteId = process.env['LUMIBASE_SITE_ID'];
   const token = process.env['LUMIBASE_TOKEN'];
 
-  if (!url || !siteId || !token) {
+  const tokenKind = token && classifyTokenPrefix(token) === 'organization' ? 'organization' : 'site';
+  if (!url || !token || (tokenKind === 'site' && !siteId)) {
     throw new Error(
       'Missing required env vars: LUMIBASE_URL, LUMIBASE_SITE_ID, LUMIBASE_TOKEN',
     );
   }
 
-  return { url, siteId, token };
+  if (tokenKind === 'organization' && siteId) console.error(`[lumibase-mcp] pinned to site ${siteId}`);
+  return { url, ...(siteId ? { siteId } : {}), token, tokenKind, readOnly: process.env['LUMIBASE_READ_ONLY'] === 'true' };
 }

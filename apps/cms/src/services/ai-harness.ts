@@ -70,6 +70,7 @@ export interface SkillDefinition {
  * Result returned by the harness after evaluating and/or executing a skill.
  */
 export interface HarnessExecutionResult {
+  organizationId?: string;
   status: 'executed' | 'pending_approval' | 'denied';
   /**
    * Machine-readable reason for a denial. Present so a client can distinguish
@@ -94,6 +95,7 @@ export interface HarnessExecutionResult {
  * When omitted (e.g. in tests), handlers fall back to stub responses.
  */
 export interface AISecureHarnessConfig {
+  organizationId?: string;
   db: Database;
   siteId: string;
   /** SchemaService instance for schema:read/write skills (listCollections, createCollection, deleteCollection). */
@@ -2368,6 +2370,7 @@ class ServiceTouchTracker {
 export class AISecureHarness {
   private readonly db: Database;
   private readonly siteId: string;
+  private readonly organizationId?: string;
   private readonly skills: Record<string, SkillDefinition>;
   private readonly agentHarnessEnabled: boolean;
   private readonly runService: AgentRunService;
@@ -2384,6 +2387,7 @@ export class AISecureHarness {
   constructor(config: AISecureHarnessConfig) {
     this.db = config.db;
     this.siteId = config.siteId;
+    this.organizationId = config.organizationId;
     this.itemServiceRef = config.itemService ? rebindable(config.itemService) : undefined;
     // The indirection is what the skills and this class both hold, so an
     // approval rebinding it reaches every write path rather than only the ones
@@ -2620,6 +2624,7 @@ export class AISecureHarness {
 
     const run = await this.runService.ensureRun({
       ...envelope,
+      ...(this.organizationId ? { organizationId: this.organizationId } : {}),
       title: envelope.title ?? `Run ${skillName}`,
       contextMessage: contextMessage ?? envelope.contextMessage,
     });

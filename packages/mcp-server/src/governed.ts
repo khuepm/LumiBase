@@ -144,7 +144,6 @@ export const UNGOVERNED_MUTATIONS: Readonly<Record<string, string>> = {
   attach_api_key_role: 'no-skill',
   attach_policy_user: 'no-skill',
   attach_role_policy: 'no-skill',
-  compile_intent: 'no-skill',
   create_preset: 'no-skill',
   create_release: 'no-skill',
   create_share: 'no-skill',
@@ -166,7 +165,6 @@ export const UNGOVERNED_MUTATIONS: Readonly<Record<string, string>> = {
   remove_role_user: 'no-skill',
   restore_backup: 'no-skill',
   revoke_share: 'no-skill',
-  run_panel: 'no-skill',
   submit_review: 'no-skill',
   translate_text: 'no-skill',
   update_cdc_subscription: 'no-skill',
@@ -205,6 +203,8 @@ const MUTATION_EXCEPTIONS = new Set(['cdc_subscription_replay']);
 
 /** True when calling `name` can change state. */
 export function isMutationTool(name: string): boolean {
+  // These POST/verb-named operations are documented previews/queries and do not persist changes.
+  if (name === 'run_panel' || name === 'compile_intent') return false;
   return MUTATION_EXCEPTIONS.has(name) || MUTATION_VERB.test(name);
 }
 
@@ -407,5 +407,16 @@ export class GovernedDispatcher {
     } catch (err) {
       return fail(err);
     }
+  }
+}
+
+/** Org tools always use the governed endpoint; auto/off never enables REST fallback. */
+export async function dispatchOrganizationTool(
+  client: LumiBaseClient, name: string, args: Record<string, unknown>,
+): Promise<CallToolResult> {
+  try {
+    return await client.jsonRpc<CallToolResult>('tools/call', { name, arguments: args }, { organization: true });
+  } catch (error) {
+    return fail(error);
   }
 }

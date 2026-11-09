@@ -1,6 +1,6 @@
 import { systemDbFor } from './db';
 import { organizationRoleExpression } from '../services/organization-access';
-import { isOrganizationPath } from '../services/organization-access';
+import { isOrganizationPath, isMcpPath } from '../services/organization-access';
 import { inheritedAdministratorRole } from '../services/site-admin-access';
 import type { MiddlewareHandler } from 'hono';
 import { and, eq } from 'drizzle-orm';
@@ -43,6 +43,8 @@ export const withSiteMembership = (): MiddlewareHandler<AppEnv> => async (c, nex
 
   // `withAuth` already rejects API keys whose stored site_id does not match
   // the selected tenant, so there is no user_sites membership to check here.
+  if (auth.type === 'api_key' && auth.apiKey?.scope === 'organization' && !siteId && isMcpPath(c.req.path)) return next();
+
   if (auth.type === 'api_key') {
     await attachAccessBundle(c, auth);
     return next();

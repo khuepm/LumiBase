@@ -70,6 +70,7 @@ export interface McpHarnessPort {
  * (Property 14).
  */
 export interface McpToolDecision {
+  organizationId?: string;
   status: HarnessExecutionResult['status'];
   /**
    * Machine-readable denial reason, e.g. `VALIDATION`, `AUTONOMY_SHADOW`. Lets a
@@ -140,7 +141,7 @@ function rpcError(
 }
 
 export class McpService {
-  constructor(private readonly port: McpHarnessPort) {}
+  constructor(private readonly port: McpHarnessPort, private readonly context: { organizationId?: string } = {}) {}
 
   /**
    * Handles one Streamable-HTTP POST body. Returns `null` for notifications
@@ -223,6 +224,7 @@ export class McpService {
         const decision = toToolDecision(
           await this.port.execute(name, rawArgs as Record<string, unknown>, capabilities),
         );
+        if (this.context.organizationId) decision.organizationId = this.context.organizationId;
         // Business outcomes ride inside the tool result (Req 4.4): a denial is
         // an isError tool result, a pending approval is a normal result whose
         // payload carries the approvalId — never a JSON-RPC protocol error.

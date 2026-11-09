@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -12,7 +13,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
-import { sites, users } from './core';
+import { organizations, sites, users } from './core';
 import { apiKeys } from './access';
 
 /**
@@ -29,8 +30,12 @@ export const aiApprovals = pgTable(
   {
     id: id(),
     siteId: text('site_id')
-      .notNull()
       .references(() => sites.id, { onDelete: 'cascade' }),
+    organizationId: text('organization_id').references(() => organizations.id, { onDelete: 'cascade' }),
+    organizationRequester: jsonb('organization_requester').$type<
+      { type: 'user'; userId: string } | { type: 'api_key'; apiKeyId: string }
+    >(),
+    result: jsonb('result'),
     agentName: text('agent_name').default('lumibase-copilot').notNull(),
     skillName: text('skill_name').notNull(),
     arguments: jsonb('arguments').default({}).notNull(),
@@ -41,6 +46,10 @@ export const aiApprovals = pgTable(
     decidedBy: text('decided_by').references(() => users.id, { onDelete: 'set null' }),
   },
   (t) => ({
+    organizationStatusIdx: index('ai_approvals_org_status_idx').on(t.organizationId, t.status),
+    scopeTarget: check('ai_approvals_scope_target', sql`
+      (${t.siteId} is not null and ${t.organizationId} is null) or
+      (${t.siteId} is null and ${t.organizationId} is not null and ${t.organizationRequester} is not null)`),
     siteStatusIdx: index('ai_approvals_site_status_idx').on(t.siteId, t.status),
   }),
 );

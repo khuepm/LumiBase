@@ -115,6 +115,7 @@ export interface Bindings {
   LUMIBASE_DEV_AUTH?: string;
   /** Explicitly allow Studio users to create organizations (default off). */
   LUMIBASE_ALLOW_ORG_SIGNUP?: string;
+  LUMIBASE_MCP_ORG_TOOLS?: string;
   /** Secret key for AES-GCM per-field encryption (base64 encoded). */
   ENCRYPTION_KEY?: string;
   /** Comma-separated trusted origins for executable extension bundles. */
