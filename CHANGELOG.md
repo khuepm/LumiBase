@@ -9,9 +9,18 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [1.0.1] - 2026-11-09
+
 ### Fixed
+- Studio admin detail routes and tab overflow, expanded/reorderable module navigation, serialized navigation preference saves, and guided IDE MCP setup with scoped API keys (#615).
+- Tag-triggered Studio releases use the configured production CMS origin and reject an unset origin; production release metadata reports the production channel (#624).
 - Delivery edge cache no longer stores `304 Not Modified` under the page URL, which could serve an empty 304 to a client with nothing cached; edge hits answer `If-None-Match` from the stored `ETag` (#622).
 - Delivery edge key and tag→URL purge index use a canonical URL (`locale`, `lang`, `provenance`, `preview` only), so unrelated query parameters can no longer evict real pages from the 200-entry index (#622).
+
+### Upgrade notes
+- No new database migrations or environment variables. Includes the Studio production hotfix workflow (#621).
 
 ## [1.0.0] - 2026-11-09
 
