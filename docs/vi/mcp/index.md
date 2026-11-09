@@ -1,11 +1,11 @@
 ---
-version: 4
-lastUpdated: 2026-10-10T05:01:03.738Z
+version: 5
+lastUpdated: 2026-11-09T12:46:09.459Z
 sourceLang: vi
-contentHash: 569d8b5541c89cde
-codeVerified: 2026-10-13T19:22:01.799Z
-codeVerifiedHash: 569d8b5541c89cde
-codeVerifiedClaims: 26
+contentHash: c35d3cb83ac0c70c
+codeVerified: 2026-11-09T12:46:09.459Z
+codeVerifiedHash: c35d3cb83ac0c70c
+codeVerifiedClaims: 28
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -60,6 +60,7 @@ Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (dựng trên `
 - **Entry:** `packages/mcp-server/src/index.ts` — `new McpServer({ name: 'lumibase', ... })`, đăng ký collection/field/item tools, `connect(StdioServerTransport)`.
 - **Client:** `LumiBaseClient` — HTTP tới `/api/v1` với Bearer token + site header.
 - **Config:** [`docs/en/agent-setup/mcp-config.json`](../../en/agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
+- **Studio:** trang *Data model → Set up MCP for your IDE* (`/data-model/mcp-setup`) tạo API key riêng gắn role, sinh config cho Cursor/Claude Desktop/VS Code, và có mục **Try these prompts** — prompt mẫu copy được, chia nhóm Explore/Content/Schema/Operations, gắn nhãn `Read-only`/`Writes data`/`Admin role`. Danh sách ở [`apps/studio/src/modules/data-model/mcp-prompts.ts`](../../../apps/studio/src/modules/data-model/mcp-prompts.ts); mỗi prompt khai các tool nó dùng và test đối chiếu với tool mà server thật sự đăng ký.
 
 ### Tool cố định (CRUD + insights read-only)
 

@@ -1,14 +1,14 @@
 ---
-version: 4
-lastUpdated: 2026-10-10T05:01:03.738Z
+version: 5
+lastUpdated: 2026-11-09T12:46:09.459Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 569d8b5541c89cde
+sourceHash: c35d3cb83ac0c70c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-13T19:22:01.799Z
-codeVerifiedHash: 569d8b5541c89cde
-codeVerifiedClaims: 26
+codeVerified: 2026-11-09T12:46:09.459Z
+codeVerifiedHash: c35d3cb83ac0c70c
+codeVerifiedClaims: 28
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -63,6 +63,7 @@ Source: [`packages/mcp-server/`](../../../packages/mcp-server/) (built on `@mode
 - **Entry:** `packages/mcp-server/src/index.ts` — `new McpServer({ name: 'lumibase', ... })`, registers the collection/field/item tools, then `connect(StdioServerTransport)`.
 - **Client:** `LumiBaseClient` — HTTP to `/api/v1` with a Bearer token + site header.
 - **Config:** [`docs/en/agent-setup/mcp-config.json`](../agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
+- **Studio:** the *Data model → Set up MCP for your IDE* page (`/data-model/mcp-setup`) creates a dedicated role-scoped API key, generates the Cursor/Claude Desktop/VS Code config, and has a **Try these prompts** section — copy-ready starter prompts grouped as Explore/Content/Schema/Operations and labelled `Read-only`/`Writes data`/`Admin role`. The list lives in [`apps/studio/src/modules/data-model/mcp-prompts.ts`](../../../apps/studio/src/modules/data-model/mcp-prompts.ts); each prompt declares the tools it uses and a test checks them against the tools the server actually registers.
 
 ### The fixed tools (CRUD + read-only insights)
 
