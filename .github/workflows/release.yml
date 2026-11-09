@@ -11,6 +11,7 @@ permissions:
 env:
   NODE_VERSION: 24
   REGISTRY: ghcr.io
+  LUMIBASE_RELEASE_CHANNEL: production
 
 jobs:
   verify:
@@ -269,7 +270,14 @@ jobs:
         env:
           NEXT_PUBLIC_GA_ID: ${{ vars.NEXT_PUBLIC_GA_ID }}
           VITE_GA_ID: ${{ vars.VITE_GA_ID }}
-        run: pnpm --filter ${{ matrix.app.package }} build
+          VITE_API_URL: ${{ vars.LUMIBASE_CMS_PRODUCTION_URL }}
+          APP_NAME: ${{ matrix.app.name }}
+        run: |
+          if [ "$APP_NAME" = studio ] && [ -z "$VITE_API_URL" ]; then
+            echo "::error::LUMIBASE_CMS_PRODUCTION_URL is unset" >&2
+            exit 1
+          fi
+          pnpm --filter ${{ matrix.app.package }} build
 
       - name: Check Cloudflare credentials
         id: cloudflare-credentials

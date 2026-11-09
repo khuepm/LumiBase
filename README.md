@@ -120,7 +120,7 @@ That gives you the **API** on `:1989`. The development compose image mounts sour
 
 ```bash
 cp docker/.env.example docker/.env      # set JWT_SECRET; DATABASE_SSL_MODE=disable for the bundled Postgres
-LUMIBASE_VERSION=1.0.0 docker compose \
+LUMIBASE_VERSION=1.0.1 docker compose \
   -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
@@ -155,12 +155,12 @@ Full documentation lives in [`docs/`](./docs/en/README.md); the task roadmap is 
 
 Every release must pass a green GitHub Actions CI run before it can be published or deployed. The required CI gate runs on every pull request and every push to `main`, and includes dependency installation with the locked pnpm version, version policy validation, typechecking, tests, lint for the current stable allowlist, and the production build.
 
-Current release: `v1.0.0` (`2026-11-09`) — **first stable release**. The public API and SDK follow the [versioning policy](docs/en/contributing/versioning-policy.md). Jev decision/review/automation APIs and the Studio M2A JSON helper remain experimental. See the [changelog](CHANGELOG.md) and [upgrade guide](docs/en/operations/upgrades.md) before upgrading from 0.x.
+Current release: `v1.0.1` (`2026-11-09`) — delivery cache and Studio production fixes; no new database migrations. The public API and SDK follow the [versioning policy](docs/en/contributing/versioning-policy.md). Jev decision/review/automation APIs and the Studio M2A JSON helper remain experimental. See the [changelog](CHANGELOG.md) and [upgrade guide](docs/en/operations/upgrades.md) before upgrading from 0.x.
 
 Every release before this one is summarised in [`CHANGELOG.md`](./CHANGELOG.md), including the **`v0.5.0` Content OS foundation** — intents/SLOs, control-loop reconciliation, the L0–L4 trust ledger, the veto window, the four-scope kill switch, the tenant constitution, provenance-first revisions, the multi-agent newsroom, and Studio Mission Control. That foundation remains the baseline every later release builds upon, not replaces.
 
 ```bash
-LUMIBASE_VERSION=1.0.0 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
+LUMIBASE_VERSION=1.0.1 docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 ```
 
 See [`CHANGELOG.md`](./CHANGELOG.md) for upgrade steps, rollback notes, compatibility details, and backup guidance.
