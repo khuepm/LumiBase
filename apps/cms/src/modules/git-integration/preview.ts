@@ -179,10 +179,13 @@ export class PreviewEnvManager {
       .where(eq(sitesTable.id, this.deps.siteId))
       .limit(1);
 
+    if (!base) throw new Error('Preview base site no longer exists');
+
     // sites is excluded from RLS, so this insert is unaffected by context.
     await this.base
       .insert(sitesTable)
       .values({
+        organizationId: base.organizationId,
         id: ephemeralId,
         name: `${base?.name ?? this.deps.siteId} (PR #${prNumber})`,
         defaultLanguage: base?.defaultLanguage ?? 'en',

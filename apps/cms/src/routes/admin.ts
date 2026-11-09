@@ -30,7 +30,7 @@ import {
   sites,
   users,
 } from '@lumibase/database';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { stream } from 'hono/streaming';
 import { z } from 'zod';
@@ -430,7 +430,9 @@ adminRouter.post('/sites', async (c) => {
   const db = c.get('db');
   const [row] = await db
     .insert(sites)
-    .values({ id: parsed.data.id, name: parsed.data.name })
+    .values({ id: parsed.data.id, name: parsed.data.name,
+      organizationId: sql`(SELECT organization_id FROM lumibase_sites WHERE id = ${c.get('siteId')})`,
+    })
     .returning();
 
   // Auto-install official `lumibase-*` extensions for the new site. Fail-soft:

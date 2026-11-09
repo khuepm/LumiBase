@@ -89,7 +89,8 @@ function makeFakeDb(
     },
     select() {
       return {
-        from() {
+        from(table: { [k: string]: unknown }) {
+          const isOrganization = getTableName(table) === 'lumibase_organizations';
           return {
             where() {
               const chain = {
@@ -100,7 +101,7 @@ function makeFakeDb(
                   return Promise.resolve([systemStateRow]);
                 },
                 then(resolve: (v: unknown) => void) {
-                  resolve([]);
+                  resolve(isOrganization ? [{ id: 'org_default' }] : []);
                 },
               };
               return chain;

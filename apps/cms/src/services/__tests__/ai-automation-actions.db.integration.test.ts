@@ -76,8 +76,8 @@ describe.skipIf(!hasDbIntegrationUrl)('Automation actions — DB integration', (
     await db.delete(sites).where(inArray(sites.id, [SITE_A, SITE_B]));
     await db.delete(users).where(eq(users.id, ADMIN));
     await db.insert(sites).values([
-      { id: SITE_A, name: 'Automation IT A' },
-      { id: SITE_B, name: 'Automation IT B' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_A, name: 'Automation IT A' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_B, name: 'Automation IT B' },
     ]);
     await db.insert(users).values({ id: ADMIN, email: 'automation-it-admin@example.dev' });
     await db.insert(roles).values({ id: ADMIN_ROLE, siteId: SITE_A, name: 'Automation IT admin', adminAccess: true, appAccess: true });

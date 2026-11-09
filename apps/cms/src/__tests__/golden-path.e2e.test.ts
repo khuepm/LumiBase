@@ -232,7 +232,7 @@ describe('Golden path (setup → collection → item → publish → read) + ten
     // rejects an unresolvable `X-Lumi-Site` with 404 ahead of `withAuth`, so probing
     // isolation against a site that was never created would short-circuit on
     // nonexistence and never reach the boundary each step means to test.
-    await db.insert(sites).values({ id: OTHER_SITE, name: 'Golden Other' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER_SITE, name: 'Golden Other' });
 
     // 5a. Token pinning: a session JWT carries its `siteId` claim, and
     //     `withAuth` rejects it outright when the `X-Lumi-Site` header names a

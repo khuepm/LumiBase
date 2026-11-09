@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { and, eq } from 'drizzle-orm';
@@ -77,8 +78,8 @@ describe.skipIf(!hasDbIntegrationUrl)('#582 Copilot context window — DB integr
     await db.delete(sites).where(eq(sites.id, OTHER_SITE));
     await db.delete(users).where(eq(users.id, ADMIN));
     await db.insert(sites).values([
-      { id: SITE, name: '582 context' },
-      { id: OTHER_SITE, name: '582 other' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: '582 context' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER_SITE, name: '582 other' },
     ]);
     await db.insert(users).values({ id: ADMIN, email: 'audit-582-admin@example.dev' });
     await db.insert(roles).values({

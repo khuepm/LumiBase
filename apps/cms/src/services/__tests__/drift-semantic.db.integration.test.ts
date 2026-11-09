@@ -73,7 +73,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Semantic drift — DB integration', () =>
   });
 
   async function seedSite(siteId: string) {
-    await db.insert(sites).values({ id: siteId, name: siteId });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: siteId, name: siteId });
     const [collection] = await db.insert(collections).values({ siteId, name: 'articles', label: 'Articles' }).returning();
     await db.insert(fields).values(
       ['brief', 'title', 'body', 'summary'].map((name) => ({ siteId, collectionId: collection!.id, name, type: 'string', interface: 'input' })),

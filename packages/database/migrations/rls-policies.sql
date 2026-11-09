@@ -185,3 +185,23 @@ COMMENT ON FUNCTION app_site_id IS
    unset or empty). SECURITY INVOKER with a pinned search_path. Used by the
    site_isolation (RESTRICTIVE) and site_isolation_permit (PERMISSIVE) RLS
    policies for site-level row isolation.';
+
+-- Organization plane: app.site_id cannot grant access to organization rows.
+-- Guard verifies membership using systemDbFor before re-scoping the app client.
+DO $$
+DECLARE tbl text; target text;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY['lumibase_organizations', 'lumibase_organization_members'] LOOP
+    target := CASE WHEN tbl = 'lumibase_organizations' THEN 'id' ELSE 'organization_id' END;
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', tbl);
+    EXECUTE format('DROP POLICY IF EXISTS organization_isolation ON %I', tbl);
+    EXECUTE format('DROP POLICY IF EXISTS organization_isolation_permit ON %I', tbl);
+    EXECUTE format($policy$CREATE POLICY organization_isolation ON %I AS RESTRICTIVE FOR ALL
+      USING (%I = NULLIF(current_setting('lumibase.organization_id', true), ''))
+      WITH CHECK (%I = NULLIF(current_setting('lumibase.organization_id', true), ''))$policy$, tbl, target, target);
+    EXECUTE format($policy$CREATE POLICY organization_isolation_permit ON %I AS PERMISSIVE FOR ALL
+      USING (%I = NULLIF(current_setting('lumibase.organization_id', true), ''))
+      WITH CHECK (%I = NULLIF(current_setting('lumibase.organization_id', true), ''))$policy$, tbl, target, target);
+  END LOOP;
+END $$;

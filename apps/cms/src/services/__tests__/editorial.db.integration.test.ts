@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import {
@@ -40,7 +41,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Editorial workflow — DB integration', (
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.delete(users).where(eq(users.id, 'author')).catch(() => undefined);
     await db.delete(users).where(eq(users.id, 'reviewer')).catch(() => undefined);
-    await db.insert(sites).values({ id: SITE, name: 'Editorial IT' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Editorial IT' });
     await db.insert(users).values([
       { id: 'author', email: 'author@test.local' },
       { id: 'reviewer', email: 'reviewer@test.local' },

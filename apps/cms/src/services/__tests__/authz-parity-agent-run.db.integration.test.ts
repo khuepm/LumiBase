@@ -66,8 +66,8 @@ describe.skipIf(!hasDbIntegrationUrl)('#580 authorization parity — sync transp
   beforeEach(async () => {
     await db.delete(sites).where(sql`${sites.id} IN (${SITE_A}, ${SITE_B})`);
     await db.insert(sites).values([
-      { id: SITE_A, name: '580 A' },
-      { id: SITE_B, name: '580 B' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_A, name: '580 A' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_B, name: '580 B' },
     ]);
     await db.insert(policies).values({
       id: POLICY,

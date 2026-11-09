@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import {
@@ -168,7 +169,7 @@ describe.skipIf(!hasDbIntegrationUrl)('decision governance — DB integration (t
     vi.stubGlobal('fetch', fetchMock);
 
     await cleanup();
-    await db.insert(sites).values([{ id: SITE_A, name: 'Dec Gov A' }, { id: SITE_B, name: 'Dec Gov B' }]);
+    await db.insert(sites).values([{ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_A, name: 'Dec Gov A' }, { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_B, name: 'Dec Gov B' }]);
     // Opt-in on A only.
     await db.insert(settings).values({ siteId: SITE_A, key: 'aiDecisions', value: { enabled: true } });
 

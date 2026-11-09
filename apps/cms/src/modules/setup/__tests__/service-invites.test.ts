@@ -88,7 +88,8 @@ function makeFakeDb(inserts: RecordedInsert[]) {
     },
     select() {
       return {
-        from() {
+        from(table: { [k: string]: unknown }) {
+          const isOrganization = getTableName(table) === 'lumibase_organizations';
           return {
             where() {
               return {
@@ -103,7 +104,7 @@ function makeFakeDb(inserts: RecordedInsert[]) {
                   ]);
                 },
                 then(resolve: (v: unknown) => void) {
-                  resolve([]);
+                  resolve(isOrganization ? [{ id: 'org_default' }] : []);
                 },
               };
             },
@@ -165,6 +166,13 @@ describe('SetupService.complete() → invites', () => {
 
     const outcome = await svc.complete(makeInput(), { requestId: 'req-none' });
     expect(outcome.ok).toBe(true);
+    const organizationIndex = inserts.findIndex((i) => i.table === 'lumibase_organizations');
+    const siteIndex = inserts.findIndex((i) => i.table === 'lumibase_sites');
+    expect(organizationIndex).toBeGreaterThanOrEqual(0);
+    expect(organizationIndex).toBeLessThan(siteIndex);
+    expect(inserts[siteIndex]?.values).toMatchObject({ organizationId: 'org_default' });
+    expect(inserts.find((i) => i.table === 'lumibase_organization_members')?.values)
+      .toMatchObject({ userId: 'usr_1', organizationId: 'org_default', role: 'owner' });
     if (outcome.ok) expect(outcome.value.invitedCount).toBe(0);
     expect(calls.filter((c) => c.event === 'user_invited')).toHaveLength(0);
     // No Member role seeded, no user_sites rows when there are no invites.

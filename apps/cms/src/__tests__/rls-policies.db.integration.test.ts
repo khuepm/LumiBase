@@ -202,7 +202,7 @@ describe.skipIf(!hasDbIntegrationUrl)('rls-policies.sql — DB integration (B125
     await tx.execute(sql`GRANT USAGE ON SCHEMA public TO ${r}`);
     await tx.execute(sql`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${r}`);
 
-    await tx.execute(sql`INSERT INTO lumibase_sites (id, name) VALUES (${f.siteA}, 'A'), (${f.siteB}, 'B')`);
+    await tx.execute(sql`INSERT INTO lumibase_sites (organization_id, id, name) VALUES ((SELECT id FROM lumibase_organizations WHERE slug='default'), ${f.siteA}, 'A'), ((SELECT id FROM lumibase_organizations WHERE slug='default'), ${f.siteB}, 'B')`);
     await tx.execute(sql`
       INSERT INTO lumibase_settings (id, site_id, key, value) VALUES
         (${f.settingsA[0]}, ${f.siteA}, 'k1', '{}'), (${f.settingsA[1]}, ${f.siteA}, 'k2', '{}'),

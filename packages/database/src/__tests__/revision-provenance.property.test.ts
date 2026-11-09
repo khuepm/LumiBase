@@ -42,7 +42,7 @@ describe('Feature: content-os, Property 13: Provenance round-trip', () => {
       canConnect = true;
 
       testSiteId = nanoid();
-      await db.insert(sites).values({ id: testSiteId, name: 'test-site-pbt-provenance' });
+      await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: testSiteId, name: 'test-site-pbt-provenance' });
 
       const [collection] = await db
         .insert(collections)

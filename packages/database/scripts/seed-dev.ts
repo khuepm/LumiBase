@@ -32,7 +32,7 @@ async function main() {
 
   // 1. Default dev site (referenced by Studio DEFAULT_DEV_SITE = 'site_demo')
   await db.execute(
-    sql`INSERT INTO lumibase_sites (id, name, domain) VALUES ('site_demo', 'Demo Site', 'localhost')
+    sql`INSERT INTO lumibase_sites (organization_id, id, name, domain) VALUES ((SELECT id FROM lumibase_organizations WHERE slug='default'), 'site_demo', 'Demo Site', 'localhost')
         ON CONFLICT (id) DO NOTHING`
   );
   console.log('[seed-dev] ✓ site_demo site row');

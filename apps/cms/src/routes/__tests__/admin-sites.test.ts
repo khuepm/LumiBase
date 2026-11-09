@@ -120,7 +120,7 @@ describe('admin site management containment', () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as { data: { id: string; name: string } };
     expect(body.data).toMatchObject({ id: 'site_new', name: 'New' });
-    expect(calls.inserts).toEqual([{ id: 'site_new', name: 'New' }]);
+    expect(calls.inserts).toEqual([{ id: 'site_new', name: 'New', organizationId: expect.any(Object) }]);
   });
 
   it.each([

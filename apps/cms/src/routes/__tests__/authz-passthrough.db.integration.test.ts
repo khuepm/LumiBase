@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { and, eq } from 'drizzle-orm';
@@ -30,7 +31,7 @@ describe.skipIf(!hasDbIntegrationUrl)('#580 REST passthrough authorization with 
     vi.restoreAllMocks();
     await cleanup();
     objects = new Map(); writes = [];
-    await db.insert(sites).values([{ id: SITE, name: SITE }, { id: OTHER, name: OTHER }]);
+    await db.insert(sites).values([{ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: SITE }, { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER, name: OTHER }]);
     await db.insert(users).values({ id: USER, email: 'synthetic580@example.test' });
     await db.insert(policies).values({ id: POLICY, siteId: SITE, name: POLICY, adminAccess: false });
     await db.insert(userPolicies).values({ userId: USER, siteId: SITE, policyId: POLICY });
