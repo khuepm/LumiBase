@@ -1,6 +1,6 @@
 # Tasks — Organizations (organization plane)
 
-> Status: **In Progress**. Phase 1 đã merge #641; Phase 2 triển khai #637; Phase 3–5 còn lại. Thực thi [ADR-013](../../../docs/en/architecture/decisions/adr-013-organization-plane.md). Mỗi phase là một PR riêng; Phase 0 phải merge trước.
+> Status: **In Progress**. Phase 1 đã merge #641; Phase 2 đã merge #666; Phase 3 triển khai #638; Phase 4–5 còn lại. Thực thi [ADR-013](../../../docs/en/architecture/decisions/adr-013-organization-plane.md). Mỗi phase là một PR riêng; Phase 0 phải merge trước.
 
 ## Phase 0 — Tiền đề (ngoài spec, đã có task riêng)
 - [x] 0.1 Hotfix khoanh vùng `POST/DELETE /api/v1/admin/sites`: xoá site khác tenant → 403; tạo site hoặc xoá site khác cần env `LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT=true` (dành cho test runner). PR khuepm/LumiBase#628. Phase 2.10 gỡ cả route lẫn env này.
@@ -32,13 +32,13 @@ Bao gồm seed Personal_Org từ task 5.1 trước insert `__default__`; tách `
 - [x] 2.12 Comment rõ trong `control-plane-access-guard.ts`: KHÔNG thêm `/api/v1/orgs` vào `CONTROL_PLANE_PATHS` (Req 4.8).
 
 ## Phase 3 — MCP (Req 5)
-- [ ] 3.1 [`client.ts` `configFromEnv`](packages/mcp-server/src/client.ts): `tokenKind`, `siteId` tuỳ chọn với `lbo_`, `readOnly`; `siteOverride` per call (design §5.1–5.2).
-- [ ] 3.2 `registerAllTools(server, client, config)`: ba cấu hình + `readOnly` lọc theo `annotations` (design §5.2); `requireSiteArg` cho tool site.
-- [ ] 3.3 `tools/organization.ts`: 8 tool org theo bảng design §5.3.
-- [ ] 3.4 CMS [`routes/mcp.ts`](apps/cms/src/routes/mcp.ts): `controlPlaneSkillFromCall` nhận diện `org:*`; gate `settings.contentOs.mcp.allowOrganizationTools` + env `LUMIBASE_MCP_ORG_TOOLS` (Req 5.7); `McpService`/governed harness mang `organizationId` (Req 5.8).
-- [ ] 3.5 HITL: tool org ghi tạo `ai_approvals` ở L0/L1; `create_org_key` trả token chỉ trong approval record (Req 5.6).
-- [ ] 3.6 Snapshot test tool list ×3 + `readOnly` ([`tools.test.ts`](packages/mcp-server/src/__tests__/tools.test.ts)); test `lbk_` list **bằng** snapshot hiện tại (Req 5.2).
-- [ ] 3.7 [`README.md`](packages/mcp-server/README.md) + `docs/{en,vi}/mcp/*`: cấu hình `lbo_`, `LUMIBASE_SITE_ID` tuỳ chọn, `LUMIBASE_READ_ONLY` trong mọi snippet (Req 5.5).
+- [x] 3.1 [`client.ts` `configFromEnv`](packages/mcp-server/src/client.ts): `tokenKind`, `siteId` tuỳ chọn với `lbo_`, `readOnly`; `siteOverride` per call (design §5.1–5.2).
+- [x] 3.2 `registerAllTools(server, client, config)`: ba cấu hình + `readOnly` lọc theo `annotations` (design §5.2); `requireSiteArg` cho tool site.
+- [x] 3.3 `tools/organization.ts`: 8 tool org theo bảng design §5.3.
+- [x] 3.4 CMS [`routes/mcp.ts`](apps/cms/src/routes/mcp.ts): `controlPlaneSkillFromCall` nhận diện `org:*`; gate `settings.contentOs.mcp.allowOrganizationTools` + env `LUMIBASE_MCP_ORG_TOOLS` (Req 5.7); `McpService`/governed harness mang `organizationId` (Req 5.8).
+- [x] 3.5 HITL: tool org ghi tạo `ai_approvals` ở L0/L1; `create_org_key` trả token chỉ trong approval record (Req 5.6).
+- [x] 3.6 Snapshot test tool list ×3 + `readOnly` ([`tools.test.ts`](packages/mcp-server/src/__tests__/tools.test.ts)); test `lbk_` list **bằng** snapshot hiện tại (Req 5.2).
+- [x] 3.7 [`README.md`](packages/mcp-server/README.md) + `docs/{en,vi}/mcp/*`: cấu hình `lbo_`, `LUMIBASE_SITE_ID` tuỳ chọn, `LUMIBASE_READ_ONLY` trong mọi snippet (Req 5.5).
 
 ## Phase 4 — Studio (Req 6)
 - [ ] 4.1 `lib/api.ts`: client `orgs` không `X-Lumi-Site`; `useOrganizations()`.

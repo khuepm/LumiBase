@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-10-10T05:01:03.738Z
+version: 8
+lastUpdated: 2026-11-09T16:44:36.282Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 569d8b5541c89cde
+sourceHash: 6d0cf95871559144
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-13T19:22:01.799Z
-codeVerifiedHash: 569d8b5541c89cde
+codeVerified: 2026-11-09T16:44:36.282Z
+codeVerifiedHash: 6d0cf95871559144
 codeVerifiedClaims: 26
 ---
 
@@ -17,7 +17,7 @@ codeVerifiedClaims: 26
 
 ## TL;DR
 
-LumiBase exposes **two MCP surfaces**. Both run through a single harness codepath, so the decision for a tool called via MCP is **identical** to calling the Agent API directly (the "MCP parity" invariant, Property 14):
+LumiBase exposes **two MCP surfaces**. Governed site tools use the same site harness as the Agent API (the "MCP parity" invariant, Property 14). Organization tools use the organization harness and its human approval boundary:
 
 | Surface | Transport | Location | Used for |
 |---|---|---|---|
@@ -63,6 +63,13 @@ Source: [`packages/mcp-server/`](../../../packages/mcp-server/) (built on `@mode
 - **Entry:** `packages/mcp-server/src/index.ts` — `new McpServer({ name: 'lumibase', ... })`, registers the collection/field/item tools, then `connect(StdioServerTransport)`.
 - **Client:** `LumiBaseClient` — HTTP to `/api/v1` with a Bearer token + site header.
 - **Config:** [`docs/en/agent-setup/mcp-config.json`](../agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
+
+
+### Organization credentials (ADR-013)
+
+Set `LUMIBASE_READ_ONLY=true` to publish only tools annotated as read-only. With an `lbk_` key, `LUMIBASE_SITE_ID` remains required and the existing site tool list is unchanged. With an `lbo_` key, omit the site to expose eight organization tools (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) plus site tools requiring a `site` argument. Pinning a site exposes the original site tools and the first two organization reads. Parallel calls cannot share site headers.
+
+Organization writes always use the governed HTTP endpoint, including when `LUMIBASE_MCP_GOVERNED=off`; there is no REST fallback. Enable organization setting `contentOs.mcp.allowOrganizationTools`; global `LUMIBASE_MCP_ORG_TOOLS=off` overrides it. Every organization mutation waits for human approval. The `confirm` argument is an acknowledgement, not an approval. An owner/admin reads `/api/v1/orgs/:orgId/approvals`, opens `/:approvalId`, and posts `{"decision":"approved"}` or `{"decision":"rejected"}` to `/:approvalId/decide`. Owner-only operations still require an owner; transfers require the same human owner in both organizations. API keys cannot decide or read receipts. New organization key plaintext appears only in the human receipt. The requester must still hold live authority when approved; execution and the receipt commit atomically. Organization approvals use a real organization parent (migration `0025`), including organizations with zero sites.
 
 ### The fixed tools (CRUD + read-only insights)
 
