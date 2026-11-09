@@ -63,6 +63,7 @@ import {
   setProjectDraft,
 } from './steps/step-project';
 import { wordlistGenerateUnique } from './wordlist';
+import { defaultSiteUrl } from './default-site-url';
 
 type SimpleStep = 'essentials' | 'review' | 'recovery';
 
@@ -135,7 +136,7 @@ const DEFAULT_ACCOUNT = {
 
 const DEFAULT_PROJECT = {
   defaultLanguage: 'en',
-  siteUrl: 'http://localhost:2026',
+  siteUrl: defaultSiteUrl(),
   displayTitle: 'LumiBase',
   theme: null,
 };
