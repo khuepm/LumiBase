@@ -1,10 +1,16 @@
 import type { ApiKeySecretResult } from '@lumibase/sdk';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowLeft, Copy, Sparkles } from 'lucide-react';
+import { ArrowLeft, Check, Copy, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { getActiveSite, getApiClient } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';
+import {
+  MCP_PROMPT_ACCESS_LABEL,
+  MCP_PROMPT_CATEGORIES,
+  MCP_PROMPTS,
+  type McpPromptCategory,
+} from './mcp-prompts';
 
 type ClientFormat = 'cursor' | 'vscode';
 
@@ -20,6 +26,83 @@ export function buildMcpConfig(format: ClientFormat, url: string, siteId: string
       : { mcpServers: { lumibase: server } },
     null,
     2,
+  );
+}
+
+const ACCESS_BADGE_CLASS = {
+  read: 'border-emerald-500/40 text-emerald-700 dark:text-emerald-400',
+  write: 'border-amber-500/40 text-amber-700 dark:text-amber-400',
+  admin: 'border-destructive/40 text-destructive',
+} as const;
+
+/** Copy-ready prompts to try once the IDE is connected. */
+export function McpStarterPrompts({ roleHasAdminAccess }: { roleHasAdminAccess?: boolean }) {
+  const [category, setCategory] = useState<McpPromptCategory>('explore');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const prompts = MCP_PROMPTS.filter((p) => p.category === category);
+
+  async function copy(id: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+    } catch {
+      setCopiedId(null);
+    }
+  }
+
+  return (
+    <section className="space-y-4 rounded-xl border p-5" aria-labelledby="mcp-starter-prompts">
+      <h2 id="mcp-starter-prompts" className="font-medium">Try these prompts</h2>
+      <p className="text-sm text-muted-foreground">
+        Paste one into your IDE’s AI chat once LumiBase is connected. Replace the values in quotes or angle brackets with your own collections and IDs.
+      </p>
+      <div role="tablist" aria-label="Prompt categories" className="flex flex-wrap gap-2">
+        {MCP_PROMPT_CATEGORIES.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            role="tab"
+            aria-selected={category === c.id}
+            onClick={() => setCategory(c.id)}
+            className={`rounded-md border px-3 py-1.5 text-sm ${category === c.id ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+      <ul className="space-y-3">
+        {prompts.map((p) => {
+          const needsAdmin = p.access === 'admin' && roleHasAdminAccess === false;
+          return (
+            <li key={p.id} className={`space-y-2 rounded-md border p-3 ${needsAdmin ? 'opacity-60' : ''}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{p.title}</span>
+                  <span className={`rounded border px-1.5 py-0.5 text-[11px] ${ACCESS_BADGE_CLASS[p.access]}`}>{MCP_PROMPT_ACCESS_LABEL[p.access]}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void copy(p.id, p.prompt)}
+                  aria-label={`Copy prompt: ${p.title}`}
+                  className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs"
+                >
+                  {copiedId === p.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copiedId === p.id ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+              <pre className="whitespace-pre-wrap rounded bg-muted/30 p-2 text-xs"><code>{p.prompt}</code></pre>
+              <p className="text-[11px] text-muted-foreground">
+                Tools: {p.tools.map((t) => <code key={t} className="mr-1">{t}</code>)}
+              </p>
+              {needsAdmin && <p className="text-xs text-destructive">The selected role has no admin access, so this prompt will be refused.</p>}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        The assistant acts with this key’s role only. Prefer asking it to preview changes before applying them; deletes and schema changes cannot be undone from the IDE.
+      </p>
+    </section>
   );
 }
 
@@ -70,6 +153,7 @@ export function McpSetupPage() {
 
   const apiUrl = getApiBaseUrl() || window.location.origin;
   const siteId = getActiveSite();
+  const selectedRole = (rolesQuery.data ?? []).find((role) => role.id === roleId);
   const config = secret ? buildMcpConfig(format, apiUrl, siteId, secret.token) : '';
 
   return (
@@ -132,9 +216,11 @@ export function McpSetupPage() {
           <button type="button" onClick={async () => { await navigator.clipboard.writeText(config); setCopied(true); }} className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
             <Copy className="h-4 w-4" /> {copied ? 'Copied' : 'Copy config'}
           </button>
-          <p className="text-sm text-muted-foreground">Cursor: save as <code>.cursor/mcp.json</code>. VS Code: save as <code>.vscode/mcp.json</code>. Restart the MCP client, then ask it to list LumiBase collections.</p>
+          <p className="text-sm text-muted-foreground">Cursor: save as <code>.cursor/mcp.json</code>. VS Code: save as <code>.vscode/mcp.json</code>. Restart the MCP client, then try one of the prompts below.</p>
         </section>
       )}
+
+      <McpStarterPrompts roleHasAdminAccess={selectedRole ? selectedRole.adminAccess : undefined} />
 
       <p className="text-sm text-muted-foreground">
         This uses the local stdio MCP server. The governed HTTP endpoint at <code>/api/v1/mcp</code> is a separate feature, controlled in Mission Control rollout flags.
