@@ -1,3 +1,6 @@
+// Requires the CMS under test to run with LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT=true:
+// setup()/teardown() create and delete tenants via /api/v1/admin/sites, which is
+// refused otherwise. Never set that flag on a production instance.
 import http from 'k6/http';
 import ws from 'k6/ws';
 import { check, sleep } from 'k6';

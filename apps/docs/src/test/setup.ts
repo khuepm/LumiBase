@@ -10,7 +10,15 @@
 // `analytics-consent.test.tsx`, which fails `typecheck` and `build` while the
 // tests themselves still pass at runtime. `apps/studio` already imports the
 // `/vitest` entry, so it was unaffected; this brings the two apps in step.
+import { Blob as NodeBlob } from 'node:buffer';
 import '@testing-library/jest-dom/vitest';
+
+// jsdom's Blob implementation omits `Blob.prototype.stream()`, which
+// `@shikijs/engine-oniguruma` 4.6+ calls when decompressing its inlined WASM
+// binary (`new Blob([binary]).stream().pipeThrough(new DecompressionStream('gzip'))`).
+if (typeof Blob !== 'undefined' && typeof Blob.prototype.stream !== 'function') {
+  globalThis.Blob = NodeBlob as unknown as typeof globalThis.Blob;
+}
 
 // Vitest's jsdom environment does not always expose `window.localStorage` in this
 // monorepo, but the analytics-consent wiring tests need a working in-memory store.
