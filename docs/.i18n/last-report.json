@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-11-09T14:56:01.296Z",
-  "mode": "preserve-only",
-  "effectiveMode": "preserve-only",
+  "generatedAt": "2026-11-09T15:34:04.377Z",
+  "mode": "plan",
+  "effectiveMode": "plan",
   "engine": "claude",
   "engineKeyPresent": false,
   "summary": {
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 159,
+    "upToDate": 160,
     "planned": 0
   },
   "actions": [
@@ -326,6 +326,18 @@
     },
     {
       "rel": "architecture/decisions/adr-012-remove-cdc-cache-invalidator.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "architecture/decisions/adr-013-organization-plane.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",

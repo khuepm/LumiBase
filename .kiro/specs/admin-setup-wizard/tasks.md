@@ -213,3 +213,6 @@ Notes về parallel hóa:
 
 ## ADR-013 Phase 1 — Personal Org prerequisite (#634)
 - [x] Seed `default` organization before inserting the default site; bind bootstrap user as owner in the same transaction. Registry #196. Provisioning extraction follows in organizations Phase 2.
+
+## ADR-013 Phase 2 — Shared site provisioning (#637)
+- [x] Setup và organization API dùng chung `provisionSite`: administrator + member, creator membership, reconcile extensions sau commit và xoá negative-cache của site mới.

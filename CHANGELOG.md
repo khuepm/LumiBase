@@ -10,7 +10,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Added
+- ADR-013 Phase 2: organization-scoped `lbo_` keys, guarded organization/site/member/key APIs, owner/admin site inheritance with audit provenance, and shared setup/site provisioning (#637). Transfers require a human owner of both organizations; owner promotions and last-owner changes are protected.
+- `LUMIBASE_ALLOW_ORG_SIGNUP=true` explicitly allows Studio users to create organizations; bootstrap operators do not need the flag. Default remains off.
 - ADR-013 Phase 1: organization schema, fixed organization permissions, token prefix classification and organization RLS scope (#634). Setup creates the parent organization before its default site.
+
+### Removed
+- Test-only `POST/DELETE /api/v1/admin/sites` routes and their containment flag. k6 provisioning uses `ORGANIZATION_ID` + `ORGANIZATION_TOKEN` (`lbo_`); destructive cleanup requires `ORGANIZATION_OWNER_TOKEN` (a Studio owner session), because organization keys are never owners.
 
 ### Upgrade notes
 - Back up PostgreSQL before applying migration `0024_organizations`. Existing sites belong to one organization with slug `default`; the bootstrap user becomes its owner. Existing API keys keep site scope. You will see one `default` organization when the organization UI arrives in Phase 4.
