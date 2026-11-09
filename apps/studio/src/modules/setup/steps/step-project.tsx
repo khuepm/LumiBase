@@ -8,6 +8,7 @@ import {
   type ProjectConfigurationFormValues,
 } from '../schemas/project';
 import { useSetupStore } from '../setup-store';
+import { defaultSiteUrl } from '../default-site-url';
 
 let projectDraft: ProjectConfigurationFormValues | null = null;
 
@@ -50,7 +51,7 @@ export function StepProject({ onSubmitted }: StepProjectProps) {
     shouldUnregister: false,
     defaultValues: projectDraft ?? {
       defaultLanguage: 'en',
-      siteUrl: 'http://localhost:2026',
+      siteUrl: defaultSiteUrl(),
       displayTitle: 'LumiBase',
       theme: null,
     },

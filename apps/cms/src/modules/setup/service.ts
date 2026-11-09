@@ -121,7 +121,12 @@ export interface SetupCompleteProject {
 
 interface NormalizedProjectConfiguration {
   readonly defaultLanguage: string;
-  readonly siteUrl: string;
+  /**
+   * `null` when the wizard sent no project block. Never a localhost
+   * placeholder: the CMS cannot know its public origin here, and a guessed
+   * `http://localhost:*` leaks into production Settings → Site.
+   */
+  readonly siteUrl: string | null;
   readonly displayTitle: string;
   readonly theme: null;
 }
@@ -1214,7 +1219,7 @@ function validateProject(project: SetupCompleteProject | undefined):
       ok: true,
       value: {
         defaultLanguage: 'en',
-        siteUrl: 'http://localhost:5173',
+        siteUrl: null,
         displayTitle: 'LumiBase',
         theme: null,
       },
