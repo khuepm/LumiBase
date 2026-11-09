@@ -1,19 +1,21 @@
 # Tasks — Organizations (organization plane)
 
-> Status: **Proposal / Roadmap**. Chưa bắt đầu. Thực thi [ADR-013](../../../docs/en/architecture/decisions/adr-013-organization-plane.md). Mỗi phase là một PR riêng; Phase 0 phải merge trước.
+> Status: **In Progress**. Phase 1 triển khai trong #634; Phase 2–5 còn lại. Thực thi [ADR-013](../../../docs/en/architecture/decisions/adr-013-organization-plane.md). Mỗi phase là một PR riêng; Phase 0 phải merge trước.
 
 ## Phase 0 — Tiền đề (ngoài spec, đã có task riêng)
-- [ ] 0.1 Hotfix khoanh vùng `POST/DELETE /api/v1/admin/sites`: xoá site khác tenant → 403; tạo site hoặc xoá site khác cần env `LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT=true` (dành cho test runner). PR khuepm/LumiBase#628. Phase 2.10 gỡ cả route lẫn env này.
-- [ ] 0.2 Chốt 4 open questions ở [design §9](design.md#9-open-questions) với owner dự án.
+- [x] 0.1 Hotfix khoanh vùng `POST/DELETE /api/v1/admin/sites`: xoá site khác tenant → 403; tạo site hoặc xoá site khác cần env `LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT=true` (dành cho test runner). PR khuepm/LumiBase#628. Phase 2.10 gỡ cả route lẫn env này.
+- [x] 0.2 Chốt 4 open questions ở [design §9](design.md#9-open-questions) với owner dự án.
 
 ## Phase 1 — Schema + backfill (Req 1, 2.1)
-- [ ] 1.1 `organizations`, `organizationMembers` trong [`core.ts`](packages/database/src/schema/core.ts); `sites.organizationId` (Req 1.1–1.2).
-- [ ] 1.2 `apiKeys.scope`, `apiKeys.organizationId`, `siteId` nullable + CHECK `api_keys_scope_target` trong [`access.ts`](packages/database/src/schema/access.ts) (Req 2.1).
-- [ ] 1.3 Migration viết tay `00NN_organizations.sql` + journal: tạo bảng → add cột → backfill Personal_Org → `SET NOT NULL` → api_keys (design §1). Đối soát số với mọi branch mở lúc merge.
-- [ ] 1.4 RLS policy cho hai bảng mới + biến `lumibase.organization_id` trong request scope (design §1 RLS).
-- [ ] 1.5 DB integration test backfill: 0/1/N site, có/không bootstrap user (design §8).
-- [ ] 1.6 `packages/shared/src/org-permissions.ts`: `ORG_ACTIONS`, `OrgRole`, `canOrg()` thuần + unit test bảng quyền (Req 3.1–3.2).
-- [ ] 1.7 `classifyTokenPrefix()` trong `packages/shared`; hằng `ORGANIZATION_TOKEN_PREFIX='lbo_'` (design §2.1).
+
+Bao gồm seed Personal_Org từ task 5.1 trước insert `__default__`; tách `provisionSite` vẫn ở Phase 2.5.
+- [x] 1.1 `organizations`, `organizationMembers` trong [`core.ts`](packages/database/src/schema/core.ts); `sites.organizationId` (Req 1.1–1.2).
+- [x] 1.2 `apiKeys.scope`, `apiKeys.organizationId`, `siteId` nullable + CHECK `api_keys_scope_target` trong [`access.ts`](packages/database/src/schema/access.ts) (Req 2.1).
+- [x] 1.3 Migration viết tay `0024_organizations.sql` + journal: tạo bảng → add cột → backfill Personal_Org → `SET NOT NULL` → api_keys (design §1). Đối soát số với mọi branch mở lúc merge.
+- [x] 1.4 RLS policy cho hai bảng mới + biến `lumibase.organization_id` trong request scope (design §1 RLS).
+- [x] 1.5 DB integration test backfill: 0/1/N site, có/không bootstrap user (design §8).
+- [x] 1.6 `packages/contracts/src/org-permissions.ts`: `ORG_ACTIONS`, `OrgRole`, `canOrg()` thuần + unit test bảng quyền (Req 3.1–3.2).
+- [x] 1.7 `classifyTokenPrefix()` trong `packages/contracts`; hằng `ORGANIZATION_TOKEN_PREFIX='lbo_'` (design §2.1).
 
 ## Phase 2 — Credential + guard + API (Req 2, 3, 4)
 - [ ] 2.1 [`middleware/auth.ts`](apps/cms/src/middleware/auth.ts): gắn `auth.apiKey.scope/organizationId`; chặn credential site-scoped trên `/api/v1/orgs/*` → `403 ORGANIZATION_FORBIDDEN` + audit (Req 2.5).
@@ -21,7 +23,7 @@
 - [ ] 2.3 `middleware/organization-access-guard.ts`: `withOrganizationAccessGuard(action)`; Org_Key = role ảo `admin`; user tra `organization_members`; 404 không lộ tồn tại (design §3).
 - [ ] 2.4 `services/site-admin-access.ts`: gộp hai `hasSiteAdminAccess` ([`admin.ts:69`](apps/cms/src/routes/admin.ts:69), [`control-plane-access-guard.ts`](apps/cms/src/middleware/control-plane-access-guard.ts)) → `resolveSiteAdminAccess(c)` trả `{ allowed, via }`; fallback `organization_members` owner/admin; audit ghi `via` (Req 3.3).
 - [ ] 2.5 `services/site-provisioning.ts`: tách upsert role Administrator/Member khỏi `SetupService` ([`setup/service.ts`](apps/cms/src/modules/setup/service.ts) ~990/~1034) thành `provisionSite()`; `SetupService.initialize` gọi lại (design §4.1).
-- [ ] 2.6 Zod `packages/shared/src/schemas/organizations.ts` (design §4).
+- [ ] 2.6 Zod `packages/contracts/src/schemas/organizations.ts` (design §4).
 - [ ] 2.7 `routes/orgs.ts`: toàn bộ bảng route design §4; mount `/orgs` trong [`index.ts`](apps/cms/src/index.ts); [`tenant.ts`](apps/cms/src/middleware/tenant.ts) miễn `X-Lumi-Site` cho `/api/v1/orgs` (Req 4.1–4.2).
 - [ ] 2.8 `POST /orgs` gate: Instance_Operator hoặc `LUMIBASE_ALLOW_ORG_SIGNUP=true` + `aud=studio` (Req 4.6).
 - [ ] 2.9 `/orgs/:orgId/keys`: mint `lbo_`, trả token một lần; `/api/v1/api-keys` từ chối `scope='organization'` → `400 SCOPE_NOT_ALLOWED` (Req 2.3).
@@ -47,7 +49,7 @@
 - [ ] 4.6 (Tuỳ chọn) `transfer_site` bằng lời mời nếu chốt ở 0.2.
 
 ## Phase 5 — Setup, docs, DoD (Req 7)
-- [ ] 5.1 `SetupService.initialize`: tạo Personal_Org + `provisionSite` với `organizationId`, idempotent (Req 7.1; design §7).
+- [ ] 5.1 (Personal_Org seed kéo lên Phase 1; dùng chung `provisionSite` hoàn tất Phase 2) `SetupService.initialize`: tạo Personal_Org + `provisionSite` với `organizationId`, idempotent (Req 7.1; design §7).
 - [ ] 5.2 Setup Impact Registry [`setup-impact.md`](../admin-setup-wizard/setup-impact.md): một dòng (seed, 2 env, migration+backfill, capability); ID > mọi branch mở ([[registry-ids-collide-across-open-prs]]).
 - [ ] 5.3 Docs song ngữ cùng commit: `api/hono-api-spec.md` (Organizations + mã lỗi mới), `security/user-management.md` (hàng Organization key; §7), `data-model.md`, `mcp/*`; chạy `docs:i18n:parity` → `verify` → `stamp-pair --verified` → `detect` (Req 7.3).
 - [ ] 5.4 ADR-013 `Status: Proposed → Accepted` ở cả `docs/en` và `docs/vi` khi Phase 2 merge.

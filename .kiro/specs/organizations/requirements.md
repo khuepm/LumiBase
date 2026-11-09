@@ -63,7 +63,7 @@ Thuật ngữ **"control plane"** trong code hiện là *quản trị phạm vi 
 #### Acceptance Criteria
 
 1. THE hệ thống SHALL đánh giá Org_Action theo bảng cố định trong ADR-013 §2 (owner: tất cả; admin: read, sites:create, members, keys, settings; billing: read, billing; member: read).
-2. THE Org_Action SHALL **không** đi qua Policy DSL (ADR-008); một hàm thuần `canOrg(role, action): boolean` trong `packages/shared` để CMS + Studio dùng chung.
+2. THE Org_Action SHALL **không** đi qua Policy DSL (ADR-008); một hàm thuần `canOrg(role, action): boolean` trong `packages/contracts` để CMS + Studio dùng chung.
 3. WHEN principal là `owner` hoặc `admin` của org, THE `hasSiteAdminAccess` (route admin, control-plane guard) SHALL trả `true` cho mọi site thuộc org đó sau khi tra `user_sites` không thấy, và `audit_log` của request SHALL mang `via: 'organization'`.
 4. THE `billing` và `member` SHALL không kế thừa quyền site nào.
 5. THE site `administrator`, `lbk_`, `controlPlaneAdmin` SHALL không có Org_Action nào (không kế thừa lên).
@@ -76,9 +76,9 @@ Thuật ngữ **"control plane"** trong code hiện là *quản trị phạm vi 
 
 1. THE CMS SHALL mount `orgsRouter` tại `/api/v1/orgs` với các route trong ADR-013 §4; response theo `{ data, meta? }` / `{ errors }` (rule #5).
 2. THE tenant middleware ([`tenant.ts`](apps/cms/src/middleware/tenant.ts)) SHALL miễn `X-Lumi-Site` cho prefix `/api/v1/orgs`; RLS request scope (spec [`rls-request-scope`](../rls-request-scope/design.md)) SHALL set theo `organization_id`.
-3. `POST /api/v1/orgs/:orgId/sites` SHALL nhận `{ id?, name, slug? }` validate Zod ở `packages/shared/src/schemas/`, và SHALL chạy cùng provisioning với setup wizard: upsert role `administrator`/`member` ([`setup/service.ts`](apps/cms/src/modules/setup/service.ts) `upsertAdministratorRole`/`upsertMemberRole` tách ra dùng chung), `reconcileOfficialExtensions`, purge negative cache; người gọi (nếu là user) được thêm `user_sites` với role `administrator`.
+3. `POST /api/v1/orgs/:orgId/sites` SHALL nhận `{ id?, name, slug? }` validate Zod ở `packages/contracts/src/schemas/`, và SHALL chạy cùng provisioning với setup wizard: upsert role `administrator`/`member` ([`setup/service.ts`](apps/cms/src/modules/setup/service.ts) `upsertAdministratorRole`/`upsertMemberRole` tách ra dùng chung), `reconcileOfficialExtensions`, purge negative cache; người gọi (nếu là user) được thêm `user_sites` với role `administrator`.
 4. `DELETE /api/v1/orgs/:orgId/sites/:siteId` SHALL yêu cầu `org:sites:delete`, header `X-Confirm-Delete: <siteId>`, và từ chối nếu `siteId` không thuộc `orgId` (`404`, không lộ tồn tại).
-5. `POST .../sites/:siteId/transfer` `{ toOrganizationId }` SHALL yêu cầu `owner` ở **cả hai** org (hoặc owner org nguồn + lời mời chấp nhận ở org đích — chốt ở design).
+5. `POST .../sites/:siteId/transfer` `{ toOrganizationId }` SHALL yêu cầu `owner` ở **cả hai** org (owner đã chốt 2026-11-09, không dùng lời mời ở Phase 2).
 6. `POST /api/v1/orgs` SHALL được phép khi: principal là Instance_Operator, HOẶC `LUMIBASE_ALLOW_ORG_SIGNUP=true` và principal có `aud=studio`; nếu không → `403 ORG_SIGNUP_DISABLED`.
 7. THE route `POST/DELETE /api/v1/admin/sites*` SHALL bị gỡ khỏi [`admin.ts`](apps/cms/src/routes/admin.ts) sau khi test runner chuyển sang `/api/v1/orgs/:orgId/sites` với Org_Key.
 8. THE `/api/v1/orgs` SHALL được thêm vào `CONTROL_PLANE_PATHS`? **Không** — guard đó kiểm tra admin *site*; `/api/v1/orgs` dùng guard riêng `withOrganizationAccessGuard` (Req 2.5, 3). Phải ghi rõ trong code comment để tránh ai đó thêm nhầm.

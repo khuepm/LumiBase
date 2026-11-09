@@ -210,3 +210,6 @@ Notes về parallel hóa:
 ### i18n coverage
 
 - Task 3.10 và 12.4 thêm key cho EN + VI tối thiểu. Các locale khác trong Studio sẽ kế thừa fallback EN cho đến khi translator bổ sung.
+
+## ADR-013 Phase 1 — Personal Org prerequisite (#634)
+- [x] Seed `default` organization before inserting the default site; bind bootstrap user as owner in the same transaction. Registry #196. Provisioning extraction follows in organizations Phase 2.
