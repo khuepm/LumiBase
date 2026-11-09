@@ -34,6 +34,7 @@ concurrency:
 
 env:
   NODE_VERSION: 24
+  LUMIBASE_RELEASE_CHANNEL: production
   WRANGLER_SEND_METRICS: "false"
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
@@ -257,10 +258,12 @@ jobs:
           # Cloudflare Pages, so it must call the CMS cross-origin. Point it
           # at the deployed CMS origin (the same repo variable the CMS deploy
           # verifies against). The CMS must allow this Studio origin via
-          # CORS_ALLOWED_ORIGINS. If unset, the build falls back to
-          # same-origin and the Studio will fail to reach the API.
+          # CORS_ALLOWED_ORIGINS. Refuse an unset origin rather than publish
+          # a same-origin build that cannot reach the API.
           VITE_API_URL: ${{ vars.LUMIBASE_CMS_PRODUCTION_URL }}
-        run: pnpm --filter @lumibase/studio build
+        run: |
+          test -n "$VITE_API_URL" || { echo "::error::LUMIBASE_CMS_PRODUCTION_URL is unset" >&2; exit 1; }
+          pnpm --filter @lumibase/studio build
 
       - name: Deploy studio to Cloudflare Pages
         if: steps.cloudflare-credentials.outputs.can_deploy == 'true'
