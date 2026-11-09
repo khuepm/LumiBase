@@ -5,6 +5,7 @@ import { recordEdgeUrl } from '@lumibase/runtime';
 import type { AppEnv, Variables } from '../env';
 import { scopedDbFor } from '../middleware/db';
 import {
+  canonicalDeliverEdgeUrl,
   DELIVER_APP_CACHE_TTL_SECONDS,
   deliverAppCacheKey,
   deliverAppCacheTags,
@@ -490,6 +491,9 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
 
   const runtime = c.get('runtime');
   const edgeCache = runtime?.edgeCache;
+  // One key per real variant, shared by match/put and the purge index (#622 B2).
+  const edgeUrl = canonicalDeliverEdgeUrl(c.req.url);
+  const edgeRequest = new Request(edgeUrl, { method: 'GET' });
   const useDeliverCache = policy.cacheable && !isPreview;
   const appCache = useDeliverCache ? runtime?.cache : undefined;
   const variantHash = await deliveryVariantHash({
@@ -509,7 +513,7 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
    */
   const indexEdgeUrl = async (collections: string[] = []) => {
     if (!edgeCache) return;
-    await recordEdgeUrl(appCache, deliverAppCacheTags(siteId, collections), c.req.url, {
+    await recordEdgeUrl(appCache, deliverAppCacheTags(siteId, collections), edgeUrl, {
       ttl: DELIVER_APP_CACHE_TTL_SECONDS,
     });
   };
@@ -528,8 +532,19 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
 
   // Tier 1b — HTTP edge cache (Req 1.6): only for cacheable public traffic.
   if (policy.cacheable && edgeCache) {
-    const cached = await edgeCache.match(c.req.raw);
-    if (cached) return cached;
+    const cached = await edgeCache.match(edgeRequest);
+    if (cached) {
+      // The edge key carries no request headers, so revalidation is answered
+      // here rather than relying on the cache to honour If-None-Match.
+      const cachedEtag = cached.headers.get('etag');
+      if (cachedEtag && etagMatches(c.req.header('if-none-match'), cachedEtag)) {
+        const headers = new Headers(cached.headers);
+        headers.delete('content-length');
+        headers.delete('content-type');
+        return new Response(null, { status: 304, headers });
+      }
+      return cached;
+    }
   }
 
   // Tier 2a — application cache (Req 8.2): full page payload + ETag metadata.
@@ -540,16 +555,14 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
       c.header('Cache-Control', policy.cacheControl);
       tagResponse();
       if (etagMatches(c.req.header('if-none-match'), cached.etag)) {
-        const notModified = c.body(null, 304);
-        if (edgeCache) {
-          await edgeCache.put(c.req.raw, notModified.clone());
-          await indexEdgeUrl();
-        }
-        return notModified;
+        // A 304 answers one client's conditional request. The edge is keyed by
+        // URL alone, so storing it would hand an empty 304 to the next client
+        // that has nothing cached (#622 B1).
+        return c.body(null, 304);
       }
       const response = c.json(cached.body);
       if (edgeCache) {
-        await edgeCache.put(c.req.raw, response.clone());
+        await edgeCache.put(edgeRequest, response.clone());
         await indexEdgeUrl();
       }
       return response;
@@ -610,12 +623,8 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
   c.header('Cache-Control', policy.cacheControl);
   tagResponse(sectionCollections(page.layoutConfig));
   if (etagMatches(c.req.header('if-none-match'), etag)) {
-    const notModified = c.body(null, 304);
-    if (edgeCache) {
-      await edgeCache.put(c.req.raw, notModified.clone());
-      await indexEdgeUrl(sectionCollections(page.layoutConfig));
-    }
-    return notModified;
+    // Never into the shared edge cache — see the app-cache branch (#622 B1).
+    return c.body(null, 304);
   }
 
   const body = await buildPagePayload(db, siteId, page, withProvenance);
@@ -632,7 +641,7 @@ deliverRouter.get('/page/:site_id/:slug', async (c) => {
 
   const response = c.json(body);
   if (edgeCache) {
-    await edgeCache.put(c.req.raw, response.clone());
+    await edgeCache.put(edgeRequest, response.clone());
     await indexEdgeUrl(sectionCollections(page.layoutConfig));
   }
   return response;

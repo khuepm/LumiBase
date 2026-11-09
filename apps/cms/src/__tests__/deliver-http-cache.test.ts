@@ -196,4 +196,75 @@ describe('GET /deliver/page — HTTP caching', () => {
     expect(stored).toBeInstanceOf(Response);
     expect((stored as Response).status).toBe(200);
   });
+
+  /** URL-keyed store — request headers are not part of the key, as with the Cache API. */
+  function urlKeyedEdge() {
+    const store = new Map<string, Response>();
+    const edgeCache: EdgeCacheProvider = {
+      async match(req) {
+        const hit = store.get(req.url);
+        return hit ? hit.clone() : null;
+      },
+      async put(req, res) {
+        store.set(req.url, res.clone());
+      },
+      async purge() {
+        return 0;
+      },
+    };
+    return { edgeCache, store };
+  }
+
+  /** #622 B1 — a 304 must never become the edge copy of the page. */
+  it('never stores a 304, so a client without a cached copy still gets the page', async () => {
+    const etag = (
+      await appWith(fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]])).request(URL)
+    ).headers.get('etag')!;
+    const { edgeCache, store } = urlKeyedEdge();
+
+    const revalidated = await appWith(fakeDb([[PAGE_ROW], [FINGERPRINT_ROW]]), edgeCache).request(URL, {
+      headers: { 'If-None-Match': etag },
+    });
+    expect(revalidated.status).toBe(304);
+    expect(store.size).toBe(0);
+
+    const fresh = await appWith(
+      fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]]),
+      edgeCache,
+    ).request(URL);
+    expect(fresh.status).toBe(200);
+    expect(((await fresh.json()) as { sections: unknown[] }).sections).toHaveLength(1);
+  });
+
+  it('answers If-None-Match from an edge hit with 304, and a plain request with the full page', async () => {
+    const { edgeCache } = urlKeyedEdge();
+    const first = await appWith(
+      fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]]),
+      edgeCache,
+    ).request(URL);
+    const etag = first.headers.get('etag')!;
+
+    // No DB rows queued: both answers must come from the edge copy.
+    const conditional = await appWith(fakeDb([]), edgeCache).request(URL, {
+      headers: { 'If-None-Match': etag },
+    });
+    expect(conditional.status).toBe(304);
+    expect(await conditional.text()).toBe('');
+    expect(conditional.headers.get('etag')).toBe(etag);
+
+    const plain = await appWith(fakeDb([]), edgeCache).request(URL);
+    expect(plain.status).toBe(200);
+  });
+
+  /** #622 B2 — query noise must not mint edge entries or index URLs. */
+  it('keys the edge on the canonical URL, ignoring unrelated query parameters', async () => {
+    const { edgeCache, store } = urlKeyedEdge();
+    for (const noise of ['?r=1', '?r=2&utm_source=x', '?r=3']) {
+      await appWith(
+        fakeDb([[PAGE_ROW], [FINGERPRINT_ROW], [COLLECTION_ROW], [ITEM_ROW]]),
+        edgeCache,
+      ).request(URL + noise);
+    }
+    expect([...store.keys()]).toEqual([`http://localhost${URL}`]);
+  });
 });

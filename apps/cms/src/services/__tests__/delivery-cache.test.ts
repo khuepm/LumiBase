@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canonicalDeliverEdgeUrl,
   etagMatches,
   resolveDeliveryCachePolicy,
   weakEtag,
@@ -94,5 +95,26 @@ describe('etagMatches', () => {
     expect(etagMatches(undefined, etag)).toBe(false);
     expect(etagMatches(null, etag)).toBe(false);
     expect(etagMatches('', etag)).toBe(false);
+  });
+});
+
+describe('canonicalDeliverEdgeUrl (#622 B2)', () => {
+  const base = 'https://cms.example/api/v1/deliver/page/site-a/home';
+
+  it('drops parameters that do not vary the payload', () => {
+    expect(canonicalDeliverEdgeUrl(`${base}?r=1&utm_source=x#frag`)).toBe(base);
+  });
+
+  it('keeps payload parameters in a fixed order regardless of input order', () => {
+    const a = canonicalDeliverEdgeUrl(`${base}?provenance=true&lang=vi&locale=vi-VN`);
+    const b = canonicalDeliverEdgeUrl(`${base}?locale=vi-VN&x=1&lang=vi&provenance=true`);
+    expect(a).toBe(`${base}?locale=vi-VN&lang=vi&provenance=true`);
+    expect(b).toBe(a);
+  });
+
+  it('normalises the boolean switches the handler reads', () => {
+    expect(canonicalDeliverEdgeUrl(`${base}?provenance=false`)).toBe(base);
+    expect(canonicalDeliverEdgeUrl(`${base}?draft=true`)).toBe(`${base}?preview=true`);
+    expect(canonicalDeliverEdgeUrl(`${base}?preview=true&draft=true`)).toBe(`${base}?preview=true`);
   });
 });
