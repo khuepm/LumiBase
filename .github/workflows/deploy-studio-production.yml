@@ -79,11 +79,13 @@ jobs:
           set -euo pipefail
           expected_asset="$(grep -Eo '/assets/index-[^" ]+\.js' apps/studio/dist/index.html | head -n 1)"
           test -n "$expected_asset"
-          for attempt in {1..12}; do
+          attempt=1
+          while [ "$attempt" -le 12 ]; do
             if curl --fail --silent --show-error --max-time 20 https://studio.lumibase.dev/ | grep -Fq "$expected_asset"; then
               echo "Production Studio serves $expected_asset from ${{ inputs.commit_sha }}"
               exit 0
             fi
+            attempt=$((attempt + 1))
             sleep 5
           done
           echo "::error::Production Studio did not serve the deployed asset $expected_asset" >&2
