@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from 'hono';
+import { isOrganizationPath } from '../services/organization-access';
 import type { AppEnv } from '../env';
 import { getHostMapping } from '../services/domains/host-cache';
 import { isValidSiteId } from '../services/identifier-guard';
@@ -19,7 +20,7 @@ import { isValidSiteId } from '../services/identifier-guard';
  */
 export const withTenant = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const path = c.req.path;
-  if (path.startsWith('/api/v1/files/upload/')) {
+  if (isOrganizationPath(path) || path.startsWith('/api/v1/files/upload/')) {
     return next();
   }
 

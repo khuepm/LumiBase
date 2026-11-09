@@ -27,17 +27,12 @@ import {
   settings,
   translations,
   webhooks,
-  sites,
-  users,
 } from '@lumibase/database';
-import { and, eq, sql } from 'drizzle-orm';
-import { Hono, type Context, type MiddlewareHandler } from 'hono';
+import { and, eq } from 'drizzle-orm';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { stream } from 'hono/streaming';
-import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { reconcileOfficialExtensions } from '../services/official-extension-reconciler';
-import { PermissionService } from '../services/permission-service';
-import type { MagicContext } from '../services/permission-dsl';
+import { resolveSiteAdminAccess } from '../services/site-admin-access';
 
 export const adminRouter = new Hono<AppEnv>();
 
@@ -45,85 +40,9 @@ const errorBody = (code: string, message: string) => ({
   errors: [{ code, message }],
 });
 
-function collectRequestHeaders(c: Context<AppEnv>): Record<string, string> {
-  const headers: Record<string, string> = {};
-  c.req.raw.headers.forEach((value, key) => {
-    headers[key.toLowerCase()] = value;
-  });
-  return headers;
-}
-
-async function resolveAuthUserId(c: Context<AppEnv>): Promise<string | null> {
-  const auth = c.get('auth');
-  if (auth?.userId) return auth.userId;
-  if (!auth?.externalId) return null;
-
-  const [row] = await c
-    .get('db')
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.externalId, auth.externalId))
-    .limit(1);
-  return row?.id ?? null;
-}
-
-async function hasSiteAdminAccess(c: Context<AppEnv>): Promise<boolean> {
-  const auth = c.get('auth');
-  const siteId = c.get('siteId');
-  const userId = await resolveAuthUserId(c);
-  if (!siteId || !userId) return false;
-
-  const ctx: MagicContext = {
-    userId,
-    siteId,
-    roleId: auth?.roleId ?? null,
-    user: auth
-      ? {
-          id: userId,
-          email: auth.email ?? null,
-          roles: auth.roles ?? [],
-          ...(auth.raw ?? {}),
-        }
-      : null,
-    ip:
-      c.get('ip') ??
-      c.req.header('cf-connecting-ip') ??
-      c.req.header('x-forwarded-for') ??
-      null,
-    headers: collectRequestHeaders(c),
-    apiKey: auth?.apiKey ?? null,
-  };
-
-  const bundle = await new PermissionService({
-    db: c.get('db'),
-    cache: c.get('runtime')?.cache,
-    ctx,
-  }).bundle();
-
-  return bundle.admin;
-}
-
 const requireSiteAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const auth = c.get('auth');
-  const authRoles = Array.isArray(auth?.roles) ? auth.roles : [];
-  if (!authRoles.includes('admin')) {
-    return c.json(errorBody('FORBIDDEN', 'Admin role required.'), 403);
-  }
-  if (!c.get('siteId')) {
-    return c.json(
-      errorBody('TENANT_REQUIRED', 'X-Lumi-Site header is required.'),
-      400,
-    );
-  }
-  if (!(await hasSiteAdminAccess(c))) {
-    return c.json(
-      errorBody(
-        'FORBIDDEN',
-        'Admin access for the requested site is required.',
-      ),
-      403,
-    );
-  }
+  if (!c.get('siteId')) return c.json(errorBody('TENANT_REQUIRED', 'X-Lumi-Site header is required.'), 400);
+  if (!(await resolveSiteAdminAccess(c)).allowed) return c.json(errorBody('FORBIDDEN', 'Admin access required.'), 403);
   return next();
 };
 
@@ -374,91 +293,3 @@ adminRouter.post('/restore', async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// Site management for the k6 test runner (`apps/cms/k6/cross-site-leak.js`).
-//
-// These routes sit on a site-scoped router: `requireSiteAdmin` only proves the
-// caller administers the site named in `X-Lumi-Site`. Creating a site, or
-// deleting one other than that site, is a platform-level act, so it is refused
-// unless the instance opts in with `LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT=true`
-// (test/load environments only). This is a containment gate, not the long-term
-// control-plane model.
-// ---------------------------------------------------------------------------
-const createSiteSchema = z
-  .strictObject({
-    id: z
-      .string()
-      .min(1)
-      .max(64)
-      .regex(/^[A-Za-z0-9_-]+$/, 'id may only contain letters, digits, _ and -'),
-    name: z.string().trim().min(1).max(255),
-  });
-
-function siteManagementEnabled(c: Context<AppEnv>): boolean {
-  return c.env?.LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT === 'true';
-}
-
-const SITE_MANAGEMENT_DISABLED = errorBody(
-  'FORBIDDEN',
-  'Site management through the admin API is disabled on this instance.',
-);
-
-adminRouter.post('/sites', async (c) => {
-  if (!siteManagementEnabled(c)) {
-    return c.json(SITE_MANAGEMENT_DISABLED, 403);
-  }
-
-  let raw: unknown;
-  try {
-    raw = await c.req.json();
-  } catch {
-    return c.json(errorBody('VALIDATION', 'Request body must be JSON.'), 400);
-  }
-  const parsed = createSiteSchema.safeParse(raw);
-  if (!parsed.success) {
-    return c.json(
-      {
-        errors: parsed.error.issues.map((issue) => ({
-          code: 'VALIDATION',
-          message: issue.message,
-          path: issue.path.join('.'),
-        })),
-      },
-      400,
-    );
-  }
-
-  const db = c.get('db');
-  const [row] = await db
-    .insert(sites)
-    .values({ id: parsed.data.id, name: parsed.data.name,
-      organizationId: sql`(SELECT organization_id FROM lumibase_sites WHERE id = ${c.get('siteId')})`,
-    })
-    .returning();
-
-  // Auto-install official `lumibase-*` extensions for the new site. Fail-soft:
-  // never throws, skips when no published/verified source row exists yet.
-  if (row) {
-    await reconcileOfficialExtensions(db, c.env, row.id).catch(() => undefined);
-    const cache = c.get('runtime')?.cache;
-    if (cache) {
-      const { forgetNegative, negativeSiteKey } = await import('../services/negative-cache');
-      await forgetNegative(cache, negativeSiteKey(row.id));
-    }
-  }
-
-  return c.json({ data: row }, 201);
-});
-
-adminRouter.delete('/sites/:id', async (c) => {
-  const id = c.req.param('id');
-  // Own site only, unless the instance opted into test-runner site management.
-  if (id !== c.get('siteId') && !siteManagementEnabled(c)) {
-    return c.json(
-      errorBody('FORBIDDEN', 'Only the site named in X-Lumi-Site can be deleted.'),
-      403,
-    );
-  }
-  const db = c.get('db');
-  await db.delete(sites).where(eq(sites.id, id));
-  return c.json({ data: { success: true } });
-});

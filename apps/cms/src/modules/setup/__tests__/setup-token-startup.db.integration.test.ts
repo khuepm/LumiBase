@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq, sql, type SQL } from 'drizzle-orm';
-import { systemState, organizations, organizationMembers, sites, users, type Database } from '@lumibase/database';
+import { systemState, organizations, organizationMembers, sites, users, roles, type Database } from '@lumibase/database';
 
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../../__tests__/helpers/db-harness';
 import { SetupService } from '../service';
@@ -168,6 +168,8 @@ describe.skipIf(!hasDbIntegrationUrl)('setup token startup — Postgres', () => 
     expect(done.ok).toBe(true);
     const [site] = await db.select().from(sites).where(eq(sites.id, '__default__'));
     expect(site?.organizationId).toBeTruthy();
+    const provisionedRoles = await db.select({ key: roles.systemKey }).from(roles).where(eq(roles.siteId, '__default__'));
+    expect(provisionedRoles.map((r) => r.key).sort()).toEqual(['administrator', 'member']);
     const [organization] = await db.select().from(organizations)
       .where(eq(organizations.id, site!.organizationId));
     expect(organization?.slug).toBe('default');

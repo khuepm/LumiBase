@@ -113,12 +113,8 @@ export interface Bindings {
   REFRESH_COOKIE_SECURE?: string;
   /** When set to `"true"`, withAuth allows dev tokens (skip JWKS verify). */
   LUMIBASE_DEV_AUTH?: string;
-  /**
-   * `true` lets a site admin create sites and delete sites other than the one in
-   * `X-Lumi-Site` via `/api/v1/admin/sites` (k6 test runner). Test/load
-   * environments only; unset in production.
-   */
-  LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT?: string;
+  /** Explicitly allow Studio users to create organizations (default off). */
+  LUMIBASE_ALLOW_ORG_SIGNUP?: string;
   /** Secret key for AES-GCM per-field encryption (base64 encoded). */
   ENCRYPTION_KEY?: string;
   /** Comma-separated trusted origins for executable extension bundles. */
@@ -306,6 +302,9 @@ export interface AuthPrincipal {
  * Per-request variables hung off Hono's context.
  */
 export interface Variables {
+  organizationAccessAudited?: boolean;
+  organization?: { id: string; role: import('@lumibase/contracts').OrgRole };
+  siteAdminVia?: 'role' | 'bootstrap' | 'organization' | null;
   db: Database;
   /**
    * Memoised system-role db (BYPASSRLS, unscoped). Set by `withSystemDb()` /

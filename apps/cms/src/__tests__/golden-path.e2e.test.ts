@@ -6,6 +6,7 @@ import {
   items,
   pages,
   sites,
+  organizations,
   systemState,
   users,
   type Database,
@@ -50,6 +51,7 @@ const TEST_DATABASE_URL = process.env.DATABASE_URL;
 // Setup seeds this fixed site id; additional tenants are inserted directly.
 const DEFAULT_SITE = '__default__';
 const OTHER_SITE = 'site_golden_other_e2e';
+const OTHER_ORG = 'org_golden_other_e2e';
 const COLLECTION = 'articles';
 const ADMIN_EMAIL = 'golden-admin@example.test';
 const ADMIN_PASSWORD = 'Golden-Path-E2E-1!';
@@ -111,6 +113,7 @@ describe('Golden path (setup → collection → item → publish → read) + ten
   // its `user_roles`. Sites cascade into collections/items.
   async function resetFixture(): Promise<void> {
     await db.delete(sites).where(eq(sites.id, OTHER_SITE)).catch(() => undefined);
+    await db.delete(organizations).where(eq(organizations.id, OTHER_ORG)).catch(() => undefined);
     await db.delete(sites).where(eq(sites.id, DEFAULT_SITE)).catch(() => undefined);
     await db.delete(users).where(eq(users.isBootstrap, true)).catch(() => undefined);
     await db.delete(systemState).catch(() => undefined);
@@ -232,13 +235,14 @@ describe('Golden path (setup → collection → item → publish → read) + ten
     // rejects an unresolvable `X-Lumi-Site` with 404 ahead of `withAuth`, so probing
     // isolation against a site that was never created would short-circuit on
     // nonexistence and never reach the boundary each step means to test.
-    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER_SITE, name: 'Golden Other' });
+    await db.insert(organizations).values({ id: OTHER_ORG, slug: OTHER_ORG, name: 'Golden other org' });
+    await db.insert(sites).values({ organizationId: OTHER_ORG, id: OTHER_SITE, name: 'Golden Other' });
 
     // 5a. Token pinning: a session JWT carries its `siteId` claim, and
     //     `withAuth` rejects it outright when the `X-Lumi-Site` header names a
-    //     different tenant — so site A's token can never even reach site B's
+    //     different organization the user does not own — so site A's token cannot reach site B's
     //     data. This is the auth-layer half of isolation. Site B is a real
-    //     tenant here, so the 401 proves the token was pinned, not merely that
+    //     tenant in another organization, so the 401 proves the boundary, not merely that
     //     the target was missing.
     const crossSite = await request('/api/v1/collections', {
       method: 'POST',

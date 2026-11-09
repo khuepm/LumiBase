@@ -206,8 +206,9 @@ async function publicApiKey(c: Context<AppEnv>, row: typeof apiKeys.$inferSelect
   };
 }
 
-function requireUserPrincipal(c: Context<AppEnv>): (AuthPrincipal & { userId: string }) | null {
+function requireUserPrincipal(c: Context<AppEnv>): AuthPrincipal | null {
   const auth = c.get('auth');
+  if (auth?.apiKeyId && auth.apiKey?.scope === 'organization') return auth;
   if (auth?.type === 'api_key' || !auth?.userId) {
     return null;
   }
@@ -217,7 +218,7 @@ function requireUserPrincipal(c: Context<AppEnv>): (AuthPrincipal & { userId: st
 async function writeApiKeyAudit(
   c: Context<AppEnv>,
   event: 'api_key_created' | 'api_key_rotated' | 'api_key_revoked',
-  auth: AuthPrincipal & { userId: string },
+  auth: AuthPrincipal,
   row: typeof apiKeys.$inferSelect,
   extra: Record<string, unknown> = {},
 ): Promise<void> {
@@ -228,6 +229,8 @@ async function writeApiKeyAudit(
     userAgent: c.get('userAgent') ?? null,
     requestId: c.get('requestId') ?? null,
     metadata: {
+      via: c.get('siteAdminVia') ?? 'role',
+      organizationId: auth.apiKey?.organizationId ?? null,
       apiKeyId: row.id,
       apiKeyName: row.name,
       prefix: row.prefix,
@@ -270,7 +273,7 @@ async function ensurePolicyExists(c: Context<AppEnv>, id: string): Promise<boole
 
 async function auditWarningOverride(
   c: Context<AppEnv>,
-  auth: AuthPrincipal & { userId: string },
+  auth: AuthPrincipal,
   metadata: Record<string, unknown>,
 ): Promise<void> {
   await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
@@ -312,7 +315,9 @@ apiKeysRouter.post('/', async (c) => {
     );
   }
 
-  const parsed = createApiKey.safeParse(await c.req.json());
+  const body = await c.req.json().catch(() => null);
+  if (body?.scope === 'organization') return c.json({ errors: [{ code: 'SCOPE_NOT_ALLOWED' }] }, 400);
+  const parsed = createApiKey.safeParse(body);
   if (!parsed.success) {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
@@ -342,7 +347,7 @@ apiKeysRouter.post('/', async (c) => {
       description: parsed.data.description,
       prefix: token.prefix,
       tokenHash: token.tokenHash,
-      createdBy: auth.userId,
+      createdBy: auth.userId ?? null,
       expiresAt: parsed.data.expiresAt ?? null,
       metadata: withAllowedOrigins(parsed.data.metadata, origins.valid),
     })
@@ -475,7 +480,7 @@ apiKeysRouter.post('/:id/rotate', async (c) => {
       prefix: token.prefix,
       tokenHash: token.tokenHash,
       rotatedAt: new Date(),
-      rotatedBy: auth.userId,
+      rotatedBy: auth.userId ?? null,
       revokedAt: null,
       revokedBy: null,
       expiresAt: nextExpiresAt,
@@ -506,7 +511,7 @@ apiKeysRouter.post('/:id/revoke', async (c) => {
     .update(apiKeys)
     .set({
       revokedAt: new Date(),
-      revokedBy: auth.userId,
+      revokedBy: auth.userId ?? null,
     })
     .where(and(scopeSite(apiKeys.siteId, c.get('siteId')), eq(apiKeys.id, c.req.param('id'))))
     .returning();

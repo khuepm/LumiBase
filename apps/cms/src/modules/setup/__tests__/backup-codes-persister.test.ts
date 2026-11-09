@@ -108,6 +108,7 @@ function makeFakeDb(captured: {
             // users insert uses `.returning(...)`; roles insert uses
             // `.onConflictDoNothing().returning(...)`.
             async returning() {
+                  if (tableName === 'lumibase_sites') return [rows];
               if (tableName === 'lumibase_roles') {
                 return [{ id: 'role_admin' }];
               }
@@ -125,6 +126,7 @@ function makeFakeDb(captured: {
             onConflictDoNothing() {
               return {
                 async returning() {
+                  if (tableName === 'lumibase_sites') return [rows];
                   if (tableName === 'lumibase_roles') {
                     return [{ id: 'role_admin' }];
                   }

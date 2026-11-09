@@ -478,8 +478,9 @@ export const FRONTEND_SESSION_DECISION_MESSAGE = 'Frontend (subscriber) sessions
  *    `frontend`-audience sessions are refused even when a role or policy
  *    grants `ai:decide` or admin access. Those credentials live in browsers
  *    and apps, so a paid provider call must come from Studio or a server
- *    holding a secret key. Anything other than `standard` (including a missing
- *    value from a cast) is refused: fail closed.
+ *    holding a secret site or organization key. Only `standard` and
+ *    `organization_api_key` are recognized private callers; unknown values
+ *    (including a missing value from a cast) are refused: fail closed.
  * 2. Then the `ai:decide` capability (admin satisfies it).
  */
 export function authorizeDecision(grant: DecisionGrant): void {
@@ -489,7 +490,7 @@ export function authorizeDecision(grant: DecisionGrant): void {
   if (grant.callerClass === 'frontend_session') {
     throw refused(FRONTEND_SESSION_DECISION_MESSAGE, 'frontend_session');
   }
-  if (grant.callerClass !== 'standard') {
+  if (grant.callerClass !== 'standard' && grant.callerClass !== 'organization_api_key') {
     throw refused('The caller could not be classified.', 'unclassified_caller');
   }
   const message = `The ${DECISION_CAPABILITY} capability is required.`;
