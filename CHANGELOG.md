@@ -9,7 +9,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+- `POST /api/v1/deployments/webhook/:provider/:siteId` carries the tenant in the URL path so Vercel and Netlify outgoing deployment webhooks (which cannot send custom `X-Lumi-Site` headers) work on the shared API host (`api.lumibase.dev`) without a per-site host mapping. `POST /api/v1/deployments/webhook/:provider` remains supported via `withTenant` (#569, B163).
 
 ## [1.0.1] - 2026-11-09
 

@@ -1,14 +1,14 @@
 ---
-version: 3
-lastUpdated: 2026-09-07T15:32:41.098Z
+version: 4
+lastUpdated: 2026-11-09T15:37:46.751Z
 sourceLang: en
 translatedFrom: en
-sourceHash: db3d36504104f971
+sourceHash: 93188f6a9c32d75d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-07T15:32:41.098Z
-codeVerifiedHash: db3d36504104f971
-codeVerifiedClaims: 34
+codeVerified: 2026-11-09T15:37:46.751Z
+codeVerifiedHash: 93188f6a9c32d75d
+codeVerifiedClaims: 38
 ---
 
 # Deployment Integrations (Vercel / Netlify)
@@ -49,7 +49,7 @@ API token của provider **không bao giờ được lưu ở dạng plaintext**
 Hai đường bổ trợ nhau giữ cho trạng thái deployment luôn mới:
 
 - **Status poller** — một cron 30s (`apps/cms/src/services/deployment/status-poller.ts`, đăng ký trong `serve.ts`) quét mọi deployment chưa ở trạng thái cuối và sync nó từ provider. Mỗi lần sync là một conditional update có bảo vệ (chỉ đổi `queued`/`building`) và một lỗi provider đơn lẻ không bao giờ làm gián đoạn cả vòng quét — chạy lại là no-op.
-- **Webhook vào** — `POST /api/v1/deployments/webhook/:provider` (public, trước auth) nhận các event trạng thái do provider đẩy tới. Nó cố ý nằm ngoài bề mặt đã xác thực vì provider xác thực bằng cách **ký body request**, không phải bằng bearer token; nó vẫn chạy `withTenant` + `withDb`. Chữ ký được verify thật trên raw body qua Web Crypto: **Vercel** dùng HMAC-SHA1 (`x-vercel-signature`), **Netlify** dùng JWS/HS256 (`x-webhook-signature`), so sánh theo constant time. Với Netlify, verify chữ ký một mình là chưa đủ — body không nằm trong signing input của JWS — nên payload còn phải buộc vào đúng bytes đó: claim `sha256` của nó được so với digest của raw body (payload **chính là** raw body cũng được nhận). Thiếu bước này, một JWS hợp lệ bắt được từ notification khác vẫn xác thực được một body khác. Chữ ký sai độ dài, payload không decode được, hay body bị sửa sau khi ký đều trả `401`, không bao giờ `500`. Secret chung được đọc từ setting theo site `deployment.webhook.<provider>` (giá trị `{ "secret": "…" }`) — **không bao giờ** từ một request header. Nếu chưa cấu hình secret, mọi request webhook đều bị từ chối (`401 INVALID_SIGNATURE`); trạng thái vẫn sync được qua poller.
+- **Webhook vào** — `POST /api/v1/deployments/webhook/:provider/:siteId` (và `POST /api/v1/deployments/webhook/:provider`, cả hai đều public, trước auth) nhận các event trạng thái do provider đẩy tới. Nó cố ý nằm ngoài bề mặt đã xác thực vì provider xác thực bằng cách **ký body request**, không phải bằng bearer token. Vì outgoing webhook của Vercel và Netlify chỉ cấu hình được URL đích và secret ký (không gửi được HTTP header tuỳ chỉnh), route `/:provider/:siteId` mang site id ngay trong path để webhook hoạt động trên shared API host (`api.lumibase.dev`) mà không cần host mapping riêng theo site; `/:provider` vẫn được hỗ trợ qua `withTenant` (header `X-Lumi-Site` hoặc host mapping theo site). Cả hai route đều chạy `withDb` và scope mọi query qua `scopedDbFor(c, siteId)`. Chữ ký được verify thật trên raw body qua Web Crypto: **Vercel** dùng HMAC-SHA1 (`x-vercel-signature`), **Netlify** dùng JWS/HS256 (`x-webhook-signature`), so sánh theo constant time. Với Netlify, verify chữ ký một mình là chưa đủ — body không nằm trong signing input của JWS — nên payload còn phải buộc vào đúng bytes đó: claim `sha256` của nó được so với digest của raw body (payload **chính là** raw body cũng được nhận). Thiếu bước này, một JWS hợp lệ bắt được từ notification khác vẫn xác thực được một body khác. Chữ ký sai độ dài, payload không decode được, hay body bị sửa sau khi ký đều trả `401`, không bao giờ `500`. Secret chung được đọc từ setting theo site `deployment.webhook.<provider>` (giá trị `{ "secret": "…" }`) — **không bao giờ** từ một request header. Nếu chưa cấu hình secret, mọi request webhook đều bị từ chối (`401 INVALID_SIGNATURE`); trạng thái vẫn sync được qua poller.
 
 ## 5. REST API
 
@@ -116,6 +116,6 @@ Một trang **Settings → Deployments** (`apps/studio/src/modules/settings/depl
 - **Capabilities:** thêm `deployments:read` / `deployments:write` — cấp chúng cho role admin khi upgrade. (Không có agent role mặc định nào mang `deployments:write`, nên skill `triggerDeployment` chỉ chạy cho caller được cấp tường minh — deploy không bao giờ tự động có sẵn cho agent thông thường.)
 - **Không seed:** target do admin tạo sau khi setup; không có giá trị mặc định.
 - **RLS:** `lumibase_deployment_targets` và `lumibase_deployments` được cách ly theo site qua `packages/database/migrations/rls-policies.sql` (theo quy ước của dự án, không nằm trong migration tạo bảng).
-- **Webhook vào (tuỳ chọn):** để nhận trạng thái do provider đẩy tới, đặt setting theo site `deployment.webhook.<provider>` thành `{ "secret": "<shared secret>" }` và cấu hình cùng secret đó ở webhook của provider. Không có nó, trạng thái chỉ sync qua poller 30s.
+- **Webhook vào (tuỳ chọn):** để nhận trạng thái do provider đẩy tới, đặt setting theo site `deployment.webhook.<provider>` thành `{ "secret": "<shared secret>" }` và cấu hình URL webhook ở provider là `https://<api-host>/api/v1/deployments/webhook/<provider>/<siteId>` kèm cùng secret đó. Không có nó, trạng thái chỉ sync qua poller 30s.
 - **Các bảng** `lumibase_deployment_targets` và `lumibase_deployments` là phần của migration schema hợp nhất `0000_lumibase_init`.
 - Xem spec ở `.kiro/specs/deployment-integrations/` để có đầy đủ requirement và design.

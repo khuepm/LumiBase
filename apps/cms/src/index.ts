@@ -203,9 +203,12 @@ app.route('/scim/v2', scimRouter);
 
 // Inbound deployment status webhook. PUBLIC / pre-auth on purpose: the
 // provider (Vercel/Netlify) authenticates via request signature, not a bearer
-// token. Needs `withTenant` (X-Lumi-Site → siteId) + `withDb` to update the
-// `deployments` row; `withRuntime` already ran globally for the KeyProvider.
-app.use('/api/v1/deployments/webhook/*', withTenant(), withDb());
+// token. `/:provider/:siteId` carries the tenant in the path so webhooks work
+// on the shared API host (`api.lumibase.dev`) where providers cannot send
+// custom headers (`X-Lumi-Site`); `/:provider` remains supported via
+// `withTenant` for per-site host mappings or callers that send `X-Lumi-Site`.
+// Both routes scope their DB handle with `scopedDbFor(c, siteId)` (#569, B130).
+app.use('/api/v1/deployments/webhook/*', withDb());
 app.route('/api/v1/deployments/webhook', deploymentsWebhookRouter);
 
 // Git integration public surface — OAuth callback + signature-verified webhook
