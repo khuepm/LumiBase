@@ -4,7 +4,7 @@
  * identically. Web Crypto only (works on both Workers and Node ≥20).
  */
 
-import { PUBLISHABLE_TOKEN_PREFIX } from './api-key-publishable';
+import { PUBLISHABLE_TOKEN_PREFIX, ORGANIZATION_TOKEN_PREFIX } from '@lumibase/contracts';
 
 export interface PlaintextToken {
   /** Full plaintext token — returned to the caller exactly once. */
@@ -24,6 +24,7 @@ export interface CreateTokenOptions {
    * See `services/api-key-publishable.ts`.
    */
   publishable?: boolean;
+  scope?: 'site' | 'organization';
 }
 
 export async function createPlaintextToken(
@@ -33,7 +34,8 @@ export async function createPlaintextToken(
   crypto.getRandomValues(bytes);
   const secret = base64Url(bytes);
   // Secret keys keep the bare `lbk_` prefix so existing tokens stay valid.
-  const token = options.publishable ? `${PUBLISHABLE_TOKEN_PREFIX}${secret}` : `lbk_${secret}`;
+  if (options.scope === 'organization' && options.publishable) throw new Error('Organization keys cannot be publishable');
+  const token = options.scope === 'organization' ? `${ORGANIZATION_TOKEN_PREFIX}${secret}` : options.publishable ? `${PUBLISHABLE_TOKEN_PREFIX}${secret}` : `lbk_${secret}`;
   return {
     token,
     prefix: token.slice(0, 16),

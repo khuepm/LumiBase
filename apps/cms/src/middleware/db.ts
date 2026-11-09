@@ -47,7 +47,7 @@ type Resolved =
   | { ok: false; status: 500; body: unknown };
 
 function isDevEnv(c: AppContext): boolean {
-  return c.env.LUMIBASE_ENV === 'development' || process.env.LUMIBASE_ENV === 'development';
+  return c.env?.LUMIBASE_ENV === 'development' || process.env.LUMIBASE_ENV === 'development';
 }
 
 function resolveSql(c: AppContext, kind: Kind): Resolved {
@@ -99,7 +99,7 @@ function hasDedicatedSystemConnection(c: AppContext): boolean {
   if (isDevEnv(c)) return Boolean(c.env.DATABASE_SYSTEM_URL || process.env.DATABASE_SYSTEM_URL);
   const db = c.get('runtime')?.database;
   if (db) return db.hasSystemConnection?.() ?? false;
-  return Boolean(c.env.HYPERDRIVE_SYSTEM?.connectionString);
+  return Boolean(c.env?.HYPERDRIVE_SYSTEM?.connectionString);
 }
 
 function modeOf(c: AppContext): DbRlsMode | DbRlsConfigError {

@@ -1,3 +1,4 @@
+import { orgsRouter } from './routes/orgs';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv } from './env';
@@ -230,6 +231,7 @@ api.use('*', withTenant(), withDb(), withTenantExists(), withAiIpRateLimit(), wi
 // anything registered on `authRouter`/`meRouter` afterwards is invisible to
 // the composed app and answers 404.
 authRouter.route('/', tfaAuthRouter);
+api.route('/orgs', orgsRouter);
 api.route('/auth', authRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
 // URL contract from admin-setup-wizard design §7.3 (`GET /api/v1/me/admin-path`).

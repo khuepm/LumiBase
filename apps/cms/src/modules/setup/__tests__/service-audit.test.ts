@@ -50,9 +50,10 @@ function makeFakeDb(
     insert(table: { [k: string]: unknown }) {
       const tableName = getTableName(table);
       return {
-        values() {
+        values(vals: unknown) {
           const builder = {
             async returning() {
+                  if (tableName === 'lumibase_sites') return [vals];
               if (tableName === 'lumibase_roles') {
                 return [{ id: 'role_admin' }];
               }
@@ -69,6 +70,7 @@ function makeFakeDb(
             onConflictDoNothing() {
               return {
                 async returning() {
+                  if (tableName === 'lumibase_sites') return [vals];
                   if (tableName === 'lumibase_roles') {
                     return [{ id: 'role_admin' }];
                   }

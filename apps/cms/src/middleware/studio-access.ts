@@ -1,3 +1,4 @@
+import { isOrganizationPath } from '../services/organization-access';
 import type { MiddlewareHandler } from 'hono';
 import { eq } from 'drizzle-orm';
 import { users } from '@lumibase/database';
@@ -58,6 +59,8 @@ const STUDIO_ACCESS_PATH_PREFIXES = [
  * collection/action permissions.
  */
 export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next) => {
+  // Organization authorization is independent of a site appAccess bundle.
+  if (isOrganizationPath(c.req.path)) return next();
   const studioClient = isStudioClientRequest(c.req.header(STUDIO_CLIENT_HEADER), c.req.header('user-agent'));
   if (!studioClient && !isStudioAccessPath(c.req.path)) {
     return next();
@@ -82,6 +85,9 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
       403,
     );
   }
+
+  // Organization keys inherit the selected site's administrator bundle.
+  if (auth?.apiKeyId && auth.apiKey?.scope === 'organization' && c.get('access')?.admin) return next();
 
   if (!auth?.userId) {
     return c.json(

@@ -16,6 +16,7 @@ function makeFakeDb(results: unknown[][]): Database {
   let selectCount = 0;
   const fluent = {
     from: () => fluent,
+    innerJoin: () => fluent,
     where: () => fluent,
     limit: () => Promise.resolve(results[selectCount++] ?? []),
   };
