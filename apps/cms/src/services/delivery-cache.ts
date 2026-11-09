@@ -156,3 +156,40 @@ export function deliverAppCacheTags(
 ): string[] {
   return [deliverTag(siteId), ...collectionNames.map((c) => itemsTag(siteId, c))];
 }
+
+/**
+ * Query parameters that change the `/deliver/page` payload (or, for
+ * `preview`, which traffic class it belongs to). Everything else in the query
+ * string is noise to the edge (#622 B2).
+ */
+const DELIVER_EDGE_KEY_PARAMS = ['locale', 'lang', 'provenance', 'preview'] as const;
+
+/**
+ * Canonical URL used as the edge-cache key **and** the tag→URL purge index
+ * entry for a `/deliver/page` request (#622 B2).
+ *
+ * The raw request URL would let `?r=1..N` mint a new edge entry per request
+ * and, worse, push the real page URLs out of the bounded purge index
+ * (`EDGE_URL_INDEX_LIMIT`), so a URL purge would miss them. Keeping only the
+ * parameters that vary the payload, in a fixed order and normalised, gives one
+ * key per real variant.
+ */
+export function canonicalDeliverEdgeUrl(rawUrl: string): string {
+  const url = new URL(rawUrl);
+  const q = url.searchParams;
+  const normalised: Record<(typeof DELIVER_EDGE_KEY_PARAMS)[number], string | null> = {
+    locale: q.get('locale') || null,
+    lang: q.get('lang') || null,
+    // Mirrors the handler: only the literal 'true' turns these on.
+    provenance: q.get('provenance') === 'true' ? 'true' : null,
+    preview: q.get('preview') === 'true' || q.get('draft') === 'true' ? 'true' : null,
+  };
+  const kept = new URLSearchParams();
+  for (const key of DELIVER_EDGE_KEY_PARAMS) {
+    const value = normalised[key];
+    if (value !== null) kept.set(key, value);
+  }
+  url.search = kept.toString();
+  url.hash = '';
+  return url.toString();
+}

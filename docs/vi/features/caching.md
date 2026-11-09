@@ -2,14 +2,14 @@
 title: Caching
 description: HTTP cache ở edge, CacheProvider tầng ứng dụng, và các lớp phòng thủ cache penetration
 translatedFrom: en
-sourceHash: dd1708ac3642ecaa
-version: 6
-lastUpdated: 2026-11-07T20:27:23.488Z
+sourceHash: 5e1114cd7d51ea0a
+version: 7
+lastUpdated: 2026-11-09T04:18:38.708Z
 sourceLang: en
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-07T20:27:23.488Z
-codeVerifiedHash: dd1708ac3642ecaa
+codeVerified: 2026-11-09T04:18:38.708Z
+codeVerifiedHash: 5e1114cd7d51ea0a
 codeVerifiedClaims: 18
 ---
 
@@ -41,6 +41,10 @@ Purge theo tag là một lời gọi bất kể bao nhiêu URL bị ảnh hưở
 3. Provider xoá colo cục bộ qua `caches.default.delete`, rồi — khi có `CF_PURGE_ZONE_ID` + `CF_PURGE_API_TOKEN` — gọi zone purge API bằng **tag**, và chỉ khi lời gọi đó bị từ chối mới thử lại bằng danh sách **URL**, theo lô 30.
 
 Chính cơ chế lùi này là lý do index URL tồn tại. Ở nơi purge theo tag chạy được, index là thừa; ở nơi không chạy được, nó là toàn bộ cơ chế.
+
+URL được ghi vào đó là key edge **chuẩn hoá**, không phải URL thô của request: chỉ giữ `locale`, `lang`, `provenance=true` và `preview=true` (hoặc `draft=true`, lưu thành `preview=true`), theo đúng thứ tự đó. Mọi query parameter khác bị bỏ trước `edgeCache.match/put`, nên `?utm_source=…` hay `?r=<random>` không tạo thêm bản edge mới và không đẩy URL trang thật ra khỏi index 200 entry.
+
+`304 Not Modified` không bao giờ được ghi vào edge. Nó chỉ trả lời request có điều kiện của một client, mà key edge không mang header nào của request, nên một 304 đã lưu sẽ bị trả với body rỗng cho client kế tiếp chưa có bản cache nào. Khi hit edge, route tự trả lời `If-None-Match` bằng cách so với `ETag` của bản đã lưu.
 
 Không có hai biến đó thì purge tụt xuống mức colo-local, và đấy **không phải** invalidate toàn cầu: các PoP khác vẫn phục vụ bản cũ tới hết `s-maxage`. Hãy cấu hình chúng cho mọi triển khai mà một lần sửa nội dung phải tới đích nhanh hơn cửa sổ `s-maxage`.
 

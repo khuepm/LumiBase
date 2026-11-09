@@ -1,12 +1,12 @@
 ---
 title: Caching
 description: Edge HTTP cache, application CacheProvider, and cache-penetration defences
-version: 6
-lastUpdated: 2026-11-07T20:27:23.488Z
+version: 7
+lastUpdated: 2026-11-09T04:18:38.708Z
 sourceLang: en
-contentHash: dd1708ac3642ecaa
-codeVerified: 2026-11-07T20:27:23.488Z
-codeVerifiedHash: dd1708ac3642ecaa
+contentHash: 5e1114cd7d51ea0a
+codeVerified: 2026-11-09T04:18:38.708Z
+codeVerifiedHash: 5e1114cd7d51ea0a
 codeVerifiedClaims: 18
 ---
 
@@ -38,6 +38,10 @@ Purging by tag is one call however many URLs are affected, and it reaches copies
 3. The provider clears the local colo through `caches.default.delete`, then — when `CF_PURGE_ZONE_ID` + `CF_PURGE_API_TOKEN` are set — calls the zone purge API with the **tag**, and only if that call is refused retries with the **URL** list, in batches of 30.
 
 The fallback is why the URL index exists at all. Where tag purge works, the index is redundant; where it does not, it is the whole mechanism.
+
+The URL recorded there is the **canonical** edge key, not the raw request URL: only `locale`, `lang`, `provenance=true` and `preview=true` (or `draft=true`, stored as `preview=true`) survive, in that order. Any other query parameter is dropped before `edgeCache.match/put`, so `?utm_source=…` or `?r=<random>` neither creates a new edge copy nor pushes real page URLs out of the 200-entry index.
+
+A `304 Not Modified` is never written to the edge. It answers one client's conditional request, and the edge key carries no request headers, so a stored 304 would be served with an empty body to the next client that has nothing cached. An edge hit answers `If-None-Match` itself by comparing it with the stored copy's `ETag`.
 
 Without those two variables the purge degrades to colo-local, which is **not** global invalidation: other PoPs keep serving until `s-maxage`. Configure them for any deployment where a content fix has to land faster than the `s-maxage` window.
 
