@@ -154,8 +154,8 @@ describe.skipIf(!hasDbIntegrationUrl)('G3 reconciler repair loop — DB integrat
     llmStub.duringCall = null;
     await db.delete(sites).where(sql`${sites.id} IN (${SITE}, ${OTHER_SITE})`);
     await db.insert(sites).values([
-      { id: SITE, name: 'G3 loop' },
-      { id: OTHER_SITE, name: 'G3 other tenant' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'G3 loop' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER_SITE, name: 'G3 other tenant' },
     ]);
     for (const siteId of [SITE, OTHER_SITE]) {
       const [coll] = await db

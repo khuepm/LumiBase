@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq, sql, type SQL } from 'drizzle-orm';
-import { systemState, type Database } from '@lumibase/database';
+import { systemState, organizations, organizationMembers, sites, users, type Database } from '@lumibase/database';
 
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../../__tests__/helpers/db-harness';
 import { SetupService } from '../service';
@@ -166,6 +166,15 @@ describe.skipIf(!hasDbIntegrationUrl)('setup token startup — Postgres', () => 
     // …and the way out that did not exist before.
     const done = await svc.complete(setupInput(started.token), { requestId: 'right' });
     expect(done.ok).toBe(true);
+    const [site] = await db.select().from(sites).where(eq(sites.id, '__default__'));
+    expect(site?.organizationId).toBeTruthy();
+    const [organization] = await db.select().from(organizations)
+      .where(eq(organizations.id, site!.organizationId));
+    expect(organization?.slug).toBe('default');
+    const owners = await db.select({ userId: organizationMembers.userId, role: organizationMembers.role })
+      .from(organizationMembers).where(eq(organizationMembers.organizationId, site!.organizationId));
+    const [bootstrap] = await db.select({ id: users.id }).from(users).where(eq(users.isBootstrap, true));
+    expect(owners).toEqual([{ userId: bootstrap!.id, role: 'owner' }]);
     expect(await svc.getState()).toEqual({ state: 'initialized', requiresSetupToken: false });
 
     // The hash does not outlive setup (design §7.3), and a later start is quiet.

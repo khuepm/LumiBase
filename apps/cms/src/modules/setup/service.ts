@@ -39,6 +39,8 @@ import {
   roles,
   settings,
   sites,
+  organizations,
+  organizationMembers,
   systemState,
   userRoles,
   userSites,
@@ -570,9 +572,18 @@ export class SetupService {
         // settings key below is kept for back-compat readers). Theme/branding
         // are left at their column defaults and configured later via
         // Studio → Settings → Site.
+        // Create the parent before inserting the NOT NULL organization_id.
+        // Migration may already have seeded it on a fresh, uninitialized install.
+        await tx.insert(organizations).values({
+          slug: 'default', name: projectValue.displayTitle,
+        }).onConflictDoNothing({ target: organizations.slug });
+        const [personalOrg] = await tx.select({ id: organizations.id }).from(organizations)
+          .where(eq(organizations.slug, 'default'));
+        if (!personalOrg) throw new SetupAbort({ code: 'INTERNAL' });
         await tx
           .insert(sites)
           .values({
+            organizationId: personalOrg.id,
             id: DEFAULT_SITE_ID,
             name: projectValue.displayTitle,
             displayTitle: projectValue.displayTitle,
@@ -636,6 +647,10 @@ export class SetupService {
         if (!newUser) {
           throw new SetupAbort({ code: 'INTERNAL' });
         }
+
+        await tx.insert(organizationMembers).values({
+          userId: newUser.id, organizationId: personalOrg.id, role: 'owner',
+        }).onConflictDoNothing();
 
         // ── 9a. Create the platform `Administrator` role (admin bypass) and
         //        bind the bootstrap admin to it. requirements.md Req 3 states

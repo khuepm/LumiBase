@@ -9,7 +9,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+- ADR-013 Phase 1: organization schema, fixed organization permissions, token prefix classification and organization RLS scope (#634). Setup creates the parent organization before its default site.
+
+### Upgrade notes
+- Back up PostgreSQL before applying migration `0024_organizations`. Existing sites belong to one organization with slug `default`; the bootstrap user becomes its owner. Existing API keys keep site scope. You will see one `default` organization when the organization UI arrives in Phase 4.
+- There is no automatic rollback. To revert the schema, restore the pre-upgrade backup. Reapply `packages/database/migrations/rls-policies.sql` if using RLS enforcement. The migration validates organization foreign keys and API key scope targets: repair manually introduced orphan IDs or inconsistent key targets before retrying.
 
 ## [1.0.1] - 2026-11-09
 

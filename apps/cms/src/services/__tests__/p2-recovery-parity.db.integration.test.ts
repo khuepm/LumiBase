@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { and, eq } from 'drizzle-orm';
@@ -26,7 +27,7 @@ describe.skipIf(!hasDbIntegrationUrl)('P2: PostgreSQL recovery and REST/skill pa
   let db: Database;
   beforeAll(async () => { db = await connectDbIntegration('p2-parity'); });
   async function clean() { for (const id of [SITE, OTHER]) await db.delete(sites).where(eq(sites.id, id)); }
-  beforeEach(async () => { await clean(); await db.insert(sites).values([{ id: SITE, name: 'A' }, { id: OTHER, name: 'B' }]); });
+  beforeEach(async () => { await clean(); await db.insert(sites).values([{ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'A' }, { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER, name: 'B' }]); });
   afterEach(() => vi.restoreAllMocks());
   afterAll(async () => { if (db) await clean(); });
   function fixture() {

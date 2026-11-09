@@ -91,7 +91,7 @@ Số migration: đối soát với **mọi** branch mở lúc merge ([[parallel-
 
 ### 2.1 Mint `lbo_`
 
-`apps/cms/src/services/api-key-token.ts` đã tách tạo/hash token; thêm hằng `ORGANIZATION_TOKEN_PREFIX = 'lbo_'` cạnh `PUBLISHABLE_TOKEN_PREFIX` ([`api-key-publishable.ts:29`](apps/cms/src/services/api-key-publishable.ts:29)). Hàm `classifyTokenPrefix(token): 'site' | 'publishable' | 'organization' | 'unknown'` dùng chung CMS + mcp-server (đặt ở `packages/shared`).
+`apps/cms/src/services/api-key-token.ts` đã tách tạo/hash token; thêm hằng `ORGANIZATION_TOKEN_PREFIX = 'lbo_'` cạnh `PUBLISHABLE_TOKEN_PREFIX` ([`api-key-publishable.ts:29`](apps/cms/src/services/api-key-publishable.ts:29)). Hàm `classifyTokenPrefix(token): 'site' | 'publishable' | 'organization' | 'unknown'` dùng chung CMS + mcp-server (đặt ở `packages/contracts`).
 
 ### 2.2 Middleware auth
 
@@ -126,7 +126,7 @@ auth.apiKey.organizationId   khi scope='organization'
 ```ts
 export const ORG_ACTIONS = [...] as const;
 export type OrgAction = typeof ORG_ACTIONS[number];
-// packages/shared/src/org-permissions.ts — thuần, không I/O, dùng chung Studio
+// packages/contracts/src/org-permissions.ts — thuần, không I/O, dùng chung Studio
 export function canOrg(role: OrgRole, action: OrgAction): boolean
 
 export const withOrganizationAccessGuard = (action: OrgAction): MiddlewareHandler<AppEnv>
@@ -154,11 +154,11 @@ export const withOrganizationAccessGuard = (action: OrgAction): MiddlewareHandle
 | `GET /orgs/:orgId/sites` | `org:read` | |
 | `POST /orgs/:orgId/sites` | `org:sites:create` | §4.1 |
 | `DELETE /orgs/:orgId/sites/:siteId` | `org:sites:delete` + `X-Confirm-Delete: <siteId>` | 404 nếu site ∉ org |
-| `POST /orgs/:orgId/sites/:siteId/transfer` | `org:sites:transfer` ở nguồn **và** `org:sites:create` ở đích (cùng principal) | phương án "lời mời" để Phase 4 |
+| `POST /orgs/:orgId/sites/:siteId/transfer` | `org:sites:transfer` ở **cả nguồn lẫn đích** (cùng user owner) | phương án "lời mời" để Phase 4 |
 | `/orgs/:orgId/members[/:userId]` | `org:read` (GET) / `org:members:manage` | hạ cấp/xoá owner cuối → `409 LAST_OWNER` |
 | `/orgs/:orgId/keys[/:keyId]` | `org:read` (GET, không trả token) / `org:keys:manage` | token trả về **một lần** khi tạo |
 
-Schema Zod ở `packages/shared/src/schemas/organizations.ts`: `OrganizationCreateSchema`, `OrganizationUpdateSchema`, `OrgSiteCreateSchema { id?: siteIdSchema, name, slug? }`, `OrgMemberUpsertSchema { userId | email, role }`, `OrgKeyCreateSchema { name, description?, expiresAt? }`.
+Schema Zod ở `packages/contracts/src/schemas/organizations.ts`: `OrganizationCreateSchema`, `OrganizationUpdateSchema`, `OrgSiteCreateSchema { id?: siteIdSchema, name, slug? }`, `OrgMemberUpsertSchema { userId | email, role }`, `OrgKeyCreateSchema { name, description?, expiresAt? }`.
 
 ### 4.1 Provisioning site dùng chung với setup wizard
 
@@ -230,7 +230,7 @@ Gate: `routes/mcp.ts` đọc `organizations.settings.contentOs.mcp.allowOrganiza
 
 - `apps/studio/src/lib/api.ts` `createApiClient(token, site)`: thêm `orgs` client không gắn `X-Lumi-Site`.
 - Hook `useOrganizations()` → `GET /orgs`; shell render switcher khi `length > 1` (Req 6.1).
-- Module `apps/studio/src/modules/organization/` (general, sites, members, keys); tab ẩn theo `canOrg(role, action)` từ `packages/shared`.
+- Module `apps/studio/src/modules/organization/` (general, sites, members, keys); tab ẩn theo `canOrg(role, action)` từ `packages/contracts`.
 - "Create site" → `provisionSite` qua API → `setSite(newId)` (thay `X-Lumi-Site`), invalidate query.
 - Shell (Tauri) không đổi contract: vẫn Bearer + `X-Lumi-Site`; endpoint additive.
 
@@ -250,7 +250,9 @@ Setup Impact Registry: một dòng với ID tiếp theo **cao hơn mọi branch 
 
 ## 9. Open questions
 
-1. `transfer_site` cần owner ở cả hai org (đơn giản, Phase 2) hay cơ chế lời mời (Phase 4)? **Đề xuất:** cả hai org trước.
-2. `lbo_` có được *tạo thêm* `lbk_` cho site trong org qua `/api/v1/api-keys` (như administrator) không? **Đề xuất:** có — nhất quán với "Org_Key = administrator trên site"; đã qua guard `org:keys:manage` lúc mint `lbo_`.
-3. Personal_Org có cho đổi `slug='default'` không? **Đề xuất:** có, chỉ owner; `default` không reserved sau khi đổi.
-4. Studio ẩn org UI khi 1 org — nhưng trang **Organization → Keys** vẫn cần để mint `lbo_` đầu tiên. **Đề xuất:** luôn hiện mục "Organization" trong Settings cho owner/admin; chỉ ẩn *switcher*.
+Owner đã chốt cả bốn đề xuất ngày 2026-11-09.
+
+1. `transfer_site` cần owner ở cả hai org (đơn giản, Phase 2) hay cơ chế lời mời (Phase 4)? **Đã chốt:** cả hai org trước.
+2. `lbo_` có được *tạo thêm* `lbk_` cho site trong org qua `/api/v1/api-keys` (như administrator) không? **Đã chốt:** có — nhất quán với "Org_Key = administrator trên site"; đã qua guard `org:keys:manage` lúc mint `lbo_`.
+3. Personal_Org có cho đổi `slug='default'` không? **Đã chốt:** có, chỉ owner; `default` không reserved sau khi đổi.
+4. Studio ẩn org UI khi 1 org — nhưng trang **Organization → Keys** vẫn cần để mint `lbo_` đầu tiên. **Đã chốt:** luôn hiện mục "Organization" trong Settings cho owner/admin; chỉ ẩn *switcher*.

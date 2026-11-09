@@ -306,6 +306,9 @@ jobs:
       - name: Apply database migrations
         run: pnpm --filter @lumibase/database migrate
 
+      - name: Organization backfill and RLS regression gate
+        run: pnpm --filter @lumibase/database exec vitest --run src/__tests__/organizations-migration.integration.test.ts
+
       # Fail loudly if the filter stops matching. A rename that made this
       # select zero files would otherwise reproduce exactly the silence this
       # job exists to end.

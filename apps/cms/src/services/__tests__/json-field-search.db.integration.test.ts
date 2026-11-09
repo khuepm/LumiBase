@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { collections, fields, sites, type Database } from '@lumibase/database';
@@ -31,7 +32,7 @@ describe.skipIf(!hasDbIntegrationUrl)('JSON field search — DB integration', ()
 
   beforeEach(async () => {
     await db.delete(sites).where(eq(sites.id, SITE));
-    await db.insert(sites).values({ id: SITE, name: 'JSON Search IT' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'JSON Search IT' });
     const collId = (await db.insert(collections).values({ siteId: SITE, name: COLLECTION, label: 'Products' }).returning({ id: collections.id }))[0]!.id;
     await db.insert(fields).values([
       { siteId: SITE, collectionId: collId, name: 'title', type: 'string', interface: 'input' },
@@ -86,7 +87,7 @@ describe.skipIf(!hasDbIntegrationUrl)('JSON field search — DB integration', ()
     // A second site with a row that WOULD match the same nested filter.
     const SITE_B = `${SITE}_b`;
     await db.delete(sites).where(eq(sites.id, SITE_B));
-    await db.insert(sites).values({ id: SITE_B, name: 'JSON Search IT B' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_B, name: 'JSON Search IT B' });
     const collB = (await db.insert(collections).values({ siteId: SITE_B, name: COLLECTION, label: 'P' }).returning({ id: collections.id }))[0]!.id;
     await db.insert(fields).values([
       { siteId: SITE_B, collectionId: collB, name: 'title', type: 'string', interface: 'input' },

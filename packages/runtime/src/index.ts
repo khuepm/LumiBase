@@ -57,3 +57,5 @@ export type { CloudflareZonePurgeConfig } from './adapters/cloudflare/edge-cache
 // `./leader-lock` imports ioredis and node:crypto as VALUES, so it is a third
 // route into the Worker bundle independent of the Docker adapters. It is
 // exported from `@lumibase/runtime/node` instead.
+
+export { createOrganizationScopedSql, scopedOrganizationIdOf } from './scoped-sql';

@@ -1,5 +1,5 @@
 import { schema, type Database } from '@lumibase/database';
-import { createSiteScopedSql, isSiteScopedSql, scopedSiteIdOf, unscopedSqlOf } from '@lumibase/runtime';
+import { createOrganizationScopedSql, scopedOrganizationIdOf, createSiteScopedSql, isSiteScopedSql, scopedSiteIdOf, unscopedSqlOf } from '@lumibase/runtime';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import type { Context, MiddlewareHandler } from 'hono';
 import postgres from 'postgres';
@@ -235,4 +235,18 @@ export function scopedDbFor(c: AppContext, siteId: string): Database {
     perSite.set(siteId, db);
   }
   return db;
+}
+
+/** Re-scope only AFTER the organization guard has verified the principal. */
+export function organizationScopedDbFor(c: AppContext, organizationId: string): Database {
+  if (!organizationId) throw new Error('organizationScopedDbFor: organizationId is required');
+  const current = c.get('db');
+  if (!current) throw new Error('organizationScopedDbFor: withDb() must run first');
+  const mode = modeOf(c);
+  if (mode instanceof DbRlsConfigError) throw mode;
+  if (mode === 'off') return current;
+  if (scopedOrganizationIdOf(dbClientOf(current)) === organizationId) return current;
+  return drizzle(createOrganizationScopedSql(
+    unscopedSqlOf(dbClientOf(current) as AnySql), organizationId,
+  ), { schema }) as unknown as Database;
 }

@@ -101,7 +101,7 @@ describe('Upgrade path 0.6.x → 1.0: RBAC role→policy backfill', () => {
 
   /** Pre-policy (0.6.x-shape) fixture: role flags only, zero policy rows. */
   async function seedLegacyInstance(): Promise<void> {
-    await db.insert(sites).values({ id: SITE, name: 'Upgrade Path E2E' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Upgrade Path E2E' });
     await db.insert(roles).values(
       FIXTURE_ROLES.map((role) => ({
         id: role.id,

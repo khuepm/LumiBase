@@ -82,7 +82,7 @@ describe.skipIf(!hasDbIntegrationUrl)('G3 dispatch reliability — DB integratio
 
   beforeEach(async () => {
     await db.delete(sites).where(eq(sites.id, SITE));
-    await db.insert(sites).values({ id: SITE, name: 'G3 reliability' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'G3 reliability' });
     const [coll] = await db
       .insert(collections)
       .values({ siteId: SITE, name: COLLECTION, label: 'Articles' })
@@ -880,7 +880,7 @@ describe.skipIf(!hasDbIntegrationUrl)('G3 dispatch reliability — DB integratio
     // Same threshold for the multi-tenant loop: two fixtures and `sitesLimit = 1`,
     // which is the production `500` failure without building 501 tenants.
     const other = `${SITE}_second`;
-    await db.insert(sites).values({ id: other, name: 'Second tenant' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: other, name: 'Second tenant' });
     const [otherCollection] = await db
       .insert(collections)
       .values({ siteId: other, name: COLLECTION, label: 'Articles' })

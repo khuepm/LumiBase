@@ -69,7 +69,7 @@ describe('Marketplace Versioning & Updates — integration', () => {
     );
     // Every site-scoped row (roles, user_sites, installed extensions) FKs to
     // this row, so create it up front — the suite must not depend on seed data.
-    await db.insert(sites).values({ id: 'site_demo', name: 'Demo Site' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: 'site_demo', name: 'Demo Site' });
   });
 
   /** Seed an admin-bypass role in site_demo and a user holding it. */
