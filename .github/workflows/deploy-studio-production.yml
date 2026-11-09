@@ -1,0 +1,90 @@
+name: Deploy Studio production hotfix
+
+# Deploy one already-merged commit without rebuilding the other Pages apps or CMS.
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full SHA of a commit already on main
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-studio-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy Studio production
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    env:
+      WRANGLER_SEND_METRICS: "false"
+      LUMIBASE_RELEASE_CHANNEL: production
+      VITE_API_URL: ${{ vars.LUMIBASE_CMS_PRODUCTION_URL }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Validate commit input
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          if [[ ! "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::commit_sha must be a full 40-character Git SHA" >&2
+            exit 1
+          fi
+
+      - name: Checkout requested commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Verify commit is merged and deployment is configured
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          test "$(git rev-parse HEAD)" = "$COMMIT_SHA"
+          git merge-base --is-ancestor "$COMMIT_SHA" origin/main
+          test -n "$VITE_API_URL" || { echo "::error::LUMIBASE_CMS_PRODUCTION_URL is unset" >&2; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is unset" >&2; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is unset" >&2; exit 1; }
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Studio for production CMS
+        run: pnpm --filter @lumibase/studio build
+
+      - name: Deploy Studio to Cloudflare Pages
+        run: pnpm exec wrangler pages deploy apps/studio/dist --project-name lumibase-studio --branch main
+
+      - name: Verify production serves this build
+        run: |
+          set -euo pipefail
+          expected_asset="$(grep -Eo '/assets/index-[^" ]+\.js' apps/studio/dist/index.html | head -n 1)"
+          test -n "$expected_asset"
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error --max-time 20 https://studio.lumibase.dev/ | grep -Fq "$expected_asset"; then
+              echo "Production Studio serves $expected_asset from ${{ inputs.commit_sha }}"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Production Studio did not serve the deployed asset $expected_asset" >&2
+          exit 1
