@@ -32,6 +32,7 @@ import { clearActiveToken, getApiClient, hasActiveToken, logout } from '@/lib/ap
 import { VersionInfoFooter } from '@/components/version-info-footer';
 import { SiteLanguageSync } from '@/components/site-language';
 import { getAdminBase } from '@/lib/admin-base';
+import { getEnvironmentBadge } from '@/lib/environment-badge';
 import { useInboxData } from '@/modules/mission-control/use-inbox';
 import { useGlobalShortcuts } from '@/lib/keybindings/use-keybindings';
 import { useKeybindingsStore } from '@/lib/keybindings/store';
@@ -108,6 +109,9 @@ function SortableModule({ module, active, adminBase, expanded, editing }: {
  * The modules surfaced directly in the mobile Bottom Nav (app-shell spec
  * §1.2). Everything else lives behind the "More" sheet.
  */
+/** Resolved once per bundle: the build mode/channel cannot change at runtime. */
+const environmentBadge = getEnvironmentBadge();
+
 const MOBILE_PRIMARY_IDS = ['content', 'files', 'automation', 'settings'] as const;
 
 /**
@@ -325,12 +329,14 @@ export function AppShell({ children }: AppShellProps) {
         >
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold">LumiBase Studio</span>
-            <span
-              aria-label="Environment: development"
-              className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-            >
-              dev
-            </span>
+            {environmentBadge && (
+              <span
+                aria-label={`Environment: ${environmentBadge}`}
+                className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+              >
+                {environmentBadge}
+              </span>
+            )}
           </div>
           {/* Right-side topbar actions */}
           <div className="flex items-center gap-2">
