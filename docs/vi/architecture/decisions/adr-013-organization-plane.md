@@ -1,24 +1,25 @@
 ---
-version: 1
-lastUpdated: 2026-11-09T10:47:21.066Z
+version: 2
+lastUpdated: 2026-11-10T01:58:25.845Z
 sourceLang: en
 translatedFrom: en
-sourceHash: bc1d243317196919
+sourceHash: be9bd3448ced37b9
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-09T10:47:21.066Z
-codeVerifiedHash: bc1d243317196919
-codeVerifiedClaims: 26
+codeVerified: 2026-11-10T01:58:25.845Z
+codeVerifiedHash: be9bd3448ced37b9
+codeVerifiedClaims: 40
 ---
 
 # ADR-013: Organization plane (phân cấp tenant và credential phân loại theo phạm vi)
 
 **Date:** 2026-11-09
-**Status:** Proposed
-
-<!-- verify-code-refs: planned /api/v1/orgs /api/v1/orgs/:orgId /api/v1/orgs/:orgId/sites /api/v1/orgs/:orgId/sites/:siteId /api/v1/orgs/:orgId/sites/:siteId/transfer /api/v1/orgs/:orgId/members /api/v1/orgs/:orgId/keys -->
+**Status:** Accepted
 
 ## Context
+
+Phần này ghi lại hiện trạng trước ADR-013; quyết định và triển khai bên dưới thay thế mô hình đó.
+
 
 LumiBase đa tenant theo mặc định: mọi bảng domain đều có `site_id`, mọi truy
 vấn đều lọc theo nó, và một API key (`lbk_…`) gắn với đúng một site
@@ -32,7 +33,7 @@ Vì vậy mô hình chỉ có **một mặt phẳng: site**. Không có gì tron
 
 - `sites` (`packages/database/src/schema/core.ts`) không có cột cha — không
   `owner_id`, không `organization_id`. Site không thuộc về ai cả.
-- `POST /api/v1/admin/sites` và `DELETE /api/v1/admin/sites/:id`
+- `/api/v1/admin/sites` (route tạo/xóa trước đây)
   (`apps/cms/src/routes/admin.ts`) tồn tại chỉ vì test runner cần. Chúng được
   bảo vệ bởi `requireSiteAdmin` của site *đang gọi*, nên administrator của site
   A có thể tạo site tuỳ ý hoặc xoá site B. Cách ly tenant chỉ mạnh bằng route
@@ -172,7 +173,7 @@ GET|POST|DELETE       /api/v1/orgs/:orgId/keys[/:keyId]
 - Tenant middleware (`apps/cms/src/middleware/tenant.ts`) miễn yêu cầu
   `X-Lumi-Site` cho `/api/v1/orgs`; RLS request scope (spec
   `rls-request-scope`) được đặt theo organization thay vì site.
-- `POST /api/v1/admin/sites` và `DELETE /api/v1/admin/sites/:id` bị gỡ sau khi
+- `/api/v1/admin/sites` (route tạo/xóa trước đây) bị gỡ sau khi
   test runner chuyển sang route mới với organization key. Việc khoanh vùng tạm
   thời (giới hạn delete về site của chính người gọi, chặn create sau bootstrap
   user) là một hotfix riêng, không thuộc ADR này.
@@ -189,8 +190,8 @@ MCP server vẫn là một package duy nhất. Lúc khởi động nó xem xét
 | Token | `LUMIBASE_SITE_ID` | Tool được lộ ra |
 |-------|--------------------|-----------------|
 | `lbk_` | bắt buộc (như hiện nay) | bộ tool site hiện tại, không đổi |
-| `lbo_` + site id | ghim key vào một site | bộ tool site hiện tại **cộng** `list_sites`, `get_organization` (tool org chỉ đọc) |
-| `lbo_` không site id | — | tool organization (`list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) **cộng** tool site nhận tham số `site` |
+| `lbo_` + site id | ghim định tuyến client vào một site | bộ tool site hiện tại **cộng** `list_sites`, `get_organization` (tool org chỉ đọc) |
+| `lbo_` không site id | — | tool organization (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) **cộng** tool site nhận tham số `site` |
 
 Quy tắc:
 
@@ -216,9 +217,11 @@ Quy tắc:
   organization; `LUMIBASE_ALLOW_ORG_SIGNUP=true` mở `POST /api/v1/orgs` cho mọi
   user có audience `studio`. Không đưa vào role instance mới; bootstrap user
   *chính là* operator của instance, như hiện nay.
-- Hosted (`lumibase.dev`): cờ đó bật, và luồng đăng ký tạo personal
-  organization ở lần đăng nhập đầu. Billing nằm trên organization, không bao
-  giờ trên site.
+- Tích hợp hosted: bật cờ và để luồng đăng ký nhân sự gọi
+  `POST /api/v1/orgs` sau lần đăng nhập Studio đầu để tạo personal
+  organization. Tích hợp đi qua API có guard; tự đăng ký frontend công khai
+  không được nâng thành danh tính Studio. Billing thuộc nơi lưu settings
+  organization; billing thật nằm ngoài ADR này.
 - Setting toàn instance vẫn nằm trên site `__default__`
   (`apps/cms/src/modules/setup/site-constants.ts`); ADR này không dời chúng.
   Một ADR sau có thể nâng lên bảng `instance_settings`.
@@ -241,8 +244,10 @@ Quy tắc:
 
 **Tiêu cực / đánh đổi**
 
-- Hai bảng mới, ba cột mới, một migration backfill (viết tay theo quy ước dự
-  án; phải đối soát số thứ tự khi merge).
+- Hai bảng organization và migration viết tay `0024_organizations`
+  (schema/backfill), `0025_organization_approvals` (phạm vi approval organization
+  thật và biên nhận). Đã đối soát số migration trên các branch mở; rollback
+  cần khôi phục backup trước nâng cấp.
 - `api_keys.site_id` trở thành nullable. Mọi nơi đọc `api_keys` phải xử lý
   `scope = 'organization'`; `EffectiveCapabilityService` và middleware auth key
   là điểm thắt, nhưng việc rà soát là công việc thật.
@@ -250,17 +255,16 @@ Quy tắc:
   đọc được. Giảm nhẹ bằng provenance audit và bởi thực tế owner vốn đã cầm key
   có thể tự cấp quyền cho mình.
 - Người dùng self-host một tenant có thêm khái niệm họ không cần. Giảm nhẹ bằng
-  backfill personal organization: Studio ẩn UI organization khi chỉ tồn tại
-  đúng một organization.
+  backfill personal organization: Studio chỉ ẩn switcher khi có một
+  organization. Organization Settings vẫn hiện cho owner/admin.
 
-**Ghi chú bảo mật (Reality Filter)**
+**Control đã kiểm chứng và giới hạn**
 
-- Việc phân loại phạm vi (`lbk_` không gọi được `/api/v1/orgs`) có thể cưỡng
-  chế ở một chỗ — middleware auth key — và phải được test ma trận bên cạnh
-  `auth-middleware-matrix.test.ts`. Chừng nào test đó chưa có, ranh giới này là
-  một tuyên bố thiết kế, không phải control đã quan sát. [Inference]
-- Gỡ `/api/v1/admin/sites` đóng một lỗ hổng cross-tenant đang tồn tại độc lập
-  với ADR này; hotfix tạm thời nên lên trước.
+- Phạm vi credential có test tại `apps/cms/src/__tests__/auth-middleware-matrix.test.ts` và integration API organization với database thật. Credential site không vào được organization plane; organization key không truy cập site ngoài organization.
+- Hotfix #628 lên main trước; Phase 2 gỡ các route admin site chỉ phục vụ test trong #666.
+- Thao tác ghi organization luôn cần người quyết định. Migration `0025_organization_approvals` lưu cha organization và bên yêu cầu; quyền được kiểm tra lại và thao tác/biên nhận commit nguyên tử. Endpoint biên nhận chỉ dành cho người dùng giữ token mới ngoài phản hồi agent. Metadata audit có `organizationId` và run id.
+- Chuyển site cần cùng một người là owner cả hai organization. Organization key được tạo site key cho site thuộc quyền nhưng không nhận quyền owner. Chỉ owner được đổi slug `default` của personal organization; slug có thể dùng lại sau đó.
+- Đăng nhập/gia hạn bằng mật khẩu vẫn cần site tồn tại. Organization không có site vẫn truy cập được bằng organization key hoặc phiên Studio còn hiệu lực; phục hồi hoàn toàn không phụ thuộc site là công việc instance riêng (backlog B196). Giữ credential phục hồi hoặc khôi phục backup.
 
 ## Alternatives considered
 
@@ -276,13 +280,13 @@ Quy tắc:
    chối: lẫn setting instance với một tenant, giữ `sites` vô chủ, và khiến việc
    xoá root site thành thảm hoạ.
 4. **Mô hình hoá role organization bằng Policy DSL của site (ADR-008).** Từ
-   chối: từ vựng organization là tám action cố định; ngữ nghĩa
+   chối: từ vựng organization là chín action cố định; ngữ nghĩa
    collection/field/row của DSL không áp dụng, và enum cố định dễ lý luận hơn
    trong một đợt review bảo mật.
 
 ## References
 
-- `apps/cms/src/routes/admin.ts` — `POST/DELETE /sites` (sẽ gỡ)
+- `apps/cms/src/routes/admin.ts` — `POST/DELETE /sites` trước đây (đã gỡ trong #666)
 - `apps/cms/src/middleware/control-plane-access-guard.ts` — "control plane"
   phạm vi site hiện có (không đổi)
 - `apps/cms/src/services/effective-capability-service.ts` — caller class

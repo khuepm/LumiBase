@@ -1,11 +1,11 @@
 ---
-version: 32
-lastUpdated: 2026-11-08T10:34:25.799Z
+version: 34
+lastUpdated: 2026-11-10T02:10:54.889Z
 sourceLang: en
-contentHash: 2b27f43393b9230a
-codeVerified: 2026-11-08T10:34:25.799Z
-codeVerifiedHash: 2b27f43393b9230a
-codeVerifiedClaims: 456
+contentHash: d2ec6dd1084fd171
+codeVerified: 2026-11-10T02:10:54.889Z
+codeVerifiedHash: d2ec6dd1084fd171
+codeVerifiedClaims: 482
 ---
 
 # Hono API Specification — LumiBase
@@ -65,6 +65,15 @@ Error response:
 | `TOKEN_EXPIRED` | 401 | JWT has expired — refresh and retry |
 | `SKILL_DENIED` | 403 | AI skill requires a capability the session lacks |
 | `HITL_REQUIRED` | 202 | Dangerous operation gated for human approval |
+| `VALIDATION` | 400 | Organization payload validation failed |
+| `SCOPE_NOT_ALLOWED` | 400 | Organization keys must be minted through the organization API |
+| `ORGANIZATION_FORBIDDEN` | 403 | Credential scope or organization role does not allow this action |
+| `ORG_SIGNUP_DISABLED` | 403 | Organization signup is disabled for this caller |
+| `SITE_NOT_IN_ORGANIZATION` | 403 | Selected site does not belong to the organization key |
+| `ORGANIZATION_NOT_EMPTY` | 409 | Organization must have no sites before deletion |
+| `LAST_OWNER` | 409 | At least one owner must remain |
+| `REQUESTER_REVOKED` | 409 | Requester no longer holds live organization authority |
+| `APPROVAL_ALREADY_DECIDED` | 409 | A conflicting approval decision is already committed |
 
 > **Deprecation signalling.** A retiring endpoint returns the IETF `Deprecation`
 > and `Sunset` response headers (RFC 8594) plus a `Link rel="deprecation"` to the
@@ -328,6 +337,47 @@ HS*/`none` algorithm), `ISSUER_ALREADY_EXISTS` (409), `NOT_FOUND` (404).
 
 > For long-lived server-to-server access, create an API key
 > (`POST /api/v1/api-keys`, token prefix `lbk_`) instead of using a login token.
+
+---
+
+## 1b. Organizations (ADR-013)
+
+Organization requests use the authenticated identity and the target organization, without `X-Lumi-Site`. An organization key (`lbo_`) is bound to one organization and has its fixed admin role. Staff identities use current organization membership. Site keys (`lbk_`), publishable keys (`lbk_pub_`), and frontend sessions cannot enter this plane. Missing membership or a resource outside the selected organization returns `404 NOT_FOUND`.
+
+| Method | Endpoint | Authority / payload |
+|---|---|---|
+| `GET` | `/api/v1/orgs` | List the caller's organizations; an organization key returns exactly its organization |
+| `POST` | `/api/v1/orgs` | Bootstrap operator, or Studio user with `LUMIBASE_ALLOW_ORG_SIGNUP=true`; `{ name, slug }`; caller becomes owner |
+| `GET` | `/api/v1/orgs/:orgId` | `org:read`; includes the caller's role |
+| `PATCH` | `/api/v1/orgs/:orgId` | `org:settings:write`; `{ name?, slug?, settings? }`; only owner can change slug |
+| `DELETE` | `/api/v1/orgs/:orgId` | Owner; `X-Confirm-Delete: <orgId>`; organization must have no sites |
+| `GET` | `/api/v1/orgs/:orgId/sites` | `org:read` |
+| `POST` | `/api/v1/orgs/:orgId/sites` | `org:sites:create`; `{ name, id?, slug? }`; `id` and `slug` must agree if both supplied |
+| `DELETE` | `/api/v1/orgs/:orgId/sites/:siteId` | Owner; `X-Confirm-Delete: <siteId>` |
+| `POST` | `/api/v1/orgs/:orgId/sites/:siteId/transfer` | The same human must own both organizations; `{ toOrganizationId }` |
+| `GET` | `/api/v1/orgs/:orgId/members` | `org:read` |
+| `POST` | `/api/v1/orgs/:orgId/members` | `org:members:manage`; `{ userId?, email?, role }`; exactly one identity field |
+| `PATCH` | `/api/v1/orgs/:orgId/members/:userId` | `org:members:manage`; `{ role }` |
+| `DELETE` | `/api/v1/orgs/:orgId/members/:userId` | `org:members:manage` |
+| `GET` | `/api/v1/orgs/:orgId/keys` | `org:read`; metadata only |
+| `POST` | `/api/v1/orgs/:orgId/keys` | `org:keys:manage`; `{ name, description?, expiresAt? }`; plaintext returned at creation |
+| `POST` | `/api/v1/orgs/:orgId/keys/:keyId/rotate` | `org:keys:manage`; old token stops working; plaintext returned at rotation |
+| `DELETE` | `/api/v1/orgs/:orgId/keys/:keyId` | `org:keys:manage`; revoke the key |
+| `GET` | `/api/v1/orgs/:orgId/approvals` | Human owner/admin only; summaries omit result secrets |
+| `GET` | `/api/v1/orgs/:orgId/approvals/:approvalId` | Human owner/admin only; receipt may contain a minted key |
+| `POST` | `/api/v1/orgs/:orgId/approvals/:approvalId/decide` | Human owner/admin; `{ decision: "approved" }` / `{ decision: "rejected" }`; operation-specific owner checks still apply |
+
+Create operations return `201`, other successful operations return `200`, using the standard `data` envelope. Organization roles are `owner`, `admin`, `billing`, and `member`. Admins cannot add/change/remove owners; the final owner cannot be removed or demoted. Owner/admin inherit site administrator authority on owned sites; billing/member do not. Organization keys are always admin and can never execute owner-only operations themselves. A member email that has no identity creates an invited identity; organization membership is separate from the staff account activation flow.
+
+Site creation uses the same provisioning as setup. `settings` replaces the settings object when supplied, so preserve unrelated fields. Slug `default` can be renamed by its owner and is then available again. `POST /api/v1/api-keys` remains site-scoped and rejects `scope="organization"`; an organization key may mint site keys only for sites in its organization.
+
+### Organization MCP approvals
+
+Organization MCP is off until `settings.contentOs.mcp.allowOrganizationTools=true`; `LUMIBASE_MCP_ORG_TOOLS=off` overrides it. Every organization mutation creates a pending approval with a real organization parent. `confirm=true` cannot approve it, and no REST fallback exists for these MCP tools. The agent receives `pending_approval`, `approvalId`, `organizationId`, and a run id; it never receives a newly minted organization key.
+
+Approval rechecks live requester access and the human decider's authority. Execution and the receipt commit atomically. Repeating the same decision returns the existing receipt; a conflicting decision returns `409 APPROVAL_ALREADY_DECIDED`. A revoked requester cannot be approved (`409 REQUESTER_REVOKED`), but can be rejected. Deleting a transfer destination does not prevent rejecting its pending request or replaying an already committed receipt. Pending transfer execution still requires both organizations and their human owner. Disabling MCP blocks approval (`403 MCP_DISABLED`) without blocking rejection. Discovery with MCP disabled returns `404 MCP_DISABLED`. See [Organization settings](../features/organizations.md) and [MCP](../mcp/index.md).
+
+Organization errors additionally include `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`, `403 ORGANIZATION_FORBIDDEN`, `403 ORG_SIGNUP_DISABLED`, `403 SITE_NOT_IN_ORGANIZATION`, `404 NOT_FOUND`, `409 LAST_OWNER`, `409 ORGANIZATION_NOT_EMPTY`, and `409 CONFLICT`.
 
 ---
 

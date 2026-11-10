@@ -1,10 +1,10 @@
 ---
-version: 8
-lastUpdated: 2026-11-09T16:44:36.282Z
+version: 10
+lastUpdated: 2026-11-10T01:59:50.309Z
 sourceLang: vi
-contentHash: 6d0cf95871559144
-codeVerified: 2026-11-09T16:44:36.282Z
-codeVerifiedHash: 6d0cf95871559144
+contentHash: 72326b4293c307f8
+codeVerified: 2026-11-10T01:59:50.309Z
+codeVerifiedHash: 72326b4293c307f8
 codeVerifiedClaims: 26
 ---
 
@@ -63,6 +63,29 @@ Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (dựng trên `
 - **Config:** [`docs/en/agent-setup/mcp-config.json`](../../en/agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
 
 ### Thông tin xác thực organization (ADR-013)
+
+Ví dụ key organization không ghim site. Mẫu chỉ đọc; đặt `LUMIBASE_READ_ONLY=false` để yêu cầu ghi, bật MCP organization trong Settings và duyệt yêu cầu bằng tài khoản người dùng.
+
+```json
+{
+  "mcpServers": {
+    "lumibase-organization": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@lumibase/mcp-server"
+      ],
+      "env": {
+        "LUMIBASE_URL": "http://localhost:1989",
+        "LUMIBASE_TOKEN": "lbo_<organization-key>",
+        "LUMIBASE_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
+
+
 
 Đặt `LUMIBASE_READ_ONLY=true` để chỉ công bố tool có annotation chỉ đọc. Với key `lbk_`, `LUMIBASE_SITE_ID` vẫn bắt buộc và danh sách tool site hiện có không đổi. Với key `lbo_`, bỏ site để có tám tool organization (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) cùng các tool site bắt buộc truyền đối số `site`. Ghim một site sẽ công bố các tool site cũ và hai tool đọc organization đầu tiên. Các lời gọi song song không dùng chung header site.
 

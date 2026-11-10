@@ -10,6 +10,9 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Added
+- ADR-013 Phases 3–5: organization MCP profiles with eight organization tools, per-call site routing, read-only configuration, mandatory human approvals, atomic execution/receipts, live requester reauthorization, and organization run attribution (#638, #640).
+- Studio Organization settings for general configuration, sites, members, keys, and MCP approvals; one-organization access remains in Settings, while the switcher appears for multiple organizations. Site switching clears cached content, and owner/admin login/refresh inherit current organization authority (#639).
+- Bilingual organization API/data-model/security/MCP/Studio documentation, ADR-013 Accepted, and organization environment defaults in local, Docker, and scaffold examples (#640).
 - ADR-013 Phase 2: organization-scoped `lbo_` keys, guarded organization/site/member/key APIs, owner/admin site inheritance with audit provenance, and shared setup/site provisioning (#637). Transfers require a human owner of both organizations; owner promotions and last-owner changes are protected.
 - `LUMIBASE_ALLOW_ORG_SIGNUP=true` explicitly allows Studio users to create organizations; bootstrap operators do not need the flag. Default remains off.
 - ADR-013 Phase 1: organization schema, fixed organization permissions, token prefix classification and organization RLS scope (#634). Setup creates the parent organization before its default site.
@@ -18,7 +21,10 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - Test-only `POST/DELETE /api/v1/admin/sites` routes and their containment flag. k6 provisioning uses `ORGANIZATION_ID` + `ORGANIZATION_TOKEN` (`lbo_`); destructive cleanup requires `ORGANIZATION_OWNER_TOKEN` (a Studio owner session), because organization keys are never owners.
 
 ### Upgrade notes
-- Back up PostgreSQL before applying migration `0024_organizations`. Existing sites belong to one organization with slug `default`; the bootstrap user becomes its owner. Existing API keys keep site scope. You will see one `default` organization when the organization UI arrives in Phase 4.
+- Back up PostgreSQL before applying `0024_organizations` and `0025_organization_approvals`. Existing sites belong to one organization with slug `default`; the bootstrap user becomes its owner. Existing API keys keep site scope. Self-hosted users will see one `default` organization in Settings → Organization; setup creates it before the first site on new installations.
+- Migration `0025_organization_approvals` preserves site approvals and adds real organization-scoped approvals, requester provenance, and human-only receipts. Each approval has exactly one site or organization parent; new key plaintext is available only in the authorized human receipt.
+- `LUMIBASE_ALLOW_ORG_SIGNUP` defaults off; `true` permits Studio users to create organizations. `LUMIBASE_MCP_ORG_TOOLS` defaults on as a global gate, but organization MCP remains disabled until its organization setting is enabled. Set the environment flag to `off` to force it off. Organization MCP writes always require human approval.
+- Password-only recovery still requires a live site. Before deleting the last site, retain a valid organization credential or Studio session to recreate a site; otherwise restore a backup (B196).
 - There is no automatic rollback. To revert the schema, restore the pre-upgrade backup. Reapply `packages/database/migrations/rls-policies.sql` if using RLS enforcement. The migration validates organization foreign keys and API key scope targets: repair manually introduced orphan IDs or inconsistent key targets before retrying.
 
 ## [1.0.1] - 2026-11-09

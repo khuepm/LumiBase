@@ -1,13 +1,13 @@
 ---
-version: 8
-lastUpdated: 2026-10-17T16:36:18.599Z
+version: 9
+lastUpdated: 2026-11-10T01:58:25.201Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6630c26d6eedb264
+sourceHash: 802b296249acdea1
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-17T16:36:18.599Z
-codeVerifiedHash: 6630c26d6eedb264
+codeVerified: 2026-11-10T01:58:25.201Z
+codeVerifiedHash: 802b296249acdea1
 codeVerifiedClaims: 20
 ---
 
@@ -18,7 +18,7 @@ codeVerifiedClaims: 20
 
 Tài liệu mô tả các bảng đã được khai báo trong `packages/database/src/schema/`. Row nội bộ mặc định dùng text ID. No-code content collections còn có chiến lược logical item primary key riêng qua `collections.primaryKeyField` và `collections.primaryKeyType`.
 
-Mọi bảng domain theo tenant đều có `site_id`.
+Dòng domain thuộc site mang `site_id`; dòng thuộc organization mang `organization_id`.
 
 > **Tên bảng vật lý mang tiền tố `lumibase_`.** Mọi bảng hệ thống của LumiBase có tên
 > vật lý `lumibase_<tên>` (vd bảng logic `users` có tên vật lý `lumibase_users`), được
@@ -31,7 +31,7 @@ Các file schema được chia theo domain:
 
 | File | Bảng (vật lý) |
 |------|------|
-| `core.ts` | `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
+| `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
 | `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
@@ -45,7 +45,14 @@ Migration nằm ở `packages/database/migrations/` và `packages/database/drizz
 
 ## 1. Core tenancy & identity (`core.ts`)
 
+### `organizations`
+- `id` text PK (nanoid), `slug` duy nhất, `name`, `settings` jsonb mặc định `{}`, `createdAt`, `updatedAt`.
+
+### `organization_members`
+- `userId`, `organizationId`, `role`, `createdAt`; PK ghép `(userId, organizationId)`. CHECK role: `owner`, `admin`, `billing`, `member`. Role dùng ma trận `canOrg` cố định, không dùng policy site. Bảng organization có RLS theo `lumibase.organization_id`.
+
 ### `sites`
+- `organizationId` là FK bắt buộc tới `organizations`, xóa RESTRICT. Migration `0024_organizations` backfill các site hiện có vào organization `default` trước khi áp NOT NULL. Setup tạo personal organization và bootstrap owner trước khi tạo site mặc định.
 - `id`, `name`, `domain`, `createdAt`, cùng các cột identity/branding/theme và `defaultLanguage`, `defaultAppearance`, `defaultSaveAction` (`stay`|`return`|`create_new`, mặc định `stay` — save action mặc định của Studio ở cấp site; override theo từng user nằm ở `users.preferences.saveAction`).
 
 ### `users`
@@ -244,6 +251,10 @@ Quá trình sinh SDK dùng manifest này để phát ra interface collection cơ
 
 Khi seed local/staging/prod, phải seed permission cho system collection một cách tường minh. Các collection nhạy cảm như `system_state`, `audit_log`, `login_attempts`, `login_baselines`, `admin_backup_codes`, `scim_tokens` và các bảng API key trong tương lai chỉ dành cho admin/security. Xem [System Collections & Sensitive Access](./features/system-collections-access.md).
 
+### `api_keys`
+- `scope` là `site` (mặc định) hoặc `organization`. CHECK yêu cầu đúng một đích tương ứng: phạm vi site có `siteId` và không có `organizationId`; phạm vi organization có `organizationId` và không có `siteId`. Cả hai đích là khóa ngoại xóa CASCADE.
+- `prefix`, `tokenHash`, metadata tên/hết hạn/thu hồi/xoay; token rõ không được lưu trong bảng này. Site key giữ liên kết role/policy. Organization key có quyền admin cố định tại organization và kế thừa administrator trên các site của nó.
+
 ## 4. Files & Assets (`platform.ts`)
 
 ### `files`
@@ -311,8 +322,11 @@ contract phía người dùng và runtime.
 ### `ai_approvals`
 | Column | Type | Note |
 |---|---|---|
-| `id` | text PK | nanoid(21) |
-| `siteId` | text FK → sites CASCADE |
+| `id` | text PK | giữ ID hiện có; UUIDv7 cho approval organization |
+| `siteId` | text nullable FK → sites CASCADE | cha approval thuộc site |
+| `organizationId` | text nullable FK → organizations CASCADE | cha approval thuộc organization |
+| `organizationRequester` | jsonb nullable | danh tính user hoặc API key yêu cầu |
+| `result` | jsonb nullable | biên nhận người duyệt đã commit, có thể chứa key mới |
 | `agentName` | text | default `'lumibase-copilot'` |
 | `skillName` | text | từ `CORE_SKILLS` registry |
 | `arguments` | jsonb | đối số skill |
@@ -321,12 +335,16 @@ contract phía người dùng và runtime.
 | `createdAt`, `decidedAt` | timestamp |
 | `decidedBy` | text FK → users SET NULL |
 
-Index: `(siteId, status)`.
+Index: `(siteId, status)`, `(organizationId, status)`.
 
 Hành vi: Skill nguy hiểm (`schema:write` hoặc tên bắt đầu bằng `delete`) bắt buộc
 tạo `ai_approvals` row chờ duyệt thay vì execute trực tiếp. Xem
 [AI Copilot](./features/ai-copilot.md). Các hành vi harness nguy hiểm mới cũng ghi
 kèm record `agent_approvals` (dạng tổng quát, có liên kết) khi phù hợp.
+
+Migration `0025_organization_approvals` cho phép `siteId` nullable và thêm `organizationId`, `organizationRequester`, `result`. CHECK cho phép một cha site hoặc một cha organization; approval organization còn phải có thông tin bên yêu cầu. Cả hai cha đều xóa CASCADE. Cặp policy RLS restrictive/permissive cô lập biên nhận theo phạm vi site hoặc organization đang hoạt động.
+
+Thao tác ghi MCP organization luôn chờ người duyệt. Kiểm tra lại quyền bên yêu cầu, ghi domain và biên nhận lưu dùng cùng transaction. Chỉ người được phép mới đọc được biên nhận chứa key mới; phản hồi danh sách và kết quả agent không chứa bí mật đó. Request chỉ thuộc organization không mượn site mặc định. ID của approval organization này là UUIDv7; ID approval hiện có vẫn hợp lệ.
 
 ### Các bảng harness `agent_*`
 

@@ -1,10 +1,12 @@
 # Requirements Document — Organizations (organization plane)
 
-> Status: **Proposal / Roadmap**. Thực thi [ADR-013](../../../docs/en/architecture/decisions/adr-013-organization-plane.md). Chưa bắt đầu.
+> Status: **Implemented**. Thực thi [ADR-013](../../../docs/en/architecture/decisions/adr-013-organization-plane.md). Phases 1–4 đã merge; Phase 5 chốt docs và kiểm chứng theo issue #640.
 
 ## Introduction
 
-LumiBase hiện chỉ có **một mặt phẳng: site**. `sites` không có cột cha, `api_keys`/`roles`/`user_sites` đều gắn `site_id`, nên không có dữ liệu nào trả lời "ai được tạo site, site này của ai". Hệ quả quan sát được:
+Bối cảnh dưới đây ghi lại hiện trạng trước ADR-013; các acceptance criteria là hợp đồng kiểm chứng triển khai.
+
+Trước ADR-013, LumiBase chỉ có **một mặt phẳng: site**. `sites` không có cột cha, `api_keys`/`roles`/`user_sites` đều gắn `site_id`, nên không có dữ liệu nào trả lời "ai được tạo site, site này của ai". Hệ quả quan sát được:
 
 - **GAP đã xác nhận:** `POST /api/v1/admin/sites` và `DELETE /api/v1/admin/sites/:id` ([`apps/cms/src/routes/admin.ts`](apps/cms/src/routes/admin.ts)) là route cho test runner, chỉ được `requireSiteAdmin` của site *đang gọi* bảo vệ — admin site A có thể tạo site tuỳ ý hoặc xoá site B. (Hotfix khoanh vùng làm riêng, ngoài spec này.)
 - **GAP đã xác nhận:** MCP server ([`packages/mcp-server`](packages/mcp-server)) không có `create_site`/`list_sites` vì token `lbk_` chỉ biết một site — đúng với credential nó cầm, nhưng không có credential nào làm được việc đó.
@@ -92,7 +94,7 @@ Thuật ngữ **"control plane"** trong code hiện là *quản trị phạm vi 
 1. THE MCP server SHALL nhận diện loại token từ prefix lúc khởi động ([`client.ts` `configFromEnv`](packages/mcp-server/src/client.ts)); `LUMIBASE_SITE_ID` SHALL là **tuỳ chọn** khi token là `lbo_` và vẫn **bắt buộc** khi là `lbk_`.
 2. WHEN token là `lbk_`, THE bộ tool SHALL không đổi so với hiện tại (snapshot test danh sách tool).
 3. WHEN token là `lbo_` + Site_Pin, THE bộ tool SHALL = bộ tool site + `list_sites`, `get_organization` (chỉ đọc).
-4. WHEN token là `lbo_` không pin, THE bộ tool SHALL = tool org (`list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) + tool site nhận tham số `site` bắt buộc.
+4. WHEN token là `lbo_` không pin, THE bộ tool SHALL = tool org (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) + tool site nhận tham số `site` bắt buộc.
 5. THE env `LUMIBASE_READ_ONLY=true` SHALL ẩn mọi tool ghi bất kể token; README SHALL dùng nó trong mọi snippet cấu hình mẫu.
 6. THE tool org ghi (`create_site`, `delete_site`, `transfer_site`, `invite_org_member`, `create_org_key`) SHALL đi qua `ai_approvals` (rule #4) khi gọi qua governed harness, ở autonomy L0/L1, không có đường `confirm=true` bỏ qua.
 7. THE setting org `contentOs.mcp.allowOrganizationTools` (default `false`) SHALL gate tool org; env `LUMIBASE_MCP_ORG_TOOLS=off` ở CMS SHALL ép tắt bất kể setting.
@@ -100,7 +102,7 @@ Thuật ngữ **"control plane"** trong code hiện là *quản trị phạm vi 
 
 ### Requirement 6: Studio
 
-**User Story:** Là một admin có nhiều site, tôi muốn chuyển giữa các site và quản lý organization trong Studio, nhưng khi chỉ có một org thì không thấy gì khác so với hôm nay.
+**User Story:** Là một admin có nhiều site, tôi muốn chuyển giữa các site và quản lý organization trong Studio, không thêm bước setup; switcher chỉ hiện khi có nhiều org, còn Organization Settings luôn hiện cho owner/admin theo quyết định §9.4.
 
 #### Acceptance Criteria
 
