@@ -101,7 +101,14 @@ capabilities on the other transports are already covered and were re-run (§5).
   has no user, role or API key, so `PermissionService` resolves no grants and every write was
   denied. That broke queued dev-admin runs (`agent-run-retry.db.integration.test.ts` › "queues
   the retry…", red in CI run 41510960129). The worker now keeps the system posture for `dev`
-  principals only; a tripwire pins that exemption to exactly `principal?.type !== 'dev'`.
+  principals only; a tripwire pins that exemption to exactly
+  `!!payload.principal && payload.principal.type !== 'dev'`.
+- **Fail closed without a context (review R2).** `permissionContext` is optional on the
+  capability resolution. A user or API-key job whose resolution has no context now fails
+  (`stopReason: capabilities_denied`, code `PERMISSION_CONTEXT_MISSING`) before an ItemService
+  is built, instead of falling through to the system ItemService. Only jobs with no principal
+  (reconciler, legacy) and `dev` principals reach `itemServiceForSystem`; a second tripwire
+  requires the guard to sit before the only `itemServiceForSystem` call.
 
 ## 5. Controls verified correct (no change)
 
@@ -159,6 +166,14 @@ suite at a time:
 - `pnpm typecheck` 18 of 18 tasks; `pnpm check:all` exit 0; docs pair re-stamped
   `--verified` (36 claims), parity 0 problems, `docs:i18n:detect` 158 of 158 up to date.
 
+After review R2/R3 (fail-closed guard):
+
+- `agent-run-worker-principal-binding.test.ts` (real worker, mocked resolution with no
+  context): the `api_key` and `user` cases fail the run with `PERMISSION_CONTEXT_MISSING` and
+  build no ItemService; a no-principal legacy job still uses the system posture. With the guard
+  removed, both principal cases fail and both worker tripwires fail (4 of 10 in the two files).
+- The full results of this round are in the PR thread.
+
 All values are synthetic canaries. No model is involved, so no repeat counts apply.
 
 ## 7. Residual / not covered
@@ -167,6 +182,10 @@ All values are synthetic canaries. No model is involved, so no repeat counts app
   agent role, which the harness enforces; there is no principal whose row/field rules could
   apply. This is a declared posture, not a defect. Narrowing it would need a per-role
   permission context (design decision) and is not proposed here.
+- **Grant and context can disagree (B191).** `dev` principals and a bootstrap user with no
+  membership on the site resolve to an admin grant whose permission context compiles to no
+  grants. The worker exempts `dev`; a queued run from a bootstrap user without membership now
+  fails at item level. The proper fix is in the resolver, not the worker.
 - **Legacy capability-snapshot jobs** (enqueued before `principal` existed) keep the system
   posture until the queue drains, as in the Copilot worker.
 - **Tool discovery** (`tools/list`, `GET /agent/tools`) lists every enabled tool regardless of

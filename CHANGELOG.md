@@ -396,7 +396,10 @@ _No unreleased changes yet._
   capability-snapshot jobs have no principal and keep the system posture, as do
   development (`dev`) principals: they exist only in the development runtime
   with the `admin` role and have no persisted role a permission context could
-  resolve. Audit report:
+  resolve. A user or API-key job whose principal resolves without a permission
+  context now fails (`stopReason: capabilities_denied`, code
+  `PERMISSION_CONTEXT_MISSING`) instead of running with the system posture.
+  Audit report:
   `docs/review-agent/2026-11-01-ai-audit-580-authz-parity.md`. No migration,
   env or setup step.
 - **Agent runs: truthful terminal states, no replay of an executed write, and no
