@@ -57,6 +57,7 @@
           "features/collections-builder",
           "features/field-types-and-config",
           "features/permissions-rbac",
+          "features/organizations",
           "features/raw-data-editing",
           "features/typegen",
           "features/extensions-system",
