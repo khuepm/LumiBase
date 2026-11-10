@@ -9,6 +9,16 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [2.0.0] - 2026-11-10
+
+### Version
+- `v2.0.0`
+
+### Date
+- `2026-11-10`
+
 ### Highlights
 - Organizations (ADR-013): manage sites, members, roles and credentials within an organization, with a Studio workspace switcher and human-approved organization MCP operations.
 - Security hardening for cross-tenant site administration and queued agent execution, plus production setup fixes and copy-ready MCP starter prompts.
