@@ -1,3 +1,4 @@
+import { createOrganizationApi } from './organization-api';
 import { createLumiClient, legacyRest } from '@lumibase/sdk';
 import { getAdminBase } from '@/lib/admin-base';
 import { getApiBaseUrl } from '@/lib/api-base';
@@ -22,6 +23,9 @@ const STORAGE_KEY = {
 };
 
 const DEFAULT_DEV_SITE = '__default__';
+let sessionGeneration = 0;
+/** Non-secret cache scope, stable across silent token rotation. */
+export const getSessionGeneration = () => sessionGeneration;
 
 export function getActiveSite(): string {
   return localStorage.getItem(STORAGE_KEY.site) || DEFAULT_DEV_SITE;
@@ -31,11 +35,26 @@ export function setActiveSite(siteId: string): void {
   localStorage.setItem(STORAGE_KEY.site, siteId);
 }
 
+/** Routing hint only. The server still verifies the refresh token and its site.
+ * A Studio access token can visit another owned site while its refresh family
+ * remains bound to the site where the session was issued.
+ */
+export function getSessionSite(): string {
+  try {
+    const part = getActiveToken().split('.')[1];
+    if (!part) return getActiveSite();
+    const payload = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+    if (typeof payload.siteId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(payload.siteId)) return payload.siteId;
+  } catch { /* Opaque external tokens retain the existing active-site routing. */ }
+  return getActiveSite();
+}
+
 export function getActiveToken(): string {
   return readToken();
 }
 
 export function setActiveToken(token: string): void {
+  sessionGeneration++;
   writeToken(token);
   cached = null;
 }
@@ -50,6 +69,7 @@ export function setActiveRefreshToken(token: string): void {
 }
 
 export function clearActiveToken(): void {
+  sessionGeneration++;
   clearTokens();
   cached = null;
 }
@@ -68,7 +88,7 @@ export async function logout(): Promise<void> {
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        'X-Lumi-Site': getActiveSite(),
+        'X-Lumi-Site': getSessionSite(),
         'X-LumiBase-Refresh': '1',
       },
       body: JSON.stringify(refreshToken ? { refreshToken } : {}),
@@ -132,6 +152,14 @@ function createApiClient(token: string, site: string) {
     token,
     refreshToken: getActiveRefreshToken(),
     siteId: site,
+    fetcher: (input, init) => {
+      const headers = new Headers(init?.headers);
+      const url = typeof input === 'object' && 'url' in input ? input.url : String(input);
+      const path = url.slice(getApiBaseUrl().length).split('?')[0] ?? '';
+      if (path === '/api/v1/orgs' || path.startsWith('/api/v1/orgs/')) headers.delete('X-Lumi-Site');
+      if (path === '/api/v1/auth/refresh') headers.set('X-Lumi-Site', getSessionSite());
+      return fetch(input, { ...init, headers });
+    },
     headers: { 'X-Lumi-Client': 'studio' },
     // Persist the rotated pair so a page reload keeps the renewed session.
     onTokensRefreshed: ({ token: next, refreshToken }) => {
@@ -143,7 +171,7 @@ function createApiClient(token: string, site: string) {
     },
     // Fires only after a refresh attempt has also failed.
     onUnauthorized: handleUnauthorized,
-  }).with(legacyRest());
+  }).with((client) => ({ ...legacyRest()(client), orgs: createOrganizationApi(client) }));
 }
 
 export type StudioApiClient = ReturnType<typeof createApiClient>;

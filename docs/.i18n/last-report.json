@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-09T16:44:49.839Z",
+  "generatedAt": "2026-11-10T01:32:16.817Z",
   "mode": "plan",
   "effectiveMode": "plan",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 160,
+    "upToDate": 161,
     "planned": 0
   },
   "actions": [
@@ -1316,6 +1316,18 @@
       "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/organizations.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
       "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0

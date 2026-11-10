@@ -1,6 +1,6 @@
 # Tasks — Organizations (organization plane)
 
-> Status: **In Progress**. Phase 1 đã merge #641; Phase 2 đã merge #666; Phase 3 triển khai #638; Phase 4–5 còn lại. Thực thi [ADR-013](../../../docs/en/architecture/decisions/adr-013-organization-plane.md). Mỗi phase là một PR riêng; Phase 0 phải merge trước.
+> Status: **In Progress**. Phase 1 đã merge #641; Phase 2 đã merge #666; Phase 3 đã merge #768; Phase 4 triển khai #639; Phase 5 còn lại. Thực thi [ADR-013](../../../docs/en/architecture/decisions/adr-013-organization-plane.md). Mỗi phase là một PR riêng; Phase 0 phải merge trước.
 
 ## Phase 0 — Tiền đề (ngoài spec, đã có task riêng)
 - [x] 0.1 Hotfix khoanh vùng `POST/DELETE /api/v1/admin/sites`: xoá site khác tenant → 403; tạo site hoặc xoá site khác cần env `LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT=true` (dành cho test runner). PR khuepm/LumiBase#628. Phase 2.10 gỡ cả route lẫn env này.
@@ -41,12 +41,12 @@ Bao gồm seed Personal_Org từ task 5.1 trước insert `__default__`; tách `
 - [x] 3.7 [`README.md`](packages/mcp-server/README.md) + `docs/{en,vi}/mcp/*`: cấu hình `lbo_`, `LUMIBASE_SITE_ID` tuỳ chọn, `LUMIBASE_READ_ONLY` trong mọi snippet (Req 5.5).
 
 ## Phase 4 — Studio (Req 6)
-- [ ] 4.1 `lib/api.ts`: client `orgs` không `X-Lumi-Site`; `useOrganizations()`.
-- [ ] 4.2 Organization switcher trong shell, chỉ khi > 1 org (Req 6.1).
-- [ ] 4.3 Module `modules/organization/` (general, sites, members, keys), tab theo `canOrg` (Req 6.2); mục "Organization" luôn hiện trong Settings cho owner/admin (design §9.4).
-- [ ] 4.4 "Create site" → `setSite(newId)` (Req 6.3).
-- [ ] 4.5 Kiểm tra contract `apps/shell` C1–C7 không đổi (Req 6.4).
-- [ ] 4.6 (Tuỳ chọn) `transfer_site` bằng lời mời nếu chốt ở 0.2.
+- [x] 4.1 `lib/api.ts`: client `orgs` không `X-Lumi-Site`; `useOrganizations()`.
+- [x] 4.2 Organization switcher trong shell, chỉ khi > 1 org (Req 6.1).
+- [x] 4.3 Module `modules/organization/` (general, sites, members, keys), tab theo `canOrg` (Req 6.2); mục "Organization" luôn hiện trong Settings cho owner/admin (design §9.4).
+- [x] 4.4 "Create site" → `setSite(newId)` (Req 6.3).
+- [x] 4.5 Kiểm tra contract `apps/shell` C1–C7 không đổi (Req 6.4).
+- [x] 4.6 Không thêm lời mời transfer: owner đã chốt cùng người là owner cả hai org; UI chọn org đích từ danh sách org người dùng sở hữu.
 
 ## Phase 5 — Setup, docs, DoD (Req 7)
 - [x] 5.1 (Personal_Org seed Phase 1; dùng chung `provisionSite` Phase 2) `SetupService.initialize`: tạo Personal_Org + `provisionSite` với `organizationId`, idempotent (Req 7.1; design §7).
