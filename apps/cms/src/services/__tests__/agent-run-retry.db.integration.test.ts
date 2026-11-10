@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { and, eq } from 'drizzle-orm';
@@ -90,8 +91,8 @@ describe.skipIf(!hasDbIntegrationUrl)('agent run retry — DB integration', () =
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.delete(sites).where(eq(sites.id, OTHER_SITE));
     await db.insert(sites).values([
-      { id: SITE, name: 'Run retry' },
-      { id: OTHER_SITE, name: 'Run retry (other tenant)' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Run retry' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER_SITE, name: 'Run retry (other tenant)' },
     ]);
   });
 

@@ -2,13 +2,12 @@ import http from 'k6/http';
 
 export function createTestSite(baseUrl, siteId, siteName, adminToken) {
   const res = http.post(
-    `${baseUrl}/api/v1/admin/sites`,
+    `${baseUrl}/api/v1/orgs/${organizationId()}/sites`,
     JSON.stringify({ id: siteId, name: siteName }),
     {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${adminToken}`,
-        'X-Lumi-Site': 'site_demo', // use existing demo site for admin request mapping
+        'Authorization': `Bearer ${organizationToken(adminToken)}`,
       },
     }
   );
@@ -20,12 +19,12 @@ export function createTestSite(baseUrl, siteId, siteName, adminToken) {
 
 export function deleteTestSite(baseUrl, siteId, adminToken) {
   const res = http.del(
-    `${baseUrl}/api/v1/admin/sites/${siteId}`,
+    `${baseUrl}/api/v1/orgs/${organizationId()}/sites/${siteId}`,
     null,
     {
       headers: {
-        'Authorization': `Bearer ${adminToken}`,
-        'X-Lumi-Site': 'site_demo',
+        'Authorization': `Bearer ${ownerToken()}`,
+        'X-Confirm-Delete': siteId,
       },
     }
   );
@@ -66,4 +65,19 @@ export function createScimToken(baseUrl, siteId, label, adminToken) {
     throw new Error(`Failed to create SCIM token for ${siteId}: Status ${res.status}`);
   }
   return res.json().data; // Returns token object including plaintext 'token' field
+}
+
+function organizationId() {
+  if (!__ENV.ORGANIZATION_ID) throw new Error('Set ORGANIZATION_ID for the test organization');
+  return __ENV.ORGANIZATION_ID;
+}
+function organizationToken(fallback) {
+  const token = __ENV.ORGANIZATION_TOKEN || fallback;
+  if (!token || !token.startsWith('lbo_')) throw new Error('Set ORGANIZATION_TOKEN to an lbo_ key');
+  return token;
+}
+function ownerToken() {
+  // Org keys are admin, never owner. Destructive cleanup needs a human owner.
+  if (!__ENV.ORGANIZATION_OWNER_TOKEN) throw new Error('Set ORGANIZATION_OWNER_TOKEN to a Studio owner session for cleanup');
+  return __ENV.ORGANIZATION_OWNER_TOKEN;
 }

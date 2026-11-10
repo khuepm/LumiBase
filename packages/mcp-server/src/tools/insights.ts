@@ -80,6 +80,7 @@ export function registerInsightsTools(server: McpServer, client: LumiBaseClient)
   server.registerTool(
     'run_panel',
     {
+      annotations: { readOnlyHint: true, destructiveHint: false },
       description:
         'Run a saved panel and return its computed result. Optionally override the panel’s filter or date range for this run only (does not modify the panel).',
       inputSchema: {

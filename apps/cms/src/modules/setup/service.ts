@@ -1,3 +1,6 @@
+import type { RuntimeContext } from '@lumibase/runtime';
+import type { AppEnv } from '../../env';
+import { provisionSite, finalizeSiteProvisioning } from '../../services/site-provisioning';
 /**
  * SetupService — implements the three public surfaces of the Setup
  * Wizard backend (design §6.5):
@@ -39,6 +42,8 @@ import {
   roles,
   settings,
   sites,
+  organizations,
+  organizationMembers,
   systemState,
   userRoles,
   userSites,
@@ -235,6 +240,8 @@ export type GeoipProbe = () => boolean;
 
 export interface SetupServiceDeps {
   readonly db: Database;
+  readonly env?: AppEnv['Bindings'];
+  readonly runtime?: RuntimeContext;
   readonly requireSetupToken: boolean;
   readonly smtpAvailable: boolean;
   readonly encryptionAvailable: boolean;
@@ -570,16 +577,20 @@ export class SetupService {
         // settings key below is kept for back-compat readers). Theme/branding
         // are left at their column defaults and configured later via
         // Studio → Settings → Site.
-        await tx
-          .insert(sites)
-          .values({
-            id: DEFAULT_SITE_ID,
-            name: projectValue.displayTitle,
-            displayTitle: projectValue.displayTitle,
-            siteUrl: projectValue.siteUrl,
-            defaultLanguage: projectValue.defaultLanguage,
-          })
-          .onConflictDoNothing();
+        // Create the parent before inserting the NOT NULL organization_id.
+        // Migration may already have seeded it on a fresh, uninitialized install.
+        await tx.insert(organizations).values({
+          slug: 'default', name: projectValue.displayTitle,
+        }).onConflictDoNothing({ target: organizations.slug });
+        const [personalOrg] = await tx.select({ id: organizations.id }).from(organizations)
+          .where(eq(organizations.slug, 'default'));
+        if (!personalOrg) throw new SetupAbort({ code: 'INTERNAL' });
+        const provisioned = await provisionSite(tx, {
+          id: DEFAULT_SITE_ID, organizationId: personalOrg.id,
+          name: projectValue.displayTitle, displayTitle: projectValue.displayTitle,
+          siteUrl: projectValue.siteUrl, defaultLanguage: projectValue.defaultLanguage,
+          allowExisting: true,
+        });
 
         // ── 8b. Seed the agent role library (Setup Impact Registry #1;
         //        content-os Req 10.3). Without this, `agent_roles` stays
@@ -637,6 +648,10 @@ export class SetupService {
           throw new SetupAbort({ code: 'INTERNAL' });
         }
 
+        await tx.insert(organizationMembers).values({
+          userId: newUser.id, organizationId: personalOrg.id, role: 'owner',
+        }).onConflictDoNothing();
+
         // ── 9a. Create the platform `Administrator` role (admin bypass) and
         //        bind the bootstrap admin to it. requirements.md Req 3 states
         //        the initialized state requires a user with role `admin` and
@@ -645,10 +660,10 @@ export class SetupService {
         //        schema/items request 403s. `systemKey: 'administrator'` keeps
         //        a re-entrant wizard run idempotent via the
         //        `roles_site_system_key_unique` index.
-        const adminRoleId = await this.upsertAdministratorRole(
-          tx,
-          DEFAULT_SITE_ID,
-        );
+        const adminRoleId = provisioned.administratorRoleId;
+        await tx.insert(userSites).values({
+          userId: newUser.id, siteId: DEFAULT_SITE_ID, roleId: adminRoleId,
+        }).onConflictDoNothing();
         await tx
           .insert(userRoles)
           .values({
@@ -675,7 +690,7 @@ export class SetupService {
           // it. Idempotent via the `roles_site_system_key_unique` index.
           const needsMember = normalizedInvites.some((i) => i.role === 'member');
           const memberRoleId = needsMember
-            ? await this.upsertMemberRole(tx, DEFAULT_SITE_ID)
+            ? provisioned.memberRoleId
             : null;
 
           for (const invite of normalizedInvites) {
@@ -917,6 +932,9 @@ export class SetupService {
     //        the raw path (it is a secret — design §7.3); the policy is
     //        the canonical JSON. No password/hash/token is in scope.
     if (outcome.ok) {
+      if (this.deps.env) await finalizeSiteProvisioning(
+        this.deps.db, this.deps.env, this.deps.runtime, DEFAULT_SITE_ID,
+      ).catch(() => undefined);
       const audit = this.resolveAuditLogger();
       const adminPathHash = await sha256ShortHex(outcome.value.adminPath);
       const base = {
@@ -986,89 +1004,7 @@ export class SetupService {
     return this.deps.audit ?? new AuditLogger({ db: this.deps.db });
   }
 
-  /**
-   * Upsert the platform `Administrator` role for a site and return its id.
-   * Idempotent across re-entrant wizard runs via the
-   * `roles_site_system_key_unique` index — a second run reuses the existing
-   * row rather than inserting a duplicate. `adminAccess: true` makes the
-   * PermissionService bundle short-circuit to full bypass (see
-   * docs permissions-rbac.md §"adminAccess=true là bypass toàn bộ").
-   */
-  private async upsertAdministratorRole(
-    tx: any,
-    siteId: string,
-  ): Promise<string> {
-    const inserted = await tx
-      .insert(roles)
-      .values({
-        siteId,
-        key: 'administrator',
-        systemKey: 'administrator',
-        name: 'Administrator',
-        description: 'Full platform access. Created during first-run setup.',
-        adminAccess: true,
-        appAccess: true,
-      })
-      .onConflictDoNothing()
-      .returning({ id: roles.id });
 
-    if (inserted[0]?.id) return inserted[0].id;
-
-    // Conflict path: row already exists (re-entrant run) — read it back.
-    const existing = await tx
-      .select({ id: roles.id })
-      .from(roles)
-      .where(
-        and(eq(roles.siteId, siteId), eq(roles.systemKey, 'administrator')),
-      )
-      .limit(1);
-
-    const adminRoleId = existing[0]?.id;
-    if (!adminRoleId) {
-      throw new SetupAbort({ code: 'INTERNAL' });
-    }
-    return adminRoleId;
-  }
-
-  /**
-   * Create (or read back) the platform `Member` role — a non-admin role
-   * with Studio access, used as the lower-privilege preset for invited
-   * teammates. Mirrors {@link upsertAdministratorRole}: idempotent via the
-   * `roles_site_system_key_unique` index so a re-entrant wizard run reuses
-   * the existing row. Distinct from `appAccess`-only here: `adminAccess` is
-   * false, so the PermissionService bundle resolves `admin=false` and the
-   * member only gets whatever explicit permissions the operator later grants.
-   */
-  private async upsertMemberRole(tx: any, siteId: string): Promise<string> {
-    const inserted = await tx
-      .insert(roles)
-      .values({
-        siteId,
-        key: 'member',
-        systemKey: 'member',
-        name: 'Member',
-        description:
-          'Standard Studio access without admin privileges. Created during first-run setup.',
-        adminAccess: false,
-        appAccess: true,
-      })
-      .onConflictDoNothing()
-      .returning({ id: roles.id });
-
-    if (inserted[0]?.id) return inserted[0].id;
-
-    const existing = await tx
-      .select({ id: roles.id })
-      .from(roles)
-      .where(and(eq(roles.siteId, siteId), eq(roles.systemKey, 'member')))
-      .limit(1);
-
-    const memberRoleId = existing[0]?.id;
-    if (!memberRoleId) {
-      throw new SetupAbort({ code: 'INTERNAL' });
-    }
-    return memberRoleId;
-  }
 }
 
 // ── internal helpers ────────────────────────────────────────────────────

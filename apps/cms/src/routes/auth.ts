@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import { systemDbFor } from '../middleware/db';
+import { organizationRoleExpression, organizationRoleForSite } from '../services/organization-access';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import { SignJWT } from 'jose';
@@ -1172,20 +1174,24 @@ authRouter.post('/login', async (c) => {
   }
 
   const siteId = c.get('siteId');
-  const [membership] = await db
-    .select({ roleId: userSites.roleId })
+  const [membership] = await systemDbFor(c)
+    .select({ roleId: userSites.roleId, organizationRole: organizationRoleExpression(user.id, siteId) })
     .from(userSites)
     .where(and(eq(userSites.userId, user.id), eq(userSites.siteId, siteId)))
     .limit(1);
+  // Use live organization authority even when the user also has a weaker direct
+  // site role. This only grants the Studio realm to organization owner/admin.
+  const inherited = !user.isBootstrap && (membership?.organizationRole === 'owner' || membership?.organizationRole === 'admin'
+    || (!membership && await organizationRoleForSite(systemDbFor(c), user.id, siteId)));
 
-  if (!membership && !user.isBootstrap) {
+  if (!membership && !user.isBootstrap && !inherited) {
     return c.json(
       { errors: [{ code: 'TENANT_ACCESS_DENIED', message: 'This account is not a member of the selected site.' }] },
       403,
     );
   }
 
-  const tokenRoles = user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'];
+  const tokenRoles = user.isBootstrap || inherited ? ['admin'] : [membership?.roleId ?? 'member'];
 
   // Resolve the token AUDIENCE (`aud` claim) from the principal's realm.
   // The bootstrap admin and any role with `appAccess` get a `studio`
@@ -1193,7 +1199,7 @@ authRouter.post('/login', async (c) => {
   // `frontend` token that `withStudioAccess` refuses. This is computed
   // here — at sign time — so the wall holds regardless of how the policy
   // bundle is later evaluated. See `services/auth/token-audience.ts`.
-  let appAccess = user.isBootstrap;
+  let appAccess = user.isBootstrap || Boolean(inherited);
   if (!appAccess && membership?.roleId) {
     const [roleRow] = await db
       .select({ appAccess: roles.appAccess })
@@ -1504,16 +1510,20 @@ authRouter.post('/refresh', async (c) => {
     );
   }
 
-  const [membership] = await db
-    .select({ roleId: userSites.roleId })
+  const [membership] = await systemDbFor(c)
+    .select({ roleId: userSites.roleId, organizationRole: organizationRoleExpression(user.id, siteId) })
     .from(userSites)
     .where(and(eq(userSites.userId, user.id), eq(userSites.siteId, siteId)))
     .limit(1);
+  // Use live organization authority even when the user also has a weaker direct
+  // site role. This only grants the Studio realm to organization owner/admin.
+  const inherited = !user.isBootstrap && (membership?.organizationRole === 'owner' || membership?.organizationRole === 'admin'
+    || (!membership && await organizationRoleForSite(systemDbFor(c), user.id, siteId)));
 
   // Re-check tenant membership on every renewal (M4): a user removed from
   // the site must not keep minting access tokens for it. Bootstrap admin is
   // exempt (it has no per-site membership row), mirroring login.
-  if (!membership && !user.isBootstrap) {
+  if (!membership && !user.isBootstrap && !inherited) {
     await revokeAllRefreshTokens(db, siteId, outcome.userId);
     clearRefreshCookie(c);
     return c.json(
@@ -1522,13 +1532,13 @@ authRouter.post('/refresh', async (c) => {
     );
   }
 
-  const tokenRoles = user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'];
+  const tokenRoles = user.isBootstrap || inherited ? ['admin'] : [membership?.roleId ?? 'member'];
 
   // Recompute the realm from the role's CURRENT `appAccess` (M4) rather than
   // trusting the audience frozen into the refresh row at login: a role
   // demoted out of Studio since then must renew as a `frontend` token, and
   // a promoted one as `studio`. Keeps the audience wall honest over time.
-  let appAccess = user.isBootstrap;
+  let appAccess = user.isBootstrap || Boolean(inherited);
   if (!appAccess && membership?.roleId) {
     const [roleRow] = await db
       .select({ appAccess: roles.appAccess })

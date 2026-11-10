@@ -1,3 +1,4 @@
+import { OrganizationSwitcher } from '@/modules/organization/switcher';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   Database,
@@ -325,7 +326,7 @@ export function AppShell({ children }: AppShellProps) {
       <div className="flex min-w-0 flex-1 flex-col">
         <header
           aria-label="LumiBase Studio header"
-          className="flex h-14 items-center justify-between border-b px-4"
+          className="flex min-h-14 flex-wrap items-center justify-between gap-y-2 border-b px-4 py-2 sm:h-14 sm:flex-nowrap sm:py-0"
         >
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold">LumiBase Studio</span>
@@ -338,6 +339,7 @@ export function AppShell({ children }: AppShellProps) {
               </span>
             )}
           </div>
+          <OrganizationSwitcher />
           {/* Right-side topbar actions */}
           <div className="flex items-center gap-2">
             <button

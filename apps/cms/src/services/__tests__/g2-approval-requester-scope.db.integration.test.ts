@@ -81,8 +81,8 @@ describe.skipIf(!hasDbIntegrationUrl)('#472 F1 approval runs with the requester 
     await db.delete(users).where(eq(users.id, ADMIN));
 
     await db.insert(sites).values([
-      { id: SITE, name: 'R2 scope' },
-      { id: OTHER_SITE, name: 'R2 scope other tenant' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'R2 scope' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER_SITE, name: 'R2 scope other tenant' },
     ]);
     await db.insert(users).values({ id: ADMIN, email: 'r2-scope-admin@example.dev' });
     await db.insert(roles).values({

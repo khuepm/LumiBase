@@ -1,3 +1,4 @@
+import { resolveSiteAdminAccess } from '../services/site-admin-access';
 import type { MiddlewareHandler } from 'hono';
 import type { AppEnv } from '../env';
 import { PermissionService } from '../services/permission-service';
@@ -46,6 +47,8 @@ export const requireSiteAdmin = (): MiddlewareHandler<AppEnv> => async (c, next)
   if (auth?.raw?.dev === true && auth.roles?.includes('admin')) {
     return next();
   }
+
+  if ((auth?.userId || auth?.apiKeyId) && (await resolveSiteAdminAccess(c)).allowed) return next();
 
   if (auth?.userId || auth?.apiKeyId) {
     const bundle = await new PermissionService({

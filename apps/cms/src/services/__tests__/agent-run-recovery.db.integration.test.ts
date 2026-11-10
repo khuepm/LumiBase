@@ -94,8 +94,8 @@ describe.skipIf(!hasDbIntegrationUrl)('#584 agent run recovery — DB integratio
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.delete(sites).where(eq(sites.id, OTHER_SITE));
     await db.insert(sites).values([
-      { id: SITE, name: '584 recovery' },
-      { id: OTHER_SITE, name: '584 recovery (other tenant)' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: '584 recovery' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER_SITE, name: '584 recovery (other tenant)' },
     ]);
   });
 

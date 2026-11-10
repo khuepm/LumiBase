@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-11-09T12:46:09.459Z
+version: 11
+lastUpdated: 2026-11-10T05:05:30.148Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: c35d3cb83ac0c70c
+sourceHash: 9020a61624f3b57c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-09T12:46:09.459Z
-codeVerifiedHash: c35d3cb83ac0c70c
+codeVerified: 2026-11-10T05:05:30.148Z
+codeVerifiedHash: 9020a61624f3b57c
 codeVerifiedClaims: 28
 ---
 
@@ -17,7 +17,7 @@ codeVerifiedClaims: 28
 
 ## TL;DR
 
-LumiBase exposes **two MCP surfaces**. Both run through a single harness codepath, so the decision for a tool called via MCP is **identical** to calling the Agent API directly (the "MCP parity" invariant, Property 14):
+LumiBase exposes **two MCP surfaces**. Governed site tools use the same site harness as the Agent API (the "MCP parity" invariant, Property 14). Organization tools use the organization harness and its human approval boundary:
 
 | Surface | Transport | Location | Used for |
 |---|---|---|---|
@@ -64,6 +64,36 @@ Source: [`packages/mcp-server/`](../../../packages/mcp-server/) (built on `@mode
 - **Client:** `LumiBaseClient` — HTTP to `/api/v1` with a Bearer token + site header.
 - **Config:** [`docs/en/agent-setup/mcp-config.json`](../agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
 - **Studio:** the *Data model → Set up MCP for your IDE* page (`/data-model/mcp-setup`) creates a dedicated role-scoped API key, generates the Cursor/Claude Desktop/VS Code config, and has a **Try these prompts** section — copy-ready starter prompts grouped as Explore/Content/Schema/Operations and labelled `Read-only`/`Writes data`/`Admin role`. The list lives in [`apps/studio/src/modules/data-model/mcp-prompts.ts`](../../../apps/studio/src/modules/data-model/mcp-prompts.ts); each prompt declares the tools it uses and a test checks them against the tools the server actually registers.
+
+
+### Organization credentials (ADR-013)
+
+Example for an unpinned organization key. Keep the sample read-only; set `LUMIBASE_READ_ONLY=false` to request writes, enable organization MCP in Settings, and approve requests as a human.
+
+```json
+{
+  "mcpServers": {
+    "lumibase-organization": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@lumibase/mcp-server"
+      ],
+      "env": {
+        "LUMIBASE_URL": "http://localhost:1989",
+        "LUMIBASE_TOKEN": "lbo_<organization-key>",
+        "LUMIBASE_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
+
+
+
+Set `LUMIBASE_READ_ONLY=true` to publish only tools annotated as read-only. With an `lbk_` key, `LUMIBASE_SITE_ID` remains required and the existing site tool list is unchanged. With an `lbo_` key, omit the site to expose eight organization tools (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) plus site tools requiring a `site` argument. Pinning a site exposes the original site tools and the first two organization reads. Parallel calls cannot share site headers.
+
+Organization writes always use the governed HTTP endpoint, including when `LUMIBASE_MCP_GOVERNED=off`; there is no REST fallback. Enable organization setting `contentOs.mcp.allowOrganizationTools`; global `LUMIBASE_MCP_ORG_TOOLS=off` overrides it. Every organization mutation waits for human approval. The `confirm` argument is an acknowledgement, not an approval. An owner/admin reads `/api/v1/orgs/:orgId/approvals`, opens `/:approvalId`, and posts `{"decision":"approved"}` or `{"decision":"rejected"}` to `/:approvalId/decide`. Owner-only operations still require an owner; transfers require the same human owner in both organizations. API keys cannot decide or read receipts. New organization key plaintext appears only in the human receipt. The requester must still hold live authority when approved; execution and the receipt commit atomically. Organization approvals use a real organization parent (migration `0025`), including organizations with zero sites.
 
 ### The fixed tools (CRUD + read-only insights)
 

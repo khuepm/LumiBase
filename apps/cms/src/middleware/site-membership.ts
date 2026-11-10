@@ -1,3 +1,7 @@
+import { systemDbFor } from './db';
+import { organizationRoleExpression } from '../services/organization-access';
+import { isOrganizationPath, isMcpPath } from '../services/organization-access';
+import { inheritedAdministratorRole } from '../services/site-admin-access';
 import type { MiddlewareHandler } from 'hono';
 import { and, eq } from 'drizzle-orm';
 import { userSites, users } from '@lumibase/database';
@@ -22,7 +26,7 @@ const PUBLIC_AUTH_PATHS = new Set([
  * `withAuth` has already matched the key to the same site.
  */
 export const withSiteMembership = (): MiddlewareHandler<AppEnv> => async (c, next) => {
-  if (PUBLIC_AUTH_PATHS.has(c.req.path) || c.req.path.startsWith('/api/v1/files/upload/')) {
+  if (isOrganizationPath(c.req.path) || PUBLIC_AUTH_PATHS.has(c.req.path) || c.req.path.startsWith('/api/v1/files/upload/')) {
     return next();
   }
 
@@ -39,6 +43,8 @@ export const withSiteMembership = (): MiddlewareHandler<AppEnv> => async (c, nex
 
   // `withAuth` already rejects API keys whose stored site_id does not match
   // the selected tenant, so there is no user_sites membership to check here.
+  if (auth.type === 'api_key' && auth.apiKey?.scope === 'organization' && !siteId && isMcpPath(c.req.path)) return next();
+
   if (auth.type === 'api_key') {
     await attachAccessBundle(c, auth);
     return next();
@@ -103,13 +109,13 @@ export const withSiteMembership = (): MiddlewareHandler<AppEnv> => async (c, nex
 
   const membershipKnown = ctx.membership !== undefined;
   const membership = ctx.membership
-    ?? (await loadMembership(c.get('db'), resolved.id, siteId));
+    ?? (await loadMembership(systemDbFor(c), resolved.id, siteId));
 
   if (!membershipKnown && membership) {
-    mergeRequestContext(c, { membership });
+    mergeRequestContext(c, { membership, organizationRole: membership.organizationRole ?? null });
   }
 
-  if (!membership) {
+  if (!membership && !(await inheritedAdministratorRole(c))) {
     return c.json(
       { errors: [{ code: 'TENANT_FORBIDDEN', message: 'Authenticated user is not a member of the selected site.' }] },
       403,
@@ -149,9 +155,9 @@ async function loadMembership(
   db: AppEnv['Variables']['db'],
   userId: string,
   siteId: string,
-): Promise<{ roleId: string | null } | null> {
+): Promise<{ roleId: string | null; organizationRole?: import('@lumibase/contracts').OrgRole | null } | null> {
   const [row] = await db
-    .select({ roleId: userSites.roleId })
+    .select({ roleId: userSites.roleId, organizationRole: organizationRoleExpression(userId, siteId) })
     .from(userSites)
     .where(and(eq(userSites.userId, userId), eq(userSites.siteId, siteId)))
     .limit(1);
@@ -159,7 +165,7 @@ async function loadMembership(
   // SCIM provisioning inserts membership without one, so gating on `roleId`
   // would 403 a real member out of the whole tenant — a lockout, not a
   // permission decision. Role resolution is `PermissionService`'s job.
-  return row ? { roleId: row.roleId ?? null } : null;
+  return row ? { roleId: row.roleId ?? null, organizationRole: row.organizationRole ?? null } : null;
 }
 
 async function attachAccessBundle(
@@ -180,6 +186,8 @@ async function attachAccessBundle(
     return;
   }
 
+  const inheritedRole = await inheritedAdministratorRole(c);
+  auth = c.get('auth');
   const runtime = c.get('runtime');
   const headers: Record<string, string> = {};
   c.req.raw.headers.forEach((value, key) => {
@@ -193,7 +201,7 @@ async function attachAccessBundle(
       userId: auth.userId ?? null,
       siteId: c.get('siteId'),
       // Anonymous principals carry their role directly (no membership row).
-      roleId: auth.roleId ?? null,
+      roleId: inheritedRole ?? auth.roleId ?? null,
       user: auth ? { id: auth.userId ?? null, email: auth.email ?? null, roles: auth.roles ?? [], ...(auth.raw ?? {}) } : null,
       ip: c.get('ip') ?? c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null,
       headers,

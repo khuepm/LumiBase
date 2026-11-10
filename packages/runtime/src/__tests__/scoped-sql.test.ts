@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   createSiteScopedSql,
+  createOrganizationScopedSql,
+  scopedOrganizationIdOf,
   isSiteScopedSql,
   scopedSiteIdOf,
   SITE_SCOPED_SQL,
@@ -272,4 +274,23 @@ describe('createSiteScopedSql', () => {
     expect(unscopedSqlOf(sql)).toBe(base);
     expect(unscopedSqlOf(base)).toBe(base);
   });
+});
+
+it('sets organization scope on the same transaction and resets the site scope', async () => {
+  const { base, events } = makeFakeSql();
+  const client = createOrganizationScopedSql(base, "org_'untrusted");
+  await client.unsafe('select * from lumibase_organizations');
+  expect(events.map((e) => e.kind)).toEqual(['begin', 'template', 'unsafe', 'commit']);
+  expect(events[1]?.values).toEqual(['', "org_'untrusted"]);
+  expect(events[1]?.text).toContain("set_config('lumibase.organization_id', ?, true)");
+  expect(scopedOrganizationIdOf(client)).toBe("org_'untrusted");
+  expect(unscopedSqlOf(client)).toBe(base);
+});
+it('scopes explicit organization transactions before their first query', async () => {
+  const { base, events } = makeFakeSql();
+  await createOrganizationScopedSql(base, 'org_a').begin(async (tx: FakeTx) => {
+    await tx.unsafe('select 1');
+  });
+  expect(events[1]?.values).toEqual(['', 'org_a']);
+  expect(events[2]?.kind).toBe('unsafe');
 });

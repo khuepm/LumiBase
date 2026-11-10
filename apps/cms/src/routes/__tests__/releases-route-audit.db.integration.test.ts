@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { and, asc, eq, like } from 'drizzle-orm';
@@ -49,7 +50,7 @@ describe.skipIf(!hasDbIntegrationUrl)('releases route — publish audit (DB inte
   beforeEach(async () => {
     await db.delete(auditLog).where(eq(auditLog.siteId, SITE));
     await db.delete(sites).where(eq(sites.id, SITE));
-    await db.insert(sites).values({ id: SITE, name: 'Release Audit IT' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Release Audit IT' });
     // The route publishes through itemServiceForRequest → real RBAC: seed an
     // admin membership so the request principal has admin bypass.
     await db.insert(users).values({ id: ADMIN, email: ADMIN_EMAIL, status: 'active' }).onConflictDoNothing();

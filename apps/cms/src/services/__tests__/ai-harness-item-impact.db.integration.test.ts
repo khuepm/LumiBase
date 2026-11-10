@@ -75,7 +75,7 @@ describe.skipIf(!hasDbIntegrationUrl)('#578 impact-aware item risk — DB integr
   beforeEach(async () => {
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.delete(users).where(eq(users.id, ADMIN));
-    await db.insert(sites).values({ id: SITE, name: '578 impact' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: '578 impact' });
     await db.insert(users).values({ id: ADMIN, email: 'audit-578-admin@example.dev' });
     await db.insert(roles).values({
       id: ADMIN_ROLE,

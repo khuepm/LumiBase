@@ -125,8 +125,8 @@ describe.skipIf(!hasDbIntegrationUrl)('Review pilot sessions — DB integration'
   beforeEach(async () => {
     await db.delete(sites).where(inArray(sites.id, [SITE_A, SITE_B]));
     await db.insert(sites).values([
-      { id: SITE_A, name: 'Review sessions IT A' },
-      { id: SITE_B, name: 'Review sessions IT B' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_A, name: 'Review sessions IT A' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_B, name: 'Review sessions IT B' },
     ]);
   });
 

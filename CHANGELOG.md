@@ -9,7 +9,41 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Highlights
+- Organizations (ADR-013): manage sites, members, roles and credentials within an organization, with a Studio workspace switcher and human-approved organization MCP operations.
+- Security hardening for cross-tenant site administration and queued agent execution, plus production setup fixes and copy-ready MCP starter prompts.
+
+### Added
+- Organization schema and fixed owner/admin/member/billing permissions; organization-scoped `lbo_` keys and `/api/v1/orgs` APIs for organizations, sites, members, keys and approvals. Organization owners/admins inherit administrator access to their sites; site credentials cannot administer an organization (#634, #637).
+- Studio Settings → Organization with General, Sites, Members, Keys and Approvals. The Organization entry remains visible to owners/admins with one organization; the switcher appears when there are multiple organizations. Site switching clears cached content, and login/refresh use current organization authority (#639).
+- Eight organization MCP tools, token-specific tool profiles, per-call site routing and read-only configuration. Organization writes require human approval, recheck the requester's current permissions and commit the operation with its receipt atomically. Keys cannot approve requests or read secret receipts (#638).
+- Twelve copy-ready starter prompts on Studio's MCP setup page, grouped by Explore, Content, Schema and Operations, with access labels and checks against registered tool names (#631).
+- Bilingual organization API, data-model, security, MCP and Studio guides; ADR-013 is Accepted. Organization environment defaults are included in local, Docker and scaffold examples (#640).
+
+### Fixed
+- Queued agent jobs bound to a user or API key fail with `PERMISSION_CONTEXT_MISSING` when permission resolution returns no context, instead of falling back to system privileges (#580, #632).
+- Cross-tenant administration through the legacy `/api/v1/admin/sites` routes is eliminated by removing those routes; organization APIs enforce membership and ownership instead (#628, #637).
+- Studio no longer displays the development badge in production. New setup derives the site URL from the Studio origin rather than saving a localhost default; CMS setup without a project URL stores no guessed URL. Existing site URLs are unchanged (#627).
+- Organization Settings remain usable on narrow screens and retain the active navigation item under a custom admin path (#639).
+- Pending transfer approvals can be rejected, and completed receipts replayed, after the destination organization is deleted. Executing a pending transfer still requires both organizations and the same human owner of each (#640).
+
+### Changed
+- Updated runtime, build and test dependencies, including jsdom 31 and `@hookform/resolvers` 7, and refreshed CodeQL tooling (#616, #619, #620, #626).
+
+### Removed
+- Legacy `POST /api/v1/admin/sites` and `DELETE /api/v1/admin/sites/:id`, and `LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT`. Use `/api/v1/orgs/:orgId/sites` instead. k6 provisioning now uses `ORGANIZATION_ID` and `ORGANIZATION_TOKEN` (`lbo_`); destructive cleanup requires `ORGANIZATION_OWNER_TOKEN` (a Studio owner session).
+
+### Migrations
+- `0024_organizations`: backfills all existing sites into one organization with slug `default`, makes the bootstrap user its owner when present, and retains existing API keys in site scope. Fresh setup creates the parent organization before inserting site `__default__` (#634).
+- `0025_organization_approvals`: preserves site approvals while adding organization-scoped approvals, requester attribution and human-only execution receipts. Every approval has exactly one site or organization parent (#638).
+
+### Upgrade notes
+- Compatibility: the removed admin-site endpoints and documented containment flag are breaking changes for integrations that used them. The [versioning policy](docs/en/contributing/versioning-policy.md) requires a major version for removed API or documented environment-variable contracts.
+- Back up PostgreSQL before applying migrations `0024` and `0025`; run the database migrations before starting the new CMS. There is no automatic schema rollback: restore the pre-upgrade backup to revert. Reapply `packages/database/migrations/rls-policies.sql` when using RLS enforcement. Repair manually introduced orphan organization IDs or inconsistent API key scope targets before retrying a failed migration.
+- Existing installations see their `default` organization in Settings → Organization. Owners may rename its slug. Site transfers require the same human to own both organizations; organization keys are never owners.
+- `LUMIBASE_ALLOW_ORG_SIGNUP` defaults off; `true` allows Studio users to create organizations. Bootstrap operators do not need this flag. `LUMIBASE_MCP_ORG_TOOLS` defaults on as a global gate, but organization MCP stays disabled until its organization setting is enabled; set the environment flag to `off` to force it off. Organization MCP writes always require human approval.
+- Replace legacy admin-site API calls and remove the retired containment flag from deployment configuration. Existing site API keys remain site-scoped; mint an organization key explicitly for organization API or MCP access.
+- Password-only recovery still requires a live site. Before deleting the last site, retain a valid organization credential or Studio session to recreate a site; otherwise restore a backup (B196).
 
 ## [1.0.1] - 2026-11-09
 

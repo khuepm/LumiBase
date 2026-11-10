@@ -398,13 +398,14 @@ describe('AI Integration: Cascade delete (site deletion → approvals removed)',
    * we verify the schema definition includes the correct onDelete behavior.
    */
 
-  it('aiApprovals schema defines siteId with onDelete cascade', () => {
+  it('aiApprovals permits a nullable site for organization-scoped approvals', () => {
     // Access the table columns to verify the FK constraint definition
     const siteIdColumn = aiApprovals.siteId;
 
-    // Verify the column exists and is not null
+    // Organization approvals use organization_id; 0025 enforces exactly one parent.
     expect(siteIdColumn).toBeDefined();
-    expect(siteIdColumn.notNull).toBe(true);
+    expect(siteIdColumn.notNull).toBe(false);
+    expect(aiApprovals.organizationId.name).toBe('organization_id');
 
     // Verify the column name maps correctly
     expect(siteIdColumn.name).toBe('site_id');

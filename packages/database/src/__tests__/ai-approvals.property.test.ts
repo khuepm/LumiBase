@@ -41,7 +41,7 @@ describe('Feature: ai-first-cms-engine, Property 15: Approval record round-trip'
 
       // Create a test site for FK constraint
       testSiteId = nanoid();
-      await db.insert(sites).values({ id: testSiteId, name: 'test-site-pbt-approvals' });
+      await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: testSiteId, name: 'test-site-pbt-approvals' });
     } catch {
       canConnect = false;
     }
