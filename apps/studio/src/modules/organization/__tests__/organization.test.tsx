@@ -286,6 +286,34 @@ describe('Organization settings and shell selection', () => {
       'approved',
     );
   });
+  it('offers no receipt replay for an approved org key, only the rotate hint', async () => {
+    mocks.approvals.mockResolvedValue([
+      {
+        id: 'approval_key',
+        organizationId: owner.id,
+        skillName: 'org:create_org_key',
+        arguments: { name: 'Agent' },
+        status: 'approved',
+        createdAt: '2026-11-09T00:00:00Z',
+      },
+      {
+        id: 'approval_site',
+        organizationId: owner.id,
+        skillName: 'org:create_site',
+        arguments: { name: 'Blog' },
+        status: 'approved',
+        createdAt: '2026-11-09T00:00:00Z',
+      },
+    ]);
+    show(<OrganizationPage />);
+    await screen.findByLabelText('Organization name');
+    fireEvent.click(screen.getByRole('button', { name: 'approvals' }));
+    expect(
+      await screen.findByText(/The key was shown once at approval/),
+    ).toBeInTheDocument();
+    // Only the site approval keeps a receipt button.
+    expect(screen.getAllByRole('button', { name: 'View receipt' })).toHaveLength(1);
+  });
   it("preserves the owner row and shows the server's last-owner refusal", async () => {
     mocks.members.mockResolvedValue([
       { userId: 'last_owner', email: 'last@example.test', role: 'owner' },
