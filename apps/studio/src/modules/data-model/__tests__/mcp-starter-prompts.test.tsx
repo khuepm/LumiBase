@@ -33,4 +33,24 @@ describe('McpStarterPrompts', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Schema' }));
     expect(screen.queryByText(/selected role has no admin access/)).toBeNull();
   });
+
+  it('switches prompt language and copies the Vietnamese text', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    render(<McpStarterPrompts />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tiếng Việt' }));
+    expect(screen.getByRole('button', { name: 'Tiếng Việt' })).toHaveAttribute('aria-pressed', 'true');
+
+    const first = MCP_PROMPTS.find((p) => p.category === 'explore')!;
+    fireEvent.click(screen.getByRole('button', { name: `Copy prompt: ${first.vi.title}` }));
+    expect(await screen.findByText('Copied')).toBeInTheDocument();
+    expect(writeText).toHaveBeenCalledWith(first.vi.prompt);
+  });
+
+  it('starts in the default language it is given', () => {
+    render(<McpStarterPrompts defaultLanguage="vi" />);
+    const first = MCP_PROMPTS.find((p) => p.category === 'explore')!;
+    expect(screen.getByText(first.vi.prompt)).toBeInTheDocument();
+  });
 });
