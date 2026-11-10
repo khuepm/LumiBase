@@ -12,3 +12,8 @@ ADMIN_PASSWORD=change-me
 # App
 PORT=8787
 NODE_ENV=development
+
+# Organization plane (server-side; signup off unless explicitly enabled).
+LUMIBASE_ALLOW_ORG_SIGNUP=false
+# Global organization MCP kill switch: off disables it; org setting defaults off.
+LUMIBASE_MCP_ORG_TOOLS=on
