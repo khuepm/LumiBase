@@ -803,6 +803,14 @@ function ApprovalCard({
             Reject request
           </button>
         </div>
+      ) : approval.status === 'approved' &&
+        approval.skillName === 'org:create_org_key' ? (
+        // The key was shown once to whoever approved it; the stored receipt
+        // keeps no plaintext. A lost key is recovered by rotating it.
+        <p className="text-sm text-muted-foreground">
+          The key was shown once at approval. Rotate it in Keys if it was not
+          saved.
+        </p>
       ) : (
         approval.status === 'approved' && (
           <button className={button} disabled={busy} onClick={receipt}>

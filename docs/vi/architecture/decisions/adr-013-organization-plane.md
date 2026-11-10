@@ -1,14 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-11-10T01:58:25.845Z
+version: 3
+lastUpdated: 2026-11-10T05:40:28.449Z
 sourceLang: en
 translatedFrom: en
-sourceHash: be9bd3448ced37b9
+sourceHash: 245bc974d50d4f04
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T01:58:25.845Z
-codeVerifiedHash: be9bd3448ced37b9
-codeVerifiedClaims: 40
+codeVerified: 2026-11-10T05:40:28.449Z
+codeVerifiedHash: 245bc974d50d4f04
+codeVerifiedClaims: 42
 ---
 
 # ADR-013: Organization plane (phân cấp tenant và credential phân loại theo phạm vi)
@@ -262,7 +262,8 @@ Quy tắc:
 
 - Phạm vi credential có test tại `apps/cms/src/__tests__/auth-middleware-matrix.test.ts` và integration API organization với database thật. Credential site không vào được organization plane; organization key không truy cập site ngoài organization.
 - Hotfix #628 lên main trước; Phase 2 gỡ các route admin site chỉ phục vụ test trong #666.
-- Thao tác ghi organization luôn cần người quyết định. Migration `0025_organization_approvals` lưu cha organization và bên yêu cầu; quyền được kiểm tra lại và thao tác/biên nhận commit nguyên tử. Endpoint biên nhận chỉ dành cho người dùng giữ token mới ngoài phản hồi agent. Metadata audit có `organizationId` và run id.
+- Thao tác ghi organization luôn cần người quyết định. Migration `0025_organization_approvals` lưu cha organization và bên yêu cầu; quyền được kiểm tra lại và thao tác/biên nhận commit nguyên tử. Key mới ở dạng rõ chỉ được trả một lần, trong response decide của người duyệt; biên nhận được lưu chỉ giữ metadata của key (`tokenRedacted: true`), kể cả khi đọc lại và replay. Metadata audit có `organizationId` và run id.
+- Organization key không thể thay đổi ai nắm quyền. Thao tác ghi thành viên, ghi organization key và `PATCH /orgs/:orgId` yêu cầu phiên người dùng; key yêu cầu chúng qua MCP approval. Nếu không, vai trò admin cho phép key bị lộ thêm người giữ nó làm admin, tạo key tồn tại lâu hơn việc thu hồi nó, hoặc tự bật tool MCP của mình.
 - Chuyển site cần cùng một người là owner cả hai organization. Organization key được tạo site key cho site thuộc quyền nhưng không nhận quyền owner. Chỉ owner được đổi slug `default` của personal organization; slug có thể dùng lại sau đó.
 - Đăng nhập/gia hạn bằng mật khẩu vẫn cần site tồn tại. Organization không có site vẫn truy cập được bằng organization key hoặc phiên Studio còn hiệu lực; phục hồi hoàn toàn không phụ thuộc site là công việc instance riêng (backlog B196). Giữ credential phục hồi hoặc khôi phục backup.
 

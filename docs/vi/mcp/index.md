@@ -1,10 +1,10 @@
 ---
-version: 10
-lastUpdated: 2026-11-10T01:59:50.309Z
+version: 11
+lastUpdated: 2026-11-10T05:40:28.268Z
 sourceLang: vi
-contentHash: 72326b4293c307f8
-codeVerified: 2026-11-10T01:59:50.309Z
-codeVerifiedHash: 72326b4293c307f8
+contentHash: 0ec7dafdafbfec9d
+codeVerified: 2026-11-10T05:40:28.268Z
+codeVerifiedHash: 0ec7dafdafbfec9d
 codeVerifiedClaims: 26
 ---
 
@@ -87,7 +87,7 @@ Ví dụ key organization không ghim site. Mẫu chỉ đọc; đặt `LUMIBASE
 
 
 
-Đặt `LUMIBASE_READ_ONLY=true` để chỉ công bố tool có annotation chỉ đọc. Với key `lbk_`, `LUMIBASE_SITE_ID` vẫn bắt buộc và danh sách tool site hiện có không đổi. Với key `lbo_`, bỏ site để có tám tool organization (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) cùng các tool site bắt buộc truyền đối số `site`. Ghim một site sẽ công bố các tool site cũ và hai tool đọc organization đầu tiên. Các lời gọi song song không dùng chung header site.
+Đặt `LUMIBASE_READ_ONLY=true` để chỉ công bố tool có annotation chỉ đọc. Ở chế độ này client cũng từ chối mọi request không phải GET, trừ một danh sách cố định endpoint xem trước/truy vấn (diff schema, tra cứu translation memory, panel insight, kiểm tra quyền và truy cập, compile intent), nên một tool không thể ghi dù tên của nó trông như chỉ đọc. Với key `lbk_`, `LUMIBASE_SITE_ID` vẫn bắt buộc và danh sách tool site hiện có không đổi. Với key `lbo_`, bỏ site để có tám tool organization (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) cùng các tool site bắt buộc truyền đối số `site`. Ghim một site sẽ công bố các tool site cũ và hai tool đọc organization đầu tiên. Các lời gọi song song không dùng chung header site.
 
 Tool ghi organization luôn đi qua HTTP endpoint có quản trị, kể cả khi `LUMIBASE_MCP_GOVERNED=off`; không fallback sang REST. Bật setting organization `contentOs.mcp.allowOrganizationTools`; biến toàn cục `LUMIBASE_MCP_ORG_TOOLS=off` có quyền tắt ưu tiên. Mọi thay đổi organization đều chờ người duyệt. Đối số `confirm` chỉ xác nhận ý định, không thay thế phê duyệt. Owner/admin đọc `/api/v1/orgs/:orgId/approvals`, mở `/:approvalId`, rồi gửi `{"decision":"approved"}` hoặc `{"decision":"rejected"}` tới `/:approvalId/decide`. Thao tác dành riêng cho owner vẫn cần owner; chuyển site cần cùng một người là owner ở cả hai organization. API key không được duyệt hay đọc biên nhận. Token organization mới chỉ hiện trong biên nhận dành cho người duyệt. Quyền hiện tại của bên yêu cầu được kiểm tra lại khi duyệt; thao tác và biên nhận được commit nguyên tử. Approval organization có cha organization thật (migration `0025`), kể cả organization không có site.
 

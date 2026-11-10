@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { LumiBaseClient, configFromEnv, type LumiBaseConfig } from '../client.js';
+import { LumiBaseClient, READ_ONLY_POST_PATHS, READ_ONLY_RPC_TOOLS, ReadOnlyViolationError, configFromEnv, type LumiBaseConfig } from '../client.js';
 import { registerAllTools } from '../tools/index.js';
 
 // Captured by running registerAllTools at epic commit 4f90a8e5541927012275d33f4c266eef42548b25.
@@ -51,6 +51,44 @@ describe('credential tool profiles', () => {
       expect([...tools.keys()].sort()).toMatchSnapshot();
     });
   }
+});
+describe('LUMIBASE_READ_ONLY', () => {
+  // Decided by what each tool actually sends, not by its name: the name-based
+  // filter once let POST /agent/intents/:id/pause and POST /materialize through.
+  const stateChanging = ['pause_intent', 'resume_intent', 'scan_intent', 'register_materialization'];
+  for (const profile of profiles) {
+    it(`${profile.label}: no exposed tool issues a state-changing request`, async () => {
+      const { tools } = capture({ ...profile.config, readOnly: true });
+      for (const name of stateChanging) expect(tools.has(name)).toBe(false);
+      const sent: Array<{ tool: string; method: string; path: string; rpcTool?: string }> = [];
+      for (const [tool, { handler }] of tools) {
+        vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+          const path = String(url).replace('https://cms.test/api/v1', '');
+          const rpc = path === '/mcp' && typeof init.body === 'string' ? JSON.parse(init.body) : null;
+          sent.push({ tool, method: init.method ?? 'GET', path, rpcTool: rpc?.params?.name });
+          return Response.json({ data: [{ id: 'org_a' }], result: { content: [] } });
+        }));
+        await handler({ site: 'site_a', id: 'x', collection: 'posts', name: 'n', key: 'k', slug: 's', panelId: 'p' })
+          .catch(() => undefined);
+      }
+      const writes = sent.filter((r) => r.method !== 'GET').filter((r) => r.path === '/mcp'
+        ? !READ_ONLY_RPC_TOOLS.has(String(r.rpcTool))
+        : !(r.method === 'POST' && READ_ONLY_POST_PATHS.some((p) => p.test(r.path))));
+      expect(writes).toEqual([]);
+    });
+  }
+  it('refuses writes in the client even when a tool name hides one', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ data: {} }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new LumiBaseClient({ url: 'https://cms.test', token: 'lbk_test', siteId: 'site_a', readOnly: true });
+    await expect(client.post('/materialize', {})).rejects.toBeInstanceOf(ReadOnlyViolationError);
+    await expect(client.delete('/items/posts/1')).rejects.toBeInstanceOf(ReadOnlyViolationError);
+    await expect(client.jsonRpc('tools/call', { name: 'org:create_site', arguments: {} }, { organization: true }))
+      .rejects.toBeInstanceOf(ReadOnlyViolationError);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await client.post('/permissions/check', {});
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 it('keeps concurrent unpinned site calls isolated and strips the routing argument', async () => {
   const calls: Array<{ url: string; site: string | undefined }> = [];

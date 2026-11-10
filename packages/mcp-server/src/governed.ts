@@ -158,12 +158,16 @@ export const UNGOVERNED_MUTATIONS: Readonly<Record<string, string>> = {
   detach_role_policy: 'no-skill',
   drop_materialization: 'no-skill',
   install_marketplace_extension: 'no-skill',
+  pause_intent: 'no-skill',
   publish_extension: 'no-skill',
   publish_release: 'no-skill',
   refresh_materialization: 'no-skill',
+  register_materialization: 'no-skill',
   reject_content: 'no-skill',
   remove_role_user: 'no-skill',
   restore_backup: 'no-skill',
+  resume_intent: 'no-skill',
+  scan_intent: 'no-skill',
   revoke_share: 'no-skill',
   submit_review: 'no-skill',
   translate_text: 'no-skill',
@@ -199,7 +203,15 @@ const MUTATION_VERB =
   /^(create|update|delete|remove|upsert|set|add|attach|detach|revoke|rotate|invite|install|uninstall|enable|disable|publish|unpublish|promote|apply|run|trigger|restore|replay|drop|materialize|reset|assign|unassign|approve|reject|submit|claim|decide|import|veto|freeze|lift|seed|sync|purge|bump|stage|commit|schedule|cancel|retry|archive|clone|duplicate|move|rename|reorder|translate|compile|generate|refresh|configure)/;
 
 /** Mutations whose name does not start with a mutation verb. */
-const MUTATION_EXCEPTIONS = new Set(['cdc_subscription_replay']);
+const MUTATION_EXCEPTIONS = new Set([
+  'cdc_subscription_replay',
+  // POSTs that change state behind a non-mutation verb. Without these entries
+  // `LUMIBASE_READ_ONLY` exposed them and mode `on` let them reach REST.
+  'pause_intent',
+  'resume_intent',
+  'scan_intent',
+  'register_materialization',
+]);
 
 /** True when calling `name` can change state. */
 export function isMutationTool(name: string): boolean {

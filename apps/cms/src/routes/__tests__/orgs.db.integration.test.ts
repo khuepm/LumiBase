@@ -122,6 +122,40 @@ describe.skipIf(!hasDbIntegrationUrl)('organization API, auth and tenant isolati
     expect((await payload(forbidden)).errors[0].code).toBe('SCOPE_NOT_ALLOWED');
     expect((await request(`/orgs/${A}/sites/${site.id}`, orgToken, 'DELETE', undefined, { 'X-Confirm-Delete': site.id })).status).toBe(403);
   });
+  it('keeps an lbo_ key off membership, key management and settings (human-only routes)', async () => {
+    // A leaked key acting as role admin must not mint a human admin, extra keys,
+    // or switch on its own MCP gate. Each of these is a REST route a key reaches
+    // past guard(); the role table alone would allow it.
+    const attempts: Array<[string, string, unknown?]> = [
+      ['POST', `/orgs/${A}/members`, { userId: OTHER, role: 'admin' }],
+      ['PATCH', `/orgs/${A}/members/${ADMIN}`, { role: 'member' }],
+      ['DELETE', `/orgs/${A}/members/${ADMIN}`],
+      ['POST', `/orgs/${A}/keys`, { name: 'persistence' }],
+      ['POST', `/orgs/${A}/keys/key_637_org/rotate`, {}],
+      ['DELETE', `/orgs/${A}/keys/key_637_org`],
+      ['PATCH', `/orgs/${A}`, { settings: { contentOs: { mcp: { allowOrganizationTools: true } } } }],
+      ['PATCH', `/orgs/${A}`, { name: 'Renamed by key' }],
+    ];
+    for (const [method, path, body] of attempts) {
+      const response = await request(path, orgToken, method, body);
+      expect([method, path, response.status]).toEqual([method, path, 403]);
+      expect((await payload(response)).errors[0].code).toBe('ORGANIZATION_FORBIDDEN');
+    }
+    // Nothing changed.
+    const members = await db.select().from(organizationMembers).where(eq(organizationMembers.organizationId, A));
+    expect(members.map((m) => `${m.userId}:${m.role}`).sort()).toEqual([`${ADMIN}:admin`, `${DUAL}:owner`, `${OWNER}:owner`].sort());
+    expect(await db.select().from(apiKeys).where(eq(apiKeys.organizationId, A))).toHaveLength(1);
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, A));
+    expect(org!.name).toBe('637 A');
+    expect(org!.settings).toEqual({});
+    // The key can still read and create sites, and still gets 404 outside its org.
+    expect((await request(`/orgs/${A}/members`, orgToken)).status).toBe(200);
+    expect((await request(`/orgs/${B}/keys`, orgToken, 'POST', { name: 'x' })).status).toBe(404);
+    // A human admin is unaffected.
+    expect((await request(`/orgs/${A}/keys`, adminToken, 'POST', { name: 'human key' })).status).toBe(201);
+    const logs = await db.select().from(auditLog);
+    expect(logs.some((l) => (l.metadata as Record<string, unknown>).reason === 'organization_key_on_human_only_route')).toBe(true);
+  });
   it('enforces owner-only slug changes, promotion and deleting a nonempty org', async () => {
     expect((await request(`/orgs/${A}`, adminToken, 'PATCH', { slug: 'org_637_renamed' })).status).toBe(403);
     expect((await request(`/orgs/${A}`, ownerToken, 'PATCH', { name: 'Renamed' })).status).toBe(200);

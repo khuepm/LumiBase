@@ -147,7 +147,7 @@ describe.skipIf(!hasDbIntegrationUrl)('organization MCP and human approvals (rea
     expect(await db.select().from(sites).where(eq(sites.id, 'site_638_off'))).toHaveLength(0);
     expect((await decide(decision.approvalId, owner, 'rejected', { LUMIBASE_MCP_ORG_TOOLS: 'off' })).status).toBe(200);
   });
-  it('stores minted key plaintext only in a human approval receipt and never mints twice', async () => {
+  it('shows minted key plaintext once to the approver, never stores it, and never mints twice', async () => {
     const requested = await call('org:create_org_key', { name: '638 minted' });
     const decision = requested.body.result.structuredContent;
     expect(decision.status).toBe('pending_approval');
@@ -159,9 +159,22 @@ describe.skipIf(!hasDbIntegrationUrl)('organization MCP and human approvals (rea
     expect(receipt.result.token).toMatch(/^lbo_/);
     expect(JSON.stringify(requested.body)).not.toContain(receipt.result.token);
     expect(JSON.stringify((await payload(await request(`/orgs/${A}/approvals`, owner))).data)).not.toContain(receipt.result.token);
+    // The stored receipt keeps no plaintext: not in the row, not on read, not on replay.
+    const [stored] = await db.select().from(aiApprovals).where(eq(aiApprovals.id, decision.approvalId));
+    expect(JSON.stringify(stored!.result)).not.toContain(receipt.result.token);
+    expect(stored!.result).toMatchObject({ tokenRedacted: true, scope: 'organization' });
+    const read = (await payload(await request(`/orgs/${A}/approvals/${decision.approvalId}`, owner))).data;
+    expect(JSON.stringify(read)).not.toContain(receipt.result.token);
+    expect(read.result).toMatchObject({ tokenRedacted: true });
     const again = await decide(decision.approvalId);
-    expect((await payload(again)).data.result.token).toBe(receipt.result.token);
+    expect(again.status).toBe(200);
+    expect(JSON.stringify((await payload(again)).data)).not.toContain(receipt.result.token);
     expect(await db.select().from(apiKeys).where(and(eq(apiKeys.organizationId, A), eq(apiKeys.name, '638 minted')))).toHaveLength(1);
+    // A row written before redaction existed is still redacted on read.
+    await db.update(aiApprovals).set({ result: { ...(stored!.result as object), token: 'lbo_legacy_plaintext' } })
+      .where(eq(aiApprovals.id, decision.approvalId));
+    expect(JSON.stringify((await payload(await request(`/orgs/${A}/approvals/${decision.approvalId}`, owner))).data))
+      .not.toContain('lbo_legacy_plaintext');
     const events = await db.select().from(auditLog).where(eq(auditLog.requestId, 'req_638_mcp'));
     expect(events.some((e) => (e.metadata as Record<string, unknown>).organizationId === A && (e.metadata as Record<string, unknown>).runId === decision.runId)).toBe(true);
     expect(JSON.stringify(events)).not.toContain(receipt.result.token);
