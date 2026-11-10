@@ -1,6 +1,6 @@
 # `@lumibase/mcp-server`
 
-Stdio [Model Context Protocol](https://modelcontextprotocol.io) server for [LumiBase](https://lumibase.dev). Lets AI assistants (Claude Code, Cursor, Windsurf, …) manage collections, fields, items, editorial workflow, releases, insights, and more against a running CMS over REST.
+Stdio [Model Context Protocol](https://modelcontextprotocol.io) server for [LumiBase](https://lumibase.dev). Lets AI assistants (Claude Code, Cursor, Windsurf, …) manage collections, fields, items, editorial workflow, releases, insights, and more against a running CMS through REST and governed MCP endpoints.
 
 ```bash
 npm install -g @lumibase/mcp-server
@@ -56,6 +56,29 @@ Fixed CRUD + read-only groups registered by the stdio server, including:
 The token's roles are the permission floor: the MCP client can never do more than that same token can through the REST API.
 
 ### Organization keys
+
+Unpinned organization configuration (read-only by default):
+
+```json
+{
+  "mcpServers": {
+    "lumibase-organization": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@lumibase/mcp-server"
+      ],
+      "env": {
+        "LUMIBASE_URL": "http://localhost:1989",
+        "LUMIBASE_TOKEN": "lbo_<organization-key>",
+        "LUMIBASE_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
+
+Set `LUMIBASE_READ_ONLY=false` when you want to request writes; enable organization MCP and approve the resulting requests in Studio.
 
 With an `lbo_` key, omit `LUMIBASE_SITE_ID` to expose eight organization tools plus the site tools. Each site tool then requires a `site` argument. Pin a site to expose the original site tools plus `get_organization` and `list_sites`; an `lbk_` key keeps the original site tool list. Site headers are isolated per call.
 

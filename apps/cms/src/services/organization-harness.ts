@@ -118,10 +118,16 @@ export async function decideOrganizationApproval(input: {
     const [initial] = await tx.select().from(aiApprovals).where(where).limit(1);
     if (!initial) organizationFail('NOT_FOUND', 404);
     const storedArgs = initial!.arguments as Record<string, unknown>;
-    const destination = initial!.skillName === 'org:transfer_site' && typeof storedArgs.toOrganizationId === 'string'
+    const destination = input.decision === 'approved' && initial!.status === 'pending'
+      && initial!.skillName === 'org:transfer_site' && typeof storedArgs.toOrganizationId === 'string'
       ? storedArgs.toOrganizationId : null;
-    // Consistent order with organization deletion and transfer; the approval is locked last.
-    for (const id of [...new Set([input.organizationId, ...(destination ? [destination] : [])])].sort()) await lockOrganization(tx, id);
+    // Keep live parent locks ordered before the approval. A deleted destination
+    // must not prevent rejection or replay of an already committed receipt.
+    // Pending execution still requires both parents in executeOrganizationMutation.
+    for (const id of [...new Set([input.organizationId, ...(destination ? [destination] : [])])].sort()) {
+      if (id === input.organizationId) await lockOrganization(tx, id);
+      else await tx.select({ id: organizations.id }).from(organizations).where(eq(organizations.id, id)).for('update');
+    }
     const [row] = await tx.select().from(aiApprovals).where(where).for('update');
     if (!row) organizationFail('NOT_FOUND', 404);
     const role = await resolveOrganizationActorRole(tx, input.organizationId, input.decider);

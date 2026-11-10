@@ -1,13 +1,13 @@
 ---
-version: 8
-lastUpdated: 2026-11-09T16:44:36.282Z
+version: 10
+lastUpdated: 2026-11-10T01:59:50.309Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 6d0cf95871559144
+sourceHash: 72326b4293c307f8
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-09T16:44:36.282Z
-codeVerifiedHash: 6d0cf95871559144
+codeVerified: 2026-11-10T01:59:50.309Z
+codeVerifiedHash: 72326b4293c307f8
 codeVerifiedClaims: 26
 ---
 
@@ -66,6 +66,29 @@ Source: [`packages/mcp-server/`](../../../packages/mcp-server/) (built on `@mode
 
 
 ### Organization credentials (ADR-013)
+
+Example for an unpinned organization key. Keep the sample read-only; set `LUMIBASE_READ_ONLY=false` to request writes, enable organization MCP in Settings, and approve requests as a human.
+
+```json
+{
+  "mcpServers": {
+    "lumibase-organization": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@lumibase/mcp-server"
+      ],
+      "env": {
+        "LUMIBASE_URL": "http://localhost:1989",
+        "LUMIBASE_TOKEN": "lbo_<organization-key>",
+        "LUMIBASE_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
+
+
 
 Set `LUMIBASE_READ_ONLY=true` to publish only tools annotated as read-only. With an `lbk_` key, `LUMIBASE_SITE_ID` remains required and the existing site tool list is unchanged. With an `lbo_` key, omit the site to expose eight organization tools (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) plus site tools requiring a `site` argument. Pinning a site exposes the original site tools and the first two organization reads. Parallel calls cannot share site headers.
 

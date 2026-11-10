@@ -174,4 +174,26 @@ describe.skipIf(!hasDbIntegrationUrl)('organization MCP and human approvals (rea
     const created = await db.select().from(sites).where(eq(sites.id, 'site_638_race'));
     expect(created).toHaveLength(record!.status === 'approved' ? 1 : 0);
   });
+  it('can reject a pending transfer after destination deletion', async () => {
+    const decision = (await call('org:transfer_site', { siteId: SA, toOrganizationId: B })).body.result.structuredContent;
+    expect((await request(`/orgs/${B}`, dual, 'DELETE', undefined, {}, { 'X-Confirm-Delete': B })).status).toBe(200);
+    expect((await decide(decision.approvalId, dual, 'approved')).status).toBe(404);
+    expect((await db.select().from(aiApprovals).where(eq(aiApprovals.id, decision.approvalId)))[0]!.status).toBe('pending');
+    const rejected = await decide(decision.approvalId, dual, 'rejected');
+    expect(rejected.status).toBe(200);
+    expect((await payload(rejected)).data.status).toBe('rejected');
+    expect((await db.select().from(sites).where(eq(sites.id, SA)))[0]!.organizationId).toBe(A);
+  });
+  it('replays a completed transfer receipt after destination deletion', async () => {
+    const decision = (await call('org:transfer_site', { siteId: SA, toOrganizationId: B })).body.result.structuredContent;
+    const approved = await decide(decision.approvalId, dual);
+    expect(approved.status).toBe(200);
+    const original = (await payload(approved)).data;
+    expect((await request(`/orgs/${B}/sites/${SA}`, dual, 'DELETE', undefined, {}, { 'X-Confirm-Delete': SA })).status).toBe(200);
+    expect((await request(`/orgs/${B}`, dual, 'DELETE', undefined, {}, { 'X-Confirm-Delete': B })).status).toBe(200);
+    const replay = await decide(decision.approvalId, dual);
+    expect(replay.status).toBe(200);
+    expect((await payload(replay)).data).toEqual(original);
+  });
+
 });

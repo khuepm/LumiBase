@@ -1,258 +1,150 @@
 # Design — Organizations (organization plane)
 
-> Status: **Proposal / Roadmap**. Thực thi [ADR-013](../../../docs/en/architecture/decisions/adr-013-organization-plane.md). Tham chiếu code hiện tại đã verify; thành phần mới đánh dấu `[Proposal]`.
+> Status: **Implemented**. Thực thi [ADR-013](../../../docs/en/architecture/decisions/adr-013-organization-plane.md). Phase 1–4 đã merge vào `epic/organizations`; Phase 5 chốt tài liệu, cấu hình và kiểm chứng theo issue #640.
 
-## 0. Nguyên tắc dẫn đường
+## 0. Nguyên tắc
 
-1. **Phân loại theo phạm vi, không xếp hạng theo sức mạnh.** `lbk_` và `lbo_` là hai *loại* credential; không có đường nào để một `lbk_` "đủ mạnh" gọi được organization plane.
-2. **Không đổi gì cho người dùng một site.** Backfill Personal_Org + Studio ẩn UI khi chỉ có một org ⇒ bản self-host một tenant không thấy khác biệt.
-3. **Dùng lại trước khi thêm.** Provisioning site dùng lại code setup wizard; key dùng lại `api-key-token.ts`; HITL dùng lại `ai_approvals`; audit dùng lại `auditSecurityGuardDenied`.
-4. **"Control plane" giữ nghĩa cũ.** `CONTROL_PLANE_PATHS`, `controlPlaneAdmin`, control-plane skill = quản trị *site*. Tầng mới = organization plane, guard riêng, mã lỗi riêng.
+1. Credential phân loại theo phạm vi: `lbk_` không thể nhận quyền organization từ policy site; `lbo_` có organization parent thật.
+2. Personal_Org được tạo ngầm trong setup. Organization Settings luôn hiện cho owner/admin, kể cả một org; chỉ ẩn switcher khi có một org.
+3. Dùng chung provisioning, tạo/hash token, audit và `ai_approvals`; không dùng site mặc định giả để chứa thao tác organization.
+4. "Control plane" cũ vẫn là quản trị site. Organization có guard và ma trận quyền riêng.
 
-## 1. Schema `[Proposal]`
+## 1. Schema và migration
 
-`packages/database/src/schema/core.ts` (cạnh `sites`, `users`, `userSites`):
+Nguồn: `packages/database/src/schema/core.ts`, `access.ts`, `ai.ts`.
 
-```ts
-export const organizations = pgTable('lumibase_organizations', {
-  id: id(),                                   // nanoid (ADR-001)
-  slug: text('slug').notNull().unique(),
-  name: text('name').notNull(),
-  /** { billing?: {...}, contentOs?: { mcp?: { allowOrganizationTools?: boolean } } } */
-  settings: jsonb('settings').default({}).notNull(),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+| Bảng | Contract |
+|---|---|
+| `lumibase_organizations` | ID nanoid, slug duy nhất, name, settings JSONB mặc định `{}`, timestamps |
+| `lumibase_organization_members` | PK `(user_id, organization_id)`, FK cascade, role CHECK `owner/admin/billing/member` |
+| `lumibase_sites` | `organization_id NOT NULL`, FK tới organization với delete RESTRICT |
+| `lumibase_api_keys` | `scope` site/organization; đúng một parent tương ứng; site key cũ giữ scope site |
+| `lumibase_ai_approvals` | Đúng một parent site hoặc organization; org approval phải có requester; result là human receipt |
 
-export const organizationMembers = pgTable(
-  'lumibase_organization_members',
-  {
-    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    organizationId: text('organization_id').notNull()
-      .references(() => organizations.id, { onDelete: 'cascade' }),
-    /** owner | admin | billing | member — enum đóng, KHÔNG phải roles.id */
-    role: text('role').notNull(),
-    createdAt: createdAt(),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.userId, t.organizationId] }),
-    orgIdx: index('org_members_org_idx').on(t.organizationId),
-    roleCheck: check('org_members_role_check',
-      sql`${t.role} in ('owner','admin','billing','member')`),
-  }),
-);
+### Migration viết tay
 
-// sites: thêm
-organizationId: text('organization_id')
-  .references(() => organizations.id, { onDelete: 'restrict' }), // NOT NULL sau backfill
-```
+- `packages/database/drizzle/0024_organizations.sql`: tạo bảng, thêm parent site nullable, backfill mọi site cũ vào org `default`, thêm bootstrap owner nếu có, áp NOT NULL và CHECK scope key. SQL backfill tạo ID ngẫu nhiên 21 ký tự; không dùng serial. Install chưa có bootstrap có thể có org backfill chưa có member; setup sau đó thêm bootstrap owner.
+- `packages/database/drizzle/0025_organization_approvals.sql`: parent organization/requester/result cho approval, nullable site parent và CHECK XOR; không thay đổi parent của approval site cũ.
+- Journal được sửa tay. Cả hai migration đã được chạy trên PostgreSQL thật; 0024 có ma trận 0/1/3 site × có/không bootstrap và chạy lại; 0025 có kiểm chứng chạy lại, giữ dữ liệu cũ và từ chối parent không hợp lệ.
+- Số migration được đối soát mọi branch/PR mở trước merge. Không rollback tự động; khôi phục backup trước nâng cấp nếu cần quay lại.
 
-`packages/database/src/schema/access.ts` (`apiKeys`):
+### RLS
 
-```ts
-scope: text('scope').default('site').notNull(),            // 'site' | 'organization'
-siteId: text('site_id').references(() => sites.id, { onDelete: 'cascade' }),   // bỏ .notNull()
-organizationId: text('organization_id').references(() => organizations.id, { onDelete: 'cascade' }),
-// CHECK api_keys_scope_target:
-//   (scope='site' AND site_id IS NOT NULL AND organization_id IS NULL)
-//   OR (scope='organization' AND organization_id IS NOT NULL AND site_id IS NULL)
-```
+`createOrganizationScopedSql` / `organizationScopedDbFor` dùng `lumibase.organization_id`; guard xác minh membership trước khi chuyển request DB sang org scope. Bảng org và approval có cặp policy restrictive/permissive để không bị một policy permissive khác mở rộng. Approval site lọc theo `app.site_id`; approval organization lọc theo organization scope. Test dùng role PostgreSQL không có BYPASSRLS.
 
-### Migration (viết tay, [[migrations-are-hand-written]])
+## 2. Credential và quyền
 
-Một file `00NN_organizations.sql`, các bước theo thứ tự trong **một** transaction:
+`packages/contracts/src/token-prefix.ts` cung cấp `classifyTokenPrefix`; `packages/contracts/src/org-permissions.ts` cung cấp `canOrg`, dùng chung CMS, MCP và Studio. `apps/cms/src/services/api-key-token.ts` mint/hash `lbo_`.
 
-1. `CREATE TABLE lumibase_organizations`, `lumibase_organization_members`.
-2. `ALTER TABLE lumibase_sites ADD COLUMN organization_id text REFERENCES …`.
-3. Backfill:
-   ```sql
-   INSERT INTO lumibase_organizations (id, slug, name)
-   SELECT <nanoid-in-sql hoặc md5 rút gọn>, 'default',
-          COALESCE((SELECT display_title FROM lumibase_sites WHERE id='__default__'),
-                   (SELECT name FROM lumibase_sites WHERE id='__default__'), 'Default');
-   UPDATE lumibase_sites SET organization_id = (SELECT id FROM lumibase_organizations WHERE slug='default');
-   INSERT INTO lumibase_organization_members (user_id, organization_id, role)
-   SELECT u.id, o.id, 'owner' FROM lumibase_users u, lumibase_organizations o
-   WHERE u.is_bootstrap = true AND o.slug = 'default';
-   ```
-   > nanoid trong SQL: dùng `encode(gen_random_bytes(16),'hex')` cắt 21 ký tự; đủ unique cho **một** dòng backfill. Không phải nanoid chuẩn nhưng không vi phạm ADR-001 (ADR cấm serial, không bắt alphabet).
-4. `ALTER TABLE lumibase_sites ALTER COLUMN organization_id SET NOT NULL`.
-5. `ALTER TABLE lumibase_api_keys ADD COLUMN scope …, ADD COLUMN organization_id …, ALTER COLUMN site_id DROP NOT NULL, ADD CONSTRAINT api_keys_scope_target CHECK (…)`.
+| Role | Quyền |
+|---|---|
+| owner | Tất cả chín Org_Action |
+| admin | read, sites:create, members:manage, keys:manage, settings:write |
+| billing | read, billing:manage (placeholder; không có billing thật) |
+| member | read |
 
-Rollback: không hỗ trợ tự động (quy ước dự án); ghi trong changelog.
+## 3. Guard và kế thừa
 
-Số migration: đối soát với **mọi** branch mở lúc merge ([[parallel-feature-branches-migration-numbering]]).
+Org key luôn là admin, không thể là owner. Role/policy site không cấp Org_Action. `withOrganizationAccessGuard` kiểm tra live member hoặc org của key; thiếu membership hay sai resource parent trả 404. Tạo/đổi/xóa owner chỉ dành cho owner; mutation owner dùng khóa organization để giữ invariant owner cuối.
 
-### RLS (`LUMIBASE_DB_RLS=enforce`)
+`resolveSiteAdminAccess` trong `apps/cms/src/services/site-admin-access.ts` là điểm dùng chung cho quyền site admin và provenance `via`. Owner/admin organization kế thừa administrator trên site thuộc org; billing/member không kế thừa. `EffectiveCapabilityService` có caller class `organization_api_key` và cấp bundle administrator chỉ sau khi xác minh site thuộc org của key.
 
-`lumibase_organizations` / `lumibase_organization_members`: policy theo `current_setting('lumibase.organization_id')`. Request scope (spec `rls-request-scope`) thêm biến `organization_id` bên cạnh `site_id`; route `/api/v1/orgs/:orgId/*` set biến này từ path param **sau** khi guard đã xác nhận membership.
+### Auth matrix
 
-## 2. Credential: nhận diện và resolve
-
-### 2.1 Mint `lbo_`
-
-`apps/cms/src/services/api-key-token.ts` đã tách tạo/hash token; thêm hằng `ORGANIZATION_TOKEN_PREFIX = 'lbo_'` cạnh `PUBLISHABLE_TOKEN_PREFIX` ([`api-key-publishable.ts:29`](apps/cms/src/services/api-key-publishable.ts:29)). Hàm `classifyTokenPrefix(token): 'site' | 'publishable' | 'organization' | 'unknown'` dùng chung CMS + mcp-server (đặt ở `packages/contracts`).
-
-### 2.2 Middleware auth
-
-[`apps/cms/src/middleware/auth.ts`](apps/cms/src/middleware/auth.ts) hiện lookup `api_keys` theo hash rồi gắn `auth.apiKey`. Thêm:
-
-```
-auth.apiKey.scope            'site' | 'organization'
-auth.apiKey.organizationId   khi scope='organization'
-```
-
-**Bất biến thực thi tại đây (một chỗ duy nhất):**
-
-| Token | Route `/api/v1/orgs/*` | Route site (`X-Lumi-Site`) |
+| Credential | Organization plane | Site plane |
 |---|---|---|
-| `lbk_` / `lbk_pub_` / `aud=frontend` | `403 ORGANIZATION_FORBIDDEN` + audit `site_scoped_credential_on_org_plane` | như hiện nay |
-| `lbo_` | tiếp tục → `withOrganizationAccessGuard` | kiểm `site.organization_id === key.organizationId` → `403 SITE_NOT_IN_ORGANIZATION` nếu sai; nếu đúng → coi như `administrator` |
-| `aud=studio` | tiếp tục → guard tra `organization_members` | như hiện nay, **+** fallback Req 3.3 |
+| `lbk_`, `lbk_pub_`, frontend session | 403 `ORGANIZATION_FORBIDDEN`, audit reason `site_scoped_credential_on_org_plane` | quyền site hiện có |
+| `lbo_` | org guard, admin cố định | phải có `X-Lumi-Site`, kiểm tra parent; sai org → 403 `SITE_NOT_IN_ORGANIZATION` |
+| Staff / Studio user | membership organization hiện tại | membership site hoặc kế thừa owner/admin organization |
 
-### 2.3 `EffectiveCapabilityService`
+Login và refresh kiểm tra quyền organization hiện tại, kể cả khi thiếu `user_sites` hoặc có role trực tiếp yếu hơn. Gỡ quyền kế thừa chặn renewal nếu không còn direct grant; direct frontend role còn lại chỉ nhận frontend audience. Studio giữ site gốc của refresh family khi chọn site nội dung khác. Không đổi định dạng session hay token-store.
 
-[`effective-capability-service.ts`](apps/cms/src/services/effective-capability-service.ts): `PrincipalCallerClass` thêm `'organization_api_key'`. `resolveApiKey` khi `scope='organization'`:
+## 4. API
 
-- không có `siteId` trong context → grant rỗng cho site plane (route site sẽ 400 `TENANT_REQUIRED` từ tenant middleware trước đó, nên nhánh này chủ yếu phòng thủ);
-- có `siteId` → verify site ∈ org, trả `capabilities` = bundle của role system `administrator` của site đó, `controlPlaneAdmin: true`.
+`apps/cms/src/routes/orgs.ts` mount trong API chain hiện có; tenant middleware nhận diện org path không cần `X-Lumi-Site`. Organization guard không dùng `CONTROL_PLANE_PATHS` của site. API reference đầy đủ ở `docs/en/api/hono-api-spec.md` và bản VI.
 
-> Khác với `lbk_` có policy admin (`controlPlaneAdmin: false` cố ý). Lý do: Org_Key chỉ mint được bởi org owner/admin — một principal vốn đã kế thừa site admin (Req 3.3) — nên không mở rộng bề mặt.
+- Org CRUD: tạo chỉ cho bootstrap operator hoặc Studio user với `LUMIBASE_ALLOW_ORG_SIGNUP=true`. Caller thành owner. PATCH slug chỉ cho owner; slug `default` dùng lại được sau khi đổi.
+- Sites: list/create/delete/transfer. Xóa cần `X-Confirm-Delete`; transfer cần cùng người là owner của cả nguồn và đích. Org phải không còn site trước khi bị xóa.
+- Members: list/upsert/update/remove; body upsert chọn đúng một `userId` hoặc `email`. Account activation là luồng staff riêng; upsert không tự gửi email kích hoạt.
+- Keys: list metadata/create/rotate/revoke dưới `/orgs/:orgId/keys`. Plaintext chỉ trả khi tạo/xoay. `/api/v1/api-keys` từ chối scope organization; org key được mint site key trong các site thuộc org.
+- Approvals: list/detail/decide dưới `/orgs/:orgId/approvals`. Chỉ người dùng owner/admin được đọc/duyệt receipt, không cho API key.
+- CORS cho phép `X-Confirm-Delete` từ origin đã cấu hình, kể cả bundled shell.
 
-## 3. Guard và phân quyền `[Proposal]`
+### 4.1 Provisioning dùng chung
 
-`apps/cms/src/middleware/organization-access-guard.ts`:
+`provisionSite(db, input)` trong `apps/cms/src/services/site-provisioning.ts` chạy trong transaction của caller: tạo site, upsert Administrator/Member, thêm creator membership nếu caller là user. `finalizeSiteProvisioning` sau commit reconcile official extensions và bỏ negative cache. Setup và REST/governed organization mutation dùng cùng service. Test đối chiếu role, membership, extension reconcile và cache.
 
-```ts
-export const ORG_ACTIONS = [...] as const;
-export type OrgAction = typeof ORG_ACTIONS[number];
-// packages/contracts/src/org-permissions.ts — thuần, không I/O, dùng chung Studio
-export function canOrg(role: OrgRole, action: OrgAction): boolean
+### 4.2 Mã lỗi
 
-export const withOrganizationAccessGuard = (action: OrgAction): MiddlewareHandler<AppEnv>
-// 1. token site-scoped → 403 ORGANIZATION_FORBIDDEN (đã chặn ở auth, đây là backstop)
-// 2. lbo_ : key.organizationId === :orgId ? role ảo 'admin' (key không bao giờ là owner) : 404
-// 3. user : tra organization_members (userId, :orgId) → role; không có → 404 (không lộ tồn tại)
-// 4. !canOrg(role, action) → 403 ORGANIZATION_FORBIDDEN
-// 5. c.set('organization', { id, role })
-```
+`ORGANIZATION_FORBIDDEN`, `ORG_SIGNUP_DISABLED`, `SITE_NOT_IN_ORGANIZATION`, `ORGANIZATION_NOT_EMPTY`, `LAST_OWNER`, `SCOPE_NOT_ALLOWED` và các mã approval được mô tả trong API reference song ngữ.
 
-> **Org_Key = `admin`, không bao giờ `owner`.** Vì vậy `delete_site`, `transfer_site`, `org:delete` qua MCP bằng Org_Key luôn cần một *user* owner phê duyệt trong `ai_approvals` — HITL là bắt buộc về mặt cấu trúc, không chỉ về chính sách. Điểm này đơn giản hoá Req 5.6.
+## 5. MCP
 
-**Kế thừa xuống (Req 3.3):** [`routes/admin.ts` `hasSiteAdminAccess`](apps/cms/src/routes/admin.ts:69) và [`control-plane-access-guard.ts` `hasSiteAdminAccess`](apps/cms/src/middleware/control-plane-access-guard.ts) hiện là hai hàm khác nhau; gộp về một `resolveSiteAdminAccess(c)` trong `services/site-admin-access.ts` trả `{ allowed, via: 'role' | 'bootstrap' | 'organization' | null }`. Audit middleware đọc `via` để ghi.
+### 5.1 Config và profile
 
-## 4. API `[Proposal]`
+Nguồn: `packages/mcp-server/src/client.ts`, `tools/index.ts`, `tools/organization.ts`, `governed.ts`; CMS `routes/mcp.ts`, `services/organization-harness.ts`, `services/mcp-service.ts`.
 
-`apps/cms/src/routes/orgs.ts`, mount `api.route('/orgs', orgsRouter)` trong [`index.ts`](apps/cms/src/index.ts) **trước** các route cần tenant. Tenant middleware ([`tenant.ts`](apps/cms/src/middleware/tenant.ts)) thêm `/api/v1/orgs` vào danh sách miễn `X-Lumi-Site` (cùng chỗ đã miễn `/api/v1/files/upload/`).
+| Cấu hình | Tool |
+|---|---|
+| `lbk_` + site | Bộ site cũ; baseline 161 tên đã chụp trước Phase 3 |
+| `lbo_` + site pin | Bộ site + `get_organization`, `list_sites` |
+| `lbo_` không pin | Bộ site + tám tool organization; mỗi tool site bắt buộc đối số `site` |
+| `LUMIBASE_READ_ONLY=true` | Lọc mọi mutation theo annotations |
 
-| Route | Guard | Ghi chú |
-|---|---|---|
-| `GET /orgs` | auth bất kỳ không phải site-scoped | `lbo_` → đúng một org; user → theo membership |
-| `POST /orgs` | Instance_Operator, hoặc `LUMIBASE_ALLOW_ORG_SIGNUP=true` + `aud=studio` | tạo org + member owner = caller; `lbo_` không được tạo org |
-| `GET/PATCH /orgs/:orgId` | `org:read` / `org:settings:write` | |
-| `DELETE /orgs/:orgId` | `org:delete` + header `X-Confirm-Delete: <orgId>` | từ chối nếu còn site (`409 ORGANIZATION_NOT_EMPTY`) |
-| `GET /orgs/:orgId/sites` | `org:read` | |
-| `POST /orgs/:orgId/sites` | `org:sites:create` | §4.1 |
-| `DELETE /orgs/:orgId/sites/:siteId` | `org:sites:delete` + `X-Confirm-Delete: <siteId>` | 404 nếu site ∉ org |
-| `POST /orgs/:orgId/sites/:siteId/transfer` | `org:sites:transfer` ở **cả nguồn lẫn đích** (cùng user owner) | phương án "lời mời" để Phase 4 |
-| `/orgs/:orgId/members[/:userId]` | `org:read` (GET) / `org:members:manage` | hạ cấp/xoá owner cuối → `409 LAST_OWNER` |
-| `/orgs/:orgId/keys[/:keyId]` | `org:read` (GET, không trả token) / `org:keys:manage` | token trả về **một lần** khi tạo |
+### 5.2 Scoped calls và đăng ký
 
-Schema Zod ở `packages/contracts/src/schemas/organizations.ts`: `OrganizationCreateSchema`, `OrganizationUpdateSchema`, `OrgSiteCreateSchema { id?: siteIdSchema, name, slug? }`, `OrgMemberUpsertSchema { userId | email, role }`, `OrgKeyCreateSchema { name, description?, expiresAt? }`.
+Pin chỉ ghim định tuyến/quảng bá tool của client, không đổi phạm vi credential ở server. Site header được tạo riêng mỗi lời gọi bằng AsyncLocalStorage/site override, không mutate header dùng chung giữa các lời gọi song song. Tool organization bỏ site header.
 
-### 4.1 Provisioning site dùng chung với setup wizard
+### 5.3 Tool organization
 
-[`modules/setup/service.ts`](apps/cms/src/modules/setup/service.ts) có hàm upsert role `Administrator` (dòng ~990) và `Member` (dòng ~1034) là private của `SetupService`. Tách thành `services/site-provisioning.ts`:
+Tám tool organization: `get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`. Chúng đi qua namespace HTTP `org:*`. Không có tool MCP xóa organization.
 
-```ts
-export async function provisionSite(db, env, runtime, input: {
-  id?: string; name: string; organizationId: string; creatorUserId?: string;
-}): Promise<{ site, administratorRoleId, memberRoleId }>
-// 1. insert sites (organization_id)      2. upsert administrator + member role
-// 3. creatorUserId → user_sites(administrator)
-// 4. reconcileOfficialExtensions(db, env, siteId).catch(noop)   (admin.ts:388 hiện tại)
-// 5. forgetNegative(cache, negativeSiteKey(siteId))              (admin.ts:391 hiện tại)
-```
+### 5.4 Gate và HITL
 
-`SetupService.initialize` gọi `provisionSite({ id: DEFAULT_SITE_ID, organizationId: personalOrg.id, … })` sau khi tạo Personal_Org (Req 7.1). `POST /orgs/:orgId/sites` gọi cùng hàm. `POST /admin/sites` **xoá**.
+- `settings.contentOs.mcp.allowOrganizationTools` mặc định false; CMS env `LUMIBASE_MCP_ORG_TOOLS=off` ép tắt. Gate không mượn cờ MCP của một site khác.
+- Mutation organization luôn tạo approval người dùng, độc lập chế độ governance site cũ. Không fallback REST, kể cả `LUMIBASE_MCP_GOVERNED=off`; `confirm` chỉ xác nhận ý định và không được dùng để approve.
+- OrganizationHarness lưu org parent thật, requester user/key, arguments và approval ID UUIDv7; không cần có site. Run audit/result mang `organizationId` và run id.
+- Decision khóa source/destination org theo thứ tự nhất quán, rồi khóa approval. Kiểm tra lại active requester, gate và human decider; domain mutation và receipt commit trong cùng transaction. Cùng decision trả receipt cũ; decision ngược trả 409. Xóa org đích không chặn reject hoặc replay receipt; chỉ pending execution cần đích còn tồn tại và cùng human owner.
+- Owner-only delete/transfer/promotion dùng quyền owner của người duyệt; chuyển site còn kiểm tra owner của đích. API key không được quyết định hoặc đọc receipt. Token `create_org_key` chỉ có trong human receipt.
+- Không có promotion L2+/veto/autopilot cho tool org trong ADR này.
 
-### 4.2 Mã lỗi mới
+## 6. Studio
 
-`ORGANIZATION_FORBIDDEN`, `ORG_SIGNUP_DISABLED`, `SITE_NOT_IN_ORGANIZATION`, `ORGANIZATION_NOT_EMPTY`, `LAST_OWNER`, `SCOPE_NOT_ALLOWED`. Thêm vào `hono-api-spec.md` (EN + VI).
+`apps/studio/src/lib/organization-api.ts` được ghép vào client ở `lib/api.ts`; dùng cùng refresh và origin resolver, bỏ site header trên organization requests. `modules/organization/use-organizations.ts` dùng cache key có origin, session generation không bí mật và organization id.
 
-## 5. MCP `[Proposal]`
+- Switcher chỉ hiện với nhiều org; chọn org đổi trang cài đặt org. Sites → Open site chọn workspace nội dung. Tạo site chọn site mới.
+- Organization Settings luôn hiện cho owner/admin, kể cả một org; direct read page vẫn tôn trọng `org:read`. General/Sites/Members/Keys/Approvals ẩn thao tác theo `canOrg`; API vẫn kiểm tra lại quyền thật.
+- Đổi org remount form, bỏ token đang hiện. Đổi site hủy query, xóa cache, lưu active site rồi reload shell để không giữ local editor state của site cũ.
+- Thao tác xóa/chuyển/xoay key/duyệt cần xác nhận tường minh; biên nhận token đóng được và có fallback copy thủ công.
+- Có route root và custom admin path; active Settings item được normalize theo admin prefix. Trên mobile, switcher ở hàng riêng, menu Settings thu gọn được.
+- Đã rà C1–C7: token-store/API origin/build path/dev port giữ nguyên, refresh body dùng site gốc, clipboard fallback, CORS header xác nhận và public health không đổi. Kiểm tra trình duyệt thực ở desktop, 390px và 320px.
 
-### 5.1 Config
+## 7. Setup và triển khai
 
-[`packages/mcp-server/src/client.ts` `configFromEnv`](packages/mcp-server/src/client.ts:181):
+Setup tạo Personal_Org trước `__default__` trong cùng transaction với bootstrap membership, rồi gọi provisioning chung. Không có bước wizard mới.
 
-```ts
-interface Config {
-  url: string; token: string;
-  tokenKind: 'site' | 'organization';   // classifyTokenPrefix(token)
-  siteId?: string;                       // bắt buộc khi tokenKind='site'
-  readOnly: boolean;                     // LUMIBASE_READ_ONLY
-}
-```
+Setup Impact Registry giữ một dòng ID 196 cho toàn bộ ADR. Hai env server: `LUMIBASE_ALLOW_ORG_SIGNUP` mặc định off; `LUMIBASE_MCP_ORG_TOOLS` mặc định on, chỉ ép tắt khi bằng `off`. Cấu hình mặc định có trong root/Docker/scaffold examples; các compose CMS truyền qua cả hai env. Org setting MCP vẫn mặc định false.
 
-Lỗi khởi động: `lbk_` thiếu `LUMIBASE_SITE_ID` → giữ thông báo hiện tại; `lbo_` + `LUMIBASE_SITE_ID` → log "pinned to site …".
+Setting instance và password login/refresh vẫn cần site. Sau khi xóa mọi site, chỉ credential organization hoặc Studio session còn hiệu lực mới tạo lại site được; nếu không còn credential phải khôi phục backup. Phục hồi human session không cần site là backlog B196, cùng thiết kế instance settings ngoài phạm vi ADR này. Hosted staff signup có thể gọi API tạo org sau Studio login khi signup flag bật; không biến public frontend signup thành Studio.
 
-### 5.2 Đăng ký tool theo credential
+## 8. Kiểm chứng
 
-[`tools/index.ts` `registerAllTools(server, client)`](packages/mcp-server/src/tools/index.ts) → `registerAllTools(server, client, config)`:
+- Auth matrix: `apps/cms/src/__tests__/auth-middleware-matrix.test.ts`.
+- CRUD, ownership, credential boundaries, RLS: `apps/cms/src/routes/__tests__/orgs.db.integration.test.ts`.
+- Provisioning: `apps/cms/src/services/__tests__/site-provisioning.test.ts` và real setup golden path.
+- MCP/HITL/zero sites/revocation/atomic retry/secret isolation: `apps/cms/src/routes/__tests__/organization-mcp.db.integration.test.ts`.
+- Login/refresh: `apps/cms/src/routes/__tests__/organization-session.db.integration.test.ts`.
+- MCP profiles, old baseline, parallel site headers: `packages/mcp-server/src/__tests__/organization-profiles.test.ts`.
+- Migration 0/1/3 × bootstrap và non-superuser RLS: `packages/database/src/__tests__/organizations-migration.integration.test.ts`; approval migration/RLS: `organization-approvals-migration.integration.test.ts` cùng thư mục.
+- Studio permissions, cache clearing, receipts, real route trees: `apps/studio/src/modules/organization/__tests__`; transport/refresh: `apps/studio/src/lib/__tests__/api.test.ts`.
+- Shell cross-origin preflight: `apps/cms/src/__tests__/organization-cors.test.ts`.
+- CI full tests/typecheck/build, broad PostgreSQL suites, golden HTTP E2E; locale parity/verify/stamp/detect cho toàn bộ docs thay đổi. Baseline parity ngoài phạm vi theo B193 không được báo là pass.
 
-```
-tokenKind='site'                 → registerSiteTools(server, client)            (không đổi; snapshot test)
-tokenKind='organization' + pin   → registerSiteTools + registerOrgReadTools      (list_sites, get_organization)
-tokenKind='organization' no pin  → registerOrgTools + registerSiteTools({ requireSiteArg: true })
-readOnly                         → mỗi register* bỏ qua tool có annotations.destructiveHint || !readOnlyHint
-```
+## 9. Các quyết định đã chốt
 
-`requireSiteArg`: mỗi tool site thêm `site: z.string()` bắt buộc vào `inputSchema`; `LumiBaseClient` nhận `siteOverride` per call để set `X-Lumi-Site`. Tool org gửi **không** `X-Lumi-Site`.
+Owner chốt ngày 2026-11-09:
 
-### 5.3 Tool org (`tools/organization.ts`)
-
-| Tool | REST | Destructive | HITL |
-|---|---|---|---|
-| `get_organization` | `GET /orgs/:id` | | |
-| `list_sites` | `GET /orgs/:id/sites` | | |
-| `create_site` | `POST /orgs/:id/sites` | ✓ | `ai_approvals` |
-| `delete_site` | `DELETE /orgs/:id/sites/:s` | ✓ | `ai_approvals` (và cần owner duyệt vì Org_Key = admin) |
-| `transfer_site` | `POST …/transfer` | ✓ | như trên |
-| `list_org_members` / `invite_org_member` | members | ✓ (invite) | `ai_approvals` |
-| `create_org_key` | `POST /orgs/:id/keys` | ✓ | `ai_approvals`; token chỉ trả trong approval record, không trả về agent |
-
-Governed harness ([`governed.ts`](packages/mcp-server/src/governed.ts)): `McpService` phía CMS thêm `organizationId` vào run context; `controlPlaneSkillFromCall` ([`routes/mcp.ts`](apps/cms/src/routes/mcp.ts)) mở rộng nhận diện skill `org:*` là control-plane skill (destructive) để backstop admin hiện có bao luôn.
-
-Gate: `routes/mcp.ts` đọc `organizations.settings.contentOs.mcp.allowOrganizationTools` (default `false`) khi principal là Org_Key hoặc call là tool org; env `LUMIBASE_MCP_ORG_TOOLS=off` thắng setting.
-
-## 6. Studio `[Proposal]`
-
-- `apps/studio/src/lib/api.ts` `createApiClient(token, site)`: thêm `orgs` client không gắn `X-Lumi-Site`.
-- Hook `useOrganizations()` → `GET /orgs`; shell render switcher khi `length > 1` (Req 6.1).
-- Module `apps/studio/src/modules/organization/` (general, sites, members, keys); tab ẩn theo `canOrg(role, action)` từ `packages/contracts`.
-- "Create site" → `provisionSite` qua API → `setSite(newId)` (thay `X-Lumi-Site`), invalidate query.
-- Shell (Tauri) không đổi contract: vẫn Bearer + `X-Lumi-Site`; endpoint additive.
-
-## 7. Setup wizard
-
-`SetupService.initialize` (service.ts ~bước 9a) thêm bước **9-pre**: tạo Personal_Org `{ slug:'default', name: displayTitle ?? name }`, member owner = bootstrap user; `provisionSite` với `organizationId`. Idempotent: `ON CONFLICT (slug) DO NOTHING` rồi select.
-
-Setup Impact Registry: một dòng với ID tiếp theo **cao hơn mọi branch mở** ([[registry-ids-collide-across-open-prs]]): seed Personal_Org; env `LUMIBASE_ALLOW_ORG_SIGNUP` (default off), `LUMIBASE_MCP_ORG_TOOLS` (default on, chỉ dùng để ép tắt); migration + backfill; capability `organization_api_key`; không bước wizard mới (org tạo ngầm).
-
-## 8. Test
-
-- `apps/cms/src/__tests__/auth-middleware-matrix.test.ts`: thêm hàng `lbk_→/orgs=403`, `lbo_+site ngoài org=403`, `lbo_ không X-Lumi-Site → route site=400`.
-- `apps/cms/src/routes/__tests__/orgs.test.ts`: CRUD, `LAST_OWNER`, `ORGANIZATION_NOT_EMPTY`, 404 không lộ tồn tại.
-- `apps/cms/src/services/__tests__/site-provisioning.test.ts`: setup wizard và `POST /orgs/:id/sites` tạo site giống nhau (so sánh role, extension, cache purge).
-- `packages/mcp-server/src/__tests__/tools.test.ts`: snapshot tool list cho 3 cấu hình + `readOnly`.
-- DB integration: migration backfill trên dump có 0, 1, N site; có/không user bootstrap.
-
-## 9. Open questions
-
-Owner đã chốt cả bốn đề xuất ngày 2026-11-09.
-
-1. `transfer_site` cần owner ở cả hai org (đơn giản, Phase 2) hay cơ chế lời mời (Phase 4)? **Đã chốt:** cả hai org trước.
-2. `lbo_` có được *tạo thêm* `lbk_` cho site trong org qua `/api/v1/api-keys` (như administrator) không? **Đã chốt:** có — nhất quán với "Org_Key = administrator trên site"; đã qua guard `org:keys:manage` lúc mint `lbo_`.
-3. Personal_Org có cho đổi `slug='default'` không? **Đã chốt:** có, chỉ owner; `default` không reserved sau khi đổi.
-4. Studio ẩn org UI khi 1 org — nhưng trang **Organization → Keys** vẫn cần để mint `lbo_` đầu tiên. **Đã chốt:** luôn hiện mục "Organization" trong Settings cho owner/admin; chỉ ẩn *switcher*.
+1. Transfer cần cùng người là owner cả hai organization, không thêm lời mời.
+2. `lbo_` được tạo `lbk_` cho site thuộc organization của nó.
+3. Owner được đổi slug `default`; slug không được reserved sau khi đổi.
+4. Settings luôn hiện Organization cho owner/admin; chỉ ẩn switcher khi có một org.

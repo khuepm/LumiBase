@@ -1,21 +1,22 @@
 ---
-version: 1
-lastUpdated: 2026-11-09T10:47:21.066Z
+version: 2
+lastUpdated: 2026-11-10T01:58:25.845Z
 sourceLang: en
-contentHash: bc1d243317196919
-codeVerified: 2026-11-09T10:47:21.066Z
-codeVerifiedHash: bc1d243317196919
-codeVerifiedClaims: 26
+contentHash: be9bd3448ced37b9
+codeVerified: 2026-11-10T01:58:25.845Z
+codeVerifiedHash: be9bd3448ced37b9
+codeVerifiedClaims: 40
 ---
 
 # ADR-013: Organization plane (tenant hierarchy and scope-typed credentials)
 
 **Date:** 2026-11-09
-**Status:** Proposed
-
-<!-- verify-code-refs: planned /api/v1/orgs /api/v1/orgs/:orgId /api/v1/orgs/:orgId/sites /api/v1/orgs/:orgId/sites/:siteId /api/v1/orgs/:orgId/sites/:siteId/transfer /api/v1/orgs/:orgId/members /api/v1/orgs/:orgId/keys -->
+**Status:** Accepted
 
 ## Context
+
+This section records the situation before ADR-013; the decision and implementation below replace that model.
+
 
 LumiBase is multi-tenant by default: every domain table carries `site_id`,
 every query filters by it, and an API key (`lbk_…`) is bound to exactly one
@@ -29,7 +30,7 @@ answer the question "who may create a site, and whose site is it?":
 
 - `sites` (`packages/database/src/schema/core.ts`) has no parent column — no
   `owner_id`, no `organization_id`. A site belongs to nobody.
-- `POST /api/v1/admin/sites` and `DELETE /api/v1/admin/sites/:id`
+- `/api/v1/admin/sites` (former create/delete routes)
   (`apps/cms/src/routes/admin.ts`) exist only because the test runner needs
   them. They are guarded by `requireSiteAdmin` of the *calling* site, so an
   administrator of site A can create arbitrary sites or delete site B. Tenant
@@ -164,10 +165,10 @@ GET    /api/v1/orgs                          list organizations the principal be
 POST   /api/v1/orgs                          create (instance plane decides who may: §6)
 GET    /api/v1/orgs/:orgId
 PATCH  /api/v1/orgs/:orgId
-DELETE /api/v1/orgs/:orgId                   owner only, destructive, HITL for agents
+DELETE /api/v1/orgs/:orgId                   human owner only; no organization-delete MCP tool
 GET    /api/v1/orgs/:orgId/sites
-POST   /api/v1/orgs/:orgId/sites             replaces POST /api/v1/admin/sites
-DELETE /api/v1/orgs/:orgId/sites/:siteId     replaces DELETE /api/v1/admin/sites/:id
+POST   /api/v1/orgs/:orgId/sites             replaces former test-only site creation
+DELETE /api/v1/orgs/:orgId/sites/:siteId     replaces former test-only site deletion
 POST   /api/v1/orgs/:orgId/sites/:siteId/transfer
 GET|POST|PATCH|DELETE /api/v1/orgs/:orgId/members[/:userId]
 GET|POST|DELETE       /api/v1/orgs/:orgId/keys[/:keyId]
@@ -176,7 +177,7 @@ GET|POST|DELETE       /api/v1/orgs/:orgId/keys[/:keyId]
 - The tenant middleware (`apps/cms/src/middleware/tenant.ts`) exempts
   `/api/v1/orgs` from the `X-Lumi-Site` requirement; RLS request scope
   (`rls-request-scope` spec) is set to the organization instead.
-- `POST /api/v1/admin/sites` and `DELETE /api/v1/admin/sites/:id` are removed
+- `/api/v1/admin/sites` (former create/delete routes) are removed
   once the test runner is moved to the new routes with an organization key.
   Their interim containment (restrict delete to the caller's own site, gate
   create behind the bootstrap user) is a separate hotfix, not part of this
@@ -194,8 +195,8 @@ The MCP server stays a single package. At start-up it inspects
 | Token | `LUMIBASE_SITE_ID` | Exposed tools |
 |-------|--------------------|---------------|
 | `lbk_` | required (as today) | current site tool set, unchanged |
-| `lbo_` + site id | pins the key to one site | current site tool set **plus** `list_sites`, `get_organization` (read-only org tools) |
-| `lbo_` without site id | — | organization tools (`list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) **plus** site tools that take a `site` argument |
+| `lbo_` + site id | pins client routing to one site | current site tool set **plus** `list_sites`, `get_organization` (read-only org tools) |
+| `lbo_` without site id | — | organization tools (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) **plus** site tools that take a `site` argument |
 
 Rules:
 
@@ -221,9 +222,11 @@ Rules:
   additional organizations; `LUMIBASE_ALLOW_ORG_SIGNUP=true` opens
   `POST /api/v1/orgs` to any `studio`-audience user. No new instance role is
   introduced; the bootstrap user *is* the instance operator, as today.
-- Hosted (`lumibase.dev`): the same flag is on, and the sign-up flow creates
-  the personal organization on first login. Billing lives on the organization,
-  never on the site.
+- Hosted integration: enable the flag and have the staff signup flow call
+  `POST /api/v1/orgs` after the first Studio login to provision a personal
+  organization. This is an integration through the guarded API; public
+  frontend self-service is not promoted into Studio identity. Billing belongs
+  to the organization settings container; real billing is outside this ADR.
 - Instance-wide settings keep living on the `__default__` site
   (`apps/cms/src/modules/setup/site-constants.ts`); this ADR does not move
   them. A later ADR may lift them to an `instance_settings` table.
@@ -246,8 +249,10 @@ Rules:
 
 **Negative / trade-offs**
 
-- Two new tables, three new columns, one backfill migration (hand-written,
-  per project convention; numbering must be reconciled on merge).
+- Two organization tables and hand-written migrations `0024_organizations`
+  (schema/backfill) and `0025_organization_approvals` (real organization approval
+  scope and receipts). Migration numbering was reconciled across open branches;
+  rollback requires restoring a pre-upgrade backup.
 - `api_keys.site_id` becomes nullable. Every reader of `api_keys` must handle
   `scope = 'organization'`; `EffectiveCapabilityService` and the key auth
   middleware are the choke points, but the audit is real work.
@@ -255,17 +260,16 @@ Rules:
   organization owner can read. Mitigated by audit provenance and by the fact
   that owners already hold the keys that could grant themselves access.
 - Self-hosted single-tenant users gain a concept they do not need. Mitigated
-  by the personal-organization backfill: Studio hides the organization UI
-  while exactly one organization exists.
+  by the personal-organization backfill: Studio hides only the switcher with
+  one organization. Organization Settings remains visible to owner/admin.
 
-**Security notes (Reality Filter)**
+**Verified controls and boundaries**
 
-- The scope typing (`lbk_` cannot call `/api/v1/orgs`) is enforceable in one
-  place — the key auth middleware — and must be covered by a matrix test
-  alongside `auth-middleware-matrix.test.ts`. Until that test exists the
-  boundary is a design claim, not an observed control. [Inference]
-- Removing `/api/v1/admin/sites` closes a cross-tenant hole that exists today
-  independently of this ADR; the interim hotfix should land first.
+- Credential scope is tested in `apps/cms/src/__tests__/auth-middleware-matrix.test.ts` and real organization API integration tests. Site credentials cannot enter the organization plane; organization keys cannot access foreign sites.
+- Hotfix #628 landed on main first; Phase 2 removed the legacy test-only admin site routes in #666.
+- Organization mutations always require a human decision. Migration `0025_organization_approvals` stores an organization parent and requester; authorization is rechecked and the mutation/receipt commit atomically. Human-only receipt endpoints keep new key plaintext out of agent results. `organizationId` and run ids are present in audit metadata.
+- Transfer requires the same human owner in both organizations. Organization keys may mint site keys for owned sites, but never gain owner authority. Only owners may rename the personal organization's `default` slug; it is reusable afterward.
+- Password login/refresh still require a live site. An organization with no sites remains accessible with a valid organization key or Studio session; fully site-free human recovery is separate instance-level work (backlog B196). Keep a recovery credential or restore a backup.
 
 ## Alternatives considered
 
@@ -282,13 +286,13 @@ Rules:
    Rejected: it conflates instance settings with a tenant, keeps `sites`
    owner-less, and would make deleting the root site catastrophic.
 4. **Model organization roles with the site Policy DSL (ADR-008).** Rejected:
-   the organization vocabulary is eight fixed actions; the DSL's
+   the organization vocabulary is nine fixed actions; the DSL's
    collection/field/row semantics do not apply, and a fixed enum is easier to
    reason about in a security review.
 
 ## References
 
-- `apps/cms/src/routes/admin.ts` — `POST/DELETE /sites` (to be removed)
+- `apps/cms/src/routes/admin.ts` — former `POST/DELETE /sites` (removed in #666)
 - `apps/cms/src/middleware/control-plane-access-guard.ts` — existing
   site-scoped "control plane" (unchanged)
 - `apps/cms/src/services/effective-capability-service.ts` — caller classes
