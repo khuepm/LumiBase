@@ -35,6 +35,7 @@ import type postgres from 'postgres';
 
 /** Marker so callers can tell a scoped client from a plain pool. */
 export const SITE_SCOPED_SQL: unique symbol = Symbol.for('lumibase.siteScopedSql');
+export const ORGANIZATION_SCOPED_SQL: unique symbol = Symbol.for('lumibase.organizationScopedSql');
 const SITE_SCOPED_BASE: unique symbol = Symbol.for('lumibase.siteScopedSql.base');
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -109,7 +110,11 @@ class ScopedQuery<T = unknown> implements PromiseLike<T> {
   }
 }
 
-function setScope(tx: AnyTx, siteId: string) {
+function setScope(tx: AnyTx, siteId: string, organizationId?: string) {
+  if (organizationId !== undefined) {
+    return tx`SELECT set_config('app.site_id', ${siteId}, true),
+      set_config('lumibase.organization_id', ${organizationId}, true)`;
+  }
   // Tagged template: `siteId` becomes parameter $1, never part of the SQL text.
   return tx`SELECT set_config('app.site_id', ${siteId}, true)`;
 }
@@ -127,10 +132,10 @@ function setScope(tx: AnyTx, siteId: string) {
  * ever made synchronous. `rls-request-scope.db.integration.test.ts` checks
  * `.count` against a real database.
  */
-function runScoped<T>(base: AnySql, siteId: string, run: (tx: AnyTx) => PromiseLike<T>): Promise<T> {
+function runScoped<T>(base: AnySql, siteId: string, run: (tx: AnyTx) => PromiseLike<T>, organizationId?: string): Promise<T> {
   return (
     base.begin(async (tx) => {
-      const scope = setScope(tx, siteId);
+      const scope = setScope(tx, siteId, organizationId);
       const query = run(tx);
       const [, r] = await Promise.all([scope, query]);
       return { r };
@@ -142,8 +147,8 @@ function runScoped<T>(base: AnySql, siteId: string, run: (tx: AnyTx) => PromiseL
  * Wrap `base` so that every statement and transaction runs with
  * `app.site_id = siteId`. See the file header.
  */
-export function createSiteScopedSql<S extends AnySql>(base: S, siteId: string): S {
-  if (typeof siteId !== 'string' || siteId.length === 0) {
+export function createSiteScopedSql<S extends AnySql>(base: S, siteId: string, organizationId?: string): S {
+  if (typeof siteId !== 'string' || (siteId.length === 0 && !organizationId)) {
     throw new Error('createSiteScopedSql: siteId must be a non-empty string');
   }
 
@@ -153,7 +158,7 @@ export function createSiteScopedSql<S extends AnySql>(base: S, siteId: string): 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const q = (tx.unsafe as any)(query, params, options);
         return mode === 'values' ? q.values() : q;
-      }),
+      }, organizationId),
     );
 
   const begin = (optionsOrCb: unknown, maybeCb?: unknown) => {
@@ -161,7 +166,7 @@ export function createSiteScopedSql<S extends AnySql>(base: S, siteId: string): 
     const cb = (hasOptions ? maybeCb : optionsOrCb) as (tx: AnyTx) => unknown;
     if (typeof cb !== 'function') throw new TypeError('begin: a callback is required');
     const scoped = async (tx: AnyTx) => {
-      await setScope(tx, siteId);
+      await setScope(tx, siteId, organizationId);
       const x = cb(tx);
       // Same contract as postgres.js: an Array result is awaited element-wise.
       return Array.isArray(x) ? Promise.all(x) : x;
@@ -186,7 +191,7 @@ export function createSiteScopedSql<S extends AnySql>(base: S, siteId: string): 
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const q = (tx as any)(first, ...rest);
             return mode === 'values' ? q.values() : q;
-          }),
+          }, organizationId),
         );
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -194,6 +199,7 @@ export function createSiteScopedSql<S extends AnySql>(base: S, siteId: string): 
     },
     get(_t, prop) {
       if (prop === SITE_SCOPED_SQL) return siteId;
+      if (prop === ORGANIZATION_SCOPED_SQL) return organizationId;
       if (prop === SITE_SCOPED_BASE) return base;
       if (prop === 'unsafe') return unsafe;
       if (prop === 'begin') return begin;
@@ -231,4 +237,14 @@ export function unscopedSqlOf<S>(x: S): S {
 export function scopedSiteIdOf(x: unknown): string | undefined {
   if (!isSiteScopedSql(x)) return undefined;
   return (x as Record<symbol, string>)[SITE_SCOPED_SQL];
+}
+
+/** Only call after membership has been verified; never trust an unguarded path. */
+export function createOrganizationScopedSql<S extends AnySql>(base: S, organizationId: string): S {
+  if (!organizationId) throw new Error('organizationId must be non-empty');
+  return createSiteScopedSql(base, '', organizationId);
+}
+export function scopedOrganizationIdOf(x: unknown): string | undefined {
+  if (!isSiteScopedSql(x)) return undefined;
+  return (x as Record<symbol, string>)[ORGANIZATION_SCOPED_SQL];
 }

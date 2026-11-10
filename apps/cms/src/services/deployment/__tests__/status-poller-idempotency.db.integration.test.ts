@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { deploymentTargets, deployments, sites, type Database } from '@lumibase/database';
@@ -104,8 +105,8 @@ describe.skipIf(!hasDbIntegrationUrl)('Deployment status poller — DB idempoten
       await db.delete(sites).where(eq(sites.id, site));
     }
     await db.insert(sites).values([
-      { id: SITE_A, name: 'Deploy poll A' },
-      { id: SITE_B, name: 'Deploy poll B' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_A, name: 'Deploy poll A' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_B, name: 'Deploy poll B' },
     ]);
     targetA = await seedTarget(SITE_A);
     targetB = await seedTarget(SITE_B);

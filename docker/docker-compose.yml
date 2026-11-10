@@ -90,6 +90,8 @@ services:
     environment:
       LUMIBASE_RUNTIME: docker
       LUMIBASE_PROCESS_ROLE: ${LUMIBASE_PROCESS_ROLE:-all}
+      LUMIBASE_ALLOW_ORG_SIGNUP: ${LUMIBASE_ALLOW_ORG_SIGNUP:-false}
+      LUMIBASE_MCP_ORG_TOOLS: ${LUMIBASE_MCP_ORG_TOOLS:-on}
       DATABASE_URL: postgresql://lumibase:lumibase_dev@postgres:5432/lumibase
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000

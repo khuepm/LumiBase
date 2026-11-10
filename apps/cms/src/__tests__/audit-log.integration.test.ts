@@ -118,7 +118,7 @@ describe('Audit log — integration', () => {
     await db.execute(
       sql`TRUNCATE TABLE lumibase_audit_log, lumibase_login_attempts, lumibase_system_state, lumibase_settings, lumibase_user_sites, lumibase_sites, lumibase_users RESTART IDENTITY CASCADE`,
     );
-    await db.insert(sites).values({ id: 'site_test', name: 'Test site' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: 'site_test', name: 'Test site' });
   });
 
   /**

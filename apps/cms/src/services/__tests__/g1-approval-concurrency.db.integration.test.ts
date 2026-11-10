@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import {
@@ -48,7 +49,7 @@ describe.skipIf(!hasDbIntegrationUrl)('G1 approval concurrency — DB integratio
   beforeAll(async () => {
     db = await connectDbIntegration('g1-approval-concurrency');
 
-    await db.insert(sites).values({ id: SITE, name: 'G1 concurrency' })
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'G1 concurrency' })
       .onConflictDoNothing();
     await db.insert(users).values({ id: ADMIN, email: 'g1-conc@example.dev' })
       .onConflictDoNothing();

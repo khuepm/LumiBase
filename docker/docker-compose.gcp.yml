@@ -74,6 +74,8 @@ services:
       NODE_ENV: production
       LUMIBASE_ENV: production
       LUMIBASE_RUNTIME: docker
+      LUMIBASE_ALLOW_ORG_SIGNUP: ${LUMIBASE_ALLOW_ORG_SIGNUP:-false}
+      LUMIBASE_MCP_ORG_TOOLS: ${LUMIBASE_MCP_ORG_TOOLS:-on}
       # Internal Compose network — Postgres/Redis are not exposed and carry no
       # TLS, so SSL verification is disabled for the in-cluster hop only.
       DATABASE_URL: postgresql://lumibase:${POSTGRES_PASSWORD}@postgres:5432/lumibase

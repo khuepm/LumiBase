@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -22,8 +23,19 @@ const id = () => text('id').$defaultFn(() => nanoid()).primaryKey();
 const createdAt = () => timestamp('created_at').defaultNow().notNull();
 const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
+export const organizations = pgTable('lumibase_organizations', {
+  id: id(),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  settings: jsonb('settings').default({}).notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
 export const sites = pgTable('lumibase_sites', {
   id: id(),
+  organizationId: text('organization_id').notNull()
+    .references(() => organizations.id, { onDelete: 'restrict' }),
   name: text('name').notNull(),
   domain: text('domain').unique(),
   /** Human-readable title shown in Studio + public metadata. Falls back to `name`. */
@@ -113,6 +125,18 @@ export const users = pgTable(
     emailLowerUnique: uniqueIndex('users_email_lower_unique').on(sql`lower(${t.email})`),
   }),
 );
+
+export const organizationMembers = pgTable('lumibase_organization_members', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  organizationId: text('organization_id').notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  role: text('role').$type<'owner' | 'admin' | 'billing' | 'member'>().notNull(),
+  createdAt: createdAt(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.organizationId] }),
+  orgIdx: index('org_members_org_idx').on(t.organizationId),
+  roleCheck: check('org_members_role_check', sql`${t.role} in ('owner','admin','billing','member')`),
+}));
 
 export const userSites = pgTable(
   'lumibase_user_sites',

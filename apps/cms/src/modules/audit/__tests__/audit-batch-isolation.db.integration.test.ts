@@ -64,8 +64,8 @@ describe.skipIf(!hasDbIntegrationUrl)('#469 audit batch isolation — DB integra
   beforeEach(async () => {
     await db.delete(sites).where(sql`${sites.id} IN (${REAL_SITE}, ${OTHER_SITE})`);
     await db.insert(sites).values([
-      { id: REAL_SITE, name: 'Audit isolation real' },
-      { id: OTHER_SITE, name: 'Audit isolation other' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: REAL_SITE, name: 'Audit isolation real' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER_SITE, name: 'Audit isolation other' },
     ]);
   });
 

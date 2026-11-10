@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq, inArray } from 'drizzle-orm';
 import {
@@ -91,8 +92,8 @@ describe.skipIf(!hasDbIntegrationUrl)('#583 permission cache principal scope —
     await db.delete(sites).where(inArray(sites.id, [SITE_A, SITE_B]));
     await db.delete(users).where(inArray(users.id, [ALICE, BOB]));
     await db.insert(sites).values([
-      { id: SITE_A, name: '583 A' },
-      { id: SITE_B, name: '583 B' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_A, name: '583 A' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_B, name: '583 B' },
     ]);
     await db.insert(users).values([
       { id: ALICE, email: 'audit-583-alice@example.dev' },

@@ -185,3 +185,40 @@ COMMENT ON FUNCTION app_site_id IS
    unset or empty). SECURITY INVOKER with a pinned search_path. Used by the
    site_isolation (RESTRICTIVE) and site_isolation_permit (PERMISSIVE) RLS
    policies for site-level row isolation.';
+
+-- Organization plane: app.site_id cannot grant access to organization rows.
+-- Guard verifies membership using systemDbFor before re-scoping the app client.
+DO $$
+DECLARE tbl text; target text;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY['lumibase_organizations', 'lumibase_organization_members'] LOOP
+    target := CASE WHEN tbl = 'lumibase_organizations' THEN 'id' ELSE 'organization_id' END;
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', tbl);
+    EXECUTE format('DROP POLICY IF EXISTS organization_isolation ON %I', tbl);
+    EXECUTE format('DROP POLICY IF EXISTS organization_isolation_permit ON %I', tbl);
+    EXECUTE format($policy$CREATE POLICY organization_isolation ON %I AS RESTRICTIVE FOR ALL
+      USING (%I = NULLIF(current_setting('lumibase.organization_id', true), ''))
+      WITH CHECK (%I = NULLIF(current_setting('lumibase.organization_id', true), ''))$policy$, tbl, target, target);
+    EXECUTE format($policy$CREATE POLICY organization_isolation_permit ON %I AS PERMISSIVE FOR ALL
+      USING (%I = NULLIF(current_setting('lumibase.organization_id', true), ''))
+      WITH CHECK (%I = NULLIF(current_setting('lumibase.organization_id', true), ''))$policy$, tbl, target, target);
+  END LOOP;
+END $$;
+
+-- Approval scope is exactly one site OR organization (0025). Keep a restrictive
+-- and permissive pair so another permissive policy cannot widen either plane.
+ALTER TABLE lumibase_ai_approvals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lumibase_ai_approvals FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS approval_isolation ON lumibase_ai_approvals;
+DROP POLICY IF EXISTS approval_isolation_permit ON lumibase_ai_approvals;
+CREATE POLICY approval_isolation ON lumibase_ai_approvals AS RESTRICTIVE FOR ALL
+  USING ((site_id = app_site_id() AND organization_id IS NULL) OR
+    (site_id IS NULL AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')))
+  WITH CHECK ((site_id = app_site_id() AND organization_id IS NULL) OR
+    (site_id IS NULL AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')));
+CREATE POLICY approval_isolation_permit ON lumibase_ai_approvals AS PERMISSIVE FOR ALL
+  USING ((site_id = app_site_id() AND organization_id IS NULL) OR
+    (site_id IS NULL AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')))
+  WITH CHECK ((site_id = app_site_id() AND organization_id IS NULL) OR
+    (site_id IS NULL AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')));

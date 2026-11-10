@@ -24,6 +24,7 @@ export interface RequestContextUser {
  * "this user belongs to this site".
  */
 export interface RequestContextMembership {
+  readonly organizationRole?: import('@lumibase/contracts').OrgRole | null;
   readonly roleId: string | null;
 }
 
@@ -36,6 +37,7 @@ export interface RequestContextMembership {
  * mountable in unit tests.
  */
 export interface RequestContextBundle {
+  readonly organizationRole?: import('@lumibase/contracts').OrgRole | null;
   readonly user?: RequestContextUser | null;
   readonly membership?: RequestContextMembership | null;
   readonly accessBundle?: PermissionBundle;

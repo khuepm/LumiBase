@@ -1,9 +1,11 @@
+import { resolveSiteAdminAccess } from '../services/site-admin-access';
 import type { MiddlewareHandler } from 'hono';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { isFrontendAudience } from '../services/auth/token-audience';
 import type { PermissionBundle } from '../services/permission-service';
 import { auditSecurityGuardDenied } from './security-audit';
 
+// /api/v1/orgs uses its own organization guard; NEVER add it to this site list.
 const CONTROL_PLANE_PATHS = [
   '/api/v1/access',
   '/api/v1/api-keys',
@@ -41,6 +43,7 @@ export const withControlPlaneAccessGuard = (): MiddlewareHandler<AppEnv> => asyn
   const auth = c.get('auth');
   if (isAdminPrincipal(auth)) return next();
   if (hasSiteAdminAccess(auth, c.get('access'))) return next();
+  if ((auth?.apiKey?.scope === 'organization' || auth?.userId) && (await resolveSiteAdminAccess(c)).allowed) return next();
   if (auth && isSelfIntrospection(c.req.method, c.req.path)) return next();
 
   await auditSecurityGuardDenied(c, 'control_plane_access_denied', {

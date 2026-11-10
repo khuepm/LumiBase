@@ -1,3 +1,6 @@
+import { classifyTokenPrefix } from '@lumibase/contracts';
+import { isOrganizationPath, isMcpPath, organizationRoleForSite, organizationRoleExpression } from '../services/organization-access';
+import { auditSecurityGuardDenied } from './security-audit';
 import type { MiddlewareHandler } from 'hono';
 import { apiKeys, users, userSites } from '@lumibase/database';
 import { and, eq, sql } from 'drizzle-orm';
@@ -77,6 +80,8 @@ function apiKeySnapshot(row: typeof apiKeys.$inferSelect): Record<string, unknow
   return {
     id: row.id,
     siteId: row.siteId,
+    scope: row.scope ?? 'site',
+    organizationId: row.organizationId ?? null,
     name: row.name,
     prefix: row.prefix,
     description: row.description,
@@ -90,7 +95,7 @@ function apiKeySnapshot(row: typeof apiKeys.$inferSelect): Record<string, unknow
 async function auditApiKeyUseDenied(
   c: Parameters<MiddlewareHandler<AppEnv>>[0],
   row: typeof apiKeys.$inferSelect,
-  reason: 'site_mismatch' | 'revoked' | 'expired' | 'origin_not_allowed',
+  reason: 'site_mismatch' | 'revoked' | 'expired' | 'origin_not_allowed' | 'site_scoped_credential_on_org_plane' | 'site_not_in_organization' | 'scope_prefix_mismatch',
 ): Promise<void> {
   // Record the denial against the key's OWN site, not the requested one.
   //
@@ -113,6 +118,7 @@ async function auditApiKeyUseDenied(
     metadata: {
       apiKeyId: row.id,
       apiKeyName: row.name,
+      organizationId: row.organizationId ?? null,
       prefix: row.prefix,
       siteId: row.siteId,
       requestedSiteId: c.get('siteId'),
@@ -212,6 +218,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
       const email = typeof payload.email === 'string' ? payload.email : undefined;
       const requestSiteId = c.get('siteId');
+      const orgPath = isOrganizationPath(path);
 
       // Map the Access identity to a real user + site role from the DB instead
       // of trusting the edge assertion for authorization (CWE-302). A verified
@@ -245,14 +252,15 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         );
       }
 
-      const [membership] = await c
-        .get('db')
-        .select({ roleId: userSites.roleId })
+      const [membership] = orgPath ? [] : await systemDbFor(c)
+        .select({ roleId: userSites.roleId, organizationRole: organizationRoleExpression(user.id, requestSiteId) })
         .from(userSites)
         .where(and(eq(userSites.userId, user.id), eq(userSites.siteId, requestSiteId)))
         .limit(1);
 
-      if (!membership && !user.isBootstrap) {
+      const inherited = !orgPath && !membership
+        ? await organizationRoleForSite(systemDbFor(c), user.id, requestSiteId) : null;
+      if (!orgPath && !membership && !user.isBootstrap && !inherited) {
         return c.json(
           { errors: [{ code: 'UNAUTHENTICATED', message: 'Cloudflare Access user is not a member of the selected site.' }] },
           401,
@@ -266,7 +274,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
           email,
           isBootstrap: user.isBootstrap,
         },
-        membership: membership?.roleId ? { roleId: membership.roleId } : null,
+        organizationRole: membership?.organizationRole ?? (inherited || null),
+        membership: membership ? { roleId: membership.roleId ?? null } : null,
       });
 
       const principal: AuthPrincipal = {
@@ -296,8 +305,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
 
   if (bearerToken) {
     const tokenHash = await sha256Hex(bearerToken);
-    const [apiKey] = await c
-      .get('db')
+    const [apiKey] = await (isOrganizationPath(path) || classifyTokenPrefix(bearerToken) === 'organization' ? systemDbFor(c) : c.get('db'))
       .select()
       .from(apiKeys)
       .where(eq(apiKeys.tokenHash, tokenHash))
@@ -309,7 +317,7 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       // never accepted here. We fetch by token hash (a 256-bit unguessable
       // value) and then reject + audit any cross-tenant use before the key
       // can yield a principal.
-      if (apiKey.siteId !== c.get('siteId')) {
+      if (apiKey.scope !== 'organization' && !isOrganizationPath(path) && apiKey.siteId !== c.get('siteId')) {
         await auditApiKeyUseDenied(c, apiKey, 'site_mismatch');
         return c.json(
           { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
@@ -329,6 +337,26 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
           { errors: [{ code: 'UNAUTHENTICATED', message: 'API key is expired or revoked.' }] },
           401,
         );
+      }
+
+      if (isOrganizationPath(path) && apiKey.scope !== 'organization') {
+        await auditApiKeyUseDenied(c, apiKey, 'site_scoped_credential_on_org_plane');
+        return c.json({ errors: [{ code: 'ORGANIZATION_FORBIDDEN' }] }, 403);
+      }
+      if (apiKey.scope === 'organization') {
+        if (classifyTokenPrefix(bearerToken) !== 'organization') {
+          await auditApiKeyUseDenied(c, apiKey, 'scope_prefix_mismatch');
+          return c.json({ errors: [{ code: 'UNAUTHENTICATED' }] }, 401);
+        }
+        if (!isOrganizationPath(path) && !(isMcpPath(path) && !c.get('siteId'))) {
+          const { sites } = await import('@lumibase/database');
+          const [site] = await systemDbFor(c).select({ organizationId: sites.organizationId })
+            .from(sites).where(eq(sites.id, c.get('siteId'))).limit(1);
+          if (!site || site.organizationId !== apiKey.organizationId) {
+            await auditApiKeyUseDenied(c, apiKey, 'site_not_in_organization');
+            return c.json({ errors: [{ code: 'SITE_NOT_IN_ORGANIZATION' }] }, 403);
+          }
+        }
       }
 
       // Origin allowlist for publishable (client-embeddable) keys. Scoped to
@@ -445,7 +473,13 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       const payload = await verifyCustomJwt(bearerToken, jwtSecret);
       const tokenSiteId = typeof payload.siteId === 'string' ? payload.siteId : null;
       const requestSiteId = c.get('siteId');
-      if (!tokenSiteId || tokenSiteId !== requestSiteId) {
+      const orgPath = isOrganizationPath(path);
+      const studioSession = audienceValues(payload.aud).includes(TOKEN_AUDIENCE.studio);
+      if (orgPath && !studioSession) {
+        await auditSecurityGuardDenied(c, 'organization_access_denied', { reason: 'site_scoped_credential_on_org_plane' });
+        return c.json({ errors: [{ code: 'ORGANIZATION_FORBIDDEN' }] }, 403);
+      }
+      if (!orgPath && (!tokenSiteId || tokenSiteId !== requestSiteId) && !studioSession) {
         return c.json(
           { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
           401,
@@ -484,18 +518,21 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         );
       }
 
-      const [membership] = await c
-        .get('db')
-        .select({ roleId: userSites.roleId })
+      const [membership] = orgPath ? [] : await systemDbFor(c)
+        .select({ roleId: userSites.roleId, organizationRole: organizationRoleExpression(user.id, requestSiteId) })
         .from(userSites)
         .where(and(eq(userSites.userId, userId), eq(userSites.siteId, requestSiteId)))
         .limit(1);
-      if (!membership && !user.isBootstrap) {
+      const inherited = !orgPath && studioSession && (!membership || tokenSiteId !== requestSiteId)
+        ? await organizationRoleForSite(systemDbFor(c), user.id, requestSiteId) : null;
+      if ((!orgPath && tokenSiteId !== requestSiteId && !inherited) || (!orgPath && !membership && !user.isBootstrap && !inherited)) {
         return c.json(
           { errors: [{ code: 'UNAUTHENTICATED', message: 'Invalid bearer token.' }] },
           401,
         );
       }
+
+      if (inherited) c.set('siteAdminVia', 'organization');
 
       // The `aud` claim records the realm the token was minted for
       // (`studio` vs `frontend`). `isFrontendUser` tracks it for the
@@ -508,7 +545,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
           email: typeof payload.email === 'string' ? payload.email : user.id,
           isBootstrap: user.isBootstrap,
         },
-        membership: membership?.roleId ? { roleId: membership.roleId } : null,
+        organizationRole: membership?.organizationRole ?? (inherited || null),
+        membership: membership ? { roleId: membership.roleId ?? null } : null,
       });
 
       const principal: AuthPrincipal = {

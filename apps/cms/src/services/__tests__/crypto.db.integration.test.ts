@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import {
@@ -41,7 +42,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Field encryption — DB integration', () 
 
   beforeEach(async () => {
     await db.delete(sites).where(eq(sites.id, SITE));
-    await db.insert(sites).values({ id: SITE, name: 'Crypto IT' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Crypto IT' });
     const [coll] = await db
       .insert(collections)
       .values({ siteId: SITE, name: COLLECTION, label: 'Patients' })

@@ -1,6 +1,6 @@
-// Requires the CMS under test to run with LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT=true:
-// setup()/teardown() create and delete tenants via /api/v1/admin/sites, which is
-// refused otherwise. Never set that flag on a production instance.
+// Set ORGANIZATION_ID + ORGANIZATION_TOKEN (lbo_) for provisioning.
+// Cleanup requires ORGANIZATION_OWNER_TOKEN (Studio owner), because an org key
+// cannot delete sites. Site-level test traffic still uses ADMIN_TOKEN.
 import http from 'k6/http';
 import ws from 'k6/ws';
 import { check, sleep } from 'k6';

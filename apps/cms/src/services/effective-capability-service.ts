@@ -1,6 +1,8 @@
-import { apiKeys, users, userSites, type Database } from '@lumibase/database';
+import { classifyTokenPrefix } from '@lumibase/contracts';
+import { organizationRoleForSite, organizationRoleExpression } from './organization-access';
+import { apiKeys, users, userSites, sites, roles, type Database } from '@lumibase/database';
 import type { CacheProvider } from '@lumibase/runtime';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import type { AuthPrincipal } from '../env';
 import { isPublishablePrefix } from './api-key-publishable';
 import { isFrontendAudience } from './auth/token-audience';
@@ -30,6 +32,7 @@ export type CapabilityDenialCode =
   | 'PRINCIPAL_NOT_MEMBER'
   | 'API_KEY_REVOKED'
   | 'API_KEY_EXPIRED'
+  | 'SITE_NOT_IN_ORGANIZATION'
   | 'DEV_PRINCIPAL_FORBIDDEN';
 
 /**
@@ -43,7 +46,7 @@ export type CapabilityDenialCode =
  *
  * Only the capability resolvers set this value; entry points read it.
  */
-export type PrincipalCallerClass = 'standard' | 'publishable_api_key' | 'frontend_session';
+export type PrincipalCallerClass = 'standard' | 'publishable_api_key' | 'frontend_session' | 'organization_api_key';
 
 export interface EffectiveCapabilityGrant {
   allowed: true;
@@ -53,7 +56,7 @@ export interface EffectiveCapabilityGrant {
    * are `standard` here; the session audience is only known on the request
    * (see {@link callerClassFromAuth}).
    */
-  callerClass: Extract<PrincipalCallerClass, 'standard' | 'publishable_api_key'>;
+  callerClass: Extract<PrincipalCallerClass, 'standard' | 'publishable_api_key' | 'organization_api_key'>;
   /** Coarse harness capabilities. Row/field checks remain in ItemService. */
   capabilities: string[];
   /** Whether this principal may pass the MCP control-plane admin backstop. */
@@ -79,6 +82,7 @@ export type EffectiveCapabilityResolution =
 
 export interface EffectiveCapabilityServiceDeps {
   db: Database;
+  authorizationDb?: Database;
   siteId: string;
   cache?: CacheProvider;
   /** Request guards such as policy IP/time conditions use these values. */
@@ -208,6 +212,7 @@ export function principalRefFromAuth(
  * - Anything else → `standard`.
  */
 export function callerClassFromAuth(auth: AuthPrincipal | undefined): PrincipalCallerClass {
+  if (auth?.apiKey?.scope === 'organization') return 'organization_api_key';
   if (!auth) return 'standard';
   if (auth.type === 'api_key') {
     return isPublishablePrefix(auth.apiKey?.prefix as string | undefined)
@@ -258,8 +263,8 @@ export class EffectiveCapabilityService {
       return this.deny(principal, 'PRINCIPAL_INACTIVE', 'The authenticated user is not active.');
     }
 
-    const [membership] = await this.deps.db
-      .select({ roleId: userSites.roleId })
+    const [membership] = await (this.deps.authorizationDb ?? this.deps.db)
+      .select({ roleId: userSites.roleId, organizationRole: organizationRoleExpression(principal.userId, this.deps.siteId) })
       .from(userSites)
       .where(
         and(
@@ -269,7 +274,12 @@ export class EffectiveCapabilityService {
       )
       .limit(1);
 
-    if (!membership && !user.isBootstrap) {
+    const organizationAdmin = !user.isBootstrap && (membership ? membership.organizationRole : await organizationRoleForSite(
+      this.deps.authorizationDb ?? this.deps.db, principal.userId, this.deps.siteId,
+    ));
+    const [organizationRole] = organizationAdmin ? await this.deps.db.select({ id: roles.id }).from(roles)
+      .where(and(eq(roles.siteId, this.deps.siteId), eq(roles.systemKey, 'administrator'))).limit(1) : [];
+    if (!membership && !user.isBootstrap && !organizationRole) {
       return this.deny(
         principal,
         'PRINCIPAL_NOT_MEMBER',
@@ -279,7 +289,7 @@ export class EffectiveCapabilityService {
 
     const context = this.permissionContext({
       userId: principal.userId,
-      roleId: membership?.roleId ?? null,
+      roleId: organizationRole?.id ?? membership?.roleId ?? null,
       user: { id: principal.userId },
       apiKey: null,
     });
@@ -301,6 +311,8 @@ export class EffectiveCapabilityService {
       .select({
         id: apiKeys.id,
         prefix: apiKeys.prefix,
+        scope: apiKeys.scope,
+        organizationId: apiKeys.organizationId,
         revokedAt: apiKeys.revokedAt,
         expiresAt: apiKeys.expiresAt,
       })
@@ -308,7 +320,7 @@ export class EffectiveCapabilityService {
       .where(
         and(
           eq(apiKeys.id, principal.apiKeyId),
-          eq(apiKeys.siteId, this.deps.siteId),
+          or(eq(apiKeys.siteId, this.deps.siteId), eq(apiKeys.scope, 'organization')),
         ),
       )
       .limit(1);
@@ -322,6 +334,24 @@ export class EffectiveCapabilityService {
     }
     if (apiKey.expiresAt && apiKey.expiresAt <= this.now()) {
       return this.deny(principal, 'API_KEY_EXPIRED', 'The authenticated API key has expired.');
+    }
+
+    if (apiKey.scope === 'organization') {
+      if (classifyTokenPrefix(apiKey.prefix) !== 'organization') {
+        return this.deny(principal, 'PRINCIPAL_NOT_FOUND', 'Credential scope and prefix do not match.');
+      }
+      const [site] = await (this.deps.authorizationDb ?? this.deps.db).select({ organizationId: sites.organizationId })
+        .from(sites).where(eq(sites.id, this.deps.siteId)).limit(1);
+      if (!site || site.organizationId !== apiKey.organizationId) {
+        return this.deny(principal, 'SITE_NOT_IN_ORGANIZATION', 'Site is not in the key organization.');
+      }
+      const [administrator] = await this.deps.db.select({ id: roles.id }).from(roles)
+        .where(and(eq(roles.siteId, this.deps.siteId), eq(roles.systemKey, 'administrator'))).limit(1);
+      if (!administrator) return this.deny(principal, 'PRINCIPAL_NOT_FOUND', 'Site administrator role is missing.');
+      const context = this.permissionContext({ userId: null, roleId: administrator.id,
+        user: null, apiKey: { id: principal.apiKeyId } });
+      const bundle = await this.bundle(context);
+      return this.grant(principal, bundle, context, true, 'organization_api_key');
     }
 
     // API-key roles are resolved from api_key_roles by PermissionService; there

@@ -12,7 +12,7 @@ async function main() {
     version: '0.9.0',
   });
 
-  registerAllTools(server, client);
+  registerAllTools(server, client, config);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

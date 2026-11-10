@@ -78,7 +78,7 @@ describe.skipIf(!hasDbIntegrationUrl)('#481 R3.4 reviewer admin contract — DB 
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.delete(users).where(sql`${users.id} IN (${ADMIN}, ${MEMBER})`);
 
-    await db.insert(sites).values({ id: SITE, name: 'Reviewer contract' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Reviewer contract' });
     await db.insert(settings).values({
       siteId: SITE,
       key: CONTENT_OS_SETTINGS_KEY,

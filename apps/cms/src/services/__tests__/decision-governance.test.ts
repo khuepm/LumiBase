@@ -641,3 +641,9 @@ describe('two-site isolation (#511, DoD §2b)', () => {
     expect(await counter(cache, requestsKey.replace('site_1', 'site_2'))).toBe(1);
   });
 });
+
+it('recognizes an organization key as a private caller while still requiring live capabilities', () => {
+  expect(() => authorizeDecision({ allowed: true, capabilities: ['admin'], callerClass: 'organization_api_key' })).not.toThrow();
+  expect(() => authorizeDecision({ allowed: true, capabilities: [], callerClass: 'organization_api_key' })).toThrow();
+  expect(() => authorizeDecision({ allowed: false, capabilities: ['admin'], callerClass: 'organization_api_key' })).toThrow();
+});

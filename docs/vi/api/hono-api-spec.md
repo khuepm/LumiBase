@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 31
-lastUpdated: 2026-11-08T10:34:25.799Z
+version: 33
+lastUpdated: 2026-11-10T02:10:54.889Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2b27f43393b9230a
+sourceHash: d2ec6dd1084fd171
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-08T10:34:25.799Z
-codeVerifiedHash: 2b27f43393b9230a
-codeVerifiedClaims: 456
+codeVerified: 2026-11-10T02:10:54.889Z
+codeVerifiedHash: d2ec6dd1084fd171
+codeVerifiedClaims: 482
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -71,6 +71,15 @@ Phản hồi lỗi:
 | `TOKEN_EXPIRED` | 401 | JWT đã hết hạn — làm mới và thử lại |
 | `SKILL_DENIED` | 403 | AI skill yêu cầu một capability mà phiên làm việc thiếu |
 | `HITL_REQUIRED` | 202 | Thao tác nguy hiểm cần sự phê duyệt của con người (Human-In-The-Loop) |
+| `VALIDATION` | 400 | Payload organization không hợp lệ |
+| `SCOPE_NOT_ALLOWED` | 400 | Organization key phải được tạo qua API organization |
+| `ORGANIZATION_FORBIDDEN` | 403 | Phạm vi credential hoặc role organization không cho phép thao tác |
+| `ORG_SIGNUP_DISABLED` | 403 | Tạo organization bị tắt đối với bên gọi này |
+| `SITE_NOT_IN_ORGANIZATION` | 403 | Site đã chọn không thuộc organization của key |
+| `ORGANIZATION_NOT_EMPTY` | 409 | Organization phải không còn site trước khi xóa |
+| `LAST_OWNER` | 409 | Phải giữ ít nhất một owner |
+| `REQUESTER_REVOKED` | 409 | Bên yêu cầu không còn quyền organization hiện tại |
+| `APPROVAL_ALREADY_DECIDED` | 409 | Quyết định phê duyệt trái ngược đã được commit |
 
 > **Tín hiệu Deprecation.** Một điểm cuối sắp ngưng hoạt động sẽ trả về các header response IETF `Deprecation` và `Sunset` (RFC 8594) cộng với `Link rel="deprecation"` dẫn tới changelog. Phía client nên log các header này và chuyển đổi trước ngày `Sunset`. Xem `docs/en/security/owasp-api-top-10-audit.md` (API9).
 
@@ -285,6 +294,47 @@ CRUD quản trị cho các nhà phát hành tin tưởng (chỉ admin):
 ```
 
 > Cho việc truy cập server-to-server dài hạn, hãy tạo một API key (`POST /api/v1/api-keys`, tiền tố token `lbk_`) thay vì dùng token đăng nhập.
+
+---
+
+## 1b. Organizations (ADR-013)
+
+Request organization dùng danh tính đã xác thực và organization đích, không cần `X-Lumi-Site`. Organization key (`lbo_`) gắn với một organization và có vai trò admin cố định. Danh tính nhân sự dùng membership organization hiện tại. Site key (`lbk_`), publishable key (`lbk_pub_`) và phiên frontend không được vào phạm vi này. Thiếu membership hoặc tài nguyên ngoài organization đã chọn trả `404 NOT_FOUND`.
+
+| Method | Endpoint | Quyền / payload |
+|---|---|---|
+| `GET` | `/api/v1/orgs` | Liệt kê organization của bên gọi; organization key chỉ nhận đúng organization của mình |
+| `POST` | `/api/v1/orgs` | Bootstrap operator, hoặc user Studio với `LUMIBASE_ALLOW_ORG_SIGNUP=true`; `{ name, slug }`; bên gọi thành owner |
+| `GET` | `/api/v1/orgs/:orgId` | `org:read`; kèm role của bên gọi |
+| `PATCH` | `/api/v1/orgs/:orgId` | `org:settings:write`; `{ name?, slug?, settings? }`; chỉ owner được đổi slug |
+| `DELETE` | `/api/v1/orgs/:orgId` | Owner; `X-Confirm-Delete: <orgId>`; organization phải không còn site |
+| `GET` | `/api/v1/orgs/:orgId/sites` | `org:read` |
+| `POST` | `/api/v1/orgs/:orgId/sites` | `org:sites:create`; `{ name, id?, slug? }`; `id` và `slug` phải khớp nếu cùng được gửi |
+| `DELETE` | `/api/v1/orgs/:orgId/sites/:siteId` | Owner; `X-Confirm-Delete: <siteId>` |
+| `POST` | `/api/v1/orgs/:orgId/sites/:siteId/transfer` | Cùng một người phải là owner ở cả hai organization; `{ toOrganizationId }` |
+| `GET` | `/api/v1/orgs/:orgId/members` | `org:read` |
+| `POST` | `/api/v1/orgs/:orgId/members` | `org:members:manage`; `{ userId?, email?, role }`; đúng một trường danh tính |
+| `PATCH` | `/api/v1/orgs/:orgId/members/:userId` | `org:members:manage`; `{ role }` |
+| `DELETE` | `/api/v1/orgs/:orgId/members/:userId` | `org:members:manage` |
+| `GET` | `/api/v1/orgs/:orgId/keys` | `org:read`; chỉ metadata |
+| `POST` | `/api/v1/orgs/:orgId/keys` | `org:keys:manage`; `{ name, description?, expiresAt? }`; token rõ chỉ trả lúc tạo |
+| `POST` | `/api/v1/orgs/:orgId/keys/:keyId/rotate` | `org:keys:manage`; token cũ ngừng hoạt động; token rõ trả lúc xoay |
+| `DELETE` | `/api/v1/orgs/:orgId/keys/:keyId` | `org:keys:manage`; thu hồi key |
+| `GET` | `/api/v1/orgs/:orgId/approvals` | Chỉ người dùng owner/admin; bản tóm tắt không có bí mật trong kết quả |
+| `GET` | `/api/v1/orgs/:orgId/approvals/:approvalId` | Chỉ người dùng owner/admin; biên nhận có thể chứa key mới |
+| `POST` | `/api/v1/orgs/:orgId/approvals/:approvalId/decide` | Người dùng owner/admin; `{ decision: "approved" }` / `{ decision: "rejected" }`; vẫn kiểm tra quyền owner theo thao tác |
+
+Thao tác tạo trả `201`, các thao tác thành công khác trả `200`, dùng envelope `data` chuẩn. Role organization gồm `owner`, `admin`, `billing` và `member`. Admin không được thêm/đổi/xóa owner; không thể xóa hay hạ cấp owner cuối. Owner/admin kế thừa quyền administrator tại site thuộc organization; billing/member không kế thừa. Organization key luôn là admin và không tự thực thi thao tác dành riêng cho owner. Email thành viên chưa có danh tính sẽ tạo danh tính ở trạng thái invited; membership organization tách biệt với luồng kích hoạt tài khoản nhân sự.
+
+Tạo site dùng cùng provisioning với setup. Khi gửi `settings`, toàn bộ object settings được thay thế, nên phải giữ các trường không liên quan. Owner được đổi slug `default`, sau đó slug này lại có thể dùng. `POST /api/v1/api-keys` vẫn thuộc phạm vi site và từ chối `scope="organization"`; organization key chỉ được tạo site key cho site thuộc organization của mình.
+
+### Phê duyệt MCP organization
+
+MCP organization tắt cho tới khi `settings.contentOs.mcp.allowOrganizationTools=true`; `LUMIBASE_MCP_ORG_TOOLS=off` có quyền tắt ưu tiên. Mọi thao tác ghi organization tạo approval chờ duyệt với cha organization thật. `confirm=true` không thể duyệt thay người dùng, và các tool MCP này không fallback sang REST. Agent nhận `pending_approval`, `approvalId`, `organizationId` và run id; agent không nhận organization key mới.
+
+Phê duyệt kiểm tra lại quyền hiện tại của bên yêu cầu và người duyệt. Thao tác và biên nhận được commit nguyên tử. Lặp cùng quyết định trả lại biên nhận cũ; quyết định trái ngược trả `409 APPROVAL_ALREADY_DECIDED`. Không thể duyệt yêu cầu đã bị thu hồi quyền (`409 REQUESTER_REVOKED`), nhưng vẫn có thể từ chối. Xóa organization đích không chặn việc từ chối yêu cầu chuyển còn chờ hay đọc lại biên nhận đã commit. Thực thi yêu cầu chuyển còn chờ vẫn cần cả hai organization và người sở hữu chúng. Tắt MCP chặn phê duyệt (`403 MCP_DISABLED`) nhưng không chặn từ chối. Discovery khi MCP tắt trả `404 MCP_DISABLED`. Xem [Cài đặt Organization](../features/organizations.md) và [MCP](../mcp/index.md).
+
+Mã lỗi organization bổ sung gồm `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`, `403 ORGANIZATION_FORBIDDEN`, `403 ORG_SIGNUP_DISABLED`, `403 SITE_NOT_IN_ORGANIZATION`, `404 NOT_FOUND`, `409 LAST_OWNER`, `409 ORGANIZATION_NOT_EMPTY` và `409 CONFLICT`.
 
 ---
 

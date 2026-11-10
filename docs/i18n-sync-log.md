@@ -2,6 +2,134 @@
 
 Append-only history of automated EN ⇄ VI documentation syncs. Each run records language detection, preserved content and translation actions so no source content is silently lost.
 
+## 2026-11-10T05:06:14.073Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 161
+
+Summary — up-to-date: 161, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-10T02:10:56.351Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 161
+
+Summary — up-to-date: 161, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-10T01:59:51.283Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 161
+
+Summary — up-to-date: 161, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-10T01:58:26.033Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 161
+
+Summary — up-to-date: 160, translated: 0, preserved: 0, conflicts: 0, planned: 1
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `mcp/index.md` | vi → en | source changed since last sync |
+
+---
+
+## 2026-11-10T01:32:16.817Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 161
+
+Summary — up-to-date: 161, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-10T01:20:21.276Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 161
+
+Summary — up-to-date: 161, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-10T01:18:41.524Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 161
+
+Summary — up-to-date: 161, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-09T16:44:49.839Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 160
+
+Summary — up-to-date: 160, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-09T16:44:38.135Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 160
+
+Summary — up-to-date: 160, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-09T16:41:32.218Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 160
+
+Summary — up-to-date: 159, translated: 0, preserved: 0, conflicts: 0, planned: 1
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `mcp/index.md` | vi → en | source changed since last sync |
+
+---
+
+## 2026-11-09T16:41:20.542Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 160
+
+Summary — up-to-date: 159, translated: 0, preserved: 0, conflicts: 0, planned: 1
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `mcp/index.md` | vi → en | source changed since last sync |
+
+---
+
+## 2026-11-09T16:39:54.027Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 160
+
+Summary — up-to-date: 159, translated: 0, preserved: 0, conflicts: 0, planned: 1
+
+### Pending / performed translations
+
+| File | Direction | Reason |
+|------|-----------|--------|
+| `mcp/index.md` | vi → en | source changed since last sync |
+
+---
+
+## 2026-11-09T15:34:04.377Z — mode `plan` (effective `plan`)
+
+Engine: `claude` · API key: absent · files scanned: 160
+
+Summary — up-to-date: 160, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
 ## 2026-11-09T15:14:42.455Z — mode `preserve-only` (effective `preserve-only`)
 
 Engine: `claude` · API key: absent · files scanned: 159

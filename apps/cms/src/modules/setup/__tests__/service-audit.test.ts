@@ -50,9 +50,10 @@ function makeFakeDb(
     insert(table: { [k: string]: unknown }) {
       const tableName = getTableName(table);
       return {
-        values() {
+        values(vals: unknown) {
           const builder = {
             async returning() {
+                  if (tableName === 'lumibase_sites') return [vals];
               if (tableName === 'lumibase_roles') {
                 return [{ id: 'role_admin' }];
               }
@@ -69,6 +70,7 @@ function makeFakeDb(
             onConflictDoNothing() {
               return {
                 async returning() {
+                  if (tableName === 'lumibase_sites') return [vals];
                   if (tableName === 'lumibase_roles') {
                     return [{ id: 'role_admin' }];
                   }
@@ -89,7 +91,8 @@ function makeFakeDb(
     },
     select() {
       return {
-        from() {
+        from(table: { [k: string]: unknown }) {
+          const isOrganization = getTableName(table) === 'lumibase_organizations';
           return {
             where() {
               const chain = {
@@ -100,7 +103,7 @@ function makeFakeDb(
                   return Promise.resolve([systemStateRow]);
                 },
                 then(resolve: (v: unknown) => void) {
-                  resolve([]);
+                  resolve(isOrganization ? [{ id: 'org_default' }] : []);
                 },
               };
               return chain;

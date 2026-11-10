@@ -1,5 +1,5 @@
 import { schema, type Database } from '@lumibase/database';
-import { createSiteScopedSql, isSiteScopedSql, scopedSiteIdOf, unscopedSqlOf } from '@lumibase/runtime';
+import { createOrganizationScopedSql, scopedOrganizationIdOf, createSiteScopedSql, isSiteScopedSql, scopedSiteIdOf, unscopedSqlOf } from '@lumibase/runtime';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import type { Context, MiddlewareHandler } from 'hono';
 import postgres from 'postgres';
@@ -47,7 +47,7 @@ type Resolved =
   | { ok: false; status: 500; body: unknown };
 
 function isDevEnv(c: AppContext): boolean {
-  return c.env.LUMIBASE_ENV === 'development' || process.env.LUMIBASE_ENV === 'development';
+  return c.env?.LUMIBASE_ENV === 'development' || process.env.LUMIBASE_ENV === 'development';
 }
 
 function resolveSql(c: AppContext, kind: Kind): Resolved {
@@ -99,7 +99,7 @@ function hasDedicatedSystemConnection(c: AppContext): boolean {
   if (isDevEnv(c)) return Boolean(c.env.DATABASE_SYSTEM_URL || process.env.DATABASE_SYSTEM_URL);
   const db = c.get('runtime')?.database;
   if (db) return db.hasSystemConnection?.() ?? false;
-  return Boolean(c.env.HYPERDRIVE_SYSTEM?.connectionString);
+  return Boolean(c.env?.HYPERDRIVE_SYSTEM?.connectionString);
 }
 
 function modeOf(c: AppContext): DbRlsMode | DbRlsConfigError {
@@ -235,4 +235,18 @@ export function scopedDbFor(c: AppContext, siteId: string): Database {
     perSite.set(siteId, db);
   }
   return db;
+}
+
+/** Re-scope only AFTER the organization guard has verified the principal. */
+export function organizationScopedDbFor(c: AppContext, organizationId: string): Database {
+  if (!organizationId) throw new Error('organizationScopedDbFor: organizationId is required');
+  const current = c.get('db');
+  if (!current) throw new Error('organizationScopedDbFor: withDb() must run first');
+  const mode = modeOf(c);
+  if (mode instanceof DbRlsConfigError) throw mode;
+  if (mode === 'off') return current;
+  if (scopedOrganizationIdOf(dbClientOf(current)) === organizationId) return current;
+  return drizzle(createOrganizationScopedSql(
+    unscopedSqlOf(dbClientOf(current) as AnySql), organizationId,
+  ), { schema }) as unknown as Database;
 }
