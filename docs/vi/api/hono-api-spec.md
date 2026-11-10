@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 33
-lastUpdated: 2026-11-10T02:10:54.889Z
+version: 34
+lastUpdated: 2026-11-10T05:40:26.568Z
 sourceLang: en
 translatedFrom: en
-sourceHash: d2ec6dd1084fd171
+sourceHash: 8c958f2d7140353f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T02:10:54.889Z
-codeVerifiedHash: d2ec6dd1084fd171
-codeVerifiedClaims: 482
+codeVerified: 2026-11-10T05:40:26.568Z
+codeVerifiedHash: 8c958f2d7140353f
+codeVerifiedClaims: 484
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -299,7 +299,7 @@ CRUD quản trị cho các nhà phát hành tin tưởng (chỉ admin):
 
 ## 1b. Organizations (ADR-013)
 
-Request organization dùng danh tính đã xác thực và organization đích, không cần `X-Lumi-Site`. Organization key (`lbo_`) gắn với một organization và có vai trò admin cố định. Danh tính nhân sự dùng membership organization hiện tại. Site key (`lbk_`), publishable key (`lbk_pub_`) và phiên frontend không được vào phạm vi này. Thiếu membership hoặc tài nguyên ngoài organization đã chọn trả `404 NOT_FOUND`.
+Request organization dùng danh tính đã xác thực và organization đích, không cần `X-Lumi-Site`. Organization key (`lbo_`) gắn với một organization và có vai trò admin cố định, trừ việc thay đổi ai nắm quyền: `PATCH /orgs/:orgId`, thao tác ghi thành viên và ghi organization key yêu cầu phiên người dùng và trả `403 ORGANIZATION_FORBIDDEN` cho key. Key yêu cầu các thay đổi này qua MCP organization, nơi người dùng duyệt. Danh tính nhân sự dùng membership organization hiện tại. Site key (`lbk_`), publishable key (`lbk_pub_`) và phiên frontend không được vào phạm vi này. Thiếu membership hoặc tài nguyên ngoài organization đã chọn trả `404 NOT_FOUND`.
 
 | Method | Endpoint | Quyền / payload |
 |---|---|---|
@@ -321,8 +321,8 @@ Request organization dùng danh tính đã xác thực và organization đích, 
 | `POST` | `/api/v1/orgs/:orgId/keys/:keyId/rotate` | `org:keys:manage`; token cũ ngừng hoạt động; token rõ trả lúc xoay |
 | `DELETE` | `/api/v1/orgs/:orgId/keys/:keyId` | `org:keys:manage`; thu hồi key |
 | `GET` | `/api/v1/orgs/:orgId/approvals` | Chỉ người dùng owner/admin; bản tóm tắt không có bí mật trong kết quả |
-| `GET` | `/api/v1/orgs/:orgId/approvals/:approvalId` | Chỉ người dùng owner/admin; biên nhận có thể chứa key mới |
-| `POST` | `/api/v1/orgs/:orgId/approvals/:approvalId/decide` | Người dùng owner/admin; `{ decision: "approved" }` / `{ decision: "rejected" }`; vẫn kiểm tra quyền owner theo thao tác |
+| `GET` | `/api/v1/orgs/:orgId/approvals/:approvalId` | Chỉ người dùng owner/admin; key mới không bao giờ được lưu hay trả lại (`tokenRedacted: true`) |
+| `POST` | `/api/v1/orgs/:orgId/approvals/:approvalId/decide` | Người dùng owner/admin; `{ decision: "approved" }` / `{ decision: "rejected" }`; vẫn kiểm tra quyền owner theo thao tác; duyệt `org:create_org_key` trả key dạng rõ chỉ trong response này |
 
 Thao tác tạo trả `201`, các thao tác thành công khác trả `200`, dùng envelope `data` chuẩn. Role organization gồm `owner`, `admin`, `billing` và `member`. Admin không được thêm/đổi/xóa owner; không thể xóa hay hạ cấp owner cuối. Owner/admin kế thừa quyền administrator tại site thuộc organization; billing/member không kế thừa. Organization key luôn là admin và không tự thực thi thao tác dành riêng cho owner. Email thành viên chưa có danh tính sẽ tạo danh tính ở trạng thái invited; membership organization tách biệt với luồng kích hoạt tài khoản nhân sự.
 

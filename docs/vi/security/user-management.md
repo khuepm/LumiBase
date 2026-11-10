@@ -1,13 +1,13 @@
 ---
-version: 6
-lastUpdated: 2026-11-10T01:58:24.947Z
+version: 7
+lastUpdated: 2026-11-10T05:40:28.038Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 4124d792994ce574
+sourceHash: ff2f770d8b410323
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T01:58:24.947Z
-codeVerifiedHash: 4124d792994ce574
+codeVerified: 2026-11-10T05:40:28.038Z
+codeVerifiedHash: ff2f770d8b410323
 codeVerifiedClaims: 112
 ---
 
@@ -423,7 +423,7 @@ Stdio server trong `packages/mcp-server` đã có quản lý user/team của sit
 | `lbo_` ghim site | Tool site cộng `get_organization`, `list_sites` | Site đã ghim |
 | `lbo_` không ghim | Tám tool organization cộng tool site | Mỗi tool site cần `site`; lời gọi organization không gửi header site |
 
-`LUMIBASE_READ_ONLY=true` ẩn tool ghi ở mọi cấu hình. Role organization cố định: owner/admin quản trị organization, billing/member không kế thừa quyền site. Organization key luôn là admin, không bao giờ là owner. Cùng một người phải sở hữu cả hai organization để duyệt chuyển site. Owner được đổi slug `default` của personal organization. Settings hiển thị Organization cho owner/admin ngay cả khi chỉ có một organization; chỉ switcher được ẩn trong trường hợp đó.
+`LUMIBASE_READ_ONLY=true` ẩn tool ghi ở mọi cấu hình. Role organization cố định: owner/admin quản trị organization, billing/member không kế thừa quyền site. Organization key luôn là admin, không bao giờ là owner, và không thể thay đổi ai nắm quyền: thao tác ghi thành viên, organization key và settings organization yêu cầu phiên người dùng, nên key bị lộ không thể thêm người giữ nó làm admin, tạo key thay thế hay tự bật tool MCP của mình. Key yêu cầu các thay đổi này qua MCP organization để người dùng duyệt; `create_org_key` được duyệt hiển thị key mới một lần cho người duyệt và biên nhận được lưu không chứa key dạng rõ. Cùng một người phải sở hữu cả hai organization để duyệt chuyển site. Owner được đổi slug `default` của personal organization. Settings hiển thị Organization cho owner/admin ngay cả khi chỉ có một organization; chỉ switcher được ẩn trong trường hợp đó.
 
 ### Phê duyệt organization bắt buộc
 

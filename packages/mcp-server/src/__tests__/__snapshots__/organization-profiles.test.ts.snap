@@ -71,13 +71,9 @@ exports[`credential tool profiles > filters pinned organization writes using ann
   "list_users",
   "list_webhooks",
   "lookup_tm",
-  "pause_intent",
   "query_insights",
   "query_materialization",
-  "register_materialization",
-  "resume_intent",
   "run_panel",
-  "scan_intent",
   "search",
 ]
 `;
@@ -151,13 +147,9 @@ exports[`credential tool profiles > filters site writes using annotations 1`] = 
   "list_users",
   "list_webhooks",
   "lookup_tm",
-  "pause_intent",
   "query_insights",
   "query_materialization",
-  "register_materialization",
-  "resume_intent",
   "run_panel",
-  "scan_intent",
   "search",
 ]
 `;
@@ -234,13 +226,9 @@ exports[`credential tool profiles > filters unpinned organization writes using a
   "list_users",
   "list_webhooks",
   "lookup_tm",
-  "pause_intent",
   "query_insights",
   "query_materialization",
-  "register_materialization",
-  "resume_intent",
   "run_panel",
-  "scan_intent",
   "search",
 ]
 `;

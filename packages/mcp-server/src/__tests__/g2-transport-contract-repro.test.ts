@@ -374,7 +374,10 @@ describe('G2 regression · governed tools route through the harness', () => {
     }
     expect(byReason).toEqual({
       'contract-narrower-than-tool': 4,
-      'no-skill': 45,
+      // 45 → 49: pause_intent, resume_intent, scan_intent and
+      // register_materialization change state behind a non-mutation verb and
+      // were missing from the inventory (they leaked into LUMIBASE_READ_ONLY).
+      'no-skill': 49,
     });
     // run_panel and compile_intent are read-only query/preview tools.
     // The two tables partition the mutation inventory: nothing counted twice.
