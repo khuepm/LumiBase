@@ -166,10 +166,10 @@ describe.skipIf(!hasDbIntegrationUrl)(
       expect((await login()).status).toBe(403);
     });
 
-    it('does not grant site access to an ordinary organization member', async () => {
+    it.each(['billing', 'member'] as const)('does not grant inherited site access to organization %s', async (role) => {
       await db
         .update(organizationMembers)
-        .set({ role: 'member' })
+        .set({ role })
         .where(eq(organizationMembers.userId, USER));
       expect((await login()).status).toBe(403);
     });
