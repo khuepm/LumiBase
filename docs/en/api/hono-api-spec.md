@@ -1,11 +1,11 @@
 ---
-version: 34
-lastUpdated: 2026-11-10T02:10:54.889Z
+version: 35
+lastUpdated: 2026-11-10T05:40:26.568Z
 sourceLang: en
-contentHash: d2ec6dd1084fd171
-codeVerified: 2026-11-10T02:10:54.889Z
-codeVerifiedHash: d2ec6dd1084fd171
-codeVerifiedClaims: 482
+contentHash: 8c958f2d7140353f
+codeVerified: 2026-11-10T05:40:26.568Z
+codeVerifiedHash: 8c958f2d7140353f
+codeVerifiedClaims: 484
 ---
 
 # Hono API Specification — LumiBase
@@ -342,7 +342,7 @@ HS*/`none` algorithm), `ISSUER_ALREADY_EXISTS` (409), `NOT_FOUND` (404).
 
 ## 1b. Organizations (ADR-013)
 
-Organization requests use the authenticated identity and the target organization, without `X-Lumi-Site`. An organization key (`lbo_`) is bound to one organization and has its fixed admin role. Staff identities use current organization membership. Site keys (`lbk_`), publishable keys (`lbk_pub_`), and frontend sessions cannot enter this plane. Missing membership or a resource outside the selected organization returns `404 NOT_FOUND`.
+Organization requests use the authenticated identity and the target organization, without `X-Lumi-Site`. An organization key (`lbo_`) is bound to one organization and has its fixed admin role, except that it cannot change who holds authority: `PATCH /orgs/:orgId`, member writes and organization-key writes require a user session and return `403 ORGANIZATION_FORBIDDEN` to a key. A key requests those changes through organization MCP, where a human approves them. Staff identities use current organization membership. Site keys (`lbk_`), publishable keys (`lbk_pub_`), and frontend sessions cannot enter this plane. Missing membership or a resource outside the selected organization returns `404 NOT_FOUND`.
 
 | Method | Endpoint | Authority / payload |
 |---|---|---|
@@ -364,8 +364,8 @@ Organization requests use the authenticated identity and the target organization
 | `POST` | `/api/v1/orgs/:orgId/keys/:keyId/rotate` | `org:keys:manage`; old token stops working; plaintext returned at rotation |
 | `DELETE` | `/api/v1/orgs/:orgId/keys/:keyId` | `org:keys:manage`; revoke the key |
 | `GET` | `/api/v1/orgs/:orgId/approvals` | Human owner/admin only; summaries omit result secrets |
-| `GET` | `/api/v1/orgs/:orgId/approvals/:approvalId` | Human owner/admin only; receipt may contain a minted key |
-| `POST` | `/api/v1/orgs/:orgId/approvals/:approvalId/decide` | Human owner/admin; `{ decision: "approved" }` / `{ decision: "rejected" }`; operation-specific owner checks still apply |
+| `GET` | `/api/v1/orgs/:orgId/approvals/:approvalId` | Human owner/admin only; a minted key is never stored or returned again (`tokenRedacted: true`) |
+| `POST` | `/api/v1/orgs/:orgId/approvals/:approvalId/decide` | Human owner/admin; `{ decision: "approved" }` / `{ decision: "rejected" }`; operation-specific owner checks still apply; approving `org:create_org_key` returns the plaintext key in this response only |
 
 Create operations return `201`, other successful operations return `200`, using the standard `data` envelope. Organization roles are `owner`, `admin`, `billing`, and `member`. Admins cannot add/change/remove owners; the final owner cannot be removed or demoted. Owner/admin inherit site administrator authority on owned sites; billing/member do not. Organization keys are always admin and can never execute owner-only operations themselves. A member email that has no identity creates an invited identity; organization membership is separate from the staff account activation flow.
 

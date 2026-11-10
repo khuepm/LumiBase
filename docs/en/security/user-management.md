@@ -1,10 +1,10 @@
 ---
-version: 6
-lastUpdated: 2026-11-10T01:58:24.947Z
+version: 7
+lastUpdated: 2026-11-10T05:40:28.038Z
 sourceLang: en
-contentHash: 4124d792994ce574
-codeVerified: 2026-11-10T01:58:24.947Z
-codeVerifiedHash: 4124d792994ce574
+contentHash: ff2f770d8b410323
+codeVerified: 2026-11-10T05:40:28.038Z
+codeVerifiedHash: ff2f770d8b410323
 codeVerifiedClaims: 112
 ---
 
@@ -414,7 +414,7 @@ The stdio server in `packages/mcp-server` already exposes site user/team managem
 | `lbo_` with a site pin | Site tools plus `get_organization`, `list_sites` | Pinned site |
 | `lbo_` without a pin | Eight organization tools plus site tools | Each site tool requires `site`; organization calls omit the site header |
 
-`LUMIBASE_READ_ONLY=true` hides mutation tools for every profile. Organization roles are fixed: owner/admin manage the organization, billing/member have no inherited site authority. An organization key is always admin, never owner. The same human must own both organizations to approve a transfer. Owners can rename the personal organization's `default` slug. Settings shows Organization to owner/admin even with one organization; only the switcher is hidden in that case.
+`LUMIBASE_READ_ONLY=true` hides mutation tools for every profile. Organization roles are fixed: owner/admin manage the organization, billing/member have no inherited site authority. An organization key is always admin, never owner, and cannot change who holds authority: member, organization-key and organization-settings writes require a user session, so a leaked key cannot add its holder as a human admin, mint replacement keys or enable its own MCP tools. It requests those changes through organization MCP for a human to approve; an approved `create_org_key` shows the new key once to the approver and the stored receipt keeps no plaintext. The same human must own both organizations to approve a transfer. Owners can rename the personal organization's `default` slug. Settings shows Organization to owner/admin even with one organization; only the switcher is hidden in that case.
 
 ### Mandatory organization approvals
 

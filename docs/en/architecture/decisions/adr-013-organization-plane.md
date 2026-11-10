@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-11-10T01:58:25.845Z
+version: 3
+lastUpdated: 2026-11-10T05:40:28.449Z
 sourceLang: en
-contentHash: be9bd3448ced37b9
-codeVerified: 2026-11-10T01:58:25.845Z
-codeVerifiedHash: be9bd3448ced37b9
-codeVerifiedClaims: 40
+contentHash: 245bc974d50d4f04
+codeVerified: 2026-11-10T05:40:28.449Z
+codeVerifiedHash: 245bc974d50d4f04
+codeVerifiedClaims: 42
 ---
 
 # ADR-013: Organization plane (tenant hierarchy and scope-typed credentials)
@@ -267,7 +267,8 @@ Rules:
 
 - Credential scope is tested in `apps/cms/src/__tests__/auth-middleware-matrix.test.ts` and real organization API integration tests. Site credentials cannot enter the organization plane; organization keys cannot access foreign sites.
 - Hotfix #628 landed on main first; Phase 2 removed the legacy test-only admin site routes in #666.
-- Organization mutations always require a human decision. Migration `0025_organization_approvals` stores an organization parent and requester; authorization is rechecked and the mutation/receipt commit atomically. Human-only receipt endpoints keep new key plaintext out of agent results. `organizationId` and run ids are present in audit metadata.
+- Organization mutations always require a human decision. Migration `0025_organization_approvals` stores an organization parent and requester; authorization is rechecked and the mutation/receipt commit atomically. A minted key's plaintext is returned once, in the approver's decide response; the stored receipt keeps only key metadata (`tokenRedacted: true`), also on read and replay. `organizationId` and run ids are present in audit metadata.
+- An organization key cannot change who holds authority. Member writes, organization-key writes and `PATCH /orgs/:orgId` require a user session; a key requests them through MCP approval. Without this, the admin role would let a leaked key add its holder as a human admin, mint keys that outlive its revocation, or enable its own MCP tools.
 - Transfer requires the same human owner in both organizations. Organization keys may mint site keys for owned sites, but never gain owner authority. Only owners may rename the personal organization's `default` slug; it is reusable afterward.
 - Password login/refresh still require a live site. An organization with no sites remains accessible with a valid organization key or Studio session; fully site-free human recovery is separate instance-level work (backlog B196). Keep a recovery credential or restore a backup.
 

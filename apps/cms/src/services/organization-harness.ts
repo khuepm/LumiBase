@@ -104,7 +104,17 @@ export async function getOrganizationApproval(db: OrganizationDb, organizationId
   const [row] = await db.select().from(aiApprovals).where(and(eq(aiApprovals.id, approvalId),
     eq(aiApprovals.organizationId, organizationId), isNull(aiApprovals.siteId))).limit(1);
   if (!row) organizationFail('NOT_FOUND', 404);
-  return { ...organizationApprovalSummary(row!), result: row!.result };
+  return { ...organizationApprovalSummary(row!), result: redactApprovalResult(row!.result) };
+}
+/**
+ * Drop plaintext credentials from an approval result before it is stored or
+ * replayed. Also applied on read so a row written before this rule existed
+ * cannot hand its secret out again.
+ */
+export function redactApprovalResult(result: unknown): unknown {
+  if (!result || typeof result !== 'object' || Array.isArray(result) || !('token' in result)) return result;
+  const { token: _token, ...rest } = result as Record<string, unknown>;
+  return { ...rest, tokenRedacted: true };
 }
 /** Domain writes and the receipt are atomic; retries cannot mint a second key/site. */
 export async function decideOrganizationApproval(input: {
@@ -134,7 +144,7 @@ export async function decideOrganizationApproval(input: {
     if (!role || !canOrg(role, 'org:keys:manage')) organizationFail('ORGANIZATION_FORBIDDEN', 403);
     if (row!.status !== 'pending') {
       if (row!.status !== input.decision) organizationFail('APPROVAL_ALREADY_DECIDED', 409);
-      return { ...organizationApprovalSummary(row!), result: row!.result };
+      return { ...organizationApprovalSummary(row!), result: redactApprovalResult(row!.result) };
     }
     let result: unknown = null;
     if (input.decision === 'approved') {
@@ -150,9 +160,14 @@ export async function decideOrganizationApproval(input: {
       createdSiteId = execution.createdSiteId;
       result = execution.data;
     }
-    const [saved] = await tx.update(aiApprovals).set({ status: input.decision, result, decidedAt: new Date(),
+    // The stored receipt never holds a plaintext secret: only the token hash is
+    // kept for API keys, and a receipt row must not become a second copy that
+    // every admin (or a backup reader) can read later. The approver sees the
+    // token once, in this response, exactly like POST /orgs/:id/keys.
+    const [saved] = await tx.update(aiApprovals).set({ status: input.decision, result: redactApprovalResult(result),
+      decidedAt: new Date(),
       decidedBy: (input.decider as Extract<OrganizationActor, { type: 'user' }>).userId }).where(where).returning();
-    return { ...organizationApprovalSummary(saved!), result: saved!.result };
+    return { ...organizationApprovalSummary(saved!), result };
   });
   if (createdSiteId) await finalizeSiteProvisioning(input.db, input.env, input.runtime, createdSiteId).catch(() => undefined);
   await new AuditLogger({ db: input.db, siteId: null }).write({ event: 'organization_mcp_approval_decided',

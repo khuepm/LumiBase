@@ -33,6 +33,8 @@ _No unreleased changes yet._
 ### Fixed
 - Queued agent jobs bound to a user or API key fail with `PERMISSION_CONTEXT_MISSING` when permission resolution returns no context, instead of falling back to system privileges (#580, #632).
 - Cross-tenant administration through the legacy `/api/v1/admin/sites` routes is eliminated by removing those routes; organization APIs enforce membership and ownership instead (#628, #637).
+- Organization keys can no longer change members, create or revoke organization keys, or update organization settings; those operations require a live human owner/admin session. Minted organization-key plaintext is kept out of approval storage and appears only in the authorized human execution receipt (#775).
+- `LUMIBASE_READ_ONLY=true` is enforced from the HTTP request method and an explicit query/preview allowlist, so a mutating request cannot bypass read-only mode through a misleading tool name (#775).
 - Studio no longer displays the development badge in production. New setup derives the site URL from the Studio origin rather than saving a localhost default; CMS setup without a project URL stores no guessed URL. Existing site URLs are unchanged (#627).
 - Organization Settings remain usable on narrow screens and retain the active navigation item under a custom admin path (#639).
 - Pending transfer approvals can be rejected, and completed receipts replayed, after the destination organization is deleted. Executing a pending transfer still requires both organizations and the same human owner of each (#640).
