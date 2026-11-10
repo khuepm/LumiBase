@@ -33,7 +33,8 @@ const emptyResult = { data: [] };
 const apiClient = new Proxy(
   {},
   {
-    get: (): unknown =>
+    get: (_target, property): unknown =>
+      property === 'orgs' ? { list: async () => [] } :
       new Proxy(vi.fn().mockResolvedValue(emptyResult), {
         get: (target, prop) =>
           prop in target
@@ -46,6 +47,7 @@ const apiClient = new Proxy(
 vi.mock('@/lib/api', () => ({
   getApiClient: () => apiClient,
   getActiveToken: () => 'token',
+  getSessionGeneration: () => 0,
   getActiveSite: () => 'site_1',
   hasActiveToken: () => true,
   clearActiveToken: vi.fn(),

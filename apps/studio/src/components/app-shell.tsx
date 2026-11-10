@@ -1,3 +1,4 @@
+import { OrganizationSwitcher } from '@/modules/organization/switcher';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   Database,
@@ -338,6 +339,7 @@ export function AppShell({ children }: AppShellProps) {
               </span>
             )}
           </div>
+          <OrganizationSwitcher />
           {/* Right-side topbar actions */}
           <div className="flex items-center gap-2">
             <button

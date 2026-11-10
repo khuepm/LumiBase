@@ -1,6 +1,8 @@
+import { useOrganization } from '@/modules/organization/use-organizations';
 import { Link, useRouterState } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { getAdminBase } from '@/lib/admin-base';
 
 interface NavItem {
   id: string;
@@ -75,8 +77,12 @@ interface SettingsLayoutProps {
 
 export function SettingsLayout({ children }: SettingsLayoutProps) {
   const { location } = useRouterState();
+  const { organization } = useOrganization();
+  const showOrganization = organization?.role === 'owner' || organization?.role === 'admin';
 
-  const isActive = (to: string) => location.pathname === to || location.pathname.startsWith(to + '/');
+  const adminBase = getAdminBase(location.pathname);
+  const pathname = adminBase ? location.pathname.slice(adminBase.length) : location.pathname;
+  const isActive = (to: string) => pathname === to || pathname.startsWith(to + '/');
 
   return (
     <div className="flex h-full -m-6">
@@ -93,7 +99,9 @@ export function SettingsLayout({ children }: SettingsLayoutProps) {
               {group.label}
             </p>
             <ul>
-              {group.items.map((item) => (
+              {(group.id === 'configuration' && showOrganization
+                ? [{ id: 'organization', label: 'Organization', to: '/settings/organization' }, ...group.items]
+                : group.items).map((item) => (
                 <li key={item.id}>
                   <Link
                     to={item.to}
