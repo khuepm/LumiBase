@@ -37,6 +37,37 @@ export class McpUnavailableError extends Error {
   }
 }
 
+/**
+ * POST endpoints that only read or preview, so `LUMIBASE_READ_ONLY` may call
+ * them. Everything else that is not a GET is refused by the client itself, not
+ * only hidden from `tools/list`: hiding is decided by tool name, and a tool
+ * whose name hides a write must still not be able to issue one.
+ */
+export const READ_ONLY_POST_PATHS: readonly RegExp[] = [
+  /^\/collections\/diff$/,
+  /^\/tm\/lookup$/,
+  /^\/dashboards\/[^/]+\/panels\/[^/]+\/data$/,
+  /^\/dashboards\/[^/]+\/panels\/preview$/,
+  /^\/permissions\/check$/,
+  /^\/access\/import\?dryRun=true$/,
+  /^\/access\/conflicts\/check$/,
+  /^\/agent\/intents\/compile$/,
+];
+
+/** Governed JSON-RPC tool calls that only read. */
+export const READ_ONLY_RPC_TOOLS: ReadonlySet<string> = new Set([
+  'org:get_organization',
+  'org:list_sites',
+  'org:list_org_members',
+]);
+
+export class ReadOnlyViolationError extends Error {
+  constructor(what: string) {
+    super(`Refused: LUMIBASE_READ_ONLY is set and ${what} can change state.`);
+    this.name = 'ReadOnlyViolationError';
+  }
+}
+
 export class LumiBaseClient {
   private readonly baseUrl: string;
   private readonly origin: string;
@@ -68,7 +99,14 @@ export class LumiBaseClient {
     return { ...this.headers, ...(!organization && siteId ? { 'X-Lumi-Site': siteId } : {}) };
   }
 
+  private assertReadOnlyAllows(method: string, path: string): void {
+    if (!this.readOnly || method === 'GET') return;
+    if (method === 'POST' && READ_ONLY_POST_PATHS.some((pattern) => pattern.test(path))) return;
+    throw new ReadOnlyViolationError(`${method} ${path}`);
+  }
+
   private async request<T>(method: string, path: string, body?: unknown, siteOverride?: string): Promise<T> {
+    this.assertReadOnlyAllows(method, path);
     const res = await fetch(`${this.baseUrl}${path}`, {
       method,
       headers: this.requestHeaders(siteOverride, path === '/orgs' || path.startsWith('/orgs/')),
@@ -120,6 +158,9 @@ export class LumiBaseClient {
    * @throws {LumiBaseApiError} for transport/HTTP failures and JSON-RPC errors.
    */
   async jsonRpc<T>(method: string, params?: Record<string, unknown>, options: { siteOverride?: string; organization?: boolean } = {}): Promise<T> {
+    if (this.readOnly && method === 'tools/call' && !READ_ONLY_RPC_TOOLS.has(String(params?.name))) {
+      throw new ReadOnlyViolationError(`tools/call ${String(params?.name)}`);
+    }
     const res = await fetch(`${this.baseUrl}/mcp`, {
       method: 'POST',
       headers: this.requestHeaders(options.siteOverride, options.organization),
@@ -183,6 +224,7 @@ export class LumiBaseClient {
    * `{data}` envelope from the JSON response (e.g. the NDJSON restore endpoint).
    */
   async postRaw<T>(path: string, body: string, contentType = 'application/x-ndjson'): Promise<T> {
+    this.assertReadOnlyAllows('POST', path);
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
       headers: { ...this.requestHeaders(), 'Content-Type': contentType },
