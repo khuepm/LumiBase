@@ -1,13 +1,13 @@
 ---
-version: 10
-lastUpdated: 2026-11-10T01:59:50.309Z
+version: 11
+lastUpdated: 2026-11-10T05:40:28.268Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 72326b4293c307f8
+sourceHash: 0ec7dafdafbfec9d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T01:59:50.309Z
-codeVerifiedHash: 72326b4293c307f8
+codeVerified: 2026-11-10T05:40:28.268Z
+codeVerifiedHash: 0ec7dafdafbfec9d
 codeVerifiedClaims: 26
 ---
 
@@ -90,7 +90,7 @@ Example for an unpinned organization key. Keep the sample read-only; set `LUMIBA
 
 
 
-Set `LUMIBASE_READ_ONLY=true` to publish only tools annotated as read-only. With an `lbk_` key, `LUMIBASE_SITE_ID` remains required and the existing site tool list is unchanged. With an `lbo_` key, omit the site to expose eight organization tools (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) plus site tools requiring a `site` argument. Pinning a site exposes the original site tools and the first two organization reads. Parallel calls cannot share site headers.
+Set `LUMIBASE_READ_ONLY=true` to publish only tools annotated as read-only. The client also refuses any non-GET request in this mode except a fixed list of preview/query endpoints (schema diff, translation-memory lookup, insight panels, permission and access checks, intent compile), so a tool cannot write even if its name looks like a read. With an `lbk_` key, `LUMIBASE_SITE_ID` remains required and the existing site tool list is unchanged. With an `lbo_` key, omit the site to expose eight organization tools (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) plus site tools requiring a `site` argument. Pinning a site exposes the original site tools and the first two organization reads. Parallel calls cannot share site headers.
 
 Organization writes always use the governed HTTP endpoint, including when `LUMIBASE_MCP_GOVERNED=off`; there is no REST fallback. Enable organization setting `contentOs.mcp.allowOrganizationTools`; global `LUMIBASE_MCP_ORG_TOOLS=off` overrides it. Every organization mutation waits for human approval. The `confirm` argument is an acknowledgement, not an approval. An owner/admin reads `/api/v1/orgs/:orgId/approvals`, opens `/:approvalId`, and posts `{"decision":"approved"}` or `{"decision":"rejected"}` to `/:approvalId/decide`. Owner-only operations still require an owner; transfers require the same human owner in both organizations. API keys cannot decide or read receipts. New organization key plaintext appears only in the human receipt. The requester must still hold live authority when approved; execution and the receipt commit atomically. Organization approvals use a real organization parent (migration `0025`), including organizations with zero sites.
 
