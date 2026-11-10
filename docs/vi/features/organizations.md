@@ -1,19 +1,19 @@
 ---
-version: 2
-lastUpdated: 2026-11-10T01:20:21.192Z
+version: 3
+lastUpdated: 2026-11-10T01:32:16.688Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6e2af176edfd08a6
+sourceHash: 2e5f91825eda8ddd
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T01:20:21.192Z
-codeVerifiedHash: 6e2af176edfd08a6
+codeVerified: 2026-11-10T01:32:16.688Z
+codeVerifiedHash: 2e5f91825eda8ddd
 codeVerifiedClaims: 6
 ---
 
 # Cài đặt Organization
 
-Organization gom các site dưới những vai trò cố định. Bản cài hiện có nhận một organization với slug `default`; setup tạo organization trước site đầu tiên. Mở **Settings → Organization** bằng tài khoản owner hoặc admin. Mục này vẫn hiện khi chỉ có một organization; switcher ở header chỉ hiện khi bạn thuộc nhiều organization.
+Organization gom các site dưới những vai trò cố định. Trên màn hình nhỏ, mở **Settings navigation** để tới trang organization. Bản cài hiện có nhận một organization với slug `default`; setup tạo organization trước site đầu tiên. Mở **Settings → Organization** bằng tài khoản owner hoặc admin. Mục này vẫn hiện khi chỉ có một organization; switcher ở header chỉ hiện khi bạn thuộc nhiều organization.
 
 ## Vai trò
 

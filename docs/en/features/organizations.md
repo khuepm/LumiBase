@@ -1,16 +1,16 @@
 ---
-version: 2
-lastUpdated: 2026-11-10T01:20:21.192Z
+version: 3
+lastUpdated: 2026-11-10T01:32:16.688Z
 sourceLang: en
-contentHash: 6e2af176edfd08a6
-codeVerified: 2026-11-10T01:20:21.192Z
-codeVerifiedHash: 6e2af176edfd08a6
+contentHash: 2e5f91825eda8ddd
+codeVerified: 2026-11-10T01:32:16.688Z
+codeVerifiedHash: 2e5f91825eda8ddd
 codeVerifiedClaims: 6
 ---
 
 # Organization settings
 
-Organizations group sites under fixed roles. Existing installations receive an organization with slug `default`; setup creates it before the first site. Open **Settings → Organization** as an owner or admin. This entry remains visible with one organization; the header switcher appears only when you belong to more than one.
+Organizations group sites under fixed roles. On narrow screens, expand **Settings navigation** to reach the organization page. Existing installations receive an organization with slug `default`; setup creates it before the first site. Open **Settings → Organization** as an owner or admin. This entry remains visible with one organization; the header switcher appears only when you belong to more than one.
 
 ## Roles
 
