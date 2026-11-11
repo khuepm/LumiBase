@@ -115,7 +115,14 @@ afterEach(() => {
   }
 });
 
-const output = (): string => out.join('\n');
+/**
+ * Captured output with ANSI colour codes removed. Assertions are about the
+ * text, and whether picocolors emits codes depends on the environment (CI sets
+ * FORCE_COLOR; a local pipe does not) — matching raw output passed locally and
+ * failed in CI.
+ */
+// eslint-disable-next-line no-control-regex
+const output = (): string => out.join('\n').replace(/\u001b\[[0-9;]*m/g, '');
 
 describe('skills (dispatch)', () => {
   it('rejects a missing or unknown subcommand', async () => {
