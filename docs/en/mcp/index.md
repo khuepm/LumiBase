@@ -1,14 +1,14 @@
 ---
-version: 13
-lastUpdated: 2026-11-10T14:25:31.765Z
+version: 14
+lastUpdated: 2026-11-11T02:45:10.893Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 132e470dfede933a
+sourceHash: 4c2fdc91634fae17
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T14:25:31.765Z
-codeVerifiedHash: 132e470dfede933a
-codeVerifiedClaims: 28
+codeVerified: 2026-11-11T02:45:10.893Z
+codeVerifiedHash: 4c2fdc91634fae17
+codeVerifiedClaims: 32
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -149,6 +149,7 @@ Versioning is **not** in the stdio server. It is exposed as **governed skills** 
 - **The SDK has no MCP client** — MCP is not a concern of the REST SDK's clients.
 - **Permission floor:** capability = the token's RBAC bundle (one model shared with REST). Every MCP extension must respect this floor.
 - **Governed tool contract:** schemas, validation, the write gate, the decision shape, and which stdio tools are governed all live in [`governed-tool-contract.md`](governed-tool-contract.md).
+- **Tool-schema fidelity (#716):** every `inputSchema` on both transports must be a valid JSON Schema (meta-schema + Ajv strict, in both draft-07 and 2020-12) and must agree with what the server actually accepts. Neither transport generates schemas from collection field definitions — item tools take `data` as an open record — so the field type × nullable × localized × repeatable matrix (plus m2o/o2m/m2m/m2a relations and files) is checked through **values** carried in `data`: the advertised schema accepts them, the harness (`validateAgentToolInput`) accepts them, and REST receives them unchanged. Both transports' `tools/list` output is pinned by a golden; for an intended change, regenerate the golden with `-u` and review the diff. Tests: [`packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts`](../../../packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts) and [`apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts`](../../../apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts).
 
 ## 4. Related pages
 
@@ -168,3 +169,4 @@ Versioning is **not** in the stdio server. It is exposed as **governed skills** 
 | Standalone server + its tools | `packages/mcp-server/src/` |
 | The `contentOs.mcp` feature flag | `apps/cms/src/services/feature-flags.ts` |
 | Parity test | `apps/cms/src/services/__tests__/mcp-parity.property.test.ts` |
+| Golden `tools/list` + JSON Schema checks | `packages/mcp-server/src/__tests__/fidelity/` |

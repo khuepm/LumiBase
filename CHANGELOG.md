@@ -9,7 +9,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+- MCP tool-schema fidelity suite. CI validates every stdio and HTTP tool `inputSchema` as JSON Schema (meta-schema and strict compilation in draft-07 and 2020-12) and fails when the `tools/list` output of either transport differs from its committed golden. A field-type × nullable × localized × repeatable matrix, including relations and files, checks that advertised schemas, harness validation and forwarded REST bodies agree (#716).
+
+### Fixed
+- `@lumibase/mcp-server` schemas now match what the server accepts. Collection and field tools accept `null` where REST clears a column, such as `note`, `sortField` or `length`. `upsert_field` no longer sends Zod defaults with every update; those defaults reset `required`, `hidden`, `encrypted`, `width` and other columns. New stdio fields therefore use database defaults, as REST does, so `searchable` defaults to `true`. `upsert_field` also forwards `classification`, `validation`, `rawEnabled` and `migrationPlan` instead of dropping them. Translation keys, CDC targets and intent `rules` and `schedule` advertise the constraints that the governed contract enforces (#716).
+- Organization MCP `tools/list` omits the `$schema` 2020-12 dialect URI, as site tools do. Draft-07 validators, including Ajv's default class, can now compile those schemas (#716).
 
 ## [2.0.0] - 2026-11-10
 

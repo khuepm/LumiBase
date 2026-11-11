@@ -1,11 +1,11 @@
 ---
-version: 13
-lastUpdated: 2026-11-10T14:25:31.765Z
+version: 14
+lastUpdated: 2026-11-11T02:45:10.893Z
 sourceLang: vi
-contentHash: 132e470dfede933a
-codeVerified: 2026-11-10T14:25:31.765Z
-codeVerifiedHash: 132e470dfede933a
-codeVerifiedClaims: 28
+contentHash: 4c2fdc91634fae17
+codeVerified: 2026-11-11T02:45:10.893Z
+codeVerifiedHash: 4c2fdc91634fae17
+codeVerifiedClaims: 32
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -146,6 +146,7 @@ Versioning **không** nằm ở stdio server. Nó được phơi bày dưới d�
 - **SDK không có MCP client** — MCP không phải mối quan tâm client của SDK REST.
 - **Permission floor:** capability = RBAC bundle của token (một mô hình dùng chung với REST). Mọi mở rộng MCP phải tôn trọng sàn này.
 - **Governed tool contract:** schema, validate, gate write, decision shape và tập tool stdio được governance kiểm soát — tất cả nằm ở [`governed-tool-contract.md`](governed-tool-contract.md).
+- **Độ trung thực của tool schema (#716):** mọi `inputSchema` của cả hai transport phải là JSON Schema hợp lệ (meta-schema + Ajv strict, cả draft-07 lẫn 2020-12) và phải khớp với thứ server thật sự nhận. Không transport nào sinh schema từ định nghĩa field của collection — item tool nhận `data` là record mở — nên ma trận field type × nullable × localized × repeatable (cùng quan hệ m2o/o2m/m2m/m2a và file) được kiểm bằng **giá trị** đi qua `data`: schema quảng bá chấp nhận, harness (`validateAgentToolInput`) chấp nhận, và REST nhận nguyên vẹn. Danh sách `tools/list` của hai transport được chốt bằng golden; đổi có chủ đích thì cập nhật golden bằng `-u` rồi review diff. Test: [`packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts`](../../../packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts) và [`apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts`](../../../apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts).
 
 ## 4. Trang liên quan
 
@@ -165,3 +166,4 @@ Versioning **không** nằm ở stdio server. Nó được phơi bày dưới d�
 | Standalone server + các tool | `packages/mcp-server/src/` |
 | Feature flag `contentOs.mcp` | `apps/cms/src/services/feature-flags.ts` |
 | Parity test | `apps/cms/src/services/__tests__/mcp-parity.property.test.ts` |
+| Golden `tools/list` + kiểm JSON Schema | `packages/mcp-server/src/__tests__/fidelity/` |
