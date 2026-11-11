@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:02:34.419Z
+version: 2
+lastUpdated: 2026-11-11T02:57:07.372Z
 sourceLang: en
-contentHash: 82398215345c6e2e
-codeVerified: 2026-08-02T19:02:34.419Z
-codeVerifiedHash: 82398215345c6e2e
+contentHash: e6caa6d331eed819
+codeVerified: 2026-11-11T02:57:07.372Z
+codeVerifiedHash: e6caa6d331eed819
 codeVerifiedClaims: 6
 ---
 
@@ -100,6 +100,7 @@ Skills run through the **governed endpoint** `POST /api/v1/mcp` (gated by the pe
 | `listExtensions` / `installExtension` / `updateExtension` / `uninstallExtension` | `extensions:read`/`write`/`delete` | safe / dangerous |
 | `listDeploymentTargets` / `listDeployments` / `getDeploymentStatus` / `triggerDeployment` | `deployments:read` / `deployments:write` | safe / dangerous (`trigger` gated by HITL below autopilot) |
 | `listCdcSubscriptions` / `getCdcSubscriptionStatus` / `createCdcSubscription` / `replayCdcSubscription` / `deleteCdcSubscription` | `cdc:manage` | reads safe; `create`/`replay`/`delete` are control-plane → HITL below autopilot. `create`/`replay` carry an explicit `dangerous` flag, `delete` via the `delete` name prefix — so the agent/MCP path matches the admin-only `/api/v1/cdc` REST surface |
+| `askUser` / `getUserAnswer` | `items:read` | safe — `askUser` parks the run in `waiting_user` until a human answers in Mission Control (or it times out / is cancelled); `getUserAnswer` returns the answer to the requester only, as untrusted data. Not on the autonomy gradient: asking is allowed at every level. See [agent harness](features/agent-harness-layer.md#asking-a-human-askuser-710) |
 
 **Reserved collection names.** `createCollection` (and any rename via `updateCollection`) rejects names starting with the `lumibase_` prefix, which is owned by the platform (CDC/Firebase sync tables, internal config). The guard lives in `SchemaService.ensureName`, so it applies uniformly to the AI harness, the builder/Studio routes, and any other caller; violations raise `RESERVED_NAME` (HTTP 422).
 

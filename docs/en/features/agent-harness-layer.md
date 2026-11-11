@@ -1,11 +1,11 @@
 ---
-version: 5
-lastUpdated: 2026-11-02T23:11:39.085Z
+version: 6
+lastUpdated: 2026-11-11T02:57:05.538Z
 sourceLang: en
-contentHash: 5532a3a79274f69d
-codeVerified: 2026-11-02T23:11:39.085Z
-codeVerifiedHash: 5532a3a79274f69d
-codeVerifiedClaims: 20
+contentHash: 416c7014482b11cc
+codeVerified: 2026-11-11T02:57:05.538Z
+codeVerifiedHash: 416c7014482b11cc
+codeVerifiedClaims: 28
 ---
 
 # Agent Harness Layer
@@ -103,7 +103,7 @@ Rules enforced by the harness:
 
 ### Run lifecycle and async execution
 
-Run status follows `queued → running → awaiting_approval → succeeded | failed | cancelled`:
+Run status follows `queued → running → awaiting_approval | waiting_user → succeeded | failed | cancelled` (`waiting_user` is a run parked on an `askUser` question — see [Asking a human](#asking-a-human-askuser-710)):
 
 - `POST /api/v1/agent/goals` with `execution: 'async'` and a `task: { skillName, arguments }` creates the goal plus a `queued` run, enqueues it on the `agent-runs` queue via the runtime `QueueProvider`, and returns `202` with the `runId` immediately. Runtimes without a queue adapter reject async execution with `ASYNC_UNAVAILABLE`; sync execution is unaffected.
 - The queue worker (`registerAgentRunWorker`, wired in the Node entrypoint) drives queued runs through the same harness codepath — capability checks, risk policy, budgets and audit apply identically. Capabilities are captured from the enqueuing session and never widened.
@@ -207,6 +207,114 @@ Four escalating scopes, all behind `POST /api/v1/agent/kill-switch` with `{ scop
 
 Freezing/lifting a role or site requires the `agents:freeze` capability (admin included). While a site is frozen, `POST /api/v1/agent/goals` returns `423 FROZEN` and the reconciler creates no goals — read endpoints keep working. `GET /api/v1/agent/kill-switch` lists active freezes plus history; `POST /api/v1/agent/kill-switch/lift` restores execution.
 
+### Asking a human: `askUser` (#710)
+
+An agent that cannot continue without a decision it is not allowed to make
+calls the `askUser` tool instead of guessing. The run pauses, a person answers
+in the Mission Control inbox, and the run resumes with the answer as the tool's
+result. It is the same lifecycle as a parked approval, not a parallel one.
+
+**Input** (canonical contract `askUser` in `@lumibase/contracts`, limits in
+`ASK_USER_LIMITS`): `question` (1–1000 chars), optional `options` (2–10 choices,
+200 chars each), `allowFreeText` (default `true`; `false` requires `options` and
+makes the answer one of them), `context` (≤ 2000 chars) and `timeoutMinutes`
+(1–10080, default 1440 = one day). Required capability: `items:read` — asking
+has no side effect, so it is not on the autonomy gradient and is allowed at
+every level, L0 included.
+
+**Lifecycle.** A question is an `agent_approvals` row with `kind = 'question'`
+(next to `approval`, `veto`, `promotion`); no new table, no migration.
+
+| Step | Run | Question | `askUser` tool call | Audit (`activity`) |
+|---|---|---|---|---|
+| ask | `queued`/`running` → `waiting_user` | `pending`, `expires_at` set | `waiting_user` | `agent_question.asked` |
+| answer | `waiting_user` → `succeeded` (`stopReason: answered`) | `answered`; answer in `decision_reason`, `decided_by`, `decided_at` | `executed`, answer as output | `agent_question.answered` |
+| timeout | → `failed` (`stopReason: question_timeout`) | `expired` | `failed` | `agent_question.expired` |
+| cancel / kill switch | → `cancelled` (`stopReason` of the cancel, `frozen` for a freeze) | `cancelled` | `denied` | `agent_question.cancelled` |
+
+Asking, answering and expiring are each one short transaction with guarded
+conditional updates. A waiting run holds **no queue worker** (the
+`agent-runs` worker returns as soon as the harness has parked it) and **no
+database lock**. It is in flight for the dispatcher (`waiting_user` is in the
+same in-flight set as `awaiting_approval`), so a goal does not get a second run
+while it waits, and `POST /agent/runs/:id/retry` refuses it.
+
+**Resume.** A harness run is one governed tool call, so resuming means the
+parked `askUser` call completes with the answer as its result and the run
+settles `succeeded`. What the agent does with the answer is its next tool call,
+authorized on its own. The agent reads the answer with the `getUserAnswer`
+tool (`{ questionId }`), which only the principal or agent role that asked may
+read (or an admin grant; anything else is `NOT_FOUND`). The answer reaches the
+model **as untrusted data**: wrapped with `untrustedBlock('ask-user-answer', …)`
+plus `UNTRUSTED_CONTENT_RULE`, in both the tool call output and the
+`getUserAnswer` result. A person typed it, but an answer box is an input like
+any other.
+
+**Who may answer** (`POST /api/v1/agent/questions/:id/answer`, behind the
+control-plane guard like the rest of `/api/v1/agent`):
+
+- a holder of `approvals:decide`, or a control-plane admin — the operators
+  already trusted to unblock a parked run, and the only path for reconciler
+  runs, which have no human requester;
+- the run's requester, when that requester is a **user** who still resolves on
+  the site. Not an API key: a key is how an agent acts, and the caller that
+  asked must not answer its own question.
+
+The answer is 1–2000 characters, trimmed; with `allowFreeText: false` it must be
+one of the options (`400 ANSWER_NOT_AN_OPTION`). The claim of the `pending` row
+and the resume of the run are one transaction, so a second answer gets
+`409 ALREADY_ANSWERED` and never a second resume. Before resuming, the
+requester's rights are re-resolved (#472): a requester who lost access gets the
+run failed (`stopReason: requester_revoked`) and `409 REQUESTER_REVOKED`.
+Other refusals: `404` (unknown or other-tenant id), `409 EXPIRED` (the answer
+route settles an overdue question itself), `409 QUESTION_CLOSED` (cancelled),
+`409 RUN_NOT_WAITING`, `423 FROZEN`.
+
+**Timeout.** The `agent-question-sweep` (Docker cron every 5 minutes, and the
+5-minute Cloudflare cron trigger) expires every `pending` question past
+`expires_at` and fails its run with `question_timeout`, which frees the goal for
+the dispatcher (a reconciler goal is then blocked with `RUN_FAILED`, never
+re-asked automatically). The failed run can be retried like any other; the
+retry asks the question again.
+
+**Kill switch.** A running agent meets a freeze at its next tool-call boundary;
+a waiting run has none, so freezing a role or the site, and pausing an intent,
+cancel the waiting runs in that scope (`stopReason: frozen`) and close their
+questions. The run scope (`cancel run`) closes the question through the same
+cancel. An answer that races a freeze is refused with `423 FROZEN` and the run is
+cancelled. A frozen agent cannot ask in the first place.
+
+**Approvals are not questions.** `GET /api/v1/agent/approvals` excludes
+`kind = 'question'` rows; `POST /approvals/:id/decide` and `/reopen` answer
+`409 NOT_AN_APPROVAL` for a question id; the agent reviewer refuses them with
+`403 HUMAN_ONLY`.
+
+**MCP.** A `tools/call` of `askUser` returns an ordinary tool result (never a
+JSON-RPC error, `isError: false`) with `status: "waiting_user"`, `questionId`
+and `runId` — the same shape rule as `pending_approval` with `approvalId`.
+
+**Autonomy metrics.** `lumibase_agent_questions_total{status}`
+(`asked` | `answered` | `expired` | `cancelled`) and
+`lumibase_agent_question_wait_seconds{status}` count questions as human
+interventions; answered runs are counted in `lumibase_agent_runs_total` with
+`stop_reason="answered"`, timeouts with `question_timeout`. The trust ledger
+shows `questions: { asked, answered, expired }` in a promotion's evidence; it is
+evidence for the human deciding, not a gate — an unanswered question already
+breaks the run streak because its run ends `failed`.
+
+**Multi-tenancy.** Isolated per tenant: the question row (`agent_approvals`,
+`site_id`, already under `site_isolation` RLS), its run and tool call, the audit
+rows, the list/read/answer routes (every query filters `site_id`; an id from
+another site is `404`) and notifications (fan-out filtered by `siteId`). Shared
+by the deployment: only the sweep, which scans across sites on the system
+connection and settles each row inside its own site scope. Verified by
+`agent-ask-user.db.integration.test.ts` (two sites on real PostgreSQL).
+
+**Notifications.** Asking emits an agent notification of kind `question` with a
+deep link to `/mission-control/inbox?entry=question:<id>`; queued runs now pass
+a Web Push sink too, so a background run's question reaches a person without
+the Studio tab open.
+
 ### Rollout flags and Content OS metrics
 
 Four per-site flags (settings key `contentOs`, all default **off**) gate the autonomous surfaces: `reconciler` (drift scans generate goals), `vetoWindow` (L3 stages instead of falling back to classic pre-execute HITL), `agentReview` (agents may decide approvals), `mcp` (the `/api/v1/mcp` endpoint answers). With every flag off the system behaves exactly like the pre-Content-OS Copilot + harness baseline.
@@ -276,6 +384,8 @@ Item CRUD is additionally classified by impact (#578): `createItem` with `status
 | `upsertSetting` / `deleteSetting` / `create*`/`update*`/`delete*` translation & webhook | access | `config:write` / `:delete` | **DANGEROUS** | Real → ConfigService |
 | `listExtensions` | access | `extensions:read` | SAFE | Real → ExtensionsService |
 | `installExtension` / `updateExtension` / `uninstallExtension` | access | `extensions:write` / `:delete` | **DANGEROUS** | Real → ExtensionsService |
+| `askUser` | agent | `items:read` | SAFE · parks the run | Intercepted by the harness → `AgentQuestionService.ask` (run `waiting_user`) |
+| `getUserAnswer` | agent | `items:read` | SAFE | Intercepted by the harness → question outcome, answer as untrusted data |
 
 > Irreversible skills (hard-capped at autonomy **L2**): `deleteCollection`, `deleteField`, `deleteRole`, `deletePolicy`, `deleteRelation`, `revokeApiKey`, `removeUser`.
 >
@@ -356,6 +466,7 @@ request-context caller wires it (`buildAgentNotifier(c)`), the harness and the
 services it drives push a notification at the moment of the event:
 
 - **approval** — a HITL approval was created (a reviewer is needed).
+- **question** — an agent asked a human with `askUser` (an answer is needed).
 - **veto** — a write was staged into an L3 veto window (auto-commit deadline).
 - **incident** — an `agent_incidents` row was recorded (severity ≥ warning).
 - **run** — an agent run succeeded or failed.
@@ -363,9 +474,10 @@ services it drives push a notification at the moment of the event:
 
 Delivery is best-effort over two transports — the per-site `SiteRoom` realtime
 WebSocket (in-app) and Web Push (VAPID, even with the tab closed) — and never
-blocks or fails execution. Background callers (reconciler/cron) omit the sink
-and rely on the Mission-Control inbox poll, so no event is lost; only its
-latency changes. See [`push-notifications.md`](./push-notifications.md).
+blocks or fails execution. The `agent-runs` queue worker passes a Web Push-only
+sink (it has no realtime namespace); other background callers (reconciler/cron)
+omit the sink and rely on the Mission-Control inbox poll, so no event is lost;
+only its latency changes. See [`push-notifications.md`](./push-notifications.md).
 
 ## Relationship to AI Copilot
 

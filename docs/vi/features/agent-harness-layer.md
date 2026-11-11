@@ -1,14 +1,14 @@
 ---
-version: 5
-lastUpdated: 2026-11-02T23:11:39.085Z
+version: 6
+lastUpdated: 2026-11-11T02:57:05.538Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5532a3a79274f69d
+sourceHash: 416c7014482b11cc
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-02T23:11:39.085Z
-codeVerifiedHash: 5532a3a79274f69d
-codeVerifiedClaims: 20
+codeVerified: 2026-11-11T02:57:05.538Z
+codeVerifiedHash: 416c7014482b11cc
+codeVerifiedClaims: 28
 ---
 
 <!--
@@ -200,6 +200,114 @@ ghi tool call nào); `423` `FROZEN`; `400` `ASYNC_UNAVAILABLE`; `503`
 `ENQUEUE_FAILED`, khi đó run thử lại được chốt ở `failed`. Một run bị cách ly với
 `stale_unverified` có thể đã tạo tác dụng rồi — thử lại nó là quyết định có chủ ý
 của con người để chạy lại, và được ghi là `agent_run.retried` trong activity.
+
+### 5.4. Hỏi người dùng: `askUser` (#710)
+
+Một agent không thể đi tiếp nếu thiếu một quyết định mà nó không được phép tự
+đưa ra thì gọi tool `askUser` thay vì đoán. Run tạm dừng, một người trả lời trong
+inbox của Mission Control, và run tiếp tục với câu trả lời làm kết quả của tool.
+Đây là cùng vòng đời với một approval đang chờ, không phải một vòng đời song song.
+
+**Input** (contract chuẩn `askUser` trong `@lumibase/contracts`, giới hạn nằm ở
+`ASK_USER_LIMITS`): `question` (1–1000 ký tự), `options` tùy chọn (2–10 lựa chọn,
+mỗi lựa chọn 200 ký tự), `allowFreeText` (mặc định `true`; `false` bắt buộc có
+`options` và câu trả lời phải là một trong số đó), `context` (≤ 2000 ký tự) và
+`timeoutMinutes` (1–10080, mặc định 1440 = một ngày). Capability bắt buộc:
+`items:read` — hỏi không có side effect, nên nó không nằm trên thang autonomy và
+được phép ở mọi mức, kể cả L0.
+
+**Vòng đời.** Một câu hỏi là một dòng `agent_approvals` với `kind = 'question'`
+(cạnh `approval`, `veto`, `promotion`); không có bảng mới, không có migration.
+
+| Bước | Run | Câu hỏi | Tool call `askUser` | Audit (`activity`) |
+|---|---|---|---|---|
+| hỏi | `queued`/`running` → `waiting_user` | `pending`, có `expires_at` | `waiting_user` | `agent_question.asked` |
+| trả lời | `waiting_user` → `succeeded` (`stopReason: answered`) | `answered`; câu trả lời ở `decision_reason`, `decided_by`, `decided_at` | `executed`, câu trả lời là output | `agent_question.answered` |
+| hết hạn | → `failed` (`stopReason: question_timeout`) | `expired` | `failed` | `agent_question.expired` |
+| huỷ / kill switch | → `cancelled` (`stopReason` của lệnh huỷ, `frozen` khi đóng băng) | `cancelled` | `denied` | `agent_question.cancelled` |
+
+Hỏi, trả lời và hết hạn mỗi việc là một transaction ngắn với các update có điều
+kiện. Một run đang chờ **không giữ queue worker** nào (worker `agent-runs` trả về
+ngay khi harness đã đỗ run) và **không giữ khoá database** nào. Với dispatcher, nó
+vẫn đang chạy (`waiting_user` nằm trong cùng tập in-flight với
+`awaiting_approval`), nên goal không nhận run thứ hai trong lúc chờ, và
+`POST /agent/runs/:id/retry` từ chối nó.
+
+**Tiếp tục.** Một run của harness là một tool call có quản trị, nên tiếp tục nghĩa
+là lời gọi `askUser` đang đỗ hoàn tất với câu trả lời làm kết quả và run chốt ở
+`succeeded`. Agent làm gì với câu trả lời là tool call kế tiếp của nó, được phân
+quyền riêng. Agent đọc câu trả lời bằng tool `getUserAnswer` (`{ questionId }`),
+chỉ principal hoặc agent role đã hỏi mới đọc được (hoặc một grant admin; còn lại
+là `NOT_FOUND`). Câu trả lời tới model **như dữ liệu không tin cậy**: được bọc bằng
+`untrustedBlock('ask-user-answer', …)` kèm `UNTRUSTED_CONTENT_RULE`, cả trong
+output của tool call lẫn kết quả `getUserAnswer`. Một người đã gõ nó, nhưng ô trả
+lời cũng là một input như mọi input khác.
+
+**Ai được trả lời** (`POST /api/v1/agent/questions/:id/answer`, nằm sau
+control-plane guard như phần còn lại của `/api/v1/agent`):
+
+- người giữ `approvals:decide`, hoặc một control-plane admin — những operator vốn
+  đã được tin để gỡ một run đang đỗ, và là đường duy nhất cho run của reconciler,
+  vốn không có người yêu cầu là người;
+- người yêu cầu của run, khi người đó là một **user** vẫn còn resolve được trên
+  site. Không phải API key: key là cách một agent hành động, và bên đã hỏi không
+  được tự trả lời câu hỏi của chính nó.
+
+Câu trả lời dài 1–2000 ký tự, đã trim; với `allowFreeText: false` nó phải là một
+trong các options (`400 ANSWER_NOT_AN_OPTION`). Việc claim dòng `pending` và việc
+tiếp tục run nằm trong một transaction, nên câu trả lời thứ hai nhận
+`409 ALREADY_ANSWERED` và không bao giờ tiếp tục run lần thứ hai. Trước khi tiếp
+tục, quyền của người yêu cầu được resolve lại (#472): người yêu cầu đã mất quyền
+khiến run bị fail (`stopReason: requester_revoked`) và nhận
+`409 REQUESTER_REVOKED`. Các từ chối khác: `404` (id không tồn tại hoặc của tenant
+khác), `409 EXPIRED` (route trả lời tự chốt một câu hỏi quá hạn), `409 QUESTION_CLOSED`
+(đã huỷ), `409 RUN_NOT_WAITING`, `423 FROZEN`.
+
+**Hết hạn.** `agent-question-sweep` (cron Docker mỗi 5 phút, và cron trigger
+5 phút trên Cloudflare) cho hết hạn mọi câu hỏi `pending` đã qua `expires_at` và
+fail run của nó với `question_timeout`, giải phóng goal cho dispatcher (goal của
+reconciler khi đó bị chặn với `RUN_FAILED`, không bao giờ tự hỏi lại). Run đã fail
+có thể thử lại như mọi run khác; lần thử lại sẽ hỏi lại câu hỏi.
+
+**Kill switch.** Một agent đang chạy gặp lệnh đóng băng ở ranh giới tool call kế
+tiếp; một run đang chờ thì không còn ranh giới nào, nên đóng băng một role hoặc cả
+site, và tạm dừng một intent, sẽ huỷ các run đang chờ trong phạm vi đó
+(`stopReason: frozen`) và đóng câu hỏi của chúng. Phạm vi run (`cancel run`) đóng
+câu hỏi qua đúng lệnh huỷ đó. Một câu trả lời chạy đua với lệnh đóng băng bị từ
+chối với `423 FROZEN` và run bị huỷ. Một agent đã bị đóng băng thì không hỏi được
+ngay từ đầu.
+
+**Approval không phải câu hỏi.** `GET /api/v1/agent/approvals` loại các dòng
+`kind = 'question'`; `POST /approvals/:id/decide` và `/reopen` trả
+`409 NOT_AN_APPROVAL` cho id của câu hỏi; agent reviewer từ chối chúng với
+`403 HUMAN_ONLY`.
+
+**MCP.** Một `tools/call` tới `askUser` trả về một tool result bình thường (không
+bao giờ là lỗi JSON-RPC, `isError: false`) với `status: "waiting_user"`,
+`questionId` và `runId` — cùng quy tắc hình dạng như `pending_approval` với
+`approvalId`.
+
+**Metric autonomy.** `lumibase_agent_questions_total{status}`
+(`asked` | `answered` | `expired` | `cancelled`) và
+`lumibase_agent_question_wait_seconds{status}` đếm câu hỏi như những lần con người
+can thiệp; run được trả lời được đếm trong `lumibase_agent_runs_total` với
+`stop_reason="answered"`, hết hạn với `question_timeout`. Trust ledger hiển thị
+`questions: { asked, answered, expired }` trong bằng chứng của một đề xuất thăng
+cấp; đó là bằng chứng cho người quyết định, không phải một cổng chặn — một câu hỏi
+không được trả lời vốn đã làm đứt chuỗi run thành công vì run của nó kết thúc `failed`.
+
+**Multi-tenancy.** Cô lập theo tenant: dòng câu hỏi (`agent_approvals`, `site_id`,
+vốn đã nằm dưới RLS `site_isolation`), run và tool call của nó, các dòng audit, các
+route liệt kê/đọc/trả lời (mọi query lọc `site_id`; id của site khác là `404`) và
+thông báo (fan-out lọc theo `siteId`). Dùng chung toàn deployment: chỉ có sweep,
+quét qua các site trên system connection và chốt từng dòng trong phạm vi site của
+chính nó. Được kiểm bằng `agent-ask-user.db.integration.test.ts` (hai site trên
+PostgreSQL thật).
+
+**Thông báo.** Khi hỏi, harness phát một agent notification loại `question` với
+deep link tới `/mission-control/inbox?entry=question:<id>`; run trong hàng đợi giờ
+cũng truyền một sink Web Push, nên câu hỏi của một run nền tới được người dùng mà
+không cần mở tab Studio.
 
 ## 6. App Generation Layer
 

@@ -1,10 +1,10 @@
 ---
-version: 13
-lastUpdated: 2026-11-10T14:25:31.765Z
+version: 14
+lastUpdated: 2026-11-11T02:57:08.013Z
 sourceLang: vi
-contentHash: 132e470dfede933a
-codeVerified: 2026-11-10T14:25:31.765Z
-codeVerifiedHash: 132e470dfede933a
+contentHash: 16b14b2f7c418709
+codeVerified: 2026-11-11T02:57:08.013Z
+codeVerifiedHash: 16b14b2f7c418709
 codeVerifiedClaims: 28
 ---
 
@@ -38,6 +38,7 @@ Nguồn: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`
 - **Mapping quyết định → kết quả tool** (bất biến quan trọng):
   - `executed` → `isError: false`, data trong `structuredContent`.
   - `pending_approval` → `isError: false`, **`approvalId` nằm trong `structuredContent`**, KHÔNG phải lỗi protocol.
+  - `waiting_user` (tool `askUser`, #710) → `isError: false`, **`questionId` nằm trong `structuredContent`**; run đỗ tới khi một người trả lời, KHÔNG phải lỗi protocol.
   - `denied` → `isError: true`.
   - Lỗi protocol chỉ dùng cho lỗi JSON-RPC thật: `-32700` parse, `-32600` invalid request, `-32601` method not found, `-32602` invalid params.
 - **Guards kế thừa từ harness** (zero logic MCP riêng): kill switch, capability, autonomy (L0–L4), constitution pin, load guard, veto window. Xem [`docs/en/features/agent-harness-layer.md`](../features/agent-harness-layer.md).
