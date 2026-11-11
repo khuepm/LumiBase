@@ -135,7 +135,10 @@ describe.skipIf(!hasDbIntegrationUrl)('askUser clarification — DB integration'
       await next();
     });
     router.route('/agent', agentRouter);
-    return router;
+    // Hono leaves `c.env` undefined unless an env bag is passed, which no real
+    // runtime does. With LUMIBASE_ENV=development (as in CI) `systemDbFor`
+    // reads `c.env.DATABASE_SYSTEM_URL`, so every request needs one.
+    return { request: (path: string, init?: RequestInit) => router.request(path, init, {}) };
   }
 
   async function answer(questionId: string, text: string, auth: AuthPrincipal = userAuth(ADMIN), siteId = SITE) {
