@@ -14,6 +14,7 @@ import {
 import { itemServiceForPrincipal, itemServiceForSystem } from './item-service-factory';
 import { createConfiguredLLMProvider, type LLMProviderEnv } from './llm-provider';
 import { SchemaService } from './schema-service';
+import { emitAgentNotification } from '../modules/notifications/agent-notifications';
 
 /**
  * Async agent run execution (Content OS task 3 / Req 3.2).
@@ -187,8 +188,9 @@ async function settleDeferralIfAny(
 /**
  * Executes one queued agent run. Cancellation between enqueue and pickup is
  * honoured (the run stays `cancelled`, nothing executes — Req 3.5). The
- * harness itself transitions the run to `awaiting_approval`, `succeeded`,
- * or `failed`.
+ * harness itself transitions the run to `awaiting_approval`, `waiting_user`
+ * (an `askUser` question, #710), `succeeded`, or `failed`. A parked run returns
+ * here immediately: waiting on a human never holds this worker.
  */
 export async function processAgentRunJob(
   deps: AgentRunWorkerDeps,
@@ -305,6 +307,13 @@ export async function processAgentRunJob(
     // queued run must be able to do exactly what the sync path does.
     keys: deps.keys,
     cache: deps.cache,
+    // A queued run that parks (an approval, or an `askUser` question, #710)
+    // must reach a person the same way a request-path run does. No Durable
+    // Object namespace here, so delivery is Web Push only; the inbox poll
+    // remains the fallback.
+    notify: (input) => {
+      void emitAgentNotification({ db: deps.db, siteId: payload.siteId, env: deps.env }, input);
+    },
   });
 
   try {

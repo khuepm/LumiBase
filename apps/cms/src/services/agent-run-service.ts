@@ -206,8 +206,16 @@ function isLockTimeout(error: unknown): boolean {
  */
 const RETRYABLE_RUN_STATES: readonly string[] = ['failed', 'cancelled'];
 
+/**
+ * A run parked by `askUser` (#710): it holds no worker and no lock, only a
+ * pending `kind = 'question'` row. It is in flight — the dispatcher must not
+ * issue the goal's next phase under it and a retry must not race it — and it
+ * leaves this state only through an answer, the timeout sweep or a cancel.
+ */
+export const WAITING_USER_RUN_STATUS = 'waiting_user';
+
 /** Run states in which work may still happen — the dispatcher's "in flight". */
-const IN_FLIGHT_RUN_STATES = ['queued', 'running', 'awaiting_approval'];
+const IN_FLIGHT_RUN_STATES = ['queued', 'running', 'awaiting_approval', WAITING_USER_RUN_STATUS];
 
 /** Goal states after which nobody is waiting for another attempt. */
 const CLOSED_GOAL_STATES = ['done', 'completed', 'failed'];
@@ -369,7 +377,7 @@ export class AgentRunService {
   async finishToolCall(
     toolCallId: string,
     patch: {
-      status: 'executed' | 'pending_approval' | 'denied' | 'failed';
+      status: 'executed' | 'pending_approval' | 'waiting_user' | 'denied' | 'failed';
       output?: unknown;
       error?: string | null;
       approvalId?: string | null;
@@ -677,14 +685,40 @@ export class AgentRunService {
   }
 
   /**
+   * Parks a run while a human answers an `askUser` question (#710).
+   *
+   * Same guard as {@link awaitApproval}, for the same reason: a run cancelled
+   * while the harness was recording the question must stay cancelled, so the
+   * caller creates the question row only when this returns true.
+   */
+  async awaitUser(runId: string, db: Pick<Database, 'update'> = this.db): Promise<boolean> {
+    const parked = await db
+      .update(agentRuns)
+      .set({ status: WAITING_USER_RUN_STATUS, updatedAt: new Date() })
+      .where(
+        and(
+          eq(agentRuns.id, runId),
+          eq(agentRuns.siteId, this.siteId),
+          inArray(agentRuns.status, ['queued', 'running']),
+        ),
+      )
+      .returning({ id: agentRuns.id });
+    return parked.length > 0;
+  }
+
+  /**
    * Cancels a non-terminal run. Cancellation takes effect at the next
    * tool-call boundary — the harness re-checks the status before every
    * tool call (Req 3.5). Returns the updated run, or null when the run is
    * missing or already terminal.
+   *
+   * A run waiting on a question (#710) has no tool-call boundary left to reach,
+   * so its open question is closed here as well; otherwise the inbox would
+   * keep offering an answer box for a run that can no longer resume.
    */
   async cancelRun(runId: string, reason = 'cancelled_by_user') {
     const run = await this.getRun(runId);
-    if (!run || !['queued', 'running', 'awaiting_approval'].includes(run.status)) {
+    if (!run || !IN_FLIGHT_RUN_STATES.includes(run.status)) {
       return null;
     }
     // The status is re-checked in the write (#584 F1). Between the read above and
@@ -714,6 +748,12 @@ export class AgentRunService {
       status: 'cancelled',
       stop_reason: metricReason(reason),
     });
+    // Not keyed on the status read above: the run can be parked between that
+    // read and the UPDATE (which then still matches `waiting_user`), and a
+    // question left `pending` under a cancelled run is an answer box that
+    // resumes nothing. The update matches no row for runs that never asked.
+    const { closeOpenQuestionsForRun } = await import('./agent-question-service');
+    await closeOpenQuestionsForRun(this.db, this.siteId, runId, reason);
     return updated ?? null;
   }
 

@@ -6,7 +6,8 @@ import {
   agentRuns,
   type Database,
 } from '@lumibase/database';
-import { and, desc, eq } from 'drizzle-orm';
+import { ASK_USER_LIMITS } from '@lumibase/contracts';
+import { and, desc, eq, ne } from 'drizzle-orm';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
@@ -19,6 +20,12 @@ import { AgentMemoryService } from '../services/agent-memory-service';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
 import { safeRequestId, maskSecrets, AgentRunService, type RetryRunRefusalCode } from '../services/agent-run-service';
 import { CORE_SKILLS } from '../services/ai-harness';
+import {
+  AgentQuestionService,
+  QUESTION_KIND,
+  QUESTION_REFUSAL_STATUS,
+} from '../services/agent-question-service';
+import { parseApprovalRequester } from '../services/approval-requester';
 import {
   principalRefFromAuth,
   resolveRequestCapabilities,
@@ -701,10 +708,127 @@ agentRouter.get('/approvals', async (c) => {
   const rows = await db
     .select()
     .from(agentApprovals)
-    .where(eq(agentApprovals.siteId, siteId))
+    // `askUser` questions (#710) share the table but are not approvals: they
+    // have no approve/reject, and listing them here invited a client to decide
+    // one. They are listed at `GET /questions`.
+    .where(and(eq(agentApprovals.siteId, siteId), ne(agentApprovals.kind, QUESTION_KIND)))
     .orderBy(desc(agentApprovals.createdAt))
     .limit(100);
   return c.json({ data: rows });
+});
+
+// ── askUser clarification questions (#710) ─────────────────────────────────
+
+/**
+ * Who may answer a question:
+ *
+ * - a holder of `approvals:decide` (or a control-plane admin) — the operators
+ *   already trusted to unblock a parked run; the only path for reconciler runs,
+ *   which have no human requester;
+ * - the run's requester, when that requester is a **user** who still resolves on
+ *   this site. Not an API key: a key is how an agent acts, and letting the
+ *   caller that asked answer its own question would close the loop the tool
+ *   exists to open.
+ *
+ * The router is already behind the control-plane guard; this is the inner check,
+ * evaluated after existence so a 403 cannot be used to probe ids.
+ */
+async function questionAnswerer(
+  c: Context<AppEnv>,
+  requestedByPrincipal: unknown,
+): Promise<'approver' | 'requester' | null> {
+  const grant = await resolveRequestCapabilities(c);
+  if (grant.controlPlaneAdmin || grant.capabilities.includes('approvals:decide')) return 'approver';
+  if (!grant.allowed) return null;
+  const requester = parseApprovalRequester(requestedByPrincipal);
+  const caller = principalRefFromAuth(c.get('auth'), c.get('siteId'));
+  if (
+    requester?.kind === 'principal'
+    && requester.ref.type === 'user'
+    && caller?.type === 'user'
+    && caller.siteId === requester.ref.siteId
+    && caller.userId === requester.ref.userId
+  ) {
+    return 'requester';
+  }
+  return null;
+}
+
+function questionService(c: Context<AppEnv>): AgentQuestionService {
+  const environment = (c.env as { LUMIBASE_ENV?: string } | undefined)?.LUMIBASE_ENV ?? process.env.LUMIBASE_ENV;
+  return new AgentQuestionService({
+    db: c.get('db'),
+    siteId: c.get('siteId'),
+    cache: c.get('runtime')?.cache,
+    ...(environment ? { environment } : {}),
+  });
+}
+
+const QUESTION_STATUSES = ['pending', 'answered', 'expired', 'cancelled'] as const;
+
+/** Questions of this site, newest first. `?status=` narrows (default `pending`; `all` for every status). */
+agentRouter.get('/questions', async (c) => {
+  const raw = c.req.query('status') ?? 'pending';
+  if (raw !== 'all' && !(QUESTION_STATUSES as readonly string[]).includes(raw)) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: `status must be one of ${QUESTION_STATUSES.join(', ')} or all` }] },
+      400,
+    );
+  }
+  const status = raw === 'all' ? undefined : (raw as (typeof QUESTION_STATUSES)[number]);
+  return c.json({ data: await questionService(c).list(status) });
+});
+
+agentRouter.get('/questions/:id', async (c) => {
+  const question = await questionService(c).get(c.req.param('id'));
+  if (!question) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Question not found' }] }, 404);
+  }
+  return c.json({ data: question });
+});
+
+/**
+ * Answers a question and resumes its run (#710). Idempotent by refusal: the
+ * answer claims the `pending` row in the same transaction that resumes the run,
+ * so a second answer gets 409 and never a second resume.
+ */
+agentRouter.post('/questions/:id/answer', async (c) => {
+  const body = z
+    .object({ answer: z.string().trim().min(1).max(ASK_USER_LIMITS.answer) })
+    .strict()
+    .safeParse(await c.req.json().catch(() => null));
+  if (!body.success) {
+    return validationError(c, body.error);
+  }
+
+  const service = questionService(c);
+  const existing = await service.loadRow(c.req.param('id'));
+  if (!existing) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Question not found' }] }, 404);
+  }
+  const via = await questionAnswerer(c, existing.requestedByPrincipal);
+  if (!via) {
+    return c.json(
+      {
+        errors: [{
+          code: 'FORBIDDEN',
+          message: 'Only the run\'s requesting user or a holder of "approvals:decide" may answer this question.',
+        }],
+      },
+      403,
+    );
+  }
+
+  const result = await service.answer({
+    questionId: existing.id,
+    answer: body.data.answer,
+    answeredBy: c.get('auth')?.userId ?? null,
+    via,
+  });
+  if (!result.ok) {
+    return c.json({ errors: [{ code: result.code, message: result.message }] }, QUESTION_REFUSAL_STATUS[result.code]);
+  }
+  return c.json({ data: result.question });
 });
 
 const agentDecideSchema = z.object({
@@ -825,6 +949,11 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
       { errors: [{ code: 'FORBIDDEN', message: 'Capability "approvals:decide" is required.' }] },
       403,
     );
+  }
+  if (existing.kind === QUESTION_KIND) {
+    // A rejection here would mark the row decided and leave its run parked in
+    // `waiting_user` until the timeout; an approval has nothing to execute.
+    return questionNotDecidable(c, approvalId);
   }
   if (existing.status !== 'pending') {
     return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
@@ -997,6 +1126,9 @@ agentRouter.post('/approvals/:id/reopen', async (c) => {
       { errors: [{ code: 'FORBIDDEN', message: 'Capability "approvals:decide" is required.' }] },
       403,
     );
+  }
+  if (existing.kind === QUESTION_KIND) {
+    return questionNotDecidable(c, approvalId);
   }
 
   // The transition and its audit commit together. Reopening authorizes a second
@@ -1210,6 +1342,19 @@ agentRouter.post('/generate-app', async (c) => {
 
   return c.json({ data: { run, artifacts: [pageArtifact, componentArtifact, seedArtifact, apiArtifact], evaluations } }, 201);
 });
+
+/** Refusal for approval routes that are handed an `askUser` question id (#710). */
+function questionNotDecidable(c: Context<AppEnv>, id: string) {
+  return c.json(
+    {
+      errors: [{
+        code: 'NOT_AN_APPROVAL',
+        message: `This is an agent question; answer it at POST /api/v1/agent/questions/${id}/answer.`,
+      }],
+    },
+    409,
+  );
+}
 
 function validationError(c: Context<AppEnv>, error: z.ZodError) {
   return c.json(

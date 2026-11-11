@@ -9,7 +9,35 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+
+- **Agent harness: `askUser` clarification tool (#710).** An agent that cannot continue
+  without a decision it may not make asks a human instead of guessing. The run parks in
+  the new `waiting_user` status (no queue worker, no lock held), the question reaches the
+  Mission Control inbox and a `question` notification, and an answer resumes the run: the
+  `askUser` tool call completes with the answer (wrapped as untrusted data for the model)
+  and the run settles `succeeded`. Stored as `agent_approvals` rows with
+  `kind = 'question'` — **no migration**. New endpoints `GET /api/v1/agent/questions`,
+  `GET /api/v1/agent/questions/:id` and `POST /api/v1/agent/questions/:id/answer`
+  (holder of `approvals:decide` or the requesting user; never an API key; tenant-scoped,
+  audited as `agent_question.*`, a second answer is `409`; the requester's rights are
+  re-resolved before resuming). New read skill `getUserAnswer` returns the outcome to the
+  requester only. Questions time out (default one day, max seven) through the 5-minute
+  `agent-question-sweep` on both runtimes, failing the run with
+  `stopReason: question_timeout`; freezing a role or the site, pausing an intent or
+  cancelling the run ends waiting runs. MCP `tools/call` returns
+  `status: "waiting_user"` with `questionId`. Metrics
+  `lumibase_agent_questions_total{status}` and `lumibase_agent_question_wait_seconds`; the
+  trust ledger shows question counts in promotion evidence.
+
+### Changed
+
+- `GET /api/v1/agent/approvals` no longer lists `askUser` questions, and
+  `POST /api/v1/agent/approvals/:id/decide` / `/reopen` refuse a question id with
+  `409 NOT_AN_APPROVAL`.
+- The `agent-runs` queue worker now passes a Web Push notifier to the harness, so
+  approvals and questions parked by a queued run notify subscribed operators (realtime
+  in-app delivery still needs a request context).
 
 ## [2.0.0] - 2026-11-10
 
