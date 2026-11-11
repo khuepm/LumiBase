@@ -4,34 +4,41 @@ import { type LumiBaseClient, LumiBaseApiError } from '../client.js';
 import { collectionNameSchema, encodePathSegment, fieldNameSchema } from './path.js';
 import { okAfter } from './_shared.js';
 
+/**
+ * Nullability mirrors `collectionInputSchema` in `apps/cms/src/routes/collections.ts`.
+ * The REST route takes `null` to clear these columns; advertising them as plain
+ * strings made `update_collection { patch: { sortField: null } }` unsendable by
+ * a schema-respecting client (#716, the `{type:"null"}` class of Payload #16214).
+ */
 const collectionInputSchema = z.object({
   name: collectionNameSchema,
-  label: z.string().optional(),
-  pluralLabel: z.string().optional(),
+  label: z.string().nullable().optional(),
+  pluralLabel: z.string().nullable().optional(),
   hidden: z.boolean().optional(),
   singleton: z.boolean().optional(),
-  icon: z.string().optional(),
-  color: z.string().optional(),
-  note: z.string().optional(),
+  icon: z.string().nullable().optional(),
+  color: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
   primaryKeyField: z.string().optional(),
   primaryKeyType: z.enum(['nanoid', 'uuid', 'integer', 'bigInteger', 'string']).optional(),
   storageMode: z.enum(['jsonb', 'materialized', 'physical', 'external']).optional(),
-  displayTemplate: z.string().optional(),
-  sortField: z.string().optional(),
-  archiveField: z.string().optional(),
-  archiveValue: z.string().optional(),
-  unarchiveValue: z.string().optional(),
+  displayTemplate: z.string().nullable().optional(),
+  sortField: z.string().nullable().optional(),
+  archiveField: z.string().nullable().optional(),
+  archiveValue: z.string().nullable().optional(),
+  unarchiveValue: z.string().nullable().optional(),
   accountability: z.enum(['all', 'activity', 'none']).optional(),
   versioning: z.boolean().optional(),
 });
 
+/** Nullability mirrors the REST `fieldInputSchema` (same route file). */
 const fieldInputSchema = z.object({
   name: fieldNameSchema,
   type: z.string().min(1),
   interface: z.string().min(1),
-  display: z.string().optional(),
-  label: z.string().optional(),
-  note: z.string().optional(),
+  display: z.string().nullable().optional(),
+  label: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
   nullable: z.boolean().optional(),
   unique: z.boolean().optional(),
   indexed: z.boolean().optional(),
@@ -41,7 +48,7 @@ const fieldInputSchema = z.object({
   hidden: z.boolean().optional(),
   width: z.enum(['half', 'full', 'fill']).optional(),
   sortOrder: z.number().int().optional(),
-  group: z.string().optional(),
+  group: z.string().nullable().optional(),
   options: z.record(z.string(), z.unknown()).optional(),
   defaultValue: z.unknown().optional(),
 });
@@ -155,8 +162,8 @@ export function registerCollectionTools(server: McpServer, client: LumiBaseClien
       inputSchema: {
         name: collectionNameSchema,
         fields: z.array(fieldInputSchema).optional(),
-        label: z.string().optional(),
-        note: z.string().optional(),
+        label: z.string().nullable().optional(),
+        note: z.string().nullable().optional(),
       },
     },
     async (input) => {
@@ -183,8 +190,8 @@ export function registerCollectionTools(server: McpServer, client: LumiBaseClien
             confirmRiskyChange: z.boolean().optional(),
           }),
         ).optional(),
-        label: z.string().optional(),
-        note: z.string().optional(),
+        label: z.string().nullable().optional(),
+        note: z.string().nullable().optional(),
         accountability: z.enum(['all', 'activity', 'none']).optional(),
         versioning: z.boolean().optional(),
       },

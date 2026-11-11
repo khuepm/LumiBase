@@ -4,41 +4,62 @@ import { type LumiBaseClient, LumiBaseApiError } from '../client.js';
 import { collectionNameSchema, encodePathSegment, fieldNameSchema } from './path.js';
 import { okAfter } from './_shared.js';
 
+/**
+ * Mirrors the REST `fieldInputSchema` in `apps/cms/src/routes/collections.ts`.
+ *
+ * Two fidelity rules (#716):
+ *   - columns the route takes as `null` (to clear them) are `.nullable()` here,
+ *     so the advertised JSON Schema carries `{type:"null"}` for them;
+ *   - no `.default()`. `PUT …/fields/:field` is an upsert and an update is a
+ *     PARTIAL patch, but the SDK applies Zod defaults before the handler runs,
+ *     so every `upsert_field` that only changed a label also sent
+ *     `required:false, hidden:false, encrypted:false, width:"full", …` and
+ *     silently reset those columns. On create the database column defaults
+ *     apply, exactly as for a REST caller that omits them.
+ */
 const fieldInputSchema = z.object({
   type: z.string().min(1).describe(
     'Storage type: string, text, integer, bigInteger, float, decimal, boolean, ' +
-    'date, dateTime, time, json, uuid, csv, hash, alias',
+    'date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias',
   ),
   interface: z.string().min(1).describe(
     'UI widget: input, textarea, select, toggle, datetime, file, image, ' +
     'repeater, relation-m2o, relation-o2m, relation-m2m, code, markdown, wysiwyg, …',
   ),
-  display: z.string().optional(),
-  label: z.string().optional(),
-  note: z.string().optional(),
+  display: z.string().nullable().optional(),
+  label: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
   defaultValue: z.unknown().optional(),
-  nullable: z.boolean().optional().default(true),
-  unique: z.boolean().optional().default(false),
-  indexed: z.boolean().optional().default(false),
-  searchable: z.boolean().optional().default(false),
-  length: z.number().int().positive().optional(),
-  precision: z.number().int().positive().optional(),
-  scale: z.number().int().min(0).optional(),
+  nullable: z.boolean().optional(),
+  unique: z.boolean().optional(),
+  indexed: z.boolean().optional(),
+  searchable: z.boolean().optional(),
+  length: z.number().int().positive().nullable().optional(),
+  precision: z.number().int().positive().nullable().optional(),
+  scale: z.number().int().min(0).nullable().optional(),
   special: z.array(z.string()).optional(),
   options: z.record(z.string(), z.unknown()).optional(),
   displayOptions: z.record(z.string(), z.unknown()).optional(),
+  validation: z.record(z.string(), z.unknown()).optional(),
   conditions: z.array(z.unknown()).optional(),
-  required: z.boolean().optional().default(false),
-  readonly: z.boolean().optional().default(false),
-  hidden: z.boolean().optional().default(false),
-  encrypted: z.boolean().optional().default(false),
-  versioned: z.boolean().optional().default(false),
-  width: z.enum(['half', 'full', 'fill']).optional().default('full'),
-  group: z.string().optional(),
+  required: z.boolean().optional(),
+  readonly: z.boolean().optional(),
+  hidden: z.boolean().optional(),
+  encrypted: z.boolean().optional(),
+  // Accepted by REST but missing here, so the SDK stripped them and a
+  // `classification: "pii"` request returned success without classifying.
+  classification: z.enum(['none', 'internal', 'pii', 'phi']).optional()
+    .describe('Data sensitivity; pii/phi require encrypted=true.'),
+  versioned: z.boolean().optional(),
+  rawEnabled: z.boolean().optional(),
+  width: z.enum(['half', 'full', 'fill']).optional(),
+  group: z.string().nullable().optional(),
   sortOrder: z.number().int().optional(),
   renameFrom: fieldNameSchema
     .optional()
     .describe('Previous field name if this is a rename operation'),
+  migrationPlan: z.record(z.string(), z.unknown()).optional()
+    .describe('Data migration plan for a risky type change (see diff_schema).'),
   confirmRiskyChange: z
     .boolean()
     .optional()

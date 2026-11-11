@@ -25,8 +25,9 @@ const subscriptionSchema = z.object({
     .enum(['reference', 'snapshot'])
     .optional()
     .describe('reference = ids only (consumer re-fetches); snapshot = masked data inline.'),
-  webhook_id: z.string().optional().describe('Required for kind=webhook (must have a secret).'),
-  extension_name: z.string().optional().describe('Required for kind=extension.'),
+  // `min(1)`: the canonical `createCdcSubscription` refuses an empty id (#716).
+  webhook_id: z.string().min(1).optional().describe('Required for kind=webhook (must have a secret).'),
+  extension_name: z.string().min(1).optional().describe('Required for kind=extension.'),
 });
 
 export function registerCdcTools(server: McpServer, client: LumiBaseClient) {

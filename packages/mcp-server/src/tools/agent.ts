@@ -5,13 +5,24 @@ import { registerCrud } from './_crud.js';
 import { run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
+/** Same 5-field cron gate as `intentInputSchema` and the canonical `createIntent`. */
+const CRON_5_FIELD = /^(\S+\s+){4}\S+$/;
+
+// `rules` bounds and the cron pattern mirror `intentInputSchema` (REST) and the
+// canonical `createIntent` contract; without them the advertised schema accepted
+// `rules: []` and `schedule: "x"`, which both servers refuse (#716).
 const intentSchema = z.object({
   name: z.string().min(1).max(120),
   collection: z.string().min(1).max(120),
   rules: z
     .array(z.record(z.string(), z.unknown()))
+    .min(1)
+    .max(50)
     .describe('SLO rules (required_fields, freshness, translations, link_health, …).'),
-  schedule: z.string().describe('5-field cron expression for reconciliation cadence.'),
+  schedule: z
+    .string()
+    .regex(CRON_5_FIELD, 'schedule must be a 5-field cron expression')
+    .describe('5-field cron expression for reconciliation cadence.'),
   budget: z.record(z.string(), z.unknown()).optional(),
   autonomyCap: z.number().int().min(0).max(4).optional().describe('Max autonomy level L0–L4 for this intent.'),
   maintenanceWindow: z.record(z.string(), z.unknown()).nullable().optional(),

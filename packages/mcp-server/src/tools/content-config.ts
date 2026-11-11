@@ -20,10 +20,13 @@ const presetSchema = z.object({
   refreshInterval: z.number().int().min(0).optional(),
 });
 
+// `min(1)` matches the canonical `createTranslation`/`updateTranslation`
+// contract these tools are governed through: advertising `""` as valid only
+// moved the refusal from the client to the harness (#716).
 const translationSchema = z.object({
-  language: z.string(),
-  namespace: z.string(),
-  key: z.string(),
+  language: z.string().min(1),
+  namespace: z.string().min(1),
+  key: z.string().min(1),
   value: z.string(),
   status: z.string().optional(),
 });
