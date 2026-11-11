@@ -62,6 +62,15 @@ import {
   invalidateItemsTag,
 } from './content-invalidation';
 import { runSiteTransaction } from './rls-transaction';
+import {
+  CASTABLE_OPS,
+  CastValueError,
+  castExpression,
+  castKindForFieldType,
+  castValue,
+  inferCastKindFromValue,
+  type CastKind,
+} from './json-filter-cast';
 
 const BULK_INSERT_CHUNK = 100;
 
@@ -364,20 +373,88 @@ function fieldExpression(name: string, mode: 'text' | 'json' = 'text'): SQL {
   }
 }
 
-function buildFilter(filter?: ItemFilter): SQL | undefined {
+/** Field name → schema type, used by the Cast_Rule. */
+export type FieldTypeMap = ReadonlyMap<string, string>;
+
+/**
+ * Pick the cast for a comparison on `key` (json-field-search Req 4, #729).
+ * Structural columns are natively typed → no cast. A top-level schema field
+ * uses its declared type; nested paths, `json` fields and unknown keys fall
+ * back to the value's JSON type (number → numeric, boolean → boolean), else
+ * text — the historical behaviour.
+ */
+function resolveCastKind(key: string, raw: unknown, types?: FieldTypeMap): CastKind {
+  if (STRUCTURAL_FIELDS.has(key)) return 'text';
+  if (!key.includes('.')) {
+    const fromSchema = castKindForFieldType(types?.get(key));
+    if (fromSchema) return fromSchema;
+  }
+  return inferCastKindFromValue(raw);
+}
+
+function castOrThrow(raw: unknown, kind: CastKind, key: string, op: string): SQL {
+  try {
+    return castValue(raw, kind);
+  } catch (err) {
+    if (err instanceof CastValueError) {
+      throw new ItemServiceError('INVALID_FILTER', `Operator "${op}" on "${key}": ${err.message}.`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Typed comparison clause. Returns `undefined` for a text comparison so the
+ * caller keeps the original (byte-identical) SQL for backward compatibility.
+ */
+function typedComparison(key: string, op: string, raw: unknown, types?: FieldTypeMap): SQL | undefined {
+  if (!CASTABLE_OPS.has(op)) return undefined;
+  const kind = resolveCastKind(key, raw, types);
+  if (kind === 'text') return undefined;
+  const expr = castExpression(fieldExpression(key), kind);
+  if (op === '_in' || op === '_nin') {
+    if (!Array.isArray(raw) || raw.length === 0) {
+      throw new ItemServiceError('INVALID_FILTER', `Operator "${op}" expects a non-empty array.`);
+    }
+    const values = sql.join(
+      raw.map((v) => castOrThrow(v, kind, key, op)),
+      sql`, `,
+    );
+    // `not in` would treat a NULL (failed guard) row as unknown → excluded,
+    // matching `<> all(...)` semantics of the text path.
+    return op === '_in' ? sql`${expr} in (${values})` : sql`${expr} not in (${values})`;
+  }
+  const value = castOrThrow(raw, kind, key, op);
+  switch (op) {
+    case '_eq':
+      return sql`${expr} = ${value}`;
+    case '_neq':
+      return sql`${expr} <> ${value}`;
+    case '_gt':
+      return sql`${expr} > ${value}`;
+    case '_gte':
+      return sql`${expr} >= ${value}`;
+    case '_lt':
+      return sql`${expr} < ${value}`;
+    default:
+      return sql`${expr} <= ${value}`;
+  }
+}
+
+function buildFilter(filter?: ItemFilter, types?: FieldTypeMap): SQL | undefined {
   if (!filter) return undefined;
   const clauses: SQL[] = [];
 
   if (filter._and?.length) {
     const sub = filter._and
-      .map(buildFilter)
+      .map((f) => buildFilter(f, types))
       .filter((c): c is SQL => c !== undefined);
     if (sub.length) clauses.push(sql.join(sub, sql` and `));
   }
 
   if (filter._or?.length) {
     const sub = filter._or
-      .map(buildFilter)
+      .map((f) => buildFilter(f, types))
       .filter((c): c is SQL => c !== undefined);
     if (sub.length) clauses.push(sql`(${sql.join(sub, sql` or `)})`);
   }
@@ -389,6 +466,11 @@ function buildFilter(filter?: ItemFilter): SQL | undefined {
     for (const [op, raw] of Object.entries(value as Record<string, unknown>)) {
       if (clauses.length >= MAX_FILTER_CLAUSES) {
         throw new ItemServiceError('INVALID_FILTER', 'Filter has too many clauses.');
+      }
+      const typed = typedComparison(key, op, raw, types);
+      if (typed) {
+        clauses.push(typed);
+        continue;
       }
       switch (op as ItemFilterOp) {
         // ── JSON containment / key-existence (json-field-search Req 3) ──
@@ -456,12 +538,17 @@ function buildFilter(filter?: ItemFilter): SQL | undefined {
   return sql.join(clauses, sql` and `);
 }
 
-function buildSort(sort?: string[]): SQL[] {
+function buildSort(sort?: string[], types?: FieldTypeMap): SQL[] {
   if (!sort?.length) return [desc(items.updatedAt)];
   return sort.map((token) => {
     const dir = token.startsWith('-') ? desc : asc;
     const name = token.replace(/^[-+]/, '');
-    return dir(fieldExpression(name) as never);
+    // Cast_Rule for sort (json-field-search Req 9): only a top-level schema
+    // field has a declared type; a sort token carries no value to infer from.
+    const kind =
+      STRUCTURAL_FIELDS.has(name) || name.includes('.') ? null : castKindForFieldType(types?.get(name));
+    const expr = kind && kind !== 'text' ? castExpression(fieldExpression(name), kind) : fieldExpression(name);
+    return dir(expr as never);
   });
 }
 
@@ -703,6 +790,7 @@ export class ItemService {
       primaryKeyType: compiled.primaryKeyType,
       storageMode: compiled.storageMode,
       meta: compiled.meta,
+      fieldTypes: new Map(compiled.fields.map((f) => [f.name, f.type])) as FieldTypeMap,
     };
   }
 
@@ -715,7 +803,7 @@ export class ItemService {
       eq(items.collectionId, coll.id),
       isNull(items.deletedAt),
       params.status ? eq(items.status, params.status) : undefined,
-      buildFilter(params.filter),
+      buildFilter(params.filter, coll.fieldTypes),
       permClause,
     );
 
@@ -726,7 +814,7 @@ export class ItemService {
       .select()
       .from(items)
       .where(where)
-      .orderBy(...buildSort(params.sort))
+      .orderBy(...buildSort(params.sort, coll.fieldTypes))
       .limit(limit)
       .offset(offset);
 

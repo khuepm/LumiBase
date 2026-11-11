@@ -9,7 +9,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+- Typed JSON filters (Cast_Rule): `_eq`/`_neq`/`_in`/`_nin`/`_gt`/`_gte`/`_lt`/`_lte` compare numeric, boolean and date fields by type instead of as text, so `filter={"price":{"_gt":9}}` matches `10`. Nested JSON paths infer the cast from a number/boolean value. A stored value of the wrong type drops out of the result instead of failing the query; a filter value that cannot be cast returns `400 INVALID_FILTER`. Sorting on numeric/boolean/date fields is typed too (#729, epic #673).
+- `GET /api/v1/collections/:name/index-advice?path=&cast=` (read-only, `schema:read`) returns `CREATE INDEX CONCURRENTLY` DDL whose expression matches the typed filter, partial on the collection (#729).
+
+### Changed
+- A string filter value on a numeric/boolean/date field that is not a valid number/boolean/date now returns `400 INVALID_FILTER`; previously it was compared as text and silently matched nothing or the wrong rows.
 
 ## [2.0.0] - 2026-11-10
 
