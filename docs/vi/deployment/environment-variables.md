@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 16
-lastUpdated: 2026-11-10T01:58:25.627Z
+version: 17
+lastUpdated: 2026-11-11T03:00:31.203Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2539ffa0eafcebe0
+sourceHash: 6cc0896d8a1582b3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T01:58:25.627Z
-codeVerifiedHash: 2539ffa0eafcebe0
-codeVerifiedClaims: 84
+codeVerified: 2026-11-11T03:00:31.203Z
+codeVerifiedHash: 6cc0896d8a1582b3
+codeVerifiedClaims: 88
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -31,6 +31,8 @@ Trang này liệt kê mọi biến môi trường và binding Cloudflare mà Lum
 |------|----------|----------|-------|
 | `LUMIBASE_ENV` | ✓ | — | Nhãn môi trường: `development`, `staging`, `production` |
 | `LUMIBASE_RUNTIME` | Chỉ Docker | `cloudflare` | `docker` cho Node.js/Docker; Cloudflare Workers tự suy ra từ binding |
+| `CORS_ALLOWED_ORIGINS` | ✓ ở production | — | Danh sách origin trình duyệt (phân cách bằng dấu phẩy) được phép gọi API; `*` bị từ chối ở production. Trên Docker, khi chưa đặt, entrypoint của image dùng chính origin của deployment này (`LUMIBASE_PUBLIC_URL`, rồi tới URL công khai của nền tảng) — Studio được phục vụ từ origin đó |
+| `LUMIBASE_PUBLIC_URL` | ✗ (chỉ Docker) | — | Origin công khai của deployment này, ví dụ `https://cms.example.com`. Entrypoint của image đọc nó để đặt mặc định cho `CORS_ALLOWED_ORIGINS` và để in URL của setup wizard. Khi không có, entrypoint dùng `RENDER_EXTERNAL_URL`, `RAILWAY_PUBLIC_DOMAIN` hoặc `FLY_APP_NAME` nếu nền tảng có đặt. Xem [Deploy một cú nhấp](./one-click.md) |
 | `JWT_SECRET` | ✓ | — | Secret để ký/xác thực JWT ứng dụng. Tối thiểu 32 ký tự. **Với production Cloudflare, đặt bằng `wrangler secret put JWT_SECRET --env production`; không bao giờ commit hay đặt trong `[env.production.vars]`.** |
 | `LUMIBASE_DEV_AUTH` | Chỉ local dev | `false` | Đặt `true` để bỏ qua auth Logto trong local dev. **Không bao giờ bật ở production; `pnpm release:check` sẽ fail nếu production resolve thành `true`.** |
 | `LUMIBASE_ALLOW_ORG_SIGNUP` | Tuỳ chọn | không đặt | Đặt `true` để người dùng Studio đã xác thực được tạo organization. Bootstrap instance operator có thể tạo organization mà không cần cờ này. Tạo/xoá site dùng organization API; các route quản lý site admin cũ và cờ riêng cho test đã bị gỡ. |

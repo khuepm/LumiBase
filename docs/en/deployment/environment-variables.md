@@ -1,11 +1,11 @@
 ---
-version: 16
-lastUpdated: 2026-11-10T01:58:25.627Z
+version: 17
+lastUpdated: 2026-11-11T03:00:31.203Z
 sourceLang: en
-contentHash: 2539ffa0eafcebe0
-codeVerified: 2026-11-10T01:58:25.627Z
-codeVerifiedHash: 2539ffa0eafcebe0
-codeVerifiedClaims: 84
+contentHash: 6cc0896d8a1582b3
+codeVerified: 2026-11-11T03:00:31.203Z
+codeVerifiedHash: 6cc0896d8a1582b3
+codeVerifiedClaims: 88
 ---
 
 # Environment Variables Reference
@@ -24,6 +24,8 @@ This page documents every environment variable and Cloudflare binding used by Lu
 |----------|----------|---------|-------------|
 | `LUMIBASE_ENV` | ✓ | — | Environment label: `development`, `staging`, `production` |
 | `LUMIBASE_RUNTIME` | Docker only | `cloudflare` | `docker` for Node.js/Docker; Cloudflare Workers infers from bindings |
+| `CORS_ALLOWED_ORIGINS` | ✓ in production | — | Comma-separated browser origins allowed to call the API; `*` is rejected in production. On Docker, when unset, the image entrypoint uses this deployment's own origin (`LUMIBASE_PUBLIC_URL`, then the platform's public URL) — the Studio is served from that origin |
+| `LUMIBASE_PUBLIC_URL` | ✗ (Docker only) | — | Public origin of this deployment, e.g. `https://cms.example.com`. Read by the image entrypoint to default `CORS_ALLOWED_ORIGINS` and to print the setup wizard URL. Without it the entrypoint uses `RENDER_EXTERNAL_URL`, `RAILWAY_PUBLIC_DOMAIN` or `FLY_APP_NAME` when the platform sets them. See [One-click deploys](./one-click.md) |
 | `JWT_SECRET` | ✓ | — | Secret for signing/verifying application JWTs. Min 32 chars. **For Cloudflare production, set with `wrangler secret put JWT_SECRET --env production`; never commit or place in `[env.production.vars]`.** |
 | `LUMIBASE_DEV_AUTH` | Local dev only | `false` | Set to `true` to bypass Logto auth in local dev. **Never enable in production; `pnpm release:check` fails if production resolves to `true`.** |
 | `LUMIBASE_ALLOW_ORG_SIGNUP` | Optional | unset | Set to `true` to allow authenticated Studio users to create organizations. Bootstrap instance operators may create organizations without this flag. Site creation and deletion use the organization API; the legacy admin site-management routes and their test-only flag have been removed. |
