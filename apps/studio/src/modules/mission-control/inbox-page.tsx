@@ -1,10 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
-import { AlertTriangle, CheckCircle, Inbox, ShieldAlert, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Inbox, MessageCircleQuestion, ShieldAlert, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import { missionControlApi } from './api';
 import { ExceptionInbox, invalidateInboxQueries } from './inbox';
 import { MissionControlLayout, useMissionControlBase } from './layout';
+import { QuestionAnswerForm } from './question-answer';
 import { StagedDiff } from './staged-diff';
 import { useInboxData, type InboxEntry } from './use-inbox';
 
@@ -123,6 +124,39 @@ function EntryDetail({ entry }: { entry: InboxEntry }) {
             <XCircle className="h-4 w-4" /> Reject
           </button>
         </div>
+      </div>
+    );
+  }
+
+  if (entry.kind === 'question') {
+    return (
+      <div className="space-y-3">
+        <h2 className="inline-flex items-center gap-2 text-sm font-semibold">
+          <MessageCircleQuestion className="h-4 w-4 text-violet-600" /> Agent question
+        </h2>
+        <dl className="grid grid-cols-[8rem_1fr] gap-y-1 text-sm">
+          <dt className="text-muted-foreground">Asked by</dt>
+          <dd>{entry.question.agentName}</dd>
+          <dt className="text-muted-foreground">Run</dt>
+          <dd>
+            <code className="rounded bg-muted px-1 text-xs">{entry.question.runId}</code>
+          </dd>
+          <dt className="text-muted-foreground">Asked at</dt>
+          <dd>{new Date(entry.question.createdAt).toLocaleString()}</dd>
+          {entry.question.expiresAt && (
+            <>
+              <dt className="text-muted-foreground">Deadline</dt>
+              <dd>{new Date(entry.question.expiresAt).toLocaleString()}</dd>
+            </>
+          )}
+        </dl>
+        <div className="border-t pt-3">
+          <QuestionAnswerForm question={entry.question} onAnswered={invalidate} />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          The run stays paused until you answer. Unanswered, it fails at the deadline; the kill switch
+          cancels it.
+        </p>
       </div>
     );
   }
