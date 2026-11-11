@@ -3,11 +3,18 @@
  * image is distroless and has no shell.
  *
  *   1. Load `<NAME>_FILE` secrets.
- *   2. Run the migration preflight and migrations with exponential backoff
+ *   2. Fill in what a one-click platform deploy cannot (#741): the public
+ *      origin for `CORS_ALLOWED_ORIGINS` and the standard base64 form of
+ *      `ENCRYPTION_KEY`.
+ *   3. In production, stop before touching the database if a required
+ *      variable is missing.
+ *   4. Run the migration preflight and migrations with exponential backoff
  *      (`SKIP_MIGRATIONS`, `RUN_MIGRATION_PREFLIGHT`, `MIGRATION_MODE` keep
  *      their old meaning).
- *   3. Load the server in this process, so it is PID 1's own code that
+ *   5. Load the server in this process, so it is PID 1's own code that
  *      receives SIGTERM — there is no shell in between to swallow it.
+ *   6. Once the server answers, print the setup wizard URL while setup is
+ *      still pending.
  *
  * Nothing here writes to disk: the image runs with a read-only root
  * filesystem.
@@ -15,7 +22,14 @@
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
-import { loadSecretFiles } from './entrypoint-lib.mjs';
+import {
+  applyDefaultCorsOrigin,
+  healthPort,
+  loadSecretFiles,
+  missingProductionVars,
+  normalizeEncryptionKey,
+  resolvePublicUrl,
+} from './entrypoint-lib.mjs';
 
 const log = (line) => console.log(`[entrypoint] ${line}`);
 const fail = (line) => {
@@ -34,6 +48,23 @@ try {
   if (loaded.length > 0) log(`Loaded from *_FILE: ${loaded.join(', ')}`);
 } catch (err) {
   fail(err instanceof Error ? err.message : String(err));
+}
+
+const publicUrl = resolvePublicUrl(env);
+const corsOrigin = applyDefaultCorsOrigin(env, publicUrl);
+if (corsOrigin) log(`CORS_ALLOWED_ORIGINS unset; using this deployment's origin ${corsOrigin}`);
+if (normalizeEncryptionKey(env)) {
+  log('ENCRYPTION_KEY rewritten to standard base64 (same key bytes)');
+}
+
+const missing = missingProductionVars(env);
+if (missing.length > 0) {
+  fail(
+    `Missing required production configuration: ${missing.join(', ')}. ` +
+      'Generate secrets with `openssl rand -base64 48` (JWT_SECRET) and ' +
+      '`openssl rand -base64 32` (ENCRYPTION_KEY); see ' +
+      'docs/en/deployment/one-click.md for the per-platform command.',
+  );
 }
 
 function runMigrate(command) {
@@ -79,6 +110,34 @@ async function migrate() {
   }
 }
 
+/**
+ * Print where to finish setup, once, while the instance is uninitialized.
+ * Best-effort and bounded: it never delays or fails the server.
+ */
+async function announceSetupWizard() {
+  const role = (env.LUMIBASE_PROCESS_ROLE || 'all').toLowerCase();
+  if (role === 'worker') return;
+  const local = `http://127.0.0.1:${healthPort(env)}`;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    await sleep(2000);
+    try {
+      const res = await fetch(`${local}/api/v1/setup/state`, { signal: AbortSignal.timeout(3000) });
+      if (!res.ok) continue;
+      const body = await res.json();
+      if (body?.state !== 'uninitialized') return;
+      const base = publicUrl ?? `http://localhost:${healthPort(env)}`;
+      log(`Setup is pending. Open ${base}/setup to create the first admin account.`);
+      if (body.requiresSetupToken) {
+        log('The wizard asks for the SETUP_TOKEN printed once in this log above.');
+      }
+      return;
+    } catch {
+      // server not up yet
+    }
+  }
+}
+
 await migrate();
 log('Starting server...');
 createRequire(import.meta.url)(serverScript);
+void announceSetupWizard();
