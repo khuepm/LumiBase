@@ -1,10 +1,10 @@
 ---
-version: 12
-lastUpdated: 2026-11-10T07:50:45.521Z
+version: 13
+lastUpdated: 2026-11-10T14:25:31.765Z
 sourceLang: vi
-contentHash: 2617d4d07e4ede6f
-codeVerified: 2026-11-10T07:50:45.521Z
-codeVerifiedHash: 2617d4d07e4ede6f
+contentHash: 132e470dfede933a
+codeVerified: 2026-11-10T14:25:31.765Z
+codeVerifiedHash: 132e470dfede933a
 codeVerifiedClaims: 28
 ---
 
@@ -61,7 +61,7 @@ Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (dựng trên `
 - **Entry:** `packages/mcp-server/src/index.ts` — `new McpServer({ name: 'lumibase', ... })`, đăng ký collection/field/item tools, `connect(StdioServerTransport)`.
 - **Client:** `LumiBaseClient` — HTTP tới `/api/v1` với Bearer token + site header.
 - **Config:** [`docs/en/agent-setup/mcp-config.json`](../../en/agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
-- **Studio:** trang *Data model → Set up MCP for your IDE* (`/data-model/mcp-setup`) tạo API key riêng gắn role, sinh config cho Cursor/Claude Desktop/VS Code, và có mục **Try these prompts** — prompt mẫu copy được, chia nhóm Explore/Content/Schema/Operations, gắn nhãn `Read-only`/`Writes data`/`Admin role`. Danh sách ở [`apps/studio/src/modules/data-model/mcp-prompts.ts`](../../../apps/studio/src/modules/data-model/mcp-prompts.ts); mỗi prompt khai các tool nó dùng và test đối chiếu với tool mà server thật sự đăng ký.
+- **Studio:** trang *Data model → Set up MCP for your IDE* (`/data-model/mcp-setup`) tạo API key riêng gắn role, sinh config cho Cursor/Claude Desktop/VS Code, và có mục **Try these prompts** — prompt mẫu copy được, chia nhóm Explore/Content/Schema/Operations, gắn nhãn `Read-only`/`Writes data`/`Admin role`, có bản tiếng Anh và tiếng Việt (nút chuyển ngôn ngữ, mặc định theo ngôn ngữ giao diện Studio). Danh sách ở [`apps/studio/src/modules/data-model/mcp-prompts.ts`](../../../apps/studio/src/modules/data-model/mcp-prompts.ts); mỗi prompt khai các tool nó dùng và test đối chiếu với tool mà server thật sự đăng ký.
 
 ### Thông tin xác thực organization (ADR-013)
 

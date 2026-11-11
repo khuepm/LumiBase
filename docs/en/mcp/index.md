@@ -1,13 +1,13 @@
 ---
-version: 12
-lastUpdated: 2026-11-10T07:50:45.521Z
+version: 13
+lastUpdated: 2026-11-10T14:25:31.765Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 2617d4d07e4ede6f
+sourceHash: 132e470dfede933a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T07:50:45.521Z
-codeVerifiedHash: 2617d4d07e4ede6f
+codeVerified: 2026-11-10T14:25:31.765Z
+codeVerifiedHash: 132e470dfede933a
 codeVerifiedClaims: 28
 ---
 
@@ -63,7 +63,7 @@ Source: [`packages/mcp-server/`](../../../packages/mcp-server/) (built on `@mode
 - **Entry:** `packages/mcp-server/src/index.ts` — `new McpServer({ name: 'lumibase', ... })`, registers the collection/field/item tools, then `connect(StdioServerTransport)`.
 - **Client:** `LumiBaseClient` — HTTP to `/api/v1` with a Bearer token + site header.
 - **Config:** [`docs/en/agent-setup/mcp-config.json`](../agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
-- **Studio:** the *Data model → Set up MCP for your IDE* page (`/data-model/mcp-setup`) creates a dedicated role-scoped API key, generates the Cursor/Claude Desktop/VS Code config, and has a **Try these prompts** section — copy-ready starter prompts grouped as Explore/Content/Schema/Operations and labelled `Read-only`/`Writes data`/`Admin role`. The list lives in [`apps/studio/src/modules/data-model/mcp-prompts.ts`](../../../apps/studio/src/modules/data-model/mcp-prompts.ts); each prompt declares the tools it uses and a test checks them against the tools the server actually registers.
+- **Studio:** the *Data model → Set up MCP for your IDE* page (`/data-model/mcp-setup`) creates a dedicated role-scoped API key, generates the Cursor/Claude Desktop/VS Code config, and has a **Try these prompts** section — copy-ready starter prompts grouped as Explore/Content/Schema/Operations and labelled `Read-only`/`Writes data`/`Admin role`, in English and Vietnamese (a language toggle that defaults to the Studio UI language). The list lives in [`apps/studio/src/modules/data-model/mcp-prompts.ts`](../../../apps/studio/src/modules/data-model/mcp-prompts.ts); each prompt declares the tools it uses and a test checks them against the tools the server actually registers.
 
 
 ### Organization credentials (ADR-013)
