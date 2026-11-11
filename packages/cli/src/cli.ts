@@ -1,6 +1,7 @@
 import pc from "picocolors";
 import { doctorCommand } from "./commands/doctor.js";
 import { initCommand } from "./commands/init.js";
+import { DEFAULT_SKILLS_DIR, skillsCommand } from "./commands/skills.js";
 import { typesCommand, DEFAULT_OUT } from "./commands/types.js";
 import { CliError } from "./errors.js";
 import { argvAfterCommand, boolFlag, parseArgs } from "./utils/args.js";
@@ -18,6 +19,7 @@ ${pc.bold("Usage")}
 ${pc.bold("Commands")}
   init [name]     Scaffold a new LumiBase project
   types           Generate TypeScript types from a live schema
+  skills          Sync Site Skills (AI agent playbooks) with a site
   doctor          Check configuration and connectivity
 
 ${pc.bold("Connection")}
@@ -37,10 +39,30 @@ ${pc.bold("lumibase types")}
   --check         Fail if the file is missing or stale ${pc.dim("(use in CI)")}
   --stdout        Print to stdout instead of writing a file
 
+${pc.bold("lumibase skills")} ${pc.dim("— Markdown playbooks (skills/*.skill.md) kept in git; needs an admin token")}
+  list            Show the skills on the site
+    --status <s>  Only draft | active | archived
+    --json        Print the raw JSON instead of a table
+  pull            Write every skill on the site to <dir>/<slug>.skill.md
+    --dir <dir>   Target directory      ${pc.dim(`(default: ${DEFAULT_SKILLS_DIR})`)}
+    --status <s>  Only draft | active | archived
+  push            Create or update skills from the *.md files in <dir>
+    --dir <dir>   Source directory      ${pc.dim(`(default: ${DEFAULT_SKILLS_DIR}; README.md is skipped)`)}
+    --activate    Activate the skills instead of leaving new ones as drafts
+    --dry-run     Show what would change without writing
+    --check       Dry run that fails if anything would change ${pc.dim("(use in CI)")}
+  install <src>   Push skills from a directory, a .md file, or an installed npm package
+                  ${pc.dim('(package dir: package.json "lumibase.skills", else skills/)')}
+    --activate    Activate on install ${pc.dim("(default: drafts, to review in Studio)")}
+    --dry-run     Show what would change without writing
+
 ${pc.bold("Examples")}
   ${pc.dim("$")} lumibase init my-site
   ${pc.dim("$")} lumibase types --out src/lumibase-types.d.ts
   ${pc.dim("$")} lumibase types --check
+  ${pc.dim("$")} lumibase skills pull
+  ${pc.dim("$")} lumibase skills push --check
+  ${pc.dim("$")} lumibase skills install @acme/lumibase-skills
   ${pc.dim("$")} lumibase doctor
 
   Docs: ${pc.cyan("https://docs.lumibase.dev")}
@@ -67,6 +89,8 @@ export async function run(argv: string[]): Promise<number> {
       return initCommand(argvAfterCommand(argv));
     case "types":
       return typesCommand(args);
+    case "skills":
+      return skillsCommand(args);
     case "doctor":
       return doctorCommand(args);
     case "help":

@@ -15,6 +15,7 @@ import { SchemaService } from '../services/schema-service';
 import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
 import { createConfiguredLLMProvider, createLLMProvider } from '../services/llm-provider';
 import { loadCopilotHistory } from '../services/copilot-history';
+import { resolveCopilotPlaybooks } from '../services/site-skill-service';
 import { createDecisionProvider, type DecisionProviderEnv } from '../services/decision-provider';
 import { decisionAuditContextForRequest } from '../services/decision-refusal-audit';
 import {
@@ -326,7 +327,16 @@ aiRouter.post('/chat', async (c) => {
     const llmProvider = createLLMProvider(
       c.env as unknown as Record<string, string | undefined>,
     );
-    const llmResponse = await llmProvider.chat(llmMessages);
+    // Site playbooks (#712) matching this message join the Copilot prompt.
+    const playbooks = await resolveCopilotPlaybooks(
+      { db, siteId },
+      { text: message, capabilities: userCapabilities },
+    );
+    const siteSkillsMeta = playbooks.applied.length > 0 ? { siteSkills: playbooks.applied } : {};
+    const llmResponse = await llmProvider.chat(
+      llmMessages,
+      playbooks.systemPrompt ? { systemPrompt: playbooks.systemPrompt } : undefined,
+    );
 
     // Step 6: Handle response
     if (llmResponse.toolCalls.length === 0) {
@@ -338,7 +348,7 @@ aiRouter.post('/chat', async (c) => {
         conversationId,
         role: 'assistant',
         content: responseText,
-        metadata: { status: 'denied' },
+        metadata: { status: 'denied', ...siteSkillsMeta },
       });
 
       // Update conversation timestamp
@@ -353,6 +363,7 @@ aiRouter.post('/chat', async (c) => {
             status: 'denied' as const,
             message: responseText,
             conversationId,
+            ...siteSkillsMeta,
           },
         },
         200,
@@ -416,6 +427,7 @@ aiRouter.post('/chat', async (c) => {
       metadata: {
         status: result.status,
         approvalId: result.approvalId,
+        ...siteSkillsMeta,
       },
     });
 
@@ -431,6 +443,7 @@ aiRouter.post('/chat', async (c) => {
           ...result,
           message: responseMessage,
           conversationId,
+          ...siteSkillsMeta,
         },
       },
       200,

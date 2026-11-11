@@ -1,14 +1,14 @@
 ---
 title: LumiBase CLI
-version: 7
-lastUpdated: 2026-10-10T04:59:28.224Z
+version: 8
+lastUpdated: 2026-11-11T01:20:50.124Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 9ea8177149217720
+sourceHash: ace01084052d0cc0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-13T19:22:01.232Z
-codeVerifiedHash: 9ea8177149217720
+codeVerified: 2026-11-11T01:20:50.124Z
+codeVerifiedHash: ace01084052d0cc0
 codeVerifiedClaims: 20
 ---
 
@@ -43,6 +43,7 @@ CLI yêu cầu Node.js 22+; launcher tại `packages/cli/bin/lumibase.js` từ c
 | `lumibase init [name]` | Tạo khung một project mới |
 | `lumibase types` | Sinh type TypeScript từ một CMS đang chạy |
 | `lumibase doctor` | Báo cáo cấu hình đã resolve và thăm dò kết nối |
+| `lumibase skills <list\|pull\|push\|install>` | Đồng bộ Site Skills (playbook cho agent) với một site |
 
 `lumibase help` và `lumibase version` cũng được chấp nhận, cùng với `--help` / `-h` và `--version` / `-v`.
 
@@ -130,6 +131,31 @@ In ra những gì đã resolve, mỗi giá trị đến từ đâu, và CMS có 
 Bước health gọi endpoint `/health` không cần xác thực (`apps/cms/src/routes/health.ts`); bước schema thực hiện đúng request có xác thực mà `lumibase types` sẽ gửi, nên `doctor` xanh nghĩa là typegen sẽ chạy được. Token được che: giữ lại một tiền tố ngắn để người vận hành biết token nào đã được nhận diện mà giá trị thật không lọt vào log CI.
 
 `doctor` thoát với mã khác 0 nếu có bất kỳ mục nào fail.
+
+## `lumibase skills`
+
+Đồng bộ [Site Skills](../features/site-skills.md) — các playbook Markdown cho agent của site — giữa một thư mục trong repository của bạn và một site. CLI chỉ chuyển file: CMS parse và validate từng tài liệu, nên định dạng chỉ có một bản cài đặt.
+
+| Lệnh | Tác dụng |
+| --- | --- |
+| `lumibase skills list` | Bảng các skill của site. `--status <s>` để lọc; `--json` in các dòng thô. |
+| `lumibase skills pull` | Ghi mọi skill ra `<dir>/<slug>.skill.md`. `--dir` (mặc định `skills`), `--status`. |
+| `lumibase skills push` | Tạo hoặc cập nhật skill từ các file `*.md` trong `<dir>` (bỏ qua `README.md`). `--activate`, `--dry-run`, `--check`. |
+| `lumibase skills install <src>` | Push skill từ một thư mục, một file `.md` đơn lẻ, hoặc một package npm đã được cài cục bộ. `--activate`, `--dry-run`. |
+
+```bash
+lumibase skills pull
+lumibase skills push --dry-run
+lumibase skills push --check      # CI: exit 1 if the site differs from the directory
+lumibase skills install @acme/lumibase-skills
+```
+
+- **Skill mới tới ở dạng draft.** Truyền `--activate` để kích hoạt; nếu không thì rà soát và kích hoạt trong Studio (Mission Control → Skills). Skill đã có giữ nguyên status, nên push một chỉnh sửa lên skill active sẽ đổi hành vi agent ngay lập tức.
+- **Idempotent.** File có nội dung khớp với phiên bản đang lưu được báo `unchanged` và không ghi gì.
+- **Mã thoát.** `push` và `install` thoát `1` khi có tài liệu bị từ chối; các tài liệu khác vẫn được áp dụng. `--check` cũng thoát `1` khi có thứ gì sẽ được tạo hoặc cập nhật.
+- **`install` không tải gì về.** Đường dẫn tồn tại được ưu tiên; nếu không, tên được resolve dưới `node_modules`, đi ngược lên từ thư mục làm việc. Bên trong một package, thư mục skill là `package.json` → `lumibase.skills`, hoặc `skills/` khi key đó vắng mặt. Tên và phiên bản package được ghi làm nguồn của phiên bản.
+- **Một chiều.** `push` không bao giờ xoá: skill có trên site nhưng không có trong thư mục được để yên, và `--check` không báo nó.
+- **Token.** Các endpoint nằm dưới `/api/v1/agent`, nên token cần quyền admin trên site (hoặc thêm capability `skills:write`).
 
 ## Liên quan
 

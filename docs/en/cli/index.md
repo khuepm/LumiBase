@@ -1,11 +1,11 @@
 ---
 title: LumiBase CLI
-version: 7
-lastUpdated: 2026-10-10T04:59:28.224Z
+version: 8
+lastUpdated: 2026-11-11T01:20:50.124Z
 sourceLang: en
-contentHash: 9ea8177149217720
-codeVerified: 2026-10-13T19:22:01.232Z
-codeVerifiedHash: 9ea8177149217720
+contentHash: ace01084052d0cc0
+codeVerified: 2026-11-11T01:20:50.124Z
+codeVerifiedHash: ace01084052d0cc0
 codeVerifiedClaims: 20
 ---
 
@@ -40,6 +40,7 @@ Node.js 22+ is required for the CLI; the launcher in `packages/cli/bin/lumibase.
 | `lumibase init [name]` | Scaffold a new project |
 | `lumibase types` | Generate TypeScript types from a running CMS |
 | `lumibase doctor` | Report resolved configuration and probe connectivity |
+| `lumibase skills <list\|pull\|push\|install>` | Sync Site Skills (agent playbooks) with a site |
 
 `lumibase help` and `lumibase version` are also accepted, as are `--help` / `-h` and `--version` / `-v`.
 
@@ -127,6 +128,31 @@ Prints what was resolved, where each value came from, and whether the CMS answer
 The health probe calls the unauthenticated `/health` endpoint (`apps/cms/src/routes/health.ts`); the schema check exercises the same authenticated request `lumibase types` makes, so a green `doctor` means typegen will work. Tokens are masked: a short prefix is kept so an operator can tell which token was picked up without the value reaching CI logs.
 
 `doctor` exits non-zero if any check fails.
+
+## `lumibase skills`
+
+Syncs [Site Skills](../features/site-skills.md) — Markdown playbooks for the site's agents — between a directory in your repository and a site. The CLI only moves files: the CMS parses and validates each document, so the format has one implementation.
+
+| Command | What it does |
+| --- | --- |
+| `lumibase skills list` | Table of the site's skills. `--status <s>` filters; `--json` prints the raw rows. |
+| `lumibase skills pull` | Writes every skill to `<dir>/<slug>.skill.md`. `--dir` (default `skills`), `--status`. |
+| `lumibase skills push` | Creates or updates skills from the `*.md` files in `<dir>` (`README.md` is skipped). `--activate`, `--dry-run`, `--check`. |
+| `lumibase skills install <src>` | Pushes skills from a directory, a single `.md` file, or an npm package that is already installed locally. `--activate`, `--dry-run`. |
+
+```bash
+lumibase skills pull
+lumibase skills push --dry-run
+lumibase skills push --check      # CI: exit 1 if the site differs from the directory
+lumibase skills install @acme/lumibase-skills
+```
+
+- **New skills land as drafts.** Pass `--activate` to activate them; otherwise review and activate in Studio (Mission Control → Skills). Existing skills keep their status, so pushing an edit to an active skill changes agent behaviour immediately.
+- **Idempotent.** A file whose content matches the stored version is reported `unchanged` and writes nothing.
+- **Exit codes.** `push` and `install` exit `1` when any document is rejected; the other documents are still applied. `--check` also exits `1` when anything would be created or updated.
+- **`install` downloads nothing.** A path that exists wins; otherwise the name is resolved under `node_modules`, walking up from the working directory. Inside a package the skills directory is `package.json` → `lumibase.skills`, or `skills/` when that key is absent. The package name and version are recorded as the version's source.
+- **One direction.** `push` never deletes: a skill that exists on the site but not in the directory is left alone, and `--check` does not report it.
+- **Token.** The endpoints are under `/api/v1/agent`, so the token needs admin access to the site (or the `skills:write` capability on top of it).
 
 ## Related
 

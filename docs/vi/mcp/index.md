@@ -1,10 +1,10 @@
 ---
-version: 13
-lastUpdated: 2026-11-10T14:25:31.765Z
+version: 14
+lastUpdated: 2026-11-11T01:20:50.339Z
 sourceLang: vi
-contentHash: 132e470dfede933a
-codeVerified: 2026-11-10T14:25:31.765Z
-codeVerifiedHash: 132e470dfede933a
+contentHash: 3c01b3b8ca235d7f
+codeVerified: 2026-11-11T01:20:50.339Z
+codeVerifiedHash: 3c01b3b8ca235d7f
 codeVerifiedClaims: 28
 ---
 
@@ -30,10 +30,11 @@ Nguồn: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`
 - **Auth → capability:** Bearer token; capability set được **resolve từ RBAC bundle sống** của token (#472), không phải từ `auth.roles`. ⇒ một MCP client **không bao giờ làm được nhiều hơn** cùng token đó qua REST — và cũng không ít hơn, điều mà cách đọc `auth.roles` cũ làm sai (role id không bao giờ khớp `items:write`). Xem [`governed-tool-contract.md`](governed-tool-contract.md) mục 4.
 - **Feature gate:** cờ per-site `contentOs.mcp` (mặc định **off**). Tắt → `404 MCP_DISABLED`. (`feature-flags.ts`).
 - **Methods (JSON-RPC):**
-  - `initialize` — thương lượng protocol version, trả `capabilities: { tools: { listChanged: false } }`.
+  - `initialize` — thương lượng protocol version, trả `capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }` (plane organization không có `prompts`).
   - `ping`.
   - `tools/list` — liệt kê tool **đang enabled** từ `ToolRegistryService`; inputSchema suy ra từ schema canonical trong `@lumibase/contracts` (chỉ skill chưa có schema mới rơi về `{ type: 'object' }`).
   - `tools/call` — chạy qua `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. Kết quả bọc `{ content, structuredContent, isError }`.
+  - `prompts/list`, `prompts/get` — các [Site Skills](../features/site-skills.md) đang `active` của site, lọc theo capability của người gọi; `name` là slug, thân trả về dưới dạng một user message. Prompt không tồn tại và prompt không được phép thấy trả lời giống hệt nhau.
   - `notifications/initialized`, `notifications/cancelled` → trả `null` ⇒ HTTP `202 Accepted` không body.
 - **Mapping quyết định → kết quả tool** (bất biến quan trọng):
   - `executed` → `isError: false`, data trong `structuredContent`.

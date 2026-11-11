@@ -20,6 +20,7 @@ import { itemServiceForRequest, buildRequestPermissionContext } from '../service
 import { createConfiguredLLMProvider } from '../services/llm-provider';
 import { McpService, type McpHarnessPort } from '../services/mcp-service';
 import { SchemaService } from '../services/schema-service';
+import { SiteSkillService } from '../services/site-skill-service';
 import { ToolRegistryService } from '../services/tool-registry-service';
 
 /**
@@ -104,7 +105,30 @@ mcpRouter.post('/', async (c) => {
     cache: runtime.cache,
   });
 
+  // Site playbooks (#712) surface as MCP prompts (#345): an external agent
+  // can pull this site's house rules the same way the built-in Copilot gets
+  // them. Read-only, and filtered by the caller's own capabilities.
+  const siteSkills = new SiteSkillService({ db, siteId });
   const port: McpHarnessPort = {
+    listPrompts: async (capabilities) =>
+      (await siteSkills.listForMcp(capabilities)).map((skill) => ({
+        name: skill.slug,
+        title: skill.name,
+        description: skill.description,
+      })),
+    getPrompt: async (name, capabilities) => {
+      const skill = (await siteSkills.listForMcp(capabilities)).find((entry) => entry.slug === name);
+      return skill
+        ? {
+            name: skill.slug,
+            title: skill.name,
+            description: skill.description,
+            text: skill.body,
+            version: skill.version,
+            hash: skill.hash,
+          }
+        : null;
+    },
     listTools: async () => [
       ...(await registry.listTools()).map(({ name, description, inputSchema, enabled }) => ({
         name,

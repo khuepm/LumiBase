@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 34
-lastUpdated: 2026-11-10T05:40:26.568Z
+version: 35
+lastUpdated: 2026-11-11T01:20:48.461Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8c958f2d7140353f
+sourceHash: 7626206e87728737
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T05:40:26.568Z
-codeVerifiedHash: 8c958f2d7140353f
+codeVerified: 2026-11-11T01:20:48.461Z
+codeVerifiedHash: 7626206e87728737
 codeVerifiedClaims: 484
 ---
 
@@ -936,10 +936,11 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `POST` | `/api/v1/agent/approvals/:id/reopen` | Đưa một approval đang ở `failed` về `pending` để quyết định lại. Body `{ reason }` là **bắt buộc** và được ghi audit; cần `approvals:decide`. Một skill đã chạm tới service rồi mới lỗi thì bị giữ lại chứ không tự mời lại, vì thử lại có thể lặp một phép ghi không idempotent — đây là đường về có chủ ý |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Quyết định của Agent với tư cách người đánh giá (cần `review:<domain>`; cấm tự đánh giá) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Các phiên bản, bản nháp, `/compile` (NL→đánh giá), `:id/dry-run`, `:id/activate` |
+| `*` | `/api/v1/agent/skills[...]` | Site Skills — playbook được chèn vào các agent run khớp: CRUD theo id hoặc slug, `:id/activate\|archive\|draft`, `:id/versions`, `:id/versions/:version/restore`, `/import`, `/export`, `/match`. Thao tác ghi cần `skills:write` hoặc control-plane admin; `riskClass: high` chỉ dành cho admin (`403 RISK_REQUIRES_ADMIN`). Xem [features/site-skills.md](../features/site-skills.md) |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Dừng ở 4 phạm vi (`run/intent/role/site`); việc đóng đóng băng cần `agents:freeze` |
 | `*` | `/api/v1/agent/intents[...]` | CRUD ý định nội dung, `:id/pause|resume|scan|drifts`, `/compile` |
 | `POST` | `/api/v1/intents/:id/scan` | Một chu kỳ reconcile: `{ scan, reconcile, dispatch }`. `dispatch` đẩy mỗi reconciler goal tiến một bước (draft → promote → verify) và báo `dispatched/completed/skipped/blocked` cùng `queueUnavailable` trên runtime không có queue adapter. Xem [vòng sửa của reconciler](../features/reconciler-repair-loop.md). Khi intent có rule `semantic`, `scan.semantic` báo pass ngữ nghĩa có budget riêng (`status` `ran`/`off`/`unavailable`, các số đếm, `completed`, `cursor`), và `scan.semanticOrphansResolved` đếm các hàng của rule ngữ nghĩa bị gỡ mà scan đã resolve. Cập nhật intent làm một rule ngữ nghĩa đã lưu đổi profile, câu hỏi, context hoặc fields mà không tăng `version` trả về `422 SEMANTIC_RULE_VERSION_REQUIRED`; xem [drift ngữ nghĩa](../features/jev-semantic-drift.md) |
-| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp` |
+| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp`. Ngoài `tools/*`, `prompts/list` và `prompts/get` phơi bày các skill active của site |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Ghim Law Zero: liệt kê / giải phóng |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Chỉ mục llms.txt công khai mỗi site |
 

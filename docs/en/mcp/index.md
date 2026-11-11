@@ -1,13 +1,13 @@
 ---
-version: 13
-lastUpdated: 2026-11-10T14:25:31.765Z
+version: 14
+lastUpdated: 2026-11-11T01:20:50.339Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 132e470dfede933a
+sourceHash: 3c01b3b8ca235d7f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T14:25:31.765Z
-codeVerifiedHash: 132e470dfede933a
+codeVerified: 2026-11-11T01:20:50.339Z
+codeVerifiedHash: 3c01b3b8ca235d7f
 codeVerifiedClaims: 28
 ---
 
@@ -33,10 +33,11 @@ Source: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`a
 - **Auth → capability:** Bearer token; the capability set is **resolved from the token's live RBAC bundle** (#472), not from `auth.roles`. ⇒ an MCP client can **never do more** than that same token can through REST — and never less either, which is what reading `auth.roles` got wrong (a role id can never match `items:write`). See [`governed-tool-contract.md`](governed-tool-contract.md) section 4.
 - **Feature gate:** the per-site `contentOs.mcp` flag (default **off**). Off → `404 MCP_DISABLED`. (`feature-flags.ts`).
 - **Methods (JSON-RPC):**
-  - `initialize` — negotiates the protocol version, returns `capabilities: { tools: { listChanged: false } }`.
+  - `initialize` — negotiates the protocol version, returns `capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }` (the organization plane has no `prompts`).
   - `ping`.
   - `tools/list` — lists the **currently enabled** tools from `ToolRegistryService`; the inputSchema is derived from the canonical schemas in `@lumibase/contracts` (only a skill with no schema still falls back to `{ type: 'object' }`).
   - `tools/call` — runs through `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. The result is wrapped as `{ content, structuredContent, isError }`.
+  - `prompts/list`, `prompts/get` — the site's `active` [Site Skills](../features/site-skills.md), filtered by the caller's capabilities; `name` is the slug and the body comes back as a single user message. A prompt that does not exist and one the caller may not see answer identically.
   - `notifications/initialized`, `notifications/cancelled` → return `null` ⇒ HTTP `202 Accepted` with no body.
 - **Mapping decision → tool result** (an important invariant):
   - `executed` → `isError: false`, data in `structuredContent`.

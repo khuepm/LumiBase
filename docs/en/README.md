@@ -1,13 +1,13 @@
 ---
-version: 7
-lastUpdated: 2026-10-10T04:59:56.112Z
+version: 8
+lastUpdated: 2026-11-11T01:21:15.680Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 3288ce23dde726e0
+sourceHash: 61bbd0dc2cc03957
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-13T19:22:00.109Z
-codeVerifiedHash: 3288ce23dde726e0
+codeVerified: 2026-11-11T01:21:15.680Z
+codeVerifiedHash: 61bbd0dc2cc03957
 codeVerifiedClaims: 4
 ---
 
@@ -71,6 +71,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
 - **Advanced features (POST-GA / Dual-runtime)** (`features/`)
   - [ai-copilot.md](./features/ai-copilot.md) — AI Chat + Human-in-the-Loop approvals (Studio Copilot).
   - [agent-harness-layer.md](./features/agent-harness-layer.md) — Agent goals, runs, tools, memory, approvals, artifacts, evaluations, and app generation governance.
+  - [site-skills.md](./features/site-skills.md) — Site Skills: versioned playbooks injected into agent runs, skills-as-code CLI, MCP prompts.
   - [runtime-abstraction.md](./features/runtime-abstraction.md) — The `@lumibase/runtime` layer that allows running on Cloudflare and Docker.
   - [flows-automation.md](./features/flows-automation.md) — The Flows / Operations engine (workflow automation).
   - [marketplace.md](./features/marketplace.md) — Marketplace extensions with digital signatures (signed bundles).

@@ -115,7 +115,10 @@ DECLARE
     -- Draft-review pilot timing (Jev J09, site-isolated; no cross-site job reads it).
     'lumibase_review_sessions',
     -- Jev automation actions (J11, site-isolated; every read/write is per site, no cross-site job).
-    'lumibase_ai_automation_actions'
+    'lumibase_ai_automation_actions',
+    -- Site Skills (#712, site-isolated playbooks + their version trail). Workers
+    -- that inject them read through the system connection, scoped by site_id.
+    'lumibase_site_skills', 'lumibase_site_skill_versions'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

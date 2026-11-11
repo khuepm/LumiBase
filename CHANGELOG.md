@@ -9,7 +9,14 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+- **Site Skills** (#712): playbooks a site writes for its agents — house style, translation rules, page structure — as Markdown with front matter. Active skills are added to the instructions of matching runs in the Copilot chat, the generation tools (`aiContentAssist`, `aiSuggestField`, `repairTranslation`, `generateAppSpec`, `generateSeedData`) and over MCP as `prompts/list` / `prompts/get`. Every content change is an immutable version with author, source and sha256 hash, and each run records the `slug@version` it used. A skill is instruction text only: it grants no tool or capability and does not bypass approvals, autonomy levels, the kill switch or the constitution.
+- `/api/v1/agent/skills` API: CRUD, activate/archive, version trail and restore, Markdown import/export, and `/match` to preview what a run would receive. Writes need `skills:write` or control-plane admin; `riskClass: high` skills are admin-only.
+- `lumibase skills list | pull | push | install` in the CLI, for keeping skills in git and deploying them from CI (`push --check` fails when the site differs from the directory).
+- Studio: Mission Control → Skills, with an editor, lifecycle actions, version history and a match preview.
+
+### Upgrade notes
+- Migration `0026_site_skills` adds two tables and changes nothing existing; no backfill. Re-apply `packages/database/migrations/rls-policies.sql` after migrating, as after every upgrade. Sites start with no skills, so agent behaviour is unchanged until an admin activates one.
 
 ## [2.0.0] - 2026-11-10
 

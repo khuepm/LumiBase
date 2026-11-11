@@ -22,6 +22,12 @@ import { runFlow, type FlowGraph } from './flow-service';
 import { ContentVersionService } from './content-version-service';
 import { completeWithInstructions, type ConfiguredLLM } from './llm-provider';
 import { redactSettingRow } from './settings-redaction';
+import {
+  EMPTY_RESOLVED_SKILLS,
+  SiteSkillService,
+  withSiteSkills,
+  type AppliedSiteSkill,
+} from './site-skill-service';
 import type { CacheProvider, KeyProvider, QueueProvider } from '@lumibase/runtime';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentAutonomousOpsTotal, observeApprovalDecision } from './agent-metrics';
@@ -225,7 +231,9 @@ export function extractJson(text: string): unknown {
 
 interface LLMJsonResult<T> {
   value: T;
-  meta: { provider: string; model: string; estimatedTokens: number; tokens?: number; inputTokens?: number | null; outputTokens?: number | null; usd?: number; usageSource?: string };
+  meta: { provider: string; model: string; estimatedTokens: number; tokens?: number; inputTokens?: number | null; outputTokens?: number | null; usd?: number; usageSource?: string;
+    /** Site playbooks injected into the instructions (#712): slug, version, hash. */
+    siteSkills?: AppliedSiteSkill[] };
 }
 
 /** A skill counts against the write budget when it mutates data or schema. */
@@ -549,6 +557,38 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
   /** Distinguishes "offline test registry" from "environment has no LLM". */
   const llmResolved = 'llm' in services;
   const llm = services.llm ?? null;
+
+  /**
+   * Site playbooks (#712) for the generation tools. Built here from the
+   * tenant handle the factory already has, rather than injected by each
+   * caller, so no `new AISecureHarness` call site can forget it (the class of
+   * bug DoD §2b "runtime provider parity" exists for). Absent in the offline
+   * registry, which has no tenant.
+   */
+  const playbooks = db && siteId ? new SiteSkillService({ db, siteId }) : null;
+
+  /**
+   * {@link completeJson} with the site's matching playbooks appended to the
+   * instructions. The applied `slug@version` + hash ride back on `meta`, which
+   * the run trail persists — that is the provenance link from generated text to
+   * the house rules that shaped it. Caller capabilities are not known inside a
+   * tool handler, so capability-gated playbooks are withheld here (fail closed).
+   */
+  async function completeGuided<T = unknown>(
+    scope: { tool: string; collection?: string; text?: string },
+    provider: ConfiguredLLM | null | undefined,
+    system: string,
+    user: string,
+  ): Promise<LLMJsonResult<T>> {
+    const resolved =
+      playbooks && provider
+        ? await playbooks.resolveSafe({ surface: 'generation', ...scope })
+        : EMPTY_RESOLVED_SKILLS;
+    const result = await completeJson<T>(provider, withSiteSkills(system, resolved), user);
+    return resolved.skills.length > 0
+      ? { ...result, meta: { ...result.meta, siteSkills: resolved.skills } }
+      : result;
+  }
 
   /**
    * Lazily construct a site-scoped DeploymentService for deployment skills.
@@ -1003,7 +1043,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           );
         }
 
-        const completion = await completeJson<{ translation?: unknown }>(
+        const completion = await completeGuided<{ translation?: unknown }>(
+          { tool: 'repairTranslation', collection, text: `${field} ${locale}` },
           services.llm,
           'You are a professional translator for a CMS. Reply with JSON only: {"translation": "..."}. Preserve meaning, tone, markup and placeholders exactly. Do not add commentary.',
           `Translate the following text from locale "${sourceLocale}" into locale "${locale}".\n\n${sourceText}`,
@@ -1095,7 +1136,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           return { collection, suggestions, existingFields };
         }
 
-        const { value, meta } = await completeJson<unknown>(
+        const { value, meta } = await completeGuided<unknown>(
+          { tool: 'aiSuggestField', collection, text: description },
           llm,
           'You design CMS field schemas. Reply with ONLY a JSON array of field suggestions, each: ' +
             '{"name": string (snake_case), "type": one of string|text|integer|float|boolean|dateTime|json, ' +
@@ -1184,7 +1226,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
           return { collection, fieldName, generatedContent: validated.content, citations: validated.citations.map((citation) => ({ ...citation, itemId: evidence.find((source) => source.sourceId === citation.sourceId)?.itemId })), abstained: validated.abstained, ragSamples: samples.length, meta };
         }
 
-        const { value, meta } = await completeJson<{ content?: unknown }>(
+        const { value, meta } = await completeGuided<{ content?: unknown }>(
+          { tool: 'aiContentAssist', collection, text: `${fieldName} ${instruction}` },
           llm,
           'You write CMS field content. Reply with ONLY JSON: {"content": string}. ' +
             'Match the tone and structure of the sample items when provided. ' +
@@ -1246,7 +1289,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         }
 
         const fieldsByCollection = await describeCollections(schemaService, collections);
-        const { value, meta } = await completeJson<{ pages?: unknown[]; components?: unknown[] }>(
+        const { value, meta } = await completeGuided<{ pages?: unknown[]; components?: unknown[] }>(
+          { tool: 'generateAppSpec', text: `${targetApp} ${collections.join(' ')}` },
           llm,
           'You design app specs for a headless CMS frontend. Reply with ONLY JSON: ' +
             '{"pages": [{"collection": string, "route": string, "title": string, ' +
@@ -1385,7 +1429,8 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         }
 
         const fieldsByCollection = await describeCollections(schemaService, [collection]);
-        const { value, meta } = await completeJson<unknown>(
+        const { value, meta } = await completeGuided<unknown>(
+          { tool: 'generateSeedData', collection, text: collection },
           llm,
           'You generate realistic seed data for a CMS collection. Reply with ONLY a JSON array ' +
             `of exactly ${count} row objects. Keys must match the field names given; values must ` +

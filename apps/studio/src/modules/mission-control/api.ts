@@ -217,6 +217,82 @@ export interface ContentOsFlagsSnapshot {
   raw: Record<string, unknown>;
 }
 
+// ── Site Skills (#712) ───────────────────────────────────────────────────
+export type SiteSkillStatus = 'draft' | 'active' | 'archived';
+export type SiteSkillRiskClass = 'low' | 'medium' | 'high';
+export type SiteSkillSurface = 'copilot' | 'generation' | 'mcp';
+
+/** Mirrors the skill row of apps/cms/src/services/site-skill-service.ts. */
+export interface SiteSkill {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  status: SiteSkillStatus;
+  riskClass: SiteSkillRiskClass;
+  priority: number;
+  triggers: string[];
+  surfaces: SiteSkillSurface[];
+  tools: string[];
+  collections: string[];
+  requiredCapabilities: string[];
+  body: string;
+  version: number;
+  hash: string;
+  source: string;
+  sourceRef: string | null;
+  activatedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Versioned content of a skill — everything but the immutable slug. */
+export interface SiteSkillContent {
+  name: string;
+  description: string;
+  riskClass: SiteSkillRiskClass;
+  priority: number;
+  triggers: string[];
+  surfaces: SiteSkillSurface[];
+  tools: string[];
+  collections: string[];
+  requiredCapabilities: string[];
+  body: string;
+}
+
+export interface SiteSkillWriteMeta {
+  changeNote?: string;
+}
+
+export interface SiteSkillVersion {
+  id: string;
+  version: number;
+  hash: string;
+  snapshot: unknown;
+  source: string;
+  sourceRef: string | null;
+  changeNote: string | null;
+  authorId: string | null;
+  authorLabel: string | null;
+  createdAt: string;
+}
+
+export interface SiteSkillMatchInput {
+  surface: SiteSkillSurface;
+  tool?: string;
+  collection?: string;
+  text?: string;
+}
+
+export interface SiteSkillMatchResult {
+  skills: Array<{ slug: string; version: number; hash: string }>;
+  /** Slugs that matched but did not fit the injection budget. */
+  skipped: string[];
+  prompt: string;
+}
+
+const SKILLS = '/api/v1/agent/skills';
+
 export const missionControlApi = {
   approvals: () => agentFetch<AgentApproval[]>('/api/v1/agent/approvals'),
   decideApproval: (id: string, decision: 'approved' | 'rejected', reason?: string) =>
@@ -335,6 +411,42 @@ export const missionControlApi = {
     agentFetch<PromotionCheckResult>('/api/v1/agent/autonomy/promotions/check', {
       method: 'POST',
       body: JSON.stringify({ agentRole, capability }),
+    }),
+  // ── Site Skills (#712) ──────────────────────────────────────────────────
+  skills: (status?: SiteSkillStatus) =>
+    agentFetch<SiteSkill[]>(status ? `${SKILLS}?status=${status}` : SKILLS),
+  skill: (id: string) =>
+    agentFetch<SiteSkill & { document: string }>(`${SKILLS}/${encodeURIComponent(id)}`),
+  /** New skills are always created as `draft`. */
+  createSkill: (input: SiteSkillContent & { slug: string } & SiteSkillWriteMeta) =>
+    agentFetch<SiteSkill>(SKILLS, {
+      method: 'POST',
+      body: JSON.stringify({ ...input, source: 'studio' }),
+    }),
+  /** `meta.changed` is dropped by agentFetch — callers refetch instead. */
+  updateSkill: (id: string, patch: Partial<SiteSkillContent> & SiteSkillWriteMeta) =>
+    agentFetch<SiteSkill>(`${SKILLS}/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ...patch, source: 'studio' }),
+    }),
+  deleteSkill: (id: string) =>
+    agentFetch(`${SKILLS}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  setSkillStatus: (id: string, action: 'activate' | 'archive' | 'draft') =>
+    agentFetch<SiteSkill>(`${SKILLS}/${encodeURIComponent(id)}/${action}`, {
+      method: 'POST',
+      body: '{}',
+    }),
+  skillVersions: (id: string) =>
+    agentFetch<SiteSkillVersion[]>(`${SKILLS}/${encodeURIComponent(id)}/versions`),
+  restoreSkillVersion: (id: string, version: number) =>
+    agentFetch<SiteSkill>(`${SKILLS}/${encodeURIComponent(id)}/versions/${version}/restore`, {
+      method: 'POST',
+      body: '{}',
+    }),
+  matchSkills: (input: SiteSkillMatchInput) =>
+    agentFetch<SiteSkillMatchResult>(`${SKILLS}/match`, {
+      method: 'POST',
+      body: JSON.stringify(input),
     }),
   /**
    * Rollout flags switchboard (content-os-ui Req 15). Reads the per-site
