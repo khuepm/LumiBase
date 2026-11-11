@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 2
-lastUpdated: 2026-10-10T05:00:15.277Z
+version: 3
+lastUpdated: 2026-11-11T02:50:37.617Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6552429e41352200
+sourceHash: 0f27a65a095fdab4
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-13T19:22:02.312Z
-codeVerifiedHash: 6552429e41352200
-codeVerifiedClaims: 9
+codeVerified: 2026-11-11T02:50:37.617Z
+codeVerifiedHash: 0f27a65a095fdab4
+codeVerifiedClaims: 18
 ---
 
 <!-- check-parity: allow code-fences headings -->
@@ -77,6 +77,83 @@ docker compose \
   -f docker/docker-compose.build.yml \
   up -d --build
 ```
+
+## Image đã hardening
+
+Image được publish (`docker/Dockerfile`) được build để chạy với mức tối thiểu
+có thể:
+
+| Thuộc tính | Ý nghĩa với bạn |
+|------------|-----------------|
+| Runtime distroless (`gcr.io/distroless/nodejs22-debian13:nonroot`) | Chỉ có Node.js và các thư viện runtime của nó — không shell, không package manager, không `curl`. `docker exec -it <container> sh` không chạy được; hãy dùng `docker debug` hoặc một container debug tạm thời. |
+| Non-root | Chạy với UID/GID `65532`. File ứng dụng thuộc root và user đó không ghi được. |
+| Root filesystem chỉ đọc | Server không ghi gì xuống đĩa, nên container chạy với `read_only: true`. `docker/docker-compose.prod.yml` và `docker/docker-compose.gcp.yml` bật nó, cùng với `cap_drop: [ALL]`, `no-new-privileges` và `init: true`. |
+| Healthcheck | `HEALTHCHECK` chạy `docker/scripts/healthcheck.mjs` bằng chính Node của image. Nó probe `PORT`, hoặc cổng health của worker khi `LUMIBASE_PROCESS_ROLE=worker`. |
+| Entrypoint | `docker/scripts/entrypoint.mjs` (Node) thay cho `entrypoint.sh`. `SKIP_MIGRATIONS`, `RUN_MIGRATION_PREFLIGHT`, `MIGRATION_MODE` và các secret `*_FILE` hoạt động như trước. |
+
+### Server ghi dữ liệu ở đâu
+
+Không có gì server cần nằm trên filesystem của container:
+
+| Dữ liệu | Nơi lưu |
+|---------|---------|
+| Nội dung, user, audit log, trạng thái setup | PostgreSQL (`DATABASE_URL`) |
+| Cache, rate limit, queue, leader lock | Redis (`REDIS_URL`) |
+| Media upload | Storage tương thích S3 (`S3_ENDPOINT`) |
+| Search index | Meilisearch (`MEILISEARCH_HOST`) |
+| Log | stdout/stderr |
+| `/tmp` | Một `tmpfs` 64 MiB trong các file compose production, chỉ dành cho code bên thứ ba gọi `os.tmpdir()`. Bản thân LumiBase không dùng nó; `/tmp` chỉ đọc vẫn khởi động được. |
+
+Input chỉ đọc: `/app/dist`, `/app/drizzle`, `/app/studio`, các secret `*_FILE`,
+các file `ENCRYPTION_KEY_<id>`, và database GeoIP tùy chọn tại
+`/var/lib/lumibase/geoip/GeoLite2-Country.mmdb`.
+
+Để chạy image đã publish theo cùng cách mà không dùng Compose:
+
+```bash
+docker run --read-only --tmpfs /tmp:size=64m --cap-drop ALL \
+  --security-opt no-new-privileges:true --init \
+  --env-file docker/.env -p 1989:1989 ghcr.io/khuepm/lumibase-cms:<version>
+```
+
+### Kiểm chứng image bạn pull
+
+Mọi image release đều được scan trước khi push: release workflow fail khi có
+bất kỳ phát hiện **CRITICAL** nào, trong image hoặc trong npm lockfile (server
+là một bundle, nên các dependency npm chỉ nhìn thấy được qua lockfile). Các
+ngoại lệ được chấp nhận nằm trong `.trivyignore`, mỗi mục kèm lý do. Sau đó
+image được ký bằng cosign keyless và mang một attestation SBOM SPDX; cả hai SBOM
+(`lumibase-cms-image.spdx.json`, `lumibase-dependencies.spdx.json`) được đính
+kèm vào GitHub Release.
+
+```bash
+IMAGE=ghcr.io/khuepm/lumibase-cms:<version>
+cosign verify "$IMAGE" \
+  --certificate-identity-regexp '^https://github\.com/khuepm/LumiBase/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+cosign verify-attestation "$IMAGE" --type spdxjson \
+  --certificate-identity-regexp '^https://github\.com/khuepm/LumiBase/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+Các build `edge` từ `main` không được ký bằng cosign; hãy pin một tag release trong production.
+
+### Nâng cấp từ image từng chạy bằng root hoặc ghi vào filesystem của nó
+
+- **File secret** mount cho `*_FILE` phải đọc được bởi UID `65532`
+  (ví dụ mode `0444`, hoặc thuộc sở hữu của `65532`). Secret của Docker Compose
+  mặc định đọc được.
+- **Bind mount hoặc volume** bạn thêm dưới `/app` để làm chỗ ghi tạm không còn
+  ghi được nữa. Không thành phần nào của LumiBase cần chúng; hãy gỡ bỏ, hoặc
+  mount một `tmpfs`.
+- **Entrypoint hoặc command tùy chỉnh** gọi `/entrypoint.sh`, `bash` hoặc `sh`
+  sẽ fail: không có shell. Entrypoint của image là
+  `["/nodejs/bin/node", "/app/bin/entrypoint.mjs"]`; để chạy một lệnh migration,
+  override nó bằng `--entrypoint /nodejs/bin/node` và truyền
+  `dist/migrate.cjs preflight` (hoặc `apply`).
+- **Health probe của orchestrator** từng dùng `curl` bên trong container phải
+  chuyển sang probe HTTP tới `/health` hoặc sang
+  `/nodejs/bin/node /app/bin/healthcheck.mjs`.
 
 ## Note: lỗi `SERVICE_UNAVAILABLE` do instance under pressure
 

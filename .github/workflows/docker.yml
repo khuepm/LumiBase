@@ -96,6 +96,19 @@ jobs:
           cache-from: type=gha
           load: true
 
+      # Same gate as the release (#734), on every PR, so a CRITICAL finding is
+      # seen when the change that introduces it is reviewed — not at tag time.
+      - name: Install Trivy
+        run: scripts/install-image-tools.sh trivy
+
+      - name: Trivy gate — no CRITICAL vulnerabilities
+        env:
+          IMAGE_TAG: ${{ github.event_name == 'pull_request' && 'lumibase-health-check:pr' || 'lumibase-health-check:local' }}
+        run: |
+          set -euo pipefail
+          trivy image --scanners vuln --severity CRITICAL --exit-code 1 --no-progress "$IMAGE_TAG"
+          trivy fs --scanners vuln --severity CRITICAL --exit-code 1 --no-progress pnpm-lock.yaml
+
       - name: Run container health check
         timeout-minutes: 5
         run: |
@@ -111,7 +124,10 @@ jobs:
             IMAGE_TAG="lumibase-health-check:local"
           fi
 
+          # Hardened runtime (#734): read-only root filesystem, no capabilities.
           docker run -d --name lumibase-health \
+            --read-only --tmpfs /tmp:size=64m \
+            --cap-drop ALL --security-opt no-new-privileges:true \
             -p 1989:1989 \
             -e LUMIBASE_RUNTIME=docker \
             -e PORT=1989 \

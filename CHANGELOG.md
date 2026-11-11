@@ -9,7 +9,12 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Security
+- Hardened production image: the runtime stage is `gcr.io/distroless/nodejs22-debian13:nonroot` (no shell, no package manager), runs as UID/GID `65532`, keeps application files root-owned, and starts with a read-only root filesystem. The shell entrypoint is replaced by `docker/scripts/entrypoint.mjs` and the `HEALTHCHECK` by `docker/scripts/healthcheck.mjs`, which now probes the worker health port for `LUMIBASE_PROCESS_ROLE=worker` instead of always `1989`. `docker/docker-compose.prod.yml` and `docker/docker-compose.gcp.yml` set `read_only: true`, a `/tmp` tmpfs, `cap_drop: [ALL]`, `no-new-privileges` and `init: true` (#734).
+- Release supply chain: `release.yml` builds the image and fails on any CRITICAL Trivy finding in the image or in `pnpm-lock.yaml` before anything is pushed, then signs the pushed digest with keyless cosign (GitHub OIDC, no stored key), attests an SPDX SBOM, verifies both in the smoke job, and attaches image and dependency SBOMs to the GitHub Release. `docker.yml` runs the same Trivy gate and a read-only, capability-free container health check on every PR. Trivy, Syft and cosign are installed by `scripts/install-image-tools.sh`, pinned by version and SHA-256 (#734).
+
+### Upgrade notes
+- Docker image (#734): the container no longer runs as root and its filesystem is read-only under the production compose files. Make `*_FILE` secret files readable by UID `65532`; remove scratch bind mounts or volumes under `/app` (nothing in LumiBase writes there — use a `tmpfs` if your own tooling needs one); replace custom entrypoints or commands that call `/entrypoint.sh`, `bash` or `sh` (there is no shell — use `--entrypoint /nodejs/bin/node` with `dist/migrate.cjs preflight|apply` for one-off migration commands); replace in-container `curl` health probes with an HTTP probe on `/health` or `/nodejs/bin/node /app/bin/healthcheck.mjs`. `docker exec … sh` no longer works; use `docker debug` or an ephemeral debug container. Environment variables, migrations and ports are unchanged. See [Docker deployment → Hardened image](docs/en/deployment/docker.md#hardened-image).
 
 ## [2.0.0] - 2026-11-10
 

@@ -37,3 +37,15 @@ updates:
     labels:
       - "dependencies"
       - "ci"
+
+  # Base images of docker/Dockerfile (#734). The runtime stage is a distroless
+  # tag (`nodejs22-debian13:nonroot`) that is rebuilt upstream for OS fixes;
+  # this keeps the builder and runtime tags themselves current.
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "docker"
