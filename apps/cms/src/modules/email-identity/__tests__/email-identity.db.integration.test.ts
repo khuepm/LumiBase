@@ -9,6 +9,7 @@ import { connectDbIntegration, hasDbIntegrationUrl } from '../../../__tests__/he
 import { adminEmailIdentityRouter } from '../../../routes/admin-email-identity';
 import { authRouter } from '../../../routes/auth';
 import { hashPassword } from '../../../services/auth/password';
+import { loadLockoutPolicyFromSettings } from '../../login-guard/middleware';
 import { emailRoot } from '../normalize';
 import { inviteUserToSite } from '../invite';
 import {
@@ -180,7 +181,15 @@ describe.skipIf(!hasDbIntegrationUrl)('Email identity policy — DB integration'
   });
 
   it('PUT /admin/email-identity/instance: 409 + collisions, bootstrap-only, 200 on success', async () => {
-    const admin = await addUser(`boot@${DOMAIN}`, { isBootstrap: true });
+    // `users_is_bootstrap_unique` allows one bootstrap admin per instance, and
+    // an earlier suite on the shared database may already have created it —
+    // act as that one when present rather than assume a fresh instance.
+    const [existingBootstrap] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.isBootstrap, true))
+      .limit(1);
+    const admin = existingBootstrap ?? (await addUser(`boot@${DOMAIN}`, { isBootstrap: true }));
     const other = await addUser(`plain@${DOMAIN}`);
     await addUser('eidit.five@gmail.com');
     const dupe = await addUser('eiditfive+x@gmail.com');
@@ -345,9 +354,19 @@ describe.skipIf(!hasDbIntegrationUrl)('Email identity policy — DB integration'
     const ok = await post(app, '/auth/login', { email: 'EiditSeven+anything@googlemail.com', password: PASSWORD });
     expect(ok.status).toBe(200);
 
-    // Five failures, each through a different alias, must lock the one row.
-    for (let i = 0; i < 5; i += 1) {
-      const res = await post(app, '/auth/login', { email: `eidit.seven+try${i}@gmail.com`, password: 'wrong-password' });
+    // The threshold comes from whatever `login_security_policy` the shared
+    // database holds (another suite may have installed a custom one), so read
+    // it instead of assuming the Standard preset's 5. Each attempt uses its own
+    // IP so a low `ipMaxFailedAttempts` cannot answer 429 before the user lock.
+    const policy = await loadLockoutPolicyFromSettings(db);
+    // N failures, each through a different alias, must lock the one row.
+    for (let i = 0; i < policy.userMaxFailedAttempts; i += 1) {
+      const res = await post(
+        app,
+        '/auth/login',
+        { email: `eidit.seven+try${i}@gmail.com`, password: 'wrong-password' },
+        `203.0.113.${100 + i}`,
+      );
       expect(res.status).toBe(401);
     }
     const locked = await userRow(u.id);
@@ -355,7 +374,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Email identity policy — DB integration'
     expect(locked!.lockedUntil!.getTime()).toBeGreaterThan(Date.now());
 
     // A fresh alias (even with the right password) is blocked by the row lock.
-    const blocked = await post(app, '/auth/login', { email: 'eiditseven+fresh@gmail.com', password: PASSWORD });
+    const blocked = await post(app, '/auth/login', { email: 'eiditseven+fresh@gmail.com', password: PASSWORD }, '203.0.113.200');
     expect(blocked.status).toBe(423);
-  }, 30_000);
+  }, 120_000);
 });
