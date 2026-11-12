@@ -63,10 +63,61 @@ jobs:
       - name: Build
         run: pnpm build
 
+  # The image vulnerability gate (#734) runs before anything is published.
+  # Every publishing job — the GitHub Release, the Worker and Pages deploys,
+  # the image push and npm — hangs off github-release, which needs this job,
+  # so a CRITICAL finding (or a scanner that cannot fetch its database) stops
+  # the whole release instead of leaving one without its Docker image.
+  scan-docker-image:
+    name: Scan Docker image (Trivy gate)
+    runs-on: ubuntu-latest
+    needs: verify
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Trivy
+        run: scripts/install-image-tools.sh trivy
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # amd64 only: the gate scans the OS layer and the shipped files, which
+      # are the same packages for both architectures. The cache it writes is
+      # what publish-docker-image builds from, so the pushed amd64 image is
+      # built from the layers scanned here.
+      - name: Build image for scanning (amd64)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: lumibase-cms:release-scan
+          build-args: |
+            LUMIBASE_GIT_SHA=${{ github.sha }}
+            LUMIBASE_RELEASE_CHANNEL=production
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Two legs, because the image alone cannot show everything: the server is
+      # an esbuild bundle, so its npm dependencies leave no package metadata in
+      # the image for a scanner to read. The image scan covers the OS layer and
+      # what ships unbundled (node-cron); the lockfile scan covers the bundled
+      # npm dependencies. Exceptions go in .trivyignore with a reason.
+      - name: Trivy gate — no CRITICAL vulnerabilities
+        run: |
+          set -euo pipefail
+          trivy image --scanners vuln --severity CRITICAL --exit-code 1 --no-progress lumibase-cms:release-scan
+          trivy fs --scanners vuln --severity CRITICAL --exit-code 1 --no-progress pnpm-lock.yaml
+
   github-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [verify, scan-docker-image]
     timeout-minutes: 10
     permissions:
       contents: write
@@ -321,9 +372,10 @@ jobs:
         run: |
           echo "IMAGE_NAME=khuepm/lumibase-cms" >> "$GITHUB_ENV"
 
-      # Trivy, Syft and cosign, each pinned by version and SHA-256.
+      # Syft and cosign, each pinned by version and SHA-256. The Trivy gate
+      # already passed in scan-docker-image, before the release was created.
       - name: Install image supply-chain tools
-        run: scripts/install-image-tools.sh trivy syft cosign
+        run: scripts/install-image-tools.sh syft cosign
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -348,35 +400,6 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=sha,prefix=
-
-      # The vulnerability gate runs BEFORE anything is pushed: a release with a
-      # CRITICAL finding never reaches the registry. The amd64 build is loaded
-      # locally and scanned; the multi-arch push below reuses its cache, so the
-      # arm64 variant ships the same OS packages and bundle.
-      - name: Build image for scanning (amd64)
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: docker/Dockerfile
-          platforms: linux/amd64
-          push: false
-          load: true
-          tags: lumibase-cms:release-scan
-          build-args: |
-            LUMIBASE_GIT_SHA=${{ github.sha }}
-            LUMIBASE_RELEASE_CHANNEL=production
-          cache-from: type=gha
-
-      # Two legs, because the image alone cannot show everything: the server is
-      # an esbuild bundle, so its npm dependencies leave no package metadata in
-      # the image for a scanner to read. The image scan covers the OS layer and
-      # what ships unbundled (node-cron); the lockfile scan covers the bundled
-      # npm dependencies. Exceptions go in .trivyignore with a reason.
-      - name: Trivy gate — no CRITICAL vulnerabilities
-        run: |
-          set -euo pipefail
-          trivy image --scanners vuln --severity CRITICAL --exit-code 1 --no-progress lumibase-cms:release-scan
-          trivy fs --scanners vuln --severity CRITICAL --exit-code 1 --no-progress pnpm-lock.yaml
 
       - name: Build and push Docker image
         id: push
