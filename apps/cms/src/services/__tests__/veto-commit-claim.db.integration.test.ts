@@ -1,5 +1,5 @@
 import { and, eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   agentApprovals,
   agentGoals,
@@ -35,6 +35,8 @@ describe.skipIf(!hasDbIntegrationUrl)('VetoService.commit — claim before apply
   beforeAll(async () => {
     db = await connectDbIntegration('veto-commit-claim');
   });
+
+  afterEach(() => vi.restoreAllMocks());
 
   afterAll(async () => {
     if (!db) return;
@@ -115,5 +117,59 @@ describe.skipIf(!hasDbIntegrationUrl)('VetoService.commit — claim before apply
     const [row] = await db.select({ status: agentApprovals.status }).from(agentApprovals).where(eq(agentApprovals.id, approvalId));
     expect(row!.status).toBe('rejected');
     expect(await appliedRevisions(revisionId)).toBe(before);
+  });
+
+  // Failure injection at the boundary the claim alone does not cover: the item
+  // patch has committed, then finalizing the approval fails. Releasing the
+  // claim back to `pending` there let the next sweep apply the staging again.
+  type Internals = { finalizeCommit: (...args: unknown[]) => Promise<void> };
+  const internals = VetoService.prototype as unknown as Internals;
+
+  it('a finalize that fails after the patch committed never re-applies the staging', async () => {
+    const { approvalId, revisionId } = await stageDue();
+    const before = await appliedRevisions(revisionId);
+    vi.spyOn(internals, 'finalizeCommit').mockRejectedValueOnce(new Error('connection reset after patch'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await sweepDueVetoCommits({ db });
+    await sweepDueVetoCommits({ db });
+
+    expect(await appliedRevisions(revisionId)).toBe(before + 1);
+    const [row] = await db.select().from(agentApprovals).where(eq(agentApprovals.id, approvalId));
+    expect(row!.status).toBe('approved');
+    expect(row!.decisionReason).toMatch(/finalize/);
+  });
+
+  it('when even the recovery write fails, the row stays claimed rather than pending', async () => {
+    const { approvalId, revisionId } = await stageDue();
+    const before = await appliedRevisions(revisionId);
+    const fail = new Error('database unavailable');
+    vi.spyOn(internals, 'finalizeCommit').mockRejectedValue(fail);
+    vi.spyOn(VetoService.prototype as unknown as { settleAppliedClaim: () => Promise<void> }, 'settleAppliedClaim').mockRejectedValue(fail);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await sweepDueVetoCommits({ db });
+    await sweepDueVetoCommits({ db });
+
+    expect(await appliedRevisions(revisionId)).toBe(before + 1);
+    const [row] = await db.select({ status: agentApprovals.status }).from(agentApprovals).where(eq(agentApprovals.id, approvalId));
+    // The approval-claim sweep moves a stale `deciding` row to `failed` for a human.
+    expect(row!.status).toBe('deciding');
+  });
+
+  it('a failure before anything was applied hands the claim back for a retry', async () => {
+    const { approvalId, revisionId } = await stageDue();
+    const before = await appliedRevisions(revisionId);
+    vi.spyOn(VetoService.prototype as unknown as { collectionNameOf: () => Promise<string> }, 'collectionNameOf')
+      .mockRejectedValueOnce(new Error('transient read failure'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await sweepDueVetoCommits({ db });
+    const [mid] = await db.select({ status: agentApprovals.status }).from(agentApprovals).where(eq(agentApprovals.id, approvalId));
+    expect(mid!.status).toBe('pending');
+    expect(await appliedRevisions(revisionId)).toBe(before);
+
+    await sweepDueVetoCommits({ db });
+    expect(await appliedRevisions(revisionId)).toBe(before + 1);
   });
 });

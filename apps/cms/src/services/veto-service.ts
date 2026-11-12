@@ -369,12 +369,27 @@ export class VetoService {
       .returning({ id: agentApprovals.id });
     if (claimed.length === 0) return { outcome: 'skipped' };
 
+    const progress = { applied: false };
     try {
-      return await this.commitClaimed(approval, itemService);
+      return await this.commitClaimed(approval, itemService, progress);
     } catch (err) {
-      // Staging stays intact (Req 13.5): hand the row back so the worker's
-      // backoff retry and the sweep can try again.
-      await this.releaseCommitClaim(approval.id);
+      if (!progress.applied) {
+        // Nothing reached live content (Req 13.5): hand the row back so the
+        // worker's backoff retry and the sweep can try again.
+        await this.releaseCommitClaim(approval.id);
+      } else {
+        // The patch is live; only the bookkeeping failed. Returning the row to
+        // `pending` would let the next sweep apply the staging a second time,
+        // so record it as the commit it was. If even that write fails the row
+        // stays `deciding`, out of the sweep's reach, and the approval-claim
+        // sweep hands it to a human as `failed`.
+        await this.settleAppliedClaim(approval.id, approval.subjectId).catch((settleErr: unknown) => {
+          console.error('[veto-commit] applied patch left claimed', {
+            approvalId: approval.id,
+            error: settleErr instanceof Error ? settleErr.message : String(settleErr),
+          });
+        });
+      }
       throw err;
     }
   }
@@ -382,6 +397,7 @@ export class VetoService {
   private async commitClaimed(
     approval: Awaited<ReturnType<VetoService['getVetoApproval']>>,
     itemService: ItemService,
+    progress: { applied: boolean },
   ): Promise<{ outcome: 'committed' | 'noop' | 'skipped'; droppedPinned?: string[] }> {
     const staging = await this.getStaging(approval.subjectId);
     if (!staging || !staging.staged) {
@@ -427,6 +443,7 @@ export class VetoService {
       confidence: staging.confidence,
     });
     await itemService.patch(collectionName, staging.itemId, { data: applied });
+    progress.applied = true;
 
     await this.finalizeCommit(
       approval.id,
@@ -509,6 +526,29 @@ export class VetoService {
     await this.deps.db
       .update(agentApprovals)
       .set({ status: 'approved', decisionReason: reason, decidedAt: new Date() })
+      .where(
+        and(
+          eq(agentApprovals.id, approvalId),
+          eq(agentApprovals.siteId, this.deps.siteId),
+          eq(agentApprovals.status, 'deciding'),
+        ),
+      );
+    await this.discardStaging(revisionId);
+  }
+
+  /**
+   * Settles a claim whose patch already reached live content after finalizing
+   * failed. Terminal and truthful (`approved`), never `pending`, so no later
+   * sweep re-applies it; guarded on `deciding` like every claim write.
+   */
+  private async settleAppliedClaim(approvalId: string, revisionId: string): Promise<void> {
+    await this.deps.db
+      .update(agentApprovals)
+      .set({
+        status: 'approved',
+        decisionReason: 'auto_commit (applied; finalize failed and was recovered)',
+        decidedAt: new Date(),
+      })
       .where(
         and(
           eq(agentApprovals.id, approvalId),
