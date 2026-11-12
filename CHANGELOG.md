@@ -14,7 +14,6 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - `/api/v1/agent/skills` API: CRUD, activate/archive, version trail and restore, Markdown import/export, and `/match` to preview what a run would receive. Reading and writing skills both need a control-plane admin — over MCP too, where `prompts/*` are empty for any other caller; non-admin skill authors are not supported yet, and `riskClass` is a review label, not a permission tier. Each write (skill, version, audit entry) is one transaction. `PATCH` takes `expectedVersion` and status actions take `version` (`409 VERSION_MISMATCH`); a skill that was ever active cannot be deleted, only archived (`409 SKILL_HAS_BEEN_ACTIVE`); an import that would change an active skill is refused per document unless it sets `updateActive`. A body is at most 12,000 characters — the per-run injection budget, so any active skill can be injected. Copilot triggers match the latest user turns of the conversation, not only the current message.
 - `lumibase skills list | pull | push | install` in the CLI, for keeping skills in git and deploying them from CI (`push --check` fails when the site differs from the directory). `push` is the deploy path and updates active skills; `install` never changes a skill that is already active.
 - Studio: Mission Control → Skills, with an editor, lifecycle actions, version history and a match preview. Saving and activating are guarded by the version on screen, and skills that were ever active offer Archive instead of Delete.
-
 - **Agent harness: `askUser` clarification tool (#710).** An agent that cannot continue
   without a decision it may not make asks a human instead of guessing. The run parks in
   the new `waiting_user` status (no queue worker, no lock held), the question reaches the
@@ -38,7 +37,6 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   trust ledger shows question counts in promotion evidence.
 
 ### Changed
-
 - `GET /api/v1/agent/approvals` no longer lists `askUser` questions, and
   `POST /api/v1/agent/approvals/:id/decide` / `/reopen` refuse a question id with
   `409 NOT_AN_APPROVAL`.

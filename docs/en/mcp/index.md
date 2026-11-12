@@ -1,12 +1,12 @@
 ---
 version: 16
-lastUpdated: 2026-11-12T19:00:31.256Z
+lastUpdated: 2026-11-12T19:09:53.426Z
 sourceLang: vi
 translatedFrom: vi
 sourceHash: 5142f18de8b5259d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T19:00:31.256Z
+codeVerified: 2026-11-12T19:09:53.426Z
 codeVerifiedHash: 5142f18de8b5259d
 codeVerifiedClaims: 30
 ---

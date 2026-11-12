@@ -7,7 +7,7 @@ translatedFrom: en
 sourceHash: bccdc6531877c4e1
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T19:00:28.741Z
+codeVerified: 2026-11-12T19:20:19.905Z
 codeVerifiedHash: bccdc6531877c4e1
 codeVerifiedClaims: 490
 ---
