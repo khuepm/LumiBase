@@ -11,7 +11,6 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 - MCP tool-schema fidelity suite. CI validates every stdio and HTTP tool `inputSchema` as JSON Schema (meta-schema and strict compilation in draft-07 and 2020-12) and fails when the `tools/list` output of either transport differs from its committed golden. What it proves about agreement with the server depends on the tool. HTTP tools and governed stdio tools are probed value by value against the canonical contract (`validateAgentToolInput`). The probes include every enum member and invalid array elements. The 33 ungoverned stdio mutations that send a JSON body, plus `diff_schema`, are compared with the Zod object their REST route parses with. The comparison covers key set at every depth, types, enums and required keys. It also checks that the handler forwards every advertised key to the bound route and that the route body schema accepts every probed value. That route body golden is generated in `apps/cms` and pinned against the live route schemas. A field-type × nullable × localized × repeatable matrix, including relations and files, checks that values pass through both transports unchanged. Not covered: rules that JSON Schema cannot state, such as cross-field refinements (`webhook_id` when `kind` is `"webhook"`), cursor decoding and transforms. Also not covered: query parameters of read tools, documents forwarded verbatim (`apply_access_import`, `restore_backup`), HTTP read skills without a canonical schema (B204), per-site schema overrides (B205) and the field `type` vocabulary (B206). Each accepted gap is listed in the suite and fails once it is stale (#716).
-
 - **Agent harness: `askUser` clarification tool (#710).** An agent that cannot continue
   without a decision it may not make asks a human instead of guessing. The run parks in
   the new `waiting_user` status (no queue worker, no lock held), the question reaches the
@@ -35,7 +34,6 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   trust ledger shows question counts in promotion evidence.
 
 ### Changed
-
 - `GET /api/v1/agent/approvals` no longer lists `askUser` questions, and
   `POST /api/v1/agent/approvals/:id/decide` / `/reopen` refuse a question id with
   `409 NOT_AN_APPROVAL`.
