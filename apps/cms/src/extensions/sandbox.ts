@@ -80,6 +80,7 @@ export interface ExtensionModule {
     'items.update.after': HookFn;
     'items.delete.before': HookFn;
     'items.delete.after': HookFn;
+    'items.export.before': HookFn;
   }>;
   /** Endpoint handler — called when a request hits /extensions/:name/* */
   handler?: (app: unknown) => void;
