@@ -77,6 +77,10 @@ export class LumiBaseClient {
   readonly readOnly: boolean;
   private readonly scope = new AsyncLocalStorage<{ siteId?: string }>();
 
+  get currentSiteId(): string | undefined {
+    return this.scope.getStore()?.siteId ?? this.siteId;
+  }
+
   constructor(config: LumiBaseConfig) {
     this.tokenKind = config.tokenKind ?? (classifyTokenPrefix(config.token) === 'organization' ? 'organization' : 'site');
     this.siteId = config.siteId;

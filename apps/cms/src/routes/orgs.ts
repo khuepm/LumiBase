@@ -12,11 +12,22 @@ import { withOrganizationAccessGuard as guard } from '../middleware/organization
 import { systemDbFor } from '../middleware/db';
 import { isFrontendAudience, audienceValues, TOKEN_AUDIENCE } from '../services/auth/token-audience';
 import { finalizeSiteProvisioning, SiteProvisioningConflict } from '../services/site-provisioning';
+import { invalidateSiteExists } from '../services/domains/site-exists-cache';
 import { createPlaintextToken } from '../services/api-key-token';
 import { AuditLogger } from '../modules/audit/logger';
 import { auditSecurityGuardDenied } from '../middleware/security-audit';
 
 export const orgsRouter = new Hono<AppEnv>();
+function mergeSettings(base: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  let merged = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    const old = merged[key];
+    merged = { ...merged, [key]: value && typeof value === 'object' && !Array.isArray(value)
+      && old && typeof old === 'object' && !Array.isArray(old)
+      ? mergeSettings(old as Record<string, unknown>, value as Record<string, unknown>) : value };
+  }
+  return merged;
+}
 orgsRouter.onError((error, c) => {
   if (error instanceof OrgError) return c.json({ errors: [{ code: error.code }] }, error.status);
   if (error instanceof SiteProvisioningConflict) return c.json({ errors: [{ code: 'CONFLICT' }] }, 409);
@@ -98,8 +109,18 @@ orgsRouter.patch('/:orgId', guard('org:settings:write'), humanOnly, async (c) =>
   const input = OrganizationUpdateSchema.safeParse(await c.req.json().catch(() => null));
   if (!input.success) return c.json({ errors: [{ code: 'VALIDATION' }] }, 400);
   if (input.data.slug !== undefined && c.get('organization')!.role !== 'owner') fail('ORGANIZATION_FORBIDDEN', 403);
-  const [row] = await c.get('db').update(organizations).set({ ...input.data, updatedAt: new Date() })
-    .where(eq(organizations.id, c.req.param('orgId'))).returning();
+  const [row] = await c.get('db').transaction(async (tx) => {
+    const [current] = await tx.select().from(organizations)
+      .where(eq(organizations.id, c.req.param('orgId'))).for('update');
+    if (!current) return [];
+    return tx.update(organizations).set({
+      ...input.data,
+      ...(input.data.settings === undefined ? {} : {
+        settings: mergeSettings(current.settings as Record<string, unknown>, input.data.settings),
+      }),
+      updatedAt: new Date(),
+    }).where(eq(organizations.id, current.id)).returning();
+  });
   if (!row) fail('NOT_FOUND', 404);
   return c.json({ data: row });
 });
@@ -127,6 +148,7 @@ orgsRouter.delete('/:orgId/sites/:siteId', guard('org:sites:delete'), async (c) 
   if (c.req.header('X-Confirm-Delete') !== siteId) fail('VALIDATION', 400);
   const result = await systemDbFor(c).transaction((tx) => executeOrganizationMutation(
     tx, c.req.param('orgId'), 'delete_site', { siteId }, organizationActorFromAuth(c.get('auth'))));
+  await invalidateSiteExists(c.get('runtime')?.cache, siteId);
   return c.json({ data: result.data });
 });
 orgsRouter.post('/:orgId/sites/:siteId/transfer', guard('org:sites:transfer'), async (c) => {

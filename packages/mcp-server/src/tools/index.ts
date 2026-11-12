@@ -50,7 +50,7 @@ export function registerAllTools(
   const siteId = options.siteId ?? client.siteId;
   const readOnly = options.readOnly ?? client.readOnly ?? false;
   const requireSiteArg = tokenKind === 'organization' && !siteId;
-  const scoped = withProfile(server, client, { readOnly, requireSiteArg });
+  const scoped = withProfile(server, client, { readOnly, requireSiteArg, annotate: tokenKind === 'organization' || readOnly });
   const dispatcher = options.dispatcher === undefined ? new GovernedDispatcher(client) : options.dispatcher;
   const target = dispatcher?.enabled ? withGovernedHandlers(scoped, dispatcher) : scoped;
   registerModules(target, client);
@@ -143,7 +143,7 @@ function registerModules(server: McpServer, client: LumiBaseClient): void {
   registerDeploymentTools(server, client);
 }
 
-function withProfile(server: McpServer, client: LumiBaseClient, profile: { readOnly: boolean; requireSiteArg: boolean }): McpServer {
+function withProfile(server: McpServer, client: LumiBaseClient, profile: { readOnly: boolean; requireSiteArg: boolean; annotate?: boolean }): McpServer {
   return new Proxy(server, {
     get(target, prop, receiver) {
       if (prop !== 'registerTool') return Reflect.get(target, prop, receiver);
@@ -164,7 +164,7 @@ function withProfile(server: McpServer, client: LumiBaseClient, profile: { readO
           return client.withSite(site, () => handler(rest));
         };
         return (target as unknown as { registerTool: (...args: unknown[]) => unknown })
-          .registerTool(name, { ...config, annotations, inputSchema }, wrapped);
+          .registerTool(name, { ...config, ...(profile.annotate ? { annotations } : {}), inputSchema }, wrapped);
       };
     },
   });

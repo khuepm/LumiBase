@@ -86,6 +86,12 @@ describe.skipIf(!hasDbIntegrationUrl)('organization API, auth and tenant isolati
     expect((await request(`/orgs/${B}`)).status).toBe(404);
     expect((await request(`/orgs/${B}`, orgToken)).status).toBe(404);
   });
+  it('preserves unrelated organization settings on a partial update', async () => {
+    await db.update(organizations).set({ settings: { billing: { plan: 'team' }, contentOs: { mcp: true } } }).where(eq(organizations.id, A));
+    const response = await request(`/orgs/${A}`, ownerToken, 'PATCH', { settings: { theme: 'dark', contentOs: { review: true } } });
+    expect(response.status).toBe(200);
+    expect((await payload(response)).data.settings).toEqual({ billing: { plan: 'team' }, contentOs: { mcp: true, review: true }, theme: 'dark' });
+  });
   it('rejects site and publishable keys and frontend sessions on the org plane with audit', async () => {
     expect((await request('/orgs', siteToken)).status).toBe(403);
     const pub = await createPlaintextToken({ publishable: true });
