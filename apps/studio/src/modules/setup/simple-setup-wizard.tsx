@@ -54,9 +54,15 @@ import {
   setPathDraft,
 } from './steps/step-path';
 import {
+  clearEmailIdentityModeDraft,
+  EmailIdentityGroup,
+  EMAIL_IDENTITY_OPTIONS,
+  getEmailIdentityModeDraft,
   getPolicyDraft,
   inferActivePreset,
+  setEmailIdentityModeDraft,
   setPolicyDraft,
+  type EmailIdentityMode,
 } from './steps/step-security';
 import {
   getProjectDraft,
@@ -152,6 +158,13 @@ export function SimpleSetupWizard() {
     const policyDraft = getPolicyDraft();
     return policyDraft ? inferActivePreset(policyDraft) ?? 'standard' : 'standard';
   });
+  const [emailIdentityMode, setEmailIdentityMode] = useState<EmailIdentityMode>(
+    getEmailIdentityModeDraft,
+  );
+  const handleEmailIdentityModeChange = useCallback((mode: EmailIdentityMode) => {
+    setEmailIdentityModeDraft(mode);
+    setEmailIdentityMode(mode);
+  }, []);
   const [draft, setDraft] = useState<SimpleSetupDraft | null>(null);
   const [invites, setInvites] = useState<InviteDraft[]>([]);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -252,6 +265,7 @@ export function SimpleSetupWizard() {
         policy,
         project: validDraft.project,
         invites: sanitizeInvites(invites),
+        emailIdentityMode,
       });
 
       const store = useSetupStore.getState();
@@ -262,6 +276,7 @@ export function SimpleSetupWizard() {
       store.setAdminPath(result.adminPath);
       store.setCompleted(true);
       clearSetupToken();
+      clearEmailIdentityModeDraft();
 
       setCompletion(result);
       setStep('recovery');
@@ -272,7 +287,7 @@ export function SimpleSetupWizard() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [draft, invites, securityPreset, validateEssentials]);
+  }, [draft, emailIdentityMode, invites, securityPreset, validateEssentials]);
 
   return (
     <div className="min-h-screen bg-muted/30 px-4 py-8 sm:py-12">
@@ -326,6 +341,8 @@ export function SimpleSetupWizard() {
             <ReviewStep
               draft={draft}
               securityPreset={securityPreset}
+              emailIdentityMode={emailIdentityMode}
+              onEmailIdentityModeChange={handleEmailIdentityModeChange}
               invites={invites}
               submitError={submitError}
               isSubmitting={isSubmitting}
@@ -576,6 +593,8 @@ function EssentialsStep({
 interface ReviewStepProps {
   draft: SimpleSetupDraft;
   securityPreset: PolicyPresetId;
+  emailIdentityMode: EmailIdentityMode;
+  onEmailIdentityModeChange: (mode: EmailIdentityMode) => void;
   invites: InviteDraft[];
   submitError: string | null;
   isSubmitting: boolean;
@@ -589,6 +608,8 @@ interface ReviewStepProps {
 function ReviewStep({
   draft,
   securityPreset,
+  emailIdentityMode,
+  onEmailIdentityModeChange,
   invites,
   submitError,
   isSubmitting,
@@ -649,12 +670,24 @@ function ReviewStep({
         </div>
       </div>
 
+      <EmailIdentityGroup
+        value={emailIdentityMode}
+        onChange={onEmailIdentityModeChange}
+      />
+
       <InviteUsersSection invites={invites} onInvitesChange={onInvitesChange} />
 
       <section className="grid gap-4 lg:grid-cols-2">
         <ReviewGroup title="Essentials">
           <ReviewItem label="Admin email" value={draft.account.email} />
           <ReviewItem label="Admin path" value={draft.path.adminPath} />
+          <ReviewItem
+            label="Email identity"
+            value={
+              EMAIL_IDENTITY_OPTIONS.find((o) => o.id === emailIdentityMode)?.label ??
+              emailIdentityMode
+            }
+          />
         </ReviewGroup>
 
         <ReviewGroup title="Security defaults">
@@ -1187,6 +1220,7 @@ async function postSetupComplete(body: {
   policy: LockoutPolicyFormValues;
   project: ProjectConfigurationFormValues;
   invites: InviteDraft[];
+  emailIdentityMode: EmailIdentityMode;
 }): Promise<SetupCompleteResponse> {
   const token = readSetupTokenForRequest();
   // Omit `invites` entirely when empty so the request matches the original

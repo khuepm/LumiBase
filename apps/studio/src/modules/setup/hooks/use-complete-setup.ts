@@ -4,7 +4,13 @@ import {
 } from '@tanstack/react-query';
 import { clearAccountDraft, getAccountDraft } from '../steps/step-account';
 import { clearPathDraft, getPathDraft } from '../steps/step-path';
-import { clearPolicyDraft, getPolicyDraft } from '../steps/step-security';
+import {
+  clearEmailIdentityModeDraft,
+  clearPolicyDraft,
+  getEmailIdentityModeDraft,
+  getPolicyDraft,
+  type EmailIdentityMode,
+} from '../steps/step-security';
 import { clearProjectDraft, getProjectDraft } from '../steps/step-project';
 import { SETUP_TOKEN_STORAGE_KEY } from '../setup-state-gate';
 import { useSetupStore } from '../setup-store';
@@ -297,6 +303,8 @@ async function completeSetup(
     adminPath: string;
     policy: NonNullable<ReturnType<typeof getPolicyDraft>>;
     project: NonNullable<ReturnType<typeof getProjectDraft>>;
+    /** Instance email identity mode (#794); the server defaults to `exact`. */
+    emailIdentityMode: EmailIdentityMode;
     setupToken?: string;
   } = {
     account: {
@@ -308,6 +316,7 @@ async function completeSetup(
     adminPath: path.adminPath,
     policy,
     project,
+    emailIdentityMode: getEmailIdentityModeDraft(),
   };
 
   if (token !== null) {
@@ -422,6 +431,7 @@ export function useCompleteSetup(): UseMutationResult<
       clearPathDraft();
       clearPolicyDraft();
       clearProjectDraft();
+      clearEmailIdentityModeDraft();
 
       // 3. Remove the cached setup token (it's invalid server-side now too).
       clearSetupToken();

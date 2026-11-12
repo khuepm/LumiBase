@@ -93,6 +93,9 @@ CREATE TRIGGER user_sites_identity_key_trg BEFORE INSERT ON lumibase_user_sites
 
 -- An email change re-keys the user's strict memberships (may raise 23505 when
 -- the new mailbox already belongs to another member of a strict site).
+-- Fires on `UPDATE OF email`, not `OF email_root`: a column-list trigger only
+-- fires for columns named in the UPDATE's SET list, and `email_root` is changed
+-- by the BEFORE trigger above, never by the statement itself.
 CREATE OR REPLACE FUNCTION lumibase_users_rekey_memberships() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -102,7 +105,7 @@ BEGIN
 END $$;
 
 DROP TRIGGER IF EXISTS users_rekey_memberships_trg ON lumibase_users;
-CREATE TRIGGER users_rekey_memberships_trg AFTER UPDATE OF email_root ON lumibase_users
+CREATE TRIGGER users_rekey_memberships_trg AFTER UPDATE OF email, email_root ON lumibase_users
   FOR EACH ROW WHEN (NEW.email_root IS DISTINCT FROM OLD.email_root)
   EXECUTE FUNCTION lumibase_users_rekey_memberships();
 

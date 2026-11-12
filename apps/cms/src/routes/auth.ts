@@ -1155,6 +1155,13 @@ authRouter.post('/login', async (c) => {
     );
   }
 
+  // Counter/lockout key for a resolved account (#794): its stored address,
+  // not the typed one. Under `root` mode the typed address may be any alias
+  // of the account; keying on it would split the failure count per alias and
+  // let alias rotation dodge the per-user lockout. Under `exact` the two are
+  // identical (`email_canonical = lower(email)`).
+  const accountEmail = normalizeEmail(user.email);
+
   const isValid = await verifyPassword(input.password, user.passwordHash);
   if (!isValid) {
     await recordLoginFailure(
@@ -1162,7 +1169,7 @@ authRouter.post('/login', async (c) => {
       counter,
       policy,
       {
-        email: emailLower,
+        email: accountEmail,
         ip,
         reason: 'invalid_credentials',
         userAgent,
@@ -1285,7 +1292,7 @@ authRouter.post('/login', async (c) => {
     // be valid but the verdict is "this is not the legitimate user".
     await recordAnomalyBlock(db, policy, {
       userId: user.id,
-      email: emailLower,
+      email: accountEmail,
       ip,
       userAgent,
       attempt,
@@ -1319,7 +1326,7 @@ authRouter.post('/login', async (c) => {
     if (totpEnabled && audience === TOKEN_AUDIENCE.studio) {
       await recordAnomalyBlock(db, policy, {
         userId: user.id,
-        email: emailLower,
+        email: accountEmail,
         ip,
         userAgent,
         attempt,
@@ -1344,7 +1351,7 @@ authRouter.post('/login', async (c) => {
     // Req 12.4 — 401 MFA_REQUIRED when policy requires MFA but user has no TOTP yet.
     await recordAnomalyBlock(db, policy, {
       userId: user.id,
-      email: emailLower,
+      email: accountEmail,
       ip,
       userAgent,
       attempt,
@@ -1391,7 +1398,7 @@ authRouter.post('/login', async (c) => {
   // operator's channels when (and only when) `anomalyTriggered` is set.
   await recordLoginSuccess(db, {
     userId: user.id,
-    email: emailLower,
+    email: accountEmail,
     ip,
     userAgent,
     attempt,

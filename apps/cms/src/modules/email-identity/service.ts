@@ -123,8 +123,8 @@ async function instanceCollisions(db: Database): Promise<IdentityCollision[]> {
 async function siteCollisions(db: Database, siteId: string): Promise<IdentityCollision[]> {
   const rows = await db.execute(sql`
     SELECT u.email_root AS root,
-           array_agg(u.id ORDER BY us.joined_at, u.id) AS user_ids,
-           array_agg(u.email ORDER BY us.joined_at, u.id) AS emails
+           array_agg(u.id ORDER BY us.created_at, u.id) AS user_ids,
+           array_agg(u.email ORDER BY us.created_at, u.id) AS emails
       FROM lumibase_user_sites us
       JOIN lumibase_users u ON u.id = us.user_id
      WHERE us.site_id = ${siteId} AND u.email_root IS NOT NULL
