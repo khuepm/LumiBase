@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-10-13T22:13:10.671Z
+version: 4
+lastUpdated: 2026-11-11T03:00:33.353Z
 sourceLang: en
-contentHash: 169f7e93758006ec
-codeVerified: 2026-10-13T22:13:10.671Z
-codeVerifiedHash: 169f7e93758006ec
+contentHash: 1bcc93cac3b51c59
+codeVerified: 2026-11-11T03:00:33.353Z
+codeVerifiedHash: 1bcc93cac3b51c59
 codeVerifiedClaims: 10
 ---
 
@@ -18,6 +18,10 @@ LumiBase supports two deployment modes from the same CMS codebase:
 For a managed-cloud self-host, see [Google Cloud (single VM)](./google-cloud-vm.md) —
 the cheapest way to run the full Docker stack on Google Cloud with Gemini as the
 LLM provider, while keeping the CMS's long-lived background jobs working.
+
+To get a running CMS and Studio on Render, Railway or Fly.io with PostgreSQL,
+Redis and generated secrets, see [One-click deploys](./one-click.md); it also
+explains why Cloudflare has no deploy button yet.
 
 The public documentation site is a static Vite app deployed separately to **Cloudflare Pages**.
 The public Marketplace site is also deployed to **Cloudflare Pages** and reads the CMS marketplace catalog at build/runtime revalidation.

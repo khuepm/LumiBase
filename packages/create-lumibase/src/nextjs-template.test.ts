@@ -268,6 +268,11 @@ describe('nextjs template — the read-only connect path is documented', () => {
     const page = read('app/page.tsx');
     expect(page).toMatch(/Already have a LumiBase instance/);
   });
+
+  it('points at the one-click deploy templates for hosting the CMS (#741)', () => {
+    const readme = read('README.md.hbs');
+    expect(readme).toMatch(/docs\.lumibase\.dev\/en\/docs\/deployment\/one-click/);
+  });
 });
 
 describe('nextjs template — package manifest', () => {

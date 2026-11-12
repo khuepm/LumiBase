@@ -1722,6 +1722,39 @@ paths:
       responses:
         '200':
           description: OK
+  /collections/{name}/index-advice:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: name, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Advise an expression index for a typed JSON path filter (read-only)
+      description: >-
+        Returns CREATE INDEX CONCURRENTLY DDL whose expression matches the typed
+        filter the item list builds for this path and cast, partial on the
+        collection. The DDL is never executed. `ddl` is null for `timestamp`
+        (timestamptz casts are not IMMUTABLE). Requires `schema:read`.
+      parameters:
+        - { name: path, in: query, required: true, schema: { type: string }, description: 'Dot path, e.g. `price` or `metadata.rating`' }
+        - { name: cast, in: query, required: false, schema: { type: string, enum: [numeric, boolean, timestamp, text] }, description: 'Defaults to the declared type of a top-level field; required for nested or json paths' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      path: { type: string }
+                      cast: { type: string, enum: [numeric, boolean, timestamp, text] }
+                      indexName: { type: string }
+                      expression: { type: string }
+                      ddl: { type: string, nullable: true }
+                      notes: { type: array, items: { type: string } }
+        '400': { description: Invalid or missing path, unknown cast, or no cast for a nested path }
+        '404': { description: Collection or top-level field not found }
   /relations:
     get:
       summary: List relations in the active site
