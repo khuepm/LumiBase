@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   auditLog,
   collections,
@@ -70,6 +70,18 @@ describe.skipIf(!hasDbIntegrationUrl)('background imports — DB integration', (
     if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
     for (const u of [ADMIN, EDITOR]) await db.delete(users).where(eq(users.id, u)).catch(() => undefined);
+  });
+
+  // The upload route starts each job in the background. Stop whatever is still
+  // running before the next test deletes the site: this UPDATE waits for any
+  // in-flight chunk's row lock, and clearing the lease makes a still-running
+  // worker fail its fence instead of writing.
+  afterEach(async () => {
+    if (!db) return;
+    await db
+      .update(importJobs)
+      .set({ status: 'cancelled', leaseOwner: null, leaseUntil: null, message: 'test teardown' })
+      .where(and(eq(importJobs.siteId, SITE), inArray(importJobs.status, ['queued', 'running'])));
   });
 
   beforeEach(async () => {
