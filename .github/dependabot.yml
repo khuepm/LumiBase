@@ -38,9 +38,10 @@ updates:
       - "dependencies"
       - "ci"
 
-  # Base images of docker/Dockerfile (#734). The runtime stage is a distroless
-  # tag (`nodejs22-debian13:nonroot`) that is rebuilt upstream for OS fixes;
-  # this keeps the builder and runtime tags themselves current.
+  # Base images of docker/Dockerfile (#734), pinned as `image:tag@sha256:…`.
+  # Dependabot bumps the digest when upstream re-pushes the same tag (the
+  # distroless `nonroot` tag has no version and is rebuilt for OS fixes) and
+  # the tag and digest together for a new `node` tag.
   - package-ecosystem: "docker"
     directory: "/docker"
     schedule:

@@ -1,5 +1,11 @@
 # Stage 1: Build
-FROM node:22-slim AS builder
+#
+# Both base images are pinned by digest (#734): a tag can be re-pointed, a
+# digest cannot, so a rebuild of the same commit gets the same base. The tag
+# stays for readers and for Dependabot, which bumps tag and digest together
+# (.github/dependabot.yml). Digests are of the multi-arch index, so amd64 and
+# arm64 builds both resolve from them.
+FROM node:22-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS builder
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
@@ -51,7 +57,7 @@ RUN pnpm --filter @lumibase/studio build
 #   PostgreSQL/Redis), so `docker run --read-only` works. /tmp is the only
 #   path worth mounting as tmpfs, for third-party code that asks os.tmpdir().
 #   See docs/en/deployment/docker.md "Hardened image".
-FROM gcr.io/distroless/nodejs22-debian13:nonroot AS runtime
+FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:34985bab6fd6981259f18ab7555995a911ca3bee4b0d38bacdc63932df1dc6cb AS runtime
 ARG LUMIBASE_GIT_SHA
 LABEL org.opencontainers.image.title="lumibase-cms" \
       org.opencontainers.image.description="LumiBase CMS API + Studio (Node/Docker runtime)" \
