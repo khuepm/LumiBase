@@ -46,12 +46,13 @@ ${pc.bold("lumibase skills")} ${pc.dim("— Markdown playbooks (skills/*.skill.m
   pull            Write every skill on the site to <dir>/<slug>.skill.md
     --dir <dir>   Target directory      ${pc.dim(`(default: ${DEFAULT_SKILLS_DIR})`)}
     --status <s>  Only draft | active | archived
-  push            Create or update skills from the *.md files in <dir>
+  push            Create or update skills from the *.md files in <dir> ${pc.dim("(updates active skills live)")}
     --dir <dir>   Source directory      ${pc.dim(`(default: ${DEFAULT_SKILLS_DIR}; README.md is skipped)`)}
     --activate    Activate the skills instead of leaving new ones as drafts
     --dry-run     Show what would change without writing
     --check       Dry run that fails if anything would change ${pc.dim("(use in CI)")}
-  install <src>   Push skills from a directory, a .md file, or an installed npm package
+  install <src>   Add skills from a directory, a .md file, or an installed npm package
+                  ${pc.dim("(never changes a skill that is already active)")}
                   ${pc.dim('(package dir: package.json "lumibase.skills", else skills/)')}
     --activate    Activate on install ${pc.dim("(default: drafts, to review in Studio)")}
     --dry-run     Show what would change without writing

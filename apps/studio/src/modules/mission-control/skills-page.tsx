@@ -95,8 +95,10 @@ export function SkillsPage() {
   }
 
   const statusMutation = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: LifecycleAction }) =>
-      missionControlApi.setSkillStatus(id, action),
+    // `version` is the one on screen: activating after someone else's edit is
+    // refused (409) rather than activating content nobody here reviewed.
+    mutationFn: ({ id, action, version }: { id: string; action: LifecycleAction; version: number }) =>
+      missionControlApi.setSkillStatus(id, action, version),
     onSuccess: (skill) => {
       setActionError(null);
       applySkill(skill);
@@ -277,7 +279,9 @@ export function SkillsPage() {
                     <button
                       key={action}
                       type="button"
-                      onClick={() => statusMutation.mutate({ id: selected.id, action })}
+                      onClick={() =>
+                        statusMutation.mutate({ id: selected.id, action, version: selected.version })
+                      }
                       disabled={busy}
                       className={cn(
                         'rounded-md px-2 py-1 text-xs disabled:opacity-50',
@@ -289,7 +293,15 @@ export function SkillsPage() {
                       {label}
                     </button>
                   ))}
-                  {confirmDelete ? (
+                  {selected.activatedAt ? (
+                    // A skill that was ever live has runs pointing at its
+                    // versions; the server refuses to delete it (409).
+                    <span className="text-xs text-muted-foreground" data-testid="skill-delete-blocked">
+                      {selected.status === 'archived'
+                        ? 'Was active, so it stays archived rather than deleted.'
+                        : 'Was active — archive it instead of deleting.'}
+                    </span>
+                  ) : confirmDelete ? (
                     <>
                       <span className="text-xs text-destructive">
                         Delete this skill and its history?

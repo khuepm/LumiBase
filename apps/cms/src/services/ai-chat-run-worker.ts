@@ -52,7 +52,7 @@ export async function executeAiChatRun(
     // model call rather than after it.
     const playbooks = await resolveCopilotPlaybooks(
       { db, siteId: job.siteId },
-      { text: job.message, capabilities: capabilities.capabilities },
+      { text: job.message, history: llmMessages, capabilities: capabilities.capabilities },
     );
     const siteSkillsMeta = playbooks.applied.length > 0 ? { siteSkills: playbooks.applied } : {};
 

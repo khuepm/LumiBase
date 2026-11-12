@@ -47,6 +47,7 @@ interface ImportBody {
   documents: { path?: string; content: string }[];
   activate?: boolean;
   dryRun?: boolean;
+  updateActive?: boolean;
   source?: string;
   sourceRef?: string;
 }
@@ -175,7 +176,7 @@ describe('skills list', () => {
     const error = await run(['list'], tempDir(), fetcher).catch((err: unknown) => err);
     expect(error).toMatchObject({
       message: expect.stringMatching(/Forbidden \(403\).*Control-plane access is required\./),
-      hint: expect.stringMatching(/skills:write/),
+      hint: expect.stringMatching(/control-plane admin/),
     });
   });
 });
@@ -264,12 +265,14 @@ describe('skills push', () => {
     expect(calls[0]?.method).toBe('POST');
     expect(calls[0]?.url.pathname).toBe('/api/v1/agent/skills/import');
     expect(calls[0]?.headers['Content-Type']).toBe('application/json');
+    // push is the deploy path, so it may change skills that are already active.
     expect(calls[0]?.body).toEqual({
       documents: [
         { path: 'house-style.skill.md', content: HOUSE_STYLE },
         { path: 'seo.skill.md', content: '# seo\n' },
       ],
       source: 'cli',
+      updateActive: true,
     });
     expect(output()).toMatch(/created\s+house-style\.skill\.md/);
     expect(output()).toMatch(/unchanged\s+seo\.skill\.md/);
@@ -361,11 +364,11 @@ describe('skills push', () => {
   it('surfaces a 403 with the server message', async () => {
     const { fetcher } = fakeFetch(() => ({
       status: 403,
-      body: { errors: [{ code: 'FORBIDDEN', message: 'Capability "skills:write" is required.' }] },
+      body: { errors: [{ code: 'FORBIDDEN', message: 'Writing Site Skills requires a control-plane admin.' }] },
     }));
 
     await expect(run(['push'], project(), fetcher)).rejects.toThrow(
-      /Forbidden \(403\).*Capability "skills:write" is required\./,
+      /Forbidden \(403\).*Writing Site Skills requires a control-plane admin\./,
     );
   });
 });
@@ -480,5 +483,27 @@ describe('skills install', () => {
     const { fetcher } = importServer({ 'bad.md': 'error' });
 
     expect(await run(['install', 'pack'], cwd, fetcher)).toBe(1);
+  });
+
+  it('never asks to change active skills, and explains the refusal when the server sends one', async () => {
+    const cwd = tempDir();
+    write(cwd, 'pack/house-style.skill.md', HOUSE_STYLE);
+    const { fetcher, calls } = fakeFetch((call) => ({
+      body: {
+        data: (call.body?.documents ?? []).map((doc) => ({
+          path: doc.path,
+          slug: 'house-style',
+          action: 'error',
+          code: 'ACTIVE_SKILL_CHANGE',
+          message: 'Skill "house-style" is active; this import would change live agent behaviour.',
+        })),
+        meta: {},
+      },
+    }));
+
+    expect(await run(['install', 'pack', '--activate'], cwd, fetcher)).toBe(1);
+    expect(calls[0]?.body).not.toHaveProperty('updateActive');
+    expect(output()).toMatch(/error\s+house-style\.skill\.md — ACTIVE_SKILL_CHANGE/);
+    expect(output()).toMatch(/never changed by install.*lumibase skills push/);
   });
 });

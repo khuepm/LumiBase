@@ -327,10 +327,10 @@ aiRouter.post('/chat', async (c) => {
     const llmProvider = createLLMProvider(
       c.env as unknown as Record<string, string | undefined>,
     );
-    // Site playbooks (#712) matching this message join the Copilot prompt.
+    // Site playbooks (#712) matching the latest user turns join the Copilot prompt.
     const playbooks = await resolveCopilotPlaybooks(
       { db, siteId },
-      { text: message, capabilities: userCapabilities },
+      { text: message, history: llmMessages, capabilities: userCapabilities },
     );
     const siteSkillsMeta = playbooks.applied.length > 0 ? { siteSkills: playbooks.applied } : {};
     const llmResponse = await llmProvider.chat(

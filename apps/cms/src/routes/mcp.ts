@@ -105,19 +105,34 @@ mcpRouter.post('/', async (c) => {
     cache: runtime.cache,
   });
 
+  // Capabilities come from the live RBAC bundle, not from `auth.roles` (#472).
+  // `auth.roles` holds a role *id* for a normal user and `[]` for an API key, so
+  // comparing it against `items:write` could only ever match the literal
+  // `'admin'` string a bootstrap/dev principal gets — the harness was
+  // admin-or-nothing regardless of what the token was actually allowed to do.
+  const grant = await resolveRequestCapabilities(c);
+
   // Site playbooks (#712) surface as MCP prompts (#345): an external agent
   // can pull this site's house rules the same way the built-in Copilot gets
-  // them. Read-only, and filtered by the caller's own capabilities.
+  // them. Read-only. Skill bodies are control-plane data — REST serves them
+  // only behind `withControlPlaneAccessGuard` — and `/mcp` is not a
+  // control-plane path, so the same rule is applied here: only a resolved
+  // control-plane admin gets prompts. Anyone else sees an empty list and the
+  // same "Unknown prompt" error as for a name that does not exist. The
+  // per-skill surface/capability filter still applies on top.
   const siteSkills = new SiteSkillService({ db, siteId });
+  const mayReadSkills = grant.allowed && grant.controlPlaneAdmin;
+  const promptSkills = async (capabilities: readonly string[]) =>
+    mayReadSkills ? siteSkills.listForMcp(capabilities) : [];
   const port: McpHarnessPort = {
     listPrompts: async (capabilities) =>
-      (await siteSkills.listForMcp(capabilities)).map((skill) => ({
+      (await promptSkills(capabilities)).map((skill) => ({
         name: skill.slug,
         title: skill.name,
         description: skill.description,
       })),
     getPrompt: async (name, capabilities) => {
-      const skill = (await siteSkills.listForMcp(capabilities)).find((entry) => entry.slug === name);
+      const skill = (await promptSkills(capabilities)).find((entry) => entry.slug === name);
       return skill
         ? {
             name: skill.slug,
@@ -157,13 +172,6 @@ mcpRouter.post('/', async (c) => {
   // requires an admin principal before the harness ever runs. Discovery
   // (`tools/list`, `initialize`, `ping`) and safe read skills are unaffected,
   // preserving Agent-API parity for everything else.
-  // Capabilities come from the live RBAC bundle, not from `auth.roles` (#472).
-  // `auth.roles` holds a role *id* for a normal user and `[]` for an API key, so
-  // comparing it against `items:write` could only ever match the literal
-  // `'admin'` string a bootstrap/dev principal gets — the harness was
-  // admin-or-nothing regardless of what the token was actually allowed to do.
-  const grant = await resolveRequestCapabilities(c);
-
   const controlPlaneSkill = controlPlaneSkillFromCall(body);
   // The backstop now accepts either signal. `isAdminPrincipal` is kept because
   // it is the same predicate `withControlPlaneAccessGuard` uses elsewhere, and

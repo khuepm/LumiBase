@@ -264,6 +264,12 @@ export interface SiteSkillWriteMeta {
   changeNote?: string;
 }
 
+/** Optimistic concurrency: a stale version answers 409 VERSION_MISMATCH. */
+export interface SiteSkillPatchMeta extends SiteSkillWriteMeta {
+  /** The version the editor loaded. */
+  expectedVersion?: number;
+}
+
 export interface SiteSkillVersion {
   id: string;
   version: number;
@@ -424,17 +430,19 @@ export const missionControlApi = {
       body: JSON.stringify({ ...input, source: 'studio' }),
     }),
   /** `meta.changed` is dropped by agentFetch — callers refetch instead. */
-  updateSkill: (id: string, patch: Partial<SiteSkillContent> & SiteSkillWriteMeta) =>
+  updateSkill: (id: string, patch: Partial<SiteSkillContent> & SiteSkillPatchMeta) =>
     agentFetch<SiteSkill>(`${SKILLS}/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify({ ...patch, source: 'studio' }),
     }),
+  /** Refused (409) for a skill that has ever been active — archive it instead. */
   deleteSkill: (id: string) =>
     agentFetch(`${SKILLS}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  setSkillStatus: (id: string, action: 'activate' | 'archive' | 'draft') =>
+  /** `version` is the version on screen; the server refuses (409) if it moved on. */
+  setSkillStatus: (id: string, action: 'activate' | 'archive' | 'draft', version?: number) =>
     agentFetch<SiteSkill>(`${SKILLS}/${encodeURIComponent(id)}/${action}`, {
       method: 'POST',
-      body: '{}',
+      body: JSON.stringify(version === undefined ? {} : { version }),
     }),
   skillVersions: (id: string) =>
     agentFetch<SiteSkillVersion[]>(`${SKILLS}/${encodeURIComponent(id)}/versions`),

@@ -7,7 +7,9 @@ import type { SiteSkill } from '../api';
 
 /**
  * Site Skills page tests (#712): list, create, lifecycle, the active-edit
- * warning, verbatim server errors, version restore and the match preview.
+ * warning, verbatim server errors, version restore and the match preview,
+ * plus the version guard on save/activate and archive-not-delete for skills
+ * that were ever live.
  */
 
 const api = vi.hoisted(() => ({
@@ -74,6 +76,7 @@ const ACTIVE = skill({
   collections: ['articles'],
   triggers: ['contract'],
   version: 4,
+  activatedAt: '2026-11-03T00:00:00.000Z',
 });
 
 function renderPage() {
@@ -174,7 +177,7 @@ describe('SkillsPage create', () => {
     fireEvent.change(screen.getByLabelText('Change note (optional)'), {
       target: { value: 'first cut' },
     });
-    expect(screen.getByTestId('skill-body-count')).toHaveTextContent('18 / 20,000 characters');
+    expect(screen.getByTestId('skill-body-count')).toHaveTextContent('18 / 12,000 characters');
 
     fireEvent.click(screen.getByRole('button', { name: 'Create draft' }));
 
@@ -218,7 +221,8 @@ describe('SkillsPage edit + lifecycle', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
 
-    await waitFor(() => expect(api.setSkillStatus).toHaveBeenCalledWith('skill_1', 'activate'));
+    // The version on screen goes along, so an edit that landed meanwhile is not activated unseen.
+    await waitFor(() => expect(api.setSkillStatus).toHaveBeenCalledWith('skill_1', 'activate', 2));
   });
 
   it('warns that saving an active skill changes agent behaviour immediately', async () => {
@@ -245,13 +249,12 @@ describe('SkillsPage edit + lifecycle', () => {
     await waitFor(() => expect(api.updateSkill).toHaveBeenCalledTimes(1));
     const [id, patch] = api.updateSkill.mock.calls[0] as [string, Record<string, unknown>];
     expect(id).toBe('skill_1');
-    expect(patch).toMatchObject({ name: 'House style', body: 'New body', priority: 10 });
+    expect(patch).toMatchObject({ name: 'House style', body: 'New body', priority: 10, expectedVersion: 2 });
     expect(patch).not.toHaveProperty('slug');
   });
 
   it('renders a server error verbatim', async () => {
-    const message =
-      'Skills with riskClass "high" can only be written or activated by a control-plane admin.';
+    const message = 'The skill is at version 5, not 4; reload it and retry.';
     api.updateSkill.mockRejectedValue(new Error(message));
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: 'Legal review' }));
@@ -262,14 +265,14 @@ describe('SkillsPage edit + lifecycle', () => {
   });
 
   it('renders a lifecycle error verbatim', async () => {
-    api.setSkillStatus.mockRejectedValue(new Error('Capability "skills:write" is required.'));
+    api.setSkillStatus.mockRejectedValue(new Error('Writing Site Skills requires a control-plane admin.'));
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: 'House style' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Capability "skills:write" is required.',
+      'Writing Site Skills requires a control-plane admin.',
     );
   });
 
@@ -282,6 +285,22 @@ describe('SkillsPage edit + lifecycle', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm delete' }));
     await waitFor(() => expect(api.deleteSkill).toHaveBeenCalledWith('skill_1'));
+  });
+
+  it('offers Archive instead of Delete for a skill that has ever been active', async () => {
+    const wasActive = skill({ id: 'skill_3', slug: 'old-rules', name: 'Old rules', activatedAt: '2026-11-01T00:00:00.000Z' });
+    api.skills.mockResolvedValue([wasActive, ACTIVE]);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Old rules' }));
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('skill-delete-blocked')).toHaveTextContent(/archive it instead/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    await waitFor(() => expect(api.setSkillStatus).toHaveBeenCalledWith('skill_3', 'archive', 2));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Legal review' }));
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    expect(api.deleteSkill).not.toHaveBeenCalled();
   });
 });
 
@@ -383,6 +402,8 @@ describe('skills API fetchers', () => {
       });
       await real.updateSkill('skill_1', { body: 'New body' });
       await real.setSkillStatus('skill_1', 'activate');
+      await real.updateSkill('skill_1', { body: 'Newer body', expectedVersion: 2 });
+      await real.setSkillStatus('skill_1', 'activate', 3);
 
       const [createUrl, createInit] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(createUrl).toBe('/api/v1/agent/skills');
@@ -403,6 +424,16 @@ describe('skills API fetchers', () => {
       const [activateUrl, activateInit] = fetchMock.mock.calls[2] as [string, RequestInit];
       expect(activateUrl).toBe('/api/v1/agent/skills/skill_1/activate');
       expect(activateInit.method).toBe('POST');
+      expect(JSON.parse(String(activateInit.body))).toEqual({});
+
+      const [, guardedPatch] = fetchMock.mock.calls[3] as [string, RequestInit];
+      expect(JSON.parse(String(guardedPatch.body))).toEqual({
+        body: 'Newer body',
+        expectedVersion: 2,
+        source: 'studio',
+      });
+      const [, guardedActivate] = fetchMock.mock.calls[4] as [string, RequestInit];
+      expect(JSON.parse(String(guardedActivate.body))).toEqual({ version: 3 });
     } finally {
       vi.unstubAllGlobals();
     }
@@ -410,19 +441,19 @@ describe('skills API fetchers', () => {
 
   it('surfaces the server error message verbatim', async () => {
     const { missionControlApi: real } = await vi.importActual<typeof import('../api')>('../api');
-    const message =
-      'Skills with riskClass "high" can only be written or activated by a control-plane admin.';
+    const message = 'The skill is at version 5, not 4; reload it and retry.';
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation(
         async () =>
-          new Response(JSON.stringify({ errors: [{ code: 'RISK_REQUIRES_ADMIN', message }] }), {
-            status: 403,
-          }),
+          new Response(
+            JSON.stringify({ errors: [{ code: 'VERSION_MISMATCH', message, currentVersion: 5 }] }),
+            { status: 409 },
+          ),
       ),
     );
     try {
-      await expect(real.setSkillStatus('skill_2', 'activate')).rejects.toThrow(message);
+      await expect(real.setSkillStatus('skill_2', 'activate', 4)).rejects.toThrow(message);
     } finally {
       vi.unstubAllGlobals();
     }

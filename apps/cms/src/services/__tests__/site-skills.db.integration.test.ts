@@ -11,7 +11,11 @@ import { executeAiChatRun } from '../ai-chat-run-worker';
 import { COPILOT_SYSTEM_PROMPT, type ConfiguredLLM, type LLMChatOptions } from '../llm-provider';
 import { McpService, type McpHarnessPort } from '../mcp-service';
 import { SchemaService } from '../schema-service';
+import { loadCopilotHistory } from '../copilot-history';
 import {
+  COPILOT_TRIGGER_TURNS,
+  MAX_INJECTED_CHARS,
+  MAX_SKILL_BODY_CHARS,
   SITE_SKILLS_PREAMBLE,
   SiteSkillService,
   resolveCopilotPlaybooks,
@@ -78,8 +82,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Site Skills — DB integration', () => {
     return { call };
   }
 
-  const service = (siteId = SITE, admin = true) =>
-    new SiteSkillService({ db, siteId, actor: { label: 'test', admin } });
+  const service = (siteId = SITE) => new SiteSkillService({ db, siteId, actor: { label: 'test' } });
 
   /** A fake LLM that records the options of every call. */
   function recordingLLM(reply: string) {
@@ -147,9 +150,60 @@ describe.skipIf(!hasDbIntegrationUrl)('Site Skills — DB integration', () => {
       const audit = await db.select().from(activity).where(and(eq(activity.siteId, SITE), eq(activity.action, 'site_skill.activated')));
       expect(audit[0]!.payload).toMatchObject({ slug: 'house-style', version: 3, fromStatus: 'draft', toStatus: 'active' });
 
-      const removed = await call('DELETE', '/house-style');
+    });
+
+    it('PATCH and activate honour the version the caller saw (409 VERSION_MISMATCH)', async () => {
+      const { call } = app();
+      await call('POST', '', HOUSE_STYLE);
+      await call('PATCH', '/house-style', { body: 'v2 body' });
+
+      const stale = await call('PATCH', '/house-style', { body: 'stale edit', expectedVersion: 1 });
+      expect(stale.status).toBe(409);
+      expect(stale.json.errors?.[0]).toMatchObject({ code: 'VERSION_MISMATCH', currentVersion: 2 });
+      const fresh = await call('PATCH', '/house-style', { body: 'v3 body', expectedVersion: 2 });
+      expect(fresh.json.data).toMatchObject({ version: 3, body: 'v3 body' });
+
+      // Activating the version the reviewer looked at, after someone else edited it, is refused.
+      const lateActivate = await call('POST', '/house-style/activate', { version: 2 });
+      expect(lateActivate.status).toBe(409);
+      expect(lateActivate.json.errors?.[0]).toMatchObject({ code: 'VERSION_MISMATCH', currentVersion: 3 });
+      expect((await call('GET', '/house-style')).json.data.status).toBe('draft');
+      expect((await call('POST', '/house-style/activate', { version: 3 })).json.data).toMatchObject({ status: 'active', version: 3 });
+      // Both fields stay optional.
+      expect((await call('POST', '/house-style/archive')).status).toBe(200);
+      expect((await call('POST', '/house-style/activate', { version: 0 })).status).toBe(400);
+    });
+
+    it('a skill that was ever active cannot be deleted — archive it; a never-active draft can', async () => {
+      const { call } = app();
+      const live = await call('POST', '', HOUSE_STYLE);
+      await call('POST', '/house-style/activate');
+      await call('POST', '/house-style/draft');
+      const refused = await call('DELETE', '/house-style');
+      expect(refused.status).toBe(409);
+      expect(refused.json.errors?.[0]?.code).toBe('SKILL_HAS_BEEN_ACTIVE');
+      expect(refused.json.errors?.[0]?.message).toMatch(/archive/i);
+      expect(await db.select().from(siteSkillVersions).where(eq(siteSkillVersions.skillId, live.json.data.id))).toHaveLength(1);
+
+      const draft = await call('POST', '', { ...HOUSE_STYLE, slug: 'scratch' });
+      const removed = await call('DELETE', '/scratch');
       expect(removed.status).toBe(200);
-      expect(await db.select().from(siteSkillVersions).where(eq(siteSkillVersions.siteId, SITE))).toHaveLength(0);
+      expect(await db.select().from(siteSkillVersions).where(eq(siteSkillVersions.skillId, draft.json.data.id))).toHaveLength(0);
+      const [audit] = await db.select().from(activity).where(and(eq(activity.siteId, SITE), eq(activity.action, 'site_skill.deleted')));
+      expect(audit!.payload).toMatchObject({ skillId: draft.json.data.id, slug: 'scratch', wasStatus: 'draft' });
+      expect(audit!.itemId).toBe(draft.json.data.id);
+    });
+
+    it('the JSON API stores the body trimmed like a parsed document, so pull → push is a no-op', async () => {
+      const { call } = app();
+      const created = await call('POST', '', { ...HOUSE_STYLE, body: `\n${HOUSE_STYLE.body}  \n\n` });
+      expect(created.json.data.body).toBe(HOUSE_STYLE.body);
+      const exported = (await call('GET', '/export')).json.data as Array<{ filename: string; content: string }>;
+      const again = await call('POST', '/import', { documents: exported.map((d) => ({ path: d.filename, content: d.content })) });
+      expect(again.json.data[0]).toMatchObject({ action: 'unchanged', version: 1 });
+      const whitespaceOnly = await call('PATCH', '/house-style', { body: `${HOUSE_STYLE.body}\n\n   ` });
+      expect(whitespaceOnly.json).toMatchObject({ meta: { changed: false }, data: { version: 1 } });
+      expect((await call('PATCH', '/house-style', { body: ' \n ' })).status).toBe(400);
     });
 
     it('rejects a duplicate slug with 409 and invalid input with 400', async () => {
@@ -162,8 +216,68 @@ describe.skipIf(!hasDbIntegrationUrl)('Site Skills — DB integration', () => {
     });
   });
 
+  describe('atomic writes (review #781 item 3)', () => {
+    /**
+     * A BEFORE trigger that fails one statement of a write. Before the write
+     * was one transaction, the statements before it stayed committed: a failed
+     * `site_skills` update left version N+1 in the trail while the skill said
+     * N, and every later write collided with N+1 (409) forever.
+     */
+    async function failing(table: string, when: string, run: () => Promise<void>) {
+      await db.execute(sql.raw(`
+        CREATE OR REPLACE FUNCTION lumibase_test_781_skill_reject() RETURNS trigger AS $$
+        BEGIN
+          IF ${when} THEN
+            RAISE EXCEPTION 'skill write rejected' USING ERRCODE = 'P0781';
+          END IF;
+          RETURN NEW;
+        END $$ LANGUAGE plpgsql;
+        CREATE TRIGGER lumibase_test_781_skill_reject BEFORE INSERT OR UPDATE ON ${table}
+          FOR EACH ROW EXECUTE FUNCTION lumibase_test_781_skill_reject()`));
+      try {
+        await run();
+      } finally {
+        await db.execute(sql.raw(`DROP TRIGGER IF EXISTS lumibase_test_781_skill_reject ON ${table}`));
+        await db.execute(sql.raw('DROP FUNCTION IF EXISTS lumibase_test_781_skill_reject()'));
+      }
+    }
+    const input = { ...HOUSE_STYLE, riskClass: 'low' as const, priority: 0, triggers: [], surfaces: [], tools: [], collections: [], requiredCapabilities: [] };
+
+    it('update: a failed skill-row write leaves no orphan version and the next write succeeds', async () => {
+      await service().create(input);
+      await failing('lumibase_site_skills', `NEW.body = 'boom'`, async () => {
+        await expect(service().update('house-style', { body: 'boom' })).rejects.toThrow();
+      });
+      const versions = await db.select().from(siteSkillVersions).where(eq(siteSkillVersions.siteId, SITE));
+      expect(versions.map((v) => v.version)).toEqual([1]);
+      expect(await db.select().from(activity).where(and(eq(activity.siteId, SITE), eq(activity.action, 'site_skill.updated')))).toHaveLength(0);
+
+      const next = await service().update('house-style', { body: 'Second version.' });
+      expect(next).toMatchObject({ changed: true, skill: { version: 2, body: 'Second version.' } });
+    });
+
+    it('update: a failed audit row rolls back the version and the skill row', async () => {
+      await service().create(input);
+      await failing('lumibase_activity', `NEW.site_id = '${SITE}' AND NEW.action = 'site_skill.updated'`, async () => {
+        await expect(service().update('house-style', { body: 'audited' })).rejects.toThrow();
+      });
+      expect((await service().get('house-style')).version).toBe(1);
+      expect(await db.select().from(siteSkillVersions).where(eq(siteSkillVersions.siteId, SITE))).toHaveLength(1);
+    });
+
+    it('create: a failed version insert leaves no skill without its v1, and a retry succeeds', async () => {
+      await failing('lumibase_site_skill_versions', `NEW.site_id = '${SITE}'`, async () => {
+        await expect(service().create(input)).rejects.toThrow();
+      });
+      expect(await db.select().from(siteSkills).where(eq(siteSkills.siteId, SITE))).toHaveLength(0);
+      const created = await service().create(input);
+      expect(created.version).toBe(1);
+      expect(await db.select().from(siteSkillVersions).where(eq(siteSkillVersions.skillId, created.id))).toHaveLength(1);
+    });
+  });
+
   describe('guards', () => {
-    it('a principal without skills:write can read but not write', async () => {
+    it('a principal that is not a control-plane admin can read but not write', async () => {
       await service().create({ ...HOUSE_STYLE, riskClass: 'low', priority: 0, triggers: [], surfaces: [], tools: [], collections: [], requiredCapabilities: [] });
       const { call } = app(['editor']);
       expect((await call('GET', '')).json.data).toHaveLength(1);
@@ -178,26 +292,17 @@ describe.skipIf(!hasDbIntegrationUrl)('Site Skills — DB integration', () => {
         const res = await call(method, path, body);
         expect(res.status, `${method} ${path}`).toBe(403);
         expect(res.json.errors?.[0]?.code).toBe('FORBIDDEN');
+        expect(res.json.errors?.[0]?.message).toBe('Writing Site Skills requires a control-plane admin.');
       }
       const [row] = await db.select().from(siteSkills).where(eq(siteSkills.siteId, SITE));
       expect(row).toMatchObject({ status: 'draft', body: HOUSE_STYLE.body, version: 1 });
     });
 
-    it('high-risk skills are admin-only in every direction', async () => {
-      const input = { ...HOUSE_STYLE, riskClass: 'high' as const, priority: 0, triggers: [], surfaces: [], tools: [], collections: [], requiredCapabilities: [] };
-      const writer = service(SITE, false);
-      await expect(writer.create(input)).rejects.toMatchObject({ code: 'RISK_REQUIRES_ADMIN', status: 403 });
-
-      await service(SITE, true).create(input);
-      await expect(writer.update('house-style', { body: 'softened' })).rejects.toMatchObject({ code: 'RISK_REQUIRES_ADMIN' });
-      await expect(writer.update('house-style', { riskClass: 'low' })).rejects.toMatchObject({ code: 'RISK_REQUIRES_ADMIN' });
-      await expect(writer.setStatus('house-style', 'active')).rejects.toMatchObject({ code: 'RISK_REQUIRES_ADMIN' });
-      await expect(writer.remove('house-style')).rejects.toMatchObject({ code: 'RISK_REQUIRES_ADMIN' });
-
-      // A writer may not escalate their own low-risk skill either.
-      await writer.create({ ...input, slug: 'mine', riskClass: 'low' });
-      await expect(writer.update('mine', { riskClass: 'high' })).rejects.toMatchObject({ code: 'RISK_REQUIRES_ADMIN' });
-      await expect(writer.setStatus('mine', 'active')).resolves.toMatchObject({ status: 'active' });
+    it('riskClass is a stored label: an admin writes and activates a high-risk skill like any other', async () => {
+      const { call } = app();
+      const created = await call('POST', '', { ...HOUSE_STYLE, riskClass: 'high' });
+      expect(created.json.data).toMatchObject({ riskClass: 'high', status: 'draft' });
+      expect((await call('POST', '/house-style/activate')).json.data.status).toBe('active');
     });
   });
 
@@ -283,12 +388,36 @@ describe.skipIf(!hasDbIntegrationUrl)('Site Skills — DB integration', () => {
       const mixed = await call('POST', '/import', {
         documents: [
           { path: 'empty.md', content: '' },
-          { path: 'huge.md', content: doc('huge', 'x'.repeat(20_001)) },
+          { path: 'huge.md', content: doc('huge', 'x'.repeat(12_001)) },
           { path: 'ok.md', content: doc('fine', 'ok') },
         ],
       });
       expect(mixed.status).toBe(200);
       expect(mixed.json.data.map((r: { action: string }) => r.action)).toEqual(['error', 'error', 'created']);
+    });
+
+    it('a content change to an active skill is refused per document unless updateActive is set', async () => {
+      const { call } = app();
+      await call('POST', '/import', { activate: true, documents: [{ content: doc('alpha', 'Alpha rules') }, { content: doc('beta', 'Beta rules') }] });
+
+      // The install path: no updateActive. The active skill is untouched; the rest of the batch still lands.
+      const install = await call('POST', '/import', {
+        documents: [{ content: doc('alpha', 'Alpha rules v2') }, { content: doc('beta', 'Beta rules') }, { content: doc('gamma', 'Gamma rules') }],
+      });
+      expect(install.json.data).toMatchObject([
+        { slug: 'alpha', action: 'error', code: 'ACTIVE_SKILL_CHANGE' },
+        { slug: 'beta', action: 'unchanged' },
+        { slug: 'gamma', action: 'created', status: 'draft' },
+      ]);
+      expect((await call('GET', '/alpha')).json.data).toMatchObject({ version: 1, body: 'Alpha rules', status: 'active' });
+      // A dry run reports the same refusal.
+      const plan = await call('POST', '/import', { dryRun: true, documents: [{ content: doc('alpha', 'Alpha rules v2') }] });
+      expect(plan.json.data[0]).toMatchObject({ action: 'error', code: 'ACTIVE_SKILL_CHANGE' });
+
+      // The push path opts in and updates the live skill.
+      const push = await call('POST', '/import', { updateActive: true, documents: [{ content: doc('alpha', 'Alpha rules v2') }] });
+      expect(push.json.data[0]).toMatchObject({ action: 'updated', version: 2, status: 'active' });
+      expect((await call('GET', '/alpha')).json.data.body).toBe('Alpha rules v2');
     });
   });
 
@@ -309,6 +438,17 @@ describe.skipIf(!hasDbIntegrationUrl)('Site Skills — DB integration', () => {
       expect((await service().resolve({ surface: 'copilot' })).skills).toHaveLength(1);
       await call('POST', '/house-style/archive');
       expect((await service().resolve({ surface: 'copilot' })).prompt).toBe('');
+    });
+
+    it('a body at the size cap is always injectable on its own', async () => {
+      const body = 'x'.repeat(MAX_SKILL_BODY_CHARS);
+      expect(MAX_SKILL_BODY_CHARS).toBe(MAX_INJECTED_CHARS);
+      await activate({ slug: 'big', name: 'Big', body });
+      const resolved = await service().resolve({ surface: 'copilot' });
+      expect(resolved.skills.map((skill) => skill.slug)).toEqual(['big']);
+      expect(resolved.skipped).toEqual([]);
+      const { call } = app();
+      expect((await call('POST', '', { slug: 'too-big', name: 'Too big', body: `${body}x` })).status).toBe(400);
     });
 
     it('generation tools: the playbook joins the instructions and is stamped on the result', async () => {
@@ -360,6 +500,53 @@ describe.skipIf(!hasDbIntegrationUrl)('Site Skills — DB integration', () => {
 
       const writer = await resolveCopilotPlaybooks({ db, siteId: SITE }, { text: 'hello', capabilities: ['items:write'] });
       expect(writer.applied.map((s) => s.slug)).toEqual(['publishers']);
+    });
+
+    it('Copilot: triggers match the latest user turns of the loaded window, on both chat paths', async () => {
+      const skill = await activate({ ...HOUSE_STYLE, triggers: ['headline'] });
+      const [conversation] = await db.insert(aiConversations).values({ siteId: SITE, title: 't' }).returning();
+      const at = (seconds: number) => new Date(Date.UTC(2026, 10, 12, 0, 0, seconds));
+      await db.insert(aiMessages).values([
+        { conversationId: conversation!.id, role: 'user', content: 'Write a headline for the launch post', createdAt: at(1) },
+        { conversationId: conversation!.id, role: 'assistant', content: 'Launch day is here', createdAt: at(2) },
+        { conversationId: conversation!.id, role: 'user', content: 'Make it shorter', createdAt: at(3) },
+      ]);
+      const history = await loadCopilotHistory(db, conversation!.id);
+
+      // The follow-up alone does not mention the trigger; the conversation does.
+      expect((await resolveCopilotPlaybooks({ db, siteId: SITE }, { text: 'Make it shorter', capabilities: [] })).applied).toEqual([]);
+      const sync = await resolveCopilotPlaybooks({ db, siteId: SITE }, { text: 'Make it shorter', history, capabilities: [] });
+      expect(sync.applied).toEqual([{ slug: skill.slug, version: 1, hash: skill.hash }]);
+
+      // Only the newest COPILOT_TRIGGER_TURNS user turns count.
+      const old = Array.from({ length: COPILOT_TRIGGER_TURNS }, (_, i) => ({ role: 'user' as const, content: `unrelated ${i}` }));
+      const stale = await resolveCopilotPlaybooks(
+        { db, siteId: SITE },
+        { text: 'Make it shorter', history: [{ role: 'user', content: 'Write a headline' }, ...old], capabilities: [] },
+      );
+      expect(stale.applied).toEqual([]);
+
+      // The queued worker loads the same window and matches the same way.
+      const { createPendingRun } = await import('../flow-run-service');
+      const run = await createPendingRun(db, { siteId: SITE, runType: 'ai_chat', input: {} });
+      const bodies: Array<Record<string, unknown>> = [];
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'Launch!' } }] }), { status: 200 });
+      }) as typeof fetch;
+      try {
+        await executeAiChatRun(
+          db,
+          { kind: 'ai_chat', siteId: SITE, runId: run.id, conversationId: conversation!.id, message: 'Make it shorter', userId: null, userCapabilities: [] },
+          undefined,
+          { LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'test-key' },
+        );
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+      const system = (bodies[0]!['messages'] as Array<{ role: string; content: string }>)[0]!;
+      expect(system.content).toContain('Never use the word "utilize".');
     });
 
     it('Copilot async worker sends the same prompt and records the applied skills', async () => {

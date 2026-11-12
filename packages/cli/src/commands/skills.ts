@@ -33,6 +33,11 @@ import { log } from '../utils/log.js';
  * command only moves Markdown files between a directory and the CMS. Nothing
  * here reads front matter, so the CLI cannot disagree with the server about
  * what a valid skill is.
+ *
+ * `push` is the deploy path: the directory is the source of truth, so it also
+ * updates skills that are already active (`updateActive`). `install` brings in
+ * someone else's skills and never changes a live skill — the server refuses
+ * that document (`ACTIVE_SKILL_CHANGE`) until it is reviewed.
  */
 
 export const DEFAULT_SKILLS_DIR = 'skills';
@@ -410,6 +415,8 @@ async function push(
     activate: opts.activate,
     dryRun,
     source: 'cli',
+    // The repo is the source of truth: pushing it is meant to change live skills.
+    updateActive: true,
   });
 
   const code = conclude(results, { dryRun, check: opts.check });
@@ -547,6 +554,7 @@ async function install(
     `Installing ${resolved.documents.length} ${plural(resolved.documents.length, 'skill')} from ${resolved.label}${opts.dryRun ? ' (dry run)' : ''}`,
   );
 
+  // No `updateActive`: an install never changes a skill that is already live.
   const results = await upload(ctx, resolved.documents, {
     activate: opts.activate,
     dryRun: opts.dryRun,
@@ -556,5 +564,10 @@ async function install(
 
   const code = conclude(results, { dryRun: opts.dryRun, check: false });
   draftNotice(results, { activate: opts.activate, dryRun: opts.dryRun });
+  if (results.some((result) => result.code === 'ACTIVE_SKILL_CHANGE')) {
+    log.dim(
+      `  Active skills are never changed by install. Review the new version in ${STUDIO_SKILLS}, or deploy it from your skills directory with \`lumibase skills push\`.`,
+    );
+  }
   return code;
 }

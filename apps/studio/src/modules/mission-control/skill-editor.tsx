@@ -16,7 +16,8 @@ import {
  * message is shown verbatim.
  */
 
-export const MAX_SKILL_BODY_CHARS = 20_000;
+/** Equal to the server's per-run injection budget, so any saved skill can be injected. */
+export const MAX_SKILL_BODY_CHARS = 12_000;
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const RESERVED_SLUGS = ['import', 'export', 'match'];
 const SURFACES: readonly SiteSkillSurface[] = ['copilot', 'generation', 'mcp'];
@@ -97,6 +98,8 @@ export function SkillEditor({
   const [body, setBody] = useState(seed.body);
   const [changeNote, setChangeNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // The server drops leading blank lines and trailing whitespace before the cap applies.
+  const storedLength = body.replace(/^\n+/, '').replace(/\s+$/, '').length;
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -115,7 +118,13 @@ export function SkillEditor({
       const note = changeNote.trim();
       const meta = note ? { changeNote: note } : {};
       return skill
-        ? missionControlApi.updateSkill(skill.id, { ...content, ...meta })
+        ? missionControlApi.updateSkill(skill.id, {
+            ...content,
+            ...meta,
+            // The version this form was seeded from: a save over someone
+            // else's newer edit is refused instead of silently replacing it.
+            expectedVersion: skill.version,
+          })
         : missionControlApi.createSkill({ slug: slug.trim(), ...content, ...meta });
     },
     onSuccess: (saved) => {
@@ -144,8 +153,8 @@ export function SkillEditor({
     ) {
       return 'Priority must be a whole number between -100 and 100.';
     }
-    if (body.length === 0) return 'Body is required.';
-    if (body.length > MAX_SKILL_BODY_CHARS) {
+    if (body.trim().length === 0) return 'Body is required.';
+    if (storedLength > MAX_SKILL_BODY_CHARS) {
       return `Body is over the ${MAX_SKILL_BODY_CHARS.toLocaleString('en-US')} character limit.`;
     }
     return null;
@@ -166,7 +175,7 @@ export function SkillEditor({
     );
   }
 
-  const overLimit = body.length > MAX_SKILL_BODY_CHARS;
+  const overLimit = storedLength > MAX_SKILL_BODY_CHARS;
 
   return (
     <form
@@ -240,7 +249,9 @@ export function SkillEditor({
               ))}
             </select>
           </label>
-          <span className="mt-1 block text-muted-foreground">High-risk skills are admin-only.</span>
+          <span className="mt-1 block text-muted-foreground">
+            A label for review priority. It does not change who can edit or activate.
+          </span>
         </div>
         <div className="text-xs">
           <label className="block">
@@ -343,7 +354,7 @@ export function SkillEditor({
           className={`mt-1 block ${overLimit ? 'text-destructive' : 'text-muted-foreground'}`}
           data-testid="skill-body-count"
         >
-          {body.length.toLocaleString('en-US')} / {MAX_SKILL_BODY_CHARS.toLocaleString('en-US')}{' '}
+          {storedLength.toLocaleString('en-US')} / {MAX_SKILL_BODY_CHARS.toLocaleString('en-US')}{' '}
           characters
         </span>
       </div>

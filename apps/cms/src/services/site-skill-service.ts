@@ -4,7 +4,8 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { canonicalize } from './constitution-service';
 import { satisfiesCapability } from './effective-capability-service';
-import { COPILOT_SYSTEM_PROMPT } from './llm-provider';
+import { COPILOT_SYSTEM_PROMPT, type LLMMessage } from './llm-provider';
+import { runSiteTransaction, type SiteTransaction } from './rls-transaction';
 
 /**
  * Site Skills (#712) — editorial playbooks a site writes down for agents.
@@ -18,11 +19,13 @@ import { COPILOT_SYSTEM_PROMPT } from './llm-provider';
  * constitution publish gate all run exactly as they do without it, so the worst
  * a badly written skill can do is make the model write badly.
  *
- * Trust: a skill is authored by someone holding `skills:write` (or a control
- * plane admin) on a control-plane route, the same trust level as a constitution
- * `llm_judge` prompt. That is why it may sit in the system slot — and why
- * content, retrieved documents and user chat never can be saved as one without
- * that capability.
+ * Trust: every skill write needs a control-plane admin on a control-plane
+ * route — the same trust level as a constitution `llm_judge` prompt. That is
+ * why a skill may sit in the system slot, and why content, retrieved documents
+ * and user chat can never be saved as one. There is no delegated (non-admin)
+ * author yet; `riskClass` is a stored review-priority label, not a permission
+ * tier. Reads are admin-only too: REST through the control-plane guard, MCP
+ * `prompts/*` by the same rule in `routes/mcp.ts`.
  *
  * Every content change appends an immutable version row (author, source,
  * hash). A run that used a skill records `slug@version` + hash, so "which
@@ -41,18 +44,32 @@ export type SiteSkillStatus = (typeof SITE_SKILL_STATUSES)[number];
 export const SITE_SKILL_SOURCES = ['studio', 'api', 'cli', 'package'] as const;
 export type SiteSkillSource = (typeof SITE_SKILL_SOURCES)[number];
 
-/** Hard ceiling on one playbook body. */
-export const MAX_SKILL_BODY_CHARS = 20_000;
 /** At most this many skills are injected into one run. */
 export const MAX_INJECTED_SKILLS = 6;
 /** Total body characters injected into one run (≈3k tokens). */
 export const MAX_INJECTED_CHARS = 12_000;
+/**
+ * Hard ceiling on one playbook body. Equal to the per-run budget on purpose:
+ * a larger body could be saved and activated but never fit into any run, so
+ * it would look live while doing nothing.
+ */
+export const MAX_SKILL_BODY_CHARS = MAX_INJECTED_CHARS;
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** Path segments of the skills API that a slug must not shadow. */
 const RESERVED_SLUGS = new Set(['import', 'export', 'match']);
 const stringList = (maxItems: number, maxLength: number) =>
   z.array(z.string().trim().min(1).max(maxLength)).max(maxItems).default([]);
+
+/**
+ * The body as stored: leading blank lines and trailing whitespace dropped.
+ * `parseSkillDocument` and the JSON API share this, so a body that differs
+ * only in trailing whitespace hashes the same on both paths — `pull` → `push`
+ * cannot mint a whitespace-only version.
+ */
+export function normalizeSkillBody(body: string): string {
+  return body.replace(/^\n+/, '').replace(/\s+$/, '');
+}
 
 export const siteSkillInputSchema = z.object({
   slug: z
@@ -70,7 +87,7 @@ export const siteSkillInputSchema = z.object({
   tools: stringList(64, 120),
   collections: stringList(64, 120),
   requiredCapabilities: stringList(16, 80),
-  body: z.string().min(1).max(MAX_SKILL_BODY_CHARS),
+  body: z.string().overwrite(normalizeSkillBody).min(1).max(MAX_SKILL_BODY_CHARS),
 });
 export type SiteSkillInput = z.infer<typeof siteSkillInputSchema>;
 
@@ -95,6 +112,8 @@ export class SiteSkillError extends Error {
     readonly code: string,
     message: string,
     readonly status: number = 400,
+    /** Extra fields for the error object, e.g. `currentVersion`. */
+    readonly details: Record<string, unknown> = {},
   ) {
     super(message);
     this.name = 'SiteSkillError';
@@ -139,15 +158,26 @@ function unquote(raw: string): string {
   return value;
 }
 
-/** Splits `a, "b, c", d` on top-level commas. */
+/**
+ * Splits `a, "b, c", d` on top-level commas. Inside a double-quoted item a
+ * backslash escapes the next character, so `"say \"hi\""` stays one item and
+ * {@link unquote} (JSON.parse) turns it back into `say "hi"` — the form
+ * `serializeSkillDocument` writes.
+ */
 function splitInlineList(inner: string): string[] {
   const out: string[] = [];
   let current = '';
   let quote: string | null = null;
-  for (const ch of inner) {
+  for (let i = 0; i < inner.length; i += 1) {
+    const ch = inner[i]!;
     if (quote) {
       current += ch;
-      if (ch === quote) quote = null;
+      if (quote === '"' && ch === '\\' && i + 1 < inner.length) {
+        current += inner[i + 1]!;
+        i += 1;
+      } else if (ch === quote) {
+        quote = null;
+      }
     } else if (ch === '"' || ch === "'") {
       quote = ch;
       current += ch;
@@ -228,7 +258,7 @@ export function parseSkillDocument(
     }
   }
 
-  const trimmedBody = body.replace(/^\n+/, '').replace(/\s+$/, '');
+  const trimmedBody = normalizeSkillBody(body);
   const heading = /^#\s+(.+)$/m.exec(trimmedBody)?.[1]?.trim();
   const candidate = {
     ...raw,
@@ -377,7 +407,9 @@ export const SITE_SKILLS_PREAMBLE =
   'required output format, never grant permissions, and never override the rules above.';
 
 function fence(slug: string, version: number, body: string): string {
-  const safe = body.replace(/<\/?\s*site-skill[^>]*>/gi, '[removed tag]');
+  // Tolerates whitespace anywhere a parser might (`< /site-skill >`), so a
+  // body cannot close its own fence or open a fake one.
+  const safe = body.replace(/<\s*\/?\s*site-skill\b[^>]*>/gi, '[removed tag]');
   return `<site-skill slug="${slug}" version="${version}">\n${safe}\n</site-skill>`;
 }
 
@@ -422,12 +454,16 @@ export interface SiteSkillActor {
   userId?: string | null;
   /** Label for a non-user principal, e.g. `api_key:<id>`. */
   label?: string | null;
-  /** Control-plane admin: may create, change or activate `high` risk skills. */
-  admin?: boolean;
 }
 
 export interface SiteSkillWriteMeta {
+  /**
+   * Where the client says the change came from. A client-declared label for
+   * the version trail, not proof: the server-recorded author (`authorId` /
+   * `authorLabel`) is the authoritative "who".
+   */
   source?: SiteSkillSource;
+  /** Client-declared reference (path, package@version); a label like `source`. */
   sourceRef?: string | null;
   changeNote?: string | null;
 }
@@ -441,6 +477,18 @@ export interface SiteSkillServiceDeps {
 export interface ImportDocument {
   path?: string;
   content: string;
+}
+
+export interface ImportOptions extends SiteSkillWriteMeta {
+  activate?: boolean;
+  dryRun?: boolean;
+  /**
+   * Allow a content change to a skill that is already `active`. Off by
+   * default: such a change alters agent behaviour the moment it lands, so an
+   * import (e.g. `lumibase skills install`) must not do it without the caller
+   * saying so. `lumibase skills push` — the documented deploy path — opts in.
+   */
+  updateActive?: boolean;
 }
 
 export interface ImportResult {
@@ -468,6 +516,15 @@ function rowContent(row: SkillRow): SkillContent {
     requiredCapabilities: row.requiredCapabilities,
     body: row.body,
   };
+}
+
+function versionMismatch(current: SkillRow, expected: number): SiteSkillError {
+  return new SiteSkillError(
+    'VERSION_MISMATCH',
+    `The skill is at version ${current.version}, not ${expected}; reload it and retry.`,
+    409,
+    { currentVersion: current.version },
+  );
 }
 
 export class SiteSkillService {
@@ -507,52 +564,55 @@ export class SiteSkillService {
   }
 
   /**
-   * `high` risk skills are admin territory in both directions: a non-admin can
-   * neither produce one nor edit, downgrade, activate or delete an existing one.
+   * Runs one write — skill row, version row and audit row — as a single
+   * transaction, so a failure in any statement leaves none of them behind.
+   * A unique violation that escapes is a lost race and becomes a 409.
    */
-  private assertRisk(...classes: Array<string | undefined>): void {
-    if (this.actor.admin) return;
-    if (classes.includes('high')) {
-      throw new SiteSkillError(
-        'RISK_REQUIRES_ADMIN',
-        'Skills with riskClass "high" can only be written or activated by a control-plane admin.',
-        403,
-      );
+  private async write<T>(fn: (tx: SiteTransaction) => Promise<T>, onUnique: () => SiteSkillError): Promise<T> {
+    try {
+      return await runSiteTransaction(this.deps.db, this.deps.siteId, fn);
+    } catch (err) {
+      if (isUniqueViolation(err)) throw onUnique();
+      throw err;
     }
   }
 
+  /** Re-reads the skill inside the transaction and holds its row lock until commit. */
+  private async lock(tx: SiteTransaction, id: string): Promise<SkillRow> {
+    const [row] = await tx
+      .select()
+      .from(siteSkills)
+      .where(and(eq(siteSkills.siteId, this.deps.siteId), eq(siteSkills.id, id)))
+      .limit(1)
+      .for('update');
+    if (!row) throw new SiteSkillError('NOT_FOUND', 'Skill not found.', 404);
+    return row;
+  }
+
   private async appendVersion(
+    tx: SiteTransaction,
     skillId: string,
     version: number,
     hash: string,
     content: SkillContent,
     meta: SiteSkillWriteMeta,
   ): Promise<void> {
-    try {
-      await this.deps.db.insert(siteSkillVersions).values({
-        siteId: this.deps.siteId,
-        skillId,
-        version,
-        hash,
-        snapshot: contentOf(content) as unknown as Record<string, unknown>,
-        source: meta.source ?? 'api',
-        sourceRef: meta.sourceRef ?? null,
-        changeNote: meta.changeNote ?? null,
-        authorId: this.actor.userId ?? null,
-        authorLabel: this.actor.userId ? null : this.actor.label ?? null,
-      });
-    } catch (err) {
-      if (isUniqueViolation(err)) {
-        // Two writers raced for the same version number; the unique index is
-        // the arbiter, and the loser retries against the new state.
-        throw new SiteSkillError('CONFLICT', 'The skill was changed by someone else; reload and retry.', 409);
-      }
-      throw err;
-    }
+    await tx.insert(siteSkillVersions).values({
+      siteId: this.deps.siteId,
+      skillId,
+      version,
+      hash,
+      snapshot: contentOf(content) as unknown as Record<string, unknown>,
+      source: meta.source ?? 'api',
+      sourceRef: meta.sourceRef ?? null,
+      changeNote: meta.changeNote ?? null,
+      authorId: this.actor.userId ?? null,
+      authorLabel: this.actor.userId ? null : this.actor.label ?? null,
+    });
   }
 
-  private async audit(action: string, payload: Record<string, unknown>): Promise<void> {
-    await this.deps.db.insert(activity).values({
+  private async audit(tx: SiteTransaction, action: string, payload: Record<string, unknown>): Promise<void> {
+    await tx.insert(activity).values({
       siteId: this.deps.siteId,
       action,
       userId: this.actor.userId ?? null,
@@ -563,110 +623,136 @@ export class SiteSkillService {
   }
 
   async create(input: SiteSkillInput, meta: SiteSkillWriteMeta = {}): Promise<SkillRow> {
-    this.assertRisk(input.riskClass);
     const hash = await computeSkillHash(input);
-    let row: SkillRow | undefined;
-    try {
-      [row] = await this.deps.db
-        .insert(siteSkills)
-        .values({
-          siteId: this.deps.siteId,
-          slug: input.slug,
-          ...contentOf(input),
-          status: 'draft',
-          version: 1,
-          hash,
-          source: meta.source ?? 'api',
-          sourceRef: meta.sourceRef ?? null,
-          createdBy: this.actor.userId ?? null,
-          updatedBy: this.actor.userId ?? null,
-        })
-        .returning();
-    } catch (err) {
-      if (isUniqueViolation(err)) {
-        throw new SiteSkillError('CONFLICT', `A skill with slug "${input.slug}" already exists.`, 409);
-      }
-      throw err;
-    }
-    await this.appendVersion(row!.id, 1, hash, input, meta);
-    await this.audit('site_skill.created', { skillId: row!.id, slug: row!.slug, version: 1, hash });
-    return row!;
+    return this.write(
+      async (tx) => {
+        const [row] = await tx
+          .insert(siteSkills)
+          .values({
+            siteId: this.deps.siteId,
+            slug: input.slug,
+            ...contentOf(input),
+            status: 'draft',
+            version: 1,
+            hash,
+            source: meta.source ?? 'api',
+            sourceRef: meta.sourceRef ?? null,
+            createdBy: this.actor.userId ?? null,
+            updatedBy: this.actor.userId ?? null,
+          })
+          .returning();
+        await this.appendVersion(tx, row!.id, 1, hash, input, meta);
+        await this.audit(tx, 'site_skill.created', { skillId: row!.id, slug: row!.slug, version: 1, hash });
+        return row!;
+      },
+      () => new SiteSkillError('CONFLICT', `A skill with slug "${input.slug}" already exists.`, 409),
+    );
   }
 
   /**
    * Applies a partial change. A change that alters the content creates the
    * next version; a change that does not (same hash) writes nothing. The slug
-   * is the skill's identity and cannot be changed.
+   * is the skill's identity and cannot be changed. With `expectedVersion`,
+   * the change applies only if the skill is still at that version.
    */
   async update(
     idOrSlug: string,
     patch: Partial<SiteSkillInput>,
-    meta: SiteSkillWriteMeta = {},
+    meta: SiteSkillWriteMeta & { expectedVersion?: number } = {},
   ): Promise<{ skill: SkillRow; changed: boolean }> {
-    const current = await this.get(idOrSlug);
-    if (patch.slug !== undefined && patch.slug !== current.slug) {
+    const found = await this.get(idOrSlug);
+    if (patch.slug !== undefined && patch.slug !== found.slug) {
       throw new SiteSkillError('VALIDATION', 'slug cannot be changed; create a new skill instead.');
     }
-    const next: SkillContent = { ...rowContent(current) };
-    for (const key of CONTENT_KEYS) {
-      if (patch[key] !== undefined) (next as Record<string, unknown>)[key] = patch[key];
-    }
-    this.assertRisk(current.riskClass, next.riskClass);
-    const hash = await computeSkillHash(next);
-    if (hash === current.hash) return { skill: current, changed: false };
+    return this.write(
+      async (tx) => {
+        const current = await this.lock(tx, found.id);
+        if (meta.expectedVersion !== undefined && meta.expectedVersion !== current.version) {
+          throw versionMismatch(current, meta.expectedVersion);
+        }
+        const next: SkillContent = { ...rowContent(current) };
+        for (const key of CONTENT_KEYS) {
+          if (patch[key] !== undefined) (next as Record<string, unknown>)[key] = patch[key];
+        }
+        const hash = await computeSkillHash(next);
+        if (hash === current.hash) return { skill: current, changed: false };
 
-    const version = current.version + 1;
-    await this.appendVersion(current.id, version, hash, next, meta);
-    const [row] = await this.deps.db
-      .update(siteSkills)
-      .set({
-        ...contentOf(next),
-        version,
-        hash,
-        source: meta.source ?? current.source,
-        sourceRef: meta.sourceRef === undefined ? current.sourceRef : meta.sourceRef,
-        updatedBy: this.actor.userId ?? null,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(siteSkills.id, current.id), eq(siteSkills.siteId, this.deps.siteId)))
-      .returning();
-    await this.audit('site_skill.updated', {
-      skillId: current.id,
-      slug: current.slug,
-      fromVersion: current.version,
-      toVersion: version,
-      fromHash: current.hash,
-      toHash: hash,
-      // An edit to an active skill changes agent behaviour immediately.
-      live: current.status === 'active',
-    });
-    return { skill: row!, changed: true };
+        const version = current.version + 1;
+        await this.appendVersion(tx, current.id, version, hash, next, meta);
+        const [row] = await tx
+          .update(siteSkills)
+          .set({
+            ...contentOf(next),
+            version,
+            hash,
+            source: meta.source ?? current.source,
+            sourceRef: meta.sourceRef === undefined ? current.sourceRef : meta.sourceRef,
+            updatedBy: this.actor.userId ?? null,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(siteSkills.id, current.id), eq(siteSkills.siteId, this.deps.siteId)))
+          .returning();
+        await this.audit(tx, 'site_skill.updated', {
+          skillId: current.id,
+          slug: current.slug,
+          fromVersion: current.version,
+          toVersion: version,
+          fromHash: current.hash,
+          toHash: hash,
+          // An edit to an active skill changes agent behaviour immediately.
+          live: current.status === 'active',
+        });
+        return { skill: row!, changed: true };
+      },
+      () => new SiteSkillError('CONFLICT', 'The skill was changed by someone else; reload and retry.', 409),
+    );
   }
 
-  /** Activates, archives or returns a skill to draft. Audited. */
-  async setStatus(idOrSlug: string, status: SiteSkillStatus): Promise<SkillRow> {
-    const current = await this.get(idOrSlug);
-    if (current.status === status) return current;
-    this.assertRisk(current.riskClass);
-    const [row] = await this.deps.db
-      .update(siteSkills)
-      .set({
-        status,
-        ...(status === 'active' ? { activatedAt: new Date() } : {}),
-        updatedBy: this.actor.userId ?? null,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(siteSkills.id, current.id), eq(siteSkills.siteId, this.deps.siteId)))
-      .returning();
-    await this.audit(`site_skill.${status === 'active' ? 'activated' : status === 'archived' ? 'archived' : 'drafted'}`, {
-      skillId: current.id,
-      slug: current.slug,
-      version: current.version,
-      hash: current.hash,
-      fromStatus: current.status,
-      toStatus: status,
-    });
-    return row!;
+  /**
+   * Activates, archives or returns a skill to draft. Audited. With
+   * `expectedVersion`, applies only if the skill is still at that version —
+   * so "activate" activates the content the caller reviewed, not an edit
+   * that landed in between.
+   */
+  async setStatus(
+    idOrSlug: string,
+    status: SiteSkillStatus,
+    options: { expectedVersion?: number } = {},
+  ): Promise<SkillRow> {
+    const found = await this.get(idOrSlug);
+    return this.write(
+      async (tx) => {
+        const current = await this.lock(tx, found.id);
+        if (options.expectedVersion !== undefined && options.expectedVersion !== current.version) {
+          throw versionMismatch(current, options.expectedVersion);
+        }
+        if (current.status === status) return current;
+        const [row] = await tx
+          .update(siteSkills)
+          .set({
+            status,
+            ...(status === 'active' ? { activatedAt: new Date() } : {}),
+            updatedBy: this.actor.userId ?? null,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(siteSkills.id, current.id), eq(siteSkills.siteId, this.deps.siteId)))
+          .returning();
+        await this.audit(
+          tx,
+          `site_skill.${status === 'active' ? 'activated' : status === 'archived' ? 'archived' : 'drafted'}`,
+          {
+            skillId: current.id,
+            slug: current.slug,
+            version: current.version,
+            hash: current.hash,
+            fromStatus: current.status,
+            toStatus: status,
+          },
+        );
+        return row!;
+      },
+      () => new SiteSkillError('CONFLICT', 'The skill was changed by someone else; reload and retry.', 409),
+    );
   }
 
   async listVersions(idOrSlug: string) {
@@ -703,33 +789,52 @@ export class SiteSkillService {
     });
   }
 
+  /**
+   * Deletes a skill that was never live. Deleting cascades the version trail,
+   * and a run that used the skill points at `slug@version` in that trail — so
+   * a skill that has ever been activated is refused (409) and must be
+   * archived instead. Drafts that were never active carry no such provenance.
+   */
   async remove(idOrSlug: string): Promise<{ id: string; slug: string }> {
-    const current = await this.get(idOrSlug);
-    this.assertRisk(current.riskClass);
-    await this.deps.db
-      .delete(siteSkills)
-      .where(and(eq(siteSkills.id, current.id), eq(siteSkills.siteId, this.deps.siteId)));
-    await this.audit('site_skill.deleted', {
-      slug: current.slug,
-      version: current.version,
-      hash: current.hash,
-      wasStatus: current.status,
-    });
-    return { id: current.id, slug: current.slug };
+    const found = await this.get(idOrSlug);
+    return this.write(
+      async (tx) => {
+        const current = await this.lock(tx, found.id);
+        if (current.activatedAt) {
+          throw new SiteSkillError(
+            'SKILL_HAS_BEEN_ACTIVE',
+            `Skill "${current.slug}" has been active, so runs may reference its versions; archive it instead of deleting it.`,
+            409,
+          );
+        }
+        await tx
+          .delete(siteSkills)
+          .where(and(eq(siteSkills.id, current.id), eq(siteSkills.siteId, this.deps.siteId)));
+        await this.audit(tx, 'site_skill.deleted', {
+          skillId: current.id,
+          slug: current.slug,
+          version: current.version,
+          hash: current.hash,
+          wasStatus: current.status,
+        });
+        return { id: current.id, slug: current.slug };
+      },
+      () => new SiteSkillError('CONFLICT', 'The skill was changed by someone else; reload and retry.', 409),
+    );
   }
 
   /**
    * Upserts skill documents by slug (the `lumibase skills push/install` path).
    * New skills land as `draft` unless `activate` is set; existing skills keep
-   * their status. Each document is reported on its own — one bad file does not
-   * abort the rest — and `dryRun` reports the same plan without writing.
+   * their status. A content change to an `active` skill is refused for that
+   * document unless `updateActive` is set. Each document is reported on its
+   * own — one bad file does not abort the rest — and `dryRun` reports the
+   * same plan without writing.
    */
-  async importDocuments(
-    documents: ImportDocument[],
-    options: SiteSkillWriteMeta & { activate?: boolean; dryRun?: boolean } = {},
-  ): Promise<ImportResult[]> {
+  async importDocuments(documents: ImportDocument[], options: ImportOptions = {}): Promise<ImportResult[]> {
     const results: ImportResult[] = [];
     const seen = new Set<string>();
+    const { activate, dryRun, updateActive, ...meta } = options;
     for (const doc of documents) {
       const base: ImportResult = { ...(doc.path ? { path: doc.path } : {}), action: 'error' };
       try {
@@ -741,35 +846,47 @@ export class SiteSkillService {
         seen.add(input.slug);
         const existing = await this.find(input.slug);
         if (!existing) {
-          this.assertRisk(input.riskClass);
-          if (options.dryRun) {
-            results.push({ ...base, action: 'created', version: 1, status: options.activate ? 'active' : 'draft' });
+          if (dryRun) {
+            results.push({ ...base, action: 'created', version: 1, status: activate ? 'active' : 'draft' });
             continue;
           }
-          let row = await this.create(input, options);
-          if (options.activate) row = await this.setStatus(row.id, 'active');
+          let row = await this.create(input, meta);
+          if (activate) row = await this.setStatus(row.id, 'active', { expectedVersion: row.version });
           results.push({ ...base, action: 'created', version: row.version, status: row.status });
           continue;
         }
         const hash = await computeSkillHash(input);
-        const wantsActivation = Boolean(options.activate) && existing.status !== 'active';
-        if (hash === existing.hash && !wantsActivation) {
+        const contentChanged = hash !== existing.hash;
+        const wantsActivation = Boolean(activate) && existing.status !== 'active';
+        if (!contentChanged && !wantsActivation) {
           results.push({ ...base, action: 'unchanged', version: existing.version, status: existing.status });
           continue;
         }
-        this.assertRisk(existing.riskClass, input.riskClass);
-        if (options.dryRun) {
+        if (contentChanged && existing.status === 'active' && !updateActive) {
+          throw new SiteSkillError(
+            'ACTIVE_SKILL_CHANGE',
+            `Skill "${existing.slug}" is active; this import would change live agent behaviour. ` +
+              'Review the change in Studio, or re-send with updateActive (what `lumibase skills push` does).',
+            409,
+          );
+        }
+        if (dryRun) {
           results.push({
             ...base,
             // An activation-only import is a change too: `push --check` must see it.
             action: 'updated',
-            version: hash === existing.hash ? existing.version : existing.version + 1,
+            version: contentChanged ? existing.version + 1 : existing.version,
             status: wantsActivation ? 'active' : existing.status,
           });
           continue;
         }
-        const { skill, changed } = await this.update(existing.id, input, options);
-        const final = wantsActivation ? await this.setStatus(skill.id, 'active') : skill;
+        const { skill, changed } = await this.update(existing.id, input, {
+          ...meta,
+          expectedVersion: existing.version,
+        });
+        const final = wantsActivation
+          ? await this.setStatus(skill.id, 'active', { expectedVersion: skill.version })
+          : skill;
         results.push({
           ...base,
           action: changed || wantsActivation ? 'updated' : 'unchanged',
@@ -842,11 +959,31 @@ function isUniqueViolation(err: unknown): boolean {
   return false;
 }
 
+/** How many of the newest user turns Copilot triggers are matched against. */
+export const COPILOT_TRIGGER_TURNS = 3;
+
+/**
+ * The text Copilot triggers are matched against: the newest
+ * {@link COPILOT_TRIGGER_TURNS} user turns of the conversation window the
+ * model is about to receive, plus the current message. Matching the current
+ * message alone dropped a playbook as soon as the user followed up with
+ * "make it shorter" — the follow-up is about the same headline, and the model
+ * still sees the earlier turns.
+ */
+export function copilotTriggerText(message: string, history: readonly LLMMessage[] = []): string {
+  const turns = history
+    .filter((entry) => entry.role === 'user')
+    .slice(-COPILOT_TRIGGER_TURNS)
+    .map((entry) => entry.content);
+  if (turns.at(-1) !== message) turns.push(message);
+  return turns.join('\n');
+}
+
 /**
  * Copilot chat instructions for one turn: the stock Copilot prompt plus the
- * site playbooks matching the user's message. `systemPrompt` is `undefined`
- * when nothing applies, so a site with no active skills sends exactly the
- * request it sent before this feature existed.
+ * site playbooks matching the conversation's latest user turns. `systemPrompt`
+ * is `undefined` when nothing applies, so a site with no active skills sends
+ * exactly the request it sent before this feature existed.
  *
  * Shared by the synchronous route and the queue worker on purpose — the two
  * halves of `POST /ai/chat` have disagreed before (RBAC, approval provenance),
@@ -854,11 +991,11 @@ function isUniqueViolation(err: unknown): boolean {
  */
 export async function resolveCopilotPlaybooks(
   deps: { db: Database; siteId: string },
-  input: { text: string; capabilities?: readonly string[] },
+  input: { text: string; history?: readonly LLMMessage[]; capabilities?: readonly string[] },
 ): Promise<{ systemPrompt?: string; applied: AppliedSiteSkill[] }> {
   const resolved = await new SiteSkillService(deps).resolveSafe({
     surface: 'copilot',
-    text: input.text,
+    text: copilotTriggerText(input.text, input.history),
     ...(input.capabilities ? { capabilities: input.capabilities } : {}),
   });
   if (!resolved.prompt) return { applied: [] };

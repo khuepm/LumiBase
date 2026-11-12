@@ -190,7 +190,7 @@ export async function probeHealth(
 const SKILLS_PATH = 'api/v1/agent/skills';
 
 const SKILLS_FORBIDDEN_HINT =
-  'Site Skills live on the admin-only /api/v1/agent surface: the token needs admin access, and writing needs the "skills:write" capability.';
+  'Site Skills live on the admin-only /api/v1/agent surface: reading and writing them both need a token with control-plane admin access to the site.';
 
 /** Importing writes one skill at a time on the server, so a full batch can be slow. */
 const SKILLS_IMPORT_TIMEOUT_MS = 60_000;
@@ -212,6 +212,8 @@ export interface SkillImportDocument {
 export interface SkillImportOptions {
   activate?: boolean;
   dryRun?: boolean;
+  /** Allow content changes to skills that are already active (live). Only `push` sets it. */
+  updateActive?: boolean;
   source?: 'cli' | 'package';
   sourceRef?: string;
 }
@@ -305,6 +307,7 @@ export async function importSkills(
           documents: batch,
           ...(importOptions.activate ? { activate: true } : {}),
           ...(importOptions.dryRun ? { dryRun: true } : {}),
+          ...(importOptions.updateActive ? { updateActive: true } : {}),
           ...(importOptions.source ? { source: importOptions.source } : {}),
           ...(importOptions.sourceRef ? { sourceRef: importOptions.sourceRef } : {}),
         },

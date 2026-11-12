@@ -20,10 +20,11 @@ import { patchSchema } from '../utils/patch-schema';
  * Site Skills API — /api/v1/agent/skills (#712).
  *
  * Lives under `/api/v1/agent`, so `withControlPlaneAccessGuard` already limits
- * the whole surface to admin principals. Inside that, writes additionally need
- * the `skills:write` capability (or control-plane admin): a skill is text the
- * agents will treat as instructions, so authoring one is a governance act, not
- * a content edit. `high` risk skills are admin-only (enforced in the service).
+ * the whole surface to admin principals. Every write checks again here that the
+ * caller's resolved grant is a control-plane admin, so the rule holds even on a
+ * mount the guard does not cover: a skill is text the agents will treat as
+ * instructions, so authoring one is a governance act, not a content edit.
+ * There is no delegated (non-admin) author; `riskClass` is a review label only.
  */
 export const siteSkillsRouter = new Hono<AppEnv>();
 
@@ -48,7 +49,13 @@ const importSchema = writeMetaSchema.extend({
     .max(100),
   activate: z.boolean().optional(),
   dryRun: z.boolean().optional(),
+  /** Allow content changes to skills that are already active (the `skills push` deploy path). */
+  updateActive: z.boolean().optional(),
 });
+
+/** Optimistic concurrency: the version the caller loaded / is looking at. */
+const patchMetaSchema = writeMetaSchema.extend({ expectedVersion: z.number().int().min(1).optional() });
+const statusBodySchema = z.object({ version: z.number().int().min(1).optional() }).nullable();
 
 const matchSchema = z.object({
   surface: z.enum(SITE_SKILL_SURFACES),
@@ -66,23 +73,24 @@ async function context(c: Context<AppEnv>) {
     actor: {
       userId: auth.userId ?? null,
       label: auth.apiKeyId ? `api_key:${auth.apiKeyId}` : null,
-      admin: grant.controlPlaneAdmin,
     },
   });
-  const canWrite = grant.controlPlaneAdmin || grant.capabilities.includes('skills:write');
+  // The one write rule: a control-plane admin. No capability string can stand
+  // in for it — nothing in the permission model mints a skills-specific one.
+  const canWrite = grant.allowed && grant.controlPlaneAdmin;
   return { service, grant, canWrite };
 }
 
 function forbidden(c: Context<AppEnv>) {
   return c.json(
-    { errors: [{ code: 'FORBIDDEN', message: 'Capability "skills:write" is required.' }] },
+    { errors: [{ code: 'FORBIDDEN', message: 'Writing Site Skills requires a control-plane admin.' }] },
     403,
   );
 }
 
 function handleError(c: Context<AppEnv>, err: unknown) {
   if (err instanceof SiteSkillError) {
-    return c.json({ errors: [{ code: err.code, message: err.message }] }, err.status as 400);
+    return c.json({ errors: [{ ...err.details, code: err.code, message: err.message }] }, err.status as 400);
   }
   if (err instanceof z.ZodError) {
     return c.json(
@@ -194,7 +202,7 @@ siteSkillsRouter.patch('/:id', async (c) => {
   const body: unknown = await c.req.json().catch(() => null);
   const parsed = patchSchema(siteSkillInputSchema).safeParse(body);
   if (!parsed.success) return handleError(c, parsed.error);
-  const meta = writeMetaSchema.safeParse(body);
+  const meta = patchMetaSchema.safeParse(body);
   if (!meta.success) return handleError(c, meta.error);
   try {
     const { skill, changed } = await service.update(c.req.param('id'), parsed.data, meta.data);
@@ -224,8 +232,13 @@ for (const [action, status] of Object.entries(STATUS_ACTIONS)) {
   siteSkillsRouter.post(`/:id/${action}`, async (c) => {
     const { service, canWrite } = await context(c);
     if (!canWrite) return forbidden(c);
+    const body = statusBodySchema.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return handleError(c, body.error);
     try {
-      return c.json({ data: await service.setStatus(c.req.param('id'), status) });
+      const expectedVersion = body.data?.version;
+      return c.json({
+        data: await service.setStatus(c.req.param('id'), status, expectedVersion === undefined ? {} : { expectedVersion }),
+      });
     } catch (err) {
       return handleError(c, err);
     }
