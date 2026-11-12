@@ -21,8 +21,24 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   deployments create them as in `DEPLOYMENT-CHECKLIST.md`. Until a queue is
   bound, `ItemService` indexes inline and revalidation is dispatched inline
   instead of being dropped. Existing Workers search indexes are not rebuilt
-  automatically: run the reindex CLI. The other Docker-only consumers listed in
-  B131 are still open.
+  automatically: run the reindex CLI.
+
+- **Scheduled publish, veto-window commits, reconciler goals, deployment status,
+  Change Feed webhooks and envelope migration now run on Cloudflare Workers
+  (B131, parts 2-5).** Docker ran these on `node-cron` with a leader lock; the
+  Worker had no counterpart, so on Workers scheduled items were never published
+  or unpublished, veto-window stagings were never committed, reconciler goals
+  never dispatched, deployments stayed `building` and webhook subscriptions
+  received nothing. The Worker's Cron Trigger now runs the same sweeps
+  (`cloudflare-cron-parity.ts`): every minute on local/production, every five
+  minutes on staging, not at all on dev/demo (no crons there). Workers delivers
+  Change Feed events to webhook subscriptions only (extension subscribers stay
+  Docker/Node, B199), within about a minute. Envelope migrations continue on a
+  new `encryption-envelope-migration` queue, created by the deploy workflows.
+  Veto commits now claim the approval (`pending → deciding`) before applying
+  the patch: with no leader lock, two overlapping sweeps applied it twice. A
+  human veto that arrives while a commit holds the claim now returns `409
+  ALREADY_DECIDED` instead of overwriting it.
 
 ## [2.0.0] - 2026-11-10
 
