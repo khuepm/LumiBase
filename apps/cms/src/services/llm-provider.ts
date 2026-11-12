@@ -288,8 +288,28 @@ interface OpenAITool {
   };
 }
 
+/**
+ * Skills the Copilot chat must never be offered (#710 review). `askUser` parks
+ * a governed agent run until a human answers through the Mission Control
+ * inbox, and `getUserAnswer` reads that answer back. The chat executes one tool
+ * call per turn and has no run to park or resume, so offering them would leave
+ * the reply without the question and the run waiting until timeout. They stay
+ * in `CORE_SKILLS` for the harness, MCP and agent-run paths.
+ */
+export const CHAT_EXCLUDED_SKILLS: ReadonlySet<string> = new Set(['askUser', 'getUserAnswer']);
+
+/**
+ * The single source of truth for the skills exposed as tools to the Copilot
+ * chat — every provider schema and the context budget derive from it.
+ */
+export function chatToolSkills(): AISkillDefinition[] {
+  return (Object.values(CORE_SKILLS) as AISkillDefinition[]).filter(
+    (skill) => !CHAT_EXCLUDED_SKILLS.has(skill.name),
+  );
+}
+
 function skillsToOpenAITools(): OpenAITool[] {
-  return (Object.values(CORE_SKILLS) as AISkillDefinition[]).map((skill) => ({
+  return chatToolSkills().map((skill) => ({
     type: 'function' as const,
     function: {
       name: skill.name,
@@ -306,7 +326,7 @@ interface AnthropicTool {
 }
 
 function skillsToAnthropicTools(): AnthropicTool[] {
-  return (Object.values(CORE_SKILLS) as AISkillDefinition[]).map((skill) => ({
+  return chatToolSkills().map((skill) => ({
     name: skill.name,
     description: skill.description,
     input_schema: skill.parameters,
@@ -320,7 +340,7 @@ interface GeminiFunctionDeclaration {
 }
 
 function skillsToGeminiFunctionDeclarations(): GeminiFunctionDeclaration[] {
-  return (Object.values(CORE_SKILLS) as AISkillDefinition[]).map((skill) => ({
+  return chatToolSkills().map((skill) => ({
     name: skill.name,
     description: skill.description,
     parameters: skill.parameters,
