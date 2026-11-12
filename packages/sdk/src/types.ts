@@ -460,6 +460,21 @@ export interface ListItemsParams {
   meta?: 'total_count' | 'none';
 }
 
+/** Options for `items(name).export()` — `GET /items/:collection/export` (#727). */
+export interface ExportItemsParams {
+  /** `csv` (default) or `json` (`{ collection, format, items: [...] }`). */
+  format?: 'csv' | 'json';
+  /** Data fields to include; structural columns are always written. */
+  fields?: string[];
+  /** Locales for translatable fields. CSV writes one `field.locale` column each. */
+  locales?: string[];
+  /** `id` (default) keeps foreign ids; `slug` swaps in the related slug; `embed` adds the related record. */
+  relations?: 'id' | 'slug' | 'embed';
+  filter?: ItemFilter;
+  sort?: string[];
+  status?: string;
+}
+
 /** Reserved metadata attributes present on every search hit. */
 export interface SearchHitMeta {
   /** Which collection the hit belongs to. */
