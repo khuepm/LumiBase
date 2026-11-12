@@ -7,6 +7,8 @@ GitHub Issues là nguồn trạng thái và acceptance chuẩn; checklist dướ
 
 **Trạng thái (2026-11-11):** cả 12 task J01–J12 đã đóng trên GitHub và code đã vào `main` (J01–J03 qua #520, #526, #527, #528, #556; J04–J12 qua #545; consumer Workers cho Flows, B118, qua #551). Epic #507 đóng cùng lúc. Các mục chỉ đóng được bằng dữ liệu thật (benchmark live VI/EN, held-out, pilot ≥100 review, precision/coverage trên nhãn production, drift live, quyết định go/no-go) **chưa có kết quả đo nào** và được theo dõi ở [#548](https://github.com/khuepm/LumiBase/issues/548). Gate của Phase B chưa đạt; automation J11 giữ shadow cho tới khi #548 có số thật.
 
+**Chú giải checkbox:** `[x]` nghĩa là **implementation đã giao** (code đã vào `main`), không phải acceptance đã đạt. Với J06, J08, J09, J11 và J12, phần nghiệm thu cần dữ liệu thật (report live, pilot, precision/coverage trên nhãn production, go/no-go) **vẫn đang chờ #548**.
+
 ## Thứ tự thực hiện
 
 1. **A — Nền tảng:** J01 → J02; J03 sau J01. Reconcile với PR #504 trước khi code.
@@ -64,6 +66,7 @@ Priority chỉ áp dụng trong chương trình Jev. Chưa có assignee hoặc d
 - [x] **J09 — [feat(ai): J09 validate draft-review pilot, metrics and rollout controls](https://github.com/khuepm/LumiBase/issues/516)**
   - Đầu ra: Pilot opt-in theo site với nhóm nội dung xác định; đo baseline thời gian review trước khi bật Jev.
   - Nghiệm thu chính: Một report có baseline, sample counts và kết quả đo thực; không có dữ liệu thật thì giữ issue mở/unverified.
+  - Trạng thái acceptance: **chưa đạt**, chờ report pilot thật ở #548.
 
 ## C — Automation sau pilot
 
