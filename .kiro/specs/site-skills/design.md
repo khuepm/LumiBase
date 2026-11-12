@@ -41,7 +41,7 @@ bản mới), `importDocuments` (upsert theo slug, báo từng tài liệu, `dry
   control-plane admin (route kiểm tra `grant.allowed && grant.controlPlaneAdmin`
   sau guard) — cùng mức tin cậy với prompt `llm_judge` của constitution. Chưa có
   tác giả được uỷ quyền: capability `skills:write` của bản đầu không principal
-  nào có được nên đã bị gỡ (review #781 mục 2; backlog B204). Thân skill được
+  nào có được nên đã bị gỡ (review #781 mục 2; backlog B214). Thân skill được
   bọc `<site-skill>` và các thẻ giả trong thân (kể cả viết có khoảng trắng như
   `< /site-skill>`, mọi kiểu hoa thường) bị vô hiệu; đoạn mở đầu nói rõ skill
   không đổi định dạng output, không cấp quyền.

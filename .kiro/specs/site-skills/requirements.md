@@ -37,7 +37,7 @@ thế governed-harness của LumiBase nhưng chưa được đưa ra bề mặt*
    quả của run.
 9. **Quản trị đọc/ghi.** Mọi thao tác ghi PHẢI cần control-plane admin; đọc
    skill (REST và MCP `prompts/*`) cũng chỉ dành cho principal đó. Chưa có tác
-   giả được uỷ quyền (backlog B204); `riskClass` là nhãn rà soát, không phải bậc
+   giả được uỷ quyền (backlog B214); `riskClass` là nhãn rà soát, không phải bậc
    quyền. Mỗi lần ghi PHẢI nguyên tử; skill đã từng active KHÔNG được xoá.
 10. **Skills as code.** CLI PHẢI có `skills list|pull|push|install`; `push` và
     `install` idempotent; `push --check` là cổng CI.
