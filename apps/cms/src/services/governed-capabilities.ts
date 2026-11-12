@@ -1,3 +1,4 @@
+import { systemDbFor } from '../middleware/db';
 import type { Context } from 'hono';
 import type { AppEnv } from '../env';
 import type { MagicContext } from './permission-dsl';
@@ -96,6 +97,7 @@ function headerSnapshot(c: Context<AppEnv>): Record<string, string> {
 export function effectiveCapabilityServiceForRequest(c: Context<AppEnv>): EffectiveCapabilityService {
   const deps: EffectiveCapabilityServiceDeps = {
     db: c.get('db'),
+    authorizationDb: c.get('db') ? systemDbFor(c) : undefined,
     siteId: c.get('siteId'),
     headers: headerSnapshot(c),
     ip: c.get('ip') ?? null,

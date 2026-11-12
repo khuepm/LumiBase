@@ -264,3 +264,48 @@ describe('auth middleware behavioural matrix (principal × route → status)', (
     });
   });
 });
+
+describe('organization credential matrix (ADR-013)', () => {
+  async function organizationMatrixRequest(token: string, path: string, siteHeader?: string) {
+    const { withTenant } = await import('../middleware/tenant');
+    const { getTableName } = await import('drizzle-orm');
+    const organization = token.startsWith('lbo_');
+    let tableName = '';
+    const query = {
+      from(table: Parameters<typeof getTableName>[0]) { tableName = getTableName(table); return query; },
+      where() { return query; },
+      async limit() {
+        if (tableName === 'lumibase_sites') return [{ organizationId: 'other_org' }];
+        return [{ id: 'matrix_org_key', name: 'matrix', prefix: token.slice(0, 16),
+          siteId: organization ? null : SITE_ID, scope: organization ? 'organization' : 'site',
+          organizationId: organization ? 'org_matrix' : null, revokedAt: null, expiresAt: null,
+          createdAt: new Date(), lastUsedAt: new Date(), metadata: {} }];
+      },
+    };
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('db', { select: () => query, insert: () => ({ values: async () => undefined }) } as never);
+      await next();
+    });
+    app.use('*', withTenant(), withAuth());
+    app.get('/api/v1/orgs', (c) => c.json({ ok: true }));
+    app.get('/api/v1/items/posts', (c) => c.json({ ok: true }));
+    return app.request(path, { headers: { authorization: `Bearer ${token}`,
+      ...(siteHeader ? { 'X-Lumi-Site': siteHeader } : {}) } }, {} as AppEnv['Bindings']);
+  }
+  it('lbk_ → organization plane is 403', async () => {
+    const response = await organizationMatrixRequest('lbk_test_key', '/api/v1/orgs');
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ errors: [{ code: 'ORGANIZATION_FORBIDDEN' }] });
+  });
+  it('lbo_ + site outside its organization is 403', async () => {
+    const response = await organizationMatrixRequest('lbo_test_key', '/api/v1/items/posts', SITE_ID);
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ errors: [{ code: 'SITE_NOT_IN_ORGANIZATION' }] });
+  });
+  it('lbo_ without X-Lumi-Site on a site route is 400', async () => {
+    const response = await organizationMatrixRequest('lbo_test_key', '/api/v1/items/posts');
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ errors: [{ code: 'TENANT_REQUIRED' }] });
+  });
+});

@@ -1,11 +1,11 @@
 ---
-version: 33
-lastUpdated: 2026-11-09T15:37:48.263Z
+version: 38
+lastUpdated: 2026-11-12T19:21:09.237Z
 sourceLang: en
-contentHash: 07e4502efda78e55
-codeVerified: 2026-11-09T15:37:48.263Z
-codeVerifiedHash: 07e4502efda78e55
-codeVerifiedClaims: 458
+contentHash: 10a0d03b3b6b481d
+codeVerified: 2026-11-12T19:21:09.237Z
+codeVerifiedHash: 10a0d03b3b6b481d
+codeVerifiedClaims: 492
 ---
 
 # Hono API Specification — LumiBase
@@ -65,6 +65,15 @@ Error response:
 | `TOKEN_EXPIRED` | 401 | JWT has expired — refresh and retry |
 | `SKILL_DENIED` | 403 | AI skill requires a capability the session lacks |
 | `HITL_REQUIRED` | 202 | Dangerous operation gated for human approval |
+| `VALIDATION` | 400 | Organization payload validation failed |
+| `SCOPE_NOT_ALLOWED` | 400 | Organization keys must be minted through the organization API |
+| `ORGANIZATION_FORBIDDEN` | 403 | Credential scope or organization role does not allow this action |
+| `ORG_SIGNUP_DISABLED` | 403 | Organization signup is disabled for this caller |
+| `SITE_NOT_IN_ORGANIZATION` | 403 | Selected site does not belong to the organization key |
+| `ORGANIZATION_NOT_EMPTY` | 409 | Organization must have no sites before deletion |
+| `LAST_OWNER` | 409 | At least one owner must remain |
+| `REQUESTER_REVOKED` | 409 | Requester no longer holds live organization authority |
+| `APPROVAL_ALREADY_DECIDED` | 409 | A conflicting approval decision is already committed |
 
 > **Deprecation signalling.** A retiring endpoint returns the IETF `Deprecation`
 > and `Sunset` response headers (RFC 8594) plus a `Link rel="deprecation"` to the
@@ -328,6 +337,47 @@ HS*/`none` algorithm), `ISSUER_ALREADY_EXISTS` (409), `NOT_FOUND` (404).
 
 > For long-lived server-to-server access, create an API key
 > (`POST /api/v1/api-keys`, token prefix `lbk_`) instead of using a login token.
+
+---
+
+## 1b. Organizations (ADR-013)
+
+Organization requests use the authenticated identity and the target organization, without `X-Lumi-Site`. An organization key (`lbo_`) is bound to one organization and has its fixed admin role, except that it cannot change who holds authority: `PATCH /orgs/:orgId`, member writes and organization-key writes require a user session and return `403 ORGANIZATION_FORBIDDEN` to a key. A key requests those changes through organization MCP, where a human approves them. Staff identities use current organization membership. Site keys (`lbk_`), publishable keys (`lbk_pub_`), and frontend sessions cannot enter this plane. Missing membership or a resource outside the selected organization returns `404 NOT_FOUND`.
+
+| Method | Endpoint | Authority / payload |
+|---|---|---|
+| `GET` | `/api/v1/orgs` | List the caller's organizations; an organization key returns exactly its organization |
+| `POST` | `/api/v1/orgs` | Bootstrap operator, or Studio user with `LUMIBASE_ALLOW_ORG_SIGNUP=true`; `{ name, slug }`; caller becomes owner |
+| `GET` | `/api/v1/orgs/:orgId` | `org:read`; includes the caller's role |
+| `PATCH` | `/api/v1/orgs/:orgId` | `org:settings:write`; `{ name?, slug?, settings? }`; only owner can change slug |
+| `DELETE` | `/api/v1/orgs/:orgId` | Owner; `X-Confirm-Delete: <orgId>`; organization must have no sites |
+| `GET` | `/api/v1/orgs/:orgId/sites` | `org:read` |
+| `POST` | `/api/v1/orgs/:orgId/sites` | `org:sites:create`; `{ name, id?, slug? }`; `id` and `slug` must agree if both supplied |
+| `DELETE` | `/api/v1/orgs/:orgId/sites/:siteId` | Owner; `X-Confirm-Delete: <siteId>` |
+| `POST` | `/api/v1/orgs/:orgId/sites/:siteId/transfer` | The same human must own both organizations; `{ toOrganizationId }` |
+| `GET` | `/api/v1/orgs/:orgId/members` | `org:read` |
+| `POST` | `/api/v1/orgs/:orgId/members` | `org:members:manage`; `{ userId?, email?, role }`; exactly one identity field |
+| `PATCH` | `/api/v1/orgs/:orgId/members/:userId` | `org:members:manage`; `{ role }` |
+| `DELETE` | `/api/v1/orgs/:orgId/members/:userId` | `org:members:manage` |
+| `GET` | `/api/v1/orgs/:orgId/keys` | `org:read`; metadata only |
+| `POST` | `/api/v1/orgs/:orgId/keys` | `org:keys:manage`; `{ name, description?, expiresAt? }`; plaintext returned at creation |
+| `POST` | `/api/v1/orgs/:orgId/keys/:keyId/rotate` | `org:keys:manage`; old token stops working; plaintext returned at rotation |
+| `DELETE` | `/api/v1/orgs/:orgId/keys/:keyId` | `org:keys:manage`; revoke the key |
+| `GET` | `/api/v1/orgs/:orgId/approvals` | Human owner/admin only; summaries omit result secrets |
+| `GET` | `/api/v1/orgs/:orgId/approvals/:approvalId` | Human owner/admin only; a minted key is never stored or returned again (`tokenRedacted: true`) |
+| `POST` | `/api/v1/orgs/:orgId/approvals/:approvalId/decide` | Human owner/admin; `{ decision: "approved" }` / `{ decision: "rejected" }`; operation-specific owner checks still apply; approving `org:create_org_key` returns the plaintext key in this response only |
+
+Create operations return `201`, other successful operations return `200`, using the standard `data` envelope. Organization roles are `owner`, `admin`, `billing`, and `member`. Admins cannot add/change/remove owners; the final owner cannot be removed or demoted. Owner/admin inherit site administrator authority on owned sites; billing/member do not. Organization keys are always admin and can never execute owner-only operations themselves. A member email that has no identity creates an invited identity; organization membership is separate from the staff account activation flow.
+
+Site creation uses the same provisioning as setup. `settings` replaces the settings object when supplied, so preserve unrelated fields. Slug `default` can be renamed by its owner and is then available again. `POST /api/v1/api-keys` remains site-scoped and rejects `scope="organization"`; an organization key may mint site keys only for sites in its organization.
+
+### Organization MCP approvals
+
+Organization MCP is off until `settings.contentOs.mcp.allowOrganizationTools=true`; `LUMIBASE_MCP_ORG_TOOLS=off` overrides it. Every organization mutation creates a pending approval with a real organization parent. `confirm=true` cannot approve it, and no REST fallback exists for these MCP tools. The agent receives `pending_approval`, `approvalId`, `organizationId`, and a run id; it never receives a newly minted organization key.
+
+Approval rechecks live requester access and the human decider's authority. Execution and the receipt commit atomically. Repeating the same decision returns the existing receipt; a conflicting decision returns `409 APPROVAL_ALREADY_DECIDED`. A revoked requester cannot be approved (`409 REQUESTER_REVOKED`), but can be rejected. Deleting a transfer destination does not prevent rejecting its pending request or replaying an already committed receipt. Pending transfer execution still requires both organizations and their human owner. Disabling MCP blocks approval (`403 MCP_DISABLED`) without blocking rejection. Discovery with MCP disabled returns `404 MCP_DISABLED`. See [Organization settings](../features/organizations.md) and [MCP](../mcp/index.md).
+
+Organization errors additionally include `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`, `403 ORGANIZATION_FORBIDDEN`, `403 ORG_SIGNUP_DISABLED`, `403 SITE_NOT_IN_ORGANIZATION`, `404 NOT_FOUND`, `409 LAST_OWNER`, `409 ORGANIZATION_NOT_EMPTY`, and `409 CONFLICT`.
 
 ---
 
@@ -995,11 +1045,14 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Human decision on a parked action. Body `{ decision: 'approved' \| 'rejected', reason? }`; needs `approvals:decide` (403 otherwise), `404` for an unknown or other-tenant id, `409` when the approval already left `pending`. On `approved` the harness owns the state transition, so execution and the status write happen once. Execution re-resolves **the requester's** current rights and runs with `requester ∩ decider`: an approval whose requester was since revoked, demoted or removed is denied, and one with no recorded requester (parked before provenance existed) is denied with `APPROVAL_PROVENANCE_MISSING` |
 | `POST` | `/api/v1/agent/approvals/:id/reopen` | Return a `failed` approval to `pending` so it can be decided again. Body `{ reason }` is **required** and audited; needs `approvals:decide`. A skill that reached a service and then failed is parked rather than re-offered, because retrying could repeat a non-idempotent write — this is the deliberate way back |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Agent-as-reviewer decision (needs `review:<domain>`; self-review forbidden) |
+| `GET` | `/api/v1/agent/questions` | `askUser` clarification questions, newest first. `?status=pending` (default) \| `answered` \| `expired` \| `cancelled` \| `all`. Each item: `{ id, runId, goalId, toolCallId, agentName, question, options, allowFreeText, context, status, expiresAt, createdAt, answer, answeredAt, answeredBy }`. Questions are not listed by `/approvals`, and `/approvals/:id/decide` and `/reopen` answer `409 NOT_AN_APPROVAL` for a question id. See [agent harness](../features/agent-harness-layer.md#asking-a-human-askuser-710) |
+| `GET` | `/api/v1/agent/questions/:id` | One question; `404` for an unknown or other-tenant id |
+| `POST` | `/api/v1/agent/questions/:id/answer` | Answer a question and resume its `waiting_user` run. Body `{ answer }` (1–2000 chars, trimmed; one of `options` when `allowFreeText` is false). Only a signed-in user answers: any API key, site- or organization-scoped and whatever its capabilities, gets `403`. Allowed for a holder of `approvals:decide` (or control-plane admin) and for the run's requesting **user**; today only site administrators reach the route (control-plane guard), so the requester rule takes effect once backlog B207 moves it out of the control plane. The claim and the resume are one transaction. `200` with the answered question (run `succeeded`); `400` `VALIDATION` / `ANSWER_INVALID` / `ANSWER_NOT_AN_OPTION`; `403`; `404`; `409` `ALREADY_ANSWERED`, `EXPIRED`, `QUESTION_CLOSED`, `RUN_NOT_WAITING`, `REQUESTER_REVOKED` (the requester lost access; the run is failed); `423` `FROZEN` (the run is cancelled) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Versions, draft, `/compile` (NL→evaluators), `:id/dry-run`, `:id/activate` |
-| `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze` |
+| `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze`. Freezing a role or the site, pausing an intent and cancelling a run also cancel runs waiting on an `askUser` question in that scope (`stopReason: frozen`) and close their questions |
 | `*` | `/api/v1/agent/intents[...]` | Content intents CRUD, `:id/pause|resume|scan|drifts`, `/compile` |
 | `POST` | `/api/v1/intents/:id/scan` | One reconciliation cycle: `{ scan, reconcile, dispatch }`. `dispatch` advances each reconciler goal one step (draft → promote → verify) and reports `dispatched/completed/skipped/blocked` plus `queueUnavailable` on runtimes without a queue adapter. See [reconciler repair loop](../features/reconciler-repair-loop.md). When the intent has `semantic` rules, `scan.semantic` reports the separately budgeted semantic pass (`status` `ran`/`off`/`unavailable`, counts, `completed`, `cursor`), and `scan.semanticOrphansResolved` counts rows of removed semantic rules it resolved. Updating an intent so a stored semantic rule changes profile, question, context or fields without a `version` bump returns `422 SEMANTIC_RULE_VERSION_REQUIRED`; see [semantic drift](../features/jev-semantic-drift.md) |
-| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag |
+| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag. A `tools/call` of `askUser` returns a normal tool result with `status: "waiting_user"`, `questionId` and `runId` |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Law Zero pins: list / release |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Public llms.txt index per site |
 

@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 32
-lastUpdated: 2026-11-09T15:37:48.263Z
+version: 37
+lastUpdated: 2026-11-12T19:21:09.237Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 07e4502efda78e55
+sourceHash: 10a0d03b3b6b481d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-09T15:37:48.263Z
-codeVerifiedHash: 07e4502efda78e55
-codeVerifiedClaims: 458
+codeVerified: 2026-11-12T19:21:09.237Z
+codeVerifiedHash: 10a0d03b3b6b481d
+codeVerifiedClaims: 492
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -71,6 +71,15 @@ Phản hồi lỗi:
 | `TOKEN_EXPIRED` | 401 | JWT đã hết hạn — làm mới và thử lại |
 | `SKILL_DENIED` | 403 | AI skill yêu cầu một capability mà phiên làm việc thiếu |
 | `HITL_REQUIRED` | 202 | Thao tác nguy hiểm cần sự phê duyệt của con người (Human-In-The-Loop) |
+| `VALIDATION` | 400 | Payload organization không hợp lệ |
+| `SCOPE_NOT_ALLOWED` | 400 | Organization key phải được tạo qua API organization |
+| `ORGANIZATION_FORBIDDEN` | 403 | Phạm vi credential hoặc role organization không cho phép thao tác |
+| `ORG_SIGNUP_DISABLED` | 403 | Tạo organization bị tắt đối với bên gọi này |
+| `SITE_NOT_IN_ORGANIZATION` | 403 | Site đã chọn không thuộc organization của key |
+| `ORGANIZATION_NOT_EMPTY` | 409 | Organization phải không còn site trước khi xóa |
+| `LAST_OWNER` | 409 | Phải giữ ít nhất một owner |
+| `REQUESTER_REVOKED` | 409 | Bên yêu cầu không còn quyền organization hiện tại |
+| `APPROVAL_ALREADY_DECIDED` | 409 | Quyết định phê duyệt trái ngược đã được commit |
 
 > **Tín hiệu Deprecation.** Một điểm cuối sắp ngưng hoạt động sẽ trả về các header response IETF `Deprecation` và `Sunset` (RFC 8594) cộng với `Link rel="deprecation"` dẫn tới changelog. Phía client nên log các header này và chuyển đổi trước ngày `Sunset`. Xem `docs/en/security/owasp-api-top-10-audit.md` (API9).
 
@@ -285,6 +294,47 @@ CRUD quản trị cho các nhà phát hành tin tưởng (chỉ admin):
 ```
 
 > Cho việc truy cập server-to-server dài hạn, hãy tạo một API key (`POST /api/v1/api-keys`, tiền tố token `lbk_`) thay vì dùng token đăng nhập.
+
+---
+
+## 1b. Organizations (ADR-013)
+
+Request organization dùng danh tính đã xác thực và organization đích, không cần `X-Lumi-Site`. Organization key (`lbo_`) gắn với một organization và có vai trò admin cố định, trừ việc thay đổi ai nắm quyền: `PATCH /orgs/:orgId`, thao tác ghi thành viên và ghi organization key yêu cầu phiên người dùng và trả `403 ORGANIZATION_FORBIDDEN` cho key. Key yêu cầu các thay đổi này qua MCP organization, nơi người dùng duyệt. Danh tính nhân sự dùng membership organization hiện tại. Site key (`lbk_`), publishable key (`lbk_pub_`) và phiên frontend không được vào phạm vi này. Thiếu membership hoặc tài nguyên ngoài organization đã chọn trả `404 NOT_FOUND`.
+
+| Method | Endpoint | Quyền / payload |
+|---|---|---|
+| `GET` | `/api/v1/orgs` | Liệt kê organization của bên gọi; organization key chỉ nhận đúng organization của mình |
+| `POST` | `/api/v1/orgs` | Bootstrap operator, hoặc user Studio với `LUMIBASE_ALLOW_ORG_SIGNUP=true`; `{ name, slug }`; bên gọi thành owner |
+| `GET` | `/api/v1/orgs/:orgId` | `org:read`; kèm role của bên gọi |
+| `PATCH` | `/api/v1/orgs/:orgId` | `org:settings:write`; `{ name?, slug?, settings? }`; chỉ owner được đổi slug |
+| `DELETE` | `/api/v1/orgs/:orgId` | Owner; `X-Confirm-Delete: <orgId>`; organization phải không còn site |
+| `GET` | `/api/v1/orgs/:orgId/sites` | `org:read` |
+| `POST` | `/api/v1/orgs/:orgId/sites` | `org:sites:create`; `{ name, id?, slug? }`; `id` và `slug` phải khớp nếu cùng được gửi |
+| `DELETE` | `/api/v1/orgs/:orgId/sites/:siteId` | Owner; `X-Confirm-Delete: <siteId>` |
+| `POST` | `/api/v1/orgs/:orgId/sites/:siteId/transfer` | Cùng một người phải là owner ở cả hai organization; `{ toOrganizationId }` |
+| `GET` | `/api/v1/orgs/:orgId/members` | `org:read` |
+| `POST` | `/api/v1/orgs/:orgId/members` | `org:members:manage`; `{ userId?, email?, role }`; đúng một trường danh tính |
+| `PATCH` | `/api/v1/orgs/:orgId/members/:userId` | `org:members:manage`; `{ role }` |
+| `DELETE` | `/api/v1/orgs/:orgId/members/:userId` | `org:members:manage` |
+| `GET` | `/api/v1/orgs/:orgId/keys` | `org:read`; chỉ metadata |
+| `POST` | `/api/v1/orgs/:orgId/keys` | `org:keys:manage`; `{ name, description?, expiresAt? }`; token rõ chỉ trả lúc tạo |
+| `POST` | `/api/v1/orgs/:orgId/keys/:keyId/rotate` | `org:keys:manage`; token cũ ngừng hoạt động; token rõ trả lúc xoay |
+| `DELETE` | `/api/v1/orgs/:orgId/keys/:keyId` | `org:keys:manage`; thu hồi key |
+| `GET` | `/api/v1/orgs/:orgId/approvals` | Chỉ người dùng owner/admin; bản tóm tắt không có bí mật trong kết quả |
+| `GET` | `/api/v1/orgs/:orgId/approvals/:approvalId` | Chỉ người dùng owner/admin; key mới không bao giờ được lưu hay trả lại (`tokenRedacted: true`) |
+| `POST` | `/api/v1/orgs/:orgId/approvals/:approvalId/decide` | Người dùng owner/admin; `{ decision: "approved" }` / `{ decision: "rejected" }`; vẫn kiểm tra quyền owner theo thao tác; duyệt `org:create_org_key` trả key dạng rõ chỉ trong response này |
+
+Thao tác tạo trả `201`, các thao tác thành công khác trả `200`, dùng envelope `data` chuẩn. Role organization gồm `owner`, `admin`, `billing` và `member`. Admin không được thêm/đổi/xóa owner; không thể xóa hay hạ cấp owner cuối. Owner/admin kế thừa quyền administrator tại site thuộc organization; billing/member không kế thừa. Organization key luôn là admin và không tự thực thi thao tác dành riêng cho owner. Email thành viên chưa có danh tính sẽ tạo danh tính ở trạng thái invited; membership organization tách biệt với luồng kích hoạt tài khoản nhân sự.
+
+Tạo site dùng cùng provisioning với setup. Khi gửi `settings`, toàn bộ object settings được thay thế, nên phải giữ các trường không liên quan. Owner được đổi slug `default`, sau đó slug này lại có thể dùng. `POST /api/v1/api-keys` vẫn thuộc phạm vi site và từ chối `scope="organization"`; organization key chỉ được tạo site key cho site thuộc organization của mình.
+
+### Phê duyệt MCP organization
+
+MCP organization tắt cho tới khi `settings.contentOs.mcp.allowOrganizationTools=true`; `LUMIBASE_MCP_ORG_TOOLS=off` có quyền tắt ưu tiên. Mọi thao tác ghi organization tạo approval chờ duyệt với cha organization thật. `confirm=true` không thể duyệt thay người dùng, và các tool MCP này không fallback sang REST. Agent nhận `pending_approval`, `approvalId`, `organizationId` và run id; agent không nhận organization key mới.
+
+Phê duyệt kiểm tra lại quyền hiện tại của bên yêu cầu và người duyệt. Thao tác và biên nhận được commit nguyên tử. Lặp cùng quyết định trả lại biên nhận cũ; quyết định trái ngược trả `409 APPROVAL_ALREADY_DECIDED`. Không thể duyệt yêu cầu đã bị thu hồi quyền (`409 REQUESTER_REVOKED`), nhưng vẫn có thể từ chối. Xóa organization đích không chặn việc từ chối yêu cầu chuyển còn chờ hay đọc lại biên nhận đã commit. Thực thi yêu cầu chuyển còn chờ vẫn cần cả hai organization và người sở hữu chúng. Tắt MCP chặn phê duyệt (`403 MCP_DISABLED`) nhưng không chặn từ chối. Discovery khi MCP tắt trả `404 MCP_DISABLED`. Xem [Cài đặt Organization](../features/organizations.md) và [MCP](../mcp/index.md).
+
+Mã lỗi organization bổ sung gồm `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`, `403 ORGANIZATION_FORBIDDEN`, `403 ORG_SIGNUP_DISABLED`, `403 SITE_NOT_IN_ORGANIZATION`, `404 NOT_FOUND`, `409 LAST_OWNER`, `409 ORGANIZATION_NOT_EMPTY` và `409 CONFLICT`.
 
 ---
 
@@ -886,11 +936,14 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Quyết định của con người cho một hành động đang bị giữ. Body `{ decision: 'approved' \| 'rejected', reason? }`; cần `approvals:decide` (nếu không thì 403), `404` cho id không tồn tại hoặc thuộc tenant khác, `409` khi approval đã rời `pending`. Với `approved`, harness là nơi duy nhất đổi trạng thái, nên việc thực thi và việc ghi status xảy ra đúng một lần. Lúc thực thi, quyền của **người yêu cầu** được resolve lại và hành động chạy với `requester ∩ decider`: approval mà người yêu cầu đã bị thu hồi, hạ quyền hay rời site sẽ bị từ chối, và approval không có thông tin người yêu cầu (bị giữ từ trước khi có cột provenance) bị từ chối với `APPROVAL_PROVENANCE_MISSING` |
 | `POST` | `/api/v1/agent/approvals/:id/reopen` | Đưa một approval đang ở `failed` về `pending` để quyết định lại. Body `{ reason }` là **bắt buộc** và được ghi audit; cần `approvals:decide`. Một skill đã chạm tới service rồi mới lỗi thì bị giữ lại chứ không tự mời lại, vì thử lại có thể lặp một phép ghi không idempotent — đây là đường về có chủ ý |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Quyết định của Agent với tư cách người đánh giá (cần `review:<domain>`; cấm tự đánh giá) |
+| `GET` | `/api/v1/agent/questions` | Các câu hỏi làm rõ `askUser`, mới nhất trước. `?status=pending` (mặc định) \| `answered` \| `expired` \| `cancelled` \| `all`. Mỗi phần tử: `{ id, runId, goalId, toolCallId, agentName, question, options, allowFreeText, context, status, expiresAt, createdAt, answer, answeredAt, answeredBy }`. Câu hỏi không xuất hiện trong `/approvals`, và `/approvals/:id/decide` cùng `/reopen` trả `409 NOT_AN_APPROVAL` cho id của câu hỏi. Xem [agent harness](../features/agent-harness-layer.md#54-hỏi-người-dùng-askuser-710) |
+| `GET` | `/api/v1/agent/questions/:id` | Một câu hỏi; `404` cho id không tồn tại hoặc thuộc tenant khác |
+| `POST` | `/api/v1/agent/questions/:id/answer` | Trả lời một câu hỏi và tiếp tục run `waiting_user` của nó. Body `{ answer }` (1–2000 ký tự, đã trim; phải là một trong `options` khi `allowFreeText` là false). Chỉ user đã đăng nhập mới trả lời được: mọi API key, scope site hay organization và dù mang capability gì, đều nhận `403`. Được phép với người giữ `approvals:decide` (hoặc control-plane admin) và với **user** đã yêu cầu run; hiện tại chỉ quản trị viên site tới được route (control-plane guard), nên quy tắc người yêu cầu có hiệu lực khi backlog B207 đưa route ra khỏi control plane. Việc claim và việc tiếp tục run là một transaction. `200` kèm câu hỏi đã trả lời (run `succeeded`); `400` `VALIDATION` / `ANSWER_INVALID` / `ANSWER_NOT_AN_OPTION`; `403`; `404`; `409` `ALREADY_ANSWERED`, `EXPIRED`, `QUESTION_CLOSED`, `RUN_NOT_WAITING`, `REQUESTER_REVOKED` (người yêu cầu đã mất quyền; run bị fail); `423` `FROZEN` (run bị huỷ) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Các phiên bản, bản nháp, `/compile` (NL→đánh giá), `:id/dry-run`, `:id/activate` |
-| `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Dừng ở 4 phạm vi (`run/intent/role/site`); việc đóng đóng băng cần `agents:freeze` |
+| `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Dừng ở 4 phạm vi (`run/intent/role/site`); việc đóng đóng băng cần `agents:freeze`. Đóng băng một role hoặc cả site, tạm dừng một intent và huỷ một run cũng huỷ các run đang chờ câu hỏi `askUser` trong phạm vi đó (`stopReason: frozen`) và đóng câu hỏi của chúng |
 | `*` | `/api/v1/agent/intents[...]` | CRUD ý định nội dung, `:id/pause|resume|scan|drifts`, `/compile` |
 | `POST` | `/api/v1/intents/:id/scan` | Một chu kỳ reconcile: `{ scan, reconcile, dispatch }`. `dispatch` đẩy mỗi reconciler goal tiến một bước (draft → promote → verify) và báo `dispatched/completed/skipped/blocked` cùng `queueUnavailable` trên runtime không có queue adapter. Xem [vòng sửa của reconciler](../features/reconciler-repair-loop.md). Khi intent có rule `semantic`, `scan.semantic` báo pass ngữ nghĩa có budget riêng (`status` `ran`/`off`/`unavailable`, các số đếm, `completed`, `cursor`), và `scan.semanticOrphansResolved` đếm các hàng của rule ngữ nghĩa bị gỡ mà scan đã resolve. Cập nhật intent làm một rule ngữ nghĩa đã lưu đổi profile, câu hỏi, context hoặc fields mà không tăng `version` trả về `422 SEMANTIC_RULE_VERSION_REQUIRED`; xem [drift ngữ nghĩa](../features/jev-semantic-drift.md) |
-| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp` |
+| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp`. Một `tools/call` tới `askUser` trả về một tool result bình thường với `status: "waiting_user"`, `questionId` và `runId` |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Ghim Law Zero: liệt kê / giải phóng |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Chỉ mục llms.txt công khai mỗi site |
 

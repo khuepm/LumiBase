@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-10-17T16:36:21.237Z
+version: 7
+lastUpdated: 2026-11-10T05:40:28.038Z
 sourceLang: en
 translatedFrom: en
-sourceHash: fd79a2e1fafb6df3
+sourceHash: ff2f770d8b410323
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-17T16:36:21.237Z
-codeVerifiedHash: fd79a2e1fafb6df3
+codeVerified: 2026-11-10T05:40:28.038Z
+codeVerifiedHash: ff2f770d8b410323
 codeVerifiedClaims: 112
 ---
 
@@ -51,6 +51,7 @@ có sự trôi dạt do tài khoản trùng lặp.
 | **Staff** | editor, admin, đồng đội | `administrator`, `member` | `true` | Invite-only (`POST /users/invite`) | CF Access JWT, hoặc password `/login` (Studio token) |
 | **Frontend end-user** | khách công khai / subscriber | `subscriber` | `false` | Tự phục vụ công khai (`POST /auth/register`) | password `/login` (frontend token) |
 | **Integration** | server-to-server (ISR, build) | n/a (API key) | theo policy đính kèm | Admin tạo API key | `Authorization: Bearer lbk_…` |
+| **Organization key** | tự động hóa organization | `admin` cố định | kế thừa administrator tại site | Owner/admin tạo qua `/orgs/:orgId/keys` | `Authorization: Bearer lbo_…` |
 
 ---
 
@@ -65,12 +66,13 @@ user_sites (membership N–N)     ← which sites + the PRIMARY role there
 roles (per site)                ← administrator | member | subscriber | custom
   └─ adminAccess, appAccess, systemKey
 policies → permissions          ← what a role can actually do (Policy DSL, ADR-008)
-api_keys → api_key_roles/policies  ← integration principals, scoped per site
+organization_members (membership N–N)
+  └─ (userId, organizationId) → owner | admin | billing | member
+organizations → sites.organizationId
+api_keys → site role/policy links OR fixed organization admin (scope=organization)
 ```
 
-- Luật domain: mọi bảng domain có `site_id` và mọi query lọc theo nó (Strict
-  Rule #2). Postgres RLS là lớp phòng thủ chiều sâu dự phòng khi
-  `LUMIBASE_DB_RLS=enforce` (B130; mặc định tắt).
+- Query thuộc site lọc theo `site_id`; query thuộc organization lọc theo `organization_id`. Postgres RLS là lớp phòng thủ chiều sâu khi `LUMIBASE_DB_RLS=enforce` (B130; mặc định tắt).
 - **`subscriber`** là role frontend đặc quyền tối thiểu. Nó không cấp gì cho
   tới khi bạn gắn quyền đọc nội dung vào nó (ví dụ `articles::read WHERE
   status = 'published'`). Nó được tạo idempotent ở lần đăng ký đầu tiên
@@ -409,71 +411,31 @@ TFA).
 
 ---
 
-## 7. Phơi bày user management qua MCP (tính khả thi tương lai)
+## 7. Quản lý user và organization qua MCP
 
-> Bề mặt này có thể được phơi bày sau qua **MCP** (Model Context Protocol)
-> không? Đánh giá bên dưới. [Inference] — một đánh giá thiết kế, không phải
-> một năng lực đã ship.
+Stdio server trong `packages/mcp-server` đã có quản lý user/team của site, gồm `list_users`, `get_user`, `invite_user`, `update_user` và `remove_user`. ADR-013 thêm phạm vi organization riêng; cấp administrator ở site không cấp quyền organization.
 
-**Nền tảng (Grounding):** LumiBase đã ship sẵn một MCP server —
-`packages/mcp-server` (`name: 'lumibase'`, stdio transport). Nó phơi bày các
-công cụ **items / collections / fields** hôm nay và xác thực đúng theo cách
-đánh giá này khuyến nghị: một `LumiBaseClient` mang
-`Authorization: Bearer <api key>` + `X-Lumi-Site: <siteId>`
-(`packages/mcp-server/src/client.ts`). Vậy "phơi bày user management qua MCP"
-một cách cụ thể nghĩa là **thêm một `tools/users.ts` bên cạnh các module công
-cụ hiện có**, tái sử dụng cùng client dùng API key — không phải xây hạ tầng
-mới.
+### Cấu hình credential
 
-**MCP ở đây sẽ là gì:** một *server* MCP phơi bày các thao tác user/role dưới
-dạng công cụ mà một AI agent (hoặc một MCP client bên ngoài) có thể gọi.
+| Credential | Tool được công bố | Định tuyến site |
+|---|---|---|
+| `lbk_` | Danh sách tool site hiện có | Bắt buộc `LUMIBASE_SITE_ID` |
+| `lbo_` ghim site | Tool site cộng `get_organization`, `list_sites` | Site đã ghim |
+| `lbo_` không ghim | Tám tool organization cộng tool site | Mỗi tool site cần `site`; lời gọi organization không gửi header site |
 
-### Cách chia được khuyến nghị
+`LUMIBASE_READ_ONLY=true` ẩn tool ghi ở mọi cấu hình. Role organization cố định: owner/admin quản trị organization, billing/member không kế thừa quyền site. Organization key luôn là admin, không bao giờ là owner, và không thể thay đổi ai nắm quyền: thao tác ghi thành viên, organization key và settings organization yêu cầu phiên người dùng, nên key bị lộ không thể thêm người giữ nó làm admin, tạo key thay thế hay tự bật tool MCP của mình. Key yêu cầu các thay đổi này qua MCP organization để người dùng duyệt; `create_org_key` được duyệt hiển thị key mới một lần cho người duyệt và biên nhận được lưu không chứa key dạng rõ. Cùng một người phải sở hữu cả hai organization để duyệt chuyển site. Owner được đổi slug `default` của personal organization. Settings hiển thị Organization cho owner/admin ngay cả khi chỉ có một organization; chỉ switcher được ẩn trong trường hợp đó.
 
-| Bề mặt | Phơi-bày-được qua MCP? | Lý do |
-|---------|----------------|-----------|
-| **Read** — liệt kê user, đọc role/policy, truy vấn audit | ✅ Rủi ro thấp | Chỉ-đọc, đã được admin-gate; ánh xạ gọn gàng sang công cụ MCP. |
-| **Management** — mời user, gán/thu hồi role, suspend, rotate API key | ⚠️ Với gating mạnh | Tác động lớn. Chỉ phơi bày phía sau một API key gắn với một admin policy tường minh, scope theo từng site, và định tuyến các lời gọi thay đổi đặc quyền qua đường HITL `ai_approvals`. |
-| **Public auth** — `register`, `login`, `verify-email` | ❌ Không phơi bày | Đây là các *luồng thông tin xác thực của người dùng cuối*, không phải năng lực của agent. Một agent không bao giờ nên tự đăng ký tài khoản hay xử lý mật khẩu user. |
+### Phê duyệt organization bắt buộc
 
-### Vì sao nó khớp gọn với LumiBase
+Tool organization chịu gate `contentOs.mcp.allowOrganizationTools` (mặc định tắt), có thể bị ép tắt bằng `LUMIBASE_MCP_ORG_TOOLS=off`. Thao tác ghi luôn dùng harness organization và `ai_approvals`, bất kể chế độ quản trị site cũ. `confirm=true` không thể cấp quyền phê duyệt hay kích hoạt fallback sang REST.
 
-- **Capability + HITL đã tồn tại.** Strict Rule #4 yêu cầu các skill có
-  capability nhóm `schema:write` hoặc `delete*` phải đi qua `ai_approvals`
-  trước. Các công cụ đột biến user (gán admin role, xóa user) đúng là nhóm
-  nguy hiểm đó — tái dùng gate ấy; đừng phát minh một side channel.
-- **Scope theo từng site là native.** Mọi bảng được scope theo `site_id` và
-  API key được bind với một site, nên một công cụ MCP kế thừa sự cô lập
-  tenant.
-- **Audit là native.** `audit_log` đã ghi `user_registered`, `email_verified`,
-  `api_key_*`, các thay đổi role — các hành động khởi từ MCP nhận cùng
-  provenance miễn phí (đặt `actorEmail`/metadata thành agent).
-- **Earned autonomy (L0–L4).** Các công cụ user-management qua MCP ánh xạ lên
-  thang tự chủ Content OS: bắt đầu ở L1 (đề xuất → con người duyệt), thăng lên
-  veto-window/autopilot chỉ cho các thao tác rủi ro thấp (ví dụ read, gửi lại
-  invite), không bao giờ cho việc leo thang role.
+User/key yêu cầu được lưu và kiểm tra lại trước khi thực thi. Một người dùng owner/admin quyết định qua API approval organization hoặc Studio. Thay đổi dành riêng cho owner vẫn cần owner, và organization key không được đọc hay quyết định biên nhận dành cho người dùng. Ghi domain và biên nhận commit nguyên tử nên retry không tạo site hay key trùng. Organization key mới chỉ hiện trong biên nhận của người duyệt. Audit run chứa `organizationId` và `runId`, kể cả request organization không có site.
 
-### Ràng buộc cứng nếu/khi hiện thực
+### Quản lý site và ranh giới xác thực
 
-1. **Không bao giờ tạo mới hay leo thang một principal mà không có HITL.** Bất
-   kỳ công cụ nào có thể cấp `appAccess`/`adminAccess`, tạo một admin, hay phát
-   một API key PHẢI tạo một hàng `ai_approvals` trước.
-2. **Toàn vẹn audience.** Các công cụ MCP xác thực với tư cách một principal
-   dùng API key (hoặc `studio`), không bao giờ bằng cách giả mạo một user JWT;
-   bức tường audience `frontend` giữ nguyên vẹn.
-3. **Không xử lý mật khẩu.** Các công cụ MCP không được nhận, lưu, hay chuyển
-   tiếp mật khẩu người dùng cuối; verify/login vẫn chỉ-HTTP.
-4. **Rate + scope.** Bind API key của MCP server với một policy hẹp (ví dụ
-   `users::read` + `users::update` chỉ trên `status`/`roleId`) thay vì bypass
-   admin.
+Tool site cũ giữ các chế độ quản trị hiện có. `LUMIBASE_MCP_GOVERNED=on` từ chối thao tác ghi thiếu mapping quản trị canonical; chế độ tương thích có thể dùng REST. Không được coi các chế độ site đó là hợp đồng phê duyệt organization bắt buộc. Xem [Hợp đồng tool có quản trị](../mcp/governed-tool-contract.md).
 
-**Kết luận:** bề mặt *management* là một ứng viên MCP tương lai tốt vì các
-primitive an toàn (capability gating, HITL, scope theo từng site, audit, các
-mức tự chủ) đã có sẵn — và phương tiện chuyển giao (`packages/mcp-server` +
-client dùng API key của nó) cũng đã tồn tại, nên công việc là một module
-`tools/users.ts` mới cộng với một key scope-admin, không phải hạ tầng mới. Bề
-mặt *public auth* nên vẫn là HTTP thông thường và không bao giờ trở thành một
-công cụ của agent.
+Đăng ký công khai, đăng nhập mật khẩu, xác minh và reset vẫn là luồng xác thực HTTP thay vì tool MCP. Kích hoạt danh tính nhân sự và membership organization là thao tác riêng. Dùng luồng mời hiện có để kích hoạt tài khoản nhân sự mới. Xem [Cài đặt Organization](../features/organizations.md) về quy trình của người dùng và giới hạn phục hồi khi không còn site.
 
 ---
 

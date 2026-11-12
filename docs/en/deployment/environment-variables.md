@@ -1,11 +1,11 @@
 ---
-version: 14
-lastUpdated: 2026-11-09T10:41:23.549Z
+version: 16
+lastUpdated: 2026-11-10T01:58:25.627Z
 sourceLang: en
-contentHash: 62f5ec3e5a6b8a6c
-codeVerified: 2026-11-09T10:41:23.549Z
-codeVerifiedHash: 62f5ec3e5a6b8a6c
-codeVerifiedClaims: 86
+contentHash: 2539ffa0eafcebe0
+codeVerified: 2026-11-10T01:58:25.627Z
+codeVerifiedHash: 2539ffa0eafcebe0
+codeVerifiedClaims: 84
 ---
 
 # Environment Variables Reference
@@ -26,7 +26,8 @@ This page documents every environment variable and Cloudflare binding used by Lu
 | `LUMIBASE_RUNTIME` | Docker only | `cloudflare` | `docker` for Node.js/Docker; Cloudflare Workers infers from bindings |
 | `JWT_SECRET` | ✓ | — | Secret for signing/verifying application JWTs. Min 32 chars. **For Cloudflare production, set with `wrangler secret put JWT_SECRET --env production`; never commit or place in `[env.production.vars]`.** |
 | `LUMIBASE_DEV_AUTH` | Local dev only | `false` | Set to `true` to bypass Logto auth in local dev. **Never enable in production; `pnpm release:check` fails if production resolves to `true`.** |
-| `LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT` | Test/load only | unset | Set to `true` to let a site admin create sites (`POST /api/v1/admin/sites`) and delete sites other than the one in `X-Lumi-Site` (`DELETE /api/v1/admin/sites/:id`). Used by the k6 cross-site-leak runner. Any other value keeps both refused (a site admin can still delete only their own site). **Never enable in production** — it lets any site admin act on every tenant. |
+| `LUMIBASE_ALLOW_ORG_SIGNUP` | Optional | unset | Set to `true` to allow authenticated Studio users to create organizations. Bootstrap instance operators may create organizations without this flag. Site creation and deletion use the organization API; the legacy admin site-management routes and their test-only flag have been removed. |
+| `LUMIBASE_MCP_ORG_TOOLS` | Optional | `on` | Set to `off` to disable organization MCP globally, regardless of `contentOs.mcp.allowOrganizationTools`. Any other value leaves the per-organization setting authoritative; that setting defaults to `false`. This does not disable site MCP. |
 | `LUMIBASE_REALTIME_ENABLED` | ✗ | — | **Not implemented.** Nothing reads this yet; setting it has no effect. Tracked as the "explicit enablement" goal in [realtime implementation](../architecture/realtime-websocket-implementation.md). |
 | `VITE_LUMIBASE_ALLOW_ADMIN_PATH_REDIRECT` | Setup/debug only | `false` | Client-side opt-in that allows convenience redirects to the private admin path. Keep unset in production except for a temporary controlled setup/debug window. |
 
@@ -316,7 +317,7 @@ Before deploying to production, verify:
 
 - [ ] `JWT_SECRET` is at least 32 characters and stored as a Wrangler Secret or Docker secret
 - [ ] `LUMIBASE_DEV_AUTH` is NOT set to `true`
-- [ ] `LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT` is NOT set to `true`
+- [ ] `LUMIBASE_ALLOW_ORG_SIGNUP` is enabled only when organization signup is intended
 - [ ] Database credentials are stored as secrets, not in `.env` files committed to git
 - [ ] `S3_SECRET_ACCESS_KEY` is stored as a secret
 - [ ] `RESEND_API_KEY` is stored as a secret

@@ -7,7 +7,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import type { QueueProvider } from '@lumibase/runtime';
-import { and, asc, desc, eq, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, lt, ne, or, sql } from 'drizzle-orm';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import type { ApprovalRequester } from './approval-requester';
 import type { AgentRunJobPayload } from './agent-run-worker';
@@ -54,6 +54,8 @@ export function safeRequestId(value: unknown): string | null {
 }
 
 export interface AgentRunEnvelope {
+  /** Attribution only; authorization is re-resolved from the stored principal. */
+  organizationId?: string;
   requestId?: string;
   goalId?: string;
   runId?: string;
@@ -204,8 +206,23 @@ function isLockTimeout(error: unknown): boolean {
  */
 const RETRYABLE_RUN_STATES: readonly string[] = ['failed', 'cancelled'];
 
+/**
+ * A run parked by `askUser` (#710): it holds no worker and no lock, only a
+ * pending `kind = 'question'` row. It is in flight — the dispatcher must not
+ * issue the goal's next phase under it and a retry must not race it — and it
+ * leaves this state only through an answer, the timeout sweep or a cancel.
+ */
+export const WAITING_USER_RUN_STATUS = 'waiting_user';
+
 /** Run states in which work may still happen — the dispatcher's "in flight". */
-const IN_FLIGHT_RUN_STATES = ['queued', 'running', 'awaiting_approval'];
+const IN_FLIGHT_RUN_STATES = ['queued', 'running', 'awaiting_approval', WAITING_USER_RUN_STATUS];
+
+/**
+ * States a run may be parked on an approval from. Not `waiting_user`: a run
+ * parked on a question leaves it only through the question (answer, timeout,
+ * cancel), never by being re-parked on something else (#710 review).
+ */
+const PARKABLE_FOR_APPROVAL_STATES = ['queued', 'running', 'awaiting_approval'];
 
 /** Goal states after which nobody is waiting for another attempt. */
 const CLOSED_GOAL_STATES = ['done', 'completed', 'failed'];
@@ -309,7 +326,8 @@ export class AgentRunService {
           origin: envelope.origin ?? 'user',
           intentId: envelope.intentId ?? null,
           agentRole: envelope.agentRole ?? null,
-          metadata: { transient: true, requestId: safeRequestId(envelope.requestId) },
+          metadata: { transient: true, requestId: safeRequestId(envelope.requestId),
+            ...(envelope.organizationId ? { organizationId: envelope.organizationId } : {}) },
         })
         .returning();
       goalId = goal!.id;
@@ -366,7 +384,7 @@ export class AgentRunService {
   async finishToolCall(
     toolCallId: string,
     patch: {
-      status: 'executed' | 'pending_approval' | 'denied' | 'failed';
+      status: 'executed' | 'pending_approval' | 'waiting_user' | 'denied' | 'failed';
       output?: unknown;
       error?: string | null;
       approvalId?: string | null;
@@ -415,15 +433,31 @@ export class AgentRunService {
     }).where(and(eq(agentRuns.siteId, this.siteId), eq(agentRuns.id, runId)));
   }
 
+  /**
+   * `closeRun` and `failRun` never move a run out of `waiting_user` (#710
+   * review). A parked run leaves that state only through its question — the
+   * answer, the timeout sweep or a cancel — each of which settles the question
+   * in the same step. A generic close/fail reaching a parked run is a caller
+   * that failed after the park committed (e.g. the worker's catch-all); turning
+   * the run `failed` there left the question `pending` and every answer a 409
+   * until it expired. The refusal is both a read-time check (no metrics or
+   * notification for a transition that did not happen) and a predicate in the
+   * UPDATE, so a park that commits between the two still wins.
+   *
+   * The one legitimate generic fail of a parked run — the answer path refusing
+   * a revoked requester, which closes the question itself — passes
+   * `{ fromWaitingUser: true }`.
+   */
   async closeRun(runId: string, metrics: Record<string, unknown> = {}): Promise<void> {
     const [run] = await this.db
       .select()
       .from(agentRuns)
       .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
+    if (run?.status === WAITING_USER_RUN_STATUS) return;
     await this.db
       .update(agentRuns)
       .set({ status: 'succeeded', metrics: sql`coalesce(${agentRuns.metrics}, '{}'::jsonb) || ${JSON.stringify(metrics)}::jsonb`, finishedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
+      .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId), ne(agentRuns.status, WAITING_USER_RUN_STATUS)));
     agentRunsTotal.inc({
       agent: metricAgent(run?.agentName ?? 'unknown'),
       status: 'succeeded',
@@ -439,15 +473,28 @@ export class AgentRunService {
     });
   }
 
-  async failRun(runId: string, error: string, metrics: Record<string, unknown> = {}): Promise<void> {
+  /** See {@link closeRun} for why a `waiting_user` run is left alone. */
+  async failRun(
+    runId: string,
+    error: string,
+    metrics: Record<string, unknown> = {},
+    options: { fromWaitingUser?: boolean } = {},
+  ): Promise<void> {
     const [run] = await this.db
       .select()
       .from(agentRuns)
       .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
+    if (run?.status === WAITING_USER_RUN_STATUS && !options.fromWaitingUser) return;
     await this.db
       .update(agentRuns)
       .set({ status: 'failed', error, metrics: sql`coalesce(${agentRuns.metrics}, '{}'::jsonb) || ${JSON.stringify(metrics)}::jsonb`, finishedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(agentRuns.id, runId), eq(agentRuns.siteId, this.siteId)));
+      .where(
+        and(
+          eq(agentRuns.id, runId),
+          eq(agentRuns.siteId, this.siteId),
+          ...(options.fromWaitingUser ? [] : [ne(agentRuns.status, WAITING_USER_RUN_STATUS)]),
+        ),
+      );
     const stopReason = String(metrics['stopReason'] ?? (run?.metrics as Record<string, unknown> | null)?.['stopReason'] ?? 'error');
     agentRunsTotal.inc({
       agent: metricAgent(run?.agentName ?? 'unknown'),
@@ -657,6 +704,9 @@ export class AgentRunService {
    * call came back as `awaiting_approval`, and the approval it then created
    * executed when a human approved it: the cancellation was lost. Returns false
    * when the run is no longer in flight; the caller must not park anything.
+   *
+   * A run waiting on a question (`waiting_user`, #710) is refused as well: it
+   * resumes only through that question.
    */
   async awaitApproval(runId: string, db: Pick<Database, 'update'> = this.db): Promise<boolean> {
     const parked = await db
@@ -666,7 +716,29 @@ export class AgentRunService {
         and(
           eq(agentRuns.id, runId),
           eq(agentRuns.siteId, this.siteId),
-          inArray(agentRuns.status, IN_FLIGHT_RUN_STATES),
+          inArray(agentRuns.status, PARKABLE_FOR_APPROVAL_STATES),
+        ),
+      )
+      .returning({ id: agentRuns.id });
+    return parked.length > 0;
+  }
+
+  /**
+   * Parks a run while a human answers an `askUser` question (#710).
+   *
+   * Same guard as {@link awaitApproval}, for the same reason: a run cancelled
+   * while the harness was recording the question must stay cancelled, so the
+   * caller creates the question row only when this returns true.
+   */
+  async awaitUser(runId: string, db: Pick<Database, 'update'> = this.db): Promise<boolean> {
+    const parked = await db
+      .update(agentRuns)
+      .set({ status: WAITING_USER_RUN_STATUS, updatedAt: new Date() })
+      .where(
+        and(
+          eq(agentRuns.id, runId),
+          eq(agentRuns.siteId, this.siteId),
+          inArray(agentRuns.status, ['queued', 'running']),
         ),
       )
       .returning({ id: agentRuns.id });
@@ -678,10 +750,14 @@ export class AgentRunService {
    * tool-call boundary — the harness re-checks the status before every
    * tool call (Req 3.5). Returns the updated run, or null when the run is
    * missing or already terminal.
+   *
+   * A run waiting on a question (#710) has no tool-call boundary left to reach,
+   * so its open question is closed here as well; otherwise the inbox would
+   * keep offering an answer box for a run that can no longer resume.
    */
   async cancelRun(runId: string, reason = 'cancelled_by_user') {
     const run = await this.getRun(runId);
-    if (!run || !['queued', 'running', 'awaiting_approval'].includes(run.status)) {
+    if (!run || !IN_FLIGHT_RUN_STATES.includes(run.status)) {
       return null;
     }
     // The status is re-checked in the write (#584 F1). Between the read above and
@@ -711,6 +787,12 @@ export class AgentRunService {
       status: 'cancelled',
       stop_reason: metricReason(reason),
     });
+    // Not keyed on the status read above: the run can be parked between that
+    // read and the UPDATE (which then still matches `waiting_user`), and a
+    // question left `pending` under a cancelled run is an answer box that
+    // resumes nothing. The update matches no row for runs that never asked.
+    const { closeOpenQuestionsForRun } = await import('./agent-question-service');
+    await closeOpenQuestionsForRun(this.db, this.siteId, runId, reason);
     return updated ?? null;
   }
 

@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-10-17T16:36:21.237Z
+version: 7
+lastUpdated: 2026-11-10T05:40:28.038Z
 sourceLang: en
-contentHash: fd79a2e1fafb6df3
-codeVerified: 2026-10-17T16:36:21.237Z
-codeVerifiedHash: fd79a2e1fafb6df3
+contentHash: ff2f770d8b410323
+codeVerified: 2026-11-10T05:40:28.038Z
+codeVerifiedHash: ff2f770d8b410323
 codeVerifiedClaims: 112
 ---
 
@@ -48,6 +48,7 @@ duplicate-account drift.
 | **Staff** | editors, admins, teammates | `administrator`, `member` | `true` | Invite-only (`POST /users/invite`) | CF Access JWT, or password `/login` (Studio token) |
 | **Frontend end-user** | public visitors / subscribers | `subscriber` | `false` | Public self-service (`POST /auth/register`) | password `/login` (frontend token) |
 | **Integration** | server-to-server (ISR, build) | n/a (API key) | per attached policy | Admin creates API key | `Authorization: Bearer lbk_…` |
+| **Organization key** | organization automation | fixed `admin` | inherited site administrator | Owner/admin creates via `/orgs/:orgId/keys` | `Authorization: Bearer lbo_…` |
 
 ---
 
@@ -62,12 +63,13 @@ user_sites (membership N–N)     ← which sites + the PRIMARY role there
 roles (per site)                ← administrator | member | subscriber | custom
   └─ adminAccess, appAccess, systemKey
 policies → permissions          ← what a role can actually do (Policy DSL, ADR-008)
-api_keys → api_key_roles/policies  ← integration principals, scoped per site
+organization_members (membership N–N)
+  └─ (userId, organizationId) → owner | admin | billing | member
+organizations → sites.organizationId
+api_keys → site role/policy links OR fixed organization admin (scope=organization)
 ```
 
-- Domain rule: every domain table has `site_id` and every query filters by
-  it (Strict Rule #2). Postgres RLS is the defense-in-depth backstop when
-  `LUMIBASE_DB_RLS=enforce` (B130; off by default).
+- Site-plane queries filter by `site_id`; organization-plane queries filter by `organization_id`. Postgres RLS is the defense-in-depth backstop when `LUMIBASE_DB_RLS=enforce` (B130; off by default).
 - **`subscriber`** is the least-privilege frontend role. It grants nothing
   until you attach content permissions to it (e.g. `articles::read WHERE
   status = 'published'`). It is created idempotently on first registration
@@ -400,69 +402,31 @@ session).
 
 ---
 
-## 7. Exposing user management over MCP (future feasibility)
+## 7. User and organization management over MCP
 
-> Can this surface later be exposed via **MCP** (Model Context Protocol)?
-> Evaluation below. [Inference] — a design assessment, not a shipped
-> capability.
+The stdio server in `packages/mcp-server` already exposes site user/team management, including `list_users`, `get_user`, `invite_user`, `update_user`, and `remove_user`. ADR-013 adds a separate organization plane; granting site administrator does not grant organization authority.
 
-**Grounding:** LumiBase already ships an MCP server —
-`packages/mcp-server` (`name: 'lumibase'`, stdio transport). It exposes
-**items / collections / fields** tools today and authenticates exactly the
-way this evaluation recommends: a `LumiBaseClient` carrying
-`Authorization: Bearer <api key>` + `X-Lumi-Site: <siteId>`
-(`packages/mcp-server/src/client.ts`). So "exposing user management over
-MCP" concretely means **adding a `tools/users.ts` alongside the existing
-tool modules**, reusing the same API-key client — not building new infra.
+### Credential profiles
 
-**What MCP would be here:** an MCP *server* exposing user/role operations
-as tools an AI agent (or external MCP client) can call.
+| Credential | Advertised tools | Site routing |
+|---|---|---|
+| `lbk_` | Existing site tool list | `LUMIBASE_SITE_ID` required |
+| `lbo_` with a site pin | Site tools plus `get_organization`, `list_sites` | Pinned site |
+| `lbo_` without a pin | Eight organization tools plus site tools | Each site tool requires `site`; organization calls omit the site header |
 
-### Recommended split
+`LUMIBASE_READ_ONLY=true` hides mutation tools for every profile. Organization roles are fixed: owner/admin manage the organization, billing/member have no inherited site authority. An organization key is always admin, never owner, and cannot change who holds authority: member, organization-key and organization-settings writes require a user session, so a leaked key cannot add its holder as a human admin, mint replacement keys or enable its own MCP tools. It requests those changes through organization MCP for a human to approve; an approved `create_org_key` shows the new key once to the approver and the stored receipt keeps no plaintext. The same human must own both organizations to approve a transfer. Owners can rename the personal organization's `default` slug. Settings shows Organization to owner/admin even with one organization; only the switcher is hidden in that case.
 
-| Surface | MCP-exposable? | Rationale |
-|---------|----------------|-----------|
-| **Read** — list users, read roles/policies, audit queries | ✅ Low risk | Read-only, already admin-gated; maps cleanly to MCP tools. |
-| **Management** — invite user, assign/revoke role, suspend, rotate API key | ⚠️ With strong gating | High-impact. Expose only behind an API key bound to an explicit admin policy, per-site scoped, and route privilege-changing calls through the HITL `ai_approvals` path. |
-| **Public auth** — `register`, `login`, `verify-email` | ❌ Do not expose | These are *end-user credential flows*, not agent capabilities. An agent should never self-register accounts or handle user passwords. |
+### Mandatory organization approvals
 
-### Why it fits LumiBase cleanly
+Organization tools are gated by `contentOs.mcp.allowOrganizationTools` (off by default), overridden by `LUMIBASE_MCP_ORG_TOOLS=off`. Writes always use the organization harness and `ai_approvals`, regardless of the legacy site governance mode. `confirm=true` cannot grant approval and cannot trigger a REST fallback.
 
-- **Capability + HITL already exist.** Strict Rule #4 requires skills with
-  `schema:write`-class capability or `delete*` to go through `ai_approvals`
-  first. User-mutation tools (assign admin role, delete user) are exactly
-  the dangerous class — reuse that gate; do not invent a side channel.
-- **Per-site scoping is native.** Every table is `site_id`-scoped and API
-  keys are bound to one site, so an MCP tool inherits tenant isolation.
-- **Audit is native.** `audit_log` already records `user_registered`,
-  `email_verified`, `api_key_*`, role changes — MCP-initiated actions get
-  the same provenance for free (set `actorEmail`/metadata to the agent).
-- **Earned autonomy (L0–L4).** MCP user-management tools map onto the
-  Content OS autonomy ladder: start at L1 (propose → human approves),
-  promote to veto-window/autopilot only for low-risk ops (e.g. read,
-  resend invite), never for role elevation.
+The requesting user/key is recorded and checked again before execution. A human owner/admin decides through the organization approval API or Studio. Owner-only changes still need an owner, and organization keys cannot read or decide human receipts. Domain changes and the receipt commit atomically, so retries cannot create duplicate sites or keys. A newly minted organization key appears only in the human receipt. Run audits carry `organizationId` and `runId`, including organization requests with zero sites.
 
-### Hard constraints if/when implemented
+### Site management and the auth boundary
 
-1. **Never mint or elevate a principal without HITL.** Any tool that can
-   grant `appAccess`/`adminAccess`, create an admin, or issue an API key
-   MUST create an `ai_approvals` row first.
-2. **Audience integrity.** MCP tools authenticate as an API-key principal
-   (or `studio`), never by forging a user JWT; the `frontend` audience wall
-   stays intact.
-3. **No password handling.** MCP tools must not accept, store, or relay
-   end-user passwords; verification/login stay HTTP-only.
-4. **Rate + scope.** Bind the MCP server's API key to a narrow policy
-   (e.g. `users::read` + `users::update` on `status`/`roleId` only) rather
-   than admin bypass.
+Legacy site tools retain their existing governance modes. `LUMIBASE_MCP_GOVERNED=on` refuses a mutation without a canonical governed mapping; compatibility modes may use REST. Do not assume those site modes provide the mandatory organization approval contract. See [Governed tool contract](../mcp/governed-tool-contract.md).
 
-**Bottom line:** the *management* surface is a good future MCP candidate
-because the safety primitives (capability gating, HITL, per-site scope,
-audit, autonomy levels) are already in place — and the delivery vehicle
-(`packages/mcp-server` + its API-key client) already exists, so the work is
-a new `tools/users.ts` module plus an admin-scoped key, not new
-infrastructure. The *public auth* surface should remain ordinary HTTP and
-never become an agent tool.
+Public registration, password login, verification, and reset remain HTTP authentication flows rather than MCP tools. Staff identity activation and organization membership remain separate operations. Use the existing invitation flow to activate a new staff account. See [Organization settings](../features/organizations.md) for the human workflow and the site-free recovery boundary.
 
 ---
 

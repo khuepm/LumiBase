@@ -84,8 +84,8 @@ describe.skipIf(!hasDbIntegrationUrl)('#472 approval requester re-resolution —
     await db.delete(sites).where(sql`${sites.id} IN (${SITE}, ${OTHER_SITE})`);
     await db.delete(users).where(sql`${users.id} IN (${ADMIN}, ${MEMBER})`);
     await db.insert(sites).values([
-      { id: SITE, name: 'R2 requester' },
-      { id: OTHER_SITE, name: 'R2 other tenant' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'R2 requester' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER_SITE, name: 'R2 other tenant' },
     ]);
 
     // Decider: a real admin, because `adminAccess` is the actual bypass.

@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -22,8 +24,18 @@ const id = () => text('id').$defaultFn(() => nanoid()).primaryKey();
 const createdAt = () => timestamp('created_at').defaultNow().notNull();
 const updatedAt = () => timestamp('updated_at').defaultNow().notNull();
 
+export const organizations = pgTable('lumibase_organizations', {
+  id: id(),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  settings: jsonb('settings').default({}).notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
 export const sites = pgTable('lumibase_sites', {
   id: id(),
+  organizationId: text('organization_id').notNull(),
   name: text('name').notNull(),
   domain: text('domain').unique(),
   /** Human-readable title shown in Studio + public metadata. Falls back to `name`. */
@@ -46,7 +58,10 @@ export const sites = pgTable('lumibase_sites', {
   customCss: text('custom_css'),
   updatedAt: updatedAt(),
   createdAt: createdAt(),
-});
+}, (t) => ({
+  organizationFk: foreignKey({ columns: [t.organizationId], foreignColumns: [organizations.id],
+    name: 'lumibase_sites_organization_id_fk' }).onDelete('restrict'),
+}));
 
 export const users = pgTable(
   'lumibase_users',
@@ -113,6 +128,21 @@ export const users = pgTable(
     emailLowerUnique: uniqueIndex('users_email_lower_unique').on(sql`lower(${t.email})`),
   }),
 );
+
+export const organizationMembers = pgTable('lumibase_organization_members', {
+  userId: text('user_id').notNull(),
+  organizationId: text('organization_id').notNull(),
+  role: text('role').$type<'owner' | 'admin' | 'billing' | 'member'>().notNull(),
+  createdAt: createdAt(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.organizationId] }),
+  orgIdx: index('org_members_org_idx').on(t.organizationId),
+  roleCheck: check('org_members_role_check', sql`${t.role} in ('owner','admin','billing','member')`),
+  userFk: foreignKey({ columns: [t.userId], foreignColumns: [users.id],
+    name: 'lumibase_organization_members_user_id_fkey' }).onDelete('cascade'),
+  organizationFk: foreignKey({ columns: [t.organizationId], foreignColumns: [organizations.id],
+    name: 'lumibase_organization_members_organization_id_fkey' }).onDelete('cascade'),
+}));
 
 export const userSites = pgTable(
   'lumibase_user_sites',

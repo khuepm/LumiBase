@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle, Clock, ShieldAlert, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, MessageCircleQuestion, ShieldAlert, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/cn';
 import { missionControlApi } from './api';
+import { QuestionAnswerForm } from './question-answer';
 import { useInboxData, type InboxEntry } from './use-inbox';
 
 /**
@@ -24,6 +25,7 @@ export function invalidateInboxQueries(queryClient: ReturnType<typeof useQueryCl
   queryClient.invalidateQueries({ queryKey: ['mc-staged'] });
   queryClient.invalidateQueries({ queryKey: ['mc-autonomy'] });
   queryClient.invalidateQueries({ queryKey: ['mc-intents'] });
+  queryClient.invalidateQueries({ queryKey: ['mc-questions'] });
 }
 
 function Countdown({ deadline }: { deadline: string }) {
@@ -167,6 +169,24 @@ export function ExceptionInbox({ limit, onOpenEntry }: ExceptionInboxProps) {
                   <XCircle className="h-3 w-3" /> Reject
                 </button>
               </span>
+            </div>
+          )}
+
+          {entry.kind === 'question' && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm">
+                  <MessageCircleQuestion className="mr-1 inline h-4 w-4 text-violet-600" />
+                  <strong>{entry.question.agentName}</strong> asks: {entry.question.question}
+                  {entry.question.expiresAt && (
+                    <span className="ml-2 text-xs">
+                      <Countdown deadline={entry.question.expiresAt} />
+                    </span>
+                  )}
+                </span>
+                {openButton(entry)}
+              </div>
+              <QuestionAnswerForm question={entry.question} compact onAnswered={invalidate} />
             </div>
           )}
 

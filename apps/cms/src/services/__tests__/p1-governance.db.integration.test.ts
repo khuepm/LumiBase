@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
@@ -20,7 +21,7 @@ describe.skipIf(!hasDbIntegrationUrl)('P1 governance: real PostgreSQL + routes +
   }
   beforeEach(async () => {
     await clean();
-    await db.insert(sites).values([{ id: SITE, name: 'P1 A' }, { id: OTHER, name: 'P1 B' }]);
+    await db.insert(sites).values([{ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'P1 A' }, { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER, name: 'P1 B' }]);
   });
   afterAll(async () => { if (db) await clean(); });
   function app() {

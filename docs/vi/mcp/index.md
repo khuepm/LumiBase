@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-11-09T12:46:09.459Z
+version: 14
+lastUpdated: 2026-11-11T02:57:08.013Z
 sourceLang: vi
-contentHash: c35d3cb83ac0c70c
-codeVerified: 2026-11-09T12:46:09.459Z
-codeVerifiedHash: c35d3cb83ac0c70c
+contentHash: 16b14b2f7c418709
+codeVerified: 2026-11-11T02:57:08.013Z
+codeVerifiedHash: 16b14b2f7c418709
 codeVerifiedClaims: 28
 ---
 
@@ -14,7 +14,7 @@ codeVerifiedClaims: 28
 
 ## TL;DR
 
-LumiBase phơi bày **hai bề mặt MCP**, cùng chạy qua một codepath harness duy nhất nên quyết định của một tool gọi qua MCP **giống hệt** khi gọi trực tiếp Agent API (bất biến "MCP parity", Property 14):
+LumiBase phơi bày **hai bề mặt MCP**, các tool site có quản trị dùng cùng harness site với Agent API (bất biến "MCP parity", Property 14). Tool organization dùng harness organization và ranh giới phê duyệt của người dùng:
 
 | Bề mặt | Transport | Vị trí | Dùng cho |
 |---|---|---|---|
@@ -38,6 +38,7 @@ Nguồn: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`
 - **Mapping quyết định → kết quả tool** (bất biến quan trọng):
   - `executed` → `isError: false`, data trong `structuredContent`.
   - `pending_approval` → `isError: false`, **`approvalId` nằm trong `structuredContent`**, KHÔNG phải lỗi protocol.
+  - `waiting_user` (tool `askUser`, #710) → `isError: false`, **`questionId` nằm trong `structuredContent`**; run đỗ tới khi một người trả lời, KHÔNG phải lỗi protocol.
   - `denied` → `isError: true`.
   - Lỗi protocol chỉ dùng cho lỗi JSON-RPC thật: `-32700` parse, `-32600` invalid request, `-32601` method not found, `-32602` invalid params.
 - **Guards kế thừa từ harness** (zero logic MCP riêng): kill switch, capability, autonomy (L0–L4), constitution pin, load guard, veto window. Xem [`docs/en/features/agent-harness-layer.md`](../features/agent-harness-layer.md).
@@ -52,6 +53,7 @@ Nguồn: [`apps/cms/src/services/tool-registry-service.ts`](../../../apps/cms/sr
 - `evaluatePolicy(tool, runId)` kiểm tra enabled/blocked + rate limit.
 - Audit: `agentToolCalls` (input/output/error/status/approvalId/cost/latency); approvals: `agentApprovals`.
 
+
 ## 2. Standalone MCP server — `@lumibase/mcp-server`
 
 Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (dựng trên `@modelcontextprotocol/sdk`; version lấy ở `package.json` của chính package — không pin lại ở đây để tránh thêm một chỗ trôi lệch).
@@ -60,7 +62,36 @@ Nguồn: [`packages/mcp-server/`](../../../packages/mcp-server/) (dựng trên `
 - **Entry:** `packages/mcp-server/src/index.ts` — `new McpServer({ name: 'lumibase', ... })`, đăng ký collection/field/item tools, `connect(StdioServerTransport)`.
 - **Client:** `LumiBaseClient` — HTTP tới `/api/v1` với Bearer token + site header.
 - **Config:** [`docs/en/agent-setup/mcp-config.json`](../../en/agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
-- **Studio:** trang *Data model → Set up MCP for your IDE* (`/data-model/mcp-setup`) tạo API key riêng gắn role, sinh config cho Cursor/Claude Desktop/VS Code, và có mục **Try these prompts** — prompt mẫu copy được, chia nhóm Explore/Content/Schema/Operations, gắn nhãn `Read-only`/`Writes data`/`Admin role`. Danh sách ở [`apps/studio/src/modules/data-model/mcp-prompts.ts`](../../../apps/studio/src/modules/data-model/mcp-prompts.ts); mỗi prompt khai các tool nó dùng và test đối chiếu với tool mà server thật sự đăng ký.
+- **Studio:** trang *Data model → Set up MCP for your IDE* (`/data-model/mcp-setup`) tạo API key riêng gắn role, sinh config cho Cursor/Claude Desktop/VS Code, và có mục **Try these prompts** — prompt mẫu copy được, chia nhóm Explore/Content/Schema/Operations, gắn nhãn `Read-only`/`Writes data`/`Admin role`, có bản tiếng Anh và tiếng Việt (nút chuyển ngôn ngữ, mặc định theo ngôn ngữ giao diện Studio). Danh sách ở [`apps/studio/src/modules/data-model/mcp-prompts.ts`](../../../apps/studio/src/modules/data-model/mcp-prompts.ts); mỗi prompt khai các tool nó dùng và test đối chiếu với tool mà server thật sự đăng ký.
+
+### Thông tin xác thực organization (ADR-013)
+
+Ví dụ key organization không ghim site. Mẫu chỉ đọc; đặt `LUMIBASE_READ_ONLY=false` để yêu cầu ghi, bật MCP organization trong Settings và duyệt yêu cầu bằng tài khoản người dùng.
+
+```json
+{
+  "mcpServers": {
+    "lumibase-organization": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@lumibase/mcp-server"
+      ],
+      "env": {
+        "LUMIBASE_URL": "http://localhost:1989",
+        "LUMIBASE_TOKEN": "lbo_<organization-key>",
+        "LUMIBASE_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
+
+
+
+Đặt `LUMIBASE_READ_ONLY=true` để chỉ công bố tool có annotation chỉ đọc. Ở chế độ này client cũng từ chối mọi request không phải GET, trừ một danh sách cố định endpoint xem trước/truy vấn (diff schema, tra cứu translation memory, panel insight, kiểm tra quyền và truy cập, compile intent), nên một tool không thể ghi dù tên của nó trông như chỉ đọc. Với key `lbk_`, `LUMIBASE_SITE_ID` vẫn bắt buộc và danh sách tool site hiện có không đổi. Với key `lbo_`, bỏ site để có tám tool organization (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) cùng các tool site bắt buộc truyền đối số `site`. Ghim một site sẽ công bố các tool site cũ và hai tool đọc organization đầu tiên. Các lời gọi song song không dùng chung header site.
+
+Tool ghi organization luôn đi qua HTTP endpoint có quản trị, kể cả khi `LUMIBASE_MCP_GOVERNED=off`; không fallback sang REST. Bật setting organization `contentOs.mcp.allowOrganizationTools`; biến toàn cục `LUMIBASE_MCP_ORG_TOOLS=off` có quyền tắt ưu tiên. Mọi thay đổi organization đều chờ người duyệt. Đối số `confirm` chỉ xác nhận ý định, không thay thế phê duyệt. Owner/admin đọc `/api/v1/orgs/:orgId/approvals`, mở `/:approvalId`, rồi gửi `{"decision":"approved"}` hoặc `{"decision":"rejected"}` tới `/:approvalId/decide`. Thao tác dành riêng cho owner vẫn cần owner; chuyển site cần cùng một người là owner ở cả hai organization. API key không được duyệt hay đọc biên nhận. Token organization mới chỉ hiện trong biên nhận dành cho người duyệt. Quyền hiện tại của bên yêu cầu được kiểm tra lại khi duyệt; thao tác và biên nhận được commit nguyên tử. Approval organization có cha organization thật (migration `0025`), kể cả organization không có site.
 
 ### Tool cố định (CRUD + insights read-only)
 

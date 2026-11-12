@@ -144,7 +144,6 @@ export const UNGOVERNED_MUTATIONS: Readonly<Record<string, string>> = {
   attach_api_key_role: 'no-skill',
   attach_policy_user: 'no-skill',
   attach_role_policy: 'no-skill',
-  compile_intent: 'no-skill',
   create_preset: 'no-skill',
   create_release: 'no-skill',
   create_share: 'no-skill',
@@ -159,14 +158,17 @@ export const UNGOVERNED_MUTATIONS: Readonly<Record<string, string>> = {
   detach_role_policy: 'no-skill',
   drop_materialization: 'no-skill',
   install_marketplace_extension: 'no-skill',
+  pause_intent: 'no-skill',
   publish_extension: 'no-skill',
   publish_release: 'no-skill',
   refresh_materialization: 'no-skill',
+  register_materialization: 'no-skill',
   reject_content: 'no-skill',
   remove_role_user: 'no-skill',
   restore_backup: 'no-skill',
+  resume_intent: 'no-skill',
+  scan_intent: 'no-skill',
   revoke_share: 'no-skill',
-  run_panel: 'no-skill',
   submit_review: 'no-skill',
   translate_text: 'no-skill',
   update_cdc_subscription: 'no-skill',
@@ -201,10 +203,20 @@ const MUTATION_VERB =
   /^(create|update|delete|remove|upsert|set|add|attach|detach|revoke|rotate|invite|install|uninstall|enable|disable|publish|unpublish|promote|apply|run|trigger|restore|replay|drop|materialize|reset|assign|unassign|approve|reject|submit|claim|decide|import|veto|freeze|lift|seed|sync|purge|bump|stage|commit|schedule|cancel|retry|archive|clone|duplicate|move|rename|reorder|translate|compile|generate|refresh|configure)/;
 
 /** Mutations whose name does not start with a mutation verb. */
-const MUTATION_EXCEPTIONS = new Set(['cdc_subscription_replay']);
+const MUTATION_EXCEPTIONS = new Set([
+  'cdc_subscription_replay',
+  // POSTs that change state behind a non-mutation verb. Without these entries
+  // `LUMIBASE_READ_ONLY` exposed them and mode `on` let them reach REST.
+  'pause_intent',
+  'resume_intent',
+  'scan_intent',
+  'register_materialization',
+]);
 
 /** True when calling `name` can change state. */
 export function isMutationTool(name: string): boolean {
+  // These POST/verb-named operations are documented previews/queries and do not persist changes.
+  if (name === 'run_panel' || name === 'compile_intent') return false;
   return MUTATION_EXCEPTIONS.has(name) || MUTATION_VERB.test(name);
 }
 
@@ -267,7 +279,8 @@ export interface GovernedDispatcherOptions {
 export class GovernedDispatcher {
   private readonly mode: GovernedMode;
   private readonly warn: (message: string) => void;
-  private available: Promise<boolean> | undefined;
+  private readonly available = new Map<string, Promise<boolean>>();
+  private readonly warnedSites = new Set<string>();
 
   constructor(
     private readonly client: LumiBaseClient,
@@ -328,7 +341,10 @@ export class GovernedDispatcher {
     // Wrapped in an async IIFE rather than `.then().catch()`: a client whose
     // `jsonRpc` is missing throws SYNCHRONOUSLY, and a synchronous throw never
     // reaches a `.catch` attached to the call expression.
-    this.available ??= (async () => {
+    const site = this.client.currentSiteId ?? '__unscoped__';
+    const cached = this.available.get(site);
+    if (cached) return cached;
+    const probe = (async () => {
       try {
         await this.client.jsonRpc('tools/list');
         return true;
@@ -338,7 +354,7 @@ export class GovernedDispatcher {
         // every subsequent call fail instead of degrading — worse for `auto`, and
         // for `on` the refusal below is what the operator asked for anyway.
         if (this.mode === 'on') return false;
-        this.warn(
+        if (!this.warnedSites.has(site)) this.warn(
           err instanceof McpUnavailableError
             ? '[lumibase-mcp] governed tool calls unavailable: this site has contentOs.mcp disabled. ' +
                 'Falling back to direct REST calls, which skip agent governance ' +
@@ -349,10 +365,14 @@ export class GovernedDispatcher {
               }); falling back to direct REST calls, which skip agent governance. ` +
                 'Set LUMIBASE_MCP_GOVERNED=on to refuse instead of falling back.',
         );
+        this.warnedSites.add(site);
         return false;
       }
     })();
-    return this.available;
+    this.available.set(site, probe);
+    // A disabled site or a transient failure must not poison future calls.
+    void probe.then((ready) => { if (!ready && this.available.get(site) === probe) this.available.delete(site); });
+    return probe;
   }
 
   /**
@@ -407,5 +427,16 @@ export class GovernedDispatcher {
     } catch (err) {
       return fail(err);
     }
+  }
+}
+
+/** Org tools always use the governed endpoint; auto/off never enables REST fallback. */
+export async function dispatchOrganizationTool(
+  client: LumiBaseClient, name: string, args: Record<string, unknown>,
+): Promise<CallToolResult> {
+  try {
+    return await client.jsonRpc<CallToolResult>('tools/call', { name, arguments: args }, { organization: true });
+  } catch (error) {
+    return fail(error);
   }
 }

@@ -54,7 +54,7 @@ async function main() {
   const sysSql = postgres(fx.sysUrl, { max: 10, prepare: false, debug });
   try {
     for (const site of SITES) {
-      await sysSql`INSERT INTO lumibase_sites (id, name) VALUES (${site}, ${site})`;
+      await sysSql`INSERT INTO lumibase_sites (organization_id, id, name) VALUES ((SELECT id FROM lumibase_organizations WHERE slug='default'), ${site}, ${site})`;
       await sysSql`INSERT INTO lumibase_collections (id, site_id, name) VALUES (${`col_${site}`}, ${site}, 'posts')`;
       const rows = Array.from({ length: 200 }, (_, i) => ({
         id: `${site}_it_${i}`,

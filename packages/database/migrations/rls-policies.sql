@@ -176,12 +176,75 @@ CREATE POLICY site_isolation_permit ON lumibase_extensions
 ALTER TABLE lumibase_role_policies DISABLE ROW LEVEL SECURITY;
 
 -- =============================================================================
--- core tables (lumibase_sites, lumibase_users) — managed by platform, no RLS needed.
+-- Core user identities are global; site and key rows have two possible scopes.
 -- =============================================================================
--- lumibase_sites, lumibase_users: intentionally excluded from site-scoped RLS.
+-- lumibase_users: intentionally excluded from site-scoped RLS.
+
+ALTER TABLE lumibase_sites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lumibase_sites FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS site_or_organization_isolation ON lumibase_sites;
+DROP POLICY IF EXISTS site_or_organization_isolation_permit ON lumibase_sites;
+CREATE POLICY site_or_organization_isolation ON lumibase_sites AS RESTRICTIVE FOR ALL
+  USING (id = app_site_id() OR organization_id = NULLIF(current_setting('lumibase.organization_id', true), ''))
+  WITH CHECK (id = app_site_id() OR organization_id = NULLIF(current_setting('lumibase.organization_id', true), ''));
+CREATE POLICY site_or_organization_isolation_permit ON lumibase_sites AS PERMISSIVE FOR ALL
+  USING (id = app_site_id() OR organization_id = NULLIF(current_setting('lumibase.organization_id', true), ''))
+  WITH CHECK (id = app_site_id() OR organization_id = NULLIF(current_setting('lumibase.organization_id', true), ''));
+
+ALTER TABLE lumibase_api_keys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lumibase_api_keys FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS key_scope_isolation ON lumibase_api_keys;
+DROP POLICY IF EXISTS key_scope_isolation_permit ON lumibase_api_keys;
+CREATE POLICY key_scope_isolation ON lumibase_api_keys AS RESTRICTIVE FOR ALL
+  USING ((scope = 'site' AND site_id = app_site_id()) OR
+    (scope = 'organization' AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')))
+  WITH CHECK ((scope = 'site' AND site_id = app_site_id()) OR
+    (scope = 'organization' AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')));
+CREATE POLICY key_scope_isolation_permit ON lumibase_api_keys AS PERMISSIVE FOR ALL
+  USING ((scope = 'site' AND site_id = app_site_id()) OR
+    (scope = 'organization' AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')))
+  WITH CHECK ((scope = 'site' AND site_id = app_site_id()) OR
+    (scope = 'organization' AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')));
 
 COMMENT ON FUNCTION app_site_id IS
   'Returns the current request site_id from SET LOCAL app.site_id (NULL when
    unset or empty). SECURITY INVOKER with a pinned search_path. Used by the
    site_isolation (RESTRICTIVE) and site_isolation_permit (PERMISSIVE) RLS
    policies for site-level row isolation.';
+
+-- Organization plane: app.site_id cannot grant access to organization rows.
+-- Guard verifies membership using systemDbFor before re-scoping the app client.
+DO $$
+DECLARE tbl text; target text;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY['lumibase_organizations', 'lumibase_organization_members'] LOOP
+    target := CASE WHEN tbl = 'lumibase_organizations' THEN 'id' ELSE 'organization_id' END;
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', tbl);
+    EXECUTE format('DROP POLICY IF EXISTS organization_isolation ON %I', tbl);
+    EXECUTE format('DROP POLICY IF EXISTS organization_isolation_permit ON %I', tbl);
+    EXECUTE format($policy$CREATE POLICY organization_isolation ON %I AS RESTRICTIVE FOR ALL
+      USING (%I = NULLIF(current_setting('lumibase.organization_id', true), ''))
+      WITH CHECK (%I = NULLIF(current_setting('lumibase.organization_id', true), ''))$policy$, tbl, target, target);
+    EXECUTE format($policy$CREATE POLICY organization_isolation_permit ON %I AS PERMISSIVE FOR ALL
+      USING (%I = NULLIF(current_setting('lumibase.organization_id', true), ''))
+      WITH CHECK (%I = NULLIF(current_setting('lumibase.organization_id', true), ''))$policy$, tbl, target, target);
+  END LOOP;
+END $$;
+
+-- Approval scope is exactly one site OR organization (0025). Keep a restrictive
+-- and permissive pair so another permissive policy cannot widen either plane.
+ALTER TABLE lumibase_ai_approvals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lumibase_ai_approvals FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS approval_isolation ON lumibase_ai_approvals;
+DROP POLICY IF EXISTS approval_isolation_permit ON lumibase_ai_approvals;
+CREATE POLICY approval_isolation ON lumibase_ai_approvals AS RESTRICTIVE FOR ALL
+  USING ((site_id = app_site_id() AND organization_id IS NULL) OR
+    (site_id IS NULL AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')))
+  WITH CHECK ((site_id = app_site_id() AND organization_id IS NULL) OR
+    (site_id IS NULL AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')));
+CREATE POLICY approval_isolation_permit ON lumibase_ai_approvals AS PERMISSIVE FOR ALL
+  USING ((site_id = app_site_id() AND organization_id IS NULL) OR
+    (site_id IS NULL AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')))
+  WITH CHECK ((site_id = app_site_id() AND organization_id IS NULL) OR
+    (site_id IS NULL AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')));

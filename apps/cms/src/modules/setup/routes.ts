@@ -165,6 +165,7 @@ function buildService(c: {
   );
   const smtpAvailable = !!readStringEnv(c.env, 'LUMIBASE_SMTP_URL');
   return new SetupService({
+    env: c.env, runtime: c.get('runtime'),
     db,
     requireSetupToken,
     smtpAvailable,

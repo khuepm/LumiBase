@@ -25,6 +25,7 @@ import {
 // Heavy dependencies (Monaco, WYSIWYG, etc.) are pulled in only when needed.
 // ---------------------------------------------------------------------------
 const AccessLayout = lazy(() => import('./modules/access/layout').then((m) => ({ default: m.AccessLayout })));
+const OrganizationPage = lazy(() => import('./modules/organization/page').then((m) => ({ default: m.OrganizationPage })));
 const SettingsLayout = lazy(() => import('./modules/settings/layout').then((m) => ({ default: m.SettingsLayout })));
 const ApiKeysPage = lazy(() => import('./modules/access/api-keys-page').then((m) => ({ default: m.ApiKeysPage })));
 const AccessImportExportPage = lazy(() => import('./modules/access/import-export-page').then((m) => ({ default: m.AccessImportExportPage })));
@@ -660,6 +661,10 @@ const notificationsSettingsRoute = createRoute({
   component: withSuspense(NotificationsSettingsPage),
 });
 
+const organizationSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute, path: '/organization', component: withSuspense(OrganizationPage),
+});
+
 const siteSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'site',
@@ -810,6 +815,10 @@ const adminPathNotificationsSettingsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'notifications',
   component: withSuspense(NotificationsSettingsPage),
+});
+
+const adminPathOrganizationSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute, path: 'organization', component: withSuspense(OrganizationPage),
 });
 
 const adminPathSiteSettingsRoute = createRoute({
@@ -1306,6 +1315,7 @@ const routeTree = rootRoute.addChildren([
       settingsTypesRoute,
       translationsRoute,
       siteSettingsRoute,
+      organizationSettingsRoute,
       domainsSettingsRoute,
       keyboardSettingsRoute,
       webhooksRoute,
@@ -1379,6 +1389,7 @@ const routeTree = rootRoute.addChildren([
       adminPathSettingsTypesRoute,
       adminPathTranslationsRoute,
       adminPathSiteSettingsRoute,
+      adminPathOrganizationSettingsRoute,
       adminPathDomainsSettingsRoute,
       adminPathKeyboardSettingsRoute,
       adminPathWebhooksRoute,

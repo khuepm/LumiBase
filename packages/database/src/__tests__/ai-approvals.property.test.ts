@@ -41,7 +41,7 @@ describe('Feature: ai-first-cms-engine, Property 15: Approval record round-trip'
 
       // Create a test site for FK constraint
       testSiteId = nanoid();
-      await db.insert(sites).values({ id: testSiteId, name: 'test-site-pbt-approvals' });
+      await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: testSiteId, name: 'test-site-pbt-approvals' });
     } catch {
       canConnect = false;
     }
@@ -66,14 +66,25 @@ describe('Feature: ai-first-cms-engine, Property 15: Approval record round-trip'
 
   const argumentsArb = fc.oneof(
     fc.constant({}),
-    fc.record({
-      name: fc.string({ minLength: 1, maxLength: 20 }),
-      value: fc.oneof(fc.string({ maxLength: 50 }), fc.integer(), fc.boolean()),
-    }),
-    fc.record({
-      collectionName: fc.string({ minLength: 1, maxLength: 30 }),
-      fields: fc.array(fc.string({ minLength: 1, maxLength: 10 }), { maxLength: 5 }),
-    }),
+    // `noNullPrototype`: fast-check 4 may otherwise build `Object.create(null)`
+    // records, which Drizzle's `values()` cannot inspect (it reads
+    // `Object.getPrototypeOf(v).constructor`). Arguments reach this column from
+    // parsed JSON, which always has `Object.prototype`, so the property stays
+    // the same over every value production can produce.
+    fc.record(
+      {
+        name: fc.string({ minLength: 1, maxLength: 20 }),
+        value: fc.oneof(fc.string({ maxLength: 50 }), fc.integer(), fc.boolean()),
+      },
+      { noNullPrototype: true },
+    ),
+    fc.record(
+      {
+        collectionName: fc.string({ minLength: 1, maxLength: 30 }),
+        fields: fc.array(fc.string({ minLength: 1, maxLength: 10 }), { maxLength: 5 }),
+      },
+      { noNullPrototype: true },
+    ),
   );
 
   const contextArb = fc.oneof(

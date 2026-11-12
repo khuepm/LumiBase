@@ -20,8 +20,17 @@ const payload = z.object({
 }) satisfies z.ZodType<AgentRunJobPayload>;
 const messageSchema = z.object({ id, jobName: z.literal('execute'), data: payload });
 
-/** Platform entrypoint: per-batch resources, per-message ack/retry, tenant in payload. */
-export async function processCloudflareAgentQueue(batch: MessageBatch<unknown>, env: Bindings): Promise<void> {
+/**
+ * Platform entrypoint: per-batch resources, per-message ack/retry, tenant in payload.
+ * `ctx.waitUntil` keeps a run's best-effort notifications (an approval or an
+ * `askUser` question) alive after the message is acked; without a context the
+ * worker awaits them itself.
+ */
+export async function processCloudflareAgentQueue(
+  batch: MessageBatch<unknown>,
+  env: Bindings,
+  ctx?: ExecutionContext,
+): Promise<void> {
   const messages = ackHealthProbes(batch.messages);
   if (messages.length === 0) return;
   // Throws before claiming a run. Cloudflare retries the batch on infra failure.
@@ -32,6 +41,7 @@ export async function processCloudflareAgentQueue(batch: MessageBatch<unknown>, 
       await processAgentRunJob({
         db, cache: runtime.cache, search: runtime.search, queue: runtime.queue,
         keys: runtime.keys, env: workerEnv,
+        ...(ctx ? { waitUntil: (promise: Promise<unknown>) => ctx.waitUntil(promise) } : {}),
       }, job.data);
       // CAS in processAgentRunJob also makes duplicate/cancelled deliveries no-ops.
       message.ack();

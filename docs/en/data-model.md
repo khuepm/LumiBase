@@ -1,10 +1,10 @@
 ---
-version: 8
-lastUpdated: 2026-10-17T16:36:18.599Z
+version: 10
+lastUpdated: 2026-11-11T02:57:07.105Z
 sourceLang: en
-contentHash: 6630c26d6eedb264
-codeVerified: 2026-10-17T16:36:18.599Z
-codeVerifiedHash: 6630c26d6eedb264
+contentHash: edb7b7484da75d3f
+codeVerified: 2026-11-11T02:57:07.105Z
+codeVerifiedHash: edb7b7484da75d3f
 codeVerifiedClaims: 20
 ---
 
@@ -12,7 +12,7 @@ codeVerifiedClaims: 20
 
 This document describes the tables declared in `packages/database/src/schema/`. Internal database rows use text IDs by default. No-code content collections also carry a logical item primary key strategy through `collections.primaryKeyField` and `collections.primaryKeyType`.
 
-Every tenant-scoped domain table has `site_id`.
+Site-plane domain rows carry `site_id`; organization-plane rows carry `organization_id`.
 
 > **Physical table names carry a `lumibase_` prefix.** Every LumiBase system table
 > is physically named `lumibase_<name>` (e.g. the logical `users` table is physically
@@ -27,7 +27,7 @@ Schema files are split by domain:
 
 | File | Tables (physical) |
 |------|------|
-| `core.ts` | `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
+| `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
 | `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
@@ -41,7 +41,14 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 
 ## 1. Core tenancy & identity (`core.ts`)
 
+### `organizations`
+- `id` text PK (nanoid), unique `slug`, `name`, `settings` jsonb default `{}`, `createdAt`, `updatedAt`.
+
+### `organization_members`
+- `userId`, `organizationId`, `role`, `createdAt`; composite PK `(userId, organizationId)`. Role CHECK: `owner`, `admin`, `billing`, `member`. Roles use the fixed `canOrg` matrix, not site policies. Organization tables have RLS using `lumibase.organization_id`.
+
 ### `sites`
+- `organizationId` is a required FK to `organizations` with delete RESTRICT. Migration `0024_organizations` backfills existing sites into the `default` organization before enforcing NOT NULL. Setup creates the personal organization and its bootstrap owner before creating the default site.
 - `id`, `name`, `domain`, `createdAt`, plus identity/branding/theme columns and `defaultLanguage`, `defaultAppearance`, and `defaultSaveAction` (`stay`|`return`|`create_new`, default `stay` — the site-wide default Studio save action; per-user override lives in `users.preferences.saveAction`).
 
 ### `users`
@@ -240,6 +247,10 @@ SDK generation uses this manifest to emit base collection interfaces and `Collec
 
 When seeding local/staging/prod, seed system collection permissions explicitly. Sensitive collections such as `system_state`, `audit_log`, `login_attempts`, `login_baselines`, `admin_backup_codes`, `scim_tokens`, and future API key tables are admin/security-only. See [System Collections & Sensitive Access](./features/system-collections-access.md).
 
+### `api_keys`
+- `scope` is `site` (default) or `organization`. CHECK requires exactly one matching target: site scope has `siteId` and no `organizationId`; organization scope has `organizationId` and no `siteId`. Both targets are foreign keys with delete CASCADE.
+- `prefix`, `tokenHash`, name/expiry/revocation/rotation metadata; plaintext is not stored in this table. Site keys retain their role/policy links. Organization keys have fixed admin authority on their organization, and inherit administrator on its sites.
+
 ## 4. Files & Assets (`platform.ts`)
 
 ### `files`
@@ -307,8 +318,11 @@ for the user-facing and runtime contract.
 ### `ai_approvals`
 | Column | Type | Note |
 |---|---|---|
-| `id` | text PK | nanoid(21) |
-| `siteId` | text FK → sites CASCADE |
+| `id` | text PK | existing IDs preserved; UUIDv7 for organization approvals |
+| `siteId` | text nullable FK → sites CASCADE | site-scoped approval parent |
+| `organizationId` | text nullable FK → organizations CASCADE | organization-scoped approval parent |
+| `organizationRequester` | jsonb nullable | requesting user or API-key identity |
+| `result` | jsonb nullable | committed human receipt, possibly a new key |
 | `agentName` | text | default `'lumibase-copilot'` |
 | `skillName` | text | from the `CORE_SKILLS` registry |
 | `arguments` | jsonb | the skill's arguments |
@@ -317,12 +331,16 @@ for the user-facing and runtime contract.
 | `createdAt`, `decidedAt` | timestamp |
 | `decidedBy` | text FK → users SET NULL |
 
-Index: `(siteId, status)`.
+Index: `(siteId, status)`, `(organizationId, status)`.
 
 Behavior: dangerous skills (`schema:write` or names starting with `delete`) must
 create an `ai_approvals` row and wait for approval instead of executing
 directly. See [AI Copilot](./features/ai-copilot.md). New dangerous harness
 actions also write linked/generalized `agent_approvals` records where applicable.
+
+Migration `0025_organization_approvals` makes `siteId` nullable and adds `organizationId`, `organizationRequester`, and `result`. The CHECK allows one site parent or one organization parent; organization approvals also require requester provenance. Both parents cascade on deletion. Paired restrictive/permissive RLS policies isolate receipts by the active site or organization scope.
+
+Organization MCP writes always wait for human approval. Requester reauthorization, the domain write, and its stored receipt share a transaction. Only authorized humans can retrieve a receipt containing a newly minted key; list responses and agent results omit that secret. Organization-only requests do not borrow the default site. IDs for these organization approvals are UUIDv7; existing approval IDs remain valid.
 
 ### `agent_*` harness tables
 
@@ -347,6 +365,7 @@ Operational notes:
 - `POST /api/v1/agent/generate-app` creates `page_spec`, `component_spec`, `seed_data`, and `api_spec` artifacts and evaluates each artifact before returning.
 - `agent_runs.metrics.stopReason` records completion or budget stop reasons such as `completed`, `error`, and `max_tool_calls`.
 - `agent_tool_calls.cost` stores token/cost estimates after secret masking.
+- `agent_runs.status` `waiting_user` (#710): the run asked a human with `askUser` and is parked until the question is answered (`succeeded`, `stopReason: answered`), times out (`failed`, `stopReason: question_timeout`) or is cancelled. No schema change: the question is an `agent_approvals` row (see below).
 - If the same goal fails at least three runs and a runtime `QueueProvider` is available, the run service enqueues `agent-dead-letter` with the scoped run failure payload.
 
 ### Draft review tables (Jev)
@@ -379,7 +398,7 @@ Content OS columns on existing tables:
 - `revisions`: `authorType`, `createdByRunId`, `model`, `constitutionHash`, `sources`, `confidence`, `staged`, `autoCommitAt` (provenance + veto staging).
 - `items`: `pinnedFields` (Law Zero — fields a human edit locked against agent writes).
 - `agent_goals`: `parentGoalId` (goal tree), `origin` (`user/reconciler/planner/flow`), `intentId`, `driftFingerprint`, `agentRole`.
-- `agent_approvals`: `kind` (`approval`/`veto`), `autoCommitAt`, `approverType` (`human`/`agent`), `approverRunId`.
+- `agent_approvals`: `kind` (`approval`/`veto`/`promotion`/`question`), `autoCommitAt`, `approverType` (`human`/`agent`), `approverRunId`. A `question` row (`askUser`, #710) uses the existing columns: `subject_id` is the `askUser` tool call (whose `input` holds the question, options and context), `status` is `pending`/`answered`/`expired`/`cancelled`, `expires_at` is the deadline, and `decision_reason`/`decided_by`/`decided_at` record the answer and who gave it.
 
 ### Directus-inspired tables (`cms.ts`)
 

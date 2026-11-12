@@ -39,7 +39,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Refresh-token flow — DB integration', (
     // Cascade from sites clears refresh_tokens + user_sites.
     await db.delete(sites).where(sql`${sites.id} = ${SITE}`);
     await db.delete(users).where(sql`${users.id} = ${USER}`);
-    await db.insert(sites).values({ id: SITE, name: 'Refresh IT' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Refresh IT' });
     await db.insert(users).values({ id: USER, email: 'refresh-it@example.com', status: 'active' });
   });
 

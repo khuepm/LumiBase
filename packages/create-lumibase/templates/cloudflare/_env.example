@@ -2,3 +2,8 @@
 JWT_SECRET=change-me-in-production
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=change-me
+
+# Organization plane (server-side; signup off unless explicitly enabled).
+LUMIBASE_ALLOW_ORG_SIGNUP=false
+# Global organization MCP kill switch: off disables it; org setting defaults off.
+LUMIBASE_MCP_ORG_TOOLS=on

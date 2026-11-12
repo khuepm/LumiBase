@@ -44,7 +44,7 @@ describe.skipIf(!hasDbIntegrationUrl)('#579 conversation ownership — DB integr
   beforeEach(async () => {
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.delete(users).where(sql`${users.id} IN (${ALICE}, ${MALLORY})`);
-    await db.insert(sites).values({ id: SITE, name: '579 conversations' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: '579 conversations' });
     await db.insert(users).values([
       { id: ALICE, email: 'alice-579@example.dev' },
       { id: MALLORY, email: 'mallory-579@example.dev' },

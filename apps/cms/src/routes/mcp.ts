@@ -1,3 +1,9 @@
+import { eq } from 'drizzle-orm';
+import { organizations } from '@lumibase/database';
+import { systemDbFor } from '../middleware/db';
+import { organizationActorFromAuth, resolveOrganizationActorRole } from '../services/organization-operations';
+import { OrganizationHarness, organizationMcpEnabled } from '../services/organization-harness';
+import { isFrontendAudience } from '../services/auth/token-audience';
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { isAdminPrincipal } from '../middleware/control-plane-access-guard';
@@ -30,6 +36,39 @@ export const mcpRouter = new Hono<AppEnv>();
 mcpRouter.post('/', async (c) => {
   const db = c.get('db');
   const siteId = c.get('siteId');
+  const auth = c.get('auth');
+  const body: unknown = await c.req.json().catch(() => undefined);
+  const call = body as { method?: string; params?: { name?: unknown; arguments?: { organizationId?: unknown } } } | null;
+  const orgCall = call?.method === 'tools/call' && typeof call.params?.name === 'string' && call.params.name.startsWith('org:');
+  const orgKey = auth?.apiKey?.scope === 'organization';
+  let organizationId: string | undefined = orgKey && typeof auth.apiKey?.organizationId === 'string'
+    ? auth.apiKey.organizationId : undefined;
+  let organizationPort: OrganizationHarness | undefined;
+  // Site tools on a pinned organization key obey the site's MCP flag. The
+  // organization flag gates only organization tools (and the unpinned profile).
+  if (orgCall || (orgKey && !siteId)) {
+    if (isFrontendAudience(auth?.raw?.aud) || (auth?.apiKeyId && !orgKey)) {
+      await auditSecurityGuardDenied(c, 'organization_access_denied', { reason: 'site_scoped_credential_on_org_plane' });
+      return c.json({ errors: [{ code: 'ORGANIZATION_FORBIDDEN' }] }, 403);
+    }
+    const target = orgKey ? auth.apiKey?.organizationId : call?.params?.arguments?.organizationId;
+    if (typeof target !== 'string') return c.json({ errors: [{ code: 'VALIDATION' }] }, 400);
+    organizationId = target;
+    const authorizationDb = systemDbFor(c);
+    const requester = organizationActorFromAuth(auth);
+    const role = await resolveOrganizationActorRole(authorizationDb, target, requester);
+    if (!role) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
+    const [org] = await authorizationDb.select().from(organizations).where(eq(organizations.id, target)).limit(1);
+    if (!org || !organizationMcpEnabled(org.settings, c.env)) {
+      return c.json({ errors: [{ code: 'MCP_DISABLED', message: 'Enable contentOs.mcp.allowOrganizationTools for this organization.' }] }, 404);
+    }
+    organizationPort = new OrganizationHarness({ db: authorizationDb, organizationId: target, requester,
+      env: c.env, runtime: c.get('runtime'), requestId: c.get('requestId'), actorEmail: auth.email });
+    if (orgCall || !siteId) {
+      const response = await new McpService(organizationPort, { organizationId: target }).handle(body, []);
+      return response === null ? c.body(null, 202) : c.json(response);
+    }
+  }
   const flags = await getContentOsFlags(db, siteId);
   if (!flags.mcp) {
     return c.json(
@@ -39,12 +78,12 @@ mcpRouter.post('/', async (c) => {
   }
 
   const runtime = c.get('runtime');
-  const auth = c.get('auth');
   const llm = createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>);
   const registry = new ToolRegistryService(db, siteId, CORE_SKILLS);
   const harness = new AISecureHarness({
     db,
     siteId,
+    organizationId,
     schemaService: new SchemaService({ db, siteId, cache: runtime.cache }),
     // Request-scoped ItemService so MCP-driven skills enforce the same
     // row/field RBAC as the bearer token would via the Agent API — matching
@@ -69,13 +108,15 @@ mcpRouter.post('/', async (c) => {
   });
 
   const port: McpHarnessPort = {
-    listTools: async () =>
-      (await registry.listTools()).map(({ name, description, inputSchema, enabled }) => ({
+    listTools: async () => [
+      ...(await registry.listTools()).map(({ name, description, inputSchema, enabled }) => ({
         name,
         description,
         inputSchema,
         enabled,
       })),
+      ...(organizationPort ? (await organizationPort.listTools()).filter((tool) => tool.name === 'org:get_organization' || tool.name === 'org:list_sites') : []),
+    ],
     execute: (skillName, args, capabilities, contextMessage) =>
       harness.execute(skillName, args, capabilities, contextMessage, {
         // Provenance for anything this call parks (#472), so approving it later
@@ -84,8 +125,6 @@ mcpRouter.post('/', async (c) => {
         requestedByPrincipal: approvalRequesterFromAuth(c.get('auth'), siteId),
       }),
   };
-
-  const body: unknown = await c.req.json().catch(() => undefined);
 
   // Defense-in-depth admin backstop. The MCP surface is not listed in
   // `CONTROL_PLANE_PATHS`, so `withControlPlaneAccessGuard()` never runs for
@@ -132,7 +171,7 @@ mcpRouter.post('/', async (c) => {
     );
   }
 
-  const response = await new McpService(port).handle(body, grant.capabilities);
+  const response = await new McpService(port, { organizationId }).handle(body, grant.capabilities);
   if (response === null) {
     // Notification — Streamable HTTP answers 202 Accepted with no body.
     return c.body(null, 202);
@@ -157,6 +196,7 @@ function controlPlaneSkillFromCall(body: unknown): string | null {
   if (request.method !== 'tools/call') return null;
   const name = request.params?.name;
   if (typeof name !== 'string' || name.length === 0) return null;
+  if (name.startsWith('org:')) return name;
   const skill = CORE_SKILLS[name];
   if (skill) {
     return isControlPlaneSkill(skill, name) ? name : null;

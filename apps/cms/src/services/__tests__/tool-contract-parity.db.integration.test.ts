@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import {
@@ -69,7 +70,7 @@ describe.skipIf(!hasDbIntegrationUrl)('#585 tool contract parity — DB integrat
   beforeEach(async () => {
     await db.delete(sites).where(eq(sites.id, SITE));
     await db.delete(users).where(eq(users.id, ADMIN));
-    await db.insert(sites).values({ id: SITE, name: '585 parity' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: '585 parity' });
     await db.insert(users).values({ id: ADMIN, email: 'audit-585-admin@example.dev' });
     await db.insert(roles).values({ id: ADMIN_ROLE, siteId: SITE, name: '585 Administrator', adminAccess: true, appAccess: true });
     await db.insert(userSites).values({ userId: ADMIN, siteId: SITE, roleId: ADMIN_ROLE });

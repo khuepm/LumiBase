@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { flows, sites, type Database } from '@lumibase/database';
@@ -29,7 +30,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Schedule-flow sweep — DB integration (B
 
   beforeEach(async () => {
     await db.delete(sites).where(eq(sites.id, SITE));
-    await db.insert(sites).values({ id: SITE, name: 'Flow scheduler IT' });
+    await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Flow scheduler IT' });
     const [flow] = await db
       .insert(flows)
       .values({

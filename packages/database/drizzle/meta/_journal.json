@@ -169,6 +169,20 @@
       "when": 1789000800000,
       "tag": "0023_ai_conversation_api_key_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794236400000,
+      "tag": "0024_organizations",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794241373412,
+      "tag": "0025_organization_approvals",
+      "breakpoints": true
     }
   ]
 }

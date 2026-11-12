@@ -20,6 +20,7 @@ const STATUS_TONES: Record<string, string> = {
   running: 'bg-sky-100 text-sky-800',
   queued: 'bg-muted text-muted-foreground',
   awaiting_approval: 'bg-amber-100 text-amber-800',
+  waiting_user: 'bg-violet-100 text-violet-800',
   failed: 'bg-destructive/10 text-destructive',
   cancelled: 'bg-muted text-muted-foreground',
 };

@@ -172,7 +172,7 @@ describe.skipIf(!hasDbIntegrationUrl)('request-path RLS scope (B130) — real Po
       [SITE_A, 2],
       [SITE_B, 1],
     ] as const) {
-      await sysSql`INSERT INTO lumibase_sites (id, name) VALUES (${site}, ${site})`;
+      await sysSql`INSERT INTO lumibase_sites (organization_id, id, name) VALUES ((SELECT id FROM lumibase_organizations WHERE slug='default'), ${site}, ${site})`;
       await sysSql`INSERT INTO lumibase_collections (id, site_id, name) VALUES (${`col_${site}`}, ${site}, ${`posts_${site}`})`;
       for (let i = 1; i <= n; i += 1) {
         await sysSql`INSERT INTO lumibase_items (id, site_id, collection_id, status) VALUES (${`it_${site.slice(-1)}_${i}`}, ${site}, ${`col_${site}`}, 'published')`;
@@ -293,7 +293,7 @@ describe.skipIf(!hasDbIntegrationUrl)('request-path RLS scope (B130) — real Po
 
     // Same request with the flag off on the NOBYPASSRLS role: nothing visible.
     const off = await (await get(app, `/api/v1/deliver/llms.txt/${SITE_A}`, null, OFF)).text();
-    expect(off).toContain('No public collections yet.');
+    expect(off).toContain('Site not found.');
   });
 
   it('system connection: cross-site worker sweeps and multi-site inserts work; the app role sees nothing', async () => {

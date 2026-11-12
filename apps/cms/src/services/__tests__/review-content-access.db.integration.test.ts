@@ -55,8 +55,8 @@ describe.skipIf(!hasDbIntegrationUrl)('review content access for a worker princi
   beforeEach(async () => {
     await db.delete(sites).where(sql`${sites.id} IN (${SITE}, ${OTHER})`);
     await db.insert(sites).values([
-      { id: SITE, name: 'RCA' },
-      { id: OTHER, name: 'RCA other' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'RCA' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER, name: 'RCA other' },
     ]);
     await db.insert(policies).values([
       { id: MASKED_POLICY, siteId: SITE, name: 'masked reader', key: 'rca-masked', adminAccess: false, appAccess: true },

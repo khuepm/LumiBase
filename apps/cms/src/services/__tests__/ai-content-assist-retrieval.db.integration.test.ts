@@ -90,8 +90,8 @@ describe.skipIf(!hasDbIntegrationUrl)('#581 aiContentAssist retrieval context â€
     titles.clear();
     await db.delete(sites).where(sql`${sites.id} IN (${SITE_A}, ${SITE_B})`);
     await db.insert(sites).values([
-      { id: SITE_A, name: '581 A' },
-      { id: SITE_B, name: '581 B' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_A, name: '581 A' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_B, name: '581 B' },
     ]);
     await db.insert(policies).values({
       id: POLICY,

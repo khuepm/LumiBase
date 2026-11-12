@@ -10,7 +10,88 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Added
+
+- **Agent harness: `askUser` clarification tool (#710).** An agent that cannot continue
+  without a decision it may not make asks a human instead of guessing. The run parks in
+  the new `waiting_user` status (no queue worker, no lock held), the question reaches the
+  Mission Control inbox and a `question` notification, and an answer resumes the run: the
+  `askUser` tool call completes with the answer (wrapped as untrusted data for the model)
+  and the run settles `succeeded`. Stored as `agent_approvals` rows with
+  `kind = 'question'` — **no migration**. New endpoints `GET /api/v1/agent/questions`,
+  `GET /api/v1/agent/questions/:id` and `POST /api/v1/agent/questions/:id/answer`
+  (signed-in users only — any API key, site- or organization-scoped, gets `403`; a holder
+  of `approvals:decide`, or the requesting user once backlog B207 opens the route beyond
+  site administrators; tenant-scoped,
+  audited as `agent_question.*`, a second answer is `409`; the requester's rights are
+  re-resolved before resuming). New read skill `getUserAnswer` returns the outcome to the
+  requester only. Both skills are offered to governed agents (agent runs, the queue
+  worker, MCP), not to the Copilot chat, which has no run to pause. Questions time out (default one day, max seven) through the 5-minute
+  `agent-question-sweep` on both runtimes, failing the run with
+  `stopReason: question_timeout`; freezing a role or the site, pausing an intent or
+  cancelling the run ends waiting runs. MCP `tools/call` returns
+  `status: "waiting_user"` with `questionId`. Metrics
+  `lumibase_agent_questions_total{status}` and `lumibase_agent_question_wait_seconds`; the
+  trust ledger shows question counts in promotion evidence.
 - `POST /api/v1/deployments/webhook/:provider/:siteId` carries the tenant in the URL path so Vercel and Netlify outgoing deployment webhooks (which cannot send custom `X-Lumi-Site` headers) work on the shared API host (`api.lumibase.dev`) without a per-site host mapping. `POST /api/v1/deployments/webhook/:provider` remains supported via `withTenant` (#569, B163).
+
+### Changed
+
+- `GET /api/v1/agent/approvals` no longer lists `askUser` questions, and
+  `POST /api/v1/agent/approvals/:id/decide` / `/reopen` refuse a question id with
+  `409 NOT_AN_APPROVAL`.
+- The `agent-runs` queue worker now passes a Web Push notifier to the harness, so
+  approvals and questions parked by a queued run notify subscribed operators (realtime
+  in-app delivery still needs a request context). It forwards only `approval` and
+  `question`: queued runs still send no run succeeded/failed pushes. On Workers the send
+  is kept alive with the queue consumer's `waitUntil` (the `queue()` dispatcher now
+  forwards its `ExecutionContext`); on Docker the worker awaits it; a failed send never
+  fails the run.
+
+## [2.0.0] - 2026-11-10
+
+### Version
+- `v2.0.0`
+
+### Date
+- `2026-11-10`
+
+### Highlights
+- Organizations (ADR-013): manage sites, members, roles and credentials within an organization, with a Studio workspace switcher and human-approved organization MCP operations.
+- Security hardening for cross-tenant site administration and queued agent execution, plus production setup fixes and copy-ready MCP starter prompts.
+
+### Added
+- Organization schema and fixed owner/admin/member/billing permissions; organization-scoped `lbo_` keys and `/api/v1/orgs` APIs for organizations, sites, members, keys and approvals. Organization owners/admins inherit administrator access to their sites; site credentials cannot administer an organization (#634, #637).
+- Studio Settings → Organization with General, Sites, Members, Keys and Approvals. The Organization entry remains visible to owners/admins with one organization; the switcher appears when there are multiple organizations. Site switching clears cached content, and login/refresh use current organization authority (#639).
+- Eight organization MCP tools, token-specific tool profiles, per-call site routing and read-only configuration. Organization writes require human approval, recheck the requester's current permissions and commit the operation with its receipt atomically. Keys cannot approve requests or read secret receipts (#638).
+- Twelve copy-ready starter prompts on Studio's MCP setup page, grouped by Explore, Content, Schema and Operations, with access labels and checks against registered tool names (#631).
+- Bilingual organization API, data-model, security, MCP and Studio guides; ADR-013 is Accepted. Organization environment defaults are included in local, Docker and scaffold examples (#640).
+
+### Fixed
+- Queued agent jobs bound to a user or API key fail with `PERMISSION_CONTEXT_MISSING` when permission resolution returns no context, instead of falling back to system privileges (#580, #632).
+- Cross-tenant administration through the legacy `/api/v1/admin/sites` routes is eliminated by removing those routes; organization APIs enforce membership and ownership instead (#628, #637).
+- Organization keys can no longer change members, create or revoke organization keys, or update organization settings; those operations require a live human owner/admin session. Minted organization-key plaintext is kept out of approval storage and appears only in the authorized human execution receipt (#775).
+- `LUMIBASE_READ_ONLY=true` is enforced from the HTTP request method and an explicit query/preview allowlist, so a mutating request cannot bypass read-only mode through a misleading tool name (#775).
+- Studio no longer displays the development badge in production. New setup derives the site URL from the Studio origin rather than saving a localhost default; CMS setup without a project URL stores no guessed URL. Existing site URLs are unchanged (#627).
+- Organization Settings remain usable on narrow screens and retain the active navigation item under a custom admin path (#639).
+- Pending transfer approvals can be rejected, and completed receipts replayed, after the destination organization is deleted. Executing a pending transfer still requires both organizations and the same human owner of each (#640).
+
+### Changed
+- Updated runtime, build and test dependencies, including jsdom 31 and `@hookform/resolvers` 7, and refreshed CodeQL tooling (#616, #619, #620, #626).
+
+### Removed
+- Legacy `POST /api/v1/admin/sites` and `DELETE /api/v1/admin/sites/:id`, and `LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT`. Use `/api/v1/orgs/:orgId/sites` instead. k6 provisioning now uses `ORGANIZATION_ID` and `ORGANIZATION_TOKEN` (`lbo_`); destructive cleanup requires `ORGANIZATION_OWNER_TOKEN` (a Studio owner session).
+
+### Migrations
+- `0024_organizations`: backfills all existing sites into one organization with slug `default`, makes the bootstrap user its owner when present, and retains existing API keys in site scope. Fresh setup creates the parent organization before inserting site `__default__` (#634).
+- `0025_organization_approvals`: preserves site approvals while adding organization-scoped approvals, requester attribution and human-only execution receipts. Every approval has exactly one site or organization parent (#638).
+
+### Upgrade notes
+- Compatibility: the removed admin-site endpoints and documented containment flag are breaking changes for integrations that used them. The [versioning policy](docs/en/contributing/versioning-policy.md) requires a major version for removed API or documented environment-variable contracts.
+- Back up PostgreSQL before applying migrations `0024` and `0025`; run the database migrations before starting the new CMS. There is no automatic schema rollback: restore the pre-upgrade backup to revert. Reapply `packages/database/migrations/rls-policies.sql` when using RLS enforcement. Repair manually introduced orphan organization IDs or inconsistent API key scope targets before retrying a failed migration.
+- Existing installations see their `default` organization in Settings → Organization. Owners may rename its slug. Site transfers require the same human to own both organizations; organization keys are never owners.
+- `LUMIBASE_ALLOW_ORG_SIGNUP` defaults off; `true` allows Studio users to create organizations. Bootstrap operators do not need this flag. `LUMIBASE_MCP_ORG_TOOLS` defaults on as a global gate, but organization MCP stays disabled until its organization setting is enabled; set the environment flag to `off` to force it off. Organization MCP writes always require human approval.
+- Replace legacy admin-site API calls and remove the retired containment flag from deployment configuration. Existing site API keys remain site-scoped; mint an organization key explicitly for organization API or MCP access.
+- Password-only recovery still requires a live site. Before deleting the last site, retain a valid organization credential or Studio session to recreate a site; otherwise restore a backup (B196).
 
 ## [1.0.1] - 2026-11-09
 
@@ -397,7 +478,10 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   capability-snapshot jobs have no principal and keep the system posture, as do
   development (`dev`) principals: they exist only in the development runtime
   with the `admin` role and have no persisted role a permission context could
-  resolve. Audit report:
+  resolve. A user or API-key job whose principal resolves without a permission
+  context now fails (`stopReason: capabilities_denied`, code
+  `PERMISSION_CONTEXT_MISSING`) instead of running with the system posture.
+  Audit report:
   `docs/review-agent/2026-11-01-ai-audit-580-authz-parity.md`. No migration,
   env or setup step.
 - **Agent runs: truthful terminal states, no replay of an executed write, and no

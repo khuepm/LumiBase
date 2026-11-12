@@ -102,8 +102,8 @@ describe.skipIf(!hasDbIntegrationUrl)('#579 compromised-model tool calls — DB 
   beforeEach(async () => {
     await db.delete(sites).where(sql`${sites.id} IN (${SITE_A}, ${SITE_B})`);
     await db.insert(sites).values([
-      { id: SITE_A, name: '579 A' },
-      { id: SITE_B, name: '579 B' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_A, name: '579 A' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_B, name: '579 B' },
     ]);
     await db.insert(policies).values({
       id: POLICY,

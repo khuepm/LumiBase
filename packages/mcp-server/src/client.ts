@@ -1,6 +1,11 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { classifyTokenPrefix } from '@lumibase/contracts';
+
 export interface LumiBaseConfig {
   url: string;
-  siteId: string;
+  siteId?: string;
+  tokenKind?: 'site' | 'organization';
+  readOnly?: boolean;
   token: string;
 }
 
@@ -32,25 +37,83 @@ export class McpUnavailableError extends Error {
   }
 }
 
+/**
+ * POST endpoints that only read or preview, so `LUMIBASE_READ_ONLY` may call
+ * them. Everything else that is not a GET is refused by the client itself, not
+ * only hidden from `tools/list`: hiding is decided by tool name, and a tool
+ * whose name hides a write must still not be able to issue one.
+ */
+export const READ_ONLY_POST_PATHS: readonly RegExp[] = [
+  /^\/collections\/diff$/,
+  /^\/tm\/lookup$/,
+  /^\/dashboards\/[^/]+\/panels\/[^/]+\/data$/,
+  /^\/dashboards\/[^/]+\/panels\/preview$/,
+  /^\/permissions\/check$/,
+  /^\/access\/import\?dryRun=true$/,
+  /^\/access\/conflicts\/check$/,
+  /^\/agent\/intents\/compile$/,
+];
+
+/** Governed JSON-RPC tool calls that only read. */
+export const READ_ONLY_RPC_TOOLS: ReadonlySet<string> = new Set([
+  'org:get_organization',
+  'org:list_sites',
+  'org:list_org_members',
+]);
+
+export class ReadOnlyViolationError extends Error {
+  constructor(what: string) {
+    super(`Refused: LUMIBASE_READ_ONLY is set and ${what} can change state.`);
+    this.name = 'ReadOnlyViolationError';
+  }
+}
+
 export class LumiBaseClient {
   private readonly baseUrl: string;
   private readonly origin: string;
   private readonly headers: Record<string, string>;
+  readonly tokenKind: 'site' | 'organization';
+  readonly siteId?: string;
+  readonly readOnly: boolean;
+  private readonly scope = new AsyncLocalStorage<{ siteId?: string }>();
+
+  get currentSiteId(): string | undefined {
+    return this.scope.getStore()?.siteId ?? this.siteId;
+  }
 
   constructor(config: LumiBaseConfig) {
+    this.tokenKind = config.tokenKind ?? (classifyTokenPrefix(config.token) === 'organization' ? 'organization' : 'site');
+    this.siteId = config.siteId;
+    this.readOnly = config.readOnly ?? false;
     this.origin = config.url.replace(/\/$/, '');
     this.baseUrl = this.origin + '/api/v1';
     this.headers = {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.token}`,
-      'X-Lumi-Site': config.siteId,
     };
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  /** Each concurrent tool invocation owns its site scope; the client is never mutated. */
+  withSite<T>(siteId: string, run: () => T): T {
+    return this.scope.run({ siteId }, run);
+  }
+
+  private requestHeaders(siteOverride?: string, organization = false): Record<string, string> {
+    const siteId = siteOverride ?? this.scope.getStore()?.siteId ?? this.siteId;
+    return { ...this.headers, ...(!organization && siteId ? { 'X-Lumi-Site': siteId } : {}) };
+  }
+
+  private assertReadOnlyAllows(method: string, path: string): void {
+    if (!this.readOnly || method === 'GET') return;
+    if (method === 'POST' && READ_ONLY_POST_PATHS.some((pattern) => pattern.test(path))) return;
+    throw new ReadOnlyViolationError(`${method} ${path}`);
+  }
+
+  private async request<T>(method: string, path: string, body?: unknown, siteOverride?: string): Promise<T> {
+    this.assertReadOnlyAllows(method, path);
     const res = await fetch(`${this.baseUrl}${path}`, {
       method,
-      headers: this.headers,
+      headers: this.requestHeaders(siteOverride, path === '/orgs' || path.startsWith('/orgs/')),
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
@@ -65,24 +128,24 @@ export class LumiBaseClient {
     return json.data as T;
   }
 
-  get<T>(path: string) {
-    return this.request<T>('GET', path);
+  get<T>(path: string, siteOverride?: string) {
+    return this.request<T>('GET', path, undefined, siteOverride);
   }
 
-  post<T>(path: string, body: unknown) {
-    return this.request<T>('POST', path, body);
+  post<T>(path: string, body: unknown, siteOverride?: string) {
+    return this.request<T>('POST', path, body, siteOverride);
   }
 
-  patch<T>(path: string, body: unknown) {
-    return this.request<T>('PATCH', path, body);
+  patch<T>(path: string, body: unknown, siteOverride?: string) {
+    return this.request<T>('PATCH', path, body, siteOverride);
   }
 
-  put<T>(path: string, body: unknown) {
-    return this.request<T>('PUT', path, body);
+  put<T>(path: string, body: unknown, siteOverride?: string) {
+    return this.request<T>('PUT', path, body, siteOverride);
   }
 
-  delete<T = void>(path: string) {
-    return this.request<T>('DELETE', path);
+  delete<T = void>(path: string, siteOverride?: string) {
+    return this.request<T>('DELETE', path, undefined, siteOverride);
   }
 
   /**
@@ -98,10 +161,13 @@ export class LumiBaseClient {
    * @throws {McpUnavailableError} when the site has not enabled `contentOs.mcp`.
    * @throws {LumiBaseApiError} for transport/HTTP failures and JSON-RPC errors.
    */
-  async jsonRpc<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+  async jsonRpc<T>(method: string, params?: Record<string, unknown>, options: { siteOverride?: string; organization?: boolean } = {}): Promise<T> {
+    if (this.readOnly && method === 'tools/call' && !READ_ONLY_RPC_TOOLS.has(String(params?.name))) {
+      throw new ReadOnlyViolationError(`tools/call ${String(params?.name)}`);
+    }
     const res = await fetch(`${this.baseUrl}/mcp`, {
       method: 'POST',
-      headers: this.headers,
+      headers: this.requestHeaders(options.siteOverride, options.organization),
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, ...(params ? { params } : {}) }),
     });
 
@@ -147,7 +213,7 @@ export class LumiBaseClient {
   }
 
   private async textRequest(url: string, method: string): Promise<string> {
-    const res = await fetch(url, { method, headers: this.headers });
+    const res = await fetch(url, { method, headers: this.requestHeaders() });
     const text = await res.text();
     if (!res.ok) {
       throw new LumiBaseApiError(res.status, [
@@ -162,9 +228,10 @@ export class LumiBaseClient {
    * `{data}` envelope from the JSON response (e.g. the NDJSON restore endpoint).
    */
   async postRaw<T>(path: string, body: string, contentType = 'application/x-ndjson'): Promise<T> {
+    this.assertReadOnlyAllows('POST', path);
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
-      headers: { ...this.headers, 'Content-Type': contentType },
+      headers: { ...this.requestHeaders(), 'Content-Type': contentType },
       body,
     });
     if (res.status === 204) return undefined as T;
@@ -181,11 +248,13 @@ export function configFromEnv(): LumiBaseConfig {
   const siteId = process.env['LUMIBASE_SITE_ID'];
   const token = process.env['LUMIBASE_TOKEN'];
 
-  if (!url || !siteId || !token) {
+  const tokenKind = token && classifyTokenPrefix(token) === 'organization' ? 'organization' : 'site';
+  if (!url || !token || (tokenKind === 'site' && !siteId)) {
     throw new Error(
       'Missing required env vars: LUMIBASE_URL, LUMIBASE_SITE_ID, LUMIBASE_TOKEN',
     );
   }
 
-  return { url, siteId, token };
+  if (tokenKind === 'organization' && siteId) console.error(`[lumibase-mcp] pinned to site ${siteId}`);
+  return { url, ...(siteId ? { siteId } : {}), token, tokenKind, readOnly: process.env['LUMIBASE_READ_ONLY'] === 'true' };
 }

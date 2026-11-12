@@ -26,6 +26,7 @@ import {
   AlertCircle,
   AlertTriangle,
   Clock,
+  MessageCircleQuestion,
   PlusCircle,
   Pencil,
   ShieldAlert,
@@ -82,6 +83,7 @@ const MAX_NOTIFICATIONS = 50;
 const EXCEPTION_ICONS = {
   veto: { icon: Clock, cls: 'text-amber-600' },
   approval: { icon: ShieldAlert, cls: 'text-sky-600' },
+  question: { icon: MessageCircleQuestion, cls: 'text-violet-600' },
   incident: { icon: AlertTriangle, cls: 'text-destructive' },
   intent_error: { icon: AlertTriangle, cls: 'text-destructive' },
 } as const;
@@ -89,6 +91,7 @@ const EXCEPTION_ICONS = {
 const AGENT_ICONS = {
   approval: { icon: ShieldAlert, cls: 'text-sky-600' },
   veto: { icon: Clock, cls: 'text-amber-600' },
+  question: { icon: MessageCircleQuestion, cls: 'text-violet-600' },
   incident: { icon: AlertTriangle, cls: 'text-destructive' },
   goal: { icon: CheckCheck, cls: 'text-emerald-600' },
   run: { icon: AlertCircle, cls: 'text-muted-foreground' },

@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-11-09T12:46:09.459Z
+version: 14
+lastUpdated: 2026-11-11T02:57:08.013Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: c35d3cb83ac0c70c
+sourceHash: 16b14b2f7c418709
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-09T12:46:09.459Z
-codeVerifiedHash: c35d3cb83ac0c70c
+codeVerified: 2026-11-11T02:57:08.013Z
+codeVerifiedHash: 16b14b2f7c418709
 codeVerifiedClaims: 28
 ---
 
@@ -17,7 +17,7 @@ codeVerifiedClaims: 28
 
 ## TL;DR
 
-LumiBase exposes **two MCP surfaces**. Both run through a single harness codepath, so the decision for a tool called via MCP is **identical** to calling the Agent API directly (the "MCP parity" invariant, Property 14):
+LumiBase exposes **two MCP surfaces**. Governed site tools use the same site harness as the Agent API (the "MCP parity" invariant, Property 14). Organization tools use the organization harness and its human approval boundary:
 
 | Surface | Transport | Location | Used for |
 |---|---|---|---|
@@ -41,6 +41,7 @@ Source: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`a
 - **Mapping decision → tool result** (an important invariant):
   - `executed` → `isError: false`, data in `structuredContent`.
   - `pending_approval` → `isError: false`, with **`approvalId` inside `structuredContent`**; this is NOT a protocol error.
+  - `waiting_user` (the `askUser` tool, #710) → `isError: false`, with **`questionId` inside `structuredContent`**; the run is parked until a human answers. This is NOT a protocol error.
   - `denied` → `isError: true`.
   - Protocol errors are reserved for genuine JSON-RPC failures: `-32700` parse, `-32600` invalid request, `-32601` method not found, `-32602` invalid params.
 - **Guards inherited from the harness** (zero MCP-specific logic): kill switch, capability, autonomy (L0–L4), constitution pin, load guard, veto window. See [`docs/en/features/agent-harness-layer.md`](../features/agent-harness-layer.md).
@@ -63,7 +64,37 @@ Source: [`packages/mcp-server/`](../../../packages/mcp-server/) (built on `@mode
 - **Entry:** `packages/mcp-server/src/index.ts` — `new McpServer({ name: 'lumibase', ... })`, registers the collection/field/item tools, then `connect(StdioServerTransport)`.
 - **Client:** `LumiBaseClient` — HTTP to `/api/v1` with a Bearer token + site header.
 - **Config:** [`docs/en/agent-setup/mcp-config.json`](../agent-setup/mcp-config.json) — env `LUMIBASE_URL`, `LUMIBASE_SITE_ID`, `LUMIBASE_TOKEN`.
-- **Studio:** the *Data model → Set up MCP for your IDE* page (`/data-model/mcp-setup`) creates a dedicated role-scoped API key, generates the Cursor/Claude Desktop/VS Code config, and has a **Try these prompts** section — copy-ready starter prompts grouped as Explore/Content/Schema/Operations and labelled `Read-only`/`Writes data`/`Admin role`. The list lives in [`apps/studio/src/modules/data-model/mcp-prompts.ts`](../../../apps/studio/src/modules/data-model/mcp-prompts.ts); each prompt declares the tools it uses and a test checks them against the tools the server actually registers.
+- **Studio:** the *Data model → Set up MCP for your IDE* page (`/data-model/mcp-setup`) creates a dedicated role-scoped API key, generates the Cursor/Claude Desktop/VS Code config, and has a **Try these prompts** section — copy-ready starter prompts grouped as Explore/Content/Schema/Operations and labelled `Read-only`/`Writes data`/`Admin role`, in English and Vietnamese (a language toggle that defaults to the Studio UI language). The list lives in [`apps/studio/src/modules/data-model/mcp-prompts.ts`](../../../apps/studio/src/modules/data-model/mcp-prompts.ts); each prompt declares the tools it uses and a test checks them against the tools the server actually registers.
+
+
+### Organization credentials (ADR-013)
+
+Example for an unpinned organization key. Keep the sample read-only; set `LUMIBASE_READ_ONLY=false` to request writes, enable organization MCP in Settings, and approve requests as a human.
+
+```json
+{
+  "mcpServers": {
+    "lumibase-organization": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@lumibase/mcp-server"
+      ],
+      "env": {
+        "LUMIBASE_URL": "http://localhost:1989",
+        "LUMIBASE_TOKEN": "lbo_<organization-key>",
+        "LUMIBASE_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
+
+
+
+Set `LUMIBASE_READ_ONLY=true` to publish only tools annotated as read-only. The client also refuses any non-GET request in this mode except a fixed list of preview/query endpoints (schema diff, translation-memory lookup, insight panels, permission and access checks, intent compile), so a tool cannot write even if its name looks like a read. With an `lbk_` key, `LUMIBASE_SITE_ID` remains required and the existing site tool list is unchanged. With an `lbo_` key, omit the site to expose eight organization tools (`get_organization`, `list_sites`, `create_site`, `delete_site`, `transfer_site`, `list_org_members`, `invite_org_member`, `create_org_key`) plus site tools requiring a `site` argument. Pinning a site exposes the original site tools and the first two organization reads. Parallel calls cannot share site headers.
+
+Organization writes always use the governed HTTP endpoint, including when `LUMIBASE_MCP_GOVERNED=off`; there is no REST fallback. Enable organization setting `contentOs.mcp.allowOrganizationTools`; global `LUMIBASE_MCP_ORG_TOOLS=off` overrides it. Every organization mutation waits for human approval. The `confirm` argument is an acknowledgement, not an approval. An owner/admin reads `/api/v1/orgs/:orgId/approvals`, opens `/:approvalId`, and posts `{"decision":"approved"}` or `{"decision":"rejected"}` to `/:approvalId/decide`. Owner-only operations still require an owner; transfers require the same human owner in both organizations. API keys cannot decide or read receipts. New organization key plaintext appears only in the human receipt. The requester must still hold live authority when approved; execution and the receipt commit atomically. Organization approvals use a real organization parent (migration `0025`), including organizations with zero sites.
 
 ### The fixed tools (CRUD + read-only insights)
 

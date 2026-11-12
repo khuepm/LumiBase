@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { eq } from 'drizzle-orm';
@@ -47,8 +48,8 @@ describe.skipIf(!hasDbIntegrationUrl)('DeploymentService.listDeployments — ord
       await db.delete(sites).where(eq(sites.id, site));
     }
     await db.insert(sites).values([
-      { id: SITE_A, name: 'Deploy order A' },
-      { id: SITE_B, name: 'Deploy order B' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_A, name: 'Deploy order A' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE_B, name: 'Deploy order B' },
     ]);
     targetA = await seedTarget(SITE_A);
     targetB = await seedTarget(SITE_B);

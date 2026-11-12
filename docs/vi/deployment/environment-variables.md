@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 14
-lastUpdated: 2026-11-09T10:41:23.549Z
+version: 16
+lastUpdated: 2026-11-10T01:58:25.627Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 62f5ec3e5a6b8a6c
+sourceHash: 2539ffa0eafcebe0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-09T10:41:23.549Z
-codeVerifiedHash: 62f5ec3e5a6b8a6c
-codeVerifiedClaims: 86
+codeVerified: 2026-11-10T01:58:25.627Z
+codeVerifiedHash: 2539ffa0eafcebe0
+codeVerifiedClaims: 84
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -33,7 +33,8 @@ Trang này liệt kê mọi biến môi trường và binding Cloudflare mà Lum
 | `LUMIBASE_RUNTIME` | Chỉ Docker | `cloudflare` | `docker` cho Node.js/Docker; Cloudflare Workers tự suy ra từ binding |
 | `JWT_SECRET` | ✓ | — | Secret để ký/xác thực JWT ứng dụng. Tối thiểu 32 ký tự. **Với production Cloudflare, đặt bằng `wrangler secret put JWT_SECRET --env production`; không bao giờ commit hay đặt trong `[env.production.vars]`.** |
 | `LUMIBASE_DEV_AUTH` | Chỉ local dev | `false` | Đặt `true` để bỏ qua auth Logto trong local dev. **Không bao giờ bật ở production; `pnpm release:check` sẽ fail nếu production resolve thành `true`.** |
-| `LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT` | Chỉ test/load | không đặt | Đặt `true` để site admin được tạo site (`POST /api/v1/admin/sites`) và xoá site khác với site trong `X-Lumi-Site` (`DELETE /api/v1/admin/sites/:id`). Runner k6 cross-site-leak dùng biến này. Mọi giá trị khác giữ cả hai bị từ chối (site admin vẫn chỉ xoá được site của chính mình). **Không bao giờ bật ở production** — nó cho mọi site admin thao tác trên mọi tenant. |
+| `LUMIBASE_ALLOW_ORG_SIGNUP` | Tuỳ chọn | không đặt | Đặt `true` để người dùng Studio đã xác thực được tạo organization. Bootstrap instance operator có thể tạo organization mà không cần cờ này. Tạo/xoá site dùng organization API; các route quản lý site admin cũ và cờ riêng cho test đã bị gỡ. |
+| `LUMIBASE_MCP_ORG_TOOLS` | Optional | `on` | Đặt `off` để tắt MCP organization toàn cục, bất kể `contentOs.mcp.allowOrganizationTools`. Giá trị khác giữ quyền quyết định ở setting từng organization; setting này mặc định `false`. Không tắt MCP site. |
 | `LUMIBASE_REALTIME_ENABLED` | ✗ | — | **Chưa implement.** Hiện không code nào đọc biến này; đặt nó không có tác dụng gì. Đang được theo dõi như mục tiêu "explicit enablement" trong [realtime implementation](../architecture/realtime-websocket-implementation.md). |
 | `VITE_LUMIBASE_ALLOW_ADMIN_PATH_REDIRECT` | Chỉ setup/debug | `false` | Opt-in phía client cho phép redirect tiện lợi tới admin path riêng tư. Giữ không đặt ở production, trừ một cửa sổ setup/debug tạm thời có kiểm soát. |
 
@@ -334,7 +335,7 @@ Trước khi deploy lên production, xác minh:
 
 - [ ] `JWT_SECRET` dài ít nhất 32 ký tự và lưu dưới dạng Wrangler Secret hoặc Docker secret
 - [ ] `LUMIBASE_DEV_AUTH` KHÔNG được đặt `true`
-- [ ] `LUMIBASE_ALLOW_ADMIN_SITE_MANAGEMENT` KHÔNG được đặt `true`
+- [ ] Chỉ bật `LUMIBASE_ALLOW_ORG_SIGNUP` khi chủ động cho phép đăng ký organization
 - [ ] Credential database lưu dưới dạng secret, không nằm trong file `.env` commit vào git
 - [ ] `S3_SECRET_ACCESS_KEY` lưu dưới dạng secret
 - [ ] `RESEND_API_KEY` lưu dưới dạng secret

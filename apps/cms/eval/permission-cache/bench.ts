@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 /**
  * Capability-resolution workload for #583: latency of the governed AI entry
  * point (`EffectiveCapabilityService.resolve`) with and without the permission
@@ -48,7 +49,7 @@ async function main(): Promise<void> {
     await db.delete(users).where(inArray(users.id, [PLAIN, GUARDED]));
   };
   await cleanup();
-  await db.insert(sites).values({ id: SITE, name: '583 bench' });
+  await db.insert(sites).values({ organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: '583 bench' });
   await db.insert(users).values([
     { id: PLAIN, email: 'bench-583-plain@example.dev' },
     { id: GUARDED, email: 'bench-583-guarded@example.dev' },

@@ -54,8 +54,8 @@ describe.skipIf(!hasDbIntegrationUrl)('Reconciliation cycle — DB integration',
     // Fresh slate: cascade from sites clears intents, drifts, goals, items.
     await db.delete(sites).where(sql`${sites.id} IN (${SITE}, ${OTHER_SITE})`);
     await db.insert(sites).values([
-      { id: SITE, name: 'Reconcile IT' },
-      { id: OTHER_SITE, name: 'Other tenant' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Reconcile IT' },
+      { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER_SITE, name: 'Other tenant' },
     ]);
     for (const siteId of [SITE, OTHER_SITE]) {
       const [coll] = await db

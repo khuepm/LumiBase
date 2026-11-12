@@ -1,3 +1,4 @@
+import { getApiBaseUrl } from '@/lib/api-base';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 
 /**
@@ -76,7 +77,7 @@ export class SetupCapabilitiesFetchError extends Error {
 async function fetchSetupCapabilities(): Promise<SetupCapabilitiesResponse> {
   let res: Response;
   try {
-    res = await fetch('/api/v1/setup/capabilities', {
+    res = await fetch(`${getApiBaseUrl()}/api/v1/setup/capabilities`, {
       method: 'GET',
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },

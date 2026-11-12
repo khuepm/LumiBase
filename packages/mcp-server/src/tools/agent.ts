@@ -74,6 +74,7 @@ export function registerAgentTools(server: McpServer, client: LumiBaseClient) {
   server.registerTool(
     'compile_intent',
     {
+      annotations: { readOnlyHint: true, destructiveHint: false },
       description: 'Compile a natural-language description into structured intent rules (preview, does not persist).',
       inputSchema: {
         description: z.string().min(1).max(4000),
