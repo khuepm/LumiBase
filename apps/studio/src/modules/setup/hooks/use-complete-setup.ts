@@ -1,3 +1,4 @@
+import { getApiBaseUrl } from '@/lib/api-base';
 import {
   useMutation,
   type UseMutationResult,
@@ -325,7 +326,7 @@ async function completeSetup(
 
   let response: Response;
   try {
-    response = await fetch('/api/v1/setup/complete', {
+    response = await fetch(`${getApiBaseUrl()}/api/v1/setup/complete`, {
       method: 'POST',
       credentials: 'same-origin',
       headers: {
