@@ -9,7 +9,20 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Fixed
+
+- **Search indexing and ISR revalidation now run on Cloudflare Workers (B131,
+  part 1).** The Worker had no `content-indexing` or `revalidation-dispatch`
+  queue, so every item write logged `Queue binding not found` and on Workers the
+  search index and the revalidation targets never saw a content change. Each
+  queue now has a producer, consumer and dead-letter queue in every
+  `wrangler.toml` profile, and the Worker's `queue()` runs the same handlers as
+  Docker. Deploy and release workflows create the missing queues; manual
+  deployments create them as in `DEPLOYMENT-CHECKLIST.md`. Until a queue is
+  bound, `ItemService` indexes inline and revalidation is dispatched inline
+  instead of being dropped. Existing Workers search indexes are not rebuilt
+  automatically: run the reindex CLI. The other Docker-only consumers listed in
+  B131 are still open.
 
 ## [2.0.0] - 2026-11-10
 
