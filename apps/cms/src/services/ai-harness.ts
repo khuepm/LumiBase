@@ -25,7 +25,7 @@ import { redactSettingRow } from './settings-redaction';
 import type { CacheProvider, KeyProvider, QueueProvider } from '@lumibase/runtime';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentAutonomousOpsTotal, agentQuestionsTotal, observeApprovalDecision } from './agent-metrics';
-import { AgentRunService, runErrorMessage, type AgentRunEnvelope } from './agent-run-service';
+import { AgentRunService, maskSecrets, runErrorMessage, type AgentRunEnvelope } from './agent-run-service';
 import {
   effectiveApprovalCapabilities,
   parseApprovalRequester,
@@ -2665,6 +2665,13 @@ export class AISecureHarness {
     // persisted for a malformed call; the caller gets a structured `VALIDATION`
     // denial instead of an engine error surfacing from inside a service.
     const inputError = this.validateToolInput(skillName, args);
+    if (!inputError && skillName === ASK_USER_SKILL) {
+      // The question is stored as the tool call's input, so record the
+      // contract's normalized form (options trimmed, #710 review): the answer
+      // is trimmed before it is compared against them.
+      const normalized = validateAgentToolInput(skillName, args);
+      if (normalized.ok) args = normalized.data;
+    }
     if (inputError) {
       // "Create no run" is not the same as "leave an existing run alone". On the
       // async path the run already exists and the worker has already moved it to
@@ -3189,12 +3196,15 @@ export class AISecureHarness {
     const { run, toolCallId, startedAt } = input;
     const questions = new AgentQuestionService({ db: this.db, siteId: this.siteId, cache: this.cache });
     const args = input.args as unknown as AskUserInput;
+    // The tool call moves to `waiting_user` inside this transaction, before
+    // the notification below: an answer can land the moment it commits.
     const parked = await questions.ask({
       runId: run.runId,
       agentName: run.agentName,
       toolCallId,
       args,
       requestedByPrincipal: input.requestedByPrincipal,
+      startedAt,
     });
     if (!parked) {
       const message = 'Run was cancelled';
@@ -3211,16 +3221,11 @@ export class AISecureHarness {
       kind: 'question',
       severity: 'info',
       title: 'Agent question',
-      body: `${run.agentName} asks: ${args.question}`.slice(0, 240),
+      // Masked like the stored tool input the inbox shows (#710 review): a
+      // push leaves the system, so it must not carry more than the record does.
+      body: `${run.agentName} asks: ${String(maskSecrets(String(args.question ?? '')))}`.slice(0, 240),
       deepLink: `/mission-control/inbox?entry=question:${parked.id}`,
       entityId: parked.id,
-    });
-
-    await this.runService.finishToolCall(toolCallId, {
-      status: 'waiting_user',
-      output: { questionId: parked.id, expiresAt: parked.expiresAt.toISOString() },
-      approvalId: parked.id,
-      latencyMs: Date.now() - startedAt,
     });
 
     return {

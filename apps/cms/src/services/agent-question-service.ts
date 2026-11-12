@@ -11,7 +11,10 @@ import { ASK_USER_DEFAULT_TIMEOUT_MINUTES, ASK_USER_LIMITS } from '@lumibase/con
 import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import {
   agentRunsTotal,
+  agentToolLatency,
   metricAgent,
+  metricStatus,
+  metricTool,
   observeQuestionSettled,
 } from './agent-metrics';
 import { maskSecrets, WAITING_USER_RUN_STATUS } from './agent-run-service';
@@ -141,7 +144,11 @@ export function questionFieldsFromInput(input: unknown): {
 } {
   const record = asRecord(input);
   const options = Array.isArray(record['options'])
-    ? record['options'].filter((option): option is string => typeof option === 'string')
+    ? record['options']
+      .filter((option): option is string => typeof option === 'string')
+      // The contract trims options on the way in; trimming here too keeps the
+      // comparison with the (trimmed) answer exact for any row recorded raw.
+      .map((option) => option.trim())
     : [];
   return {
     question: typeof record['question'] === 'string' ? record['question'] : '',
@@ -264,6 +271,12 @@ export class AgentQuestionService {
    * Parks `runId` on a new question, atomically. Returns null when the run is
    * no longer in flight (cancelled while the harness was recording the call),
    * in which case nothing was written.
+   *
+   * The `askUser` tool call moves to `waiting_user` in the same transaction
+   * (#710 review). Written after the commit, it raced the answer: an answer
+   * landing between the commit and that write had its `executed` output
+   * overwritten back to `waiting_user`. The write is also a compare-and-set on
+   * `running`, so it can never undo a settled call.
    */
   async ask(input: {
     runId: string;
@@ -272,9 +285,12 @@ export class AgentQuestionService {
     args: AskUserInput;
     requestedByPrincipal: ApprovalRequester | null;
     now?: Date;
+    /** When the harness started the tool call (`Date.now()`), for its latency. */
+    startedAt?: number;
   }): Promise<{ id: string; expiresAt: Date } | null> {
     const now = input.now ?? new Date();
     const expiresAt = questionDeadline(input.args.timeoutMinutes, now);
+    const latencyMs = input.startedAt === undefined ? undefined : Math.max(0, now.getTime() - input.startedAt);
     const { AgentRunService } = await import('./agent-run-service');
     const runs = new AgentRunService(this.db, this.siteId);
 
@@ -295,6 +311,23 @@ export class AgentQuestionService {
           expiresAt,
         })
         .returning({ id: agentApprovals.id });
+      await tx
+        .update(agentToolCalls)
+        .set({
+          status: WAITING_USER_RUN_STATUS,
+          output: { questionId: row!.id, expiresAt: expiresAt.toISOString() },
+          error: null,
+          approvalId: row!.id,
+          latencyMs: latencyMs ?? null,
+          finishedAt: now,
+        })
+        .where(
+          and(
+            eq(agentToolCalls.id, input.toolCallId),
+            eq(agentToolCalls.siteId, this.siteId),
+            eq(agentToolCalls.status, 'running'),
+          ),
+        );
       await tx.insert(activity).values({
         siteId: this.siteId,
         action: 'agent_question.asked',
@@ -310,6 +343,9 @@ export class AgentQuestionService {
       });
       return { id: row!.id, expiresAt };
     });
+    if (created && latencyMs !== undefined) {
+      agentToolLatency.observe({ tool: metricTool('askUser'), status: metricStatus(WAITING_USER_RUN_STATUS) }, latencyMs / 1000);
+    }
     return created;
   }
 
@@ -450,7 +486,12 @@ export class AgentQuestionService {
         requester,
       );
       if (!resolution.allowed) {
-        await runs.failRun(run.id, resolution.message, { stopReason: 'requester_revoked', questionId: row.id });
+        await runs.failRun(
+          run.id,
+          resolution.message,
+          { stopReason: 'requester_revoked', questionId: row.id },
+          { fromWaitingUser: true },
+        );
         await closeOpenQuestionsForRun(this.db, this.siteId, run.id, 'requester_revoked');
         return refuse('REQUESTER_REVOKED', resolution.message);
       }

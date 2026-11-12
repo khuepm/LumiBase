@@ -431,8 +431,10 @@ export const AgentToolSchemas = {
   askUser: z
     .object({
       question: z.string().min(1).max(ASK_USER_LIMITS.question),
+      // Trimmed, like the answer the API and Studio compare against them: an
+      // untrimmed `"yes "` could never be matched by a choice-only answer.
       options: z
-        .array(z.string().min(1).max(ASK_USER_LIMITS.option))
+        .array(z.string().trim().min(1).max(ASK_USER_LIMITS.option))
         .min(2)
         .max(ASK_USER_LIMITS.options)
         .optional(),
@@ -446,6 +448,14 @@ export const AgentToolSchemas = {
       if (input.allowFreeText === false && !input.options) {
         ctx.addIssue({ code: 'custom', path: ['options'], message: 'options are required when allowFreeText is false' });
       }
+      // Two options that read the same after trimming are one choice offered twice.
+      const seen = new Set<string>();
+      input.options?.forEach((option, index) => {
+        if (seen.has(option)) {
+          ctx.addIssue({ code: 'custom', path: ['options', index], message: 'options must be unique' });
+        }
+        seen.add(option);
+      });
     }),
   /** Reads the outcome of an `askUser` question this caller asked. */
   getUserAnswer: z.object({ questionId: id }).strict(),

@@ -29,6 +29,20 @@ describe('askUser contract', () => {
     ).toBe(false);
   });
 
+  it('trims options, and refuses options that are blank or duplicate once trimmed (#710 review)', () => {
+    const trimmed = validateAgentToolInput('askUser', {
+      question: 'Publish?', options: ['  yes ', 'no\n'], allowFreeText: false,
+    });
+    expect(trimmed).toEqual({
+      ok: true,
+      data: { question: 'Publish?', options: ['yes', 'no'], allowFreeText: false },
+    });
+    expect(validateAgentToolInput('askUser', { question: 'Publish?', options: ['yes', '   '] }).ok).toBe(false);
+    const duplicate = validateAgentToolInput('askUser', { question: 'Publish?', options: ['yes', 'yes '] });
+    expect(duplicate.ok).toBe(false);
+    if (!duplicate.ok) expect(duplicate.issues).toContainEqual({ path: 'options.1', message: 'options must be unique' });
+  });
+
   it('is a safe, non-control-plane skill: asking is not an action the autonomy gradient authorizes', () => {
     for (const name of ['askUser', 'getUserAnswer']) {
       const skill = CORE_SKILLS[name]!;

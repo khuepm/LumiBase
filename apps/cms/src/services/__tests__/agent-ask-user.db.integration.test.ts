@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { and, eq, sql } from 'drizzle-orm';
 import {
@@ -30,6 +30,15 @@ import { KillSwitchService } from '../kill-switch-service';
 import { McpService, type McpToolDecision } from '../mcp-service';
 import { noRunInFlight } from '../goal-dispatch-service';
 import type { ApprovalRequester } from '../approval-requester';
+import { createPlaintextToken } from '../api-key-token';
+import { emitAgentNotification } from '../../modules/notifications/agent-notifications';
+
+// The queue worker sends Web Push directly; record what it would send instead.
+vi.mock('../../modules/notifications/agent-notifications', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../modules/notifications/agent-notifications')>()),
+  emitAgentNotification: vi.fn(async () => undefined),
+}));
+import { EffectiveCapabilityService } from '../effective-capability-service';
 
 /**
  * `askUser` (#710) — pause → answer → resume, against REAL PostgreSQL.
@@ -54,6 +63,8 @@ const BYSTANDER = 'usr_ask_bystander';
 const ADMIN_ROLE = 'role_ask_admin';
 const MEMBER_ROLE = 'role_ask_member';
 const KEY = 'key_ask_agent';
+const ORG_KEY = 'key_ask_org_agent';
+const SITE_ADMIN_ROLE = 'role_ask_site_administrator';
 
 const userAuth = (userId: string): AuthPrincipal => ({ type: 'user', userId, roles: [], raw: {} });
 const keyAuth: AuthPrincipal = { type: 'api_key', apiKeyId: KEY, roles: [], raw: {} };
@@ -73,11 +84,14 @@ describe.skipIf(!hasDbIntegrationUrl)('askUser clarification — DB integration'
     if (!db) return;
     await db.delete(sites).where(sql`${sites.id} IN (${SITE}, ${OTHER_SITE})`).catch(() => undefined);
     await db.delete(users).where(sql`${users.id} IN (${ADMIN}, ${REQUESTER}, ${BYSTANDER})`).catch(() => undefined);
+    await db.delete(apiKeys).where(eq(apiKeys.id, ORG_KEY)).catch(() => undefined);
   });
 
   beforeEach(async () => {
     await db.delete(sites).where(sql`${sites.id} IN (${SITE}, ${OTHER_SITE})`);
     await db.delete(users).where(sql`${users.id} IN (${ADMIN}, ${REQUESTER}, ${BYSTANDER})`);
+    // An organization key has no site, so the site cascade does not remove it.
+    await db.delete(apiKeys).where(eq(apiKeys.id, ORG_KEY));
     await db.insert(sites).values([
       { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: SITE, name: 'Ask user' },
       { organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`, id: OTHER_SITE, name: 'Ask user (other tenant)' },
@@ -106,6 +120,10 @@ describe.skipIf(!hasDbIntegrationUrl)('askUser clarification — DB integration'
     await db.insert(apiKeys).values({
       id: KEY, siteId: SITE, name: 'agent key', prefix: 'lbk_ask', tokenHash: 'fixture-not-a-credential',
     });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   function harness(siteId = SITE): AISecureHarness {
@@ -232,6 +250,58 @@ describe.skipIf(!hasDbIntegrationUrl)('askUser clarification — DB integration'
     expect(foreign).toMatchObject({ status: 'denied', code: 'NOT_FOUND' });
   });
 
+  it('an answer racing the park is not overwritten back to waiting_user (#710 review)', async () => {
+    // The answer starts the moment the question is announced (the notifier
+    // runs right after the park commits) and is allowed to finish before
+    // anything the harness still does for the call afterwards.
+    let answering: Promise<{ status: number }> | undefined;
+    const original = AgentRunService.prototype.finishToolCall;
+    vi.spyOn(AgentRunService.prototype, 'finishToolCall').mockImplementation(async function (this: AgentRunService, id, patch) {
+      if (patch.status === 'waiting_user' && answering) await answering;
+      return original.call(this, id, patch);
+    });
+    const racing = new AISecureHarness({
+      db,
+      siteId: SITE,
+      enableAgentHarnessAudit: true,
+      notify: (event) => {
+        if (event.kind === 'question' && event.entityId) answering = answer(event.entityId, 'formal');
+      },
+    });
+
+    const asked = await racing.execute('askUser', { question: 'Formal?' }, ['items:read'], undefined, {
+      requestedByPrincipal: asUser(REQUESTER),
+    });
+    expect(asked.status).toBe('waiting_user');
+    expect(answering).toBeDefined();
+    expect((await answering!).status).toBe(200);
+
+    const question = await questionRow(asked.questionId!);
+    const [call] = await db.select().from(agentToolCalls).where(eq(agentToolCalls.id, question.subjectId));
+    expect(call!.status).toBe('executed');
+    expect((call!.output as Record<string, unknown>)['answered']).toBe(true);
+    expect((await runRow(asked.runId!)).status).toBe('succeeded');
+  });
+
+  it('a generic close, fail or approval park cannot move a waiting run off its question (#710 review)', async () => {
+    const asked = await ask();
+    const runs = new AgentRunService(db, SITE);
+    // What a caller that throws after the park committed does: the worker's
+    // catch-all fails the run.
+    await runs.failRun(asked.runId, 'boom after the park', { stopReason: 'worker_error' });
+    await runs.closeRun(asked.runId, { toolCalls: 1 });
+    expect(await runs.awaitApproval(asked.runId)).toBe(false);
+
+    const parked = await runRow(asked.runId);
+    expect(parked.status).toBe('waiting_user');
+    expect(parked.error).toBeNull();
+    expect((await questionRow(asked.questionId)).status).toBe('pending');
+
+    // The question still settles the run.
+    expect((await answer(asked.questionId, 'formal')).status).toBe(200);
+    expect((await runRow(asked.runId)).status).toBe('succeeded');
+  });
+
   it('a queued run parks without holding the worker and resumes after the answer', async () => {
     const service = new AgentRunService(db, SITE);
     const run = await service.ensureRun({ title: 'queued ask', status: 'queued' });
@@ -256,6 +326,69 @@ describe.skipIf(!hasDbIntegrationUrl)('askUser clarification — DB integration'
 
     expect((await answer(questions[0]!.id, 'tomorrow', userAuth(REQUESTER))).status).toBe(200);
     expect((await runRow(run.runId)).status).toBe('succeeded');
+  });
+
+  // ── queue worker notifications (#710 review) ────────────────────────────────
+
+  async function queuedJob(skillName: string, args: Record<string, unknown>): Promise<AgentRunJobPayload> {
+    const run = await new AgentRunService(db, SITE).ensureRun({ title: `queued ${skillName}`, status: 'queued' });
+    return {
+      siteId: SITE,
+      goalId: run.goalId,
+      runId: run.runId,
+      skillName,
+      arguments: args,
+      principal: { type: 'user', siteId: SITE, userId: REQUESTER },
+      userId: REQUESTER,
+    };
+  }
+
+  it('the worker announces a question, masked like the stored input, and stays silent on run lifecycle', async () => {
+    const emit = vi.mocked(emitAgentNotification);
+    emit.mockClear();
+    const asking = await queuedJob('askUser', { question: 'Deploy with token: sk_live_123 to ops@example.dev?' });
+    await processAgentRunJob({ db, env: { LUMIBASE_ENV: 'development' } } as never, asking);
+    expect((await runRow(asking.runId)).status).toBe('waiting_user');
+    expect(emit).toHaveBeenCalledOnce();
+    const [, sent] = emit.mock.calls[0]!;
+    expect(sent.kind).toBe('question');
+    expect(sent.body).toContain('token: [masked]');
+    expect(sent.body).not.toContain('sk_live_123');
+    expect(sent.body).not.toContain('ops@example.dev');
+
+    // A queued run that fails (and one that is answered to success) pushes
+    // nothing: queued runs were silent before the worker had a notifier.
+    emit.mockClear();
+    const failing = await queuedJob('noSuchSkill', {});
+    await processAgentRunJob({ db, env: { LUMIBASE_ENV: 'development' } } as never, failing);
+    expect((await runRow(failing.runId)).status).toBe('failed');
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('the worker keeps the send alive: through waitUntil when given one, else by awaiting it; a failed send never fails the run', async () => {
+    const emit = vi.mocked(emitAgentNotification);
+    let release!: () => void;
+    emit.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    const awaited = await queuedJob('askUser', { question: 'Awaited?' });
+    let settled = false;
+    const processing = processAgentRunJob({ db, env: { LUMIBASE_ENV: 'development' } } as never, awaited)
+      .then(() => { settled = true; });
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(settled).toBe(false); // no waitUntil: the job waits for its send
+    release();
+    await processing;
+    expect(settled).toBe(true);
+
+    const waitUntil = vi.fn();
+    emit.mockImplementationOnce(() => Promise.reject(new Error('push service down')));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const handed = await queuedJob('askUser', { question: 'Handed off?' });
+    await processAgentRunJob({ db, env: { LUMIBASE_ENV: 'development' }, waitUntil } as never, handed);
+    expect(waitUntil).toHaveBeenCalledOnce();
+    await waitUntil.mock.calls[0]![0]; // swallowed, never rejects
+    expect(log).toHaveBeenCalledWith('[agent-run-worker] notification failed', expect.objectContaining({ kind: 'question' }));
+    expect((await runRow(handed.runId)).status).toBe('waiting_user');
   });
 
   it('MCP surfaces a question like a pending approval: status + questionId, not an error', async () => {
@@ -295,6 +428,54 @@ describe.skipIf(!hasDbIntegrationUrl)('askUser clarification — DB integration'
     expect(audit!.payload).toMatchObject({ via: 'requester', questionId: asked.questionId });
   });
 
+  it('an organization-scoped API key cannot answer, even its own question (#710 review)', async () => {
+    // The key resolves as a control-plane admin on this site: an org key maps
+    // to the site's administrator role. That is what made it look like an
+    // approver before the API-key refusal.
+    await db.insert(roles).values({
+      id: SITE_ADMIN_ROLE, siteId: SITE, name: 'Administrator', systemKey: 'administrator', adminAccess: true, appAccess: true,
+    });
+    const token = await createPlaintextToken({ scope: 'organization' });
+    const [site] = await db.select({ organizationId: sites.organizationId }).from(sites).where(eq(sites.id, SITE));
+    await db.insert(apiKeys).values({
+      id: ORG_KEY, name: 'org agent key', scope: 'organization', organizationId: site!.organizationId,
+      prefix: token.prefix, tokenHash: token.tokenHash,
+    });
+    const grant = await new EffectiveCapabilityService({ db, siteId: SITE })
+      .resolve({ type: 'api_key', siteId: SITE, apiKeyId: ORG_KEY });
+    expect(grant.allowed && grant.controlPlaneAdmin).toBe(true);
+
+    const orgKeyAuth: AuthPrincipal = {
+      type: 'api_key',
+      apiKeyId: ORG_KEY,
+      apiKey: { id: ORG_KEY, scope: 'organization', prefix: token.prefix },
+      roles: [],
+      raw: {},
+    };
+    const asked = await ask(
+      { question: 'May I publish?' },
+      { kind: 'principal', ref: { type: 'api_key', siteId: SITE, apiKeyId: ORG_KEY } },
+    );
+    const auditsBefore = await auditActions();
+
+    const refused = await answer(asked.questionId, 'yes', orgKeyAuth);
+    expect(refused.status).toBe(403);
+    expect(refused.body.errors?.[0]?.code).toBe('FORBIDDEN');
+
+    // Nothing moved: the run still waits, the question is still open, no audit row.
+    expect((await runRow(asked.runId)).status).toBe('waiting_user');
+    const question = await questionRow(asked.questionId);
+    expect(question.status).toBe('pending');
+    expect(question.decisionReason).toBeNull();
+    expect(await auditActions()).toEqual(auditsBefore);
+    expect(auditsBefore).not.toContain('agent_question.answered');
+
+    // A user's question is refused to the org key just the same.
+    const userAsked = await ask();
+    expect((await answer(userAsked.questionId, 'casual', orgKeyAuth)).status).toBe(403);
+    expect((await questionRow(userAsked.questionId)).status).toBe('pending');
+  });
+
   it('another tenant cannot see or answer the question', async () => {
     const asked = await ask();
     await db.insert(roles).values({ id: 'role_ask_other_admin', siteId: OTHER_SITE, name: 'Other admin', adminAccess: true, appAccess: true });
@@ -329,6 +510,17 @@ describe.skipIf(!hasDbIntegrationUrl)('askUser clarification — DB integration'
     expect((await answer(asked.questionId, 'x'.repeat(2001))).status).toBe(400);
     expect((await questionRow(asked.questionId)).status).toBe('pending');
     expect((await answer(asked.questionId, 'blue')).status).toBe(200);
+  });
+
+  it('stores options trimmed, so a choice-only question with padded options stays answerable (#710 review)', async () => {
+    const asked = await ask({ question: 'Ship it?', options: ['yes ', ' no'], allowFreeText: false });
+    const question = await questionRow(asked.questionId);
+    const [call] = await db.select().from(agentToolCalls).where(eq(agentToolCalls.id, question.subjectId));
+    expect((call!.input as Record<string, unknown>)['options']).toEqual(['yes', 'no']);
+    const view = await new AgentQuestionService({ db, siteId: SITE }).get(asked.questionId);
+    expect(view!.options).toEqual(['yes', 'no']);
+    expect((await answer(asked.questionId, 'yes')).status).toBe(200);
+    expect((await runRow(asked.runId)).status).toBe('succeeded');
   });
 
   it('approval routes refuse a question id instead of deciding it', async () => {

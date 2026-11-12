@@ -720,28 +720,40 @@ agentRouter.get('/approvals', async (c) => {
 // ── askUser clarification questions (#710) ─────────────────────────────────
 
 /**
- * Who may answer a question:
+ * Who may answer a question. An answer must come from a human session — never
+ * from an API key, of any scope and whatever capabilities it carries: a key is
+ * how an agent acts, and an agent answering its own question (an
+ * organization-scoped key resolves as a control-plane admin) would close the
+ * loop the tool exists to open and settle the run as `via: 'approver'` with no
+ * human in the audit trail. That refusal runs first, before either branch:
  *
- * - a holder of `approvals:decide` (or a control-plane admin) — the operators
- *   already trusted to unblock a parked run; the only path for reconciler runs,
- *   which have no human requester;
- * - the run's requester, when that requester is a **user** who still resolves on
- *   this site. Not an API key: a key is how an agent acts, and letting the
- *   caller that asked answer its own question would close the loop the tool
- *   exists to open.
+ * - `'approver'` — a user holding `approvals:decide` (or a control-plane admin):
+ *   the operators already trusted to unblock a parked run, and the only path for
+ *   reconciler runs, which have no human requester;
+ * - `'requester'` — the run's requester, when that requester is a **user** who
+ *   still resolves on this site and is the caller.
  *
- * The router is already behind the control-plane guard; this is the inner check,
- * evaluated after existence so a 403 cannot be used to probe ids.
+ * Today the `'requester'` branch is not reachable in production: every
+ * `/api/v1/agent/*` route sits behind the control-plane guard, which admits only
+ * site administrators (plus organization-scoped keys, refused above), and an
+ * administrator already matches `'approver'`. So today only administrators —
+ * who hold `approvals:decide` through the admin bypass — answer. The requester
+ * branch takes effect once backlog B207 reclassifies the answer route out of
+ * the control plane; it is kept so that change needs no new rule.
+ *
+ * Evaluated after existence so a 403 cannot be used to probe ids.
  */
 async function questionAnswerer(
   c: Context<AppEnv>,
   requestedByPrincipal: unknown,
 ): Promise<'approver' | 'requester' | null> {
+  const auth = c.get('auth');
+  if (!auth || auth.type === 'api_key' || auth.apiKeyId || auth.apiKey) return null;
   const grant = await resolveRequestCapabilities(c);
   if (grant.controlPlaneAdmin || grant.capabilities.includes('approvals:decide')) return 'approver';
   if (!grant.allowed) return null;
   const requester = parseApprovalRequester(requestedByPrincipal);
-  const caller = principalRefFromAuth(c.get('auth'), c.get('siteId'));
+  const caller = principalRefFromAuth(auth, c.get('siteId'));
   if (
     requester?.kind === 'principal'
     && requester.ref.type === 'user'
@@ -812,7 +824,8 @@ agentRouter.post('/questions/:id/answer', async (c) => {
       {
         errors: [{
           code: 'FORBIDDEN',
-          message: 'Only the run\'s requesting user or a holder of "approvals:decide" may answer this question.',
+          message:
+            'Only a signed-in user may answer: the run\'s requesting user or a holder of "approvals:decide". API keys cannot answer.',
         }],
       },
       403,

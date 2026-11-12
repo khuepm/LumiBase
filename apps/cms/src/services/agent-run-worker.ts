@@ -14,7 +14,10 @@ import {
 import { itemServiceForPrincipal, itemServiceForSystem } from './item-service-factory';
 import { createConfiguredLLMProvider, type LLMProviderEnv } from './llm-provider';
 import { SchemaService } from './schema-service';
-import { emitAgentNotification } from '../modules/notifications/agent-notifications';
+import {
+  emitAgentNotification,
+  type AgentNotificationKind,
+} from '../modules/notifications/agent-notifications';
 
 /**
  * Async agent run execution (Content OS task 3 / Req 3.2).
@@ -91,7 +94,24 @@ export interface AgentRunWorkerDeps {
    */
   keys?: KeyProvider;
   env: LLMProviderEnv & Record<string, string | undefined>;
+  /**
+   * Keeps a best-effort side task (a Web Push send) alive past the job on
+   * runtimes that end the invocation when the handler returns — the Worker
+   * queue consumer passes `ExecutionContext.waitUntil`. Without it the worker
+   * awaits the sends itself before the job settles.
+   */
+  waitUntil?: (promise: Promise<unknown>) => void;
 }
+
+/**
+ * Notification kinds a queued run may emit (#710 review). A queued run parks
+ * on an approval or an `askUser` question and someone has to be told; those
+ * reach a person the way request-path runs do. Run succeeded/failed, incident,
+ * veto-window and goal events stay silent from the worker, as they were before
+ * the worker had a notifier — every queued run pushing its lifecycle to every
+ * subscriber of the site would be noise.
+ */
+const WORKER_NOTIFICATION_KINDS: ReadonlySet<AgentNotificationKind> = new Set(['approval', 'question']);
 
 /**
  * Resolves the capabilities a queued run executes with.
@@ -291,6 +311,7 @@ export async function processAgentRunJob(
     ? itemServiceForPrincipal(itemDeps, capabilities.permissionContext)
     : itemServiceForSystem(itemDeps, 'background-worker');
 
+  const notifications: Array<Promise<void>> = [];
   const harness = new AISecureHarness({
     db: deps.db,
     siteId: payload.siteId,
@@ -310,9 +331,19 @@ export async function processAgentRunJob(
     // A queued run that parks (an approval, or an `askUser` question, #710)
     // must reach a person the same way a request-path run does. No Durable
     // Object namespace here, so delivery is Web Push only; the inbox poll
-    // remains the fallback.
+    // remains the fallback. Best effort: a failed send never fails the run.
     notify: (input) => {
-      void emitAgentNotification({ db: deps.db, siteId: payload.siteId, env: deps.env }, input);
+      if (!WORKER_NOTIFICATION_KINDS.has(input.kind)) return;
+      const sent = emitAgentNotification({ db: deps.db, siteId: payload.siteId, env: deps.env }, input)
+        .catch((err: unknown) => {
+          console.error('[agent-run-worker] notification failed', {
+            siteId: payload.siteId,
+            kind: input.kind,
+            err: err instanceof Error ? err.message : String(err),
+          });
+        });
+      if (deps.waitUntil) deps.waitUntil(sent);
+      else notifications.push(sent);
     },
   });
 
@@ -363,6 +394,9 @@ export async function processAgentRunJob(
     // `runErrorMessage`, not `err.message`: a failed query's message carries its
     // bound parameters, and this string is returned by `GET /agent/runs` (#584 F4).
     await runService.failRun(payload.runId, runErrorMessage(err), { stopReason: 'worker_error' });
+  } finally {
+    // Each send already swallows its own failure.
+    if (notifications.length > 0) await Promise.all(notifications);
   }
 }
 
