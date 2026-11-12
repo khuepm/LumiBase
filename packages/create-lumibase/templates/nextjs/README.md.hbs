@@ -164,4 +164,10 @@ This stack is for local development:
 - Set `LUMIBASE_PUBLIC_ORIGIN` to your real origin before deploying: an empty
   allowlist lets a publishable key be used from anywhere.
 
+To host the CMS itself rather than run this compose file on a server, the
+one-click templates put the same image (Studio included) on Render, Railway or
+Fly.io with PostgreSQL, Redis and generated secrets, and take you to the setup
+wizard: https://docs.lumibase.dev/en/docs/deployment/one-click. Then follow
+"Connecting to a CMS you already run" above with that instance's URL.
+
 Docs → https://docs.lumibase.dev
