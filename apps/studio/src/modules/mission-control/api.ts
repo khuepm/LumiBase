@@ -45,6 +45,31 @@ export interface AgentApproval {
   createdAt: string;
 }
 
+/**
+ * An `askUser` clarification question (#710): the run is parked in
+ * `waiting_user` until a human answers, the deadline passes or it is cancelled.
+ */
+export interface AgentQuestion {
+  id: string;
+  runId: string;
+  goalId: string | null;
+  toolCallId: string;
+  agentName: string;
+  question: string;
+  /** Choices the agent offered; empty for an open question. */
+  options: string[];
+  /** False when the answer must be one of `options`. */
+  allowFreeText: boolean;
+  context: string | null;
+  /** `pending` | `answered` | `expired` | `cancelled`. */
+  status: string;
+  expiresAt: string | null;
+  createdAt: string;
+  answer: string | null;
+  answeredAt: string | null;
+  answeredBy: string | null;
+}
+
 export interface StagedVeto {
   approvalId?: string;
   id?: string;
@@ -305,6 +330,12 @@ export const missionControlApi = {
     agentFetch(`/api/v1/agent/approvals/${id}/decide`, {
       method: 'POST',
       body: JSON.stringify({ decision, reason }),
+    }),
+  questions: () => agentFetch<AgentQuestion[]>('/api/v1/agent/questions?status=pending'),
+  answerQuestion: (id: string, answer: string) =>
+    agentFetch<AgentQuestion>(`/api/v1/agent/questions/${encodeURIComponent(id)}/answer`, {
+      method: 'POST',
+      body: JSON.stringify({ answer }),
     }),
   staged: () => agentFetch<StagedVeto[]>('/api/v1/agent/staged'),
   veto: (approvalId: string, reason?: string) =>

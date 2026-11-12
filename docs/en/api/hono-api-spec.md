@@ -1,11 +1,11 @@
 ---
-version: 37
-lastUpdated: 2026-11-12T18:43:32.664Z
+version: 38
+lastUpdated: 2026-11-12T19:09:51.806Z
 sourceLang: en
-contentHash: 4eb5bdde77c88e7f
-codeVerified: 2026-11-12T18:43:32.664Z
-codeVerifiedHash: 4eb5bdde77c88e7f
-codeVerifiedClaims: 484
+contentHash: 1deb3c49a74ecd2f
+codeVerified: 2026-11-12T19:09:51.806Z
+codeVerifiedHash: 1deb3c49a74ecd2f
+codeVerifiedClaims: 490
 ---
 
 # Hono API Specification — LumiBase
@@ -1044,12 +1044,15 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Human decision on a parked action. Body `{ decision: 'approved' \| 'rejected', reason? }`; needs `approvals:decide` (403 otherwise), `404` for an unknown or other-tenant id, `409` when the approval already left `pending`. On `approved` the harness owns the state transition, so execution and the status write happen once. Execution re-resolves **the requester's** current rights and runs with `requester ∩ decider`: an approval whose requester was since revoked, demoted or removed is denied, and one with no recorded requester (parked before provenance existed) is denied with `APPROVAL_PROVENANCE_MISSING` |
 | `POST` | `/api/v1/agent/approvals/:id/reopen` | Return a `failed` approval to `pending` so it can be decided again. Body `{ reason }` is **required** and audited; needs `approvals:decide`. A skill that reached a service and then failed is parked rather than re-offered, because retrying could repeat a non-idempotent write — this is the deliberate way back |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Agent-as-reviewer decision (needs `review:<domain>`; self-review forbidden) |
+| `GET` | `/api/v1/agent/questions` | `askUser` clarification questions, newest first. `?status=pending` (default) \| `answered` \| `expired` \| `cancelled` \| `all`. Each item: `{ id, runId, goalId, toolCallId, agentName, question, options, allowFreeText, context, status, expiresAt, createdAt, answer, answeredAt, answeredBy }`. Questions are not listed by `/approvals`, and `/approvals/:id/decide` and `/reopen` answer `409 NOT_AN_APPROVAL` for a question id. See [agent harness](../features/agent-harness-layer.md#asking-a-human-askuser-710) |
+| `GET` | `/api/v1/agent/questions/:id` | One question; `404` for an unknown or other-tenant id |
+| `POST` | `/api/v1/agent/questions/:id/answer` | Answer a question and resume its `waiting_user` run. Body `{ answer }` (1–2000 chars, trimmed; one of `options` when `allowFreeText` is false). Only a signed-in user answers: any API key, site- or organization-scoped and whatever its capabilities, gets `403`. Allowed for a holder of `approvals:decide` (or control-plane admin) and for the run's requesting **user**; today only site administrators reach the route (control-plane guard), so the requester rule takes effect once backlog B207 moves it out of the control plane. The claim and the resume are one transaction. `200` with the answered question (run `succeeded`); `400` `VALIDATION` / `ANSWER_INVALID` / `ANSWER_NOT_AN_OPTION`; `403`; `404`; `409` `ALREADY_ANSWERED`, `EXPIRED`, `QUESTION_CLOSED`, `RUN_NOT_WAITING`, `REQUESTER_REVOKED` (the requester lost access; the run is failed); `423` `FROZEN` (the run is cancelled) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Versions, draft, `/compile` (NL→evaluators), `:id/dry-run`, `:id/activate` |
 | `*` | `/api/v1/agent/skills[...]` | Site Skills — playbooks injected into matching agent runs: CRUD by id or slug, `:id/activate\|archive\|draft`, `:id/versions`, `:id/versions/:version/restore`, `/import`, `/export`, `/match`. Every write needs a control-plane admin (`403 FORBIDDEN` otherwise; there is no delegated author and `riskClass` is a label only). `PATCH` takes `expectedVersion` and status actions take `version` (`409 VERSION_MISMATCH`); `DELETE` refuses a skill that was ever active (`409 SKILL_HAS_BEEN_ACTIVE`); `/import` refuses content changes to active skills unless `updateActive: true` (`ACTIVE_SKILL_CHANGE`). See [features/site-skills.md](../features/site-skills.md) |
-| `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze` |
+| `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze`. Freezing a role or the site, pausing an intent and cancelling a run also cancel runs waiting on an `askUser` question in that scope (`stopReason: frozen`) and close their questions |
 | `*` | `/api/v1/agent/intents[...]` | Content intents CRUD, `:id/pause|resume|scan|drifts`, `/compile` |
 | `POST` | `/api/v1/intents/:id/scan` | One reconciliation cycle: `{ scan, reconcile, dispatch }`. `dispatch` advances each reconciler goal one step (draft → promote → verify) and reports `dispatched/completed/skipped/blocked` plus `queueUnavailable` on runtimes without a queue adapter. See [reconciler repair loop](../features/reconciler-repair-loop.md). When the intent has `semantic` rules, `scan.semantic` reports the separately budgeted semantic pass (`status` `ran`/`off`/`unavailable`, counts, `completed`, `cursor`), and `scan.semanticOrphansResolved` counts rows of removed semantic rules it resolved. Updating an intent so a stored semantic rule changes profile, question, context or fields without a `version` bump returns `422 SEMANTIC_RULE_VERSION_REQUIRED`; see [semantic drift](../features/jev-semantic-drift.md) |
-| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag. Besides `tools/*`, `prompts/list` and `prompts/get` expose the site's active skills |
+| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag. Besides `tools/*`, `prompts/list` and `prompts/get` expose the site's active skills. A `tools/call` of `askUser` returns a normal tool result with `status: "waiting_user"`, `questionId` and `runId` |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Law Zero pins: list / release |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Public llms.txt index per site |
 

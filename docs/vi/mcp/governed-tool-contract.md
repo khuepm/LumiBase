@@ -1,11 +1,11 @@
 ---
-version: 9
-lastUpdated: 2026-11-02T20:48:27.500Z
+version: 10
+lastUpdated: 2026-11-11T02:57:07.772Z
 sourceLang: vi
-contentHash: 552573785394b136
-codeVerified: 2026-11-02T20:48:27.500Z
-codeVerifiedHash: 552573785394b136
-codeVerifiedClaims: 36
+contentHash: 329b9de7859ec6a0
+codeVerified: 2026-11-11T02:57:07.772Z
+codeVerifiedHash: 329b9de7859ec6a0
+codeVerifiedClaims: 38
 translatedFrom: en
 sourceHash: 8431450c18c2e01f
 mtEngine: manual
@@ -142,19 +142,20 @@ Hai giới hạn, nói ra thay vì để ngầm hiểu:
 
 ```jsonc
 {
-  "status": "executed" | "pending_approval" | "denied",
+  "status": "executed" | "pending_approval" | "waiting_user" | "denied",
   "code": "VALIDATION | AUTONOMY_SHADOW | …",
   "data": {},
   "approvalId": "…",
   "approvalSpace": "agent" | "legacy_ai",
   "agentApprovalId": "…",
   "legacyApprovalId": "…",
+  "questionId": "…",
   "runId": "…",
   "message": "…"
 }
 ```
 
-`code` chỉ có khi `denied`; `data` chỉ có khi `executed`; nhóm `approval*` chỉ có khi `pending_approval`.
+`code` chỉ có khi `denied`; `data` chỉ có khi `executed`; nhóm `approval*` chỉ có khi `pending_approval`; `questionId` chỉ có khi `waiting_user` — run đã hỏi một người bằng tool `askUser` (#710) và đang đỗ tới khi câu hỏi được trả lời tại `POST /api/v1/agent/questions/{questionId}/answer`; agent đọc kết quả bằng tool `getUserAnswer`. Câu hỏi không thuộc không gian id approval nào.
 
 `isError` bằng `status === 'denied'`.
 

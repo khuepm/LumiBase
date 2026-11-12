@@ -14,6 +14,39 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - `/api/v1/agent/skills` API: CRUD, activate/archive, version trail and restore, Markdown import/export, and `/match` to preview what a run would receive. Reading and writing skills both need a control-plane admin — over MCP too, where `prompts/*` are empty for any other caller; non-admin skill authors are not supported yet, and `riskClass` is a review label, not a permission tier. Each write (skill, version, audit entry) is one transaction. `PATCH` takes `expectedVersion` and status actions take `version` (`409 VERSION_MISMATCH`); a skill that was ever active cannot be deleted, only archived (`409 SKILL_HAS_BEEN_ACTIVE`); an import that would change an active skill is refused per document unless it sets `updateActive`. A body is at most 12,000 characters — the per-run injection budget, so any active skill can be injected. Copilot triggers match the latest user turns of the conversation, not only the current message.
 - `lumibase skills list | pull | push | install` in the CLI, for keeping skills in git and deploying them from CI (`push --check` fails when the site differs from the directory). `push` is the deploy path and updates active skills; `install` never changes a skill that is already active.
 - Studio: Mission Control → Skills, with an editor, lifecycle actions, version history and a match preview. Saving and activating are guarded by the version on screen, and skills that were ever active offer Archive instead of Delete.
+- **Agent harness: `askUser` clarification tool (#710).** An agent that cannot continue
+  without a decision it may not make asks a human instead of guessing. The run parks in
+  the new `waiting_user` status (no queue worker, no lock held), the question reaches the
+  Mission Control inbox and a `question` notification, and an answer resumes the run: the
+  `askUser` tool call completes with the answer (wrapped as untrusted data for the model)
+  and the run settles `succeeded`. Stored as `agent_approvals` rows with
+  `kind = 'question'` — **no migration**. New endpoints `GET /api/v1/agent/questions`,
+  `GET /api/v1/agent/questions/:id` and `POST /api/v1/agent/questions/:id/answer`
+  (signed-in users only — any API key, site- or organization-scoped, gets `403`; a holder
+  of `approvals:decide`, or the requesting user once backlog B207 opens the route beyond
+  site administrators; tenant-scoped,
+  audited as `agent_question.*`, a second answer is `409`; the requester's rights are
+  re-resolved before resuming). New read skill `getUserAnswer` returns the outcome to the
+  requester only. Both skills are offered to governed agents (agent runs, the queue
+  worker, MCP), not to the Copilot chat, which has no run to pause. Questions time out (default one day, max seven) through the 5-minute
+  `agent-question-sweep` on both runtimes, failing the run with
+  `stopReason: question_timeout`; freezing a role or the site, pausing an intent or
+  cancelling the run ends waiting runs. MCP `tools/call` returns
+  `status: "waiting_user"` with `questionId`. Metrics
+  `lumibase_agent_questions_total{status}` and `lumibase_agent_question_wait_seconds`; the
+  trust ledger shows question counts in promotion evidence.
+
+### Changed
+- `GET /api/v1/agent/approvals` no longer lists `askUser` questions, and
+  `POST /api/v1/agent/approvals/:id/decide` / `/reopen` refuse a question id with
+  `409 NOT_AN_APPROVAL`.
+- The `agent-runs` queue worker now passes a Web Push notifier to the harness, so
+  approvals and questions parked by a queued run notify subscribed operators (realtime
+  in-app delivery still needs a request context). It forwards only `approval` and
+  `question`: queued runs still send no run succeeded/failed pushes. On Workers the send
+  is kept alive with the queue consumer's `waitUntil` (the `queue()` dispatcher now
+  forwards its `ExecutionContext`); on Docker the worker awaits it; a failed send never
+  fails the run.
 
 ### Upgrade notes
 - Migration `0026_site_skills` adds two tables and changes nothing existing; no backfill. Re-apply `packages/database/migrations/rls-policies.sql` after migrating, as after every upgrade. Sites start with no skills, so agent behaviour is unchanged until an admin activates one.
