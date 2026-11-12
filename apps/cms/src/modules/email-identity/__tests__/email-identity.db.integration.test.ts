@@ -91,6 +91,17 @@ describe.skipIf(!hasDbIntegrationUrl)('Email identity policy — DB integration'
     await cleanup();
     const reset = await setInstanceEmailIdentityMode(db, 'exact');
     expect(reset.ok).toBe(true);
+    // Several tests switch the (global) instance to `root`, which is refused —
+    // correctly — while ANY two accounts share a root mailbox. CI runs every
+    // suite on one database, so name a foreign collision explicitly instead of
+    // failing later with an opaque `{ ok: false }` mismatch.
+    const foreign = await setInstanceEmailIdentityMode(db, 'root', { dryRun: true });
+    if (!foreign.ok) {
+      throw new Error(
+        `email-identity suite precondition: the shared database already holds accounts that share a root mailbox ` +
+          `(not created by this suite), so switching to root mode is refused: ${JSON.stringify(foreign)}`,
+      );
+    }
     const org = sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`;
     await db.insert(sites).values([
       { organizationId: org, id: SITE_STRICT, name: 'EID strict' },
