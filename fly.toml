@@ -28,7 +28,12 @@ kill_signal = "SIGTERM"
 kill_timeout = 15
 
 [build]
-  # Pin a release tag for production; `latest` follows the newest release.
+  # UNATTENDED UPGRADES: `latest` follows the newest release and the image
+  # migrates the database on every start, so a deploy or restart after a
+  # (major) release upgrades this app. For production, change this one line
+  # to the release you tested:  image = "ghcr.io/khuepm/lumibase-cms:<version>"
+  # (`latest` stays the default because no older release tag has the
+  # entrypoint these templates rely on; docs/en/deployment/one-click.md).
   image = "ghcr.io/khuepm/lumibase-cms:latest"
 
 [env]

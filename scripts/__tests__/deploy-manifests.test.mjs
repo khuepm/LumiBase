@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { REQUIRED_PRODUCTION_VARS } from '../../docker/scripts/entrypoint-lib.mjs';
+import { REQUIRED_PRODUCTION_VARS, encryptionKeyProblem } from '../../docker/scripts/entrypoint-lib.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const read = (rel) => readFileSync(root + rel, 'utf8');
@@ -60,6 +60,13 @@ test('fly.toml: no secrets in [env], setup gated, port/health/signal match the i
   assert.match(toml, /^\s*auto_stop_machines = "off"$/m, 'a stopped machine runs no scheduler or workers');
 });
 
+test('the templates deploying :latest say how to pin, next to the image line', () => {
+  // :latest + migrate-on-start is an unattended upgrade; the one-line pin must
+  // sit where an operator edits the image.
+  assert.match(read('render.yaml'), /# .*url: ghcr\.io\/khuepm\/lumibase-cms:<version>\n(?:\s*#.*\n)*\s*url: ghcr\.io\/khuepm\/lumibase-cms:latest$/m);
+  assert.match(read('fly.toml'), /# .*image = "ghcr\.io\/khuepm\/lumibase-cms:<version>"\n(?:\s*#.*\n)*\s*image = "ghcr\.io\/khuepm\/lumibase-cms:latest"$/m);
+});
+
 test('railway.json builds the production Dockerfile and checks /health', () => {
   const config = JSON.parse(read('railway.json'));
   assert.equal(config.build.builder, 'DOCKERFILE');
@@ -69,13 +76,20 @@ test('railway.json builds the production Dockerfile and checks /health', () => {
 
 test('Railway template variables cover production and generate valid secrets', () => {
   const { variables } = JSON.parse(read('docker/railway-template-variables.json'));
-  for (const name of REQUIRED_PRODUCTION_VARS) assert.ok(variables[name], `${name} missing`);
+  for (const name of REQUIRED_PRODUCTION_VARS) {
+    if (DERIVED.has(name)) continue;
+    assert.ok(variables[name], `${name} missing`);
+  }
+  // `https://${{RAILWAY_PUBLIC_DOMAIN}}` expands to `https://` without a domain
+  // and would shadow the entrypoint's own RAILWAY_PUBLIC_DOMAIN fallback.
+  for (const name of DERIVED) assert.equal(variables[name], undefined, `${name} must be derived, not templated`);
   assert.equal(variables.LUMIBASE_REQUIRE_SETUP_TOKEN, 'true');
   assert.match(variables.JWT_SECRET, /^\$\{\{secret\(\d+\)\}\}$/);
   assert.ok(Number(variables.JWT_SECRET.match(/\d+/)[0]) >= 32, 'JWT_SECRET needs at least 32 chars');
 
   // Expand the ENCRYPTION_KEY recipe the way Railway does and run the same
-  // check `validateProductionConfig` applies (canonical base64, 16/24/32 bytes).
+  // check `validateProductionConfig` applies (canonical base64, 16/24/32 bytes)
+  // and the entrypoint mirrors; the entrypoint never rewrites the key.
   const recipe = variables.ENCRYPTION_KEY.match(/^\$\{\{secret\((\d+), "([^"]+)"\)\}\}(.*)$/);
   assert.ok(recipe, 'ENCRYPTION_KEY must be a secret(length, alphabet) recipe');
   const [, length, alphabet, suffix] = recipe;
@@ -86,6 +100,7 @@ test('Railway template variables cover production and generate valid secrets', (
     const raw = Buffer.from(value, 'base64');
     assert.equal(raw.byteLength, 32, value);
     assert.equal(raw.toString('base64'), value, `non-canonical key: ${value}`);
+    assert.equal(encryptionKeyProblem({ NODE_ENV: 'production', ENCRYPTION_KEY: value }), undefined, value);
   }
 });
 
