@@ -296,6 +296,17 @@ function escapeMarkdown(text: string): string {
   return text.replace(/([\\`*_[\]#<>|])/g, '\\$1');
 }
 
+/**
+ * One table cell on one line. Inline text is already escaped by
+ * `escapeMarkdown`, so only pipes that are still unescaped (preceded by an even
+ * run of backslashes, e.g. from a code block) get a backslash. Escaping every
+ * pipe again would turn an escaped pipe (backslash, pipe) into backslash,
+ * backslash, pipe: a literal backslash followed by a column break.
+ */
+function tableCell(md: string): string {
+  return md.replace(/\n+/g, ' ').replace(/(\\*)\|/g, (m, bs: string) => (bs.length % 2 === 0 ? `${bs}\\|` : m));
+}
+
 function refUrl(ref: RichTextRef, opts: RichTextRenderOptions): string {
   const resolved = opts.resolveRef?.(ref);
   const safe = resolved ? safeHref(resolved) : null;
@@ -361,7 +372,7 @@ function blocksToMarkdown(blocks: RichTextBlock[], opts: RichTextRenderOptions, 
           return indent + (b.ref.kind === 'file' ? `![](${refUrl(b.ref, opts)})` : `[](${refUrl(b.ref, opts)})`);
         case 'table': {
           const lines = b.rows.map(
-            (row) => `| ${row.cells.map((c) => blocksToMarkdown(c, opts).replace(/\n+/g, ' ').replace(/\|/g, '\\|')).join(' | ')} |`,
+            (row) => `| ${row.cells.map((c) => tableCell(blocksToMarkdown(c, opts))).join(' | ')} |`,
           );
           if (lines.length) {
             const cols = b.rows[0]!.cells.length;

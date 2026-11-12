@@ -308,3 +308,26 @@ describe('importEntries — 409 handling', () => {
     expect(result.failed[0]).toMatch(/Item must be approved/);
   });
 });
+
+describe('richTextToMarkdown — table cells', () => {
+  const cell = (block: Record<string, unknown>) => ({ cells: [[block]] });
+  const table = (rows: unknown[]) =>
+    richTextToMarkdown({ type: 'doc', version: 1, content: [{ type: 'table', rows }] } as unknown as RichTextDocument);
+  const columns = (line: string) => line.split(/(?<!\\)\|/).length - 2;
+
+  it('keeps a pipe or a trailing backslash in text inside its cell', () => {
+    const md = table([
+      cell({ type: 'paragraph', content: [{ type: 'text', text: 'a|b\\' }] }),
+      cell({ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }),
+    ]);
+    const first = md.split('\n')[0]!;
+    expect(first).toBe('| a\\|b\\\\ |');
+    expect(columns(first)).toBe(1);
+  });
+
+  it('escapes a pipe from an unescaped code block once', () => {
+    const md = table([cell({ type: 'code', text: 'a | b' })]);
+    expect(md.split('\n')[0]).toContain('a \\| b');
+    expect(columns(md.split('\n')[0]!)).toBe(1);
+  });
+});
