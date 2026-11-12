@@ -45,19 +45,19 @@
     "graphql": "^17.1.0",
     "graphql-yoga": "^6.0.1",
     "hono": "^4.13.16",
-    "jose": "^6.2.15",
+    "jose": "^6.2.17",
     "maxmind": "5.0.8",
     "nanoid": "^6.0.2",
     "node-cron": "^4.6.0",
-    "nodemailer": "10.3.1",
+    "nodemailer": "10.4.0",
     "postgres": "^4.1.0",
     "prom-client": "^15.1.0",
     "uuid": "^14.0.3",
-    "ws": "^8.22.1",
+    "ws": "^8.22.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261106.1",
+    "@cloudflare/workers-types": "^5.20261109.1",
     "@types/node": "^26.6.6",
     "@types/nodemailer": "8.0.2",
     "@types/ws": "^8.18.2",
@@ -66,6 +66,6 @@
     "tsx": "^4.23.15",
     "typescript": "^5.6.2",
     "vitest": "^5.1.0",
-    "wrangler": "^4.158.0"
+    "wrangler": "^4.159.0"
   }
 }
