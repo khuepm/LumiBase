@@ -692,3 +692,134 @@ describe('nullable relation and metadata columns advertise and accept null', () 
     expect(sent.body).toEqual(body);
   });
 });
+
+// ── 6. recorded requests, replayed against the real routes ────────────────────
+
+/**
+ * The #716 review asked for a tool → REST regression, not only a comparison of
+ * schemas. `apps/cms` and this package do not depend on each other, so the
+ * check is split at the wire: this half calls the REGISTERED tools through the
+ * SDK client and pins the exact `{method, path, body}` each one sends in
+ * `golden/mcp-recorded-requests.json`; the CMS half
+ * (`apps/cms/src/routes/__tests__/mcp-recorded-requests.db.integration.test.ts`)
+ * replays every entry, in order, against the real Hono routes over PostgreSQL
+ * and asserts the persisted rows (an `encrypted: true, classification: "pii"`
+ * field is stored encrypted and classified; `status` pauses and resumes a
+ * subscription whose `kind` stays put). It also parses every body with the
+ * route's own Zod and requires nothing to be stripped, without a database.
+ *
+ * Path placeholder: `{subscriptionId}` is the id the replayed create returns.
+ * An intended change: `pnpm -F @lumibase/mcp-server exec vitest run
+ * src/__tests__/tool-schema-fidelity.test.ts -u`, then review the diff.
+ */
+const REPLAY_COLLECTION = 'mcp716_customers';
+
+/** `[label, tool, arguments]`, in replay order. */
+const REPLAY_CALLS: Array<[string, string, Record<string, unknown>]> = [
+  [
+    'apply_schema creates an encrypted PII field and the length/precision/scale/validation/display keys',
+    'apply_schema',
+    {
+      name: REPLAY_COLLECTION,
+      note: 'Created through the stdio MCP tool',
+      fields: [
+        {
+          name: 'email',
+          type: 'string',
+          interface: 'input',
+          label: 'Email',
+          required: true,
+          encrypted: true,
+          classification: 'pii',
+          length: 320,
+          validation: { _and: [{ email: { _regex: '^.+@.+$' } }] },
+          displayOptions: { mask: true },
+          rawEnabled: false,
+          width: 'half',
+        },
+        { name: 'total', type: 'decimal', interface: 'input', precision: 12, scale: 2 },
+      ],
+    },
+  ],
+  [
+    'diff_schema previews a classification change and new precision/scale',
+    'diff_schema',
+    {
+      name: REPLAY_COLLECTION,
+      fields: [
+        { name: 'email', type: 'string', interface: 'input', encrypted: true, classification: 'phi', length: 320 },
+        { name: 'total', type: 'decimal', interface: 'input', precision: 14, scale: 4 },
+      ],
+    },
+  ],
+  [
+    'apply_schema passes the risky-change guard with migrationPlan alone (populated field, type change)',
+    'apply_schema',
+    {
+      name: REPLAY_COLLECTION,
+      fields: [
+        { name: 'email', type: 'string', interface: 'input', encrypted: true, classification: 'pii', length: 320 },
+        { name: 'total', type: 'integer', interface: 'input', migrationPlan: { strategy: 'cast' } },
+      ],
+    },
+  ],
+  ['create_cdc_subscription creates a pull subscription', 'create_cdc_subscription', { name: 'mcp716_pull', kind: 'pull' }],
+  [
+    'update_cdc_subscription pauses it (immutable kind/webhook_id are not forwarded)',
+    'update_cdc_subscription',
+    { id: '{subscriptionId}', status: 'paused', kind: 'webhook', webhook_id: 'wh_never_sent' },
+  ],
+  [
+    'update_cdc_subscription resumes and renames it',
+    'update_cdc_subscription',
+    { id: '{subscriptionId}', status: 'active', name: 'mcp716_pull_renamed' },
+  ],
+];
+
+describe('recorded requests for the REST replay (#716 review)', () => {
+  it('the registered tools send exactly the committed requests', async () => {
+    const recorded: Array<Recorded & { label: string; tool: string }> = [];
+    for (const [label, tool, args] of REPLAY_CALLS) {
+      const sent = await callStdio(tool, args);
+      recorded.push({ label, tool, method: sent.method, path: decodeURIComponent(sent.path), body: sent.body });
+    }
+    await expect(`${JSON.stringify(recorded, null, 2)}\n`).toMatchFileSnapshot(
+      join(GOLDEN_DIR, 'mcp-recorded-requests.json'),
+    );
+  });
+
+  it('immutable CDC keys never reach PATCH /cdc/subscriptions/:id; status does', async () => {
+    const sent = await callStdio('update_cdc_subscription', {
+      id: 'sub_1',
+      status: 'paused',
+      kind: 'webhook',
+      webhook_id: 'wh_1',
+      extension_name: 'ext',
+    });
+    expect(sent).toEqual({ method: 'PATCH', path: '/cdc/subscriptions/sub_1', body: { status: 'paused' } });
+    const advertised = Object.keys((stdioSchema('update_cdc_subscription')['properties'] ?? {}) as object);
+    expect(advertised).toContain('status');
+    for (const key of ['kind', 'webhook_id', 'extension_name']) expect(advertised).not.toContain(key);
+  });
+
+  it('apply_schema / diff_schema forward every security-sensitive field key unchanged', async () => {
+    const field = {
+      name: 'ssn',
+      type: 'string',
+      interface: 'input',
+      encrypted: true,
+      classification: 'phi',
+      length: 11,
+      precision: 3,
+      scale: 0,
+      validation: { _and: [] },
+      displayOptions: { mask: true },
+      rawEnabled: false,
+      migrationPlan: { strategy: 'cast' },
+    };
+    for (const tool of ['apply_schema', 'diff_schema']) {
+      const sent = await callStdio(tool, { name: 'patients', fields: [field] });
+      expect((sent.body as { fields: unknown[] }).fields, tool).toEqual([field]);
+    }
+  });
+});
