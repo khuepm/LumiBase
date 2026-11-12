@@ -117,6 +117,7 @@ export default Sentry.withSentry(
                 db,
                 config: resolveImportConfig(env as unknown as Record<string, string | undefined>),
                 realtime: runtime.realtime,
+                env: env as unknown as Record<string, unknown>,
               },
               { budgetMs: 25_000 },
             ),

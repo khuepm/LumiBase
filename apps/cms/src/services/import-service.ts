@@ -187,18 +187,35 @@ export async function createImportJob(input: {
 
 // ── Step ──────────────────────────────────────────────────────────────────────
 
+/** Builds an ItemService bound to the job's principal on a given connection/transaction. */
+export type ItemServiceBinder = (db: Database) => ItemService;
+
 export interface ImportStepDeps {
   db: Database;
   config: ImportConfig;
   realtime?: RealtimeProvider;
+  /**
+   * Runtime env (Workers bindings or `process.env`). Passed to ItemService as
+   * `extensionEnv` so hook extensions run on imported rows.
+   */
+  env?: Record<string, unknown>;
   /** Injectable for tests; defaults to the real principal-bound ItemService. */
-  itemServiceFor?: (job: ImportJobRow) => Promise<ItemService | { denied: string }>;
+  itemServiceFor?: (job: ImportJobRow) => Promise<ItemServiceBinder | { denied: string }>;
+  /**
+   * Test seam: runs inside the chunk transaction after each row is written.
+   * Throwing here simulates a crash mid-chunk (the whole chunk rolls back).
+   */
+  afterRowWritten?: (rowIndex: number) => Promise<void> | void;
   now?: () => Date;
 }
 
 export type StepOutcome = 'progressed' | 'done' | 'busy' | 'waiting';
 
-async function defaultItemServiceFor(db: Database, job: ImportJobRow): Promise<ItemService | { denied: string }> {
+async function defaultItemServiceFor(
+  db: Database,
+  job: ImportJobRow,
+  env: Record<string, unknown> | undefined,
+): Promise<ItemServiceBinder | { denied: string }> {
   const resolution = await resolvePrincipalCapabilities(
     new EffectiveCapabilityService({ db, siteId: job.siteId }),
     job.principal as AuthenticatedPrincipalRef,
@@ -206,11 +223,16 @@ async function defaultItemServiceFor(db: Database, job: ImportJobRow): Promise<I
   if (!resolution.allowed || !resolution.permissionContext) {
     return { denied: resolution.message ?? 'The principal that started this import is no longer authorised.' };
   }
-  return itemServiceForPrincipal(
-    { db, siteId: job.siteId, userId: job.createdBy ?? null },
-    resolution.permissionContext,
-  );
+  const ctx = resolution.permissionContext;
+  return (bound) =>
+    itemServiceForPrincipal(
+      { db: bound, siteId: job.siteId, userId: job.createdBy ?? null, ...(env ? { extensionEnv: env } : {}) },
+      ctx,
+    );
 }
+
+/** Thrown inside the chunk transaction when another worker owns the job. */
+class LeaseLostError extends Error {}
 
 function rowError(row: number, rec: ImportRecord, err: unknown): ImportRowError {
   const message =
@@ -313,74 +335,113 @@ export async function runImportStep(deps: ImportStepDeps, jobId: string): Promis
     return 'done';
   }
 
-  const svc = await (deps.itemServiceFor ?? ((j) => defaultItemServiceFor(deps.db, j)))(job);
-  if ('denied' in svc) {
-    await finish(deps, job.id, owner, 'failed', svc.denied);
+  const bind = await (deps.itemServiceFor ?? ((j) => defaultItemServiceFor(deps.db, j, deps.env)))(job);
+  if ('denied' in bind) {
+    await finish(deps, job.id, owner, 'failed', bind.denied);
     return 'done';
   }
 
   let records: ImportRecord[];
   try {
-    const meta = await svc.describeForExport(job.collection);
+    const meta = await bind(deps.db).describeForExport(job.collection);
     records = parseExport(job.source, job.format as ExportFormat, meta.fields);
   } catch (err) {
     await finish(deps, job.id, owner, 'failed', err instanceof Error ? err.message : 'Could not read the import file.');
     return 'done';
   }
 
+  // ── One transaction per chunk ─────────────────────────────────────────────
+  //
+  // The rows and the cursor advance commit together, so a crash anywhere in
+  // the chunk rolls back every row it wrote and the next worker replays the
+  // chunk from the old cursor: no duplicates (review on #792).
+  //
+  // Fencing: the transaction first locks the job row `FOR UPDATE` where we are
+  // still the lease owner, and renews the lease. A competing claim blocks on
+  // that lock until we commit or roll back, so two workers can never write the
+  // same chunk; if another worker took the job before we locked it, we write
+  // nothing. If this process dies, Postgres aborts the transaction and drops
+  // the lock, and the expired lease lets the next tick resume.
   const start = job.cursor;
   const end = Math.min(start + deps.config.chunkSize, records.length);
-  let created = 0;
-  let updated = 0;
-  const errors: ImportRowError[] = [];
-  for (let i = start; i < end; i++) {
-    const rec = records[i]!;
-    try {
-      const payload = { data: rec.data, ...(rec.status ? { status: rec.status } : {}), ...(rec.sort !== undefined ? { sort: rec.sort } : {}) };
-      if (job.mode === 'upsert' && rec.id && (await exists(svc, job.collection, rec.id))) {
-        await svc.patch(job.collection, rec.id, payload);
-        updated++;
-      } else {
-        await svc.create(job.collection, payload);
-        created++;
+  let committed: ImportJobRow | undefined;
+  try {
+    committed = await deps.db.transaction(async (tx) => {
+      const lockedAt = deps.now?.() ?? new Date();
+      const [locked] = await tx
+        .select({ id: importJobs.id })
+        .from(importJobs)
+        .where(and(eq(importJobs.id, job.id), eq(importJobs.leaseOwner, owner)))
+        .for('update');
+      if (!locked) throw new LeaseLostError();
+      await tx
+        .update(importJobs)
+        .set({ leaseUntil: new Date(lockedAt.getTime() + deps.config.leaseMs) })
+        .where(eq(importJobs.id, job.id));
+
+      const svc = bind(tx as unknown as Database);
+      let created = 0;
+      let updated = 0;
+      const errors: ImportRowError[] = [];
+      for (let i = start; i < end; i++) {
+        const rec = records[i]!;
+        try {
+          // Savepoint per row: a failing row rolls back only its own writes.
+          await tx.transaction(async () => {
+            const payload = { data: rec.data, ...(rec.status ? { status: rec.status } : {}), ...(rec.sort !== undefined ? { sort: rec.sort } : {}) };
+            if (job.mode === 'upsert' && rec.id && (await exists(svc, job.collection, rec.id))) {
+              await svc.patch(job.collection, rec.id, payload);
+              updated++;
+            } else {
+              await svc.create(job.collection, payload);
+              created++;
+            }
+          });
+        } catch (err) {
+          errors.push(rowError(i + 1, rec, err));
+        }
+        // Outside the per-row catch: a throw here aborts the whole chunk.
+        await deps.afterRowWritten?.(i);
       }
-    } catch (err) {
-      errors.push(rowError(i + 1, rec, err));
-    }
+
+      const keptErrors = Array.isArray(job.errors) ? (job.errors as ImportRowError[]) : [];
+      const room = Math.max(0, deps.config.maxErrors - keptErrors.length);
+      const failedRows = job.failedRows + errors.length;
+      const progress: Partial<typeof importJobs.$inferInsert> = {
+        cursor: end,
+        createdRows: job.createdRows + created,
+        updatedRows: job.updatedRows + updated,
+        failedRows,
+        errors: [...keptErrors, ...errors.slice(0, room)],
+        errorsTruncated: job.errorsTruncated + Math.max(0, errors.length - room),
+        leaseOwner: null,
+        leaseUntil: null,
+        updatedAt: deps.now?.() ?? new Date(),
+      };
+      if (end >= records.length) {
+        const failedAll = failedRows === records.length;
+        Object.assign(progress, {
+          status: failedAll ? 'failed' : 'succeeded',
+          message: failedAll ? 'Every row failed; see the error report.' : null,
+          source: '',
+          finishedAt: progress.updatedAt,
+        });
+      }
+      const [row] = await tx
+        .update(importJobs)
+        .set(progress)
+        .where(and(eq(importJobs.id, job.id), eq(importJobs.leaseOwner, owner)))
+        .returning();
+      if (!row) throw new LeaseLostError();
+      return row;
+    });
+  } catch (err) {
+    if (err instanceof LeaseLostError) return 'busy';
+    throw err;
   }
 
-  const keptErrors = Array.isArray(job.errors) ? (job.errors as ImportRowError[]) : [];
-  const room = Math.max(0, deps.config.maxErrors - keptErrors.length);
-  const nextErrors = [...keptErrors, ...errors.slice(0, room)];
-  const progress = {
-    cursor: end,
-    createdRows: job.createdRows + created,
-    updatedRows: job.updatedRows + updated,
-    failedRows: job.failedRows + errors.length,
-    errors: nextErrors,
-    errorsTruncated: job.errorsTruncated + Math.max(0, errors.length - room),
-  };
-
-  if (end >= records.length) {
-    const failedAll = progress.failedRows === records.length;
-    await finish(
-      deps,
-      job.id,
-      owner,
-      failedAll ? 'failed' : 'succeeded',
-      failedAll ? 'Every row failed; see the error report.' : null,
-      progress,
-    );
-    return 'done';
-  }
-
-  const [row] = await deps.db
-    .update(importJobs)
-    .set({ ...progress, leaseOwner: null, leaseUntil: null, updatedAt: deps.now?.() ?? new Date() })
-    .where(and(eq(importJobs.id, job.id), eq(importJobs.leaseOwner, owner)))
-    .returning();
-  if (row) await publishProgress(deps, row);
-  return 'progressed';
+  await publishProgress(deps, committed);
+  return TERMINAL_STATUSES.includes(committed.status as ImportStatus) ? 'done' : 'progressed';
 }
 
 async function exists(svc: ItemService, collection: string, id: string): Promise<boolean> {

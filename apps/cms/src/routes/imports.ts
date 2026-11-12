@@ -142,7 +142,7 @@ importsRouter.post('/', async (c) => {
   // Start now; the minute tick resumes whatever this request's budget leaves.
   runDetached(
     c,
-    driveImportJob({ db, config, realtime: c.get('runtime')?.realtime }, job.id, 20_000).catch((err) =>
+    driveImportJob({ db, config, realtime: c.get('runtime')?.realtime, env: envRecord(c) }, job.id, 20_000).catch((err) =>
       console.error('[imports] first run failed', { jobId: job.id, err: formatSafeError(err) }),
     ),
   );

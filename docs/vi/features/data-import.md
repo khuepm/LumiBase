@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-11-12T10:11:38.468Z
+version: 3
+lastUpdated: 2026-11-12T18:45:08.116Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 932857ad9c1c2971
+sourceHash: 98aaa3b267d1bf6f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T10:11:38.468Z
-codeVerifiedHash: 932857ad9c1c2971
+codeVerified: 2026-11-12T18:45:08.116Z
+codeVerifiedHash: 98aaa3b267d1bf6f
 codeVerifiedClaims: 12
 ---
 
@@ -125,9 +125,11 @@ realtime `import.progress` cho người đã upload.
 
 **Cách job chạy.** Request upload khởi động job và xử lý nó trong khoảng
 20 giây. Sau đó một cron mỗi phút (Cron Trigger trên Workers, hoặc scheduler của
-Node trên Docker) chạy tiếp. Mỗi bước giữ một lease ngắn trên job, nên các worker
-chạy chồng nhau không bao giờ ghi cùng một phần hai lần, và một worker chết giữa
-chừng được thay thế khi lease của nó hết hạn. Đo trên máy local với Postgres 16,
+Node trên Docker) chạy tiếp. Mỗi phần là một transaction của database: các dòng và
+bộ đếm tiến độ được commit cùng nhau, nên một worker chết giữa chừng không để lại
+gì, và phần đó được chạy lại từ dòng đã commit cuối cùng, không tạo bản trùng.
+Transaction khoá job, nên worker thứ hai phải chờ thay vì ghi trùng các dòng đó,
+và tiếp quản khi lease của worker đầu hết hạn. Đo trên máy local với Postgres 16,
 mỗi dòng đi qua toàn bộ pipeline item (validation, revision, change feed) với tốc
 độ khoảng 90 dòng mỗi giây cho mỗi job, nên một file 100k dòng mất khoảng 20 phút.
 Giới hạn và kích thước mỗi phần được đặt bằng [các biến `IMPORT_*`](../deployment/environment-variables.md#imports).

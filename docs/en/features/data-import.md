@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-11-12T10:11:38.468Z
+version: 3
+lastUpdated: 2026-11-12T18:45:08.116Z
 sourceLang: en
-contentHash: 932857ad9c1c2971
-codeVerified: 2026-11-12T10:11:38.468Z
-codeVerifiedHash: 932857ad9c1c2971
+contentHash: 98aaa3b267d1bf6f
+codeVerified: 2026-11-12T18:45:08.116Z
+codeVerifiedHash: 98aaa3b267d1bf6f
 codeVerifiedClaims: 12
 ---
 
@@ -123,9 +123,12 @@ receives an `import.progress` realtime event for the uploader.
 
 **How it runs.** The upload request starts the job and works on it for up to
 about 20 seconds. After that, a one-minute cron (Workers Cron Trigger, or the
-Node scheduler on Docker) resumes it. Each step takes a short lease on the job,
-so overlapping workers never write the same chunk twice, and a worker that dies
-mid-chunk is replaced once its lease expires. Measured locally on Postgres 16, a
+Node scheduler on Docker) resumes it. Each chunk is one database transaction:
+the rows and the progress counter commit together, so a worker that dies
+mid-chunk leaves nothing behind and the chunk is replayed from the last
+committed row, with no duplicates. The transaction locks the job, so a second
+worker waits instead of writing the same rows, and takes over once the first
+worker's lease expires. Measured locally on Postgres 16, a
 row goes through the full item pipeline (validation, revisions, change feed) at
 about 90 rows per second per job, so a 100k-row file takes about 20 minutes.
 Limits and chunk size are set with [`IMPORT_*` variables](../deployment/environment-variables.md#imports).

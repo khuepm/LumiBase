@@ -208,6 +208,84 @@ describe.skipIf(!hasDbIntegrationUrl)('background imports — DB integration', (
     expect(await reload(j.id)).toMatchObject({ status: 'succeeded', createdRows: 120 });
   });
 
+  /** Titles of every item in `products`, to spot duplicates. */
+  async function titlesInProducts(): Promise<string[]> {
+    const coll = (await db.select({ id: collections.id }).from(collections).where(and(eq(collections.siteId, SITE), eq(collections.name, 'products'))))[0]!.id;
+    const rows = await db.select({ data: items.data }).from(items).where(eq(items.collectionId, coll));
+    return rows.map((r) => ((r.data as { title?: { en?: string } }).title?.en ?? '')).sort();
+  }
+  const titled = (n: number) => csv(Array.from({ length: n }, (_, i) => ({ title: `R${String(i).padStart(3, '0')}`, price: i })));
+  const expected = (n: number) => Array.from({ length: n }, (_, i) => `R${String(i).padStart(3, '0')}`);
+
+  it('a crash after N writes rolls the chunk back; resume writes every row exactly once (review on #792)', async () => {
+    const j = await job(titled(120));
+    // First chunk commits normally.
+    await runImportStep({ db, config: config() }, j.id);
+    // Second chunk "crashes" after 20 rows were written.
+    const crash = new Error('process died');
+    await expect(
+      runImportStep({ db, config: config(), afterRowWritten: (i) => { if (i === 69) throw crash; } }, j.id),
+    ).rejects.toBe(crash);
+    let row = await reload(j.id);
+    expect(row.cursor).toBe(50);
+    expect(row.createdRows).toBe(50);
+    expect(await countItems()).toBe(50); // the 20 crashed writes are gone
+    // The dead worker still holds the lease; nobody can take it until it expires.
+    expect(await runImportTick({ db, config: config() })).toBe(0);
+    await db.update(importJobs).set({ leaseUntil: new Date(Date.now() - 1000) }).where(eq(importJobs.id, j.id));
+    await runImportTick({ db, config: config() });
+    row = await reload(j.id);
+    expect(row).toMatchObject({ status: 'succeeded', cursor: 120, createdRows: 120 });
+    expect(await titlesInProducts()).toEqual(expected(120));
+  });
+
+  it('a worker whose lease was taken before it locked the job writes nothing', async () => {
+    const j = await job(titled(10));
+    let wrote = 0;
+    const outcome = await runImportStep(
+      {
+        db,
+        config: config(),
+        // Runs after the claim, before the chunk transaction: another worker steals the job.
+        itemServiceFor: async (claimed) => {
+          await db.update(importJobs).set({ leaseOwner: 'other-worker', leaseUntil: new Date(Date.now() + 60_000) }).where(eq(importJobs.id, claimed.id));
+          return (bound) => {
+            wrote++;
+            return new ItemService({ db: bound, siteId: SITE });
+          };
+        },
+      },
+      j.id,
+    );
+    expect(outcome).toBe('busy');
+    expect(await countItems()).toBe(0);
+    expect(await reload(j.id)).toMatchObject({ cursor: 0, leaseOwner: 'other-worker' });
+    expect(wrote).toBe(1); // only the describe call; no chunk ran
+  });
+
+  it('an expired lease cannot let a second worker overlap a running chunk', async () => {
+    const j = await job(titled(100));
+    let second: Promise<unknown> | undefined;
+    await runImportStep(
+      {
+        db,
+        config: config({ leaseMs: 1 }), // lease is already "expired" while the chunk runs
+        afterRowWritten: async (i) => {
+          if (i === 10) {
+            // A second worker tries now. It must wait for this chunk's lock, then
+            // continue from the committed cursor, not replay these rows.
+            second = runImportStep({ db, config: config() }, j.id);
+            await new Promise((r) => setTimeout(r, 200));
+          }
+        },
+      },
+      j.id,
+    );
+    expect(await second).toBe('done');
+    expect(await reload(j.id)).toMatchObject({ status: 'succeeded', cursor: 100, createdRows: 100 });
+    expect(await titlesInProducts()).toEqual(expected(100));
+  });
+
   it('cancel: a queued job stops at once, a running job at its next step', async () => {
     const queued = await job(csv([{ price: 1 }]));
     let res = await app.request(`/api/v1/imports/${queued.id}/cancel`, { method: 'POST' });

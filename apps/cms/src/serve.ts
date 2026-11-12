@@ -547,6 +547,7 @@ async function main() {
     db: rotatorDb,
     config: resolveImportConfig(process.env as Record<string, string | undefined>),
     realtime: runtime.realtime,
+    env: process.env as Record<string, unknown>,
   };
   importTask = cron.schedule(
     '* * * * *',
