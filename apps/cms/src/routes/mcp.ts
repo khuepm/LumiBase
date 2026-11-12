@@ -18,7 +18,9 @@ import { approvalRequesterFromAuth, resolveRequestCapabilities } from '../servic
 import { IntentService } from '../services/intent-service';
 import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
 import { createConfiguredLLMProvider } from '../services/llm-provider';
-import { McpService, type McpHarnessPort } from '../services/mcp-service';
+import { McpService, toolAnnotations, toolTitle, type McpHarnessPort } from '../services/mcp-service';
+import { mcpOAuthScopes } from '../modules/mcp-oauth/adapter';
+import { MCP_SCOPE, narrowCapabilitiesByScopes } from '../modules/mcp-oauth/scopes';
 import { SchemaService } from '../services/schema-service';
 import { ToolRegistryService } from '../services/tool-registry-service';
 
@@ -47,6 +49,13 @@ mcpRouter.post('/', async (c) => {
   // Site tools on a pinned organization key obey the site's MCP flag. The
   // organization flag gates only organization tools (and the unpinned profile).
   if (orgCall || (orgKey && !siteId)) {
+    // Organization tools return before the scope narrowing further down, so an
+    // OAuth token (#346) is checked here: only `lumibase.admin` reaches them.
+    const orgScopes = mcpOAuthScopes(auth);
+    if (orgScopes && !orgScopes.includes(MCP_SCOPE.admin)) {
+      await auditSecurityGuardDenied(c, 'organization_access_denied', { reason: 'oauth_scope_excludes_organization_plane' });
+      return c.json({ errors: [{ code: 'ORGANIZATION_FORBIDDEN' }] }, 403);
+    }
     if (isFrontendAudience(auth?.raw?.aud) || (auth?.apiKeyId && !orgKey)) {
       await auditSecurityGuardDenied(c, 'organization_access_denied', { reason: 'site_scoped_credential_on_org_plane' });
       return c.json({ errors: [{ code: 'ORGANIZATION_FORBIDDEN' }] }, 403);
@@ -109,11 +118,13 @@ mcpRouter.post('/', async (c) => {
 
   const port: McpHarnessPort = {
     listTools: async () => [
-      ...(await registry.listTools()).map(({ name, description, inputSchema, enabled }) => ({
-        name,
-        description,
-        inputSchema,
-        enabled,
+      ...(await registry.listTools()).map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        enabled: tool.enabled,
+        title: toolTitle(tool.name),
+        annotations: toolAnnotations(tool),
       })),
       ...(organizationPort ? (await organizationPort.listTools()).filter((tool) => tool.name === 'org:get_organization' || tool.name === 'org:list_sites') : []),
     ],
@@ -142,6 +153,16 @@ mcpRouter.post('/', async (c) => {
   // `'admin'` string a bootstrap/dev principal gets — the harness was
   // admin-or-nothing regardless of what the token was actually allowed to do.
   const grant = await resolveRequestCapabilities(c);
+  // An OAuth access token (#346) is bounded twice: by the user's RBAC bundle
+  // above, and by the scopes the user consented to. Scopes only ever remove.
+  const oauthScopes = mcpOAuthScopes(auth);
+  const capabilities = oauthScopes
+    ? narrowCapabilitiesByScopes(
+        grant.capabilities,
+        oauthScopes,
+        Object.values(CORE_SKILLS).flatMap((skill) => skill.requiredCapabilities),
+      )
+    : grant.capabilities;
 
   const controlPlaneSkill = controlPlaneSkillFromCall(body);
   // The backstop now accepts either signal. `isAdminPrincipal` is kept because
@@ -150,10 +171,11 @@ mcpRouter.post('/', async (c) => {
   // role passes, while an admin-policy API KEY still does not
   // (`EffectiveCapabilityService.resolveApiKey` returns `controlPlaneAdmin:
   // false` deliberately).
-  if (controlPlaneSkill && !isAdminPrincipal(auth) && !grant.controlPlaneAdmin) {
+  const scopeAllowsControlPlane = !oauthScopes || oauthScopes.includes(MCP_SCOPE.admin);
+  if (controlPlaneSkill && (!scopeAllowsControlPlane || (!isAdminPrincipal(auth) && !grant.controlPlaneAdmin))) {
     await auditSecurityGuardDenied(c, 'mcp_control_plane_skill_denied', {
       skill: controlPlaneSkill,
-      reason: 'non_admin_control_plane_skill',
+      reason: scopeAllowsControlPlane ? 'non_admin_control_plane_skill' : 'oauth_scope_excludes_control_plane',
       roles: auth?.roles ?? [],
       principalType: auth?.type ?? 'user',
       capabilityCode: grant.code ?? null,
@@ -171,7 +193,7 @@ mcpRouter.post('/', async (c) => {
     );
   }
 
-  const response = await new McpService(port, { organizationId }).handle(body, grant.capabilities);
+  const response = await new McpService(port, { organizationId }).handle(body, capabilities);
   if (response === null) {
     // Notification — Streamable HTTP answers 202 Accepted with no body.
     return c.body(null, 202);

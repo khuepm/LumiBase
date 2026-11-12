@@ -10,6 +10,7 @@ import type { AppEnv, AuthPrincipal } from '../env';
 import { runDetached } from '../lib/detached';
 import { AuditLogger } from '../modules/audit/logger';
 import { tryExternalJwt } from '../modules/external-auth/adapter';
+import { tryMcpOAuth } from '../modules/mcp-oauth/adapter';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { TOKEN_AUDIENCE, audienceValues } from '../services/auth/token-audience';
 import { resolvePublicRoleIdCached } from '../services/auth/public-role';
@@ -423,6 +424,30 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       };
       c.set('auth', principal);
       return next();
+    }
+
+    // 3a. OAuth 2.1 access token for the MCP endpoint (#346). Only on the MCP
+    // route and only when the operator configured an authorization server;
+    // `skip` otherwise, so every other credential keeps its own branch.
+    const mcpOAuth = await tryMcpOAuth(c, bearerToken);
+    if (mcpOAuth.kind === 'authenticated') {
+      c.set('auth', mcpOAuth.principal);
+      return next();
+    }
+    if (mcpOAuth.kind === 'rejected') {
+      console.warn('[withAuth] MCP OAuth token rejected:', mcpOAuth.code);
+      await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
+        event: 'mcp_oauth_denied',
+        actorEmail: null,
+        ip: c.get('ip') ?? null,
+        userAgent: c.get('userAgent') ?? null,
+        requestId: c.get('requestId') ?? null,
+        metadata: { code: mcpOAuth.code, status: mcpOAuth.status },
+      });
+      return c.json(
+        { errors: [{ code: mcpOAuth.status === 403 ? 'FORBIDDEN' : 'UNAUTHENTICATED', message: mcpOAuth.status === 403 ? 'Access denied.' : 'Authentication required.' }] },
+        mcpOAuth.status,
+      );
     }
 
     // 3b. External JWT (trusted issuer JWKS). Sits between API-key and the

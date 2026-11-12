@@ -82,6 +82,18 @@ export interface Bindings {
   /** Secret key for signing internal Custom JWTs (for frontend users) */
   JWT_SECRET?: string;
   /**
+   * OAuth 2.1 access tokens on the remote MCP endpoint (#346). LumiBase is the
+   * protected resource; these name the external authorization server it
+   * trusts. All three of issuer, JWKS URI and resource must be set or the
+   * feature stays off. See `modules/mcp-oauth/config.ts`.
+   */
+  MCP_OAUTH_ISSUER?: string;
+  MCP_OAUTH_JWKS_URI?: string;
+  /** Canonical URL of this MCP endpoint; accepted tokens carry it as `aud`. */
+  MCP_OAUTH_RESOURCE?: string;
+  /** `user_id` (default) or `external_id`: the `users` column `sub` identifies. */
+  MCP_OAUTH_SUBJECT?: string;
+  /**
    * Session-token TTL for the `studio` realm (staff/CMS). Accepts a
    * compact duration (`12h`, `30m`, `7d`) or a number of seconds.
    * Defaults to `12h`. Invalid values fall back to the default.

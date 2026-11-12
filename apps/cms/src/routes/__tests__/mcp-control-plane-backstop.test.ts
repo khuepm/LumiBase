@@ -263,3 +263,72 @@ describe('control-plane skill classifier (isControlPlaneSkill)', () => {
     expect(isControlPlaneSkill(CORE_SKILLS['deleteItem']!, 'deleteItem')).toBe(true);
   });
 });
+
+/**
+ * OAuth access tokens (#346) add a second bound on top of RBAC: the scopes the
+ * user consented to. These prove the route applies it — an administrator who
+ * granted a client read access is, for that client, a reader.
+ */
+describe('MCP OAuth scope ceiling', () => {
+  const oauthAdmin = (scopes: string[]): AuthPrincipal => ({
+    type: 'user', userId: 'u2', email: 'admin@example.com', roles: [], raw: { mcpOAuth: true, scopes },
+  });
+
+  beforeEach(() => {
+    harnessExecute.mockReset();
+    harnessExecute.mockResolvedValue({ status: 'executed', data: { ok: true } });
+  });
+
+  it('gives an admin with the read scope only read capabilities', async () => {
+    const { status } = await call(oauthAdmin(['lumibase.read']), 'tools/call', { name: 'listItems', arguments: {} }, adminRbac('u2'));
+    expect(status).toBe(200);
+    const capabilities = harnessExecute.mock.calls[0]?.[2] as string[];
+    expect(capabilities).toContain('items:read');
+    expect(capabilities.every((capability) => capability.endsWith(':read'))).toBe(true);
+  });
+
+  it('adds content writes, but nothing else, under the write scope', async () => {
+    await call(oauthAdmin(['lumibase.write']), 'tools/call', { name: 'createItem', arguments: {} }, adminRbac('u2'));
+    const capabilities = harnessExecute.mock.calls[0]?.[2] as string[];
+    expect(capabilities).toContain('items:write');
+    expect(capabilities.some((capability) => /^(schema|access|config|users):(?!read)/.test(capability))).toBe(false);
+  });
+
+  it('refuses a control-plane skill to an admin whose token lacks the admin scope', async () => {
+    const { status, body } = await call(
+      oauthAdmin(['lumibase.read', 'lumibase.write']), 'tools/call', { name: 'deleteCollection', arguments: { name: 'posts' } }, adminRbac('u2'),
+    );
+    expect(status).toBe(403);
+    expect((body.errors as Array<{ code: string }>)[0]?.code).toBe('CONTROL_PLANE_FORBIDDEN');
+    expect(harnessExecute).not.toHaveBeenCalled();
+  });
+
+  it('refuses organization tools without the admin scope', async () => {
+    const { status, body } = await call(
+      oauthAdmin(['lumibase.write']), 'tools/call', { name: 'org:list_sites', arguments: { organizationId: 'org_1' } }, adminRbac('u2'),
+    );
+    expect(status).toBe(403);
+    expect((body.errors as Array<{ code: string }>)[0]?.code).toBe('ORGANIZATION_FORBIDDEN');
+    expect(harnessExecute).not.toHaveBeenCalled();
+  });
+
+  it('with the admin scope an admin keeps the full bundle; a member is still only a member', async () => {
+    await call(oauthAdmin(['lumibase.admin']), 'tools/call', { name: 'deleteCollection', arguments: { name: 'posts' } }, adminRbac('u2'));
+    expect(harnessExecute.mock.calls[0]?.[2]).toEqual(['admin']);
+
+    harnessExecute.mockReset();
+    const member: AuthPrincipal = { type: 'user', userId: 'u1', roles: [], raw: { mcpOAuth: true, scopes: ['lumibase.admin'] } };
+    const { status } = await call(member, 'tools/call', { name: 'deleteCollection', arguments: { name: 'posts' } }, memberRbac('u1', []));
+    expect(status).toBe(403);
+    expect(harnessExecute).not.toHaveBeenCalled();
+  });
+
+  it('advertises a title and annotations for each tool', async () => {
+    const { body } = await call(oauthAdmin(['lumibase.read']), 'tools/list', undefined, adminRbac('u2'));
+    const tools = (body.result as { tools: Array<{ name: string; title?: string; annotations?: Record<string, boolean> }> }).tools;
+    const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
+    expect(byName.listItems).toMatchObject({ title: 'List items', annotations: { readOnlyHint: true, destructiveHint: false } });
+    expect(byName.deleteItem?.annotations).toEqual({ readOnlyHint: false, destructiveHint: true });
+    expect(byName.createItem?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false });
+  });
+});

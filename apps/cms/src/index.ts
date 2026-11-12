@@ -91,6 +91,7 @@ import { aiAutomationRouter } from './routes/ai-automation';
 import { agentRouter } from './routes/agent';
 import { intentsRouter } from './routes/intents';
 import { mcpRouter } from './routes/mcp';
+import { protectedResourceMetadataHandler, withMcpOAuthChallenge } from './modules/mcp-oauth/http';
 import { emailRouter } from './modules/email/routes';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
@@ -121,7 +122,7 @@ app.use(
     origin: (origin, c) => resolveCorsOrigin(origin, c.env),
     credentials: true,
     allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password', 'X-LumiBase-Refresh', 'X-Confirm-Delete'],
-    exposeHeaders: ['X-Request-Id', 'Retry-After'],
+    exposeHeaders: ['X-Request-Id', 'Retry-After', 'WWW-Authenticate'],
   }),
 );
 
@@ -407,6 +408,13 @@ app.route('/api/v1/deliver', deliverRouter);
 // `/api/v1/pageviews/stats` (mounted on `api` below) doesn't run it twice.
 app.use('/api/v1/pageviews/:site_id/hit', withDb(), withRateLimit());
 app.route('/api/v1/pageviews', pageviewsPublicRouter);
+
+// OAuth 2.1 protected-resource surface of the MCP endpoint (#346). Both pieces
+// are inert until the operator configures an authorization server. Registered
+// before the `api` mount so the challenge wraps every 401 that chain produces.
+app.get('/.well-known/oauth-protected-resource/*', protectedResourceMetadataHandler);
+app.get('/.well-known/oauth-protected-resource', protectedResourceMetadataHandler);
+app.use('/api/v1/mcp', withMcpOAuthChallenge());
 
 app.route('/api/v1', api);
 

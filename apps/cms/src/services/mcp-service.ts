@@ -48,6 +48,36 @@ export interface McpToolSummary {
   description: string;
   inputSchema?: Record<string, unknown>;
   enabled?: boolean;
+  /** Human-readable name; MCP `title`. */
+  title?: string;
+  /** MCP tool annotations. Hints for the client, never an authorization input. */
+  annotations?: McpToolAnnotations;
+}
+
+export interface McpToolAnnotations {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+}
+
+/** `listItems` → `List items`. */
+export function toolTitle(name: string): string {
+  const words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_:]+/g, ' ').trim().toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Derive the hints from what the registry already knows. A tool is read-only
+ * only when it is `safe` and every capability it needs is a `:read` one — a
+ * tool that declares no capability is not assumed harmless. `dangerous` is the
+ * registry's own classification of schema changes, deletes and outward side
+ * effects, which is what `destructiveHint` means.
+ */
+export function toolAnnotations(tool: { requiredCapabilities: readonly string[]; riskPolicy: { level: string } }): McpToolAnnotations {
+  const readOnly =
+    tool.riskPolicy.level === 'safe' &&
+    tool.requiredCapabilities.length > 0 &&
+    tool.requiredCapabilities.every((capability) => capability.endsWith(':read'));
+  return { readOnlyHint: readOnly, destructiveHint: !readOnly && tool.riskPolicy.level === 'dangerous' };
 }
 
 /**
@@ -213,6 +243,8 @@ export class McpService {
             .map((tool) => ({
               name: tool.name,
               description: tool.description,
+              ...(tool.title ? { title: tool.title } : {}),
+              ...(tool.annotations ? { annotations: tool.annotations } : {}),
               inputSchema:
                 tool.inputSchema && Object.keys(tool.inputSchema).length > 0
                   ? tool.inputSchema
