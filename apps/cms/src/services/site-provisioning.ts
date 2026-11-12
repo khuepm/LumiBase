@@ -5,6 +5,7 @@ import { nanoid } from 'nanoid';
 import type { AppEnv } from '../env';
 import { reconcileOfficialExtensions } from './official-extension-reconciler';
 import { forgetNegative, negativeSiteKey } from './negative-cache';
+import { invalidateSiteExists } from './domains/site-exists-cache';
 
 type ProvisionDb = Pick<Database, 'select' | 'insert'>;
 export class SiteProvisioningConflict extends Error {}
@@ -44,5 +45,10 @@ export async function provisionSite(db: ProvisionDb, input: {
 }
 export async function finalizeSiteProvisioning(db: Database, env: AppEnv['Bindings'], runtime: RuntimeContext | undefined, siteId: string) {
   await reconcileOfficialExtensions(db, env, siteId).catch(() => undefined);
-  if (runtime?.cache) await forgetNegative(runtime.cache, negativeSiteKey(siteId));
+  if (runtime?.cache) {
+    await Promise.all([
+      forgetNegative(runtime.cache, negativeSiteKey(siteId)),
+      invalidateSiteExists(runtime.cache, siteId),
+    ]);
+  }
 }
