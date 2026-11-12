@@ -86,7 +86,10 @@ describe('Feature: content-os, Property 13: Provenance round-trip', () => {
   );
   const confidenceArb = fc.oneof(
     fc.constant(null),
-    // float32 round-trips exactly through the pg `real` column
+    // A float32 value. The pg `real` column stores it exactly, but its text
+    // output is the shortest string that round-trips *as float32* (e.g.
+    // `1e-45` for the smallest subnormal), which JS then reads as a double.
+    // Compare in float32 space (see the assertion below).
     fc.float({ min: 0, max: 1, noNaN: true }).map((n) => Math.fround(n)),
   );
 
@@ -131,7 +134,9 @@ describe('Feature: content-os, Property 13: Provenance round-trip', () => {
           expect(queried!.model).toBe(model);
           expect(queried!.constitutionHash).toBe(constitutionHash);
           expect(queried!.sources).toEqual(sources);
-          expect(queried!.confidence).toBe(confidence);
+          // Same float32 value; the double JS parses from pg's text can differ
+          // in digits beyond float32 precision.
+          expect(queried!.confidence === null ? null : Math.fround(queried!.confidence)).toBe(confidence);
           // Agent revisions without a run keep a null run reference
           expect(queried!.createdByRunId).toBeNull();
           // Staging defaults: revisions are live unless explicitly staged

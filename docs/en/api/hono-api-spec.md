@@ -1,11 +1,11 @@
 ---
-version: 36
-lastUpdated: 2026-11-12T18:32:16.217Z
+version: 39
+lastUpdated: 2026-11-12T19:36:51.919Z
 sourceLang: en
-contentHash: 4c46d65fd60d54a0
-codeVerified: 2026-11-12T18:32:16.217Z
-codeVerifiedHash: 4c46d65fd60d54a0
-codeVerifiedClaims: 486
+contentHash: 48b4cd03d504fdc8
+codeVerified: 2026-11-12T19:36:51.919Z
+codeVerifiedHash: 48b4cd03d504fdc8
+codeVerifiedClaims: 496
 ---
 
 # Hono API Specification — LumiBase
@@ -517,6 +517,7 @@ active `siteId`.
 |--------|------|-------------|
 | `GET` | `/api/v1/items/:collection` | List items (paginated, filterable) |
 | `POST` | `/api/v1/items/:collection` | Create item (or array for bulk) |
+| `GET` | `/api/v1/items/:collection/export` | Stream the collection as CSV or JSON ([Data export](../features/data-export.md)) |
 | `GET` | `/api/v1/items/:collection/:id` | Get single item |
 | `PATCH` | `/api/v1/items/:collection/:id` | Partial update |
 | `PUT` | `/api/v1/items/:collection/:id` | Full replace |
@@ -546,6 +547,16 @@ sample }] } }`. `POST …/resolve-dependents` takes
 runs transactionally (delete delegates to the normal item-delete path).
 Errors: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null on a
 required field), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
+
+**Export.** `GET /items/:collection/export?format=csv|json&fields=&locales=&relations=id|slug|embed&filter=&sort=&status=`
+streams every matching row (keyset-paged, so any size). It uses the caller's
+`read` permission and the list `filter`/`sort` syntax, runs the extensions'
+`items.export.before` hook per row, and writes an `items_exported` audit entry.
+CSV writes one `field.locale` column per locale of a translatable field and
+neutralises spreadsheet formulas; JSON is
+`{ collection, format: "lumibase-export@1", exportedAt, fields, locales, relations, items: [{ id, status, sort, created_at, updated_at, data }] }`.
+Errors before streaming: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`,
+`403 FORBIDDEN`, `404 NOT_FOUND`. See [Data export](../features/data-export.md).
 
 **List pagination & totals.** `GET /items/:collection` accepts `limit`
 (1–200, default 25), `offset`, and `meta`:
@@ -1044,11 +1055,14 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Human decision on a parked action. Body `{ decision: 'approved' \| 'rejected', reason? }`; needs `approvals:decide` (403 otherwise), `404` for an unknown or other-tenant id, `409` when the approval already left `pending`. On `approved` the harness owns the state transition, so execution and the status write happen once. Execution re-resolves **the requester's** current rights and runs with `requester ∩ decider`: an approval whose requester was since revoked, demoted or removed is denied, and one with no recorded requester (parked before provenance existed) is denied with `APPROVAL_PROVENANCE_MISSING` |
 | `POST` | `/api/v1/agent/approvals/:id/reopen` | Return a `failed` approval to `pending` so it can be decided again. Body `{ reason }` is **required** and audited; needs `approvals:decide`. A skill that reached a service and then failed is parked rather than re-offered, because retrying could repeat a non-idempotent write — this is the deliberate way back |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Agent-as-reviewer decision (needs `review:<domain>`; self-review forbidden) |
+| `GET` | `/api/v1/agent/questions` | `askUser` clarification questions, newest first. `?status=pending` (default) \| `answered` \| `expired` \| `cancelled` \| `all`. Each item: `{ id, runId, goalId, toolCallId, agentName, question, options, allowFreeText, context, status, expiresAt, createdAt, answer, answeredAt, answeredBy }`. Questions are not listed by `/approvals`, and `/approvals/:id/decide` and `/reopen` answer `409 NOT_AN_APPROVAL` for a question id. See [agent harness](../features/agent-harness-layer.md#asking-a-human-askuser-710) |
+| `GET` | `/api/v1/agent/questions/:id` | One question; `404` for an unknown or other-tenant id |
+| `POST` | `/api/v1/agent/questions/:id/answer` | Answer a question and resume its `waiting_user` run. Body `{ answer }` (1–2000 chars, trimmed; one of `options` when `allowFreeText` is false). Only a signed-in user answers: any API key, site- or organization-scoped and whatever its capabilities, gets `403`. Allowed for a holder of `approvals:decide` (or control-plane admin) and for the run's requesting **user**; today only site administrators reach the route (control-plane guard), so the requester rule takes effect once backlog B207 moves it out of the control plane. The claim and the resume are one transaction. `200` with the answered question (run `succeeded`); `400` `VALIDATION` / `ANSWER_INVALID` / `ANSWER_NOT_AN_OPTION`; `403`; `404`; `409` `ALREADY_ANSWERED`, `EXPIRED`, `QUESTION_CLOSED`, `RUN_NOT_WAITING`, `REQUESTER_REVOKED` (the requester lost access; the run is failed); `423` `FROZEN` (the run is cancelled) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Versions, draft, `/compile` (NL→evaluators), `:id/dry-run`, `:id/activate` |
-| `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze` |
+| `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze`. Freezing a role or the site, pausing an intent and cancelling a run also cancel runs waiting on an `askUser` question in that scope (`stopReason: frozen`) and close their questions |
 | `*` | `/api/v1/agent/intents[...]` | Content intents CRUD, `:id/pause|resume|scan|drifts`, `/compile` |
 | `POST` | `/api/v1/intents/:id/scan` | One reconciliation cycle: `{ scan, reconcile, dispatch }`. `dispatch` advances each reconciler goal one step (draft → promote → verify) and reports `dispatched/completed/skipped/blocked` plus `queueUnavailable` on runtimes without a queue adapter. See [reconciler repair loop](../features/reconciler-repair-loop.md). When the intent has `semantic` rules, `scan.semantic` reports the separately budgeted semantic pass (`status` `ran`/`off`/`unavailable`, counts, `completed`, `cursor`), and `scan.semanticOrphansResolved` counts rows of removed semantic rules it resolved. Updating an intent so a stored semantic rule changes profile, question, context or fields without a `version` bump returns `422 SEMANTIC_RULE_VERSION_REQUIRED`; see [semantic drift](../features/jev-semantic-drift.md) |
-| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag |
+| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag. A `tools/call` of `askUser` returns a normal tool result with `status: "waiting_user"`, `questionId` and `runId` |
 | `POST` | `/api/v1/mcp/sites/:siteId` | Same MCP server, site taken from the path (for hosted OAuth connectors that cannot send `X-Lumi-Site`) |
 | `GET` | `/.well-known/oauth-protected-resource/api/v1/mcp[/sites/:siteId]` | RFC 9728 Protected Resource Metadata (public; `404` unless MCP is on and a trusted issuer lists the resource URI in `audience`) — see [OAuth connector](../agent-setup/oauth-connector.md) |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Law Zero pins: list / release |

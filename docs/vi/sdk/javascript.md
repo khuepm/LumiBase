@@ -1,13 +1,13 @@
 ---
-version: 5
-lastUpdated: 2026-10-26T15:54:55.091Z
+version: 6
+lastUpdated: 2026-11-12T06:32:59.652Z
 sourceLang: en
 translatedFrom: en
-sourceHash: c6b8c8284912e170
+sourceHash: 30519b4e9b54cfb3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-26T15:54:55.091Z
-codeVerifiedHash: c6b8c8284912e170
+codeVerified: 2026-11-12T06:32:59.652Z
+codeVerifiedHash: 30519b4e9b54cfb3
 codeVerifiedClaims: 8
 ---
 
@@ -182,6 +182,20 @@ await client.items('articles').delete('art_abc123')
 
 // op là 'create' | 'update' | 'delete'; xem docs/vi/features/data-import.md
 await client.items('articles').bulk('create', [{ title: 'A' }, { title: 'B' }])
+```
+
+### Export
+
+```typescript
+// Xuất CSV hoặc JSON theo luồng; xem docs/vi/features/data-export.md
+const res = await client.items('articles').export({
+  format: 'csv',
+  fields: ['title', 'slug'],
+  locales: ['en', 'vi'],
+  relations: 'slug',
+  filter: { status: { _eq: 'published' } },
+})
+const csv = await res.text()
 ```
 
 ### Revision và pin

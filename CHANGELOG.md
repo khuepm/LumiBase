@@ -10,9 +10,46 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Added
+- Collection export: `GET /api/v1/items/:collection/export` streams CSV or JSON with field selection, locale columns for translatable fields (`title.vi`), relation modes (`id`, `slug`, `embed`), the list filter/sort syntax and the caller's read permission. CSV neutralises spreadsheet formulas reversibly. Each export is audited as `items_exported`. Export → import → export round-trips losslessly, translations included (#727, epic #673).
+- Studio: an **Export** button and dialog on the collection list (format, fields, locales, relations, current filters).
+- SDK: `client.items(name).export(params)` returns the streaming `Response`; `client.rawFetch(path, init)` is the streaming counterpart of `rawRequest`.
+- Extensions: `items.export.before` hook to transform or drop fields from each exported row.
+
+- **Agent harness: `askUser` clarification tool (#710).** An agent that cannot continue
+  without a decision it may not make asks a human instead of guessing. The run parks in
+  the new `waiting_user` status (no queue worker, no lock held), the question reaches the
+  Mission Control inbox and a `question` notification, and an answer resumes the run: the
+  `askUser` tool call completes with the answer (wrapped as untrusted data for the model)
+  and the run settles `succeeded`. Stored as `agent_approvals` rows with
+  `kind = 'question'` — **no migration**. New endpoints `GET /api/v1/agent/questions`,
+  `GET /api/v1/agent/questions/:id` and `POST /api/v1/agent/questions/:id/answer`
+  (signed-in users only — any API key, site- or organization-scoped, gets `403`; a holder
+  of `approvals:decide`, or the requesting user once backlog B207 opens the route beyond
+  site administrators; tenant-scoped,
+  audited as `agent_question.*`, a second answer is `409`; the requester's rights are
+  re-resolved before resuming). New read skill `getUserAnswer` returns the outcome to the
+  requester only. Both skills are offered to governed agents (agent runs, the queue
+  worker, MCP), not to the Copilot chat, which has no run to pause. Questions time out (default one day, max seven) through the 5-minute
+  `agent-question-sweep` on both runtimes, failing the run with
+  `stopReason: question_timeout`; freezing a role or the site, pausing an intent or
+  cancelling the run ends waiting runs. MCP `tools/call` returns
+  `status: "waiting_user"` with `questionId`. Metrics
+  `lumibase_agent_questions_total{status}` and `lumibase_agent_question_wait_seconds`; the
+  trust ledger shows question counts in promotion evidence.
 - MCP: OAuth 2.1 protected-resource support for hosted connectors (Claude, ChatGPT, IDE remote MCP) — #346. RFC 9728 metadata at `/.well-known/oauth-protected-resource[/api/v1/mcp[/sites/<siteId>]]` advertising the site's trusted external issuers as authorization servers; `WWW-Authenticate: Bearer resource_metadata=…` on MCP 401s; site-addressed endpoint `POST /api/v1/mcp/sites/<siteId>`; scopes `mcp:read`/`mcp:write`/`mcp:delete`/`mcp:admin` that only narrow the RBAC capability set, with `403 INSUFFICIENT_SCOPE` step-up challenges. No Dynamic Client Registration in LumiBase (use the IdP's, or register the client manually). Guide: `docs/en/agent-setup/oauth-connector.md`.
 
 ### Changed
+
+- `GET /api/v1/agent/approvals` no longer lists `askUser` questions, and
+  `POST /api/v1/agent/approvals/:id/decide` / `/reopen` refuse a question id with
+  `409 NOT_AN_APPROVAL`.
+- The `agent-runs` queue worker now passes a Web Push notifier to the harness, so
+  approvals and questions parked by a queued run notify subscribed operators (realtime
+  in-app delivery still needs a request context). It forwards only `approval` and
+  `question`: queued runs still send no run succeeded/failed pushes. On Workers the send
+  is kept alive with the queue consumer's `waitUntil` (the `queue()` dispatcher now
+  forwards its `ExecutionContext`); on Docker the worker awaits it; a failed send never
+  fails the run.
 - Security: external-issuer JWTs on the MCP endpoint must carry the MCP resource URI in `aud` (token pass-through from other audiences is refused), and a token whose only audience is an MCP resource is refused on every other path. API keys and LumiBase session JWTs are unaffected. Set `LUMIBASE_PUBLIC_URL` behind a TLS-terminating proxy so the resource URI matches.
 
 ## [2.0.0] - 2026-11-10
