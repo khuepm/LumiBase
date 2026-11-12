@@ -37,3 +37,16 @@ updates:
     labels:
       - "dependencies"
       - "ci"
+
+  # Base images of docker/Dockerfile (#734), pinned as `image:tag@sha256:…`.
+  # Dependabot bumps the digest when upstream re-pushes the same tag (the
+  # distroless `nonroot` tag has no version and is rebuilt for OS fixes) and
+  # the tag and digest together for a new `node` tag.
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "docker"
