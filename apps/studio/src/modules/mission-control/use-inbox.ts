@@ -4,6 +4,7 @@ import {
   missionControlApi,
   type AgentApproval,
   type AgentIncident,
+  type AgentQuestion,
   type ContentIntent,
   type StagedVeto,
 } from './api';
@@ -11,7 +12,8 @@ import {
 /**
  * Single source for the exception inbox (content-os-ui task 1; Req 3.5, 2.1,
  * 6.1). One queue for everything that needs a human: veto countdowns first
- * (hard deadline), then pending approvals, open incidents, errored intents.
+ * (hard deadline), then pending approvals and agent questions (#710), open
+ * incidents, errored intents.
  * The dashboard, the inbox page and the AppShell badge all read from here so
  * the four underlying queries are shared through the React Query cache.
  */
@@ -19,12 +21,15 @@ import {
 export type InboxEntry =
   | { kind: 'veto'; id: string; urgency: number; veto: StagedVeto }
   | { kind: 'approval'; id: string; urgency: number; approval: AgentApproval }
+  | { kind: 'question'; id: string; urgency: number; question: AgentQuestion }
   | { kind: 'incident'; id: string; urgency: number; incident: AgentIncident }
   | { kind: 'intent_error'; id: string; urgency: number; intent: ContentIntent };
 
 export interface InboxCounts {
   total: number;
   approvals: number;
+  /** Open `askUser` questions (#710) — a run is parked on each one. */
+  questions: number;
   staged: number;
   incidents: number;
   intentErrors: number;
@@ -52,6 +57,8 @@ export function entryLabel(entry: InboxEntry): string {
       return `Staged change on ${String(entry.veto.collection ?? '?')}/${String(entry.veto.itemId ?? '?')} — veto window open`;
     case 'approval':
       return `Approval requested: ${entry.approval.subjectType} by ${entry.approval.requestedByAgent}`;
+    case 'question':
+      return `Question from ${entry.question.agentName}: ${entry.question.question}`;
     case 'incident':
       return `Incident (${entry.incident.severity}): ${entry.incident.source} — ${entry.incident.agentRole}`;
     case 'intent_error':
@@ -65,6 +72,7 @@ export function buildEntries(
   incidents: AgentIncident[],
   intents: ContentIntent[],
   now: number = Date.now(),
+  questions: AgentQuestion[] = [],
 ): InboxEntry[] {
   const entries: InboxEntry[] = [
     // Veto windows: urgency = time to auto-commit (sooner = more urgent).
@@ -74,13 +82,28 @@ export function buildEntries(
       urgency: new Date(veto.autoCommitAt).getTime() - now,
       veto,
     })),
+    // Questions (#710) are listed by their own endpoint; a `kind: 'question'`
+    // row that reaches the approvals list (older CMS) must not get Approve /
+    // Reject buttons, which cannot resume its run.
     ...approvals
-      .filter((a) => a.status === 'pending' && a.kind !== 'veto')
+      .filter((a) => a.status === 'pending' && a.kind !== 'veto' && a.kind !== 'question')
       .map((approval): InboxEntry => ({
         kind: 'approval',
         id: entryId('approval', approval.id),
         urgency: 1_000_000_000 + (now - new Date(approval.createdAt).getTime()) * -1,
         approval,
+      })),
+    // A run is parked on each question; the deadline orders them like veto
+    // windows, and an open-ended question sorts with the approvals.
+    ...questions
+      .filter((q) => q.status === 'pending')
+      .map((question): InboxEntry => ({
+        kind: 'question',
+        id: entryId('question', question.id),
+        urgency: question.expiresAt
+          ? new Date(question.expiresAt).getTime() - now
+          : 1_000_000_000 - (now - new Date(question.createdAt).getTime()),
+        question,
       })),
     ...incidents.map((incident): InboxEntry => ({
       kind: 'incident',
@@ -109,6 +132,7 @@ export function buildCounts(entries: InboxEntry[]): InboxCounts {
   return {
     total: entries.length,
     approvals: entries.filter((e) => e.kind === 'approval').length,
+    questions: entries.filter((e) => e.kind === 'question').length,
     staged: staged.length,
     incidents: entries.filter((e) => e.kind === 'incident').length,
     intentErrors: entries.filter((e) => e.kind === 'intent_error').length,
@@ -141,15 +165,22 @@ export function useInboxData() {
     refetchInterval: 60_000,
     retry: false,
   });
+  const questionsQuery = useQuery({
+    queryKey: ['mc-questions'],
+    queryFn: missionControlApi.questions,
+    refetchInterval: 60_000,
+    retry: false,
+  });
 
   const approvals = approvalsQuery.data;
   const staged = stagedQuery.data;
   const incidents = autonomyQuery.data?.openIncidents;
   const intents = intentsQuery.data;
+  const questions = questionsQuery.data;
 
   const entries = useMemo(
-    () => buildEntries(approvals ?? [], staged ?? [], incidents ?? [], intents ?? []),
-    [approvals, staged, incidents, intents],
+    () => buildEntries(approvals ?? [], staged ?? [], incidents ?? [], intents ?? [], Date.now(), questions ?? []),
+    [approvals, staged, incidents, intents, questions],
   );
   const counts = useMemo(() => buildCounts(entries), [entries]);
 
@@ -160,6 +191,10 @@ export function useInboxData() {
     isLoading: approvalsQuery.isLoading || stagedQuery.isLoading,
     /** True once every source either loaded or failed — gates the badge. */
     isError:
-      approvalsQuery.isError && stagedQuery.isError && autonomyQuery.isError && intentsQuery.isError,
+      approvalsQuery.isError &&
+      stagedQuery.isError &&
+      autonomyQuery.isError &&
+      intentsQuery.isError &&
+      questionsQuery.isError,
   };
 }
