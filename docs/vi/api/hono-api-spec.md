@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 37
-lastUpdated: 2026-11-12T19:00:28.741Z
+version: 39
+lastUpdated: 2026-11-12T20:38:40.908Z
 sourceLang: en
 translatedFrom: en
-sourceHash: bccdc6531877c4e1
+sourceHash: 9a6c11835e29b8ef
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T19:20:19.905Z
-codeVerifiedHash: bccdc6531877c4e1
-codeVerifiedClaims: 490
+codeVerified: 2026-11-12T20:38:40.908Z
+codeVerifiedHash: 9a6c11835e29b8ef
+codeVerifiedClaims: 498
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -118,6 +118,25 @@ Phản hồi lỗi:
 | `_has_any_keys`, `_has_all_keys` | Trường JSON object chứa bất kỳ / tất cả các key này (mảng chuỗi) |
 
 **Tìm kiếm bên trong JSON.** Một key trường lọc có thể là **đường dẫn dấu chấm** vào trường JSON/JSONB lồng nhau — ví dụ `filter={"metadata.author.country":{"_eq":"VN"}}` biên dịch thành tra cứu `data #>> '{metadata,author,country}'`. Các phân đoạn đường dẫn bị giới hạn trong `[A-Za-z0-9_]` và được bind dưới dạng tham số (an toàn trước SQL injection); độ sâu tối đa là 8. Các toán tử `_json_contains` / `_has_*` chạy trên JSONB và sử dụng index GIN hiện có. Các key cấp cao nhất và các trường cấu trúc hoạt động chính xác như trước.
+
+**So sánh theo kiểu (Cast_Rule).** Giá trị item được lưu dạng JSONB, nên phép so sánh thô là so sánh chuỗi (`'10' > '9'` là false). Vì vậy `_eq`, `_neq`, `_in`, `_nin`, `_gt`, `_gte`, `_lt` và `_lte` ép kiểu cả hai vế theo kiểu dữ liệu:
+
+| Trường / giá trị | Phép so sánh |
+|------------------|--------------|
+| Trường cấp cao nhất kiểu `integer`, `bigInteger`, `decimal`, `float` | `numeric` |
+| Trường cấp cao nhất kiểu `boolean` | `boolean` |
+| Trường cấp cao nhất kiểu `date`, `datetime`, `timestamp` | `timestamptz` |
+| Đường dẫn lồng nhau, trường `json` hoặc key không có trong schema, với giá trị JSON là số / boolean | `numeric` / `boolean`, suy ra từ giá trị |
+| Mọi trường hợp khác (`string`, `text`, `uuid`, giá trị chuỗi trên đường dẫn lồng nhau) | chuỗi, như trước |
+
+Vế dữ liệu được ép kiểu có kiểm tra trước: một dòng có giá trị không giống kiểu đích (ví dụ `"n/a"` trong trường `decimal`) được so sánh như `NULL` và bị loại, thay vì làm hỏng cả truy vấn. Giá trị lọc không ép kiểu được (ví dụ `{"price":{"_gt":"cheap"}}`) bị từ chối với `400 INVALID_FILTER`. Các toán tử chuỗi (`_contains`, `_starts_with`, `_ends_with`) luôn so sánh chuỗi. Sắp xếp theo trường số, boolean hoặc ngày ở cấp cao nhất dùng cùng phép ép kiểu, nên `sort=-price` sắp theo thứ tự số. Các trường cấu trúc (`id`, `status`, `sort`, `created_at`, …) giữ kiểu cột gốc.
+
+```
+GET /api/v1/items/products?filter={"price":{"_gt":10}}&sort=-price
+GET /api/v1/items/products?filter={"metadata.rating":{"_gte":4.5}}
+```
+
+Để một bộ lọc có kiểu trên đường dẫn được truy vấn nhiều dùng được index, hãy hỏi [index advisor](#json-path-index-advisor) để lấy DDL khớp.
 
 ### Định dạng bộ lọc (Filter forms)
 
@@ -352,6 +371,7 @@ Mã lỗi organization bổ sung gồm `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`
 | `GET` | `/api/v1/collections/:name/schema` | Xuất schema collection dạng JSON |
 | `PUT` | `/api/v1/collections/:name/schema` | Áp dụng schema (idempotent, nhận biết diff) |
 | `POST` | `/api/v1/collections/diff` | So sánh schema bundle với hiện tại |
+| `GET` | `/api/v1/collections/:name/index-advice?path=&cast=` | Gợi ý index cho đường dẫn JSON (chỉ đọc, `schema:read`) |
 
 **Request tạo collection:**
 ```json
@@ -365,6 +385,25 @@ Mã lỗi organization bổ sung gồm `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`
   "sort_field": "sort"
 }
 ```
+
+#### JSON path index advisor
+
+`GET /api/v1/collections/:name/index-advice?path=<dot.path>[&cast=numeric|boolean|timestamp|text]` trả về DDL `CREATE INDEX` có biểu thức khớp chính xác với biểu thức mà bộ dựng filter sinh ra cho đường dẫn và kiểu ép đó, để Postgres dùng được index cho các filter `_eq`/`_in`/khoảng có kiểu. Index là partial theo collection (`WHERE collection_id = … AND deleted_at IS NULL`). `cast` mặc định lấy theo kiểu khai báo của trường cấp cao nhất; bắt buộc với đường dẫn lồng nhau hoặc trường `json`. Endpoint không bao giờ tự chạy DDL: người vận hành xem lại rồi chạy ngoài transaction (`CONCURRENTLY`). `timestamp` trả về `ddl: null`, vì phép ép `timestamptz` không `IMMUTABLE` nên Postgres từ chối tạo index.
+
+```json
+{
+  "data": {
+    "path": "price",
+    "cast": "numeric",
+    "indexName": "items_products_price_numeric_idx",
+    "expression": "(case when (data ->> 'price') ~ '…' then (data ->> 'price')::numeric end)",
+    "ddl": "CREATE INDEX CONCURRENTLY IF NOT EXISTS items_products_price_numeric_idx ON lumibase_items ((…)) WHERE collection_id = '…' AND deleted_at IS NULL;",
+    "notes": ["Run outside a transaction (CONCURRENTLY).", "…"]
+  }
+}
+```
+
+Lỗi: `400 VALIDATION` (thiếu/sai `path`, `cast` không hợp lệ, hoặc thiếu `cast` cho đường dẫn lồng nhau), `404 NOT_FOUND` (collection hoặc trường cấp cao nhất).
 
 ### Fields
 
@@ -456,6 +495,7 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 |--------|------|-------------|
 | `GET` | `/api/v1/items/:collection` | Liệt kê các mục (có phân trang, bộ lọc) |
 | `POST` | `/api/v1/items/:collection` | Tạo mục (hoặc mảng cho hàng loạt) |
+| `GET` | `/api/v1/items/:collection/export` | Xuất collection dạng CSV hoặc JSON theo luồng ([Data export](../features/data-export.md)) |
 | `GET` | `/api/v1/items/:collection/:id` | Lấy một mục duy nhất |
 | `PATCH` | `/api/v1/items/:collection/:id` | Cập nhật một phần |
 | `PUT` | `/api/v1/items/:collection/:id` | Thay thế hoàn toàn |
@@ -473,6 +513,8 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `POST` | `/api/v1/items/:collection/:id/versions/:key/promote` | Áp dụng bản nháp vào main (ghi một revision); `meta.mainDiverged` |
 
 **Các bản ghi phụ thuộc (Dependent records).** Vì các tham chiếu item nằm trong JSONB (không phải cột FK vật lý), `onDelete` của một quan hệ được thực thi ở lớp ứng dụng. Khi `DELETE`, nếu một quan hệ khai báo `restrict` vẫn còn bản ghi trỏ tới item, lệnh xóa sẽ bị chặn với **409 `DEPENDENT_RECORDS_EXIST`** và một mảng `dependents`. (`set null`/`cascade` **không** tự động áp dụng khi xóa mềm — điều đó sẽ làm hỏng khả năng phục hồi của xóa mềm; trình biên tập phải xóa chúng một cách tường minh.) `GET …/dependents` trả về `{ data: { blocking, dependents: [{ relation, collection, field, onDelete, count, sample }] } }`. `POST …/resolve-dependents` nhận `{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` và chạy trong một transaction (lệnh delete ủy quyền cho đường dẫn xóa item thông thường). Lỗi: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null trên trường bắt buộc), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
+
+**Export.** `GET /items/:collection/export?format=csv|json&fields=&locales=&relations=id|slug|embed&filter=&sort=&status=` xuất theo luồng mọi dòng khớp (phân trang keyset, nên không giới hạn kích thước). Endpoint dùng quyền `read` của người gọi và cú pháp `filter`/`sort` của endpoint danh sách, chạy hook `items.export.before` của extension cho từng dòng, và ghi một mục audit `items_exported`. CSV ghi một cột `field.locale` cho mỗi locale của trường dịch được và vô hiệu hoá công thức bảng tính; JSON có dạng `{ collection, format: "lumibase-export@1", exportedAt, fields, locales, relations, items: [{ id, status, sort, created_at, updated_at, data }] }`. Lỗi trả về trước khi bắt đầu stream: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`, `403 FORBIDDEN`, `404 NOT_FOUND`. Xem [Data export](../features/data-export.md).
 
 **Phân trang danh sách & Tổng số.** `GET /items/:collection` chấp nhận `limit` (1–200, mặc định 25), `offset`, và `meta`:
 

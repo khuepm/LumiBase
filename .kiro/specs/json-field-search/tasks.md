@@ -23,11 +23,11 @@ Toàn bộ thay đổi tập trung ở `apps/cms/src/services/item-service.ts` (
   - [x] 2.2 Cập nhật `buildFilter()` (item-service.ts:230-301) gọi `resolveFieldRef`+`validatePath` cho mỗi leaf, xử lý NestedObject form, đếm leaf-clause cho `MAX_FILTER_CLAUSES`; giữ walk `_and`/`_or` (item-service.ts:234-246) (Req 2.4, 5.3, 6.4; design §3, §4)
   - [x] 2.3 Test parameter-binding: khẳng định `path.segments` nằm trong `sql.params`, KHÔNG trong queryChunks literal (không có nội suy chuỗi) (Req 6.2, 10.2; design §5, §9)
 
-- [ ] 3. Type-aware Cast_Rule — **HOÃN v2 có chủ đích** (deviation 2026-06-22: v1 so sánh text để giữ additive + tránh cast-error sập query; xem Implementation status)
-  - [ ] 3.1 Trong `buildFilter`, lookup `CompiledField` qua `this.schemaService.getCompiled(collection)` theo `segments[0]`; truyền `compiledType` vào `opCtx` (Req 4.1; design §4.1-cite, §7)
-  - [ ] 3.2 Thêm `applyCast(expr, type, op)`: numeric→`::numeric`, boolean→`::boolean`, date/time→`::timestamptz`, string/unknown→none; operator chuỗi luôn text; type không xác định → fallback text (Req 4.2, 4.3, 4.5; design §7)
-  - [ ] 3.3 Resilience: chọn safe-cast (vd `jsonb_typeof` guard cho numeric/boolean) để value không-khớp-kiểu không làm sập toàn query (open question §12.3) (Req 4.4; design §7)
-  - [ ] 3.4 Unit test casting: `_gte` numeric trên JSON path (10 > 9), `_eq` boolean, so sánh date; value lệch kiểu không sập; field thiếu schema → text fallback (Req 4.1-4.5; design §7)
+- [x] 3. Type-aware Cast_Rule — hoãn ở v1 (2026-06-22), **hoàn thành 2026-11-11 (#729)**: `apps/cms/src/services/json-filter-cast.ts`
+  - [x] 3.1 Trong `buildFilter`, lookup `CompiledField` qua `this.schemaService.getCompiled(collection)` theo `segments[0]`; truyền `compiledType` vào `opCtx` (Req 4.1; design §4.1-cite, §7)
+  - [x] 3.2 Thêm `applyCast(expr, type, op)`: numeric→`::numeric`, boolean→`::boolean`, date/time→`::timestamptz`, string/unknown→none; operator chuỗi luôn text; type không xác định → fallback text (Req 4.2, 4.3, 4.5; design §7)
+  - [x] 3.3 Resilience: chọn safe-cast (vd `jsonb_typeof` guard cho numeric/boolean) để value không-khớp-kiểu không làm sập toàn query (open question §12.3) (Req 4.4; design §7)
+  - [x] 3.4 Unit test casting: `_gte` numeric trên JSON path (10 > 9), `_eq` boolean, so sánh date; value lệch kiểu không sập; field thiếu schema → text fallback (Req 4.1-4.5; design §7)
 
 ### Phase C — JSON operators, sort, shared schema
 
@@ -71,3 +71,19 @@ Toàn bộ thay đổi tập trung ở `apps/cms/src/services/item-service.ts` (
 - **Shared Zod `item-filter.ts` (Req 8)**: thay vì file schema riêng, cập nhật SDK `ItemFilterOp` type (runtime validate ở server vẫn là chốt chặn) — đủ cho type-safety SDK, gọn hơn.
 
 **Verified:** recursive typecheck 15/15; `json-field-path.test.ts` (5, injection/validation) + `json-field-search.db.integration.test.ts` (7 trên Postgres thật: nested filter, top-level backward-compat, `_json_contains` sub-object + array membership, `_has_key`, `_has_any/_all_keys`, injection rejected).
+
+## Implementation status (2026-11-11 — Cast_Rule, #729, epic #673)
+
+**Done — task 3 (Cast_Rule) + index advisor.**
+
+- `buildFilter`/`buildSort` nhận `FieldTypeMap` (tên trường → type) từ `getCompiled` qua `resolveCollection`. Kiểu cast: trường cấp cao nhất theo schema (`integer|bigInteger|decimal|float`→numeric, `boolean`, `date|datetime|timestamp`→timestamptz); đường dẫn lồng/`json`/key lạ suy từ giá trị (JS number→numeric, boolean→boolean); còn lại text (byte-identical SQL cũ). Trường cấu trúc không cast.
+- **Resilience (§12.3):** chọn guard bằng regex/`case` thay vì `jsonb_typeof`, vì `jsonb_typeof` không phủ được số lưu dạng chuỗi (`"10"`). Dòng lệch kiểu → `NULL` → bị loại; giá trị filter lệch kiểu → `400 INVALID_FILTER`.
+- **Index (§12.1):** guard là SQL hằng, nên `GET /api/v1/collections/:name/index-advice` sinh DDL expression index partial theo collection khớp chính xác biểu thức filter; EXPLAIN dùng index (test DB cho cả path 1 và 2 segment). `timestamptz` không IMMUTABLE → `ddl: null`.
+- **GraphQL:** `filter` của query collection là JSON scalar chuyển thẳng vào `ItemService.list`, nên dot-path + cast hoạt động y hệt REST, không cần input type riêng.
+
+**Guard chặt bằng đúng phép cast (review #788, 2026-11-12):** regex chỉ kiểm tra *hình dạng* là chưa đủ (`2026-99-99`, `1e999999` vẫn làm `::timestamptz` / `::numeric` throw và sập cả truy vấn). Guard giờ chặt đúng bằng phép cast, viết bằng SQL thuần (chạy được trên PostgreSQL 15, không cần `pg_input_is_valid` của PG16, không migration):
+- numeric: text ≤ 1000 ký tự và số mũ tối đa 3 chữ số → giá trị lớn nhất ~2000 chữ số, nằm xa trong giới hạn của numeric; vẫn IMMUTABLE nên expression index của advisor vẫn khớp.
+- timestamp: regex giới hạn từng trường (tháng 01-12, ngày 01-31, giờ 00-23, phút/giây, offset ≤ 15:59), rồi `CASE` lồng loại năm `0000` và ngày vượt số ngày của tháng (có năm nhuận) trước khi cast.
+- Filter SQL và DDL của advisor sinh từ cùng một template nên không lệch nhau. Test DB gồm các dòng legacy hỏng (filter + sort vẫn chạy) và property test fuzz so guard với một hàm try/catch cast trên Postgres thật.
+
+**Verified:** `json-filter-cast.test.ts` (unit), `json-field-cast.db.integration.test.ts` (11 trên Postgres 16 thật), `json-field-*` cũ không đổi; typecheck CMS sạch.

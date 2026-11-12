@@ -11,6 +11,8 @@
  *   items.update.after   — called with the updated item
  *   items.delete.before  — can cancel delete by throwing
  *   items.delete.after   — called after soft-delete
+ *   items.export.before  — called per exported row; may return `{ item }` to
+ *                          transform it (throwing aborts the export, #727)
  *
  * A hook that returns a plain object merges its result into the payload.
  * A hook that throws aborts the operation and re-throws (caller must catch).
@@ -35,7 +37,8 @@ export type HookEvent =
   | 'items.update.before'
   | 'items.update.after'
   | 'items.delete.before'
-  | 'items.delete.after';
+  | 'items.delete.after'
+  | 'items.export.before';
 
 /** Default wall-clock budget for a single hook handler invocation (ms). */
 const DEFAULT_HOOK_TIMEOUT_MS = 5000;

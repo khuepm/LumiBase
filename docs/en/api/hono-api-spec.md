@@ -1,11 +1,11 @@
 ---
-version: 38
-lastUpdated: 2026-11-12T19:00:28.741Z
+version: 40
+lastUpdated: 2026-11-12T20:38:40.908Z
 sourceLang: en
-contentHash: bccdc6531877c4e1
-codeVerified: 2026-11-12T19:20:19.905Z
-codeVerifiedHash: bccdc6531877c4e1
-codeVerifiedClaims: 490
+contentHash: 9a6c11835e29b8ef
+codeVerified: 2026-11-12T20:38:40.908Z
+codeVerifiedHash: 9a6c11835e29b8ef
+codeVerifiedClaims: 498
 ---
 
 # Hono API Specification — LumiBase
@@ -124,6 +124,35 @@ restricted to `[A-Za-z0-9_]` and bound as parameters (injection-safe); depth is
 capped at 8. The `_json_contains` / `_has_*` operators run against the JSONB and
 use the existing GIN index. Top-level keys and structural fields behave exactly
 as before.
+
+**Typed comparisons (Cast_Rule).** Item values are stored as JSONB, so a naive
+comparison is textual (`'10' > '9'` is false). `_eq`, `_neq`, `_in`, `_nin`,
+`_gt`, `_gte`, `_lt` and `_lte` therefore cast both sides by type:
+
+| Field / value | Comparison |
+|---------------|------------|
+| Top-level field of type `integer`, `bigInteger`, `decimal`, `float` | `numeric` |
+| Top-level field of type `boolean` | `boolean` |
+| Top-level field of type `date`, `datetime`, `timestamp` | `timestamptz` |
+| Nested path, `json` field or unknown key with a JSON number / boolean value | `numeric` / `boolean`, inferred from the value |
+| Anything else (`string`, `text`, `uuid`, string values on nested paths) | text, as before |
+
+The stored side uses a guarded cast: a row whose value does not look like the
+type (for example `"n/a"` in a `decimal` field) compares as `NULL` and drops
+out, instead of failing the query. A filter value that cannot be cast (for
+example `{"price":{"_gt":"cheap"}}`) is rejected with `400 INVALID_FILTER`.
+String operators (`_contains`, `_starts_with`, `_ends_with`) always compare text.
+Sorting on a top-level numeric, boolean or date field uses the same cast, so
+`sort=-price` orders numerically. Structural fields (`id`, `status`, `sort`,
+`created_at`, …) keep their native column types.
+
+```
+GET /api/v1/items/products?filter={"price":{"_gt":10}}&sort=-price
+GET /api/v1/items/products?filter={"metadata.rating":{"_gte":4.5}}
+```
+
+To make a typed filter on a hot path use an index, ask the
+[index advisor](#json-path-index-advisor) for matching DDL.
 
 ### Filter forms
 
@@ -395,6 +424,7 @@ Organization errors additionally include `400 VALIDATION`, `400 SCOPE_NOT_ALLOWE
 | `GET` | `/api/v1/collections/:name/schema` | Export collection schema as JSON |
 | `PUT` | `/api/v1/collections/:name/schema` | Apply schema (idempotent, diff-aware) |
 | `POST` | `/api/v1/collections/diff` | Compare bundle schema vs current |
+| `GET` | `/api/v1/collections/:name/index-advice?path=&cast=` | JSON path index advisor (read-only, `schema:read`) |
 
 **Create collection request:**
 ```json
@@ -408,6 +438,34 @@ Organization errors additionally include `400 VALIDATION`, `400 SCOPE_NOT_ALLOWE
   "sort_field": "sort"
 }
 ```
+
+#### JSON path index advisor
+
+`GET /api/v1/collections/:name/index-advice?path=<dot.path>[&cast=numeric|boolean|timestamp|text]`
+returns `CREATE INDEX` DDL whose expression matches exactly what the filter
+builder emits for that path and cast, so Postgres can use it for typed
+`_eq`/`_in`/range filters. The index is partial on the collection
+(`WHERE collection_id = … AND deleted_at IS NULL`). `cast` defaults to the
+declared type of a top-level field; it is required for nested or `json` paths.
+The endpoint never runs the DDL: an operator reviews it and runs it outside a
+transaction (`CONCURRENTLY`). `timestamp` returns `ddl: null`, because
+`timestamptz` casts are not `IMMUTABLE` and Postgres refuses to index them.
+
+```json
+{
+  "data": {
+    "path": "price",
+    "cast": "numeric",
+    "indexName": "items_products_price_numeric_idx",
+    "expression": "(case when (data ->> 'price') ~ '…' then (data ->> 'price')::numeric end)",
+    "ddl": "CREATE INDEX CONCURRENTLY IF NOT EXISTS items_products_price_numeric_idx ON lumibase_items ((…)) WHERE collection_id = '…' AND deleted_at IS NULL;",
+    "notes": ["Run outside a transaction (CONCURRENTLY).", "…"]
+  }
+}
+```
+
+Errors: `400 VALIDATION` (missing/invalid `path`, unknown `cast`, or no `cast`
+for a nested path), `404 NOT_FOUND` (collection or top-level field).
 
 ### Fields
 
@@ -517,6 +575,7 @@ active `siteId`.
 |--------|------|-------------|
 | `GET` | `/api/v1/items/:collection` | List items (paginated, filterable) |
 | `POST` | `/api/v1/items/:collection` | Create item (or array for bulk) |
+| `GET` | `/api/v1/items/:collection/export` | Stream the collection as CSV or JSON ([Data export](../features/data-export.md)) |
 | `GET` | `/api/v1/items/:collection/:id` | Get single item |
 | `PATCH` | `/api/v1/items/:collection/:id` | Partial update |
 | `PUT` | `/api/v1/items/:collection/:id` | Full replace |
@@ -546,6 +605,16 @@ sample }] } }`. `POST …/resolve-dependents` takes
 runs transactionally (delete delegates to the normal item-delete path).
 Errors: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null on a
 required field), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
+
+**Export.** `GET /items/:collection/export?format=csv|json&fields=&locales=&relations=id|slug|embed&filter=&sort=&status=`
+streams every matching row (keyset-paged, so any size). It uses the caller's
+`read` permission and the list `filter`/`sort` syntax, runs the extensions'
+`items.export.before` hook per row, and writes an `items_exported` audit entry.
+CSV writes one `field.locale` column per locale of a translatable field and
+neutralises spreadsheet formulas; JSON is
+`{ collection, format: "lumibase-export@1", exportedAt, fields, locales, relations, items: [{ id, status, sort, created_at, updated_at, data }] }`.
+Errors before streaming: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`,
+`403 FORBIDDEN`, `404 NOT_FOUND`. See [Data export](../features/data-export.md).
 
 **List pagination & totals.** `GET /items/:collection` accepts `limit`
 (1–200, default 25), `offset`, and `meta`:

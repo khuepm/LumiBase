@@ -1,0 +1,15 @@
+{
+  "$comment": "Variables of the LumiBase service in the Railway template (#741). Railway templates are composed in Railway's template editor, not read from the repository; this file is the reviewed source a maintainer copies them from, and scripts/__tests__/deploy-manifests.test.mjs keeps it honest. Postgres and Redis are Railway's official database services named `Postgres` and `Redis`. Service source: Docker image ghcr.io/khuepm/lumibase-cms:<version> -- a release tag, never latest: the image migrates the database on every start, so latest turns a restart after a major release into an unattended upgrade. (railway.json is for services created from the repository and builds from source instead.) Enable a public domain on the service: CORS_ALLOWED_ORIGINS is deliberately not set here, the entrypoint derives it from RAILWAY_PUBLIC_DOMAIN, and a template value such as https://${{RAILWAY_PUBLIC_DOMAIN}} would expand to https:// without a domain. ENCRYPTION_KEY is a standard, padded base64 AES-256 key the server accepts as-is; the entrypoint never rewrites it.",
+  "variables": {
+    "NODE_ENV": "production",
+    "LUMIBASE_ENV": "production",
+    "LUMIBASE_RUNTIME": "docker",
+    "PORT": "1989",
+    "LUMIBASE_REQUIRE_SETUP_TOKEN": "true",
+    "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+    "DATABASE_SSL_MODE": "disable",
+    "REDIS_URL": "${{Redis.REDIS_URL}}",
+    "JWT_SECRET": "${{secret(64)}}",
+    "ENCRYPTION_KEY": "${{secret(42, \"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/\")}}A="
+  }
+}

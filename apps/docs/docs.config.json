@@ -84,6 +84,7 @@
           "deployment/overview",
           "deployment/cloudflare",
           "deployment/docker",
+          "deployment/one-click",
           "deployment/google-cloud-vm",
           "deployment/environment-variables",
           "deployment/local-development"
