@@ -91,6 +91,8 @@ import { aiAutomationRouter } from './routes/ai-automation';
 import { agentRouter } from './routes/agent';
 import { intentsRouter } from './routes/intents';
 import { mcpRouter } from './routes/mcp';
+import { protectedResourceRouter } from './routes/oauth-protected-resource';
+import { withMcpAuthChallenge } from './middleware/mcp-oauth';
 import { emailRouter } from './modules/email/routes';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
@@ -225,6 +227,10 @@ const api = new Hono<AppEnv>();
 // counters) and before `withAuth` (a blocked /api/v1/ai/* request costs no JWT
 // or API-key work, no quota reservation, no provider call and no audit write).
 // It is a no-op outside /api/v1/ai.
+// RFC 9728 discovery challenge on MCP 401s (#346). Registered BEFORE the
+// authenticated chain so it wraps the 401s `withAuth` itself returns.
+api.use('/mcp', withMcpAuthChallenge());
+api.use('/mcp/*', withMcpAuthChallenge());
 api.use('*', withTenant(), withDb(), withTenantExists(), withAiIpRateLimit(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
 // Sub-routers must be attached to their parent BEFORE the parent is mounted
 // on `api`: Hono's `route()` copies the child's routes at call time, so
@@ -407,6 +413,12 @@ app.route('/api/v1/deliver', deliverRouter);
 // `/api/v1/pageviews/stats` (mounted on `api` below) doesn't run it twice.
 app.use('/api/v1/pageviews/:site_id/hit', withDb(), withRateLimit());
 app.route('/api/v1/pageviews', pageviewsPublicRouter);
+
+// RFC 9728 Protected Resource Metadata for the MCP endpoint (#346). Public
+// (discovery precedes the token) but tenant-resolved: the issuer list is per site.
+app.use('/.well-known/oauth-protected-resource', withTenant(), withDb(), withTenantExists());
+app.use('/.well-known/oauth-protected-resource/*', withTenant(), withDb(), withTenantExists());
+app.route('/.well-known/oauth-protected-resource', protectedResourceRouter);
 
 app.route('/api/v1', api);
 

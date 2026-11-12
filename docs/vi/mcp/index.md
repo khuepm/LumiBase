@@ -1,11 +1,11 @@
 ---
-version: 13
-lastUpdated: 2026-11-10T14:25:31.765Z
+version: 14
+lastUpdated: 2026-11-12T18:31:27.445Z
 sourceLang: vi
-contentHash: 132e470dfede933a
-codeVerified: 2026-11-10T14:25:31.765Z
-codeVerifiedHash: 132e470dfede933a
-codeVerifiedClaims: 28
+contentHash: 6d2dbfbc68a6904f
+codeVerified: 2026-11-12T18:31:27.445Z
+codeVerifiedHash: 6d2dbfbc68a6904f
+codeVerifiedClaims: 30
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -28,6 +28,7 @@ Nguồn: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`
 - **Transport:** Streamable HTTP — JSON-RPC 2.0 một request/một response. `GET /api/v1/mcp` trả `405 METHOD_NOT_ALLOWED` (không có server-initiated stream/SSE); client fallback plain request/response theo spec MCP.
 - **Protocol versions:** `2025-06-18` (default) và `2025-03-26`. `serverInfo = { name: 'lumibase-mcp', version: '1.0.0' }`.
 - **Auth → capability:** Bearer token; capability set được **resolve từ RBAC bundle sống** của token (#472), không phải từ `auth.roles`. ⇒ một MCP client **không bao giờ làm được nhiều hơn** cùng token đó qua REST — và cũng không ít hơn, điều mà cách đọc `auth.roles` cũ làm sai (role id không bao giờ khớp `items:write`). Xem [`governed-tool-contract.md`](governed-tool-contract.md) mục 4.
+- **OAuth 2.1 (#346):** endpoint còn là một OAuth protected resource cho MCP client được host. `401` mang `WWW-Authenticate: Bearer resource_metadata=…`; `/.well-known/oauth-protected-resource[/api/v1/mcp[/sites/<siteId>]]` (RFC 9728) liệt kê các trusted external issuer có `audience` chứa resource URI. Trên endpoint MCP, token external-issuer phải có resource URI trong `aud`; scope (`mcp:read`/`mcp:write`/`mcp:delete`/`mcp:admin`) chỉ thu hẹp capability set, và backstop `CONTROL_PLANE_FORBIDDEN` giữ nguyên. Endpoint theo site `POST /api/v1/mcp/sites/<siteId>` dành cho client không gửi được `X-Lumi-Site`. Xem [`../agent-setup/oauth-connector.md`](../agent-setup/oauth-connector.md).
 - **Feature gate:** cờ per-site `contentOs.mcp` (mặc định **off**). Tắt → `404 MCP_DISABLED`. (`feature-flags.ts`).
 - **Methods (JSON-RPC):**
   - `initialize` — thương lượng protocol version, trả `capabilities: { tools: { listChanged: false } }`.

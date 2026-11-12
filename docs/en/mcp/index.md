@@ -1,14 +1,14 @@
 ---
-version: 13
-lastUpdated: 2026-11-10T14:25:31.765Z
+version: 14
+lastUpdated: 2026-11-12T18:31:27.445Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 132e470dfede933a
+sourceHash: 6d2dbfbc68a6904f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T14:25:31.765Z
-codeVerifiedHash: 132e470dfede933a
-codeVerifiedClaims: 28
+codeVerified: 2026-11-12T18:31:27.445Z
+codeVerifiedHash: 6d2dbfbc68a6904f
+codeVerifiedClaims: 30
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -31,6 +31,7 @@ Source: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`a
 - **Transport:** Streamable HTTP — JSON-RPC 2.0, one request/one response. `GET /api/v1/mcp` returns `405 METHOD_NOT_ALLOWED` (there is no server-initiated stream/SSE); clients fall back to plain request/response per the MCP spec.
 - **Protocol versions:** `2025-06-18` (default) and `2025-03-26`. `serverInfo = { name: 'lumibase-mcp', version: '1.0.0' }`.
 - **Auth → capability:** Bearer token; the capability set is **resolved from the token's live RBAC bundle** (#472), not from `auth.roles`. ⇒ an MCP client can **never do more** than that same token can through REST — and never less either, which is what reading `auth.roles` got wrong (a role id can never match `items:write`). See [`governed-tool-contract.md`](governed-tool-contract.md) section 4.
+- **OAuth 2.1 (#346):** the endpoint is also an OAuth protected resource for hosted MCP clients. A `401` carries `WWW-Authenticate: Bearer resource_metadata=…`; `/.well-known/oauth-protected-resource[/api/v1/mcp[/sites/<siteId>]]` (RFC 9728) lists the trusted external issuers whose `audience` contains the resource URI. On the MCP endpoint an external-issuer token must carry the resource URI in `aud`; scopes (`mcp:read`/`mcp:write`/`mcp:delete`/`mcp:admin`) only narrow the capability set, and the `CONTROL_PLANE_FORBIDDEN` backstop is unchanged. The site-addressed endpoint `POST /api/v1/mcp/sites/<siteId>` is for clients that cannot send `X-Lumi-Site`. See [`../agent-setup/oauth-connector.md`](../agent-setup/oauth-connector.md).
 - **Feature gate:** the per-site `contentOs.mcp` flag (default **off**). Off → `404 MCP_DISABLED`. (`feature-flags.ts`).
 - **Methods (JSON-RPC):**
   - `initialize` — negotiates the protocol version, returns `capabilities: { tools: { listChanged: false } }`.

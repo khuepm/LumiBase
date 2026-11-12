@@ -213,6 +213,7 @@ const ROUTER_DB_CLASS: Record<string, { class: RouterClass; file?: string; note?
   '/scim/v2': { class: 'system' },
   '/api/v1/deployments/webhook': { class: 'request-scoped' },
   '/api/v1': { class: 'request-scoped' },
+  '/.well-known/oauth-protected-resource': { class: 'request-scoped', note: 'MCP OAuth metadata (#346): public, tenant-resolved issuer list' },
   '/api/v1/shares': { class: 'self-scoped', file: 'routes/shares.ts' },
   '/api/v1/email': { class: 'self-scoped', file: 'routes/email-public.ts' },
   '/api/v1/deliver': { class: 'self-scoped', file: 'routes/deliver.ts' },

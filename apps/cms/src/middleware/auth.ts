@@ -19,6 +19,8 @@ import {
   readAllowedOrigins,
 } from '../services/api-key-publishable';
 import { mergeRequestContext } from './request-context';
+import { mcpResourceContext } from './mcp-oauth';
+import { scopesFromClaims } from '../services/mcp-oauth';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -439,6 +441,20 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         roles: ext.roleIds,
         raw: ext.payload as Record<string, unknown>,
       };
+      // On the MCP resource the verifier has already required `aud` to contain
+      // the resource URI, so this is an OAuth access token for MCP (#346): carry
+      // its scopes so the route can narrow the RBAC capability set.
+      const mcp = mcpResourceContext(c);
+      if (mcp) {
+        const claims = ext.payload as Record<string, unknown>;
+        const clientId = typeof claims.azp === 'string' ? claims.azp : typeof claims.client_id === 'string' ? claims.client_id : undefined;
+        principal.oauth = {
+          issuer: String(ext.payload.iss ?? ''),
+          resource: mcp.resource,
+          scopes: scopesFromClaims(claims),
+          ...(clientId ? { clientId } : {}),
+        };
+      }
       c.set('auth', principal);
       return next();
     }

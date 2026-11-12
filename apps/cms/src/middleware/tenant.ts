@@ -3,6 +3,7 @@ import { isOrganizationPath, isMcpPath } from '../services/organization-access';
 import type { AppEnv } from '../env';
 import { getHostMapping } from '../services/domains/host-cache';
 import { isValidSiteId } from '../services/identifier-guard';
+import { mcpSiteIdFromPath } from '../services/mcp-oauth';
 
 /**
  * Resolve the active `site_id` for the request and pin it on the context.
@@ -25,6 +26,22 @@ export const withTenant = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   }
 
   const headerSite = c.req.header('x-lumi-site');
+
+  // Site-addressed MCP endpoint (#346): `/api/v1/mcp/sites/<id>` and its
+  // `/.well-known/oauth-protected-resource/...` metadata. A hosted OAuth
+  // connector only knows a URL, so the site rides in the path. The path is
+  // authoritative; a contradicting `X-Lumi-Site` is a client bug, not a hint.
+  const pathSite = mcpSiteIdFromPath(path);
+  if (pathSite !== null) {
+    if (!isValidSiteId(pathSite)) {
+      return c.json({ errors: [{ code: 'TENANT_INVALID', message: 'Site id in the path has an invalid format.' }] }, 400);
+    }
+    if (headerSite && headerSite !== pathSite) {
+      return c.json({ errors: [{ code: 'TENANT_MISMATCH', message: 'X-Lumi-Site does not match the site in the path.' }] }, 400);
+    }
+    c.set('siteId', pathSite);
+    return next();
+  }
   // Prefix is only a routing hint. withAuth MUST verify the key before org MCP runs.
   if (!headerSite && isMcpPath(path) && /^Bearer\s+lbo_/.test(c.req.header('authorization') ?? '')) return next();
   if (headerSite) {

@@ -9,7 +9,11 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+- MCP: OAuth 2.1 protected-resource support for hosted connectors (Claude, ChatGPT, IDE remote MCP) — #346. RFC 9728 metadata at `/.well-known/oauth-protected-resource[/api/v1/mcp[/sites/<siteId>]]` advertising the site's trusted external issuers as authorization servers; `WWW-Authenticate: Bearer resource_metadata=…` on MCP 401s; site-addressed endpoint `POST /api/v1/mcp/sites/<siteId>`; scopes `mcp:read`/`mcp:write`/`mcp:delete`/`mcp:admin` that only narrow the RBAC capability set, with `403 INSUFFICIENT_SCOPE` step-up challenges. No Dynamic Client Registration in LumiBase (use the IdP's, or register the client manually). Guide: `docs/en/agent-setup/oauth-connector.md`.
+
+### Changed
+- Security: external-issuer JWTs on the MCP endpoint must carry the MCP resource URI in `aud` (token pass-through from other audiences is refused), and a token whose only audience is an MCP resource is refused on every other path. API keys and LumiBase session JWTs are unaffected. Set `LUMIBASE_PUBLIC_URL` behind a TLS-terminating proxy so the resource URI matches.
 
 ## [2.0.0] - 2026-11-10
 

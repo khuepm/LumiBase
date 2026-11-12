@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 34
-lastUpdated: 2026-11-10T05:40:26.568Z
+version: 35
+lastUpdated: 2026-11-12T18:32:16.217Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8c958f2d7140353f
+sourceHash: 4c46d65fd60d54a0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T05:40:26.568Z
-codeVerifiedHash: 8c958f2d7140353f
-codeVerifiedClaims: 484
+codeVerified: 2026-11-12T18:32:16.217Z
+codeVerifiedHash: 4c46d65fd60d54a0
+codeVerifiedClaims: 486
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -940,6 +940,8 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `*` | `/api/v1/agent/intents[...]` | CRUD ý định nội dung, `:id/pause|resume|scan|drifts`, `/compile` |
 | `POST` | `/api/v1/intents/:id/scan` | Một chu kỳ reconcile: `{ scan, reconcile, dispatch }`. `dispatch` đẩy mỗi reconciler goal tiến một bước (draft → promote → verify) và báo `dispatched/completed/skipped/blocked` cùng `queueUnavailable` trên runtime không có queue adapter. Xem [vòng sửa của reconciler](../features/reconciler-repair-loop.md). Khi intent có rule `semantic`, `scan.semantic` báo pass ngữ nghĩa có budget riêng (`status` `ran`/`off`/`unavailable`, các số đếm, `completed`, `cursor`), và `scan.semanticOrphansResolved` đếm các hàng của rule ngữ nghĩa bị gỡ mà scan đã resolve. Cập nhật intent làm một rule ngữ nghĩa đã lưu đổi profile, câu hỏi, context hoặc fields mà không tăng `version` trả về `422 SEMANTIC_RULE_VERSION_REQUIRED`; xem [drift ngữ nghĩa](../features/jev-semantic-drift.md) |
 | `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp` |
+| `POST` | `/api/v1/mcp/sites/:siteId` | Cùng MCP server, site lấy từ path (cho OAuth connector được host không gửi được `X-Lumi-Site`) |
+| `GET` | `/.well-known/oauth-protected-resource/api/v1/mcp[/sites/:siteId]` | RFC 9728 Protected Resource Metadata (public; `404` trừ khi MCP bật và có trusted issuer liệt kê resource URI trong `audience`) — xem [OAuth connector](../agent-setup/oauth-connector.md) |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Ghim Law Zero: liệt kê / giải phóng |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Chỉ mục llms.txt công khai mỗi site |
 

@@ -296,6 +296,18 @@ export interface AuthPrincipal {
   roles?: string[];
   /** Flag to identify if this principal is a frontend end-user (authenticated via Custom JWT) */
   isFrontendUser?: boolean;
+  /**
+   * Present when the principal is an OAuth access token presented to the MCP
+   * resource (#346): an external-issuer JWT whose `aud` includes the MCP
+   * resource URI. `scopes` narrow — never widen — the RBAC capability set.
+   */
+  oauth?: {
+    issuer: string;
+    resource: string;
+    scopes: string[];
+    /** OAuth client that obtained the token (`azp` / `client_id`), for audit. */
+    clientId?: string;
+  };
   raw: Record<string, unknown>;
 }
 

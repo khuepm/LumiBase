@@ -67,6 +67,13 @@ export interface VerifierDeps {
   provisionUser: (draft: VerifiedPrincipalDraft, roleIds: string[]) => Promise<{ userId: string } | { error: '401' | '403'; code: string }>;
   /** The request's resolved siteId (for the multi-tenant gate). */
   requestSiteId: string;
+  /**
+   * Request-specific audience wall, run after the signature + standard-claim
+   * check and BEFORE role mapping / JIT provisioning, so a token refused here
+   * never creates a user. Receives the verified `aud` values. Used for the MCP
+   * resource wall (#346): absent ⇒ no extra constraint.
+   */
+  checkAudience?: (aud: string[]) => { ok: true } | { ok: false; code: string; reason: string };
 }
 
 const FORBIDDEN_ALGS = new Set(['none', 'HS256', 'HS384', 'HS512']);
@@ -158,6 +165,15 @@ export async function verifyExternalJwt(token: string, deps: VerifierDeps): Prom
     payload = result.payload;
   } catch (err) {
     return { kind: 'rejected', status: 401, code: 'TOKEN_INVALID', reason: `Signature/claim verification failed: ${(err as Error)?.name ?? 'error'}.` };
+  }
+
+  // 4b. Request-specific audience wall (MCP resource, #346).
+  if (deps.checkAudience) {
+    const aud = typeof payload.aud === 'string' ? [payload.aud] : Array.isArray(payload.aud) ? payload.aud : [];
+    const verdict = deps.checkAudience(aud);
+    if (!verdict.ok) {
+      return { kind: 'rejected', status: 401, code: verdict.code, reason: verdict.reason };
+    }
   }
 
   // 5. Multi-tenant gate (T3). If a siteId claim is mapped, it must match.
