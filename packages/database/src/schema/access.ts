@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -170,7 +171,7 @@ export const apiKeys = pgTable(
   {
     id: id(),
     scope: text('scope').$type<'site' | 'organization'>().default('site').notNull(),
-    organizationId: text('organization_id').references(() => organizations.id, { onDelete: 'cascade' }),
+    organizationId: text('organization_id'),
     siteId: text('site_id')
       .references(() => sites.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
@@ -192,6 +193,8 @@ export const apiKeys = pgTable(
     createdAt: createdAt(),
   },
   (t) => ({
+    organizationFk: foreignKey({ columns: [t.organizationId], foreignColumns: [organizations.id],
+      name: 'lumibase_api_keys_organization_id_fk' }).onDelete('cascade'),
     scopeTarget: check('api_keys_scope_target', sql`
       (${t.scope} = 'site' and ${t.siteId} is not null and ${t.organizationId} is null)
       or (${t.scope} = 'organization' and ${t.organizationId} is not null and ${t.siteId} is null)`),

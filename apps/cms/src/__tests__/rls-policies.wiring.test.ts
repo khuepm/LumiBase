@@ -29,8 +29,8 @@ const occurrences = (needle: RegExp) => (CODE.match(needle) ?? []).length;
 
 describe('rls-policies.sql keeps a permissive + restrictive pair per table (B125)', () => {
   it('creates pairs in the site loop, extensions and organization loop and approvals', () => {
-    expect(occurrences(/\bAS RESTRICTIVE\b/g)).toBe(4);
-    expect(occurrences(/\bAS PERMISSIVE\b/g)).toBe(4);
+    expect(occurrences(/\bAS RESTRICTIVE\b/g)).toBe(6);
+    expect(occurrences(/\bAS PERMISSIVE\b/g)).toBe(6);
   });
 
   it('pairs every site_isolation policy with a site_isolation_permit policy', () => {
@@ -43,7 +43,11 @@ describe('rls-policies.sql keeps a permissive + restrictive pair per table (B125
     // No other policy name: a stray policy would bypass the pair's reasoning.
     expect(occurrences(/CREATE POLICY approval_isolation ON\b/g)).toBe(1);
     expect(occurrences(/CREATE POLICY approval_isolation_permit ON\b/g)).toBe(1);
-    expect(occurrences(/CREATE POLICY\b/g)).toBe(restrictive + permissive + 4);
+    expect(occurrences(/CREATE POLICY site_or_organization_isolation ON\b/g)).toBe(1);
+    expect(occurrences(/CREATE POLICY site_or_organization_isolation_permit ON\b/g)).toBe(1);
+    expect(occurrences(/CREATE POLICY key_scope_isolation ON\b/g)).toBe(1);
+    expect(occurrences(/CREATE POLICY key_scope_isolation_permit ON\b/g)).toBe(1);
+    expect(occurrences(/CREATE POLICY\b/g)).toBe(restrictive + permissive + 8);
   });
 
   it('drops both names before creating them, so re-applying converges', () => {
@@ -78,5 +82,5 @@ it('scopes organization tables separately with a matching policy pair', () => {
   expect(CODE).toContain("ARRAY['lumibase_organizations', 'lumibase_organization_members']");
   expect(occurrences(/DROP POLICY IF EXISTS organization_isolation ON\b/g)).toBe(1);
   expect(occurrences(/DROP POLICY IF EXISTS organization_isolation_permit ON\b/g)).toBe(1);
-  expect(occurrences(/current_setting\('lumibase.organization_id', true\)/g)).toBe(8);
+  expect(occurrences(/current_setting\('lumibase.organization_id', true\)/g)).toBe(16);
 });

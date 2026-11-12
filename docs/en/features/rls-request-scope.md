@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-10-17T16:36:19.946Z
+version: 2
+lastUpdated: 2026-11-12T07:04:33.596Z
 sourceLang: en
-contentHash: 5114d38102cfe297
-codeVerified: 2026-10-17T16:36:19.946Z
-codeVerifiedHash: 5114d38102cfe297
+contentHash: fe8311b22d94c903
+codeVerified: 2026-11-12T07:04:33.596Z
+codeVerifiedHash: fe8311b22d94c903
 codeVerifiedClaims: 14
 ---
 
@@ -17,6 +17,7 @@ The flag is opt-in. With the default `LUMIBASE_DB_RLS=off` nothing changes for e
 ## How it works
 
 - **Request path.** `withDb()` (`apps/cms/src/middleware/db.ts`) runs right after `withTenant()`. Under `enforce` it wraps the connection with `createSiteScopedSql` (`packages/runtime/src/scoped-sql.ts`), and every statement runs as `BEGIN; SELECT set_config('app.site_id', $1, true); <query>; COMMIT` on one connection. The site id is always a bound parameter. The value lives only for that transaction, so it cannot leak to another request through the pool. `db.transaction(...)` is scoped the same way, and `runSiteTransaction(db, otherSite, fn)` still re-scopes a transaction to another site.
+- **Organization and core scope.** `lumibase_sites` is visible by its site id or its organization id; `lumibase_api_keys` uses the key's site or organization scope. The restrictive/permissive policy pair uses `app.site_id` or transaction-local `lumibase.organization_id`. Organization reads still require membership checks in the API. Reapply the RLS policy file after upgrade; `pnpm db:migrate` does not apply it.
 - **Routers that learn the site in the handler** (`/api/v1/deliver`, public shares, `/api/v1/pageviews/:site_id/hit`, `/api/v1/email/unsubscribe`, the git webhook and preview environments) build their db with `scopedDbFor(c, siteId)`.
 - **System connection.** Workers, cron, queue consumers and system routes (setup, recovery, SCIM, git OAuth callback, admin-path guard, cross-site audit writes) cross sites or run before a site exists. They use a second connection on a role with `BYPASSRLS`: `DATABASE_SYSTEM_URL` (Docker) or the `HYPERDRIVE_SYSTEM` binding (Workers).
 - **Fail closed.** `withRls()` asserts that the request db is scoped to the request site and answers `503 RLS_UNAVAILABLE` otherwise. A missing system connection under `enforce` answers `503 RLS_MISCONFIGURED`, and an invalid flag value does too. On Docker the process refuses to start instead.

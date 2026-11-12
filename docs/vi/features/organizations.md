@@ -1,14 +1,14 @@
 ---
-version: 3
-lastUpdated: 2026-11-10T01:32:16.688Z
+version: 4
+lastUpdated: 2026-11-12T06:58:59.409Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2e5f91825eda8ddd
+sourceHash: 7fb7ff68405b0a37
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T01:32:16.688Z
-codeVerifiedHash: 2e5f91825eda8ddd
-codeVerifiedClaims: 6
+codeVerified: 2026-11-12T06:58:59.409Z
+codeVerifiedHash: 7fb7ff68405b0a37
+codeVerifiedClaims: 8
 ---
 
 # Cài đặt Organization
@@ -40,6 +40,8 @@ Lựa chọn organization là tùy chọn trình duyệt, không cấp quyền t
 Đăng nhập và gia hạn của owner/admin organization dùng membership hiện tại ngay cả khi thiếu membership trực tiếp ở site. Role trực tiếp yếu hơn không ghi đè quyền kế thừa đó. Gỡ quyền kế thừa sẽ chặn gia hạn trừ khi role site trực tiếp vẫn cho phép; nếu chỉ còn role frontend thì phiên gia hạn mang audience frontend.
 
 Đăng nhập bằng mật khẩu và gia hạn vẫn cần một site tồn tại. Trước khi xóa site cuối cùng, hãy giữ organization key hoặc phiên Studio còn hiệu lực để tạo lại site qua API organization. Nếu mọi credential này hết hạn hoặc bị mất, cần khôi phục bản sao lưu. Phục hồi instance không phụ thuộc site là thiết kế riêng (backlog B196).
+
+Với bản cài cũ được migrate mà không có bootstrap user, operator có thể khôi phục owner cho organization đã backfill. Chọn user đang active và đã là admin của mọi site trong organization đó, rồi chạy `pnpm -F @lumibase/database recover:organization-owner <organization-id> <user-id> CONFIRM:<organization-id>` với `DATABASE_SYSTEM_URL` (hoặc `DATABASE_URL` của operator). Lệnh từ chối organization đã có owner và không cấp thêm quyền site cho user mới. Với organization không có site, operator có thể chọn một user active bất kỳ.
 
 ## Desktop và kiểm chứng
 
