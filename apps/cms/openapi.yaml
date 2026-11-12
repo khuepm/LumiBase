@@ -2573,6 +2573,54 @@ paths:
                 sort: { type: integer }
       responses:
         '201': { description: Created }
+  /items/{collection}/export:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: collection, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Stream the collection as CSV or JSON
+      description: >-
+        Keyset-paged streaming export using the caller's read permission. Runs
+        the extensions' `items.export.before` hook per row and writes an
+        `items_exported` audit entry. Bad input is rejected before streaming.
+      parameters:
+        - { name: format, in: query, schema: { type: string, enum: [csv, json], default: csv } }
+        - { name: fields, in: query, schema: { type: string }, description: Comma-separated data fields; structural columns are always written }
+        - { name: locales, in: query, schema: { type: string }, description: Comma-separated locales for translatable fields }
+        - { name: relations, in: query, schema: { type: string, enum: [id, slug, embed], default: id } }
+        - { name: filter, in: query, schema: { type: string }, description: Same syntax as the list endpoint (JSON or bracket form) }
+        - { name: sort, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: 'File download (`Content-Disposition: attachment`)'
+          content:
+            text/csv:
+              schema: { type: string }
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collection: { type: string }
+                  format: { type: string, example: lumibase-export@1 }
+                  exportedAt: { type: string, format: date-time }
+                  fields: { type: array, items: { type: string } }
+                  locales: { type: array, items: { type: string }, nullable: true }
+                  relations: { type: string, enum: [id, slug, embed] }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        status: { type: string }
+                        sort: { type: integer }
+                        created_at: { type: string, nullable: true }
+                        updated_at: { type: string, nullable: true }
+                        data: { type: object, additionalProperties: true }
+        '400': { description: VALIDATION, UNKNOWN_FIELD or INVALID_FILTER }
+        '403': { description: No read permission on the collection }
+        '404': { description: Collection not found }
   /items/{collection}/bulk:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'
