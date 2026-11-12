@@ -1,13 +1,13 @@
 ---
-version: 8
-lastUpdated: 2026-11-12T11:56:39.857Z
+version: 9
+lastUpdated: 2026-11-12T18:39:23.133Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2f9f44d604928fc8
+sourceHash: 8642aaaed806d710
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T11:56:39.857Z
-codeVerifiedHash: 2f9f44d604928fc8
+codeVerified: 2026-11-12T18:39:23.133Z
+codeVerifiedHash: 8642aaaed806d710
 codeVerifiedClaims: 120
 ---
 
@@ -99,6 +99,14 @@ hai tầng — và một site chỉ có thể **chặt hơn** instance:
 
 Hộp thư gốc: `+tag` bị bỏ khỏi phần local trên mọi domain (giữ `+` ở đầu);
 với Gmail phần local còn bỏ dấu chấm và `googlemail.com` quy về `gmail.com`.
+
+> **Đây là một policy, không phải bảo đảm về việc giao thư.** Sub-addressing
+> (`+tag`) là quy ước của từng nhà cung cấp. Trên domain không hỗ trợ nó,
+> `a+b@example.com` có thể là hộp thư khác với `a@example.com`, nhưng mode
+> `root` (hoặc site strict) vẫn coi chúng là một định danh — nên các chủ hộp thư
+> đó tranh nhau một tài khoản hoặc một membership. Chỉ chọn `root` / strict khi
+> chấp nhận được đánh đổi này với tập người dùng của mình; mode mặc định `exact`
+> không bao giờ áp dụng nó.
 Quy tắc nằm ở hai nơi, `emailRoot()`
 (`apps/cms/src/modules/email-identity/normalize.ts`) và hàm SQL
 `lumibase_email_root()` (migration `0026`); một integration test ghim cả hai

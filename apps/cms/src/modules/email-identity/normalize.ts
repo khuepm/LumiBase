@@ -3,10 +3,16 @@
  *
  * Two keys are derived from an address:
  *
- *   - {@link emailRoot}: the mailbox the address delivers to. `+tag` is
- *     stripped from the local part on every domain (a leading `+` is kept so
- *     the result never has an empty local part); for Gmail the local part also
- *     loses its dots and `googlemail.com` folds to `gmail.com`.
+ *   - {@link emailRoot}: the mailbox the address is *treated as* delivering
+ *     to. `+tag` is stripped from the local part on every domain (a leading
+ *     `+` is kept so the result never has an empty local part); for Gmail the
+ *     local part also loses its dots and `googlemail.com` folds to `gmail.com`.
+ *
+ *     Stripping `+tag` on every domain is a **product-policy choice**, not a
+ *     fact about mail delivery: sub-addressing is a provider convention, and on
+ *     a domain that does not implement it `a+b@x` may be a different mailbox
+ *     from `a@x`. Operators opt into that trade-off by choosing `root` mode (or
+ *     a strict site); the default `exact` mode never applies it.
  *   - {@link canonicalEmail}: the account key under the instance's
  *     {@link EmailIdentityMode} — `exact` keeps today's behaviour (case-folded
  *     address), `root` collapses every alias onto its root mailbox.

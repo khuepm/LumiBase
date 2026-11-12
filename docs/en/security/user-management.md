@@ -1,10 +1,10 @@
 ---
-version: 8
-lastUpdated: 2026-11-12T11:56:39.857Z
+version: 9
+lastUpdated: 2026-11-12T18:39:23.133Z
 sourceLang: en
-contentHash: 2f9f44d604928fc8
-codeVerified: 2026-11-12T11:56:39.857Z
-codeVerifiedHash: 2f9f44d604928fc8
+contentHash: 8642aaaed806d710
+codeVerified: 2026-11-12T18:39:23.133Z
+codeVerifiedHash: 8642aaaed806d710
 codeVerifiedClaims: 120
 ---
 
@@ -96,7 +96,14 @@ two tiers — and a site can only be **stricter** than the instance:
 
 Root mailbox: `+tag` is stripped from the local part on every domain (a
 leading `+` is kept); for Gmail the local part also loses its dots and
-`googlemail.com` folds to `gmail.com`. The rule lives twice, in `emailRoot()`
+`googlemail.com` folds to `gmail.com`.
+
+> **This is a policy, not a delivery guarantee.** Sub-addressing (`+tag`) is a
+> provider convention. On a domain that does not implement it, `a+b@example.com`
+> can be a different mailbox from `a@example.com`, and `root` mode (or a strict
+> site) will still treat them as one identity — so its holders compete for one
+> account or one membership. Choose `root` / strict only when that trade-off is
+> acceptable for your user base; the default `exact` mode never applies it. The rule lives twice, in `emailRoot()`
 (`apps/cms/src/modules/email-identity/normalize.ts`) and in the SQL function
 `lumibase_email_root()` (migration `0026`); an integration test pins both to
 one fixture list. Database triggers write `users.email_canonical` /

@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 35
-lastUpdated: 2026-11-12T11:56:38.102Z
+version: 36
+lastUpdated: 2026-11-12T18:39:21.944Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2fb85a863f29c9e0
+sourceHash: 446a866cfc921698
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T11:56:38.102Z
-codeVerifiedHash: 2fb85a863f29c9e0
+codeVerified: 2026-11-12T18:39:21.944Z
+codeVerifiedHash: 446a866cfc921698
 codeVerifiedClaims: 492
 ---
 
@@ -267,7 +267,9 @@ hai tầng. Một site chỉ có thể **chặt hơn** instance, không bao gi�
 - **Mode của instance** (`exact` mặc định, `root`). `exact` giữ mỗi địa chỉ
   khác nhau là một tài khoản riêng. `root` biến một hộp thư gốc thành một tài
   khoản trên toàn instance: `+tag` bị bỏ trên mọi domain, và với Gmail phần
-  local còn bỏ dấu chấm và `googlemail.com` quy về `gmail.com`. Mode được chọn
+  local còn bỏ dấu chấm và `googlemail.com` quy về `gmail.com`. Bỏ `+tag` trên
+  mọi domain là lựa chọn policy, không bảo đảm alias tới cùng hộp thư
+  (sub-addressing là quy ước của nhà cung cấp). Mode được chọn
   trong Setup Wizard (`emailIdentityMode` trong body
   `POST /api/v1/setup/complete`; bỏ trống → `exact`) và về sau chỉ bootstrap
   admin đổi được — phải là user principal, không bao giờ là API key (ngược lại

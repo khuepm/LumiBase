@@ -1,10 +1,10 @@
 ---
-version: 36
-lastUpdated: 2026-11-12T11:56:38.102Z
+version: 37
+lastUpdated: 2026-11-12T18:39:21.944Z
 sourceLang: en
-contentHash: 2fb85a863f29c9e0
-codeVerified: 2026-11-12T11:56:38.102Z
-codeVerifiedHash: 2fb85a863f29c9e0
+contentHash: 446a866cfc921698
+codeVerified: 2026-11-12T18:39:21.944Z
+codeVerifiedHash: 446a866cfc921698
 codeVerifiedClaims: 492
 ---
 
@@ -294,7 +294,9 @@ site can only be **stricter** than the instance, never looser.
 - **Instance mode** (`exact` default, `root`). `exact` keeps every distinct
   address as its own account. `root` makes one root mailbox one account
   instance-wide: `+tag` is stripped on every domain, and for Gmail the local
-  part also loses its dots and `googlemail.com` folds to `gmail.com`. It is
+  part also loses its dots and `googlemail.com` folds to `gmail.com`. Stripping
+  `+tag` on every domain is a policy choice, not a guarantee that the alias
+  reaches the same mailbox (sub-addressing is a provider convention). It is
   chosen in the Setup Wizard (`emailIdentityMode` in the
   `POST /api/v1/setup/complete` body; omitted → `exact`) and changed later only
   by the bootstrap admin — a user principal, never an API key (`403 FORBIDDEN`
