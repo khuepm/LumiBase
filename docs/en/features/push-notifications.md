@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-11-11T02:57:07.579Z
+version: 3
+lastUpdated: 2026-11-12T18:29:49.521Z
 sourceLang: en
-contentHash: ad555e217ea47f30
-codeVerified: 2026-11-11T02:57:07.579Z
-codeVerifiedHash: ad555e217ea47f30
+contentHash: d2b8d013b525ed73
+codeVerified: 2026-11-12T18:29:49.521Z
+codeVerifiedHash: d2b8d013b525ed73
 codeVerifiedClaims: 28
 ---
 
@@ -44,8 +44,10 @@ Each notification carries `{ id, kind, severity, title, body, deepLink, entityId
   optional `AgentNotifier` callback; request-context callers build one with
   `buildAgentNotifier(c)` (`notify-context.ts`), which binds the DO namespace
   (`SITE_ROOM`) and the VAPID env. The `agent-runs` queue worker passes a Web
-  Push-only notifier (no DO namespace there); other background callers omit it
-  (poll fallback).
+  Push-only notifier (no DO namespace there) that forwards `approval` and
+  `question` only — queued runs send no run succeeded/failed pushes — and keeps
+  each send alive with the queue consumer's `waitUntil` on Workers (awaited on
+  Docker); other background callers omit it (poll fallback).
 - **Web Push crypto** — `apps/cms/src/modules/notifications/web-push.ts`,
   implemented entirely on the Web Crypto API so it runs on both Cloudflare
   Workers and Node (the `web-push` npm package is Node-only and is deliberately

@@ -39,3 +39,12 @@
 - [x] 6.2 Setup Impact Registry dòng #202 (`n/a`).
 - [x] 6.3 Backlog B207, B208, B209.
 - [x] 6.4 CHANGELOG `[Unreleased]`.
+
+## Review #784
+- [x] 7.1 Loại `askUser` / `getUserAnswer` khỏi danh sách tool của Copilot chat (`chatToolSkills()`); test `llm-provider.test.ts`.
+- [x] 7.2 Mọi API key (kể cả org key) bị từ chối ở route trả lời; test org key trong `agent-ask-user.db.integration.test.ts`.
+- [x] 7.3 Trim + unique options trong contract; harness ghi input đã chuẩn hoá.
+- [x] 7.4 `closeRun` / `failRun` / `awaitApproval` không đưa run ra khỏi `waiting_user`.
+- [x] 7.5 Tool call `waiting_user` ghi trong transaction đỗ, trước notify.
+- [x] 7.6 Worker chỉ phát `approval` / `question`; `waitUntil` (Workers) hoặc await (Docker); body câu hỏi được che.
+- [x] 7.7 Comment + docs: nhánh requester chưa chạm tới được cho tới B207; không API key nào trả lời.

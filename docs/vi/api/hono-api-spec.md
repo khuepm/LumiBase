@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 35
-lastUpdated: 2026-11-11T02:57:05.805Z
+version: 36
+lastUpdated: 2026-11-12T18:29:48.103Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b2f355610f3b4dc5
+sourceHash: eb97b09676bd1cb0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T02:57:05.805Z
-codeVerifiedHash: b2f355610f3b4dc5
+codeVerified: 2026-11-12T18:29:48.103Z
+codeVerifiedHash: eb97b09676bd1cb0
 codeVerifiedClaims: 490
 ---
 
@@ -937,7 +937,7 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Quyết định của Agent với tư cách người đánh giá (cần `review:<domain>`; cấm tự đánh giá) |
 | `GET` | `/api/v1/agent/questions` | Các câu hỏi làm rõ `askUser`, mới nhất trước. `?status=pending` (mặc định) \| `answered` \| `expired` \| `cancelled` \| `all`. Mỗi phần tử: `{ id, runId, goalId, toolCallId, agentName, question, options, allowFreeText, context, status, expiresAt, createdAt, answer, answeredAt, answeredBy }`. Câu hỏi không xuất hiện trong `/approvals`, và `/approvals/:id/decide` cùng `/reopen` trả `409 NOT_AN_APPROVAL` cho id của câu hỏi. Xem [agent harness](../features/agent-harness-layer.md#54-hỏi-người-dùng-askuser-710) |
 | `GET` | `/api/v1/agent/questions/:id` | Một câu hỏi; `404` cho id không tồn tại hoặc thuộc tenant khác |
-| `POST` | `/api/v1/agent/questions/:id/answer` | Trả lời một câu hỏi và tiếp tục run `waiting_user` của nó. Body `{ answer }` (1–2000 ký tự, đã trim; phải là một trong `options` khi `allowFreeText` là false). Được phép với người giữ `approvals:decide` (hoặc control-plane admin) và với **user** đã yêu cầu run; không bao giờ với API key. Việc claim và việc tiếp tục run là một transaction. `200` kèm câu hỏi đã trả lời (run `succeeded`); `400` `VALIDATION` / `ANSWER_INVALID` / `ANSWER_NOT_AN_OPTION`; `403`; `404`; `409` `ALREADY_ANSWERED`, `EXPIRED`, `QUESTION_CLOSED`, `RUN_NOT_WAITING`, `REQUESTER_REVOKED` (người yêu cầu đã mất quyền; run bị fail); `423` `FROZEN` (run bị huỷ) |
+| `POST` | `/api/v1/agent/questions/:id/answer` | Trả lời một câu hỏi và tiếp tục run `waiting_user` của nó. Body `{ answer }` (1–2000 ký tự, đã trim; phải là một trong `options` khi `allowFreeText` là false). Chỉ user đã đăng nhập mới trả lời được: mọi API key, scope site hay organization và dù mang capability gì, đều nhận `403`. Được phép với người giữ `approvals:decide` (hoặc control-plane admin) và với **user** đã yêu cầu run; hiện tại chỉ quản trị viên site tới được route (control-plane guard), nên quy tắc người yêu cầu có hiệu lực khi backlog B207 đưa route ra khỏi control plane. Việc claim và việc tiếp tục run là một transaction. `200` kèm câu hỏi đã trả lời (run `succeeded`); `400` `VALIDATION` / `ANSWER_INVALID` / `ANSWER_NOT_AN_OPTION`; `403`; `404`; `409` `ALREADY_ANSWERED`, `EXPIRED`, `QUESTION_CLOSED`, `RUN_NOT_WAITING`, `REQUESTER_REVOKED` (người yêu cầu đã mất quyền; run bị fail); `423` `FROZEN` (run bị huỷ) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Các phiên bản, bản nháp, `/compile` (NL→đánh giá), `:id/dry-run`, `:id/activate` |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Dừng ở 4 phạm vi (`run/intent/role/site`); việc đóng đóng băng cần `agents:freeze`. Đóng băng một role hoặc cả site, tạm dừng một intent và huỷ một run cũng huỷ các run đang chờ câu hỏi `askUser` trong phạm vi đó (`stopReason: frozen`) và đóng câu hỏi của chúng |
 | `*` | `/api/v1/agent/intents[...]` | CRUD ý định nội dung, `:id/pause|resume|scan|drifts`, `/compile` |

@@ -1,14 +1,14 @@
 ---
-version: 6
-lastUpdated: 2026-11-11T02:57:05.538Z
+version: 7
+lastUpdated: 2026-11-12T18:29:47.859Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 416c7014482b11cc
+sourceHash: 0832f7037ca51e29
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T02:57:05.538Z
-codeVerifiedHash: 416c7014482b11cc
-codeVerifiedClaims: 28
+codeVerified: 2026-11-12T18:29:47.859Z
+codeVerifiedHash: 0832f7037ca51e29
+codeVerifiedClaims: 30
 ---
 
 <!--
@@ -208,9 +208,16 @@ Một agent không thể đi tiếp nếu thiếu một quyết định mà nó 
 inbox của Mission Control, và run tiếp tục với câu trả lời làm kết quả của tool.
 Đây là cùng vòng đời với một approval đang chờ, không phải một vòng đời song song.
 
+`askUser` và `getUserAnswer` được cung cấp cho các agent có quản trị — agent run,
+queue worker `agent-runs` và MCP — và **không cho Copilot chat**
+(`POST /api/v1/ai/chat`). Chat thực thi một tool call mỗi lượt và không có run nào
+để tạm dừng rồi tiếp tục, nên danh sách tool của nó (`chatToolSkills()` trong
+`llm-provider.ts`, cũng dùng cho ngân sách context) bỏ cả hai ra.
+
 **Input** (contract chuẩn `askUser` trong `@lumibase/contracts`, giới hạn nằm ở
 `ASK_USER_LIMITS`): `question` (1–1000 ký tự), `options` tùy chọn (2–10 lựa chọn,
-mỗi lựa chọn 200 ký tự), `allowFreeText` (mặc định `true`; `false` bắt buộc có
+mỗi lựa chọn 200 ký tự, được trim và phải khác nhau sau khi trim — chúng được so
+với một câu trả lời đã trim), `allowFreeText` (mặc định `true`; `false` bắt buộc có
 `options` và câu trả lời phải là một trong số đó), `context` (≤ 2000 ký tự) và
 `timeoutMinutes` (1–10080, mặc định 1440 = một ngày). Capability bắt buộc:
 `items:read` — hỏi không có side effect, nên nó không nằm trên thang autonomy và
@@ -227,7 +234,13 @@ mỗi lựa chọn 200 ký tự), `allowFreeText` (mặc định `true`; `false`
 | huỷ / kill switch | → `cancelled` (`stopReason` của lệnh huỷ, `frozen` khi đóng băng) | `cancelled` | `denied` | `agent_question.cancelled` |
 
 Hỏi, trả lời và hết hạn mỗi việc là một transaction ngắn với các update có điều
-kiện. Một run đang chờ **không giữ queue worker** nào (worker `agent-runs` trả về
+kiện. Khi hỏi, việc chuyển run, ghi câu hỏi và đánh dấu tool call `askUser` là
+`waiting_user` nằm trong cùng một transaction, trước mọi thông báo, nên một câu trả
+lời tới ngay sau khi commit không bao giờ bị ghi đè. Một run đang chờ chỉ rời
+`waiting_user` qua câu hỏi của nó (trả lời, hết hạn, huỷ): một lệnh close hoặc fail
+chung chung — ví dụ một worker ném lỗi sau khi việc đỗ đã commit — và việc đỗ nó
+vào một approval đều bị từ chối, nên câu hỏi không bao giờ bị bỏ lại `pending` dưới
+một run đã kết thúc. Một run đang chờ **không giữ queue worker** nào (worker `agent-runs` trả về
 ngay khi harness đã đỗ run) và **không giữ khoá database** nào. Với dispatcher, nó
 vẫn đang chạy (`waiting_user` nằm trong cùng tập in-flight với
 `awaiting_approval`), nên goal không nhận run thứ hai trong lúc chờ, và
@@ -244,14 +257,23 @@ output của tool call lẫn kết quả `getUserAnswer`. Một người đã g�
 lời cũng là một input như mọi input khác.
 
 **Ai được trả lời** (`POST /api/v1/agent/questions/:id/answer`, nằm sau
-control-plane guard như phần còn lại của `/api/v1/agent`):
+control-plane guard như phần còn lại của `/api/v1/agent`). Chỉ một **user** đã
+đăng nhập mới trả lời được. Mọi API key — scope site hay scope organization, dù
+mang capability gì — đều bị từ chối với `403` trước mọi kiểm tra khác: key là cách
+một agent hành động, và agent không được tự trả lời câu hỏi của chính nó (một
+organization key được resolve như control-plane admin, nên nếu không chặn nó sẽ
+lọt qua như một approver mà audit trail không có người nào). Trong số các user:
 
 - người giữ `approvals:decide`, hoặc một control-plane admin — những operator vốn
   đã được tin để gỡ một run đang đỗ, và là đường duy nhất cho run của reconciler,
   vốn không có người yêu cầu là người;
 - người yêu cầu của run, khi người đó là một **user** vẫn còn resolve được trên
-  site. Không phải API key: key là cách một agent hành động, và bên đã hỏi không
-  được tự trả lời câu hỏi của chính nó.
+  site.
+
+Hiện tại chỉ quản trị viên site tới được route này: control-plane guard đứng trước
+`/api/v1/agent` không cho ai khác qua, và một quản trị viên vốn đã được tính là
+approver. Vì vậy quy tắc người yêu cầu chưa thể chạm tới; nó có hiệu lực khi backlog
+B207 đưa route trả lời ra khỏi control plane.
 
 Câu trả lời dài 1–2000 ký tự, đã trim; với `allowFreeText: false` nó phải là một
 trong các options (`400 ANSWER_NOT_AN_OPTION`). Việc claim dòng `pending` và việc
@@ -305,9 +327,13 @@ chính nó. Được kiểm bằng `agent-ask-user.db.integration.test.ts` (hai 
 PostgreSQL thật).
 
 **Thông báo.** Khi hỏi, harness phát một agent notification loại `question` với
-deep link tới `/mission-control/inbox?entry=question:<id>`; run trong hàng đợi giờ
-cũng truyền một sink Web Push, nên câu hỏi của một run nền tới được người dùng mà
-không cần mở tab Studio.
+deep link tới `/mission-control/inbox?entry=question:<id>`; phần body mang câu hỏi
+đã được che giống hệt input tool đã lưu. Queue worker `agent-runs` truyền một sink
+Web Push chỉ cho `approval` và `question`, nên câu hỏi của một run nền tới được
+người dùng mà không cần mở tab Studio; run trong hàng đợi vẫn không gửi push run
+succeeded/failed (hay sự kiện vòng đời nào khác). Việc gửi là best effort: trên
+Workers nó được giữ sống bằng `waitUntil` của queue consumer, trên Docker worker
+chờ nó xong, và một lần gửi lỗi không bao giờ làm fail run.
 
 ## 6. App Generation Layer
 

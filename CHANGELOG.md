@@ -19,10 +19,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   and the run settles `succeeded`. Stored as `agent_approvals` rows with
   `kind = 'question'` — **no migration**. New endpoints `GET /api/v1/agent/questions`,
   `GET /api/v1/agent/questions/:id` and `POST /api/v1/agent/questions/:id/answer`
-  (holder of `approvals:decide` or the requesting user; never an API key; tenant-scoped,
+  (signed-in users only — any API key, site- or organization-scoped, gets `403`; a holder
+  of `approvals:decide`, or the requesting user once backlog B207 opens the route beyond
+  site administrators; tenant-scoped,
   audited as `agent_question.*`, a second answer is `409`; the requester's rights are
   re-resolved before resuming). New read skill `getUserAnswer` returns the outcome to the
-  requester only. Questions time out (default one day, max seven) through the 5-minute
+  requester only. Both skills are offered to governed agents (agent runs, the queue
+  worker, MCP), not to the Copilot chat, which has no run to pause. Questions time out (default one day, max seven) through the 5-minute
   `agent-question-sweep` on both runtimes, failing the run with
   `stopReason: question_timeout`; freezing a role or the site, pausing an intent or
   cancelling the run ends waiting runs. MCP `tools/call` returns
@@ -37,7 +40,11 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `409 NOT_AN_APPROVAL`.
 - The `agent-runs` queue worker now passes a Web Push notifier to the harness, so
   approvals and questions parked by a queued run notify subscribed operators (realtime
-  in-app delivery still needs a request context).
+  in-app delivery still needs a request context). It forwards only `approval` and
+  `question`: queued runs still send no run succeeded/failed pushes. On Workers the send
+  is kept alive with the queue consumer's `waitUntil` (the `queue()` dispatcher now
+  forwards its `ExecutionContext`); on Docker the worker awaits it; a failed send never
+  fails the run.
 
 ## [2.0.0] - 2026-11-10
 

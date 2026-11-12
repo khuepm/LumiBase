@@ -1,11 +1,11 @@
 ---
-version: 6
-lastUpdated: 2026-11-11T02:57:05.538Z
+version: 7
+lastUpdated: 2026-11-12T18:29:47.859Z
 sourceLang: en
-contentHash: 416c7014482b11cc
-codeVerified: 2026-11-11T02:57:05.538Z
-codeVerifiedHash: 416c7014482b11cc
-codeVerifiedClaims: 28
+contentHash: 0832f7037ca51e29
+codeVerified: 2026-11-12T18:29:47.859Z
+codeVerifiedHash: 0832f7037ca51e29
+codeVerifiedClaims: 30
 ---
 
 # Agent Harness Layer
@@ -214,9 +214,16 @@ calls the `askUser` tool instead of guessing. The run pauses, a person answers
 in the Mission Control inbox, and the run resumes with the answer as the tool's
 result. It is the same lifecycle as a parked approval, not a parallel one.
 
+`askUser` and `getUserAnswer` are offered to governed agents — agent runs, the
+`agent-runs` queue worker and MCP — and **not to the Copilot chat**
+(`POST /api/v1/ai/chat`). The chat executes one tool call per turn and has no
+run to pause and resume, so its tool list (`chatToolSkills()` in
+`llm-provider.ts`, also used for the context budget) leaves both out.
+
 **Input** (canonical contract `askUser` in `@lumibase/contracts`, limits in
 `ASK_USER_LIMITS`): `question` (1–1000 chars), optional `options` (2–10 choices,
-200 chars each), `allowFreeText` (default `true`; `false` requires `options` and
+200 chars each, trimmed and unique after trimming — they are compared with a
+trimmed answer), `allowFreeText` (default `true`; `false` requires `options` and
 makes the answer one of them), `context` (≤ 2000 chars) and `timeoutMinutes`
 (1–10080, default 1440 = one day). Required capability: `items:read` — asking
 has no side effect, so it is not on the autonomy gradient and is allowed at
@@ -233,7 +240,13 @@ every level, L0 included.
 | cancel / kill switch | → `cancelled` (`stopReason` of the cancel, `frozen` for a freeze) | `cancelled` | `denied` | `agent_question.cancelled` |
 
 Asking, answering and expiring are each one short transaction with guarded
-conditional updates. A waiting run holds **no queue worker** (the
+conditional updates. Asking moves the run, records the question and marks the
+`askUser` tool call `waiting_user` in the same transaction, before any
+notification, so an answer that lands right after the commit is never
+overwritten. A waiting run leaves `waiting_user` only through its question
+(answer, timeout, cancel): a generic close or fail — say, a worker that throws
+after the park committed — and parking it on an approval are refused, so the
+question can never be left `pending` under a run that already ended. A waiting run holds **no queue worker** (the
 `agent-runs` worker returns as soon as the harness has parked it) and **no
 database lock**. It is in flight for the dispatcher (`waiting_user` is in the
 same in-flight set as `awaiting_approval`), so a goal does not get a second run
@@ -251,14 +264,23 @@ plus `UNTRUSTED_CONTENT_RULE`, in both the tool call output and the
 any other.
 
 **Who may answer** (`POST /api/v1/agent/questions/:id/answer`, behind the
-control-plane guard like the rest of `/api/v1/agent`):
+control-plane guard like the rest of `/api/v1/agent`). Only a signed-in
+**user** answers. Any API key — site-scoped or organization-scoped, whatever
+capabilities it carries — is refused with `403` before anything else is
+checked: a key is how an agent acts, and an agent must not answer its own
+question (an organization key resolves as a control-plane admin, so it would
+otherwise pass as an approver with no human in the audit trail). Among users:
 
 - a holder of `approvals:decide`, or a control-plane admin — the operators
   already trusted to unblock a parked run, and the only path for reconciler
   runs, which have no human requester;
 - the run's requester, when that requester is a **user** who still resolves on
-  the site. Not an API key: a key is how an agent acts, and the caller that
-  asked must not answer its own question.
+  the site.
+
+Today only site administrators reach this route: the control-plane guard in
+front of `/api/v1/agent` admits nobody else, and an administrator already
+counts as an approver. The requester rule is therefore not reachable yet; it
+takes effect once backlog B207 moves the answer route out of the control plane.
 
 The answer is 1–2000 characters, trimmed; with `allowFreeText: false` it must be
 one of the options (`400 ANSWER_NOT_AN_OPTION`). The claim of the `pending` row
@@ -311,9 +333,13 @@ connection and settles each row inside its own site scope. Verified by
 `agent-ask-user.db.integration.test.ts` (two sites on real PostgreSQL).
 
 **Notifications.** Asking emits an agent notification of kind `question` with a
-deep link to `/mission-control/inbox?entry=question:<id>`; queued runs now pass
-a Web Push sink too, so a background run's question reaches a person without
-the Studio tab open.
+deep link to `/mission-control/inbox?entry=question:<id>`; its body carries the
+question masked the same way as the stored tool input. The `agent-runs` queue
+worker passes a Web Push sink for `approval` and `question` only, so a
+background run's question reaches a person without the Studio tab open; queued
+runs still send no run succeeded/failed (or other lifecycle) pushes. The send is
+best effort: on Workers it is kept alive with the queue consumer's `waitUntil`,
+on Docker the worker awaits it, and a failed send never fails the run.
 
 ### Rollout flags and Content OS metrics
 

@@ -23,7 +23,7 @@ Spec này thêm tool `askUser`: run **tạm dừng** (`waiting_user`), câu hỏ
 
 #### Acceptance Criteria
 
-1. THE harness SHALL đăng ký skill `askUser` với input `question` (1–1000), `options?` (2–10, mỗi cái ≤ 200), `allowFreeText?` (mặc định true), `context?` (≤ 2000), `timeoutMinutes?` (1–10080, mặc định 1440); input sai bị từ chối `VALIDATION` trước khi ghi bất kỳ dòng nào.
+1. THE harness SHALL đăng ký skill `askUser` với input `question` (1–1000), `options?` (2–10, mỗi cái ≤ 200, được trim và phải khác nhau sau trim), `allowFreeText?` (mặc định true), `context?` (≤ 2000), `timeoutMinutes?` (1–10080, mặc định 1440); input sai bị từ chối `VALIDATION` trước khi ghi bất kỳ dòng nào.
 2. WHEN `allowFreeText = false` THEN `options` SHALL bắt buộc.
 3. THE skill SHALL cần `items:read`, không nằm trên thang autonomy (hỏi không có side effect), và đi qua kill switch, capability, policy như mọi tool call.
 4. WHEN agent gọi `askUser` THEN harness SHALL, trong một transaction, chuyển run `queued|running → waiting_user` có điều kiện và tạo question `pending` có `expires_at`; nếu run đã bị huỷ thì không ghi gì.
@@ -38,7 +38,7 @@ Spec này thêm tool `askUser`: run **tạm dừng** (`waiting_user`), câu hỏ
 #### Acceptance Criteria
 
 1. `POST /api/v1/agent/questions/:id/answer` SHALL nhận `{ answer }` 1–2000 ký tự (trim); với `allowFreeText = false` câu trả lời phải là một option (`400 ANSWER_NOT_AN_OPTION`).
-2. Người được trả lời SHALL là Approver, hoặc Requester khi Requester là **user** còn resolve được trên site. API key không bao giờ được tự trả lời.
+2. Người được trả lời SHALL là Approver, hoặc Requester khi Requester là **user** còn resolve được trên site. Chỉ user đã đăng nhập mới trả lời: mọi API key (scope site hay organization, bất kể capability) bị từ chối trước khi xét Approver/Requester.
 3. Việc claim question `pending → answered` và chuyển run `waiting_user → succeeded` SHALL nằm trong một transaction; lần trả lời thứ hai nhận `409 ALREADY_ANSWERED`.
 4. Tool call `askUser` SHALL chuyển `executed` với output là câu trả lời bọc `untrustedBlock` + `UNTRUSTED_CONTENT_RULE`.
 5. Trước khi tiếp tục, quyền của Requester SHALL được resolve lại (#472); Requester mất quyền → run `failed` (`requester_revoked`), `409 REQUESTER_REVOKED`.

@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-11-11T02:57:07.579Z
+version: 3
+lastUpdated: 2026-11-12T18:29:49.521Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ad555e217ea47f30
+sourceHash: d2b8d013b525ed73
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T02:57:07.579Z
-codeVerifiedHash: ad555e217ea47f30
+codeVerified: 2026-11-12T18:29:49.521Z
+codeVerifiedHash: d2b8d013b525ed73
 codeVerifiedClaims: 28
 ---
 
@@ -48,8 +48,11 @@ Mỗi notification mang `{ id, kind, severity, title, body, deepLink, entityId, 
   callback `AgentNotifier` tuỳ chọn; caller ở request-context dựng nó bằng
   `buildAgentNotifier(c)` (`notify-context.ts`), hàm này bind namespace DO
   (`SITE_ROOM`) và env VAPID. Worker của hàng đợi `agent-runs` truyền một
-  notifier chỉ dùng Web Push (ở đó không có namespace DO); các caller ở background
-  khác bỏ nó đi (dùng poll dự phòng).
+  notifier chỉ dùng Web Push (ở đó không có namespace DO) và chỉ chuyển tiếp
+  `approval` và `question` — run trong hàng đợi không gửi push run succeeded/failed
+  — đồng thời giữ sống từng lần gửi bằng `waitUntil` của queue consumer trên
+  Workers (trên Docker thì chờ nó xong); các caller ở background khác bỏ nó đi
+  (dùng poll dự phòng).
 - **Crypto cho Web Push** — `apps/cms/src/modules/notifications/web-push.ts`,
   hiện thực hoàn toàn trên Web Crypto API nên chạy được trên cả Cloudflare Workers
   và Node (package npm `web-push` chỉ chạy trên Node và cố ý không được dùng).
