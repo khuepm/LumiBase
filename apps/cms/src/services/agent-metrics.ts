@@ -32,6 +32,33 @@ export const agentApprovalLatency = new Histogram({
   registers: [register],
 });
 
+/**
+ * `askUser` clarification questions (#710) by lifecycle outcome: `asked`,
+ * `answered`, `expired`, `cancelled`. A question is a human intervention in an
+ * agent run, so it belongs next to approvals when reading how autonomous a
+ * role really is: autonomous operation rate excludes runs that had to ask.
+ */
+export const agentQuestionsTotal = new Counter({
+  name: 'lumibase_agent_questions_total',
+  help: 'Agent clarification questions (askUser) by outcome',
+  labelNames: ['status'] as const,
+  registers: [register],
+});
+
+export const agentQuestionWait = new Histogram({
+  name: 'lumibase_agent_question_wait_seconds',
+  help: 'Time an agent run waited between askUser and the question settling',
+  labelNames: ['status'] as const,
+  buckets: [5, 30, 60, 300, 900, 1800, 3600, 21600, 86400, 604800],
+  registers: [register],
+});
+
+export function observeQuestionSettled(status: 'answered' | 'expired' | 'cancelled', askedAt: Date, now = new Date()): void {
+  agentQuestionsTotal.inc({ status });
+  const seconds = (now.getTime() - askedAt.getTime()) / 1000;
+  if (Number.isFinite(seconds)) agentQuestionWait.observe({ status }, Math.max(0, seconds));
+}
+
 export const agentEvaluationsTotal = new Counter({
   name: 'lumibase_agent_evaluations_total',
   help: 'Agent artifact evaluations by kind and status',
@@ -151,13 +178,13 @@ export function metricAgent(value: string): string {
   return value === 'lumibase-copilot' ? value : 'custom';
 }
 export function metricReason(value: string): string {
-  return ['completed', 'error', 'execution_timeout', 'worker_error', 'cancelled_by_user', 'killed_by_user', 'stale_unverified', 'enqueue_failed', 'queue_timeout', 'overload'].includes(value) ? value : 'other';
+  return ['completed', 'error', 'execution_timeout', 'worker_error', 'cancelled_by_user', 'killed_by_user', 'stale_unverified', 'enqueue_failed', 'queue_timeout', 'overload', 'answered', 'question_timeout', 'frozen'].includes(value) ? value : 'other';
 }
 export function metricKind(value: string): string {
   return ['tool_call', 'artifact', 'schema_validation', 'migration_dry_run', 'api_spec_validation', 'prompt_safety', 'json_schema_validation'].includes(value) ? value : 'other';
 }
 export function metricStatus(value: string): string {
-  return ['approved', 'rejected', 'failed', 'executed', 'pending_approval', 'denied', 'succeeded', 'cancelled', 'pass', 'fail'].includes(value) ? value : 'other';
+  return ['approved', 'rejected', 'failed', 'executed', 'pending_approval', 'waiting_user', 'denied', 'succeeded', 'cancelled', 'pass', 'fail'].includes(value) ? value : 'other';
 }
 export function observeApprovalDecision(row: { subjectType?: string; status: string; createdAt: Date }): void {
   const labels = { subject_type: metricKind(row.subjectType ?? 'tool_call'), status: metricStatus(row.status) };
