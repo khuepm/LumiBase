@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-11-12T18:45:08.116Z
+version: 4
+lastUpdated: 2026-11-12T21:04:27.226Z
 sourceLang: en
-contentHash: 98aaa3b267d1bf6f
-codeVerified: 2026-11-12T18:45:08.116Z
-codeVerifiedHash: 98aaa3b267d1bf6f
+contentHash: 5644257d82b75cbc
+codeVerified: 2026-11-12T21:04:27.226Z
+codeVerifiedHash: 5644257d82b75cbc
 codeVerifiedClaims: 12
 ---
 
@@ -132,6 +132,15 @@ worker's lease expires. Measured locally on Postgres 16, a
 row goes through the full item pipeline (validation, revisions, change feed) at
 about 90 rows per second per job, so a 100k-row file takes about 20 minutes.
 Limits and chunk size are set with [`IMPORT_*` variables](../deployment/environment-variables.md#imports).
+
+**Side effects run at least once.** Only the database writes are part of the
+chunk transaction. What a row triggers outside the database — `items.create.after`
+/ `items.update.after` hooks, flows, realtime events, search indexing, Firebase
+sync — fires as the row is written, before the chunk commits. When a chunk is
+replayed after a crash or a lost lease, those effects fire again for its rows,
+and they may already have fired for a row whose write was rolled back. Make
+extension hooks and flow targets idempotent (key on `itemId`), or treat the
+item as the source of truth and reconcile from it.
 
 ## Rate limit
 

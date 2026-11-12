@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-11-12T18:45:08.116Z
+version: 4
+lastUpdated: 2026-11-12T21:04:27.226Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 98aaa3b267d1bf6f
+sourceHash: 5644257d82b75cbc
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T18:45:08.116Z
-codeVerifiedHash: 98aaa3b267d1bf6f
+codeVerified: 2026-11-12T21:04:27.226Z
+codeVerifiedHash: 5644257d82b75cbc
 codeVerifiedClaims: 12
 ---
 
@@ -133,6 +133,15 @@ và tiếp quản khi lease của worker đầu hết hạn. Đo trên máy loca
 mỗi dòng đi qua toàn bộ pipeline item (validation, revision, change feed) với tốc
 độ khoảng 90 dòng mỗi giây cho mỗi job, nên một file 100k dòng mất khoảng 20 phút.
 Giới hạn và kích thước mỗi phần được đặt bằng [các biến `IMPORT_*`](../deployment/environment-variables.md#imports).
+
+**Side effect chạy ít nhất một lần.** Chỉ các thao tác ghi database nằm trong
+transaction của phần. Những gì một dòng kích hoạt bên ngoài database — hook
+`items.create.after` / `items.update.after`, flow, sự kiện realtime, đánh index
+search, đồng bộ Firebase — chạy ngay khi dòng được ghi, trước khi phần được commit.
+Khi một phần được chạy lại sau sự cố hoặc mất lease, các side effect đó chạy lại cho
+các dòng của nó, và có thể đã chạy cho một dòng mà thao tác ghi bị rollback. Hãy làm
+cho hook của extension và đích của flow có tính idempotent (dựa theo `itemId`), hoặc
+coi item là nguồn sự thật và đối soát lại từ nó.
 
 ## Rate limit
 
