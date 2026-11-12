@@ -1,6 +1,7 @@
 import pc from "picocolors";
 import { doctorCommand } from "./commands/doctor.js";
 import { initCommand } from "./commands/init.js";
+import { migrateCommand } from "./commands/migrate.js";
 import { typesCommand, DEFAULT_OUT } from "./commands/types.js";
 import { CliError } from "./errors.js";
 import { argvAfterCommand, boolFlag, parseArgs } from "./utils/args.js";
@@ -19,6 +20,7 @@ ${pc.bold("Commands")}
   init [name]     Scaffold a new LumiBase project
   types           Generate TypeScript types from a live schema
   doctor          Check configuration and connectivity
+  migrate <source>  Migrate content from another CMS ${pc.dim("(contentful)")}
 
 ${pc.bold("Connection")}
   Resolved with precedence flag > environment > ${pc.cyan("lumibase.config.json")}.
@@ -36,6 +38,16 @@ ${pc.bold("lumibase types")}
   --import-from <pkg>  Module the generated file imports from ${pc.dim('(default: lumibase)')}
   --check         Fail if the file is missing or stale ${pc.dim("(use in CI)")}
   --stdout        Print to stdout instead of writing a file
+
+${pc.bold("lumibase migrate contentful")}
+  --file <path>   Output of ${pc.cyan("contentful space export --include-drafts")}
+  --apply         Write the schema and content ${pc.dim("(default: dry run)")}
+  --yes           Skip the confirmation prompt ${pc.dim("(required without a TTY)")}
+  --prefix <p>    Prefix for new collection names, e.g. cf_
+  --locale-map <a=b,…>  Map source locales, e.g. en-US=en
+  --skip-assets   Do not download/upload assets
+  --state <path>  Resume file ${pc.dim("(default: .lumibase/migrate-contentful-<space>.json)")}
+  --json          Print the plan as JSON
 
 ${pc.bold("Examples")}
   ${pc.dim("$")} lumibase init my-site
@@ -69,6 +81,8 @@ export async function run(argv: string[]): Promise<number> {
       return typesCommand(args);
     case "doctor":
       return doctorCommand(args);
+    case "migrate":
+      return migrateCommand(args);
     case "help":
       log.plain(HELP);
       return 0;

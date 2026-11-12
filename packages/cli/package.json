@@ -34,6 +34,7 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
+    "@lumibase/contracts": "workspace:*",
     "@lumibase/sdk": "workspace:*",
     "picocolors": "^1.1.1"
   },

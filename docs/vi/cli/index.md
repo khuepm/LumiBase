@@ -1,14 +1,14 @@
 ---
 title: LumiBase CLI
-version: 7
-lastUpdated: 2026-10-10T04:59:28.224Z
+version: 8
+lastUpdated: 2026-11-12T20:47:43.079Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 9ea8177149217720
+sourceHash: 176e034324bab9cb
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-13T19:22:01.232Z
-codeVerifiedHash: 9ea8177149217720
+codeVerified: 2026-11-12T20:47:43.079Z
+codeVerifiedHash: 176e034324bab9cb
 codeVerifiedClaims: 20
 ---
 
@@ -43,6 +43,7 @@ CLI yêu cầu Node.js 22+; launcher tại `packages/cli/bin/lumibase.js` từ c
 | `lumibase init [name]` | Tạo khung một project mới |
 | `lumibase types` | Sinh type TypeScript từ một CMS đang chạy |
 | `lumibase doctor` | Báo cáo cấu hình đã resolve và thăm dò kết nối |
+| `lumibase migrate <source>` | Migrate nội dung từ CMS khác (Contentful); chỉ dry run nếu không có `--apply` |
 
 `lumibase help` và `lumibase version` cũng được chấp nhận, cùng với `--help` / `-h` và `--version` / `-v`.
 
@@ -131,9 +132,27 @@ Bước health gọi endpoint `/health` không cần xác thực (`apps/cms/src/
 
 `doctor` thoát với mã khác 0 nếu có bất kỳ mục nào fail.
 
+## `lumibase migrate contentful`
+
+Chuyển một space Contentful vào site đang kết nối: content type thành collection,
+entry thành item giữ nguyên id Contentful, asset được upload thành file, và rich
+text thành JSON rich-text portable của LumiBase.
+
+```bash
+lumibase migrate contentful --file space.json                 # dry run: prints the plan
+lumibase migrate contentful --file space.json --apply         # asks, then writes
+lumibase migrate contentful --file space.json --apply --yes   # CI
+```
+
+Không có `--apply` thì không ghi gì. `--apply` hỏi xác nhận trước khi đổi schema;
+shell không tương tác cần `--yes`. Chạy lại là an toàn: item đã có được cập nhật,
+asset đã upload được bỏ qua. Các flag, bảng ánh xạ field và giới hạn:
+[Content migration](../features/content-migration.md).
+
 ## Liên quan
 
 - [SDK — typegen](../sdk/typegen.md) — API lập trình nằm sau `lumibase types`
 - [Bắt đầu](../getting-started.md#bạn-thật-sự-cần-cái-nào) — starter vs platform vs consumer client, và `lumibase` nằm ở đâu
 - [Phát triển cục bộ](../deployment/local-development.md) — chạy CMS và Studio mà CLI này trỏ vào
 - [npm publishing](../release/npm-publishing.md) — cách package được phát hành
+- [Content migration](../features/content-migration.md) — `lumibase migrate` đầy đủ

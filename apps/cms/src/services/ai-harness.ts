@@ -1,4 +1,5 @@
 import { validateGroundedContent, type GroundingSource } from './grounded-content';
+import { applyContentMigrationSchema, planContentMigration, type ContentMigrationArgs } from './content-migration-service';
 import {
   agentApprovals,
   aiApprovals,
@@ -1450,6 +1451,32 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
         const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
         const relation = await schemaServiceRef.createRelation(args as never);
         return { created: true, relation };
+      },
+    },
+
+    planContentMigration: {
+      name: 'planContentMigration',
+      description:
+        'Plan a migration from another CMS (Contentful): map its content types to collections and fields, compared with the current schema. Read-only.',
+      requiredCapabilities: ['schema:read'],
+      service: 'schema',
+      handler: async (args) => {
+        const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
+        return planContentMigration(args as unknown as ContentMigrationArgs, schemaServiceRef);
+      },
+    },
+
+    applyContentMigrationSchema: {
+      name: 'applyContentMigrationSchema',
+      description:
+        'Create the collections, fields and relations a content migration needs. Additive only; existing fields are never changed. Entries are imported with `lumibase migrate --apply`.',
+      // Mutating schema:* capabilities make this control-plane: it always parks
+      // for human approval (isControlPlaneSkill) before it runs.
+      requiredCapabilities: ['schema:create', 'schema:update'],
+      service: 'schema',
+      handler: async (args) => {
+        const schemaServiceRef = requireService(schemaService, 'SCHEMA_SERVICE');
+        return applyContentMigrationSchema(args as unknown as ContentMigrationArgs, schemaServiceRef);
       },
     },
 

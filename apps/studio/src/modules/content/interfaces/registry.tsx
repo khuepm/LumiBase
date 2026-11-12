@@ -35,6 +35,7 @@ import { TagsInterface } from './tags';
 import { TextInterface, TextMultilineInterface } from './text';
 import { ToggleInterface } from './toggle';
 import { TranslatableText } from './translatable-text';
+import { RichTextInterface } from './richtext';
 import { WysiwygInterface } from './wysiwyg';
 import type { InterfaceComponent } from './types';
 import { getExtension } from '@/lib/extension-loader';
@@ -82,6 +83,7 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
   map: MapInterface,
   code: CodeInterface,
   wysiwyg: WysiwygInterface,
+  richtext: RichTextInterface,
   markdown: MarkdownInterface,
   file: FileInterface,
   files: FilesInterface,

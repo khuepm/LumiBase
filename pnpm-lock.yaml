@@ -534,6 +534,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@lumibase/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@lumibase/sdk':
         specifier: workspace:*
         version: link:../sdk

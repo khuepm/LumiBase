@@ -1,11 +1,11 @@
 ---
 title: LumiBase CLI
-version: 7
-lastUpdated: 2026-10-10T04:59:28.224Z
+version: 8
+lastUpdated: 2026-11-12T20:47:43.079Z
 sourceLang: en
-contentHash: 9ea8177149217720
-codeVerified: 2026-10-13T19:22:01.232Z
-codeVerifiedHash: 9ea8177149217720
+contentHash: 176e034324bab9cb
+codeVerified: 2026-11-12T20:47:43.079Z
+codeVerifiedHash: 176e034324bab9cb
 codeVerifiedClaims: 20
 ---
 
@@ -40,6 +40,7 @@ Node.js 22+ is required for the CLI; the launcher in `packages/cli/bin/lumibase.
 | `lumibase init [name]` | Scaffold a new project |
 | `lumibase types` | Generate TypeScript types from a running CMS |
 | `lumibase doctor` | Report resolved configuration and probe connectivity |
+| `lumibase migrate <source>` | Migrate content from another CMS (Contentful); dry run unless `--apply` |
 
 `lumibase help` and `lumibase version` are also accepted, as are `--help` / `-h` and `--version` / `-v`.
 
@@ -128,9 +129,27 @@ The health probe calls the unauthenticated `/health` endpoint (`apps/cms/src/rou
 
 `doctor` exits non-zero if any check fails.
 
+## `lumibase migrate contentful`
+
+Moves a Contentful space into the connected site: content types become
+collections, entries become items with their Contentful ids, assets are uploaded
+as files, and rich text becomes LumiBase's portable rich-text JSON.
+
+```bash
+lumibase migrate contentful --file space.json                 # dry run: prints the plan
+lumibase migrate contentful --file space.json --apply         # asks, then writes
+lumibase migrate contentful --file space.json --apply --yes   # CI
+```
+
+Without `--apply` nothing is written. `--apply` asks for confirmation before it
+changes the schema; a non-interactive shell needs `--yes`. Re-running is safe:
+existing items are updated, uploaded assets are skipped. Flags, the field mapping
+and limits: [Content migration](../features/content-migration.md).
+
 ## Related
 
 - [SDK — typegen](../sdk/typegen.md) — the programmatic API behind `lumibase types`
 - [Getting started](../getting-started.md#which-one-do-you-actually-want) — starter vs platform vs consumer client, and where `lumibase` fits
 - [Local development](../deployment/local-development.md) — running the CMS and Studio this CLI points at
 - [npm publishing](../release/npm-publishing.md) — how the package is released
+- [Content migration](../features/content-migration.md) — `lumibase migrate` in full
