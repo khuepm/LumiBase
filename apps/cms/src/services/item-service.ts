@@ -62,6 +62,7 @@ import {
   invalidateItemsTag,
 } from './content-invalidation';
 import { runSiteTransaction } from './rls-transaction';
+import { queueAccepts } from './queue-routing';
 
 const BULK_INSERT_CHUNK = 100;
 
@@ -1753,7 +1754,8 @@ export class ItemService {
   /**
    * Index an item in the search engine after create/update.
    * Uses QueueProvider to enqueue a `search:index` job on the `content-indexing` queue.
-   * Falls back to direct SearchProvider.index() if queue is unavailable.
+   * Falls back to direct SearchProvider.index() if the queue is unavailable or,
+   * on Workers, has no producer binding (B131).
    * Errors are logged but never block the main operation.
    *
    * The queue payload carries `siteId` so the worker can scope the physical
@@ -1761,7 +1763,7 @@ export class ItemService {
    */
   private async indexItem(collectionName: string, id: string, data: Record<string, unknown>): Promise<void> {
     try {
-      if (this.deps.queue) {
+      if (queueAccepts(this.deps.queue, 'content-indexing')) {
         await this.deps.queue.enqueue('content-indexing', 'search:index', {
           siteId: this.deps.siteId,
           collection: collectionName,
@@ -1782,12 +1784,13 @@ export class ItemService {
   /**
    * Remove an item from the search index after soft-delete.
    * Uses QueueProvider to enqueue a `search:remove` job on the `content-indexing` queue.
-   * Falls back to direct SearchProvider.delete() if queue is unavailable.
+   * Falls back to direct SearchProvider.delete() if the queue is unavailable or
+   * has no producer binding (B131).
    * Errors are logged but never block the main operation.
    */
   private async deindexItem(collectionName: string, id: string): Promise<void> {
     try {
-      if (this.deps.queue) {
+      if (queueAccepts(this.deps.queue, 'content-indexing')) {
         await this.deps.queue.enqueue('content-indexing', 'search:remove', {
           siteId: this.deps.siteId,
           collection: collectionName,
