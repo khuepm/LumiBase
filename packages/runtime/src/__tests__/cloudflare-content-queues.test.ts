@@ -3,8 +3,9 @@ import { createCloudflareRuntime } from '../adapters/cloudflare';
 
 /**
  * B131: search indexing and ISR revalidation have dedicated producer bindings
- * on Workers. Business code enqueues on the logical names `content-indexing` /
- * `revalidation-dispatch`; without this mapping `enqueue` threw `Queue binding
+ * on Workers, and so does the envelope-migration continuation. Business code
+ * enqueues on the logical names `content-indexing` / `revalidation-dispatch` /
+ * `encryption-envelope-migration`; without this mapping `enqueue` threw `Queue binding
  * not found` on every item write and neither job ever ran.
  */
 const binding = () => ({ send: vi.fn(async () => {}), sendBatch: vi.fn(async () => {}) });
@@ -13,6 +14,7 @@ describe('Cloudflare logical content queue routing (B131)', () => {
   it.each([
     ['content-indexing', 'CONTENT_INDEXING_QUEUE', 'search:index'],
     ['revalidation-dispatch', 'REVALIDATION_QUEUE', 'dispatch'],
+    ['encryption-envelope-migration', 'ENVELOPE_MIGRATION_QUEUE', 'migrate'],
   ] as const)('routes %s jobs to %s only', async (logical, bindingName, jobName) => {
     const target = binding(); const flows = binding(); const other = binding();
     const otherName = bindingName === 'CONTENT_INDEXING_QUEUE' ? 'REVALIDATION_QUEUE' : 'CONTENT_INDEXING_QUEUE';

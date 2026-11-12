@@ -31,22 +31,37 @@ const ENTRY = read('cloudflare.ts');
 const FLOW_HANDLERS = read('cloudflare-flow-queue.ts');
 const AGENT_HANDLER = read('cloudflare-agent-queue.ts');
 const CONTENT_HANDLERS = read('cloudflare-content-queue.ts');
+const CRON_PARITY = read('cloudflare-cron-parity.ts');
 const WRANGLER = readFileSync(resolve(SRC, '../wrangler.toml'), 'utf8');
 
 const PROFILES = ['local', 'staging', 'production', 'dev', 'demo'] as const;
 
 /**
- * Docker consumers with no Workers counterpart yet. Each names the backlog
- * row that tracks it. The list may only shrink: an entry that no longer
- * appears in `serve.ts` fails the test.
+ * Docker consumers that Workers replaces with a Cron Trigger sweep rather than
+ * a queue consumer (B131). Nothing enqueues on their queue in production code,
+ * or the queue is only a latency path in front of a periodic backstop, so the
+ * backstop is what Workers needs. Each maps to the sweep function Docker runs
+ * on node-cron and the tag it has in `cloudflare-cron-parity.ts`.
  */
-const DOCKER_ONLY_CONSUMERS: Record<string, string> = {
-  registerAuditLogWorker: 'B131',
-  registerCdcDispatchWorker: 'B131',
-  registerVetoCommitWorker: 'B131',
-  registerSchedulerWorker: 'B131',
-  registerStatusPoller: 'B131',
-  registerEnvelopeMigrationWorker: 'B131',
+const WORKER_CRON_EQUIVALENTS: Record<string, { sweep: string; tag: string; dockerSource?: string }> = {
+  registerSchedulerWorker: { sweep: 'runSchedulerTick', tag: 'content-scheduler' },
+  registerStatusPoller: { sweep: 'sweepAllSites', tag: 'deployment-poll' },
+  registerVetoCommitWorker: { sweep: 'sweepDueVetoCommits', tag: 'veto-sweep' },
+  // Docker runs the CDC sweep on a setInterval inside the registration.
+  registerCdcDispatchWorker: { sweep: 'runCdcDispatchSweep', tag: 'cdc-dispatch', dockerSource: 'modules/cdc/change-feed/dispatcher.ts' },
+};
+
+/**
+ * Docker consumers Workers deliberately does not run, with the reason. Not a
+ * backlog: adding an entry needs a reason a reviewer can check.
+ */
+const DOCKER_ONLY_BY_DESIGN: Record<string, string> = {
+  // Production code wires the audit queue only through this registration
+  // (setAuditLogQueue), so on Workers AuditLogger writes every row
+  // synchronously and nothing is lost. A Workers consumer would set that
+  // isolate-global queue, start routing requests' audit through an in-memory
+  // batcher, and risk losing rows when the isolate ends before the flush.
+  registerAuditLogWorker: 'Workers writes audit synchronously; no queue is wired there',
 };
 
 // ── Scanner ─────────────────────────────────────────────────────────────────
@@ -108,31 +123,58 @@ describe('every Docker queue consumer is consumed on Workers or allow-listed (a)
 
   it('no serve.ts consumer is missing on Workers without a backlog ID', () => {
     const workers = new Set<string>(consumers.map(([, c]) => c.dockerRegistration));
-    const missing = serveRegistrations.filter((name) => !workers.has(name) && !(name in DOCKER_ONLY_CONSUMERS));
+    const missing = serveRegistrations.filter(
+      (name) => !workers.has(name) && !(name in WORKER_CRON_EQUIVALENTS) && !(name in DOCKER_ONLY_BY_DESIGN),
+    );
     expect(
       missing,
       'These serve.ts consumers have no Workers counterpart. Add a handler to ' +
-        'WORKER_QUEUE_CONSUMERS (src/cloudflare-queue.ts) + wrangler bindings, or ' +
-        'allow-list them in DOCKER_ONLY_CONSUMERS with a backlog ID.',
+        'WORKER_QUEUE_CONSUMERS (src/cloudflare-queue.ts) + wrangler bindings, a sweep ' +
+        'to cloudflare-cron-parity.ts, or a reasoned entry in DOCKER_ONLY_BY_DESIGN.',
     ).toEqual([]);
   });
 
-  it('the allow-list only names consumers that still exist and are not consumed on Workers', () => {
-    for (const [name, backlog] of Object.entries(DOCKER_ONLY_CONSUMERS)) {
-      expect(serveRegistrations, `${name} left serve.ts; drop it from the allow-list`).toContain(name);
-      expect(consumers.map(([, c]) => c.dockerRegistration as string)).not.toContain(name);
-      expect(backlog).toMatch(/^B\d+$/);
+  it('every category names a consumer that still exists, in exactly one category', () => {
+    const queued = consumers.map(([, c]) => c.dockerRegistration as string);
+    for (const name of [...Object.keys(WORKER_CRON_EQUIVALENTS), ...Object.keys(DOCKER_ONLY_BY_DESIGN)]) {
+      expect(serveRegistrations, `${name} left serve.ts; drop it`).toContain(name);
+      expect(queued).not.toContain(name);
     }
+    for (const name of Object.keys(DOCKER_ONLY_BY_DESIGN)) expect(WORKER_CRON_EQUIVALENTS).not.toHaveProperty(name);
+  });
+
+  it.each(Object.entries(WORKER_CRON_EQUIVALENTS))(
+    '%s: serve.ts runs %s on a schedule and the Worker runs it from a sweep',
+    (_name, { sweep, tag, dockerSource }) => {
+      expect(dockerSource ? read(dockerSource) : SERVE).toMatch(new RegExp(`\\b${sweep}\\(`));
+      expect(CRON_PARITY).toMatch(new RegExp(`\\b${sweep}\\(`));
+      expect(CRON_PARITY).toContain(`'${tag}':`);
+    },
+  );
+
+  it('the goal-dispatch tick, which has no queue, runs on both entrypoints', () => {
+    expect(SERVE).toMatch(/\brunGoalDispatchTick\(/);
+    expect(CRON_PARITY).toMatch(/\brunGoalDispatchTick\(/);
+    expect(CRON_PARITY).toContain("'goal-dispatch':");
+  });
+
+  it('the retention sweep runs hourly on both entrypoints', () => {
+    expect(SERVE).toMatch(/\bsweepRetention\(/);
+    expect(CRON_PARITY).toMatch(/\bsweepRetention\(/);
   });
 });
 
 // ── (b) Workers → Docker + wrangler ─────────────────────────────────────────
 
 describe('every Workers consumer has a Docker twin and wrangler config in every profile (b)', () => {
-  it('the Worker exports the dispatcher and runs the minute schedule sweep', () => {
+  it('the Worker exports the dispatcher and runs the parity sweeps on every trigger', () => {
     expect(ENTRY).toContain('queue: processCloudflareQueue');
     expect(ENTRY).toContain("controller.cron === '* * * * *'");
-    expect(ENTRY).toContain('runDueScheduledFlows({ db, queue: runtime.queue })');
+    expect(ENTRY).toContain('runWorkerSweeps(MINUTE_SWEEPS, sweepDeps)');
+    expect(ENTRY).toContain('runWorkerSweeps({ ...MINUTE_SWEEPS, ...FIVE_MINUTE_SWEEPS }, sweepDeps)');
+    expect(ENTRY).toContain('runWorkerSweeps(HOURLY_SWEEPS, sweepDeps)');
+    // The scheduler tick carries the schedule-flow sweep (B118, B132).
+    expect(read('services/scheduler-worker.ts')).toMatch(/runDueScheduledFlows\(/);
   });
 
   it.each(consumers)('%s is registered in serve.ts', (_logical, consumer) => {

@@ -1,5 +1,6 @@
 import { processCloudflareAgentQueue } from './cloudflare-agent-queue';
 import { processCloudflareContentIndexingQueue, processCloudflareRevalidationQueue } from './cloudflare-content-queue';
+import { processCloudflareEnvelopeMigrationQueue } from './cloudflare-envelope-queue';
 import { processCloudflareFlowEventsQueue, processCloudflareFlowRunsQueue } from './cloudflare-flow-queue';
 import { ackHealthProbes } from './cloudflare-queue-common';
 import type { Bindings } from './env';
@@ -22,6 +23,10 @@ export const WORKER_QUEUE_CONSUMERS = {
   'flow-events': { binding: 'FLOW_EVENTS_QUEUE', dockerRegistration: 'registerFlowEventWorker' },
   'content-indexing': { binding: 'CONTENT_INDEXING_QUEUE', dockerRegistration: 'registerContentIndexingWorker' },
   'revalidation-dispatch': { binding: 'REVALIDATION_QUEUE', dockerRegistration: 'registerRevalidationWorker' },
+  'encryption-envelope-migration': {
+    binding: 'ENVELOPE_MIGRATION_QUEUE',
+    dockerRegistration: 'registerEnvelopeMigrationWorker',
+  },
 } as const;
 
 export type WorkerLogicalQueue = keyof typeof WORKER_QUEUE_CONSUMERS;
@@ -32,9 +37,11 @@ const HANDLERS: Record<WorkerLogicalQueue, (batch: MessageBatch<unknown>, env: B
   'flow-events': processCloudflareFlowEventsQueue,
   'content-indexing': processCloudflareContentIndexingQueue,
   'revalidation-dispatch': processCloudflareRevalidationQueue,
+  'encryption-envelope-migration': processCloudflareEnvelopeMigrationQueue,
 };
 
-const QUEUE_NAME = /^(agent-runs|flow-runs|flow-events|content-indexing|revalidation-dispatch)(-[a-z0-9-]+)?$/;
+const QUEUE_NAME =
+  /^(agent-runs|flow-runs|flow-events|content-indexing|revalidation-dispatch|encryption-envelope-migration)(-[a-z0-9-]+)?$/;
 
 /**
  * Physical queue name → logical queue. Accepts `lumibase-<logical>-<profile>`

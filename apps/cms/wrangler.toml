@@ -101,7 +101,8 @@ crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]
 # ─── Queues ───────────────────────────────────────────────────────────────────
 # The Worker's `queue()` export (src/cloudflare-queue.ts) routes each batch by
 # queue name: `lumibase-<logical>-<profile>` → agent-runs / flow-runs /
-# flow-events / content-indexing / revalidation-dispatch. Keep the logical
+# flow-events / content-indexing / revalidation-dispatch /
+# encryption-envelope-migration. Keep the logical
 # segment if you rename a queue. Every named profile needs its queues (and
 # `-dlq`) created before deploy, e.g.
 #   wrangler queues create lumibase-flow-runs-production
@@ -171,6 +172,17 @@ max_batch_size = 10
 max_batch_timeout = 5
 max_retries = 2
 dead_letter_queue = "lumibase-revalidation-dispatch-local-dlq"
+
+[[queues.producers]]
+binding = "ENVELOPE_MIGRATION_QUEUE"
+queue = "lumibase-encryption-envelope-migration-local"
+
+[[queues.consumers]]
+queue = "lumibase-encryption-envelope-migration-local"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-encryption-envelope-migration-local-dlq"
 
 # ─── Environment Profiles ────────────────────────────────────────────────────
 # Top-level [vars] is intentionally local/development only. Named environments
@@ -336,6 +348,17 @@ max_batch_timeout = 5
 max_retries = 2
 dead_letter_queue = "lumibase-revalidation-dispatch-staging-dlq"
 
+[[env.staging.queues.producers]]
+binding = "ENVELOPE_MIGRATION_QUEUE"
+queue = "lumibase-encryption-envelope-migration-staging"
+
+[[env.staging.queues.consumers]]
+queue = "lumibase-encryption-envelope-migration-staging"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-encryption-envelope-migration-staging-dlq"
+
 [env.staging.triggers]
 # Reserve the minute trigger for production on the shared Free account.
 crons = ["0 * * * *", "*/5 * * * *"]
@@ -491,6 +514,17 @@ max_batch_timeout = 5
 max_retries = 2
 dead_letter_queue = "lumibase-revalidation-dispatch-production-dlq"
 
+[[env.production.queues.producers]]
+binding = "ENVELOPE_MIGRATION_QUEUE"
+queue = "lumibase-encryption-envelope-migration-production"
+
+[[env.production.queues.consumers]]
+queue = "lumibase-encryption-envelope-migration-production"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-encryption-envelope-migration-production-dlq"
+
 [env.production.triggers]
 crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]
 
@@ -600,6 +634,17 @@ max_batch_size = 10
 max_batch_timeout = 5
 max_retries = 2
 dead_letter_queue = "lumibase-revalidation-dispatch-dev-dlq"
+
+[[env.dev.queues.producers]]
+binding = "ENVELOPE_MIGRATION_QUEUE"
+queue = "lumibase-encryption-envelope-migration-dev"
+
+[[env.dev.queues.consumers]]
+queue = "lumibase-encryption-envelope-migration-dev"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-encryption-envelope-migration-dev-dlq"
 
 [env.dev.triggers]
 # Reserve account cron capacity for production.
@@ -712,6 +757,17 @@ max_batch_size = 10
 max_batch_timeout = 5
 max_retries = 2
 dead_letter_queue = "lumibase-revalidation-dispatch-demo-dlq"
+
+[[env.demo.queues.producers]]
+binding = "ENVELOPE_MIGRATION_QUEUE"
+queue = "lumibase-encryption-envelope-migration-demo"
+
+[[env.demo.queues.consumers]]
+queue = "lumibase-encryption-envelope-migration-demo"
+max_batch_size = 1
+max_batch_timeout = 1
+max_retries = 2
+dead_letter_queue = "lumibase-encryption-envelope-migration-demo-dlq"
 
 [env.demo.triggers]
 # Reserve account cron capacity for production.
