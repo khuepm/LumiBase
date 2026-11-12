@@ -1,10 +1,10 @@
 ---
-version: 10
-lastUpdated: 2026-11-12T10:11:41.992Z
+version: 11
+lastUpdated: 2026-11-12T18:56:19.246Z
 sourceLang: en
-contentHash: 0a60a8119f42af54
-codeVerified: 2026-11-12T10:11:41.992Z
-codeVerifiedHash: 0a60a8119f42af54
+contentHash: 5c01feaf33a583e1
+codeVerified: 2026-11-12T18:56:19.246Z
+codeVerifiedHash: 5c01feaf33a583e1
 codeVerifiedClaims: 20
 ---
 
@@ -371,6 +371,7 @@ Operational notes:
 - `POST /api/v1/agent/generate-app` creates `page_spec`, `component_spec`, `seed_data`, and `api_spec` artifacts and evaluates each artifact before returning.
 - `agent_runs.metrics.stopReason` records completion or budget stop reasons such as `completed`, `error`, and `max_tool_calls`.
 - `agent_tool_calls.cost` stores token/cost estimates after secret masking.
+- `agent_runs.status` `waiting_user` (#710): the run asked a human with `askUser` and is parked until the question is answered (`succeeded`, `stopReason: answered`), times out (`failed`, `stopReason: question_timeout`) or is cancelled. No schema change: the question is an `agent_approvals` row (see below).
 - If the same goal fails at least three runs and a runtime `QueueProvider` is available, the run service enqueues `agent-dead-letter` with the scoped run failure payload.
 
 ### Draft review tables (Jev)
@@ -403,7 +404,7 @@ Content OS columns on existing tables:
 - `revisions`: `authorType`, `createdByRunId`, `model`, `constitutionHash`, `sources`, `confidence`, `staged`, `autoCommitAt` (provenance + veto staging).
 - `items`: `pinnedFields` (Law Zero — fields a human edit locked against agent writes).
 - `agent_goals`: `parentGoalId` (goal tree), `origin` (`user/reconciler/planner/flow`), `intentId`, `driftFingerprint`, `agentRole`.
-- `agent_approvals`: `kind` (`approval`/`veto`), `autoCommitAt`, `approverType` (`human`/`agent`), `approverRunId`.
+- `agent_approvals`: `kind` (`approval`/`veto`/`promotion`/`question`), `autoCommitAt`, `approverType` (`human`/`agent`), `approverRunId`. A `question` row (`askUser`, #710) uses the existing columns: `subject_id` is the `askUser` tool call (whose `input` holds the question, options and context), `status` is `pending`/`answered`/`expired`/`cancelled`, `expires_at` is the deadline, and `decision_reason`/`decided_by`/`decided_at` record the answer and who gave it.
 
 ### Directus-inspired tables (`cms.ts`)
 

@@ -972,6 +972,30 @@ components:
         decisionReason: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
         decidedAt: { type: string, format: date-time, nullable: true }
+    AgentQuestion:
+      type: object
+      description: >-
+        An askUser clarification question (#710). Stored as an agent_approvals
+        row with kind = question; its run is parked in `waiting_user` while the
+        question is pending.
+      properties:
+        id: { type: string }
+        runId: { type: string }
+        goalId: { type: string, nullable: true }
+        toolCallId: { type: string }
+        agentName: { type: string }
+        question: { type: string, maxLength: 1000 }
+        options:
+          type: array
+          items: { type: string, maxLength: 200 }
+        allowFreeText: { type: boolean }
+        context: { type: string, nullable: true }
+        status: { type: string, enum: [pending, answered, expired, cancelled] }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        answer: { type: string, nullable: true, maxLength: 2000 }
+        answeredAt: { type: string, format: date-time, nullable: true }
+        answeredBy: { type: string, nullable: true }
     AgentArtifact:
       type: object
       properties:
@@ -4678,6 +4702,7 @@ paths:
   /agent/approvals:
     get:
       summary: List generalized agent approvals
+      description: askUser questions (kind = question) are excluded; see /agent/questions.
       parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
       responses:
         '200':
@@ -4709,6 +4734,85 @@ paths:
                 reason: { type: string }
       responses:
         '200': { description: Decision recorded }
+        '409': { description: Already processed, or NOT_AN_APPROVAL for an askUser question id }
+
+  /agent/questions:
+    get:
+      summary: List askUser clarification questions
+      description: >-
+        Questions agents asked with the askUser tool (#710), newest first.
+        They are not listed by /agent/approvals.
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [pending, answered, expired, cancelled, all], default: pending }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AgentQuestion' }
+        '400': { description: Unknown status filter }
+
+  /agent/questions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Read one askUser question
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AgentQuestion' }
+        '404': { description: Unknown or other-tenant question }
+
+  /agent/questions/{id}/answer:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Answer an askUser question and resume its run
+      description: >-
+        Allowed for a holder of approvals:decide (or a control-plane admin) and
+        for the run's requesting user; never for an API key. Claiming the
+        pending question and resuming the waiting_user run are one transaction,
+        so a second answer is refused with 409 and never resumes the run twice.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answer]
+              additionalProperties: false
+              properties:
+                answer: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '200':
+          description: Answered; the run settled succeeded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AgentQuestion' }
+        '400': { description: VALIDATION, ANSWER_INVALID or ANSWER_NOT_AN_OPTION }
+        '403': { description: Not the requesting user and no approvals:decide }
+        '404': { description: Unknown or other-tenant question }
+        '409': { description: ALREADY_ANSWERED, EXPIRED, QUESTION_CLOSED, RUN_NOT_WAITING or REQUESTER_REVOKED }
+        '423': { description: FROZEN — the kill switch covers the run; it was cancelled }
 
   /agent/artifacts:
     get:

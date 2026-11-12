@@ -160,6 +160,19 @@ export default Sentry.withSentry(
         .catch(() => console.error('[agent-run-sweep] failed')),
     );
 
+    // askUser question timeout (#710): expire overdue questions and fail their
+    // waiting runs (`question_timeout`). Same sweep as the Docker cron.
+    ctx.waitUntil(
+      import('./services/agent-question-service')
+        .then(({ sweepExpiredQuestions }) => sweepExpiredQuestions({ db }))
+        .then((expired) => {
+          for (const question of expired) {
+            console.warn('[agent-question-sweep] question expired', JSON.stringify(question));
+          }
+        })
+        .catch(() => console.error('[agent-question-sweep] failed')),
+    );
+
     if (controller.cron === '0 * * * *') {
       ctx.waitUntil(runScheduledRotation(db));
       ctx.waitUntil(runScheduledRefreshTokenPrune(db));

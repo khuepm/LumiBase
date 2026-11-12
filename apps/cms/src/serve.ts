@@ -165,6 +165,7 @@ async function main() {
   let vetoSweepTask: ScheduledTask | undefined;
   let claimSweepTask: ScheduledTask | undefined;
   let staleRunSweepTask: ScheduledTask | undefined;
+  let questionSweepTask: ScheduledTask | undefined;
   let schedulerTask: ScheduledTask | undefined;
   let retentionTask: ScheduledTask | undefined;
   let deploymentPollTask: ScheduledTask | undefined;
@@ -477,6 +478,34 @@ async function main() {
     ),
   );
 
+  // ── askUser question timeout (#710) ────────────────────────────────────────
+  //
+  // A run parked on a question holds no worker and no lock, so nothing else
+  // would ever notice its deadline. This sweep expires overdue questions and
+  // fails their runs with `stopReason: 'question_timeout'`, which frees the goal
+  // for the dispatcher. Each step is a guarded conditional update, so an answer
+  // that lands first is never overwritten. Same 5-minute tick on Workers.
+  const { sweepExpiredQuestions } = await import('./services/agent-question-service');
+  questionSweepTask = cron.schedule(
+    '*/5 * * * *',
+    leaderLockedCallback(
+      'agent-question-sweep',
+      240_000,
+      async () => {
+        await sweepExpiredQuestions({ db: rotatorDb })
+          .then((expired) => {
+            for (const question of expired) {
+              console.warn('[agent-question-sweep] question expired', JSON.stringify(question));
+            }
+          })
+          .catch((err) => {
+            console.error('[agent-question-sweep] failed', formatSafeError(err));
+          });
+      },
+      lockOpts,
+    ),
+  );
+
   // ── Content scheduler (regulated-content-readiness task 7; Req 7.3/7.4) ──
   //
   // A 1-minute tick applies due publish/unpublish transitions. Each flip is a
@@ -669,6 +698,7 @@ async function main() {
     vetoSweepTask?.stop();
     claimSweepTask?.stop();
     staleRunSweepTask?.stop();
+    questionSweepTask?.stop();
     schedulerTask?.stop();
     retentionTask?.stop();
     deploymentPollTask?.stop();

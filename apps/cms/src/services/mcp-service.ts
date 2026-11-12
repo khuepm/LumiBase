@@ -11,8 +11,9 @@ import type { HarnessExecutionResult } from './ai-harness';
  * MCP-specific business logic.
  *
  * Error split (design "Error Handling"): protocol violations are JSON-RPC
- * errors; business outcomes (`denied`, `pending_approval`) are ordinary tool
- * results so MCP clients can surface the approval id to the user (Req 4.4).
+ * errors; business outcomes (`denied`, `pending_approval`, `waiting_user`) are
+ * ordinary tool results so MCP clients can surface the approval or question id
+ * to the user (Req 4.4).
  */
 
 /** Protocol revisions this adapter accepts from clients. */
@@ -103,6 +104,12 @@ export interface McpToolDecision {
   agentApprovalId?: string;
   /** The legacy `ai_approvals` id, when one was written. */
   legacyApprovalId?: string;
+  /**
+   * The `askUser` question the run waits on, when status is `waiting_user`
+   * (#710). Answered by a human at `POST /api/v1/agent/questions/{questionId}/answer`;
+   * the agent reads the outcome with the `getUserAnswer` tool.
+   */
+  questionId?: string;
   runId?: string;
   message?: string;
 }
@@ -121,6 +128,7 @@ export function toToolDecision(result: HarnessExecutionResult): McpToolDecision 
   }
   if (result.agentApprovalId) decision.agentApprovalId = result.agentApprovalId;
   if (result.approvalId) decision.legacyApprovalId = result.approvalId;
+  if (result.questionId) decision.questionId = result.questionId;
 
   if (result.runId) decision.runId = result.runId;
   if (result.message) decision.message = result.message;
@@ -227,7 +235,9 @@ export class McpService {
         if (this.context.organizationId) decision.organizationId = this.context.organizationId;
         // Business outcomes ride inside the tool result (Req 4.4): a denial is
         // an isError tool result, a pending approval is a normal result whose
-        // payload carries the approvalId — never a JSON-RPC protocol error.
+        // payload carries the approvalId, and a question (`waiting_user`, #710)
+        // is a normal result carrying the questionId — never a JSON-RPC
+        // protocol error.
         return {
           content: [{ type: 'text', text: JSON.stringify(decision) }],
           structuredContent: decision as unknown as Record<string, unknown>,

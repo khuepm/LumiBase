@@ -130,6 +130,7 @@ describe('buildCounts', () => {
     expect(buildCounts(entries)).toEqual({
       total: 5,
       approvals: 1,
+      questions: 0,
       staged: 2,
       incidents: 1,
       intentErrors: 1,
@@ -141,6 +142,7 @@ describe('buildCounts', () => {
     expect(buildCounts([])).toEqual({
       total: 0,
       approvals: 0,
+      questions: 0,
       staged: 0,
       incidents: 0,
       intentErrors: 0,
