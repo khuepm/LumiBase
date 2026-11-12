@@ -6,6 +6,16 @@ import { itemServiceForRequest, permissionServiceForRequest } from '../services/
 import { ContentVersionError, ContentVersionService } from '../services/content-version-service';
 import { DependentsError, DependentsService, type ResolveAction } from '../services/dependents-service';
 import { formatSafeError } from '@lumibase/contracts/utils';
+import { and, eq } from 'drizzle-orm';
+import { scopeSite, settings } from '@lumibase/database';
+import {
+  ExportError,
+  planExport,
+  streamExport,
+  type ExportOptions,
+  type ExportRecord,
+} from '../services/export-service';
+import { AuditLogger } from '../modules/audit/logger';
 
 /**
  * /items/:collection — generic CRUD over the items store.
@@ -134,6 +144,129 @@ itemsRouter.post('/:collection/bulk', async (c) => {
     const { status, body } = toError(err);
     return c.json(body, status as 400);
   }
+});
+
+// ---------- Export (#727) ----------
+// Registered before `/:collection/:id` so `export` is never read as an item id.
+
+const exportQuerySchema = z.object({
+  format: z.enum(['csv', 'json']).default('csv'),
+  fields: z.string().optional(),
+  locales: z.string().optional(),
+  relations: z.enum(['id', 'slug', 'embed']).default('id'),
+  filter: z.string().optional(),
+  sort: z.string().optional(),
+  status: z.string().optional(),
+});
+
+const csvList = (v: string | undefined) =>
+  v ? v.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+
+/** Site locales from the `locales` setting (`value.supported`), as Studio reads them. */
+async function siteLocales(c: Context<AppEnv>): Promise<string[]> {
+  const [row] = await c
+    .get('db')
+    .select({ value: settings.value })
+    .from(settings)
+    .where(and(eq(settings.key, 'locales'), scopeSite(settings.siteId, c.get('siteId'))))
+    .limit(1);
+  const supported = (row?.value as { supported?: unknown } | undefined)?.supported;
+  return Array.isArray(supported) ? supported.filter((l): l is string => typeof l === 'string') : ['en', 'vi'];
+}
+
+/**
+ * GET /items/:collection/export — stream the collection as CSV or JSON.
+ * Uses the caller's `read` permission (row filters and field masks apply), the
+ * same filter/sort syntax as the list endpoint, and the extensions'
+ * `items.export.before` hook per row.
+ */
+itemsRouter.get('/:collection/export', async (c) => {
+  const collection = c.req.param('collection');
+  const searchParams = new URL(c.req.url).searchParams;
+  const parsed = exportQuerySchema.safeParse(Object.fromEntries(searchParams));
+  if (!parsed.success) {
+    return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
+  }
+  let filter: ExportOptions['filter'];
+  try {
+    filter = parseFilterQueryParams(searchParams, parsed.data.filter) as ExportOptions['filter'];
+  } catch {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'Invalid filter: expected JSON or filter[field][_op]=value syntax.' }] }, 400);
+  }
+  const options: ExportOptions = {
+    format: parsed.data.format,
+    fields: csvList(parsed.data.fields),
+    locales: csvList(parsed.data.locales),
+    relations: parsed.data.relations,
+    filter,
+    sort: csvList(parsed.data.sort),
+    status: parsed.data.status,
+  };
+
+  const svc = buildService(c);
+  let plan;
+  let transform: Awaited<ReturnType<typeof svc.exportRowTransformer>>;
+  try {
+    const meta = await svc.describeForExport(collection);
+    plan = planExport({
+      collection,
+      schemaFields: meta.fields,
+      relations: meta.relations,
+      siteLocales: await siteLocales(c),
+      options,
+    });
+    // Probe once so a bad filter/sort is a 400 now, not a broken stream later.
+    await svc.list(collection, { filter, sort: options.sort, status: options.status, limit: 1, withTotal: false });
+    transform = await svc.exportRowTransformer(collection);
+  } catch (err) {
+    if (err instanceof ExportError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, 400);
+    }
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+
+  const auth = c.get('auth');
+  await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
+    event: 'items_exported',
+    actorEmail: auth?.email ?? null,
+    targetEmail: null,
+    ip: c.get('ip') ?? null,
+    userAgent: c.get('userAgent') ?? null,
+    requestId: c.get('requestId') ?? null,
+    metadata: {
+      collection,
+      format: plan.format,
+      fields: plan.fields,
+      locales: plan.locales,
+      relations: plan.relations,
+      filtered: Boolean(filter),
+      apiKeyId: auth?.apiKeyId ?? null,
+    },
+  });
+
+  const body = streamExport(plan, options, {
+    list: async (params) => (await svc.list(collection, params)).data as never,
+    transform: transform
+      ? async (record) => {
+          const out = (await transform!(record as unknown as Record<string, unknown>)) as Partial<ExportRecord>;
+          // A hook that returns a malformed item keeps the original row rather
+          // than breaking the stream half-way.
+          const ok = typeof out?.data === 'object' && out.data !== null && !Array.isArray(out.data);
+          return ok ? ({ ...record, ...out } as ExportRecord) : record;
+        }
+      : undefined,
+  });
+  const stamp = new Date().toISOString().slice(0, 10);
+  const safeName = collection.replace(/[^A-Za-z0-9_-]/g, '_');
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'content-type': plan.format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8',
+      'content-disposition': `attachment; filename="${safeName}-${stamp}.${plan.format}"`,
+      'cache-control': 'no-store',
+    },
+  });
 });
 
 itemsRouter.get('/:collection/:id', async (c) => {
