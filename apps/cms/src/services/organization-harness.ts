@@ -11,6 +11,7 @@ import { AuditLogger } from '../modules/audit/logger';
 import { executeOrganizationMutation, lockOrganization, organizationFail, OrganizationError,
   resolveOrganizationActorRole, type OrganizationActor, type OrganizationMutation, type OrganizationDb } from './organization-operations';
 import { finalizeSiteProvisioning } from './site-provisioning';
+import { invalidateSiteExists } from './domains/site-exists-cache';
 
 export function organizationMcpEnabled(settings: unknown, env: { LUMIBASE_MCP_ORG_TOOLS?: string }): boolean {
   if (env.LUMIBASE_MCP_ORG_TOOLS === 'off') return false;
@@ -127,6 +128,7 @@ export async function decideOrganizationApproval(input: {
 }) {
   if (input.decider.type !== 'user') organizationFail('ORGANIZATION_FORBIDDEN', 403);
   let createdSiteId: string | undefined;
+  let deletedSiteId: string | undefined;
   const receipt = await input.db.transaction(async (tx) => {
     const where = and(eq(aiApprovals.id, input.approvalId), eq(aiApprovals.organizationId, input.organizationId), isNull(aiApprovals.siteId));
     const [initial] = await tx.select().from(aiApprovals).where(where).limit(1);
@@ -162,6 +164,7 @@ export async function decideOrganizationApproval(input: {
       if (!Object.hasOwn(OrganizationToolSchemas, row!.skillName) || readActions.has(operation)) organizationFail('VALIDATION', 400);
       const execution = await executeOrganizationMutation(tx, input.organizationId, operation, storedArgs, input.decider);
       createdSiteId = execution.createdSiteId;
+      if (operation === 'delete_site' && typeof storedArgs.siteId === 'string') deletedSiteId = storedArgs.siteId;
       result = execution.data;
     }
     // The stored receipt never holds a plaintext secret: only the token hash is
@@ -174,6 +177,7 @@ export async function decideOrganizationApproval(input: {
     return { ...organizationApprovalSummary(saved!), result };
   });
   if (createdSiteId) await finalizeSiteProvisioning(input.db, input.env, input.runtime, createdSiteId).catch(() => undefined);
+  if (deletedSiteId) await invalidateSiteExists(input.runtime?.cache, deletedSiteId);
   await new AuditLogger({ db: input.db, siteId: null }).write({ event: 'organization_mcp_approval_decided',
     requestId: input.requestId ?? null, metadata: { organizationId: input.organizationId, runId: input.approvalId,
       requester: receipt.requester, decider: input.decider, decision: receipt.status, via: 'organization' } });

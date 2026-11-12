@@ -318,8 +318,12 @@ describe('golden tools/list', () => {
       });
     }
     for (const tool of connected.readOnly.tools) {
-      expect(tool, tool.name).toEqual(site.get(tool.name));
-      expect(tool.annotations?.readOnlyHint, tool.name).toBe(true);
+      // Only the read-only profile annotates its tools (#789); the site
+      // profile leaves `annotations` unset. Everything else must be identical.
+      const { annotations, ...rest } = tool;
+      const { annotations: _siteAnnotations, ...siteRest } = site.get(tool.name)!;
+      expect(rest, tool.name).toEqual(siteRest);
+      expect(annotations?.readOnlyHint, tool.name).toBe(true);
     }
   });
 
