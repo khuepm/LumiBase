@@ -182,6 +182,29 @@ export class TrustLedgerService {
       rejected: decidedRows.filter((row) => row.status === 'rejected').length,
     };
 
+    // Clarification questions (#710) are human interventions too. They are
+    // evidence, not a gate: asking when unsure is the behaviour earned
+    // autonomy should reward, so they are shown to the human deciding the
+    // promotion rather than counted against the role. An unanswered question
+    // still breaks the run streak (its run ends `failed`), which is the gate.
+    const questionRows = await this.deps.db
+      .select({ status: agentApprovals.status })
+      .from(agentApprovals)
+      .where(
+        and(
+          eq(agentApprovals.siteId, this.deps.siteId),
+          eq(agentApprovals.requestedByAgent, agentRole),
+          eq(agentApprovals.kind, 'question'),
+        ),
+      )
+      .orderBy(desc(agentApprovals.createdAt))
+      .limit(200);
+    const questions = {
+      asked: questionRows.length,
+      answered: questionRows.filter((row) => row.status === 'answered').length,
+      expired: questionRows.filter((row) => row.status === 'expired').length,
+    };
+
     const incidents = await this.deps.db
       .select({ id: agentIncidents.id })
       .from(agentIncidents)
@@ -208,6 +231,7 @@ export class TrustLedgerService {
       evidence: {
         runStatuses: input.runStatuses,
         approvalsDecided,
+        questions,
         openIncidents: incidents.length,
         thresholds: this.thresholds,
       },

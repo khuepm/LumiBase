@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Database } from '@lumibase/database';
+import { agentRuns, type Database } from '@lumibase/database';
 import { AgentRunService } from '../agent-run-service';
 import { processAgentRunJob, type AgentRunJobPayload } from '../agent-run-worker';
 
@@ -42,9 +42,15 @@ function fakeRunsDb(initial: RunRow | null): Database & { row: () => RunRow | nu
         },
       }),
     }),
-    update: () => ({
+    // Only agent_runs is modelled. `cancelRun` also closes the run's open
+    // `askUser` questions (#710); this run never asked one, so any other table
+    // matches no row.
+    update: (table: unknown) => ({
       set: (patch: Record<string, unknown>) => ({
         where: () => {
+          if (table !== agentRuns) {
+            return Object.assign(Promise.resolve(undefined), { returning: async () => [] });
+          }
           if (current) Object.assign(current, patch);
           const rows = current ? [{ ...current }] : [];
           return Object.assign(Promise.resolve(undefined), {
@@ -102,8 +108,8 @@ describe('Feature: content-os, Requirement 3: run state machine', () => {
     expect(db.row()!.status).toBe('awaiting_approval');
   });
 
-  it('cancelRun cancels queued/running/awaiting_approval runs with a stop reason', async () => {
-    for (const status of ['queued', 'running', 'awaiting_approval']) {
+  it('cancelRun cancels queued/running/awaiting_approval/waiting_user runs with a stop reason', async () => {
+    for (const status of ['queued', 'running', 'awaiting_approval', 'waiting_user']) {
       const db = fakeRunsDb(makeRun(status));
       const service = new AgentRunService(db, 'site_1');
       const cancelled = await service.cancelRun('run_1', 'cancelled_by_user');

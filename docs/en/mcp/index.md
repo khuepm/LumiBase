@@ -1,13 +1,13 @@
 ---
-version: 15
-lastUpdated: 2026-11-12T18:31:06.918Z
+version: 16
+lastUpdated: 2026-11-12T19:03:36.330Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 509ef395c6bb2705
+sourceHash: 0c13f5b73067c6c0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T18:31:06.918Z
-codeVerifiedHash: 509ef395c6bb2705
+codeVerified: 2026-11-12T19:03:36.330Z
+codeVerifiedHash: 0c13f5b73067c6c0
 codeVerifiedClaims: 34
 ---
 
@@ -41,6 +41,7 @@ Source: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`a
 - **Mapping decision → tool result** (an important invariant):
   - `executed` → `isError: false`, data in `structuredContent`.
   - `pending_approval` → `isError: false`, with **`approvalId` inside `structuredContent`**; this is NOT a protocol error.
+  - `waiting_user` (the `askUser` tool, #710) → `isError: false`, with **`questionId` inside `structuredContent`**; the run is parked until a human answers. This is NOT a protocol error.
   - `denied` → `isError: true`.
   - Protocol errors are reserved for genuine JSON-RPC failures: `-32700` parse, `-32600` invalid request, `-32601` method not found, `-32602` invalid params.
 - **Guards inherited from the harness** (zero MCP-specific logic): kill switch, capability, autonomy (L0–L4), constitution pin, load guard, veto window. See [`docs/en/features/agent-harness-layer.md`](../features/agent-harness-layer.md).

@@ -106,6 +106,24 @@ const flowNode = z.object({
   branches: z.record(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), z.string().nullable()).optional(),
 });
 
+/**
+ * Bounds for the `askUser` clarification tool (#710), shared by the harness
+ * (question), the answer route (answer) and Studio (input `maxLength`).
+ * `timeoutMinutes` defaults to {@link ASK_USER_DEFAULT_TIMEOUT_MINUTES}.
+ */
+export const ASK_USER_LIMITS = {
+  question: 1000,
+  option: 200,
+  options: 10,
+  context: 2000,
+  answer: 2000,
+  /** Seven days. */
+  timeoutMinutes: 10_080,
+} as const;
+
+/** One day: long enough for a person to see it, short enough not to hold a goal for a week. */
+export const ASK_USER_DEFAULT_TIMEOUT_MINUTES = 1440;
+
 /** Standard 5-field cron — the same pattern `intentInputSchema` enforces. */
 const CRON_5_FIELD = /^(\S+\s+){4}\S+$/;
 
@@ -406,6 +424,45 @@ export const AgentToolSchemas = {
     .object({ subscriptionId: id, occurredAfter: z.string().datetime() })
     .strict(),
   deleteCdcSubscription: z.object({ subscriptionId: id }).strict(),
+
+  // ── clarification (#710) ─────────────────────────────────────────────────
+  /**
+   * Pauses the run and asks a human. The harness intercepts this skill: it
+   * never reaches a handler, it parks the run in `waiting_user` and records a
+   * `kind = 'question'` row in `agent_approvals`. The limits bound what a run
+   * can push into the Studio inbox and into a notification.
+   */
+  askUser: z
+    .object({
+      question: z.string().min(1).max(ASK_USER_LIMITS.question),
+      // Trimmed, like the answer the API and Studio compare against them: an
+      // untrimmed `"yes "` could never be matched by a choice-only answer.
+      options: z
+        .array(z.string().trim().min(1).max(ASK_USER_LIMITS.option))
+        .min(2)
+        .max(ASK_USER_LIMITS.options)
+        .optional(),
+      allowFreeText: z.boolean().optional(),
+      context: z.string().max(ASK_USER_LIMITS.context).optional(),
+      timeoutMinutes: z.number().int().min(1).max(ASK_USER_LIMITS.timeoutMinutes).optional(),
+    })
+    .strict()
+    .superRefine((input, ctx) => {
+      // "Choose one of these" with nothing to choose from could never be answered.
+      if (input.allowFreeText === false && !input.options) {
+        ctx.addIssue({ code: 'custom', path: ['options'], message: 'options are required when allowFreeText is false' });
+      }
+      // Two options that read the same after trimming are one choice offered twice.
+      const seen = new Set<string>();
+      input.options?.forEach((option, index) => {
+        if (seen.has(option)) {
+          ctx.addIssue({ code: 'custom', path: ['options', index], message: 'options must be unique' });
+        }
+        seen.add(option);
+      });
+    }),
+  /** Reads the outcome of an `askUser` question this caller asked. */
+  getUserAnswer: z.object({ questionId: id }).strict(),
 } as const satisfies Record<string, z.ZodType>;
 
 export type AgentToolName = keyof typeof AgentToolSchemas;

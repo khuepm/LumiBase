@@ -87,7 +87,7 @@ function DashboardBody() {
   });
 
   const activeFreezes = killSwitchQuery.data?.active.length ?? 0;
-  const needsHuman = counts.approvals + counts.intentErrors;
+  const needsHuman = counts.approvals + counts.questions + counts.intentErrors;
   const sloCard = sloHealthCard(sloSummary(rows));
 
   return (
