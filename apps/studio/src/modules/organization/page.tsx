@@ -372,7 +372,7 @@ function OrganizationSettings({
                     const destination = organizations.find((o) => o.id === to);
                     if (destination)
                       ask(
-                        site.name,
+                        site.id,
                         `Move ${site.name} to ${destination.name}? Members and keys of the destination organization will gain access.`,
                         () => api.sites.transfer(id, site.id, to),
                       );
@@ -404,7 +404,7 @@ function OrganizationSettings({
                   disabled={busy}
                   onClick={() =>
                     ask(
-                      site.name,
+                      site.id,
                       `Permanently delete ${site.name} and all its content?`,
                       () => api.sites.remove(id, site.id),
                     )
