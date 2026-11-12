@@ -1,19 +1,19 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T10:17:03.297Z
+version: 2
+lastUpdated: 2026-11-12T10:11:38.468Z
 sourceLang: en
-contentHash: 152cf39aee864f38
-codeVerified: 2026-07-28T10:17:03.297Z
-codeVerifiedHash: 152cf39aee864f38
-codeVerifiedClaims: 4
+contentHash: 932857ad9c1c2971
+codeVerified: 2026-11-12T10:11:38.468Z
+codeVerifiedHash: 932857ad9c1c2971
+codeVerifiedClaims: 12
 ---
 
 # Data import
 
 Bulk-loading many items — a migration, a seed, a one-off backfill — goes through
-the **bulk items endpoint**, not one request per row. This page covers the
-endpoint, the rate limit that trips large imports, and a recommended batching
-approach.
+the **bulk items endpoint** or, for a whole file, a **background import job**,
+never one request per row. This page covers both, the rate limit that trips
+large imports, and a recommended batching approach.
 
 ## Bulk endpoint
 
@@ -55,6 +55,81 @@ the earlier items committed. For large imports, send items in batches (e.g.
 and keep each request well under the rate-limit window. Pick a batch size that
 balances throughput against request duration for your data.
 
+## Background import jobs
+
+For a file — a [CSV or JSON export](./data-export.md), a migration dump, a
+100k-row spreadsheet — upload it as an **import job** instead of batching
+`bulk` calls yourself. The server stores the file, answers `202` at once, and
+writes the rows in the background in chunks, so the size of the file never
+hits a request timeout.
+
+```
+POST /api/v1/imports?collection={collection}&format=csv|json&mode=create|upsert
+```
+
+- **Body:** the file. Send it as multipart (`file` field; the format is taken
+  from a `.csv` / `.json` name) or as a raw body (`text/csv`,
+  `application/octet-stream`). A raw `application/json` body is capped by the
+  1 MiB JSON body limit, so send JSON files as multipart or
+  `application/octet-stream`.
+- **Format:** the layout of [Data export](./data-export.md) — CSV with
+  `field.locale` columns for translatable fields, or the JSON envelope (or a
+  bare array of `{ id?, status?, sort?, data }`). Columns that are not fields
+  of the collection are rejected with `400` before any row is written.
+- **Mode:** `create` (default) always creates new items. `upsert` updates the
+  item whose `id` matches and creates the rest; it needs `update` permission too.
+- **Permissions:** checked up front (`create`, plus `update` for `upsert`) and
+  again on every row, as the user or API key that uploaded the file. If that
+  principal loses access while the job runs, the job stops as `failed`.
+
+The response is the job:
+
+```json
+{
+  "data": {
+    "id": "Vb3…",
+    "collection": "products",
+    "format": "csv",
+    "mode": "create",
+    "status": "queued",
+    "totalRows": 100000,
+    "processedRows": 0,
+    "createdRows": 0,
+    "updatedRows": 0,
+    "failedRows": 0,
+    "errorsTruncated": 0,
+    "message": null,
+    "cancelRequested": false
+  }
+}
+```
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/v1/imports/{id}` | Progress: `status`, `processedRows` of `totalRows`, counters. |
+| `GET /api/v1/imports?collection=&status=&limit=` | Recent jobs. You see your own; site admins see all. |
+| `GET /api/v1/imports/{id}/errors` | Row errors `{ row, id?, message }`. Add `?format=csv` for a download. |
+| `POST /api/v1/imports/{id}/cancel` | Stop the job. A queued job stops at once; a running one after its current chunk. |
+
+`status` moves `queued` → `running` → `succeeded`, `failed`, `cancelled` or
+`timed_out`. A row that fails (validation, permission, hook) is recorded with
+its 1-based row number and the job continues; the job is `failed` only when
+every row failed. The first 1,000 row errors are kept and the rest counted in
+`errorsTruncated`. Rows written before a cancel or timeout stay.
+
+Studio has the same flow under **Content → collection → Import**, with a
+progress bar, **Cancel import** and **Download error report**. Studio also
+receives an `import.progress` realtime event for the uploader.
+
+**How it runs.** The upload request starts the job and works on it for up to
+about 20 seconds. After that, a one-minute cron (Workers Cron Trigger, or the
+Node scheduler on Docker) resumes it. Each step takes a short lease on the job,
+so overlapping workers never write the same chunk twice, and a worker that dies
+mid-chunk is replaced once its lease expires. Measured locally on Postgres 16, a
+row goes through the full item pipeline (validation, revisions, change feed) at
+about 90 rows per second per job, so a 100k-row file takes about 20 minutes.
+Limits and chunk size are set with [`IMPORT_*` variables](../deployment/environment-variables.md#imports).
+
 ## Rate limit
 
 The authenticated API is throttled to **300 requests per 60 seconds** per
@@ -73,5 +148,7 @@ that honours them will pace itself automatically.
 
 ## Related
 
+- [Data export](./data-export.md)
+- [Environment Variables → Imports](../deployment/environment-variables.md#imports)
 - [Environment Variables → Rate limiting](../deployment/environment-variables.md#rate-limiting)
 - [Data model](../data-model.md)

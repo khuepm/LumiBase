@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 16
-lastUpdated: 2026-11-10T01:58:25.627Z
+version: 17
+lastUpdated: 2026-11-12T10:11:40.750Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2539ffa0eafcebe0
+sourceHash: 52dba58781718f18
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T01:58:25.627Z
-codeVerifiedHash: 2539ffa0eafcebe0
-codeVerifiedClaims: 84
+codeVerified: 2026-11-12T10:11:40.750Z
+codeVerifiedHash: 52dba58781718f18
+codeVerifiedClaims: 86
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -270,6 +270,19 @@ Import lớn có thể chạm ngân sách mặc định. Tăng `LUMIBASE_RATE_LI
 <!-- Lý do waiver: link tới `graphql-api-spec.md` mang anchor trong trang, và
      heading bên VI là "## Chống lạm dụng" nên slug bắt buộc khác EN
      (#abuse-guards). Trỏ về anchor EN sẽ thành link chết trong bản VI. -->
+
+## Imports
+
+Import collection chạy nền (`POST /api/v1/imports`, xem [Data import](../features/data-import.md#job-import-chạy-nền)). Các giá trị áp dụng như nhau trên Workers (binding) và Docker (biến môi trường).
+
+| Biến | Bắt buộc | Mặc định | Mô tả |
+|------|----------|----------|-------|
+| `IMPORT_TIMEOUT` | ✗ | `3600` | Số giây một job được chạy, tính từ bước đầu tiên. Quá mức này job kết thúc với `timed_out`; các dòng đã ghi vẫn được giữ. |
+| `IMPORT_MAX_CONCURRENCY` | ✗ | `20` | Số job chạy cùng lúc trên mỗi site. Job vượt quá giữ trạng thái `queued` cho tới khi có job xong. |
+| `IMPORT_MAX_BYTES` | ✗ | `52428800` | Kích thước upload lớn nhất, tính bằng byte (50 MiB). File lớn hơn nhận `413 PAYLOAD_TOO_LARGE`. |
+| `IMPORT_CHUNK_SIZE` | ✗ | `500` | Số dòng ghi trong mỗi bước (tối đa `5000`). Bước nhỏ phản hồi lệnh huỷ nhanh hơn; bước lớn xong sớm hơn. |
+
+---
 
 ## GraphQL
 

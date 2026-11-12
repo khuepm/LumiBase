@@ -115,7 +115,10 @@ DECLARE
     -- Draft-review pilot timing (Jev J09, site-isolated; no cross-site job reads it).
     'lumibase_review_sessions',
     -- Jev automation actions (J11, site-isolated; every read/write is per site, no cross-site job).
-    'lumibase_ai_automation_actions'
+    'lumibase_ai_automation_actions',
+    -- Background collection imports (#726). Requests read/write their own site;
+    -- the resume tick claims jobs across sites on the system connection.
+    'lumibase_import_jobs'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

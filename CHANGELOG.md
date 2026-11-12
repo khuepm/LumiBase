@@ -14,6 +14,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - Studio: an **Export** button and dialog on the collection list (format, fields, locales, relations, current filters).
 - SDK: `client.items(name).export(params)` returns the streaming `Response`; `client.rawFetch(path, init)` is the streaming counterpart of `rawRequest`.
 - Extensions: `items.export.before` hook to transform or drop fields from each exported row.
+- Background imports: `POST /api/v1/imports` takes a CSV or JSON export file, answers `202` and writes the rows in chunks under the uploader's permissions, re-checked every chunk. Progress at `GET /api/v1/imports/:id`, cancel at `POST …/cancel`, row-level error report at `GET …/errors` (`?format=csv`). `create` or `upsert` (by `id`). Jobs survive restarts: a one-minute tick resumes any job whose lease expired. Limits: `IMPORT_TIMEOUT`, `IMPORT_MAX_CONCURRENCY` (per site), `IMPORT_MAX_BYTES`, `IMPORT_CHUNK_SIZE` (#726, epic #673).
+- Studio: **Import** button and dialog on the collection list with live progress, cancel and the error report download.
+- SDK: `client.imports.create / list / get / errors / errorsCsv / cancel`.
+- Database: migration `0026_import_jobs` adds `lumibase_import_jobs` (site-isolated under RLS).
+
+### Fixed
+- SDK: `rawRequest` no longer forces `content-type: application/json` on a `FormData` body, which broke multipart uploads.
 
 ## [2.0.0] - 2026-11-10
 

@@ -1,13 +1,13 @@
 ---
-version: 9
-lastUpdated: 2026-11-10T01:58:25.201Z
+version: 10
+lastUpdated: 2026-11-12T10:11:41.992Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 802b296249acdea1
+sourceHash: 0a60a8119f42af54
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T01:58:25.201Z
-codeVerifiedHash: 802b296249acdea1
+codeVerified: 2026-11-12T10:11:41.992Z
+codeVerifiedHash: 0a60a8119f42af54
 codeVerifiedClaims: 20
 ---
 
@@ -38,6 +38,7 @@ Các file schema được chia theo domain:
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
+| `imports.ts` | `lumibase_import_jobs` |
 
 Migration nằm ở `packages/database/migrations/` và `packages/database/drizzle/`.
 
@@ -205,6 +206,11 @@ Index: `(siteId, collectionId, status)`, GIN trên `data`, `(siteId, status, pub
 ### `materialized_collections` (POST-GA6)
 - Định nghĩa các bảng đọc đã denormalize cho đường nóng.
 - `target`, `refreshStrategy` (`auto`/`cron`/`manual`), `refreshCron`, `projection jsonb`, `filter jsonb`, `lastRefreshedAt`, `rowCount`, `status`, `error`.
+
+### `import_jobs` (`imports.ts`, migration `0026`)
+- Một lần import chạy nền (#726): `collection`, `format` (`csv`/`json`), `mode` (`create`/`upsert`), `status` (`queued`/`running`/`succeeded`/`failed`/`cancelled`/`timed_out`), `principal` jsonb (được resolve lại ở mỗi bước), `created_by`.
+- Tiến độ: `total_rows`, `cursor` (dòng kế tiếp), `created_rows`, `updated_rows`, `failed_rows`, `errors` jsonb (`{ row, id?, message }[]`, có giới hạn) và `errors_truncated`.
+- Điều phối worker: `lease_owner`, `lease_until`, `timeout_ms`, `cancel_requested_at`, `started_at`, `finished_at`. `source` giữ file đã upload cho tới khi job kết thúc, sau đó được xoá. Cô lập theo site bằng RLS.
 
 ### Runtime contract cho schema diff/apply
 

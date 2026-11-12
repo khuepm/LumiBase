@@ -1,11 +1,11 @@
 ---
-version: 36
-lastUpdated: 2026-11-12T06:32:30.195Z
+version: 37
+lastUpdated: 2026-11-12T10:11:44.742Z
 sourceLang: en
-contentHash: a3d25048112b7fb3
-codeVerified: 2026-11-12T06:32:30.195Z
-codeVerifiedHash: a3d25048112b7fb3
-codeVerifiedClaims: 488
+contentHash: 12d0c7ac6fcb8d15
+codeVerified: 2026-11-12T10:11:44.742Z
+codeVerifiedHash: 12d0c7ac6fcb8d15
+codeVerifiedClaims: 494
 ---
 
 # Hono API Specification — LumiBase
@@ -557,6 +557,20 @@ neutralises spreadsheet formulas; JSON is
 `{ collection, format: "lumibase-export@1", exportedAt, fields, locales, relations, items: [{ id, status, sort, created_at, updated_at, data }] }`.
 Errors before streaming: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`,
 `403 FORBIDDEN`, `404 NOT_FOUND`. See [Data export](../features/data-export.md).
+
+**Imports.** Background jobs that read the export formats back:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/imports?collection=&format=csv\|json&mode=create\|upsert` | Upload a file (multipart `file` or raw body) → `202 { data: job }` |
+| `GET` | `/api/v1/imports?collection=&status=&limit=` | Recent jobs (own; site admins see all) |
+| `GET` | `/api/v1/imports/:id` | Job progress and counters |
+| `GET` | `/api/v1/imports/:id/errors` | Row errors; `?format=csv` downloads them |
+| `POST` | `/api/v1/imports/:id/cancel` | Stop a queued or running job |
+
+Bad files fail with `400 VALIDATION` / `413 PAYLOAD_TOO_LARGE` before a job is
+created; missing `create` (or `update` for `upsert`) permission is `403`. See
+[Data import](../features/data-import.md#background-import-jobs).
 
 **List pagination & totals.** `GET /items/:collection` accepts `limit`
 (1–200, default 25), `offset`, and `meta`:

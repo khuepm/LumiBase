@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 35
-lastUpdated: 2026-11-12T06:32:30.195Z
+version: 36
+lastUpdated: 2026-11-12T10:11:44.742Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a3d25048112b7fb3
+sourceHash: 12d0c7ac6fcb8d15
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T06:32:30.195Z
-codeVerifiedHash: a3d25048112b7fb3
-codeVerifiedClaims: 488
+codeVerified: 2026-11-12T10:11:44.742Z
+codeVerifiedHash: 12d0c7ac6fcb8d15
+codeVerifiedClaims: 494
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -476,6 +476,18 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 **Các bản ghi phụ thuộc (Dependent records).** Vì các tham chiếu item nằm trong JSONB (không phải cột FK vật lý), `onDelete` của một quan hệ được thực thi ở lớp ứng dụng. Khi `DELETE`, nếu một quan hệ khai báo `restrict` vẫn còn bản ghi trỏ tới item, lệnh xóa sẽ bị chặn với **409 `DEPENDENT_RECORDS_EXIST`** và một mảng `dependents`. (`set null`/`cascade` **không** tự động áp dụng khi xóa mềm — điều đó sẽ làm hỏng khả năng phục hồi của xóa mềm; trình biên tập phải xóa chúng một cách tường minh.) `GET …/dependents` trả về `{ data: { blocking, dependents: [{ relation, collection, field, onDelete, count, sample }] } }`. `POST …/resolve-dependents` nhận `{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` và chạy trong một transaction (lệnh delete ủy quyền cho đường dẫn xóa item thông thường). Lỗi: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null trên trường bắt buộc), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
 
 **Export.** `GET /items/:collection/export?format=csv|json&fields=&locales=&relations=id|slug|embed&filter=&sort=&status=` xuất theo luồng mọi dòng khớp (phân trang keyset, nên không giới hạn kích thước). Endpoint dùng quyền `read` của người gọi và cú pháp `filter`/`sort` của endpoint danh sách, chạy hook `items.export.before` của extension cho từng dòng, và ghi một mục audit `items_exported`. CSV ghi một cột `field.locale` cho mỗi locale của trường dịch được và vô hiệu hoá công thức bảng tính; JSON có dạng `{ collection, format: "lumibase-export@1", exportedAt, fields, locales, relations, items: [{ id, status, sort, created_at, updated_at, data }] }`. Lỗi trả về trước khi bắt đầu stream: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`, `403 FORBIDDEN`, `404 NOT_FOUND`. Xem [Data export](../features/data-export.md).
+
+**Imports.** Job chạy nền đọc lại các định dạng export:
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `POST` | `/api/v1/imports?collection=&format=csv\|json&mode=create\|upsert` | Upload một file (multipart `file` hoặc body thô) → `202 { data: job }` |
+| `GET` | `/api/v1/imports?collection=&status=&limit=` | Các job gần đây (của mình; admin của site thấy tất cả) |
+| `GET` | `/api/v1/imports/:id` | Tiến độ và các bộ đếm của job |
+| `GET` | `/api/v1/imports/:id/errors` | Lỗi theo dòng; `?format=csv` để tải về |
+| `POST` | `/api/v1/imports/:id/cancel` | Dừng một job đang chờ hoặc đang chạy |
+
+File không hợp lệ bị từ chối với `400 VALIDATION` / `413 PAYLOAD_TOO_LARGE` trước khi tạo job; thiếu quyền `create` (hoặc `update` với `upsert`) trả `403`. Xem [Data import](../features/data-import.md#job-import-chạy-nền).
 
 **Phân trang danh sách & Tổng số.** `GET /items/:collection` chấp nhận `limit` (1–200, mặc định 25), `offset`, và `meta`:
 

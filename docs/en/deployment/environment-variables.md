@@ -1,11 +1,11 @@
 ---
-version: 16
-lastUpdated: 2026-11-10T01:58:25.627Z
+version: 17
+lastUpdated: 2026-11-12T10:11:40.750Z
 sourceLang: en
-contentHash: 2539ffa0eafcebe0
-codeVerified: 2026-11-10T01:58:25.627Z
-codeVerifiedHash: 2539ffa0eafcebe0
-codeVerifiedClaims: 84
+contentHash: 52dba58781718f18
+codeVerified: 2026-11-12T10:11:40.750Z
+codeVerifiedHash: 52dba58781718f18
+codeVerifiedClaims: 86
 ---
 
 # Environment Variables Reference
@@ -253,6 +253,19 @@ Large imports can trip the default budget. Raise `LUMIBASE_RATE_LIMIT_MAX` and p
 | `LUMIBASE_DELIVER_RATE_LIMIT` | ✗ | `1200` | Max requests per minute per client IP on the public Delivery API (`/api/v1/deliver/*`). `0` disables. See [Caching — penetration](../features/caching.md). |
 | `LUMIBASE_AI_IP_RATE_LIMIT` | ✗ | `300` | Max requests per minute per client IP per site on `/api/v1/ai/*`, checked before authentication (#564). Over it → `429 RATE_LIMITED` with `Retry-After`. `0` disables; skipped when the client IP is unknown. Store failure follows `LUMIBASE_RATE_LIMIT_FAIL_CLOSED`. |
 | `LUMIBASE_NEGATIVE_CACHE_TTL` | ✗ | `30` | Tombstone TTL (seconds) for confirmed absences on public read paths, before ±20% jitter. `0` disables. |
+
+---
+
+## Imports
+
+Background collection imports (`POST /api/v1/imports`, see [Data import](../features/data-import.md#background-import-jobs)). The same values apply on Workers (bindings) and Docker (environment).
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `IMPORT_TIMEOUT` | ✗ | `3600` | Seconds a job may run, from its first step. Past it the job ends as `timed_out`; rows already written stay. |
+| `IMPORT_MAX_CONCURRENCY` | ✗ | `20` | Jobs running at once per site. Further jobs stay `queued` until one finishes. |
+| `IMPORT_MAX_BYTES` | ✗ | `52428800` | Largest accepted upload, in bytes (50 MiB). Larger files get `413 PAYLOAD_TOO_LARGE`. |
+| `IMPORT_CHUNK_SIZE` | ✗ | `500` | Rows written per step (max `5000`). Smaller steps react faster to cancel; larger ones finish sooner. |
 
 ---
 

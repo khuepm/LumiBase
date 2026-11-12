@@ -170,6 +170,7 @@ async function main() {
   let deploymentPollTask: ScheduledTask | undefined;
   let flowScheduleTask: ScheduledTask | undefined;
   let goalDispatchTask: ScheduledTask | undefined;
+  let importTask: ScheduledTask | undefined;
   let loadGuardTimer: ReturnType<typeof setInterval> | undefined;
 
   if (runWorkers) {
@@ -536,6 +537,31 @@ async function main() {
   // guaranteed nothing, for any of these jobs; `goal-dispatch` is simply the one
   // where the consequence is two runs for one drift. `serve-cron-await.test.ts`
   // keeps the shape from coming back.
+  // ── Background imports (#726) ───────────────────────────────────────────
+  //
+  // Each upload starts processing in its own request; this tick resumes jobs
+  // whose lease expired (restart, crash) and starts queued jobs that waited on
+  // the per-site concurrency limit.
+  const { runImportTick, resolveImportConfig } = await import('./services/import-service');
+  const importDeps = {
+    db: rotatorDb,
+    config: resolveImportConfig(process.env as Record<string, string | undefined>),
+    realtime: runtime.realtime,
+  };
+  importTask = cron.schedule(
+    '* * * * *',
+    leaderLockedCallback(
+      'import-resume',
+      55_000,
+      async () => {
+        await runImportTick(importDeps, { budgetMs: 50_000 }).catch((err) => {
+          console.error('[import] tick failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
+
   const { runGoalDispatchTick } = await import('./services/goal-dispatch-service');
   const goalDispatchDeps = { db: rotatorDb, queue: runtime.queue };
   goalDispatchTask = cron.schedule(
@@ -647,6 +673,7 @@ async function main() {
     deploymentPollTask?.stop();
     flowScheduleTask?.stop();
     goalDispatchTask?.stop();
+    importTask?.stop();
     if (runHttp) {
       pressureLimiter.stop();
     }
