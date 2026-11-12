@@ -1,11 +1,11 @@
 ---
-version: 39
-lastUpdated: 2026-11-12T19:40:32.226Z
+version: 40
+lastUpdated: 2026-11-12T20:37:20.102Z
 sourceLang: en
-contentHash: c7c035265078c1e4
-codeVerified: 2026-11-12T19:40:32.226Z
-codeVerifiedHash: c7c035265078c1e4
-codeVerifiedClaims: 502
+contentHash: a1bbfe205193f9e8
+codeVerified: 2026-11-12T20:37:20.102Z
+codeVerifiedHash: a1bbfe205193f9e8
+codeVerifiedClaims: 506
 ---
 
 # Hono API Specification — LumiBase
@@ -124,6 +124,35 @@ restricted to `[A-Za-z0-9_]` and bound as parameters (injection-safe); depth is
 capped at 8. The `_json_contains` / `_has_*` operators run against the JSONB and
 use the existing GIN index. Top-level keys and structural fields behave exactly
 as before.
+
+**Typed comparisons (Cast_Rule).** Item values are stored as JSONB, so a naive
+comparison is textual (`'10' > '9'` is false). `_eq`, `_neq`, `_in`, `_nin`,
+`_gt`, `_gte`, `_lt` and `_lte` therefore cast both sides by type:
+
+| Field / value | Comparison |
+|---------------|------------|
+| Top-level field of type `integer`, `bigInteger`, `decimal`, `float` | `numeric` |
+| Top-level field of type `boolean` | `boolean` |
+| Top-level field of type `date`, `datetime`, `timestamp` | `timestamptz` |
+| Nested path, `json` field or unknown key with a JSON number / boolean value | `numeric` / `boolean`, inferred from the value |
+| Anything else (`string`, `text`, `uuid`, string values on nested paths) | text, as before |
+
+The stored side uses a guarded cast: a row whose value does not look like the
+type (for example `"n/a"` in a `decimal` field) compares as `NULL` and drops
+out, instead of failing the query. A filter value that cannot be cast (for
+example `{"price":{"_gt":"cheap"}}`) is rejected with `400 INVALID_FILTER`.
+String operators (`_contains`, `_starts_with`, `_ends_with`) always compare text.
+Sorting on a top-level numeric, boolean or date field uses the same cast, so
+`sort=-price` orders numerically. Structural fields (`id`, `status`, `sort`,
+`created_at`, …) keep their native column types.
+
+```
+GET /api/v1/items/products?filter={"price":{"_gt":10}}&sort=-price
+GET /api/v1/items/products?filter={"metadata.rating":{"_gte":4.5}}
+```
+
+To make a typed filter on a hot path use an index, ask the
+[index advisor](#json-path-index-advisor) for matching DDL.
 
 ### Filter forms
 
@@ -456,6 +485,7 @@ Organization errors additionally include `400 VALIDATION`, `400 SCOPE_NOT_ALLOWE
 | `GET` | `/api/v1/collections/:name/schema` | Export collection schema as JSON |
 | `PUT` | `/api/v1/collections/:name/schema` | Apply schema (idempotent, diff-aware) |
 | `POST` | `/api/v1/collections/diff` | Compare bundle schema vs current |
+| `GET` | `/api/v1/collections/:name/index-advice?path=&cast=` | JSON path index advisor (read-only, `schema:read`) |
 
 **Create collection request:**
 ```json
@@ -469,6 +499,34 @@ Organization errors additionally include `400 VALIDATION`, `400 SCOPE_NOT_ALLOWE
   "sort_field": "sort"
 }
 ```
+
+#### JSON path index advisor
+
+`GET /api/v1/collections/:name/index-advice?path=<dot.path>[&cast=numeric|boolean|timestamp|text]`
+returns `CREATE INDEX` DDL whose expression matches exactly what the filter
+builder emits for that path and cast, so Postgres can use it for typed
+`_eq`/`_in`/range filters. The index is partial on the collection
+(`WHERE collection_id = … AND deleted_at IS NULL`). `cast` defaults to the
+declared type of a top-level field; it is required for nested or `json` paths.
+The endpoint never runs the DDL: an operator reviews it and runs it outside a
+transaction (`CONCURRENTLY`). `timestamp` returns `ddl: null`, because
+`timestamptz` casts are not `IMMUTABLE` and Postgres refuses to index them.
+
+```json
+{
+  "data": {
+    "path": "price",
+    "cast": "numeric",
+    "indexName": "items_products_price_numeric_idx",
+    "expression": "(case when (data ->> 'price') ~ '…' then (data ->> 'price')::numeric end)",
+    "ddl": "CREATE INDEX CONCURRENTLY IF NOT EXISTS items_products_price_numeric_idx ON lumibase_items ((…)) WHERE collection_id = '…' AND deleted_at IS NULL;",
+    "notes": ["Run outside a transaction (CONCURRENTLY).", "…"]
+  }
+}
+```
+
+Errors: `400 VALIDATION` (missing/invalid `path`, unknown `cast`, or no `cast`
+for a nested path), `404 NOT_FOUND` (collection or top-level field).
 
 ### Fields
 
