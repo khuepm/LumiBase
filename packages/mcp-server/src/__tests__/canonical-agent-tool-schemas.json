@@ -22,6 +22,18 @@
       "collection"
     ]
   },
+  "askUser": {
+    "properties": [
+      "allowFreeText",
+      "context",
+      "options",
+      "question",
+      "timeoutMinutes"
+    ],
+    "required": [
+      "question"
+    ]
+  },
   "createApiKey": {
     "properties": [
       "description",
@@ -337,6 +349,14 @@
     ],
     "required": [
       "id"
+    ]
+  },
+  "getUserAnswer": {
+    "properties": [
+      "questionId"
+    ],
+    "required": [
+      "questionId"
     ]
   },
   "installExtension": {

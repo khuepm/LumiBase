@@ -1,14 +1,14 @@
 ---
-version: 9
-lastUpdated: 2026-11-02T20:48:27.500Z
+version: 10
+lastUpdated: 2026-11-11T02:57:07.772Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 552573785394b136
+sourceHash: 329b9de7859ec6a0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-02T20:48:27.500Z
-codeVerifiedHash: 552573785394b136
-codeVerifiedClaims: 36
+codeVerified: 2026-11-11T02:57:07.772Z
+codeVerifiedHash: 329b9de7859ec6a0
+codeVerifiedClaims: 38
 contentHash: 8431450c18c2e01f
 ---
 
@@ -142,19 +142,20 @@ Two limits, stated rather than implied:
 
 ```jsonc
 {
-  "status": "executed" | "pending_approval" | "denied",
+  "status": "executed" | "pending_approval" | "waiting_user" | "denied",
   "code": "VALIDATION | AUTONOMY_SHADOW | …",
   "data": {},
   "approvalId": "…",
   "approvalSpace": "agent" | "legacy_ai",
   "agentApprovalId": "…",
   "legacyApprovalId": "…",
+  "questionId": "…",
   "runId": "…",
   "message": "…"
 }
 ```
 
-`code` appears only when `denied`; `data` only when `executed`; the `approval*` group only when `pending_approval`.
+`code` appears only when `denied`; `data` only when `executed`; the `approval*` group only when `pending_approval`; `questionId` only when `waiting_user` — the run asked a human with the `askUser` tool (#710) and is parked until the question is answered at `POST /api/v1/agent/questions/{questionId}/answer`; the agent reads the outcome with the `getUserAnswer` tool. A question belongs to neither approval id space.
 
 `isError` equals `status === 'denied'`.
 

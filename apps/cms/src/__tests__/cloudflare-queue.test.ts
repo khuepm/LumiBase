@@ -69,11 +69,12 @@ describe('processCloudflareQueue routing', () => {
     'revalidation-dispatch': processCloudflareRevalidationQueue,
   } as const;
 
-  it.each(LOGICAL)('a %s batch reaches exactly its own handler', async (logical) => {
+  it.each(LOGICAL)('a %s batch reaches exactly its own handler, with the execution context', async (logical) => {
     const b = batch(`lumibase-${logical}-production`);
-    await processCloudflareQueue(b, env);
+    const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
+    await processCloudflareQueue(b, env, ctx);
     for (const [name, handler] of Object.entries(handlers)) {
-      if (name === logical) expect(handler).toHaveBeenCalledWith(b, env);
+      if (name === logical) expect(handler).toHaveBeenCalledWith(b, env, ctx);
       else expect(handler).not.toHaveBeenCalled();
     }
   });
