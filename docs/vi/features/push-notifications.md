@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T10:26:33.742Z
+version: 3
+lastUpdated: 2026-11-12T18:29:49.521Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 015a30205d060b97
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T10:26:33.742Z
-codeVerifiedHash: 015a30205d060b97
+sourceHash: d2b8d013b525ed73
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-12T18:29:49.521Z
+codeVerifiedHash: d2b8d013b525ed73
 codeVerifiedClaims: 28
 ---
 
@@ -32,6 +32,7 @@ push chỉ giảm độ trễ.
 | Kind | Phát khi | Mức độ |
 |---|---|---|
 | `approval` | Một HITL approval được tạo (cần reviewer). | info |
+| `question` | Một agent hỏi một người bằng `askUser`; run chờ câu trả lời. | info |
 | `veto` | Một lần ghi được staged vào cửa sổ veto L3. | warning |
 | `incident` | Một row `agent_incidents` được ghi lại. | warning / critical |
 | `run` | Một agent run thành công hoặc thất bại. | info / warning |
@@ -46,7 +47,12 @@ Mỗi notification mang `{ id, kind, severity, title, body, deepLink, entityId, 
   (`emitAgentNotification`). Các producer chỉ giữ `db` + `siteId` nhận thêm một
   callback `AgentNotifier` tuỳ chọn; caller ở request-context dựng nó bằng
   `buildAgentNotifier(c)` (`notify-context.ts`), hàm này bind namespace DO
-  (`SITE_ROOM`) và env VAPID. Caller ở background bỏ nó đi (dùng poll dự phòng).
+  (`SITE_ROOM`) và env VAPID. Worker của hàng đợi `agent-runs` truyền một
+  notifier chỉ dùng Web Push (ở đó không có namespace DO) và chỉ chuyển tiếp
+  `approval` và `question` — run trong hàng đợi không gửi push run succeeded/failed
+  — đồng thời giữ sống từng lần gửi bằng `waitUntil` của queue consumer trên
+  Workers (trên Docker thì chờ nó xong); các caller ở background khác bỏ nó đi
+  (dùng poll dự phòng).
 - **Crypto cho Web Push** — `apps/cms/src/modules/notifications/web-push.ts`,
   hiện thực hoàn toàn trên Web Crypto API nên chạy được trên cả Cloudflare Workers
   và Node (package npm `web-push` chỉ chạy trên Node và cố ý không được dùng).

@@ -1,13 +1,13 @@
 ---
-version: 10
-lastUpdated: 2026-11-11T01:20:49.873Z
+version: 11
+lastUpdated: 2026-11-12T19:00:30.801Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1c479a55b936ff06
+sourceHash: c7258c140c90de90
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T01:20:49.873Z
-codeVerifiedHash: 1c479a55b936ff06
+codeVerified: 2026-11-12T19:00:30.801Z
+codeVerifiedHash: c7258c140c90de90
 codeVerifiedClaims: 20
 ---
 
@@ -368,6 +368,7 @@ Ghi chú vận hành:
 - `POST /api/v1/agent/generate-app` tạo artifact `page_spec`, `component_spec`, `seed_data`, `api_spec` và chạy evaluation cho từng artifact trước khi trả kết quả.
 - `agent_runs.metrics.stopReason` ghi lý do hoàn tất hoặc dừng theo budget, ví dụ `completed`, `error`, `max_tool_calls`.
 - `agent_tool_calls.cost` lưu token/cost estimate sau khi đã mask secret.
+- `agent_runs.status` `waiting_user` (#710): run đã hỏi một người bằng `askUser` và đang đỗ tới khi câu hỏi được trả lời (`succeeded`, `stopReason: answered`), hết hạn (`failed`, `stopReason: question_timeout`) hoặc bị huỷ. Không đổi schema: câu hỏi là một dòng `agent_approvals` (xem bên dưới).
 - Nếu cùng một goal fail ít nhất ba run và runtime có `QueueProvider`, run service enqueue `agent-dead-letter` với payload thất bại theo tenant.
 
 ### Các bảng kiểm tra bản nháp (Jev)
@@ -402,7 +403,7 @@ Các cột Content OS thêm vào bảng có sẵn:
 - `revisions`: `authorType`, `createdByRunId`, `model`, `constitutionHash`, `sources`, `confidence`, `staged`, `autoCommitAt` (provenance + staging cho veto).
 - `items`: `pinnedFields` (Law Zero — các field mà một lần sửa của con người đã khoá lại, chặn agent ghi).
 - `agent_goals`: `parentGoalId` (cây goal), `origin` (`user/reconciler/planner/flow`), `intentId`, `driftFingerprint`, `agentRole`.
-- `agent_approvals`: `kind` (`approval`/`veto`), `autoCommitAt`, `approverType` (`human`/`agent`), `approverRunId`.
+- `agent_approvals`: `kind` (`approval`/`veto`/`promotion`/`question`), `autoCommitAt`, `approverType` (`human`/`agent`), `approverRunId`. Dòng `question` (`askUser`, #710) dùng các cột sẵn có: `subject_id` là tool call `askUser` (`input` của nó chứa câu hỏi, options và context), `status` là `pending`/`answered`/`expired`/`cancelled`, `expires_at` là hạn chót, còn `decision_reason`/`decided_by`/`decided_at` ghi câu trả lời và người trả lời.
 
 ### Các bảng lấy cảm hứng từ Directus (`cms.ts`)
 

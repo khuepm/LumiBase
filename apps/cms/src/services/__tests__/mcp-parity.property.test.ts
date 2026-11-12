@@ -54,10 +54,13 @@ function decisionPort(
 }
 
 function harnessResultFor(
-  status: 'executed' | 'pending_approval' | 'denied',
+  status: 'executed' | 'pending_approval' | 'waiting_user' | 'denied',
   seed: string,
 ): HarnessExecutionResult {
   if (status === 'executed') return { status, data: { ok: true, seed }, runId: `run_${seed}` };
+  if (status === 'waiting_user') {
+    return { status, questionId: `q_${seed}`, runId: `run_${seed}`, message: 'Waiting for a human answer' };
+  }
   if (status === 'pending_approval') {
     return { status, agentApprovalId: `apr_${seed}`, runId: `run_${seed}`, message: 'Awaiting approval' };
   }
@@ -92,8 +95,8 @@ describe('Feature: content-os, Property 14: MCP parity', () => {
       fc.asyncProperty(nameArb, argsArb, capabilitiesArb, async (name, args, caps) => {
         // Decision derived deterministically from the inputs.
         const decide = (skill: string, a: Record<string, unknown>, c: string[]): HarnessExecutionResult => {
-          const weight = (skill.length + Object.keys(a).length + c.length) % 3;
-          const status = (['executed', 'pending_approval', 'denied'] as const)[weight]!;
+          const weight = (skill.length + Object.keys(a).length + c.length) % 4;
+          const status = (['executed', 'pending_approval', 'denied', 'waiting_user'] as const)[weight]!;
           return harnessResultFor(status, skill);
         };
         const port = decisionPort(decide);
@@ -117,6 +120,24 @@ describe('Feature: content-os, Property 14: MCP parity', () => {
         const { decision, isError } = await callViaMcp(service, name, args, []);
         expect(decision.status).toBe('pending_approval');
         expect(decision.approvalId).toBe(`apr_${name}`);
+        expect(isError).toBe(false);
+      }),
+      { numRuns: 100 },
+    );
+  });
+
+  it('waiting_user (askUser, #710) surfaces questionId in the tool result, never a protocol error', async () => {
+    await fc.assert(
+      fc.asyncProperty(nameArb, argsArb, async (name, args) => {
+        const service = new McpService(
+          decisionPort((skill) => harnessResultFor('waiting_user', skill)),
+        );
+        const { decision, isError } = await callViaMcp(service, name, args, []);
+        expect(decision.status).toBe('waiting_user');
+        expect(decision.questionId).toBe(`q_${name}`);
+        expect(decision.runId).toBe(`run_${name}`);
+        // A question is not an approval: no approval id space is claimed.
+        expect(decision.approvalId).toBeUndefined();
         expect(isError).toBe(false);
       }),
       { numRuns: 100 },
