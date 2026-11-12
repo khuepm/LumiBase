@@ -62,8 +62,12 @@ import { KillSwitchService } from './kill-switch-service';
  * would re-ask a human who already said no.
  */
 
-/** Non-terminal run states: work is in flight, do not dispatch again. */
-const ACTIVE_RUN_STATES = new Set(['queued', 'running', 'awaiting_approval']);
+/**
+ * Non-terminal run states: work is in flight, do not dispatch again.
+ * `waiting_user` (#710) is a run parked on an `askUser` question — waiting on a
+ * human exactly like `awaiting_approval`.
+ */
+const ACTIVE_RUN_STATES = new Set(['queued', 'running', 'awaiting_approval', 'waiting_user']);
 
 /** Goal statuses a dispatch pass may act on. Filtered in SQL, not in memory. */
 export const DISPATCHABLE_GOAL_STATUSES = ['open', 'in_progress'] as const;
@@ -168,7 +172,7 @@ export function noRunInFlight(now: Date): SQL {
     where ${agentRuns.goalId} = ${agentGoals.id}
       and ${agentRuns.siteId} = ${agentGoals.siteId}
       and (
-        ${agentRuns.status} in ('running', 'awaiting_approval')
+        ${agentRuns.status} in ('running', 'awaiting_approval', 'waiting_user')
         or (
           ${agentRuns.status} = 'queued'
           -- ISO string with an explicit cast, not a Date: inside a raw fragment
