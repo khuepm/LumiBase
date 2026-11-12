@@ -31,7 +31,10 @@ export const WORKER_QUEUE_CONSUMERS = {
 
 export type WorkerLogicalQueue = keyof typeof WORKER_QUEUE_CONSUMERS;
 
-const HANDLERS: Record<WorkerLogicalQueue, (batch: MessageBatch<unknown>, env: Bindings) => Promise<void>> = {
+const HANDLERS: Record<
+  WorkerLogicalQueue,
+  (batch: MessageBatch<unknown>, env: Bindings, ctx?: ExecutionContext) => Promise<void>
+> = {
   'agent-runs': processCloudflareAgentQueue,
   'flow-runs': processCloudflareFlowRunsQueue,
   'flow-events': processCloudflareFlowEventsQueue,
@@ -54,11 +57,18 @@ export function resolveLogicalQueue(name: string): WorkerLogicalQueue | null {
   return match ? (match[1] as WorkerLogicalQueue) : null;
 }
 
-/** The Worker's `queue()` export. */
-export async function processCloudflareQueue(batch: MessageBatch<unknown>, env: Bindings): Promise<void> {
+/**
+ * The Worker's `queue()` export. `ctx` is forwarded so a consumer can keep a
+ * best-effort side task (a Web Push send) alive past the message handler.
+ */
+export async function processCloudflareQueue(
+  batch: MessageBatch<unknown>,
+  env: Bindings,
+  ctx?: ExecutionContext,
+): Promise<void> {
   const logical = resolveLogicalQueue(batch.queue);
   if (logical) {
-    await HANDLERS[logical](batch, env);
+    await HANDLERS[logical](batch, env, ctx);
     return;
   }
   // No consumer for this queue: retry so messages reach the DLQ instead of
