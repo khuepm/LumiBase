@@ -1,11 +1,11 @@
 ---
-version: 7
-lastUpdated: 2026-11-10T05:40:28.038Z
+version: 8
+lastUpdated: 2026-11-12T11:56:39.857Z
 sourceLang: en
-contentHash: ff2f770d8b410323
-codeVerified: 2026-11-10T05:40:28.038Z
-codeVerifiedHash: ff2f770d8b410323
-codeVerifiedClaims: 112
+contentHash: 2f9f44d604928fc8
+codeVerified: 2026-11-12T11:56:39.857Z
+codeVerifiedHash: 2f9f44d604928fc8
+codeVerifiedClaims: 120
 ---
 
 # User Management Best Practices
@@ -77,6 +77,63 @@ api_keys → site role/policy links OR fixed organization admin (scope=organizat
 
 > ⚠️ **Never attach Studio/admin policies to `subscriber`.** That role's
 > entire purpose is to be the safe floor for self-service signups.
+
+---
+
+## 2b. Email identity policy (aliases)
+
+`users` is identity-global, so "are these two addresses the same account?" is
+an instance-wide question. Before #794 the only rule was `lower(email)`:
+`test+a@gmail.com`, `test+b@gmail.com` and `t.est@gmail.com` were three
+accounts delivering to one mailbox. The policy is now chosen explicitly, in
+two tiers — and a site can only be **stricter** than the instance:
+
+| Instance mode | Site `strict` | Result |
+|---|---|---|
+| `exact` (default) | off (default) | Pre-#794 behaviour: every distinct address is its own account |
+| `exact` | on | Aliases exist globally, but the site admits one membership per root mailbox |
+| `root` | any | One root mailbox = one account instance-wide; the site flag is a no-op |
+
+Root mailbox: `+tag` is stripped from the local part on every domain (a
+leading `+` is kept); for Gmail the local part also loses its dots and
+`googlemail.com` folds to `gmail.com`. The rule lives twice, in `emailRoot()`
+(`apps/cms/src/modules/email-identity/normalize.ts`) and in the SQL function
+`lumibase_email_root()` (migration `0026`); an integration test pins both to
+one fixture list. Database triggers write `users.email_canonical` /
+`users.email_root` and `user_sites.identity_key`, so every writer — register,
+invite, SCIM, setup, seeds — is keyed the same way, and unique indexes (not a
+check-then-insert) enforce the result.
+
+**Choosing and changing it.** The instance mode is picked in the Setup Wizard
+(Security step, or the review step of quick setup); existing instances are
+backfilled to `exact`, so upgrading changes nothing. Later, only the bootstrap
+admin can change it (`PUT /api/v1/admin/email-identity/instance`); a site admin
+toggles strict for their site (`PUT /api/v1/admin/email-identity/site`).
+Tightening runs a check first and refuses with `409 IDENTITY_COLLISION` and the
+list of colliding accounts — merge or rename them, then retry. Loosening always
+succeeds. Both accept `dryRun: true`, and every applied change is audit-logged.
+
+**Decisions.**
+
+- **Login under `root` accepts any alias.** `POST /auth/login` (and
+  forgot-password / resend-verification) resolves the typed address to the
+  account by its root mailbox, so `test+anything@gmail.com` signs into the
+  `test@gmail.com` account with that account's password. This follows from
+  "one mailbox = one account": every alias delivers to the same inbox, so it
+  grants no access the mailbox owner does not already have.
+- **Lockout is per account row, not per typed address.** Failed attempts are
+  counted against the resolved account's stored address and the lock is set on
+  that row by primary key; the pre-check reads the lock through the same
+  resolution. Rotating aliases neither resets the counter nor dodges a lock.
+  Attempts against an address that matches no account are still counted on the
+  typed address (and by IP), as before.
+- **Anti-enumeration is unchanged.** `/register` answers the same generic
+  `202` whether the address, one of its aliases, or a strict-site alias already
+  exists; the account and its membership commit in one transaction, so a
+  refused membership never leaves an orphan account.
+
+Linking several external identities (social / SSO) to one account is a separate
+follow-up (`user_identities`), not part of this policy.
 
 ---
 
@@ -444,6 +501,7 @@ Public registration, password login, verification, and reset remain HTTP authent
 | Rotating refresh tokens (issue/rotate/revoke) | `apps/cms/src/services/auth/refresh-token.ts` (table `lumibase_refresh_tokens`) |
 | Email-verify / password-reset tokens | `apps/cms/src/services/auth/{email-verification,password-reset}.ts` |
 | Per-IP rate limit (register/resend/forgot) | `apps/cms/src/modules/auth/registration-guard.ts` |
+| Email identity policy (normaliser, lookups, guarded mode change, invite) | `apps/cms/src/modules/email-identity/` · `apps/cms/src/routes/admin-email-identity.ts` |
 | Verification / reset emails | `apps/cms/src/modules/email/{verify-email,password-reset}.ts` |
 | Decision record | `docs/en/architecture/decisions/adr-011-user-management-realms.md` |
 

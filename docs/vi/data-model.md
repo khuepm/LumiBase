@@ -1,13 +1,13 @@
 ---
-version: 9
-lastUpdated: 2026-11-10T01:58:25.201Z
+version: 10
+lastUpdated: 2026-11-12T11:56:39.600Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 802b296249acdea1
+sourceHash: 272573fe09697d24
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T01:58:25.201Z
-codeVerifiedHash: 802b296249acdea1
+codeVerified: 2026-11-12T11:56:39.600Z
+codeVerifiedHash: 272573fe09697d24
 codeVerifiedClaims: 20
 ---
 
@@ -54,6 +54,7 @@ Migration nằm ở `packages/database/migrations/` và `packages/database/drizz
 ### `sites`
 - `organizationId` là FK bắt buộc tới `organizations`, xóa RESTRICT. Migration `0024_organizations` backfill các site hiện có vào organization `default` trước khi áp NOT NULL. Setup tạo personal organization và bootstrap owner trước khi tạo site mặc định.
 - `id`, `name`, `domain`, `createdAt`, cùng các cột identity/branding/theme và `defaultLanguage`, `defaultAppearance`, `defaultSaveAction` (`stay`|`return`|`create_new`, mặc định `stay` — save action mặc định của Studio ở cấp site; override theo từng user nằm ở `users.preferences.saveAction`).
+- `emailIdentityStrict` boolean, mặc định `false` (migration `0026`) — tầng định danh email theo site: khi bật, mỗi hộp thư gốc chỉ có một membership (xem `user_sites.identityKey`).
 
 ### `users`
 | Column | Type | Note |
@@ -66,12 +67,17 @@ Migration nằm ở `packages/database/migrations/` và `packages/database/drizz
 | `preferences` | jsonb | UI prefs theo user: `{ language, theme, timezone, defaultPresets, saveAction }`. `saveAction` (`stay`/`return`/`create_new`) override `sites.default_save_action`. |
 | `lastSeenAt` | timestamp |
 | `passwordChangedAt` | timestamp | Được set ở mọi lần reset/change (migration `0006`). Token password-reset có `iat` sớm hơn mốc này sẽ bị từ chối → link reset dùng một lần. |
+| `emailCanonical` | text unique | Khoá tài khoản theo mode định danh email của instance: `lower(email)` (`exact`) hoặc hộp thư gốc (`root`). Do trigger ghi (migration `0026`), app không bao giờ ghi. Nullable trong một release; tra cứu fallback về `lower(email)` cho hàng null. |
+| `emailRoot` | text | Hộp thư gốc: bỏ `+tag` trên mọi domain; Gmail bỏ dấu chấm và `googlemail.com` → `gmail.com`. Tính bởi `lumibase_email_root()` trong cùng trigger. Index thường. |
 | `createdAt`, `updatedAt` | timestamp |
 
-Unique index: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, `is_bootstrap = true`), và `users_email_lower_unique` trên `lower(email)` (migration `0006`) — email là identity toàn cục, một account cho một địa chỉ. ⚠️ Migrate một instance đang chạy sẽ fail nếu instance đó đã có email trùng nhau khi bỏ qua hoa/thường; phải de-duplicate trước.
+Unique index: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, `is_bootstrap = true`), và `users_email_lower_unique` trên `lower(email)` (migration `0006`) — email là identity toàn cục, một account cho một địa chỉ. ⚠️ Migrate một instance đang chạy sẽ fail nếu instance đó đã có email trùng nhau khi bỏ qua hoa/thường; phải de-duplicate trước. Migration `0026` thêm `users_email_canonical_unique` trên `email_canonical` và `users_email_root_idx` trên `email_root`; dưới mode `root`, index canonical biến "một hộp thư gốc = một tài khoản" thành bảo đảm ở tầng database.
 
 ### `user_sites` (membership N-N)
-- `userId`, `siteId`, `roleId`, `joinedAt`. PK composite.
+- `userId`, `siteId`, `roleId`, `createdAt`. PK composite.
+- `identityKey` text (migration `0026`) — bằng `users.email_root` khi site strict, ngược lại là null. Unique index `user_sites_site_identity_unique` trên `(site_id, identity_key)` chỉ cho một membership mỗi hộp thư gốc trên site strict (null không bao giờ xung đột). Được trigger điền khi insert và cập nhật lại khi email của thành viên thay đổi.
+
+**Chính sách định danh email (migration `0026`).** Tầng instance nằm ở `system_state.email_identity_mode` (`exact` | `root`, mặc định `exact`; instance hiện có được backfill thành `exact`, nên nâng cấp không đổi hành vi). Mọi writer — route, SCIM, setup, seed, bản app cũ — đều có cùng giá trị cột dẫn xuất vì trigger tính chúng: `lumibase_users_email_identity()` trên `users` (đọc singleton `FOR SHARE`), `lumibase_user_sites_identity_key()` trên `user_sites` (đọc site `FOR SHARE`) và `lumibase_users_rekey_memberships()` sau khi đổi email. Endpoint đổi policy giữ `FOR UPDATE` trên cùng các hàng đó, nên không hàng nào bị gán khoá theo policy cũ. Xem [Quản lý người dùng](./security/user-management.md) và `/api/v1/admin/email-identity` trong API spec.
 
 ### `teams` / `team_members`
 - `teams`: `id`, `siteId`, `name`, `description`.

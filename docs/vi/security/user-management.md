@@ -1,14 +1,14 @@
 ---
-version: 7
-lastUpdated: 2026-11-10T05:40:28.038Z
+version: 8
+lastUpdated: 2026-11-12T11:56:39.857Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ff2f770d8b410323
+sourceHash: 2f9f44d604928fc8
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T05:40:28.038Z
-codeVerifiedHash: ff2f770d8b410323
-codeVerifiedClaims: 112
+codeVerified: 2026-11-12T11:56:39.857Z
+codeVerifiedHash: 2f9f44d604928fc8
+codeVerifiedClaims: 120
 ---
 
 # User Management Best Practices
@@ -80,6 +80,63 @@ api_keys → site role/policy links OR fixed organization admin (scope=organizat
 
 > ⚠️ **Không bao giờ gắn policy Studio/admin vào `subscriber`.** Toàn bộ mục
 > đích của role đó là làm mặt sàn an toàn cho các đăng ký tự phục vụ.
+
+---
+
+## 2b. Chính sách định danh email (alias)
+
+`users` là định danh toàn cục, nên câu hỏi "hai địa chỉ này có phải cùng một
+tài khoản không?" là câu hỏi ở cấp instance. Trước #794 quy tắc duy nhất là
+`lower(email)`: `test+a@gmail.com`, `test+b@gmail.com` và `t.est@gmail.com` là
+ba tài khoản cùng nhận thư vào một hộp thư. Giờ policy được chọn tường minh, ở
+hai tầng — và một site chỉ có thể **chặt hơn** instance:
+
+| Mode của instance | Site `strict` | Kết quả |
+|---|---|---|
+| `exact` (mặc định) | tắt (mặc định) | Hành vi trước #794: mỗi địa chỉ khác nhau là một tài khoản riêng |
+| `exact` | bật | Alias vẫn tồn tại toàn cục, nhưng site chỉ nhận một membership cho mỗi hộp thư gốc |
+| `root` | bất kỳ | Một hộp thư gốc = một tài khoản trên toàn instance; cờ của site không có tác dụng |
+
+Hộp thư gốc: `+tag` bị bỏ khỏi phần local trên mọi domain (giữ `+` ở đầu);
+với Gmail phần local còn bỏ dấu chấm và `googlemail.com` quy về `gmail.com`.
+Quy tắc nằm ở hai nơi, `emailRoot()`
+(`apps/cms/src/modules/email-identity/normalize.ts`) và hàm SQL
+`lumibase_email_root()` (migration `0026`); một integration test ghim cả hai
+vào cùng một danh sách fixture. Trigger database ghi `users.email_canonical` /
+`users.email_root` và `user_sites.identity_key`, nên mọi writer — register,
+invite, SCIM, setup, seed — đều gán khoá giống nhau, và unique index (không
+phải kiểm-tra-rồi-chèn) bảo đảm kết quả.
+
+**Chọn và thay đổi.** Mode của instance được chọn trong Setup Wizard (bước
+Security, hoặc bước review của quick setup); instance hiện có được backfill
+thành `exact`, nên nâng cấp không thay đổi gì. Về sau chỉ bootstrap admin đổi
+được (`PUT /api/v1/admin/email-identity/instance`); site admin bật/tắt strict
+cho site của mình (`PUT /api/v1/admin/email-identity/site`). Siết chặt sẽ kiểm
+tra trước và từ chối bằng `409 IDENTITY_COLLISION` kèm danh sách tài khoản xung
+đột — gộp hoặc đổi địa chỉ các tài khoản đó rồi thử lại. Nới lỏng luôn thành
+công. Cả hai nhận `dryRun: true`, và mọi thay đổi được áp dụng đều có audit log.
+
+**Quyết định.**
+
+- **Dưới `root`, đăng nhập bằng alias nào cũng được.** `POST /auth/login` (và
+  forgot-password / resend-verification) resolve địa chỉ được gõ về tài khoản
+  theo hộp thư gốc, nên `test+anything@gmail.com` đăng nhập vào tài khoản
+  `test@gmail.com` bằng mật khẩu của tài khoản đó. Đây là hệ quả của "một hộp
+  thư = một tài khoản": mọi alias đều giao thư vào cùng inbox, nên không cấp
+  thêm quyền nào mà chủ hộp thư chưa có.
+- **Lockout theo từng hàng tài khoản, không theo địa chỉ được gõ.** Lần thất
+  bại được đếm theo địa chỉ đã lưu của tài khoản được resolve và khoá được đặt
+  lên chính hàng đó theo khoá chính; bước pre-check đọc khoá qua cùng phép
+  resolve. Xoay vòng alias không reset bộ đếm và không né được khoá. Lần thử với
+  địa chỉ không khớp tài khoản nào vẫn được đếm theo địa chỉ được gõ (và theo
+  IP) như trước.
+- **Chống dò tài khoản (anti-enumeration) không đổi.** `/register` trả cùng
+  `202` chung dù địa chỉ, một alias của nó, hay một alias trên site strict đã
+  tồn tại; tài khoản và membership được commit trong một transaction, nên
+  membership bị từ chối không bao giờ để lại tài khoản mồ côi.
+
+Liên kết nhiều định danh ngoài (social / SSO) vào một tài khoản là việc tiếp
+theo tách riêng (`user_identities`), không thuộc policy này.
 
 ---
 
@@ -453,6 +510,7 @@ Tool site cũ giữ các chế độ quản trị hiện có. `LUMIBASE_MCP_GOVE
 | Refresh token xoay vòng (issue/rotate/revoke) | `apps/cms/src/services/auth/refresh-token.ts` (bảng `lumibase_refresh_tokens`) |
 | Token email-verify / password-reset | `apps/cms/src/services/auth/{email-verification,password-reset}.ts` |
 | Rate limit theo IP (register/resend/forgot) | `apps/cms/src/modules/auth/registration-guard.ts` |
+| Chính sách định danh email (chuẩn hoá, tra cứu, đổi mode có kiểm soát, invite) | `apps/cms/src/modules/email-identity/` · `apps/cms/src/routes/admin-email-identity.ts` |
 | Email verification / reset | `apps/cms/src/modules/email/{verify-email,password-reset}.ts` |
 | Bản ghi quyết định | `docs/en/architecture/decisions/adr-011-user-management-realms.md` |
 
