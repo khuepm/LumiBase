@@ -2,11 +2,17 @@
 import { pathToFileURL } from 'node:url';
 
 /**
- * Logical queues the deploy provisions: the Flows queues (B118) and the content
- * side-effect queues (B131). `agent-runs` predates this script and is created
+ * Logical queues the deploy provisions: the Flows queues (B118), the content
+ * side-effect queues and the envelope-migration queue (B131). `agent-runs` predates this script and is created
  * by hand (DEPLOYMENT-CHECKLIST).
  */
-export const PROVISIONED_QUEUES = ['flow-runs', 'flow-events', 'content-indexing', 'revalidation-dispatch'];
+export const PROVISIONED_QUEUES = [
+  'flow-runs',
+  'flow-events',
+  'content-indexing',
+  'revalidation-dispatch',
+  'encryption-envelope-migration',
+];
 
 export function flowQueueNames(environment) {
   if (!['dev', 'staging', 'demo', 'production'].includes(environment)) {
