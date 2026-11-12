@@ -1,16 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fc from 'fast-check';
 import { processCloudflareAgentQueue } from '../cloudflare-agent-queue';
+import { processCloudflareContentIndexingQueue, processCloudflareRevalidationQueue } from '../cloudflare-content-queue';
 import { processCloudflareFlowEventsQueue, processCloudflareFlowRunsQueue } from '../cloudflare-flow-queue';
 import { processCloudflareQueue, resolveLogicalQueue, WORKER_QUEUE_CONSUMERS } from '../cloudflare-queue';
 import type { Bindings } from '../env';
 
-/** Worker `queue()` dispatcher (B118): strict routing by physical queue name. */
+/** Worker `queue()` dispatcher (B118, B131): strict routing by physical queue name. */
 
 vi.mock('../cloudflare-agent-queue', () => ({ processCloudflareAgentQueue: vi.fn(async () => {}) }));
 vi.mock('../cloudflare-flow-queue', () => ({
   processCloudflareFlowRunsQueue: vi.fn(async () => {}),
   processCloudflareFlowEventsQueue: vi.fn(async () => {}),
+}));
+vi.mock('../cloudflare-content-queue', () => ({
+  processCloudflareContentIndexingQueue: vi.fn(async () => {}),
+  processCloudflareRevalidationQueue: vi.fn(async () => {}),
 }));
 
 const PROFILES = ['local', 'staging', 'production', 'dev', 'demo'];
@@ -37,7 +42,7 @@ describe('resolveLogicalQueue', () => {
     },
   );
 
-  it.each(['lumibase-flow-runs-production-dlq', 'lumibase-agent-runs-local-dlq', 'lumibase-realtime', 'other', 'flow-runner', ''])(
+  it.each(['lumibase-flow-runs-production-dlq', 'lumibase-agent-runs-local-dlq', 'lumibase-content-indexing-dev-dlq', 'lumibase-realtime', 'other', 'flow-runner', 'content-indexer', ''])(
     '%s has no consumer',
     (name) => {
       expect(resolveLogicalQueue(name)).toBeNull();
@@ -60,6 +65,8 @@ describe('processCloudflareQueue routing', () => {
     'agent-runs': processCloudflareAgentQueue,
     'flow-runs': processCloudflareFlowRunsQueue,
     'flow-events': processCloudflareFlowEventsQueue,
+    'content-indexing': processCloudflareContentIndexingQueue,
+    'revalidation-dispatch': processCloudflareRevalidationQueue,
   } as const;
 
   it.each(LOGICAL)('a %s batch reaches exactly its own handler', async (logical) => {
