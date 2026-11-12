@@ -13,8 +13,41 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - Typed JSON filters (Cast_Rule): `_eq`/`_neq`/`_in`/`_nin`/`_gt`/`_gte`/`_lt`/`_lte` compare numeric, boolean and date fields by type instead of as text, so `filter={"price":{"_gt":9}}` matches `10`. Nested JSON paths infer the cast from a number/boolean value. A stored value of the wrong type drops out of the result instead of failing the query; a filter value that cannot be cast returns `400 INVALID_FILTER`. Sorting on numeric/boolean/date fields is typed too (#729, epic #673).
 - `GET /api/v1/collections/:name/index-advice?path=&cast=` (read-only, `schema:read`) returns `CREATE INDEX CONCURRENTLY` DDL whose expression matches the typed filter, partial on the collection (#729).
 
+- **Agent harness: `askUser` clarification tool (#710).** An agent that cannot continue
+  without a decision it may not make asks a human instead of guessing. The run parks in
+  the new `waiting_user` status (no queue worker, no lock held), the question reaches the
+  Mission Control inbox and a `question` notification, and an answer resumes the run: the
+  `askUser` tool call completes with the answer (wrapped as untrusted data for the model)
+  and the run settles `succeeded`. Stored as `agent_approvals` rows with
+  `kind = 'question'` — **no migration**. New endpoints `GET /api/v1/agent/questions`,
+  `GET /api/v1/agent/questions/:id` and `POST /api/v1/agent/questions/:id/answer`
+  (signed-in users only — any API key, site- or organization-scoped, gets `403`; a holder
+  of `approvals:decide`, or the requesting user once backlog B207 opens the route beyond
+  site administrators; tenant-scoped,
+  audited as `agent_question.*`, a second answer is `409`; the requester's rights are
+  re-resolved before resuming). New read skill `getUserAnswer` returns the outcome to the
+  requester only. Both skills are offered to governed agents (agent runs, the queue
+  worker, MCP), not to the Copilot chat, which has no run to pause. Questions time out (default one day, max seven) through the 5-minute
+  `agent-question-sweep` on both runtimes, failing the run with
+  `stopReason: question_timeout`; freezing a role or the site, pausing an intent or
+  cancelling the run ends waiting runs. MCP `tools/call` returns
+  `status: "waiting_user"` with `questionId`. Metrics
+  `lumibase_agent_questions_total{status}` and `lumibase_agent_question_wait_seconds`; the
+  trust ledger shows question counts in promotion evidence.
+
 ### Changed
 - A string filter value on a numeric/boolean/date field that is not a valid number/boolean/date now returns `400 INVALID_FILTER`; previously it was compared as text and silently matched nothing or the wrong rows.
+
+- `GET /api/v1/agent/approvals` no longer lists `askUser` questions, and
+  `POST /api/v1/agent/approvals/:id/decide` / `/reopen` refuse a question id with
+  `409 NOT_AN_APPROVAL`.
+- The `agent-runs` queue worker now passes a Web Push notifier to the harness, so
+  approvals and questions parked by a queued run notify subscribed operators (realtime
+  in-app delivery still needs a request context). It forwards only `approval` and
+  `question`: queued runs still send no run succeeded/failed pushes. On Workers the send
+  is kept alive with the queue consumer's `waitUntil` (the `queue()` dispatcher now
+  forwards its `ExecutionContext`); on Docker the worker awaits it; a failed send never
+  fails the run.
 
 ## [2.0.0] - 2026-11-10
 
