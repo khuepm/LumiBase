@@ -34,6 +34,10 @@ const flowNode = z.object({
   options: z.record(z.string(), z.unknown()).optional(),
   next: z.string().nullable().optional(),
   onError: z.string().nullable().optional(),
+  // Explicit branches (J10, #517): branch key → node id, null ends the run.
+  // Accepted by REST `flowSchema` and the canonical `createFlow`; missing here,
+  // so `update_flow` stripped them (#716 review).
+  branches: z.record(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), z.string().nullable()).optional(),
 });
 
 const flowSchema = z.object({

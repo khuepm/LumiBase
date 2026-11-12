@@ -3,9 +3,12 @@ import { z } from 'zod';
 import { type LumiBaseClient, LumiBaseApiError } from '../client.js';
 import { collectionNameSchema, encodePathSegment, fieldNameSchema } from './path.js';
 import { okAfter } from './_shared.js';
+import { fieldDefinitionSchema } from './fields.js';
+import { relationInputSchema } from './relations.js';
 
 /**
- * Nullability mirrors `collectionInputSchema` in `apps/cms/src/routes/collections.ts`.
+ * Mirrors `collectionInputSchema` in `apps/cms/src/routes/collections.ts`, key
+ * for key; the fidelity suite compares the two through the REST body golden.
  * The REST route takes `null` to clear these columns; advertising them as plain
  * strings made `update_collection { patch: { sortField: null } }` unsendable by
  * a schema-respecting client (#716, the `{type:"null"}` class of Payload #16214).
@@ -15,11 +18,15 @@ const collectionInputSchema = z.object({
   label: z.string().nullable().optional(),
   pluralLabel: z.string().nullable().optional(),
   hidden: z.boolean().optional(),
+  system: z
+    .boolean()
+    .optional()
+    .describe('Marks a LumiBase-internal collection: excluded from delivery and access-grant listings.'),
   singleton: z.boolean().optional(),
   icon: z.string().nullable().optional(),
   color: z.string().nullable().optional(),
   note: z.string().nullable().optional(),
-  primaryKeyField: z.string().optional(),
+  primaryKeyField: fieldNameSchema.optional(),
   primaryKeyType: z.enum(['nanoid', 'uuid', 'integer', 'bigInteger', 'string']).optional(),
   storageMode: z.enum(['jsonb', 'materialized', 'physical', 'external']).optional(),
   displayTemplate: z.string().nullable().optional(),
@@ -27,31 +34,33 @@ const collectionInputSchema = z.object({
   archiveField: z.string().nullable().optional(),
   archiveValue: z.string().nullable().optional(),
   unarchiveValue: z.string().nullable().optional(),
+  itemDuplicationFields: z.array(z.string()).optional().describe('Fields copied when an item is duplicated.'),
+  translations: z.record(z.string(), z.unknown()).optional(),
   accountability: z.enum(['all', 'activity', 'none']).optional(),
   versioning: z.boolean().optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
 });
 
-/** Nullability mirrors the REST `fieldInputSchema` (same route file). */
-const fieldInputSchema = z.object({
-  name: fieldNameSchema,
-  type: z.string().min(1),
-  interface: z.string().min(1),
-  display: z.string().nullable().optional(),
-  label: z.string().nullable().optional(),
-  note: z.string().nullable().optional(),
-  nullable: z.boolean().optional(),
-  unique: z.boolean().optional(),
-  indexed: z.boolean().optional(),
-  searchable: z.boolean().optional(),
-  required: z.boolean().optional(),
-  readonly: z.boolean().optional(),
-  hidden: z.boolean().optional(),
-  width: z.enum(['half', 'full', 'fill']).optional(),
-  sortOrder: z.number().int().optional(),
-  group: z.string().nullable().optional(),
-  options: z.record(z.string(), z.unknown()).optional(),
-  defaultValue: z.unknown().optional(),
-});
+/** One entry of `fields[]`: the `upsert_field` object plus the field's `name`. */
+const schemaFieldSchema = fieldDefinitionSchema.extend({ name: fieldNameSchema });
+
+/**
+ * The body of `PUT /collections/:name/schema` and `POST /collections/diff`
+ * (REST `schemaInputSchema`): collection metadata, `fields[]` and `relations[]`.
+ * `fields`/`relations`, when given, are the COMPLETE list: fields and relations
+ * of the collection not in it are deleted on apply.
+ */
+const schemaBodyShape = {
+  ...collectionInputSchema.omit({ name: true }).partial().shape,
+  fields: z
+    .array(schemaFieldSchema)
+    .optional()
+    .describe('Complete field list; existing fields missing from it are deleted on apply.'),
+  relations: z
+    .array(z.object(relationInputSchema))
+    .optional()
+    .describe('Complete relation list; existing relations missing from it are deleted on apply.'),
+};
 
 function formatError(err: unknown): string {
   if (err instanceof LumiBaseApiError) {
@@ -161,9 +170,7 @@ export function registerCollectionTools(server: McpServer, client: LumiBaseClien
         'Always call this before apply_schema to check for breaking changes.',
       inputSchema: {
         name: collectionNameSchema,
-        fields: z.array(fieldInputSchema).optional(),
-        label: z.string().nullable().optional(),
-        note: z.string().nullable().optional(),
+        ...schemaBodyShape,
       },
     },
     async (input) => {
@@ -184,16 +191,7 @@ export function registerCollectionTools(server: McpServer, client: LumiBaseClien
         'Call diff_schema first to preview changes. Pass confirmRiskyChange=true on field inputs that have risky changes.',
       inputSchema: {
         name: collectionNameSchema,
-        fields: z.array(
-          fieldInputSchema.extend({
-            renameFrom: fieldNameSchema.optional(),
-            confirmRiskyChange: z.boolean().optional(),
-          }),
-        ).optional(),
-        label: z.string().nullable().optional(),
-        note: z.string().nullable().optional(),
-        accountability: z.enum(['all', 'activity', 'none']).optional(),
-        versioning: z.boolean().optional(),
+        ...schemaBodyShape,
       },
     },
     async (input) => {

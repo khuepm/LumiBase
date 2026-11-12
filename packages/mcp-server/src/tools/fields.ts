@@ -5,7 +5,12 @@ import { collectionNameSchema, encodePathSegment, fieldNameSchema } from './path
 import { okAfter } from './_shared.js';
 
 /**
- * Mirrors the REST `fieldInputSchema` in `apps/cms/src/routes/collections.ts`.
+ * Mirrors the REST `fieldInputSchema` in `apps/cms/src/routes/collections.ts`,
+ * minus `name` (the field is named by the URL here). Exported so `apply_schema`
+ * and `diff_schema` build their `fields[]` from this one object instead of a
+ * second copy that drifted (#716 review: the copy lacked 12 keys, so
+ * `encrypted`/`classification` were stripped and the field created plaintext).
+ * The fidelity suite compares it key by key with the REST golden.
  *
  * Two fidelity rules (#716):
  *   - columns the route takes as `null` (to clear them) are `.nullable()` here,
@@ -17,10 +22,13 @@ import { okAfter } from './_shared.js';
  *     silently reset those columns. On create the database column defaults
  *     apply, exactly as for a REST caller that omits them.
  */
-const fieldInputSchema = z.object({
+export const fieldDefinitionSchema = z.object({
+  // The canonical vocabulary is `FieldType` (`@lumibase/contracts`): `datetime`,
+  // not `dateTime`; no `float`. The server stores any string (B206).
   type: z.string().min(1).describe(
-    'Storage type: string, text, integer, bigInteger, float, decimal, boolean, ' +
-    'date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias',
+    'Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, ' +
+    'date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias. ' +
+    'Not validated server-side; GraphQL currently types `datetime` as String (B206).',
   ),
   interface: z.string().min(1).describe(
     'UI widget: input, textarea, select, toggle, datetime, file, image, ' +
@@ -58,8 +66,11 @@ const fieldInputSchema = z.object({
   renameFrom: fieldNameSchema
     .optional()
     .describe('Previous field name if this is a rename operation'),
+  // REST semantics, kept on purpose: any object (even `{}`) passes the
+  // risky-change guard like `confirmRiskyChange: true`, and the plan itself is
+  // not executed (`toFieldDbInput` discards it). See backlog B207.
   migrationPlan: z.record(z.string(), z.unknown()).optional()
-    .describe('Data migration plan for a risky type change (see diff_schema).'),
+    .describe('Counts as confirmation of a risky change, like confirmRiskyChange=true. The plan is not executed yet.'),
   confirmRiskyChange: z
     .boolean()
     .optional()
@@ -98,12 +109,12 @@ export function registerFieldTools(server: McpServer, client: LumiBaseClient) {
       description:
         'Create or update a field in a collection. ' +
         'field_name must be lowercase snake_case (e.g. "published_at"). ' +
-        'Common types: string (varchar), text (longtext), integer, boolean, dateTime, json, uuid. ' +
+        'Common types: string (varchar), text (longtext), integer, decimal, boolean, datetime, json, uuid. ' +
         'Common interfaces: input, textarea, datetime, toggle, select, file, markdown.',
       inputSchema: {
         collection: collectionNameSchema,
         field_name: fieldNameSchema.describe('Machine name of the field'),
-        ...fieldInputSchema.shape,
+        ...fieldDefinitionSchema.shape,
       },
     },
     async ({ collection, field_name, ...fieldInput }) => {

@@ -100,6 +100,10 @@ const flowNode = z.object({
   options: record.optional(),
   next: z.string().nullable().optional(),
   onError: z.string().nullable().optional(),
+  // Explicit branches (J10, #517), as `flowSchema` in `apps/cms` accepts them.
+  // Without the key this object stripped them, so a governed `createFlow`
+  // saved a branching node without its branches (#716 review).
+  branches: z.record(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), z.string().nullable()).optional(),
 });
 
 /** Standard 5-field cron — the same pattern `intentInputSchema` enforces. */

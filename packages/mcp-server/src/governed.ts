@@ -130,7 +130,7 @@ export const GOVERNED_TOOLS: Readonly<Record<string, GovernedBinding>> = {
 export const UNGOVERNED_MUTATIONS: Readonly<Record<string, string>> = {
   // Skill exists, but the canonical contract is narrower than what this tool
   // advertises. Routing now would reject arguments callers legitimately send.
-  create_collection: 'contract-narrower-than-tool: 16 advertised properties have no canonical counterpart',
+  create_collection: 'contract-narrower-than-tool: 20 advertised properties have no canonical counterpart',
   create_policy: 'contract-narrower-than-tool: enforceTfa/ipAllow/ipDeny/validFrom/validUntil',
   create_role: 'contract-narrower-than-tool: systemKey',
   cdc_subscription_replay: 'contract-narrower-than-tool: cursor has no canonical counterpart',
