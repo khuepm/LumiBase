@@ -68,7 +68,7 @@ export const fieldDefinitionSchema = z.object({
     .describe('Previous field name if this is a rename operation'),
   // REST semantics, kept on purpose: any object (even `{}`) passes the
   // risky-change guard like `confirmRiskyChange: true`, and the plan itself is
-  // not executed (`toFieldDbInput` discards it). See backlog B207.
+  // not executed (`toFieldDbInput` discards it). See backlog B213.
   migrationPlan: z.record(z.string(), z.unknown()).optional()
     .describe('Counts as confirmation of a risky change, like confirmRiskyChange=true. The plan is not executed yet.'),
   confirmRiskyChange: z
