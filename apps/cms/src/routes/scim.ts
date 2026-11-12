@@ -23,7 +23,9 @@
 import { teams, teamMembers, userSites, users, scimTokens, activity } from "@lumibase/database";
 import { and, eq, ilike, or, isNull, inArray } from "drizzle-orm";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import type { AppEnv } from "../env";
+import { emailLookup, isEmailIdentityConflict } from "../modules/email-identity/service";
 import { formatSafeError } from '@lumibase/contracts/utils';
 
 export const scimRouter = new Hono<AppEnv>();
@@ -32,6 +34,14 @@ const SCIM_USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User";
 const SCIM_GROUP_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:Group";
 const SCIM_LIST_RESPONSE = "urn:ietf:params:scim:api:messages:2.0:ListResponse";
 const SCIM_ERROR = "urn:ietf:params:scim:api:messages:2.0:Error";
+
+/** RFC 7644 §3.3 / §3.12: the userName is already taken (#794). */
+function scimUniqueness(c: Context<AppEnv>) {
+  return c.json(
+    { schemas: [SCIM_ERROR], status: "409", scimType: "uniqueness", detail: "userName is already in use" },
+    409,
+  );
+}
 
 // ── auth middleware ────────────────────────────────────────────────────────
 
@@ -308,7 +318,10 @@ scimRouter.get("/Users", async (c) => {
   if (filter) {
     const parsed = parseFilter(filter);
     if (parsed.field === "userName" && parsed.value) {
-      rows = await selectSiteUsers().where(and(eq(userSites.siteId, siteId), eq(users.email, parsed.value)));
+      // RFC 7643 §4.1.1: userName is caseExact=false. Identity-aware (#794):
+      // under `root` mode an alias finds the account it resolves to.
+      const { where } = await emailLookup(db, parsed.value);
+      rows = await selectSiteUsers().where(and(eq(userSites.siteId, siteId), where));
     } else if (parsed.field === "externalId" && parsed.value) {
       rows = await selectSiteUsers().where(and(eq(userSites.siteId, siteId), eq(users.externalId, parsed.value)));
     } else {
@@ -357,23 +370,38 @@ scimRouter.post("/Users", async (c) => {
   }
 
   const siteId = c.get("siteId");
-  const inserted = await db
-    .insert(users)
-    .values({
-      externalId: body.externalId ?? body.userName,
-      email: body.userName,
-      firstName: body.name?.givenName ?? null,
-      lastName: body.name?.familyName ?? null,
-      status: body.active === false ? "suspended" : "active",
-    })
-    .returning();
+  const userName = body.userName;
+  // Account + membership commit together (#794): an address that is taken —
+  // exactly, as an alias under `root` mode, or as an alias of an existing
+  // member of a `strict` site — answers RFC 7644 §3.3 409 `uniqueness`
+  // instead of a 500 or an orphan account.
+  let created: (typeof users.$inferSelect) | undefined;
+  try {
+    created = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(users)
+        .values({
+          externalId: body.externalId ?? userName,
+          email: userName,
+          firstName: body.name?.givenName ?? null,
+          lastName: body.name?.familyName ?? null,
+          status: body.active === false ? "suspended" : "active",
+        })
+        .returning();
+      if (row) {
+        await tx
+          .insert(userSites)
+          .values({ userId: row.id, siteId })
+          .onConflictDoNothing({ target: [userSites.userId, userSites.siteId] });
+      }
+      return row;
+    });
+  } catch (err) {
+    if (isEmailIdentityConflict(err)) return scimUniqueness(c);
+    throw err;
+  }
 
-  await db
-    .insert(userSites)
-    .values({ userId: inserted[0]!.id, siteId })
-    .onConflictDoNothing();
-
-  return c.json(toScimUser(inserted[0]), 201);
+  return c.json(toScimUser(created), 201);
 });
 
 scimRouter.put("/Users/:id", async (c) => {
@@ -382,17 +410,24 @@ scimRouter.put("/Users/:id", async (c) => {
   const id = c.req.param("id");
   const body = (await c.req.json()) as Partial<ScimUser>;
 
-  const updated = await db
-    .update(users)
-    .set({
-      email: body.userName ?? undefined,
-      firstName: body.name?.givenName ?? null,
-      lastName: body.name?.familyName ?? null,
-      status: body.active === false ? "suspended" : "active",
-      updatedAt: new Date(),
-    })
-    .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db))))
-    .returning();
+  let updated: Array<typeof users.$inferSelect>;
+  try {
+    updated = await db
+      .update(users)
+      .set({
+        email: body.userName ?? undefined,
+        firstName: body.name?.givenName ?? null,
+        lastName: body.name?.familyName ?? null,
+        status: body.active === false ? "suspended" : "active",
+        updatedAt: new Date(),
+      })
+      .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db))))
+      .returning();
+  } catch (err) {
+    // A new userName that another account (or strict-site member) already owns.
+    if (isEmailIdentityConflict(err)) return scimUniqueness(c);
+    throw err;
+  }
 
   if (updated.length === 0) {
     return c.json(
@@ -422,11 +457,17 @@ scimRouter.patch("/Users/:id", async (c) => {
     }
   }
 
-  const updated = await db
-    .update(users)
-    .set(set)
-    .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db))))
-    .returning();
+  let updated: Array<typeof users.$inferSelect>;
+  try {
+    updated = await db
+      .update(users)
+      .set(set)
+      .where(and(eq(users.id, id), inArray(users.id, siteUserIds(siteId)(db))))
+      .returning();
+  } catch (err) {
+    if (isEmailIdentityConflict(err)) return scimUniqueness(c);
+    throw err;
+  }
   if (updated.length === 0) {
     return c.json(
       { schemas: [SCIM_ERROR], status: "404", detail: "User not found" },

@@ -53,6 +53,7 @@ import {
   createCounterStore,
 } from '../modules/login-guard/counter';
 import { normalizeEmail } from '../modules/login-guard/email-normalize';
+import { emailLookup, isEmailIdentityConflict } from '../modules/email-identity/service';
 import { STANDARD_LOCKOUT_POLICY } from '../modules/setup/policy-codec';
 import {
   recordLoginFailure,
@@ -531,6 +532,9 @@ authRouter.post('/register', async (c) => {
   }
   const input = parsedInput.data;
   const emailLower = normalizeEmail(input.email);
+  // #794: resolve the account under the instance email identity mode
+  // (`root` mode matches any +tag / Gmail-dot alias of the stored address).
+  const emailMatch = (await emailLookup(db, emailLower)).where;
 
   const audit = new AuditLogger({ db, siteId });
 
@@ -540,7 +544,7 @@ authRouter.post('/register', async (c) => {
   const [existing] = await db
     .select({ id: users.id })
     .from(users)
-    .where(sql`lower(${users.email}) = ${emailLower}`)
+    .where(emailMatch)
     .limit(1);
 
   if (!existing) {
@@ -548,35 +552,42 @@ authRouter.post('/register', async (c) => {
     // (1) Server-resolved least-privilege role. Never from the body.
     const subscriberRoleId = await ensureSubscriberRole(db, siteId);
 
-    // The SELECT above is advisory; the `users_email_lower_unique` index
-    // (migration 0006) is the real guard. A concurrent registration for the
-    // same email loses the INSERT race with a unique violation — swallow it
-    // and fall through to the identical generic 202 so the outcome (and the
-    // response) is the same as "email already existed" (H3 + anti-enum).
+    // The SELECT above is advisory; the unique indexes are the real guard:
+    // `users_email_lower_unique` / `users_email_canonical_unique` for the
+    // account (a concurrent registration, or an alias of an existing account
+    // under `root` mode — #794) and `user_sites_site_identity_unique` for the
+    // membership (an alias of an existing member on a `strict` site). The
+    // account and its membership commit together, so a refused membership
+    // never leaves an orphan account; every such conflict falls through to
+    // the identical generic 202 (H3 + anti-enum).
     let newUser: { id: string; email: string } | undefined;
     try {
-      [newUser] = await db
-        .insert(users)
-        .values({
-          email: input.email,
-          passwordHash,
-          firstName: input.firstName,
-          lastName: input.lastName,
-          // (2) Inactive until email verification flips it to 'active'.
-          status: 'invited',
-        })
-        .returning({ id: users.id, email: users.email });
+      newUser = await db.transaction(async (tx) => {
+        const [created] = await tx
+          .insert(users)
+          .values({
+            email: input.email,
+            passwordHash,
+            firstName: input.firstName,
+            lastName: input.lastName,
+            // (2) Inactive until email verification flips it to 'active'.
+            status: 'invited',
+          })
+          .returning({ id: users.id, email: users.email });
+        if (created) {
+          await tx
+            .insert(userSites)
+            .values({ userId: created.id, siteId, roleId: subscriberRoleId })
+            .onConflictDoNothing({ target: [userSites.userId, userSites.siteId] });
+        }
+        return created;
+      });
     } catch (err) {
-      if (!isUniqueViolation(err)) throw err;
+      if (!isUniqueViolation(err) && !isEmailIdentityConflict(err)) throw err;
       newUser = undefined;
     }
 
     if (newUser) {
-      await db
-        .insert(userSites)
-        .values({ userId: newUser.id, siteId, roleId: subscriberRoleId })
-        .onConflictDoNothing();
-
       // Stateless verification token (no DB row); emailed inside the link.
       const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
       if (jwtSecret) {
@@ -745,11 +756,14 @@ authRouter.post('/resend-verification', async (c) => {
   const body = await c.req.json();
   const input = resendVerificationSchema.parse(body);
   const emailLower = normalizeEmail(input.email);
+  // #794: resolve the account under the instance email identity mode
+  // (`root` mode matches any +tag / Gmail-dot alias of the stored address).
+  const emailMatch = (await emailLookup(db, emailLower)).where;
 
   const [user] = await db
     .select({ id: users.id, status: users.status, passwordHash: users.passwordHash, email: users.email })
     .from(users)
-    .where(sql`lower(${users.email}) = ${emailLower}`)
+    .where(emailMatch)
     .limit(1);
 
   // Eligible = exists, not yet activated, and password-based (a self-service
@@ -829,11 +843,14 @@ authRouter.post('/forgot-password', async (c) => {
   const body = await c.req.json();
   const input = forgotPasswordSchema.parse(body);
   const emailLower = normalizeEmail(input.email);
+  // #794: resolve the account under the instance email identity mode
+  // (`root` mode matches any +tag / Gmail-dot alias of the stored address).
+  const emailMatch = (await emailLookup(db, emailLower)).where;
 
   const [user] = await db
     .select({ id: users.id, status: users.status, passwordHash: users.passwordHash, email: users.email })
     .from(users)
-    .where(sql`lower(${users.email}) = ${emailLower}`)
+    .where(emailMatch)
     .limit(1);
 
   // Only mint + email for an eligible account. A non-existent, inactive, or
@@ -1048,6 +1065,9 @@ authRouter.post('/login', async (c) => {
   // key on the exact same canonical form. Drift across these call
   // sites would silently break lockout transitions.
   const emailLower = normalizeEmail(input.email);
+  // #794: resolve the account under the instance email identity mode
+  // (`root` mode matches any +tag / Gmail-dot alias of the stored address).
+  const emailMatch = (await emailLookup(db, emailLower)).where;
   const ip = extractClientIp(c);
   const userAgent = c.req.header('user-agent') ?? null;
 
@@ -1094,7 +1114,7 @@ authRouter.post('/login', async (c) => {
   const [user] = await db
     .select()
     .from(users)
-    .where(sql`lower(${users.email}) = ${emailLower}`)
+    .where(emailMatch)
     .limit(1);
 
   if (!user || !user.passwordHash) {

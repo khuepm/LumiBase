@@ -183,6 +183,13 @@
       "when": 1794241373412,
       "tag": "0025_organization_approvals",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794327773412,
+      "tag": "0026_email_identity_policy",
+      "breakpoints": true
     }
   ]
 }
