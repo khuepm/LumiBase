@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 3
-lastUpdated: 2026-11-11T02:50:37.617Z
+version: 4
+lastUpdated: 2026-11-12T18:25:51.362Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 0f27a65a095fdab4
+sourceHash: a8e0d457c7d0b3f8
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T03:00:27.283Z
-codeVerifiedHash: 0f27a65a095fdab4
-codeVerifiedClaims: 18
+codeVerified: 2026-11-12T18:25:51.362Z
+codeVerifiedHash: a8e0d457c7d0b3f8
+codeVerifiedClaims: 20
 ---
 
 <!-- check-parity: allow code-fences headings -->
@@ -86,10 +86,10 @@ có thể:
 | Thuộc tính | Ý nghĩa với bạn |
 |------------|-----------------|
 | Runtime distroless (`gcr.io/distroless/nodejs22-debian13:nonroot`) | Chỉ có Node.js và các thư viện runtime của nó — không shell, không package manager, không `curl`. `docker exec -it <container> sh` không chạy được; hãy dùng `docker debug` hoặc một container debug tạm thời. |
-| Non-root | Chạy với UID/GID `65532`. File ứng dụng thuộc root và user đó không ghi được. |
+| Non-root, UID cố định | Chạy với UID/GID `65532`. Image trước đó cũng chạy không đặc quyền, bằng system user `lumibase` có UID do `adduser --system` chọn lúc build; nay user là một UID số cố định mà các kiểm tra `runAsNonRoot` xác minh được. File ứng dụng thuộc root và user đó không ghi được. |
 | Root filesystem chỉ đọc | Server không ghi gì xuống đĩa, nên container chạy với `read_only: true`. `docker/docker-compose.prod.yml` và `docker/docker-compose.gcp.yml` bật nó, cùng với `cap_drop: [ALL]`, `no-new-privileges` và `init: true`. |
 | Healthcheck | `HEALTHCHECK` chạy `docker/scripts/healthcheck.mjs` bằng chính Node của image. Nó probe `PORT`, hoặc cổng health của worker khi `LUMIBASE_PROCESS_ROLE=worker`. |
-| Entrypoint | `docker/scripts/entrypoint.mjs` (Node) thay cho `entrypoint.sh`. `SKIP_MIGRATIONS`, `RUN_MIGRATION_PREFLIGHT`, `MIGRATION_MODE` và các secret `*_FILE` hoạt động như trước. |
+| Entrypoint | `docker/scripts/entrypoint.mjs` (Node) thay cho `entrypoint.sh`. `SKIP_MIGRATIONS`, `RUN_MIGRATION_PREFLIGHT`, `MIGRATION_MODE` và các secret `*_FILE` hoạt động như trước; `MIGRATION_MODE=preflight` (hoặc `dry-run`) vẫn chỉ cần `DATABASE_URL`. Giá trị secret, kể cả `ENCRYPTION_KEY`, đến server đúng như được cung cấp. |
 
 ### Server ghi dữ liệu ở đâu
 
@@ -118,8 +118,9 @@ docker run --read-only --tmpfs /tmp:size=64m --cap-drop ALL \
 
 ### Kiểm chứng image bạn pull
 
-Mọi image release đều được scan trước khi push: release workflow fail khi có
-bất kỳ phát hiện **CRITICAL** nào, trong image hoặc trong npm lockfile (server
+Mọi image release đều được scan trước khi bất cứ thứ gì của bản release được
+publish — GitHub Release, image, Worker và npm đều chờ cổng kiểm tra này. Release
+workflow fail khi có bất kỳ phát hiện **CRITICAL** nào, trong image hoặc trong npm lockfile (server
 là một bundle, nên các dependency npm chỉ nhìn thấy được qua lockfile). Các
 ngoại lệ được chấp nhận nằm trong `.trivyignore`, mỗi mục kèm lý do. Sau đó
 image được ký bằng cosign keyless và mang một attestation SBOM SPDX; cả hai SBOM
@@ -138,11 +139,14 @@ cosign verify-attestation "$IMAGE" --type spdxjson \
 
 Các build `edge` từ `main` không được ký bằng cosign; hãy pin một tag release trong production.
 
-### Nâng cấp từ image từng chạy bằng root hoặc ghi vào filesystem của nó
+### Nâng cấp từ image trước đó (user `lumibase`, filesystem ghi được)
 
 - **File secret** mount cho `*_FILE` phải đọc được bởi UID `65532`
-  (ví dụ mode `0444`, hoặc thuộc sở hữu của `65532`). Secret của Docker Compose
-  mặc định đọc được.
+  (ví dụ mode `0444`, hoặc thuộc sở hữu của `65532`). File chỉ UID `lumibase`
+  cũ đọc được thì không đạt. Secret `file:` của Docker Compose được bind-mount
+  với owner và mode của file trên host, nên một file secret `0600` thuộc user
+  của bạn sẽ không đọc được trong container cho tới khi bạn đổi mode hoặc
+  owner của nó trên host.
 - **Bind mount hoặc volume** bạn thêm dưới `/app` để làm chỗ ghi tạm không còn
   ghi được nữa. Không thành phần nào của LumiBase cần chúng; hãy gỡ bỏ, hoặc
   mount một `tmpfs`.

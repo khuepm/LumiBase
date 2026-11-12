@@ -1,11 +1,11 @@
 ---
-version: 3
-lastUpdated: 2026-11-11T02:50:37.617Z
+version: 4
+lastUpdated: 2026-11-12T18:25:51.362Z
 sourceLang: en
-contentHash: 0f27a65a095fdab4
-codeVerified: 2026-11-11T03:00:27.283Z
-codeVerifiedHash: 0f27a65a095fdab4
-codeVerifiedClaims: 18
+contentHash: a8e0d457c7d0b3f8
+codeVerified: 2026-11-12T18:25:51.362Z
+codeVerifiedHash: a8e0d457c7d0b3f8
+codeVerifiedClaims: 20
 ---
 
 # Docker Deployment
@@ -78,10 +78,10 @@ possible:
 | Property | What it means for you |
 |----------|-----------------------|
 | Distroless runtime (`gcr.io/distroless/nodejs22-debian13:nonroot`) | Node.js and its runtime libraries only — no shell, no package manager, no `curl`. `docker exec -it <container> sh` does not work; use `docker debug` or an ephemeral debug container instead. |
-| Non-root | Runs as UID/GID `65532`. The application files belong to root and are not writable by that user. |
+| Non-root, fixed UID | Runs as UID/GID `65532`. The previous image also ran unprivileged, as a `lumibase` system user whose UID `adduser --system` picked at build time; the user is now a fixed, numeric UID that `runAsNonRoot` checks can verify. The application files belong to root and are not writable by that user. |
 | Read-only root filesystem | The server writes nothing to disk, so the container runs with `read_only: true`. `docker/docker-compose.prod.yml` and `docker/docker-compose.gcp.yml` set it, together with `cap_drop: [ALL]`, `no-new-privileges` and `init: true`. |
 | Healthcheck | `HEALTHCHECK` runs `docker/scripts/healthcheck.mjs` with the image's own Node. It probes `PORT`, or the worker health port when `LUMIBASE_PROCESS_ROLE=worker`. |
-| Entrypoint | `docker/scripts/entrypoint.mjs` (Node) replaces `entrypoint.sh`. `SKIP_MIGRATIONS`, `RUN_MIGRATION_PREFLIGHT`, `MIGRATION_MODE` and the `*_FILE` secrets behave as before. |
+| Entrypoint | `docker/scripts/entrypoint.mjs` (Node) replaces `entrypoint.sh`. `SKIP_MIGRATIONS`, `RUN_MIGRATION_PREFLIGHT`, `MIGRATION_MODE` and the `*_FILE` secrets behave as before; `MIGRATION_MODE=preflight` (or `dry-run`) still needs only `DATABASE_URL`. Secret values, `ENCRYPTION_KEY` included, reach the server exactly as supplied. |
 
 ### Where the server writes
 
@@ -110,8 +110,9 @@ docker run --read-only --tmpfs /tmp:size=64m --cap-drop ALL \
 
 ### Verify what you pull
 
-Every release image is scanned before it is pushed: the release workflow fails
-on any **CRITICAL** finding, in the image or in the npm lockfile (the server is
+Every release image is scanned before anything in the release is published —
+the GitHub Release, the image, the Worker and npm all wait for the gate. The
+release workflow fails on any **CRITICAL** finding, in the image or in the npm lockfile (the server is
 a bundle, so its npm dependencies are only visible through the lockfile).
 Accepted exceptions live in `.trivyignore`, each with its reason. The image is
 then signed with keyless cosign and carries an SPDX SBOM attestation; both SBOMs
@@ -130,11 +131,14 @@ cosign verify-attestation "$IMAGE" --type spdxjson \
 
 `edge` builds from `main` are not cosign-signed; pin a release tag in production.
 
-### Upgrading from an image that ran as root or wrote to its filesystem
+### Upgrading from the previous image (`lumibase` user, writable filesystem)
 
 - **Secret files** mounted for `*_FILE` must be readable by UID `65532`
-  (for example mode `0444`, or owned by `65532`). Docker Compose secrets are
-  readable by default.
+  (for example mode `0444`, or owned by `65532`). A file readable only by the
+  old `lumibase` UID is not. Docker Compose `file:` secrets are bind-mounted
+  with the host file's owner and mode, so a `0600` secret file owned by your
+  own user is unreadable inside the container until you change its mode or
+  owner on the host.
 - **Bind mounts or volumes** you added under `/app` for scratch space are no
   longer writable. Nothing in LumiBase needs one; remove it, or mount a `tmpfs`.
 - **Custom entrypoints or commands** that called `/entrypoint.sh`, `bash` or `sh`
