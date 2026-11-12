@@ -60,41 +60,87 @@ export function inferCastKindFromValue(raw: unknown): CastKind {
   return 'text';
 }
 
-// Guard patterns. Kept as SQL string literals (standard_conforming_strings is
-// on, so backslashes are literal). Constants only — never interpolate input.
-const NUMERIC_RE = `'^\\s*[-+]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][-+]?[0-9]+)?\\s*$'`;
-const TIMESTAMP_RE =
-  `'^[0-9]{4}-[0-9]{2}-[0-9]{2}([T ][0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]+)?)?)?(Z|[+-][0-9]{2}(:?[0-9]{2})?)?$'`;
+// ── Guarded casts ────────────────────────────────────────────────────────────
+//
+// A guard must be exactly as strict as the cast it protects: a value that
+// passes the guard but makes `::numeric` / `::timestamptz` throw fails the
+// whole list query (Req 4.4). Shape-only regexes are not enough
+// (`2026-99-99`, `1e999999`). The checks below run in pure SQL so they work on
+// PostgreSQL 15 (no `pg_input_is_valid`), need no migration, and stay
+// IMMUTABLE for numeric so the advised expression index still matches.
+//
+// Each guard is one template with `$T` standing for the text expression; the
+// filter SQL (bound key) and the index DDL (literal key) are both rendered from
+// it, so they cannot drift apart. `CASE` is used for every dependent check
+// because PostgreSQL does not guarantee left-to-right evaluation of `AND`:
+// a substring cast must never run on text the regex has not validated.
+// standard_conforming_strings is on, so backslashes in literals are literal.
+
+/**
+ * numeric: optional sign, digits with optional fraction, optional exponent of
+ * at most 3 digits, whole text at most 1000 chars. Worst case is about 2000
+ * digits of weight or scale, far inside numeric's limits (131072 / 16383).
+ */
+const NUMERIC_GUARD =
+  `(case when length($T) <= 1000 and ($T) ~ '^\\s*[-+]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][-+]?[0-9]{1,3})?\\s*$' ` +
+  `then ($T)::numeric end)`;
+
+/**
+ * timestamp: ISO-8601 date with optional time and UTC offset. The regex bounds
+ * every field (month 01-12, day 01-31, hour 00-23, minute 00-59, second
+ * 00-60 — PostgreSQL accepts a leap second — and offset up to 15:59). The
+ * nested CASE then rejects year 0000 and days past the end of the month
+ * (leap years included) before the cast runs.
+ */
+const TIMESTAMP_SHAPE =
+  `'^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])` +
+  `([T ]([01][0-9]|2[0-3]):[0-5][0-9](:([0-5][0-9]|60)(\\.[0-9]{1,9})?)?` +
+  `(Z|[+-](0[0-9]|1[0-5])(:?[0-5][0-9])?)?)?$'`;
+const DAYS_IN_MONTH =
+  `(case substr($T, 6, 2)::int when 2 then ` +
+  `(case when (substr($T, 1, 4)::int % 4 = 0 and substr($T, 1, 4)::int % 100 <> 0) ` +
+  `or substr($T, 1, 4)::int % 400 = 0 then 29 else 28 end) ` +
+  `when 4 then 30 when 6 then 30 when 9 then 30 when 11 then 30 else 31 end)`;
+const TIMESTAMP_GUARD =
+  `(case when ($T) ~ ${TIMESTAMP_SHAPE} then ` +
+  `(case when substr($T, 1, 4) <> '0000' and substr($T, 9, 2)::int <= ${DAYS_IN_MONTH} ` +
+  `then ($T)::timestamptz end) end)`;
+
+const BOOLEAN_GUARD = `(case lower($T) when 'true' then true when 'false' then false end)`;
+
+function guardTemplate(kind: CastKind): string | null {
+  switch (kind) {
+    case 'numeric':
+      return NUMERIC_GUARD;
+    case 'boolean':
+      return BOOLEAN_GUARD;
+    case 'timestamp':
+      return TIMESTAMP_GUARD;
+    default:
+      return null;
+  }
+}
 
 /**
  * Wrap a TEXT expression in the guarded cast for `kind`. Returns the input
- * unchanged for `text`.
+ * unchanged for `text`. Every `$T` becomes the (parameter-bound) expression.
  */
 export function castExpression(textExpr: SQL, kind: CastKind): SQL {
-  switch (kind) {
-    case 'numeric':
-      return sql`(case when (${textExpr}) ~ ${sql.raw(NUMERIC_RE)} then (${textExpr})::numeric end)`;
-    case 'boolean':
-      return sql`(case lower(${textExpr}) when 'true' then true when 'false' then false end)`;
-    case 'timestamp':
-      return sql`(case when (${textExpr}) ~ ${sql.raw(TIMESTAMP_RE)} then (${textExpr})::timestamptz end)`;
-    default:
-      return textExpr;
-  }
+  const template = guardTemplate(kind);
+  if (!template) return textExpr;
+  const parts = template.split('$T');
+  const chunks: SQL[] = [];
+  parts.forEach((part, i) => {
+    if (part) chunks.push(sql.raw(part));
+    if (i < parts.length - 1) chunks.push(textExpr);
+  });
+  return sql.join(chunks, sql.raw(''));
 }
 
 /** Raw SQL text of the guarded cast over a literal text expression (for DDL). */
 export function castExpressionText(textExpr: string, kind: CastKind): string {
-  switch (kind) {
-    case 'numeric':
-      return `(case when (${textExpr}) ~ ${NUMERIC_RE} then (${textExpr})::numeric end)`;
-    case 'boolean':
-      return `(case lower(${textExpr}) when 'true' then true when 'false' then false end)`;
-    case 'timestamp':
-      return `(case when (${textExpr}) ~ ${TIMESTAMP_RE} then (${textExpr})::timestamptz end)`;
-    default:
-      return textExpr;
-  }
+  const template = guardTemplate(kind);
+  return template ? template.split('$T').join(textExpr) : textExpr;
 }
 
 export class CastValueError extends Error {}

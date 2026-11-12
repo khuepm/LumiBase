@@ -5,6 +5,7 @@ import {
   CastValueError,
   buildJsonPathIndexAdvice,
   castExpression,
+  castExpressionText,
   castKindForFieldType,
   castValue,
   inferCastKindFromValue,
@@ -67,9 +68,26 @@ describe('castValue', () => {
 describe('castExpression', () => {
   it('guards the cast so malformed rows become NULL (Req 4.4)', () => {
     const q = render(castExpression(sql`d->>${'price'}`, 'numeric'));
-    expect(q.sql).toMatch(/^\(case when \(d->>\$1\) ~ '.+' then \(d->>\$2\)::numeric end\)$/);
-    // The key stays a bound parameter; the guard regex is constant SQL.
-    expect(q.params).toEqual(['price', 'price']);
+    // Length cap + exponent cap run inside the CASE, before the cast.
+    expect(q.sql).toMatch(/^\(case when length\(d->>\$1\) <= 1000 and \(d->>\$2\) ~ '.+\{1,3\}.+' then \(d->>\$3\)::numeric end\)$/);
+    // The key stays a bound parameter; the guard is constant SQL.
+    expect(q.params).toEqual(['price', 'price', 'price']);
+  });
+
+  it('checks the calendar before casting a timestamp', () => {
+    const q = render(castExpression(sql`d->>${'at'}`, 'timestamp'));
+    const cast = q.sql.indexOf('::timestamptz');
+    expect(q.sql.indexOf("<> '0000'")).toBeGreaterThan(-1);
+    expect(q.sql.indexOf("<> '0000'")).toBeLessThan(cast);
+    expect(q.sql).toContain('% 400 = 0 then 29 else 28');
+    expect(q.params.every((p) => p === 'at')).toBe(true);
+  });
+
+  it('renders the same guard for the index DDL as for the filter', () => {
+    for (const kind of ['numeric', 'boolean', 'timestamp'] as const) {
+      const fromSql = render(castExpression(sql.raw(`data ->> 'k'`), kind)).sql;
+      expect(castExpressionText(`data ->> 'k'`, kind)).toBe(fromSql);
+    }
   });
 
   it('leaves text expressions unchanged', () => {

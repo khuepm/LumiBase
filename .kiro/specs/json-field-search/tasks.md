@@ -81,6 +81,9 @@ Toàn bộ thay đổi tập trung ở `apps/cms/src/services/item-service.ts` (
 - **Index (§12.1):** guard là SQL hằng, nên `GET /api/v1/collections/:name/index-advice` sinh DDL expression index partial theo collection khớp chính xác biểu thức filter; EXPLAIN dùng index (test DB cho cả path 1 và 2 segment). `timestamptz` không IMMUTABLE → `ddl: null`.
 - **GraphQL:** `filter` của query collection là JSON scalar chuyển thẳng vào `ItemService.list`, nên dot-path + cast hoạt động y hệt REST, không cần input type riêng.
 
-**Deviation:** date dùng `::timestamptz` có guard regex ISO-8601; một chuỗi khớp regex nhưng không phải ngày hợp lệ (vd `2026-02-31`) vẫn có thể làm lỗi truy vấn. Field validation lúc ghi chặn ca này với dữ liệu mới.
+**Guard chặt bằng đúng phép cast (review #788, 2026-11-12):** regex chỉ kiểm tra *hình dạng* là chưa đủ (`2026-99-99`, `1e999999` vẫn làm `::timestamptz` / `::numeric` throw và sập cả truy vấn). Guard giờ chặt đúng bằng phép cast, viết bằng SQL thuần (chạy được trên PostgreSQL 15, không cần `pg_input_is_valid` của PG16, không migration):
+- numeric: text ≤ 1000 ký tự và số mũ tối đa 3 chữ số → giá trị lớn nhất ~2000 chữ số, nằm xa trong giới hạn của numeric; vẫn IMMUTABLE nên expression index của advisor vẫn khớp.
+- timestamp: regex giới hạn từng trường (tháng 01-12, ngày 01-31, giờ 00-23, phút/giây, offset ≤ 15:59), rồi `CASE` lồng loại năm `0000` và ngày vượt số ngày của tháng (có năm nhuận) trước khi cast.
+- Filter SQL và DDL của advisor sinh từ cùng một template nên không lệch nhau. Test DB gồm các dòng legacy hỏng (filter + sort vẫn chạy) và property test fuzz so guard với một hàm try/catch cast trên Postgres thật.
 
 **Verified:** `json-filter-cast.test.ts` (unit), `json-field-cast.db.integration.test.ts` (11 trên Postgres 16 thật), `json-field-*` cũ không đổi; typecheck CMS sạch.
