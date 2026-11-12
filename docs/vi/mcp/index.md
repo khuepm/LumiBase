@@ -1,11 +1,11 @@
 ---
-version: 14
-lastUpdated: 2026-11-11T02:45:10.893Z
+version: 15
+lastUpdated: 2026-11-12T18:31:06.918Z
 sourceLang: vi
-contentHash: 4c2fdc91634fae17
-codeVerified: 2026-11-11T02:45:10.893Z
-codeVerifiedHash: 4c2fdc91634fae17
-codeVerifiedClaims: 32
+contentHash: 509ef395c6bb2705
+codeVerified: 2026-11-12T18:31:06.918Z
+codeVerifiedHash: 509ef395c6bb2705
+codeVerifiedClaims: 34
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -146,7 +146,7 @@ Versioning **không** nằm ở stdio server. Nó được phơi bày dưới d�
 - **SDK không có MCP client** — MCP không phải mối quan tâm client của SDK REST.
 - **Permission floor:** capability = RBAC bundle của token (một mô hình dùng chung với REST). Mọi mở rộng MCP phải tôn trọng sàn này.
 - **Governed tool contract:** schema, validate, gate write, decision shape và tập tool stdio được governance kiểm soát — tất cả nằm ở [`governed-tool-contract.md`](governed-tool-contract.md).
-- **Độ trung thực của tool schema (#716):** mọi `inputSchema` của cả hai transport phải là JSON Schema hợp lệ (meta-schema + Ajv strict, cả draft-07 lẫn 2020-12) và phải khớp với thứ server thật sự nhận. Không transport nào sinh schema từ định nghĩa field của collection — item tool nhận `data` là record mở — nên ma trận field type × nullable × localized × repeatable (cùng quan hệ m2o/o2m/m2m/m2a và file) được kiểm bằng **giá trị** đi qua `data`: schema quảng bá chấp nhận, harness (`validateAgentToolInput`) chấp nhận, và REST nhận nguyên vẹn. Danh sách `tools/list` của hai transport được chốt bằng golden; đổi có chủ đích thì cập nhật golden bằng `-u` rồi review diff. Test: [`packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts`](../../../packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts) và [`apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts`](../../../apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts).
+- **Độ trung thực của tool schema (#716):** mọi `inputSchema` của cả hai transport phải là JSON Schema hợp lệ (meta-schema + Ajv strict, cả draft-07 lẫn 2020-12), và `tools/list` của hai transport được chốt bằng golden (`name`, `description`, `inputSchema`); đổi có chủ đích thì cập nhật golden bằng `-u` rồi review diff. Mức khớp với server mà suite chứng minh tùy theo loại tool. Tool HTTP và tool stdio được governance kiểm soát được dò từng giá trị (kể cả mọi giá trị enum và phần tử mảng sai) so với contract canonical (`validateAgentToolInput`). 33 mutation stdio không qua governance có gửi body JSON, cùng `diff_schema`, được so với đúng Zod object mà route REST của chúng parse: tập key ở mọi độ sâu, kiểu, enum, key bắt buộc; handler phải gửi mọi key đã quảng bá tới đúng route; và body schema của route phải nhận mọi giá trị dò mà tool chấp nhận. Golden body REST được sinh trong `apps/cms` và được test ở đó chốt khớp với route thật. Không transport nào sinh schema từ định nghĩa field của collection — item tool nhận `data` là record mở — nên ma trận field type × nullable × localized × repeatable (cùng quan hệ m2o/o2m/m2m/m2a và file) được kiểm bằng **giá trị** đi qua `data`. Suite **không** chứng minh: các ràng buộc JSON Schema không diễn đạt được (refine liên field như `webhook_id` khi `kind` là `"webhook"`, giải mã cursor, transform), query param của tool đọc, tài liệu chuyển nguyên vẹn (`apply_access_import`, `restore_backup`), skill đọc HTTP chưa có schema canonical (B204), schema override theo site (B205) và từ vựng `type` của field (B206). Mỗi khoảng hở được chấp nhận đều nằm trong suite kèm lý do và làm test fail khi không còn đúng. Test: [`packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts`](../../../packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts), [`apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts`](../../../apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts) và [`apps/cms/src/services/__tests__/mcp-rest-body-golden.test.ts`](../../../apps/cms/src/services/__tests__/mcp-rest-body-golden.test.ts).
 
 ## 4. Trang liên quan
 
