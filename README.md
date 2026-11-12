@@ -128,6 +128,12 @@ The image serves the Studio from the same origin as the API, so there is no seco
 
 Runbook: [Deployment overview](./docs/en/deployment/overview.md) · [Deployment checklist](./docs/en/DEPLOYMENT-CHECKLIST.md)
 
+**Deploy to a cloud platform** — CMS + Studio + PostgreSQL + Redis, secrets generated, straight to the setup wizard:
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/khuepm/lumibase)
+
+Fly.io (`fly.toml`, four commands) and Railway (`railway.json`; template pending publication) are covered in [One-click deploys](./docs/en/deployment/one-click.md), along with why Cloudflare has no button yet.
+
 ### 3. A development checkout (contributors)
 
 ```bash
