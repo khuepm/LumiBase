@@ -13,7 +13,7 @@ import { formatSafeError } from '@lumibase/contracts/utils';
  * to site scoping.
  */
 
-const collectionInputSchema = z.object({
+export const collectionInputSchema = z.object({
   name: z
     .string()
     .min(1)
@@ -51,9 +51,9 @@ const collectionInputSchema = z.object({
   meta: z.record(z.string(), z.unknown()).optional(),
 });
 
-const collectionPatchSchema = patchSchema(collectionInputSchema.omit({ name: true }));
+export const collectionPatchSchema = patchSchema(collectionInputSchema.omit({ name: true }));
 
-const fieldInputSchema = z.object({
+export const fieldInputSchema = z.object({
   name: z
     .string()
     .min(1)
@@ -92,7 +92,7 @@ const fieldInputSchema = z.object({
   confirmRiskyChange: z.boolean().optional(),
 });
 
-const schemaInputSchema = patchSchema(collectionInputSchema.extend({
+export const schemaInputSchema = patchSchema(collectionInputSchema.extend({
     fields: z.array(fieldInputSchema).optional(),
     relations: z.array(z.object({
       manyCollection: z.string().min(1),

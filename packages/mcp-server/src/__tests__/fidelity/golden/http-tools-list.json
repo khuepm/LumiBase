@@ -318,6 +318,19 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "branches": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                      },
+                      "additionalProperties": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
                     }
                   },
                   "required": [

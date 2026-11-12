@@ -82,23 +82,46 @@ export function schemaProblems(schema: unknown): string[] {
   return problems;
 }
 
-const compiled = new WeakMap<object, (data: unknown) => boolean>();
+type Validate = ((data: unknown) => boolean) & { errors?: unknown[] | null };
+const compiled = new WeakMap<object, Validate>();
 
-/** Does `value` satisfy `schema`, in the dialect the schema declares? */
-export function schemaAccepts(schema: Record<string, unknown>, value: unknown): boolean {
+function validatorFor(schema: Record<string, unknown>): Validate {
   let validate = compiled.get(schema);
   if (!validate) {
     const ajv = dialectOf(schema) === 'draft-07' ? ajvDraft07 : ajv2020;
     validate = ajv.compile(withoutDialect(schema));
     compiled.set(schema, validate);
   }
-  return validate(value);
+  return validate;
+}
+
+/** Does `value` satisfy `schema`, in the dialect the schema declares? */
+export function schemaAccepts(schema: Record<string, unknown>, value: unknown): boolean {
+  return validatorFor(schema)(value);
+}
+
+/**
+ * The top-level properties `value` violates `schema` at (`/rules`, `/` for the
+ * root), or `[]` when it is accepted. Lets an accepted gap be scoped to one key
+ * instead of silencing a whole tool.
+ */
+export function rejectedAt(schema: Record<string, unknown>, value: unknown): string[] {
+  const validate = validatorFor(schema);
+  if (validate(value)) return [];
+  const paths = ((validate.errors ?? []) as Array<{ instancePath: string; params?: { missingProperty?: string } }>).map(
+    (e) => {
+      const top = e.instancePath.split('/')[1];
+      if (top !== undefined) return `/${top}`;
+      return e.params?.missingProperty ? `/${e.params.missingProperty}` : '/';
+    },
+  );
+  return [...new Set(paths)].sort();
 }
 
 type Json = Record<string, unknown>;
 
 /** Strings tried, in order, against a `pattern` with no better hint. */
-const PATTERN_CANDIDATES = ['posts', 'abc', 'a', 'x1', '0 * * * *', 'en', 'abc-123', 'a:b', 'A1'];
+const PATTERN_CANDIDATES = ['posts', 'abc', 'a', 'x1', '0 * * * *', 'en', 'abc-123', 'a:b', 'A1', 'ab'.repeat(32)];
 
 function stringFor(key: string, s: Json): string {
   const format = s['format'];
@@ -134,15 +157,29 @@ function stringFor(key: string, s: Json): string {
  * reproduces with the same payload.
  */
 export function sampleFor(schema: unknown, key = ''): unknown {
+  return sample(schema, key, false);
+}
+
+/**
+ * Like {@link sampleFor}, but every declared property is present, at every
+ * depth, and every array holds one element. Used to prove a handler forwards
+ * each advertised key and the server accepts each one.
+ */
+export function fullSampleFor(schema: unknown, key = ''): unknown {
+  return sample(schema, key, true);
+}
+
+function sample(schema: unknown, key: string, full: boolean): unknown {
   const s = (schema ?? {}) as Json;
   if ('const' in s) return s['const'];
   if (Array.isArray(s['enum'])) return (s['enum'] as unknown[])[0];
   const branches = (s['anyOf'] ?? s['oneOf']) as unknown[] | undefined;
   if (Array.isArray(branches)) {
     const nonNull = branches.find((b) => (b as Json)['type'] !== 'null') ?? branches[0];
-    return sampleFor(nonNull, key);
+    return sample(nonNull, key, full);
   }
-  switch (s['type']) {
+  const type = Array.isArray(s['type']) ? (s['type'] as string[]).find((t) => t !== 'null') : s['type'];
+  switch (type) {
     case 'string':
       return stringFor(key, s);
     case 'integer':
@@ -155,13 +192,14 @@ export function sampleFor(schema: unknown, key = ''): unknown {
     case 'null':
       return null;
     case 'array': {
-      const n = (s['minItems'] as number | undefined) ?? 0;
-      return Array.from({ length: n }, () => sampleFor(s['items'], key));
+      const n = Math.max((s['minItems'] as number | undefined) ?? 0, full ? 1 : 0);
+      return Array.from({ length: n }, () => sample(s['items'], key, full));
     }
     case 'object': {
       const props = (s['properties'] ?? {}) as Record<string, unknown>;
       const out: Record<string, unknown> = {};
-      for (const req of (s['required'] ?? []) as string[]) out[req] = sampleFor(props[req], req);
+      const keys = full ? Object.keys(props) : ((s['required'] ?? []) as string[]);
+      for (const k of keys) out[k] = sample(props[k], k, full);
       return out;
     }
     default:
@@ -179,6 +217,173 @@ export const PROBES: ReadonlyArray<unknown> = [
   true,
   [],
   ['x'],
+  // Invalid array elements (#716 review): `[""]` passed stdio while the
+  // server's `z.string().min(1)` items refused it; wrong-typed elements too.
+  [''],
+  [0],
+  [null],
+  [{}],
   {},
   { a: 1 },
 ];
+
+/** Every enum / const value a property can take, including inside an array's items. */
+function enumValues(schema: unknown): unknown[] {
+  const s = (schema ?? {}) as Json;
+  const out: unknown[] = [];
+  if ('const' in s) out.push(s['const']);
+  if (Array.isArray(s['enum'])) out.push(...(s['enum'] as unknown[]));
+  for (const b of ((s['anyOf'] ?? s['oneOf'] ?? []) as unknown[])) out.push(...enumValues(b));
+  return out;
+}
+
+/**
+ * {@link PROBES} plus every member of the property's enum (each alone, and each
+ * as a one-element array when the enum sits on array items). The first-member
+ * sampler alone never sent `kind: "webhook"`, so a schema that is only valid
+ * for `pull` passed (#716 review).
+ */
+export function probesFor(property: unknown): unknown[] {
+  const p = (property ?? {}) as Json;
+  const values = enumValues(p);
+  const items = enumValues(p['items']);
+  return [...PROBES, ...values, ...items.map((v) => [v])];
+}
+
+// ── structural comparison of an advertised schema with a server schema ──────
+
+const SCALAR_TYPES = ['string', 'number', 'integer', 'boolean', 'null', 'array', 'object'];
+
+function branches(s: Json): Json[] {
+  const list = (s['anyOf'] ?? s['oneOf']) as Json[] | undefined;
+  return Array.isArray(list) ? list.flatMap(branches) : [s];
+}
+
+/** JSON types a schema admits, or `'any'` when it does not constrain the type. */
+export function typesOf(schema: unknown): Set<string> | 'any' {
+  const out = new Set<string>();
+  for (const b of branches((schema ?? {}) as Json)) {
+    if ('const' in b) {
+      const v = b['const'];
+      out.add(v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
+      continue;
+    }
+    const t = b['type'];
+    if (typeof t === 'string') out.add(t);
+    else if (Array.isArray(t)) for (const x of t as string[]) out.add(x);
+    else if (Array.isArray(b['enum'])) for (const v of b['enum'] as unknown[]) out.add(v === null ? 'null' : typeof v);
+    else return 'any';
+  }
+  return out;
+}
+
+function nonNull(s: Json): Json[] {
+  return branches(s).filter((b) => b['type'] !== 'null' && !(Array.isArray(b['type']) && (b['type'] as string[]).every((t) => t === 'null')));
+}
+
+/** Finite set of values, when every non-null branch is an enum or const. */
+function finiteValues(s: Json): unknown[] | null {
+  const out: unknown[] = [];
+  for (const b of nonNull(s)) {
+    if ('const' in b) out.push(b['const']);
+    else if (Array.isArray(b['enum'])) out.push(...(b['enum'] as unknown[]));
+    else return null;
+  }
+  return out.length > 0 ? out : null;
+}
+
+interface ObjectView {
+  /** Property name → every schema any object branch gives it. */
+  props: Map<string, Json[]>;
+  /** Required keys, when exactly one object branch exists. */
+  required: string[] | null;
+  /** No `properties` at all: an open record or `{}` that forwards any key. */
+  open: boolean;
+}
+
+function objectView(s: Json): ObjectView | null {
+  const objects = nonNull(s).filter((b) => b['type'] === 'object' || 'properties' in b ||
+    (Array.isArray(b['type']) && (b['type'] as string[]).includes('object')));
+  if (objects.length === 0) return null;
+  const props = new Map<string, Json[]>();
+  let open = false;
+  for (const o of objects) {
+    if (!o['properties']) open = true;
+    for (const [k, v] of Object.entries((o['properties'] ?? {}) as Record<string, Json>)) {
+      props.set(k, [...(props.get(k) ?? []), v]);
+    }
+  }
+  const required = objects.length === 1 ? ((objects[0]!['required'] ?? []) as string[]) : null;
+  return { props, required, open };
+}
+
+function arrayItems(s: Json): Json | null {
+  const items = nonNull(s)
+    .filter((b) => b['type'] === 'array' || (Array.isArray(b['type']) && (b['type'] as string[]).includes('array')))
+    .map((b) => (b['items'] ?? {}) as Json);
+  if (items.length === 0) return null;
+  return items.length === 1 ? items[0]! : { anyOf: items };
+}
+
+const merge = (list: Json[]): Json => (list.length === 1 ? list[0]! : { anyOf: list });
+
+/**
+ * Where an advertised (tool) schema and a server (route) schema disagree on
+ * shape, recursively through object properties and array items:
+ *   - `server-only`: a key the server accepts that the tool does not advertise
+ *     (a schema-respecting client can never send it; an SDK strips it);
+ *   - `advertised-only`: a key the tool advertises that the server's schema
+ *     does not declare (Zod strips it: the call "succeeds" without effect);
+ *   - `type`: the tool admits a JSON type the server refuses;
+ *   - `enum`: the tool admits a value outside the server's enum;
+ *   - `required`: the server requires a key the tool marks optional.
+ * Open records (`properties` absent) on either side forward any key, so key
+ * sets below them are not compared. Value constraints (`minLength`, patterns,
+ * refinements) are the differential probe's job, not this function's.
+ */
+export function shapeMismatches(advertised: unknown, server: unknown, path = ''): string[] {
+  const a = (advertised ?? {}) as Json;
+  const s = (server ?? {}) as Json;
+  const out: string[] = [];
+  const at = path || '<body>';
+
+  const ta = typesOf(a);
+  const ts = typesOf(s);
+  if (ts !== 'any') {
+    if (ta === 'any') out.push(`type ${at}: advertised any, server ${[...ts].join('|')}`);
+    else {
+      const loose = [...ta].filter((t) => SCALAR_TYPES.includes(t) && !ts.has(t) && !(t === 'integer' && ts.has('number')));
+      if (loose.length > 0) out.push(`type ${at}: advertised ${loose.join('|')}, server ${[...ts].join('|')}`);
+    }
+  }
+
+  const serverValues = finiteValues(s);
+  if (serverValues) {
+    const advertisedValues = finiteValues(a);
+    const extra = advertisedValues
+      ? advertisedValues.filter((v) => !serverValues.some((sv) => JSON.stringify(sv) === JSON.stringify(v)))
+      : ['<any>'];
+    if (extra.length > 0) out.push(`enum ${at}: advertised ${extra.map((v) => JSON.stringify(v)).join(',')} outside server enum`);
+  }
+
+  const oa = objectView(a);
+  const os = objectView(s);
+  if (oa && os && !oa.open && !os.open) {
+    for (const key of os.props.keys()) if (!oa.props.has(key)) out.push(`server-only ${path ? `${path}.` : ''}${key}`);
+    for (const key of oa.props.keys()) if (!os.props.has(key)) out.push(`advertised-only ${path ? `${path}.` : ''}${key}`);
+    if (oa.required && os.required) {
+      for (const key of os.required) {
+        if (oa.props.has(key) && !oa.required.includes(key)) out.push(`required ${path ? `${path}.` : ''}${key}`);
+      }
+    }
+    for (const [key, list] of oa.props) {
+      const theirs = os.props.get(key);
+      if (theirs) out.push(...shapeMismatches(merge(list), merge(theirs), path ? `${path}.${key}` : key));
+    }
+  }
+
+  const ia = arrayItems(a);
+  const is = arrayItems(s);
+  if (ia && is) out.push(...shapeMismatches(ia, is, `${path}[]`));
+  return out;
+}
