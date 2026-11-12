@@ -11,6 +11,18 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Added
 
+- **MCP: OAuth 2.1 access tokens on the remote endpoint (#346).** `POST /api/v1/mcp` can now
+  act as an OAuth 2.1 protected resource, which is what hosted assistants (ChatGPT, claude.ai)
+  require in place of an API key. LumiBase verifies tokens and never issues them: the operator
+  names an external authorization server with `MCP_OAUTH_ISSUER`, `MCP_OAUTH_JWKS_URI` and
+  `MCP_OAUTH_RESOURCE` (plus optional `MCP_OAUTH_SUBJECT`). Unset, nothing changes. A token
+  identifies an existing user; membership and capabilities come from that user's live RBAC
+  bundle, and the scopes `lumibase.read` / `lumibase.write` / `lumibase.admin` can only narrow
+  it. Adds `GET /.well-known/oauth-protected-resource[/api/v1/mcp]` (RFC 9728) and a
+  `WWW-Authenticate` challenge on MCP `401`s. **No migration.**
+- **MCP: tool titles and annotations.** `tools/list` now returns `title` and
+  `annotations.readOnlyHint` / `destructiveHint` for registry tools, derived from each tool's
+  required capabilities and risk level. Additive; existing clients are unaffected.
 - **Agent harness: `askUser` clarification tool (#710).** An agent that cannot continue
   without a decision it may not make asks a human instead of guessing. The run parks in
   the new `waiting_user` status (no queue worker, no lock held), the question reaches the

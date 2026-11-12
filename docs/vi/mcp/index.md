@@ -1,10 +1,10 @@
 ---
-version: 14
-lastUpdated: 2026-11-11T02:57:08.013Z
+version: 15
+lastUpdated: 2026-11-12T20:00:42.665Z
 sourceLang: vi
-contentHash: 16b14b2f7c418709
-codeVerified: 2026-11-11T02:57:08.013Z
-codeVerifiedHash: 16b14b2f7c418709
+contentHash: 83e0c7cf80c59b12
+codeVerified: 2026-11-12T20:00:42.665Z
+codeVerifiedHash: 83e0c7cf80c59b12
 codeVerifiedClaims: 28
 ---
 
@@ -42,6 +42,34 @@ Nguồn: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`
   - `denied` → `isError: true`.
   - Lỗi protocol chỉ dùng cho lỗi JSON-RPC thật: `-32700` parse, `-32600` invalid request, `-32601` method not found, `-32602` invalid params.
 - **Guards kế thừa từ harness** (zero logic MCP riêng): kill switch, capability, autonomy (L0–L4), constitution pin, load guard, veto window. Xem [`docs/en/features/agent-harness-layer.md`](../features/agent-harness-layer.md).
+
+### Access token OAuth 2.1 (#346)
+
+Các trợ lý dạng hosted (ChatGPT, claude.ai) không nhận API key; chúng yêu cầu MCP endpoint là một protected resource theo OAuth 2.1. LumiBase chỉ đóng vai **resource** — không bao giờ phát hành token. Việc đó do một authorization server bên ngoài đảm nhận, và operator khai báo nó bằng biến môi trường. Nguồn: [`apps/cms/src/modules/mcp-oauth/`](../../../apps/cms/src/modules/mcp-oauth/).
+
+| Biến | Ý nghĩa |
+|---|---|
+| `MCP_OAUTH_ISSUER` | Giá trị `iss` mà mọi token được chấp nhận phải mang; được công bố là authorization server. |
+| `MCP_OAUTH_JWKS_URI` | Nơi server đó công bố khóa ký. |
+| `MCP_OAUTH_RESOURCE` | URL chuẩn của MCP endpoint này. Token phải ghi nó trong `aud`. |
+| `MCP_OAUTH_SUBJECT` | `user_id` (mặc định) hoặc `external_id`: cột nào của `users` mà `sub` định danh. |
+
+Cả ba biến đầu phải được đặt, dưới dạng URL `https`, nếu không tính năng tắt và những điều dưới đây không áp dụng.
+
+- **Nơi được chấp nhận:** chỉ `POST /api/v1/mcp`. Cùng token đó không phải là credential trên bất kỳ route nào khác.
+- **Những gì được kiểm tra:** chữ ký bất đối xứng (`RS256`, `PS256`, `ES256`, `EdDSA`) theo JWKS, `iss`, `aud`, `exp`, `sub`. Token phát hành cho audience khác bị từ chối, nên không thể chuyển tiếp sang đây. Claim tùy chọn: `site_id` phải bằng site của request; `token_version` phải bằng giá trị hiện tại của user, nên đổi mật khẩu sẽ thu hồi quyền đã cấp.
+- **Danh tính:** một user LumiBase đang tồn tại và active. Membership của site và capability được resolve đúng như với phiên của chính user đó — bản thân token không cấp thêm gì.
+- **Scope là trần, không bao giờ là quyền được cấp:**
+
+  | Scope | Giữ lại |
+  |---|---|
+  | `lumibase.read` | chỉ các capability `:read` |
+  | `lumibase.write` | thêm quyền ghi trên `items` và `translations` |
+  | `lumibase.admin` | mọi thứ user đang có, skill control-plane và tool organization |
+
+  Một administrator cấp cho client scope `lumibase.read` thì với client đó chỉ là người đọc. Thiếu `lumibase.admin`, skill control-plane trả `403 CONTROL_PLANE_FORBIDDEN` và tool organization trả `403 ORGANIZATION_FORBIDDEN`.
+- **Discovery:** `GET /.well-known/oauth-protected-resource/api/v1/mcp` trả metadata theo RFC 9728, và mọi `401` từ route MCP đều mang `WWW-Authenticate: Bearer resource_metadata="…"`.
+- **Gợi ý tool:** `tools/list` trả `title` và `annotations` (`readOnlyHint`, `destructiveHint`) cho từng tool trong registry, suy ra từ capability yêu cầu và mức rủi ro. Đây là gợi ý cho client và không tham gia vào việc phân quyền.
 
 ### Tool registry (động)
 

@@ -1,13 +1,13 @@
 ---
-version: 14
-lastUpdated: 2026-11-11T02:57:08.013Z
+version: 15
+lastUpdated: 2026-11-12T20:00:42.665Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 16b14b2f7c418709
+sourceHash: 83e0c7cf80c59b12
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T02:57:08.013Z
-codeVerifiedHash: 16b14b2f7c418709
+codeVerified: 2026-11-12T20:00:42.665Z
+codeVerifiedHash: 83e0c7cf80c59b12
 codeVerifiedClaims: 28
 ---
 
@@ -45,6 +45,34 @@ Source: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`a
   - `denied` → `isError: true`.
   - Protocol errors are reserved for genuine JSON-RPC failures: `-32700` parse, `-32600` invalid request, `-32601` method not found, `-32602` invalid params.
 - **Guards inherited from the harness** (zero MCP-specific logic): kill switch, capability, autonomy (L0–L4), constitution pin, load guard, veto window. See [`docs/en/features/agent-harness-layer.md`](../features/agent-harness-layer.md).
+
+### OAuth 2.1 access tokens (#346)
+
+Hosted assistants (ChatGPT, claude.ai) cannot be handed an API key; they expect the MCP endpoint to be an OAuth 2.1 protected resource. LumiBase plays the **resource** role only — it never issues tokens. An external authorization server does, and the operator names it with environment variables. Source: [`apps/cms/src/modules/mcp-oauth/`](../../../apps/cms/src/modules/mcp-oauth/).
+
+| Variable | Meaning |
+|---|---|
+| `MCP_OAUTH_ISSUER` | The `iss` every accepted token must carry; advertised as the authorization server. |
+| `MCP_OAUTH_JWKS_URI` | Where that server publishes its signing keys. |
+| `MCP_OAUTH_RESOURCE` | Canonical URL of this MCP endpoint. Tokens must name it in `aud`. |
+| `MCP_OAUTH_SUBJECT` | `user_id` (default) or `external_id`: which `users` column `sub` identifies. |
+
+All of the first three must be set, as `https` URLs, or the feature is off and nothing below applies.
+
+- **Where it is accepted:** `POST /api/v1/mcp` only. The same token is not a credential on any other route.
+- **What is verified:** an asymmetric signature (`RS256`, `PS256`, `ES256`, `EdDSA`) against the JWKS, `iss`, `aud`, `exp`, `sub`. A token minted for another audience is rejected, so it cannot be passed through. Optional claims: `site_id` must equal the request's site; `token_version` must equal the user's current one, so a password change revokes the grant.
+- **Who it is:** an existing, active LumiBase user. Site membership and capabilities are resolved exactly as for that user's own session — the token grants nothing by itself.
+- **Scopes are a ceiling, never a grant:**
+
+  | Scope | Keeps |
+  |---|---|
+  | `lumibase.read` | `:read` capabilities only |
+  | `lumibase.write` | plus writes on `items` and `translations` |
+  | `lumibase.admin` | everything the user holds, control-plane skills and organization tools |
+
+  An administrator who grants a client `lumibase.read` is a reader for that client. Without `lumibase.admin`, control-plane skills return `403 CONTROL_PLANE_FORBIDDEN` and organization tools `403 ORGANIZATION_FORBIDDEN`.
+- **Discovery:** `GET /.well-known/oauth-protected-resource/api/v1/mcp` returns the RFC 9728 metadata, and every `401` from the MCP route carries `WWW-Authenticate: Bearer resource_metadata="…"`.
+- **Tool hints:** `tools/list` returns a `title` and `annotations` (`readOnlyHint`, `destructiveHint`) for each registry tool, derived from its required capabilities and risk level. They are hints for the client and take no part in authorization.
 
 ### The tool registry (dynamic)
 
