@@ -29,6 +29,11 @@ const profiles = [
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 describe('credential tool profiles', () => {
+  it('keeps the original site tool metadata when read-only is off', () => {
+    const { tools } = capture(profiles[0]!.config);
+    expect(tools.get('list_items')!.config.annotations).toBeUndefined();
+    expect(tools.get('create_item')!.config.annotations).toBeUndefined();
+  });
   for (const profile of profiles) {
     it(`snapshots ${profile.label} names against the pre-Phase3 site baseline`, () => {
       const { tools } = capture(profile.config);
