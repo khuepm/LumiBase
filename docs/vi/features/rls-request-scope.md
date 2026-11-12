@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-10-17T16:36:19.946Z
+version: 2
+lastUpdated: 2026-11-12T07:04:33.596Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5114d38102cfe297
+sourceHash: fe8311b22d94c903
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-17T16:36:19.946Z
-codeVerifiedHash: 5114d38102cfe297
+codeVerified: 2026-11-12T07:04:33.596Z
+codeVerifiedHash: fe8311b22d94c903
 codeVerifiedClaims: 14
 ---
 
@@ -20,6 +20,7 @@ Cờ này là opt-in. Với mặc định `LUMIBASE_DB_RLS=off`, deployment hi�
 ## Cách hoạt động
 
 - **Request path.** `withDb()` (`apps/cms/src/middleware/db.ts`) chạy ngay sau `withTenant()`. Ở `enforce`, nó bọc connection bằng `createSiteScopedSql` (`packages/runtime/src/scoped-sql.ts`), và mỗi câu chạy dạng `BEGIN; SELECT set_config('app.site_id', $1, true); <query>; COMMIT` trên một connection. Site id luôn là tham số bind. Giá trị chỉ sống trong transaction đó nên không thể rò sang request khác qua pool. `db.transaction(...)` cũng được scope như vậy, và `runSiteTransaction(db, otherSite, fn)` vẫn scope lại một transaction sang site khác.
+- **Phạm vi organization và bảng lõi.** `lumibase_sites` được nhìn thấy theo ID site hoặc organization; `lumibase_api_keys` dùng phạm vi site hoặc organization của key. Cặp policy restrictive/permissive dựa vào `app.site_id` hoặc `lumibase.organization_id` chỉ tồn tại trong transaction. API vẫn kiểm tra membership trước khi đọc organization. Cần áp dụng lại file policy RLS sau nâng cấp; `pnpm db:migrate` không tự áp dụng file này.
 - **Router chỉ biết site trong handler** (`/api/v1/deliver`, share công khai, `/api/v1/pageviews/:site_id/hit`, `/api/v1/email/unsubscribe`, git webhook và môi trường preview) dựng db bằng `scopedDbFor(c, siteId)`.
 - **System connection.** Worker, cron, queue consumer và route hệ thống (setup, recovery, SCIM, git OAuth callback, admin-path guard, các lệnh ghi audit xuyên site) chạy xuyên site hoặc chạy trước khi có site. Chúng dùng connection thứ hai trên một role có `BYPASSRLS`: `DATABASE_SYSTEM_URL` (Docker) hoặc binding `HYPERDRIVE_SYSTEM` (Workers).
 - **Fail closed.** `withRls()` kiểm tra db của request đã được scope theo đúng site của request, nếu không thì trả `503 RLS_UNAVAILABLE`. Thiếu system connection khi `enforce` thì trả `503 RLS_MISCONFIGURED`, và giá trị cờ không hợp lệ cũng vậy. Trên Docker thì process từ chối khởi động.

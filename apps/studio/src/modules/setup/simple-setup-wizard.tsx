@@ -1,3 +1,4 @@
+import { getApiBaseUrl } from '@/lib/api-base';
 import {
   AlertTriangle,
   BookOpen,
@@ -1192,7 +1193,7 @@ async function postSetupComplete(body: {
   // Omit `invites` entirely when empty so the request matches the original
   // shape on a no-invite setup (the field is optional server-side).
   const payload = body.invites.length > 0 ? body : { ...body, invites: undefined };
-  const response = await fetch('/api/v1/setup/complete', {
+  const response = await fetch(`${getApiBaseUrl()}/api/v1/setup/complete`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: {

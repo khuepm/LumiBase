@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, afterAll, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { SignJWT } from 'jose';
 import { and, eq, inArray } from 'drizzle-orm';
-import { aiApprovals, apiKeys, auditLog, organizations, organizationMembers, sites, users, type Database } from '@lumibase/database';
+import { aiApprovals, apiKeys, auditLog, organizations, organizationMembers, settings, sites, users, type Database } from '@lumibase/database';
 import { MemoryCacheProvider } from '@lumibase/runtime';
 import { OrganizationToolSchemas } from '@lumibase/contracts';
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
@@ -92,6 +92,14 @@ describe.skipIf(!hasDbIntegrationUrl)('organization MCP and human approvals (rea
     await db.update(organizations).set({ settings: enabled }).where(eq(organizations.id, A));
     expect((await call('org:list_sites', {}, token, { LUMIBASE_MCP_ORG_TOOLS: 'off' })).response.status).toBe(404);
     expect(await db.select().from(aiApprovals).where(eq(aiApprovals.organizationId, A))).toHaveLength(0);
+  });
+  it('does not apply the organization MCP switch to site tools on a pinned key', async () => {
+    await db.update(organizations).set({ settings: {} }).where(eq(organizations.id, A));
+    await db.insert(settings).values({ siteId: SA, key: 'contentOs', value: { mcp: true } });
+    const response = await request('/mcp', token, 'POST', { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+      {}, { 'X-Lumi-Site': SA });
+    expect(response.status).toBe(200);
+    expect((await payload(response)).result.tools.length).toBeGreaterThan(0);
   });
   it('the lbo_ prefix is never authentication and site credentials cannot call org skills', async () => {
     expect((await call('org:list_sites', {}, 'lbo_not_a_valid_key')).response.status).toBe(401);

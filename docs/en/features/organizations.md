@@ -1,11 +1,11 @@
 ---
-version: 3
-lastUpdated: 2026-11-10T01:32:16.688Z
+version: 4
+lastUpdated: 2026-11-12T06:58:59.409Z
 sourceLang: en
-contentHash: 2e5f91825eda8ddd
-codeVerified: 2026-11-10T01:32:16.688Z
-codeVerifiedHash: 2e5f91825eda8ddd
-codeVerifiedClaims: 6
+contentHash: 7fb7ff68405b0a37
+codeVerified: 2026-11-12T06:58:59.409Z
+codeVerifiedHash: 7fb7ff68405b0a37
+codeVerifiedClaims: 8
 ---
 
 # Organization settings
@@ -37,6 +37,8 @@ Organization selection is a browser preference, never an authorization grant. Qu
 Organization owner/admin login and refresh use current organization membership even without a direct site membership. A weaker direct role does not override that inherited authority. Removing the inherited grant blocks renewal unless a direct site role still authorizes it; a remaining frontend role renews with a frontend audience.
 
 Password login and refresh still require a real site. Before deleting the last site, retain a valid organization key or Studio session to recreate one through the organization API. If all such credentials expire or are lost, restore a backup. Site-free instance recovery is a separate design (backlog B196).
+
+For a legacy installation migrated without a bootstrap user, an operator can restore an owner for the backfilled organization. Choose an active user who already administers every site in that organization, then run `pnpm -F @lumibase/database recover:organization-owner <organization-id> <user-id> CONFIRM:<organization-id>` with `DATABASE_SYSTEM_URL` (or an operator `DATABASE_URL`). The command refuses an organization that already has an owner and does not grant site access to a new user. A site-free organization can be recovered with any active user selected by the operator.
 
 ## Desktop and verification
 
