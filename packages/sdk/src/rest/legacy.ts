@@ -16,6 +16,7 @@ import {
   SchemaDiffInput,
   TypegenSchemaFilters,
   ListItemsParams,
+  ExportItemsParams,
   ItemRow,
   ListItemsResponse,
   RevisionRow,
@@ -311,6 +312,23 @@ export function legacyRest() {
           }),
         delete: (id: string) =>
           client.rawRequest<null>(`${base}/${id}`, { method: "DELETE" }),
+        /**
+         * Stream the collection as CSV or JSON (#727). Resolves with the
+         * unread `Response`: pipe `res.body` to a file, or `await res.text()`.
+         * Uses the caller's read permission; filters use the list syntax.
+         */
+        export: (params: ExportItemsParams = {}): Promise<Response> => {
+          const qs = new URLSearchParams();
+          if (params.format) qs.set("format", params.format);
+          if (params.fields?.length) qs.set("fields", params.fields.join(","));
+          if (params.locales?.length) qs.set("locales", params.locales.join(","));
+          if (params.relations) qs.set("relations", params.relations);
+          if (params.filter) qs.set("filter", JSON.stringify(params.filter));
+          if (params.sort?.length) qs.set("sort", params.sort.join(","));
+          if (params.status) qs.set("status", params.status);
+          const s = qs.toString();
+          return client.rawFetch(`${base}/export${s ? `?${s}` : ""}`);
+        },
         bulk: (
           op: "create" | "update" | "delete",
           payload: Array<Record<string, unknown>>,

@@ -1,11 +1,11 @@
 ---
-version: 37
-lastUpdated: 2026-11-12T18:29:48.103Z
+version: 38
+lastUpdated: 2026-11-12T18:53:18.991Z
 sourceLang: en
-contentHash: eb97b09676bd1cb0
-codeVerified: 2026-11-12T18:29:48.103Z
-codeVerifiedHash: eb97b09676bd1cb0
-codeVerifiedClaims: 490
+contentHash: 7b10d79148e0e196
+codeVerified: 2026-11-12T18:53:18.991Z
+codeVerifiedHash: 7b10d79148e0e196
+codeVerifiedClaims: 494
 ---
 
 # Hono API Specification — LumiBase
@@ -517,6 +517,7 @@ active `siteId`.
 |--------|------|-------------|
 | `GET` | `/api/v1/items/:collection` | List items (paginated, filterable) |
 | `POST` | `/api/v1/items/:collection` | Create item (or array for bulk) |
+| `GET` | `/api/v1/items/:collection/export` | Stream the collection as CSV or JSON ([Data export](../features/data-export.md)) |
 | `GET` | `/api/v1/items/:collection/:id` | Get single item |
 | `PATCH` | `/api/v1/items/:collection/:id` | Partial update |
 | `PUT` | `/api/v1/items/:collection/:id` | Full replace |
@@ -546,6 +547,16 @@ sample }] } }`. `POST …/resolve-dependents` takes
 runs transactionally (delete delegates to the normal item-delete path).
 Errors: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null on a
 required field), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
+
+**Export.** `GET /items/:collection/export?format=csv|json&fields=&locales=&relations=id|slug|embed&filter=&sort=&status=`
+streams every matching row (keyset-paged, so any size). It uses the caller's
+`read` permission and the list `filter`/`sort` syntax, runs the extensions'
+`items.export.before` hook per row, and writes an `items_exported` audit entry.
+CSV writes one `field.locale` column per locale of a translatable field and
+neutralises spreadsheet formulas; JSON is
+`{ collection, format: "lumibase-export@1", exportedAt, fields, locales, relations, items: [{ id, status, sort, created_at, updated_at, data }] }`.
+Errors before streaming: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`,
+`403 FORBIDDEN`, `404 NOT_FOUND`. See [Data export](../features/data-export.md).
 
 **List pagination & totals.** `GET /items/:collection` accepts `limit`
 (1–200, default 25), `offset`, and `meta`:

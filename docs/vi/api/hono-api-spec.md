@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 36
-lastUpdated: 2026-11-12T18:29:48.103Z
+version: 37
+lastUpdated: 2026-11-12T18:53:18.991Z
 sourceLang: en
 translatedFrom: en
-sourceHash: eb97b09676bd1cb0
+sourceHash: 7b10d79148e0e196
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T18:29:48.103Z
-codeVerifiedHash: eb97b09676bd1cb0
-codeVerifiedClaims: 490
+codeVerified: 2026-11-12T18:53:18.991Z
+codeVerifiedHash: 7b10d79148e0e196
+codeVerifiedClaims: 494
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -456,6 +456,7 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 |--------|------|-------------|
 | `GET` | `/api/v1/items/:collection` | Liệt kê các mục (có phân trang, bộ lọc) |
 | `POST` | `/api/v1/items/:collection` | Tạo mục (hoặc mảng cho hàng loạt) |
+| `GET` | `/api/v1/items/:collection/export` | Xuất collection dạng CSV hoặc JSON theo luồng ([Data export](../features/data-export.md)) |
 | `GET` | `/api/v1/items/:collection/:id` | Lấy một mục duy nhất |
 | `PATCH` | `/api/v1/items/:collection/:id` | Cập nhật một phần |
 | `PUT` | `/api/v1/items/:collection/:id` | Thay thế hoàn toàn |
@@ -473,6 +474,8 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `POST` | `/api/v1/items/:collection/:id/versions/:key/promote` | Áp dụng bản nháp vào main (ghi một revision); `meta.mainDiverged` |
 
 **Các bản ghi phụ thuộc (Dependent records).** Vì các tham chiếu item nằm trong JSONB (không phải cột FK vật lý), `onDelete` của một quan hệ được thực thi ở lớp ứng dụng. Khi `DELETE`, nếu một quan hệ khai báo `restrict` vẫn còn bản ghi trỏ tới item, lệnh xóa sẽ bị chặn với **409 `DEPENDENT_RECORDS_EXIST`** và một mảng `dependents`. (`set null`/`cascade` **không** tự động áp dụng khi xóa mềm — điều đó sẽ làm hỏng khả năng phục hồi của xóa mềm; trình biên tập phải xóa chúng một cách tường minh.) `GET …/dependents` trả về `{ data: { blocking, dependents: [{ relation, collection, field, onDelete, count, sample }] } }`. `POST …/resolve-dependents` nhận `{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` và chạy trong một transaction (lệnh delete ủy quyền cho đường dẫn xóa item thông thường). Lỗi: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null trên trường bắt buộc), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
+
+**Export.** `GET /items/:collection/export?format=csv|json&fields=&locales=&relations=id|slug|embed&filter=&sort=&status=` xuất theo luồng mọi dòng khớp (phân trang keyset, nên không giới hạn kích thước). Endpoint dùng quyền `read` của người gọi và cú pháp `filter`/`sort` của endpoint danh sách, chạy hook `items.export.before` của extension cho từng dòng, và ghi một mục audit `items_exported`. CSV ghi một cột `field.locale` cho mỗi locale của trường dịch được và vô hiệu hoá công thức bảng tính; JSON có dạng `{ collection, format: "lumibase-export@1", exportedAt, fields, locales, relations, items: [{ id, status, sort, created_at, updated_at, data }] }`. Lỗi trả về trước khi bắt đầu stream: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`, `403 FORBIDDEN`, `404 NOT_FOUND`. Xem [Data export](../features/data-export.md).
 
 **Phân trang danh sách & Tổng số.** `GET /items/:collection` chấp nhận `limit` (1–200, mặc định 25), `offset`, và `meta`:
 
