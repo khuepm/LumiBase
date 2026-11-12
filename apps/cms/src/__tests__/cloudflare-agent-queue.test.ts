@@ -52,6 +52,16 @@ describe('Cloudflare agent queue entrypoint (B10)', () => {
       expect(job.ack).toHaveBeenCalledOnce(); expect(job.retry).not.toHaveBeenCalled();
     }
   });
+  it('hands the job the execution context\'s waitUntil for best-effort notifications (#710 review)', async () => {
+    const job = message('site-a', 'run-a');
+    const waitUntil = vi.fn();
+    vi.mocked(processAgentRunJob).mockImplementation(async (deps) => {
+      deps.waitUntil?.(Promise.resolve('sent'));
+    });
+    await processCloudflareAgentQueue(batch([job]), env, { waitUntil, passThroughOnException: vi.fn() } as unknown as ExecutionContext);
+    expect(waitUntil).toHaveBeenCalledOnce();
+    expect(job.ack).toHaveBeenCalledOnce();
+  });
   it('retries only the failed message and continues the batch', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const a = message('site-a', 'bad'); const b = message('site-b', 'good');

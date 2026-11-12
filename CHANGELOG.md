@@ -13,6 +13,41 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - One-click deploys of the CMS with its Studio (#741): a Render Blueprint (`render.yaml`, with a Deploy to Render button in the README) that provisions the published image, Render Postgres and a `noeviction` Key Value instance and generates `JWT_SECRET`/`ENCRYPTION_KEY`; a Fly.io `fly.toml` (one machine always on, `SIGTERM` shutdown, secrets set with one `fly secrets set`); and a Railway `railway.json` plus `docker/railway-template-variables.json`, the variable set for the Railway template. Every template gates setup with `LUMIBASE_REQUIRE_SETUP_TOKEN`. Cloudflare has no deploy button yet; [One-click deploys](docs/en/deployment/one-click.md) explains what is and is not one-click on each platform.
 - The image entrypoint defaults `CORS_ALLOWED_ORIGINS` to the deployment's own origin when it is unset — from the new `LUMIBASE_PUBLIC_URL`, or the platform's `RENDER_EXTERNAL_URL`, `RAILWAY_PUBLIC_DOMAIN` or `FLY_APP_NAME` — and treats a value with no host (such as `https://` from an empty platform domain) as unset; prints the setup wizard URL while setup is pending; and in production, when the server is going to start, exits before touching the database when a required variable is missing or `ENCRYPTION_KEY` is one the server would reject, naming it. `ENCRYPTION_KEY` is passed to the server exactly as supplied — the CDC registry derives its key from the string, so re-encoding it would change the key. `MIGRATION_MODE=preflight|dry-run` still needs only `DATABASE_URL` (#741).
 
+- **Agent harness: `askUser` clarification tool (#710).** An agent that cannot continue
+  without a decision it may not make asks a human instead of guessing. The run parks in
+  the new `waiting_user` status (no queue worker, no lock held), the question reaches the
+  Mission Control inbox and a `question` notification, and an answer resumes the run: the
+  `askUser` tool call completes with the answer (wrapped as untrusted data for the model)
+  and the run settles `succeeded`. Stored as `agent_approvals` rows with
+  `kind = 'question'` — **no migration**. New endpoints `GET /api/v1/agent/questions`,
+  `GET /api/v1/agent/questions/:id` and `POST /api/v1/agent/questions/:id/answer`
+  (signed-in users only — any API key, site- or organization-scoped, gets `403`; a holder
+  of `approvals:decide`, or the requesting user once backlog B207 opens the route beyond
+  site administrators; tenant-scoped,
+  audited as `agent_question.*`, a second answer is `409`; the requester's rights are
+  re-resolved before resuming). New read skill `getUserAnswer` returns the outcome to the
+  requester only. Both skills are offered to governed agents (agent runs, the queue
+  worker, MCP), not to the Copilot chat, which has no run to pause. Questions time out (default one day, max seven) through the 5-minute
+  `agent-question-sweep` on both runtimes, failing the run with
+  `stopReason: question_timeout`; freezing a role or the site, pausing an intent or
+  cancelling the run ends waiting runs. MCP `tools/call` returns
+  `status: "waiting_user"` with `questionId`. Metrics
+  `lumibase_agent_questions_total{status}` and `lumibase_agent_question_wait_seconds`; the
+  trust ledger shows question counts in promotion evidence.
+
+### Changed
+
+- `GET /api/v1/agent/approvals` no longer lists `askUser` questions, and
+  `POST /api/v1/agent/approvals/:id/decide` / `/reopen` refuse a question id with
+  `409 NOT_AN_APPROVAL`.
+- The `agent-runs` queue worker now passes a Web Push notifier to the harness, so
+  approvals and questions parked by a queued run notify subscribed operators (realtime
+  in-app delivery still needs a request context). It forwards only `approval` and
+  `question`: queued runs still send no run succeeded/failed pushes. On Workers the send
+  is kept alive with the queue consumer's `waitUntil` (the `queue()` dispatcher now
+  forwards its `ExecutionContext`); on Docker the worker awaits it; a failed send never
+  fails the run.
+
 ### Security
 - Hardened production image: both base images are pinned by digest (`node:22-slim@sha256:…`, `gcr.io/distroless/nodejs22-debian13:nonroot@sha256:…`; Dependabot bumps tag and digest); the runtime stage is distroless (no shell, no package manager), runs as UID/GID `65532`, keeps application files root-owned, and starts with a read-only root filesystem. The shell entrypoint is replaced by `docker/scripts/entrypoint.mjs` and the `HEALTHCHECK` by `docker/scripts/healthcheck.mjs`, which now probes the worker health port for `LUMIBASE_PROCESS_ROLE=worker` instead of always `1989`. `docker/docker-compose.prod.yml` and `docker/docker-compose.gcp.yml` set `read_only: true`, a `/tmp` tmpfs, `cap_drop: [ALL]`, `no-new-privileges` and `init: true` (#734).
 - Release supply chain: `release.yml` builds the image and fails on any CRITICAL Trivy finding in the image or in `pnpm-lock.yaml` in a job that the GitHub Release — and through it every publish job (Docker image, Worker, Pages, npm) — depends on, so a failed gate stops the release as a whole rather than leaving one without its image; it then signs the pushed digest with keyless cosign (GitHub OIDC, no stored key), attests an SPDX SBOM, verifies both in the smoke job, and attaches image and dependency SBOMs to the GitHub Release. `docker.yml` builds once, locally, runs the same Trivy gate and a read-only, capability-free container health check on every PR and on `main`, and pushes that same image from `main` only after both pass. Trivy, Syft and cosign are installed by `scripts/install-image-tools.sh`, pinned by version and SHA-256 (#734).

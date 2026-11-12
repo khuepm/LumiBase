@@ -143,6 +143,11 @@ export class ReviewerService {
       // The veto window exists precisely to give HUMANS the last word.
       throw new ReviewerError('HUMAN_ONLY', 'Veto-window approvals require a human.', 403);
     }
+    if (approval.kind === 'question') {
+      // `askUser` (#710) exists to reach a person; an agent answering another
+      // agent's clarification would close the loop it was meant to open.
+      throw new ReviewerError('HUMAN_ONLY', 'Agent questions are answered by a human.', 403);
+    }
 
     // Capability: review:<domain> (Req 11.2).
     const toolName =
