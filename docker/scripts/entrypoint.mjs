@@ -4,10 +4,12 @@
  *
  *   1. Load `<NAME>_FILE` secrets.
  *   2. Fill in what a one-click platform deploy cannot (#741): the public
- *      origin for `CORS_ALLOWED_ORIGINS` and the standard base64 form of
- *      `ENCRYPTION_KEY`.
- *   3. In production, stop before touching the database if a required
- *      variable is missing.
+ *      origin for `CORS_ALLOWED_ORIGINS`. `ENCRYPTION_KEY` is never rewritten
+ *      — the CDC registry derives its key from the string itself.
+ *   3. In production, when the server is going to start, stop before touching
+ *      the database if a required variable is missing or `ENCRYPTION_KEY` is
+ *      one the server would reject. `MIGRATION_MODE=preflight|dry-run` never
+ *      starts the server, so it needs only what the migration step needs.
  *   4. Run the migration preflight and migrations with exponential backoff
  *      (`SKIP_MIGRATIONS`, `RUN_MIGRATION_PREFLIGHT`, `MIGRATION_MODE` keep
  *      their old meaning).
@@ -24,10 +26,12 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import {
   applyDefaultCorsOrigin,
+  corsOriginsHaveNoHost,
+  encryptionKeyProblem,
+  exitsAfterPreflight,
   healthPort,
   loadSecretFiles,
   missingProductionVars,
-  normalizeEncryptionKey,
   resolvePublicUrl,
 } from './entrypoint-lib.mjs';
 
@@ -51,20 +55,37 @@ try {
 }
 
 const publicUrl = resolvePublicUrl(env);
+const hostlessCors = corsOriginsHaveNoHost(env.CORS_ALLOWED_ORIGINS);
+if (hostlessCors) {
+  log(
+    `CORS_ALLOWED_ORIGINS='${env.CORS_ALLOWED_ORIGINS}' names no host ` +
+      '(a platform domain variable that was still empty?); ignoring it.',
+  );
+}
 const corsOrigin = applyDefaultCorsOrigin(env, publicUrl);
 if (corsOrigin) log(`CORS_ALLOWED_ORIGINS unset; using this deployment's origin ${corsOrigin}`);
-if (normalizeEncryptionKey(env)) {
-  log('ENCRYPTION_KEY rewritten to standard base64 (same key bytes)');
-}
 
-const missing = missingProductionVars(env);
-if (missing.length > 0) {
-  fail(
-    `Missing required production configuration: ${missing.join(', ')}. ` +
-      'Generate secrets with `openssl rand -base64 48` (JWT_SECRET) and ' +
-      '`openssl rand -base64 32` (ENCRYPTION_KEY); see ' +
-      'docs/en/deployment/one-click.md for the per-platform command.',
-  );
+// Preflight/dry-run exits after the migration check and never loads the
+// server, so the server's own configuration is not required for it — the same
+// contract `entrypoint.sh` had (`-e DATABASE_URL=… -e MIGRATION_MODE=preflight`).
+if (!exitsAfterPreflight(env)) {
+  const missing = missingProductionVars(env);
+  if (missing.length > 0) {
+    const corsHint =
+      missing.includes('CORS_ALLOWED_ORIGINS') && hostlessCors
+        ? ' Set CORS_ALLOWED_ORIGINS or LUMIBASE_PUBLIC_URL to this deployment\'s ' +
+          'https:// origin, or enable the platform\'s public domain.'
+        : '';
+    fail(
+      `Missing required production configuration: ${missing.join(', ')}. ` +
+        'Generate secrets with `openssl rand -base64 48` (JWT_SECRET) and ' +
+        '`openssl rand -base64 32` (ENCRYPTION_KEY); see ' +
+        'docs/en/deployment/one-click.md for the per-platform command.' +
+        corsHint,
+    );
+  }
+  const keyProblem = encryptionKeyProblem(env);
+  if (keyProblem) fail(keyProblem);
 }
 
 function runMigrate(command) {
@@ -89,7 +110,7 @@ async function migrate() {
       log('Running database migration preflight...');
       ok = await runMigrate('preflight');
       step = 'Migration preflight';
-      if (ok && (env.MIGRATION_MODE === 'preflight' || env.MIGRATION_MODE === 'dry-run')) {
+      if (ok && exitsAfterPreflight(env)) {
         log(`MIGRATION_MODE=${env.MIGRATION_MODE}; exiting after preflight without starting server.`);
         process.exit(0);
       }

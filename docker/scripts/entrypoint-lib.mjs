@@ -106,37 +106,79 @@ export function resolvePublicUrl(env) {
  * unset and the origin is known. The image serves the Studio from the same
  * origin as the API, so this is the only origin a one-click deploy needs, and
  * production refuses to start without the variable. An explicit value —
- * including one that lists other origins — is never touched.
+ * including one that lists other origins — is never touched; a value with no
+ * host at all (`https://`, see `corsOriginsHaveNoHost`) is removed first.
  * @returns {string | undefined} the origin applied, if any
  */
 export function applyDefaultCorsOrigin(env, publicUrl) {
+  if (corsOriginsHaveNoHost(env.CORS_ALLOWED_ORIGINS)) delete env.CORS_ALLOWED_ORIGINS;
   if (env.CORS_ALLOWED_ORIGINS?.trim() || !publicUrl) return undefined;
   env.CORS_ALLOWED_ORIGINS = publicUrl;
   return publicUrl;
 }
 
 /**
- * Accept an AES key that is valid key material but encoded with the URL-safe
- * base64 alphabet or without padding, and rewrite it to the standard form the
- * server checks for. The key bytes are identical, so data encrypted before and
- * after is unaffected. Anything that does not decode to 16, 24 or 32 bytes is
- * left untouched for the server's own validation to reject.
- * @returns {boolean} whether the value was rewritten
+ * Why the server would reject `ENCRYPTION_KEY`, or `undefined` when it would
+ * accept it (or is not in production, where the server does not check it).
+ *
+ * The same test as `isValidAesGcmKey` in `apps/cms/src/config/production.ts`:
+ * standard, canonically padded base64 of 16, 24 or 32 bytes — no stricter,
+ * so nothing that boots under `node dist/serve.cjs` is refused here. The
+ * value is only read, never rewritten: the CDC registry derives its AES key
+ * from the string itself (SHA-256 of its UTF-8 bytes,
+ * `apps/cms/src/modules/cdc/registry/encryption.ts`), so re-encoding the same
+ * key bytes would still change the key and break every connection string
+ * encrypted under the old one.
  */
-export function normalizeEncryptionKey(env, key = 'ENCRYPTION_KEY') {
-  const value = env[key]?.trim();
-  if (!value) return false;
-  if (!/^[A-Za-z0-9+/_-]+={0,2}$/.test(value)) return false;
-  const raw = Buffer.from(value.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
-  if (![16, 24, 32].includes(raw.byteLength)) return false;
-  const standard = raw.toString('base64');
-  // Re-encoding must reproduce the input up to alphabet and padding, or the
-  // value carried bits the decoder dropped and is not a clean key.
-  const comparable = (s) => s.replace(/-/g, '+').replace(/_/g, '/').replace(/=+$/, '');
-  if (comparable(standard) !== comparable(value)) return false;
-  if (standard === env[key]) return false;
-  env[key] = standard;
-  return true;
+export function encryptionKeyProblem(env) {
+  if (!isProduction(env)) return undefined;
+  const value = env.ENCRYPTION_KEY;
+  if (!value) return undefined; // reported as missing by missingProductionVars
+  const normalized = value.trim();
+  if (/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
+    const raw = Buffer.from(normalized, 'base64');
+    if ([16, 24, 32].includes(raw.byteLength) && raw.toString('base64') === normalized) {
+      return undefined;
+    }
+  }
+  return (
+    'ENCRYPTION_KEY must be a base64-encoded 128, 192, or 256-bit AES key ' +
+    '(standard base64 with padding, e.g. the output of `openssl rand -base64 32`). ' +
+    'The entrypoint does not convert it: if this deployment already encrypted ' +
+    'data under the current value, keep that value and fix how it is supplied ' +
+    'rather than generating a new key.'
+  );
+}
+
+/**
+ * True when `CORS_ALLOWED_ORIGINS` is set but every entry is empty or an
+ * origin without a host — e.g. `https://`, which is what a platform template
+ * such as Railway's `https://${{RAILWAY_PUBLIC_DOMAIN}}` expands to before a
+ * public domain exists. Such a value carries no usable origin, so it is
+ * treated as unset: the deployment's own origin may replace it, and if none is
+ * known the entrypoint stops with a message instead of starting a server no
+ * browser can call.
+ */
+export function corsOriginsHaveNoHost(value) {
+  if (!value?.trim()) return false;
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .every((entry) => entry === '' || /^[a-z][a-z0-9+.-]*:\/*$/i.test(entry));
+}
+
+/**
+ * `MIGRATION_MODE=preflight|dry-run` runs the migration preflight and exits
+ * without loading the server — unless preflight is switched off or migrations
+ * are skipped, in which case the mode has nothing to do and the server starts
+ * as usual (the `entrypoint.sh` behaviour).
+ */
+export function exitsAfterPreflight(env) {
+  return (
+    env.SKIP_MIGRATIONS !== 'true' &&
+    env.RUN_MIGRATION_PREFLIGHT !== 'false' &&
+    (env.MIGRATION_MODE === 'preflight' || env.MIGRATION_MODE === 'dry-run')
+  );
 }
 
 /** Required production variables that are still empty. */
