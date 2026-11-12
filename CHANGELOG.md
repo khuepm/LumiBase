@@ -10,6 +10,10 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Added
+- Collection export: `GET /api/v1/items/:collection/export` streams CSV or JSON with field selection, locale columns for translatable fields (`title.vi`), relation modes (`id`, `slug`, `embed`), the list filter/sort syntax and the caller's read permission. CSV neutralises spreadsheet formulas reversibly. Each export is audited as `items_exported`. Export → import → export round-trips losslessly, translations included (#727, epic #673).
+- Studio: an **Export** button and dialog on the collection list (format, fields, locales, relations, current filters).
+- SDK: `client.items(name).export(params)` returns the streaming `Response`; `client.rawFetch(path, init)` is the streaming counterpart of `rawRequest`.
+- Extensions: `items.export.before` hook to transform or drop fields from each exported row.
 
 - **Agent harness: `askUser` clarification tool (#710).** An agent that cannot continue
   without a decision it may not make asks a human instead of guessing. The run parks in
