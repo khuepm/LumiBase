@@ -83,7 +83,7 @@ Output is **deterministic** — no timestamp, host, or site id in the header —
 
 ## `lumibase skills`
 
-Site Skills are Markdown playbooks (front matter + body) a site stores for its AI agents. Keep them in git as `skills/*.skill.md` and push from CI — the server parses and validates the documents; the CLI only moves files. Needs an admin token (writes need the `skills:write` capability).
+Site Skills are Markdown playbooks (front matter + body) a site stores for its AI agents. Keep them in git as `skills/*.skill.md` and push from CI — the server parses and validates the documents; the CLI only moves files. Needs a token with control-plane admin access to the site — every skill read and write does.
 
 ```bash
 lumibase skills list [--status draft|active|archived] [--json]
@@ -109,6 +109,7 @@ Write in active voice…
 
 - `push` sends every `*.md` directly inside `--dir` (sorted, non-recursive, `README.md` skipped) and prints one line per file. It exits non-zero if the server rejects any document.
 - New skills arrive as **drafts** unless `--activate` is passed; existing skills keep their status. Review and activate drafts in Studio (Mission Control → Skills).
+- `push` is the deploy path: it also updates skills that are already **active**, and the change is live at once. `install` never changes an active skill — that file is reported as `ACTIVE_SKILL_CHANGE` and left for review.
 - `push --check` is a dry run that also exits non-zero when anything would be created or updated — a CI drift gate. It only compares the files you have: a skill that exists on the site but not in the directory is not reported.
 
   ```yaml

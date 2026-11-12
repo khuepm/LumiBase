@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 35
-lastUpdated: 2026-11-11T01:20:48.461Z
+version: 36
+lastUpdated: 2026-11-12T18:43:32.664Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7626206e87728737
+sourceHash: 4eb5bdde77c88e7f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T01:20:48.461Z
-codeVerifiedHash: 7626206e87728737
+codeVerified: 2026-11-12T18:43:32.664Z
+codeVerifiedHash: 4eb5bdde77c88e7f
 codeVerifiedClaims: 484
 ---
 
@@ -936,7 +936,7 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `POST` | `/api/v1/agent/approvals/:id/reopen` | Đưa một approval đang ở `failed` về `pending` để quyết định lại. Body `{ reason }` là **bắt buộc** và được ghi audit; cần `approvals:decide`. Một skill đã chạm tới service rồi mới lỗi thì bị giữ lại chứ không tự mời lại, vì thử lại có thể lặp một phép ghi không idempotent — đây là đường về có chủ ý |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Quyết định của Agent với tư cách người đánh giá (cần `review:<domain>`; cấm tự đánh giá) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Các phiên bản, bản nháp, `/compile` (NL→đánh giá), `:id/dry-run`, `:id/activate` |
-| `*` | `/api/v1/agent/skills[...]` | Site Skills — playbook được chèn vào các agent run khớp: CRUD theo id hoặc slug, `:id/activate\|archive\|draft`, `:id/versions`, `:id/versions/:version/restore`, `/import`, `/export`, `/match`. Thao tác ghi cần `skills:write` hoặc control-plane admin; `riskClass: high` chỉ dành cho admin (`403 RISK_REQUIRES_ADMIN`). Xem [features/site-skills.md](../features/site-skills.md) |
+| `*` | `/api/v1/agent/skills[...]` | Site Skills — playbook được chèn vào các agent run khớp: CRUD theo id hoặc slug, `:id/activate\|archive\|draft`, `:id/versions`, `:id/versions/:version/restore`, `/import`, `/export`, `/match`. Mọi thao tác ghi cần control-plane admin (nếu không thì `403 FORBIDDEN`; không có tác giả được uỷ quyền và `riskClass` chỉ là nhãn). `PATCH` nhận `expectedVersion` và các thao tác status nhận `version` (`409 VERSION_MISMATCH`); `DELETE` từ chối skill đã từng active (`409 SKILL_HAS_BEEN_ACTIVE`); `/import` từ chối thay đổi nội dung của skill active trừ khi `updateActive: true` (`ACTIVE_SKILL_CHANGE`). Xem [features/site-skills.md](../features/site-skills.md) |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Dừng ở 4 phạm vi (`run/intent/role/site`); việc đóng đóng băng cần `agents:freeze` |
 | `*` | `/api/v1/agent/intents[...]` | CRUD ý định nội dung, `:id/pause|resume|scan|drifts`, `/compile` |
 | `POST` | `/api/v1/intents/:id/scan` | Một chu kỳ reconcile: `{ scan, reconcile, dispatch }`. `dispatch` đẩy mỗi reconciler goal tiến một bước (draft → promote → verify) và báo `dispatched/completed/skipped/blocked` cùng `queueUnavailable` trên runtime không có queue adapter. Xem [vòng sửa của reconciler](../features/reconciler-repair-loop.md). Khi intent có rule `semantic`, `scan.semantic` báo pass ngữ nghĩa có budget riêng (`status` `ran`/`off`/`unavailable`, các số đếm, `completed`, `cursor`), và `scan.semanticOrphansResolved` đếm các hàng của rule ngữ nghĩa bị gỡ mà scan đã resolve. Cập nhật intent làm một rule ngữ nghĩa đã lưu đổi profile, câu hỏi, context hoặc fields mà không tăng `version` trả về `422 SEMANTIC_RULE_VERSION_REQUIRED`; xem [drift ngữ nghĩa](../features/jev-semantic-drift.md) |

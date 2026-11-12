@@ -1,10 +1,10 @@
 ---
-version: 36
-lastUpdated: 2026-11-11T01:20:48.461Z
+version: 37
+lastUpdated: 2026-11-12T18:43:32.664Z
 sourceLang: en
-contentHash: 7626206e87728737
-codeVerified: 2026-11-11T01:20:48.461Z
-codeVerifiedHash: 7626206e87728737
+contentHash: 4eb5bdde77c88e7f
+codeVerified: 2026-11-12T18:43:32.664Z
+codeVerifiedHash: 4eb5bdde77c88e7f
 codeVerifiedClaims: 484
 ---
 
@@ -1045,7 +1045,7 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `POST` | `/api/v1/agent/approvals/:id/reopen` | Return a `failed` approval to `pending` so it can be decided again. Body `{ reason }` is **required** and audited; needs `approvals:decide`. A skill that reached a service and then failed is parked rather than re-offered, because retrying could repeat a non-idempotent write — this is the deliberate way back |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Agent-as-reviewer decision (needs `review:<domain>`; self-review forbidden) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Versions, draft, `/compile` (NL→evaluators), `:id/dry-run`, `:id/activate` |
-| `*` | `/api/v1/agent/skills[...]` | Site Skills — playbooks injected into matching agent runs: CRUD by id or slug, `:id/activate\|archive\|draft`, `:id/versions`, `:id/versions/:version/restore`, `/import`, `/export`, `/match`. Writes need `skills:write` or control-plane admin; `riskClass: high` is admin-only (`403 RISK_REQUIRES_ADMIN`). See [features/site-skills.md](../features/site-skills.md) |
+| `*` | `/api/v1/agent/skills[...]` | Site Skills — playbooks injected into matching agent runs: CRUD by id or slug, `:id/activate\|archive\|draft`, `:id/versions`, `:id/versions/:version/restore`, `/import`, `/export`, `/match`. Every write needs a control-plane admin (`403 FORBIDDEN` otherwise; there is no delegated author and `riskClass` is a label only). `PATCH` takes `expectedVersion` and status actions take `version` (`409 VERSION_MISMATCH`); `DELETE` refuses a skill that was ever active (`409 SKILL_HAS_BEEN_ACTIVE`); `/import` refuses content changes to active skills unless `updateActive: true` (`ACTIVE_SKILL_CHANGE`). See [features/site-skills.md](../features/site-skills.md) |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze` |
 | `*` | `/api/v1/agent/intents[...]` | Content intents CRUD, `:id/pause|resume|scan|drifts`, `/compile` |
 | `POST` | `/api/v1/intents/:id/scan` | One reconciliation cycle: `{ scan, reconcile, dispatch }`. `dispatch` advances each reconciler goal one step (draft → promote → verify) and reports `dispatched/completed/skipped/blocked` plus `queueUnavailable` on runtimes without a queue adapter. See [reconciler repair loop](../features/reconciler-repair-loop.md). When the intent has `semantic` rules, `scan.semantic` reports the separately budgeted semantic pass (`status` `ran`/`off`/`unavailable`, counts, `completed`, `cursor`), and `scan.semanticOrphansResolved` counts rows of removed semantic rules it resolved. Updating an intent so a stored semantic rule changes profile, question, context or fields without a `version` bump returns `422 SEMANTIC_RULE_VERSION_REQUIRED`; see [semantic drift](../features/jev-semantic-drift.md) |

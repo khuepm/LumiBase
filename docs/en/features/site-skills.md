@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-11-11T01:20:48.242Z
+version: 2
+lastUpdated: 2026-11-12T18:43:32.411Z
 sourceLang: en
-contentHash: ea10e3ae2fb9950c
-codeVerified: 2026-11-11T01:20:48.242Z
-codeVerifiedHash: ea10e3ae2fb9950c
+contentHash: ef3117c0b3b07b7c
+codeVerified: 2026-11-12T18:43:32.411Z
+codeVerifiedHash: ef3117c0b3b07b7c
 codeVerifiedClaims: 24
 ---
 
@@ -60,7 +60,7 @@ Never use "utilize"; say "use".
 | `slug` | Identity, unique per site. Lowercase letters, digits, single hyphens; at most 64 characters. Cannot be changed. `import`, `export` and `match` are reserved. | file name |
 | `name` | Display name, at most 120 characters. | first `# heading` |
 | `description` | One line, at most 500 characters. Shown in lists and as the MCP prompt description. | empty |
-| `riskClass` | `low`, `medium` or `high`. `high` is admin-only. | `low` |
+| `riskClass` | `low`, `medium` or `high`. A label for review priority, shown in Studio. It does not change who may edit or activate the skill. | `low` |
 | `priority` | `-100` to `100`. Higher is injected first when the budget is tight. | `0` |
 | `surfaces` | `copilot`, `generation`, `mcp`. Empty means all. | all |
 | `tools` | Harness tool names the skill is limited to. Empty means any. | any |
@@ -71,7 +71,11 @@ Never use "utilize"; say "use".
 The front matter is a deliberately small YAML subset: `key: value`,
 `key: [a, b]`, and `key:` followed by `- item` lines. Unknown keys are an
 error, not ignored — a typo in `triggers` must not silently turn a narrow skill
-into one that applies everywhere. The body is 1 to 20,000 characters.
+into one that applies everywhere. The body is 1 to 12,000 characters — the
+same as the per-run [budget](#budget), so any single skill can always be
+injected. Leading blank lines and trailing whitespace are dropped on every
+path (Studio, JSON API, import), so a body that differs only there is the same
+content and hashes the same.
 
 ## Where skills are injected
 
@@ -80,7 +84,7 @@ the requests it sent before this feature existed.
 
 | Surface | Where | Matching context |
 |---|---|---|
-| `copilot` | `POST /api/v1/ai/chat`, synchronous and `Prefer: respond-async` | the user's message; the caller's capabilities |
+| `copilot` | `POST /api/v1/ai/chat`, synchronous and `Prefer: respond-async` | the newest 3 user turns of the conversation window sent to the model, plus the current message; the caller's capabilities |
 | `generation` | harness tools that call a model: `aiContentAssist`, `aiSuggestField`, `repairTranslation`, `generateAppSpec`, `generateSeedData` | the tool name, its collection, its instruction |
 | `mcp` | `prompts/list` and `prompts/get` on `POST /api/v1/mcp` | the caller's capabilities (the client picks, so triggers do not filter) |
 
@@ -127,29 +131,58 @@ change note. A write that does not change the content (same hash) creates no
 version. Restoring version *N* writes its content as a **new** version, so the
 trail only grows.
 
+The author is recorded by the server from the authenticated principal and is
+the authoritative "who". `source` and `sourceRef` are labels the client
+declares (the CLI sends `cli` or `package`, Studio sends `studio`); they are
+useful context, not proof of origin.
+
+Each write — the skill row, its version row and its activity entry — is one
+database transaction: if any statement fails, none of them is kept, and the
+next write continues from the last committed version.
+
 Status (`draft` → `active` → `archived`) is not part of the version: it says
 whether the current version is live. Activation, archival, edits and deletion
-are written to the activity log as `site_skill.*` entries.
+are written to the activity log as `site_skill.*` entries, each with the
+skill's id (`skillId`) and slug.
+
+A skill that has ever been activated cannot be deleted (`409
+SKILL_HAS_BEEN_ACTIVE`): runs may be stamped with its versions, and deleting
+the skill would delete that trail. Archive it instead. A draft that was never
+active can be deleted, together with its versions.
 
 > Editing an `active` skill changes agent behaviour immediately. To stage a
 > change, return the skill to `draft` first, or push it from a branch and
 > activate on merge.
 
+### Concurrent edits
+
+`PATCH` takes an optional `expectedVersion` and the status actions
+(`activate`, `archive`, `draft`) take an optional `version`. When given and the
+skill has moved on, the write is refused with `409 VERSION_MISMATCH` and the
+error carries `currentVersion`. Studio sends both: the version the editor
+loaded, and the version on screen when you click **Activate** — so you never
+activate content you did not see.
+
 ## Governance
 
 - The whole surface lives under `/api/v1/agent`, which the control-plane guard
-  limits to admin principals.
-- Writes additionally need the `skills:write` capability or control-plane
-  admin. Reads do not.
-- `riskClass: high` is admin-only in every direction: creating, editing,
-  downgrading, activating, archiving and deleting. Use it for playbooks that
-  steer consequential behaviour (pricing copy, legal wording, anything an
-  autopilot-level agent will act on unreviewed).
+  limits to admin principals. Reading a skill needs the same: the MCP
+  `prompts/*` methods apply that rule themselves (see [MCP](#mcp)).
+- **Every write needs a control-plane admin** — create, edit, restore, import,
+  activate, archive and delete. The route checks it again after the guard, so
+  it holds on any mount.
+- Delegated (non-admin) skill authors are not supported yet: there is no
+  capability that lets a non-admin write skills. `riskClass` does not change
+  who may write either; it is a label that helps reviewers decide what to
+  look at first. Use `high` for playbooks that steer consequential behaviour
+  (pricing copy, legal wording, anything an autopilot-level agent will act on
+  unreviewed).
 - New skills are always created as `draft`. Imported skills stay `draft`
-  unless the import says `activate`.
+  unless the import says `activate`. An import never changes the content of an
+  `active` skill unless it says `updateActive` (see [Skills as code](#skills-as-code)).
 - Skills are trusted instructions because of who may write them. Content,
-  retrieved documents and chat messages can never become a skill without that
-  capability, and they keep entering prompts as untrusted data.
+  retrieved documents and chat messages can never become a skill, and they
+  keep entering prompts as untrusted data.
 
 ## API
 
@@ -160,18 +193,19 @@ All routes are under `/api/v1/agent/skills`. `:id` accepts the id or the slug.
 | `GET` | `/` | List skills. Optional `?status=draft\|active\|archived`. |
 | `POST` | `/` | Create a draft. Body: the front matter fields plus `body`; optional `source`, `sourceRef`, `changeNote`. `201`; `409 CONFLICT` on a duplicate slug. |
 | `GET` | `/:id` | One skill, plus `document` (the Markdown form). |
-| `PATCH` | `/:id` | Partial update; omitted fields are kept. `meta.changed` is `false` when nothing changed. `slug` cannot change. |
-| `DELETE` | `/:id` | Delete the skill and its version trail. Audited. |
-| `POST` | `/:id/activate` · `/:id/archive` · `/:id/draft` | Change status. |
+| `PATCH` | `/:id` | Partial update; omitted fields are kept. Optional `expectedVersion` (`409 VERSION_MISMATCH` when the skill moved on). `meta.changed` is `false` when nothing changed. `slug` cannot change. |
+| `DELETE` | `/:id` | Delete a skill that was never active, with its version trail. Audited. `409 SKILL_HAS_BEEN_ACTIVE` for a skill that has ever been activated — archive it instead. |
+| `POST` | `/:id/activate` · `/:id/archive` · `/:id/draft` | Change status. Optional body `{ version }` (`409 VERSION_MISMATCH` when the skill moved on). |
 | `GET` | `/:id/versions` | Version trail, newest first. |
 | `POST` | `/:id/versions/:version/restore` | Write an old version's content as a new version. |
-| `POST` | `/import` | Upsert Markdown documents by slug. Body `{ documents: [{ path?, content }], activate?, dryRun?, source?, sourceRef? }`, 1–100 documents. Returns one result per document (`created`, `updated`, `unchanged`, `error`) and counts in `meta`. One bad document does not abort the rest. |
+| `POST` | `/import` | Upsert Markdown documents by slug. Body `{ documents: [{ path?, content }], activate?, dryRun?, updateActive?, source?, sourceRef? }`, 1–100 documents. Returns one result per document (`created`, `updated`, `unchanged`, `error`) and counts in `meta`. One bad document does not abort the rest. A content change to an `active` skill is that document's error (`ACTIVE_SKILL_CHANGE`) unless `updateActive` is `true`. |
 | `GET` | `/export` | Every skill as `{ slug, filename, status, version, hash, content }`. Re-importing an export is a no-op. |
 | `POST` | `/match` | Preview. Body `{ surface, tool?, collection?, text? }`; returns `{ skills, skipped, prompt }` evaluated with the caller's capabilities. |
 
-Errors use the standard envelope: `VALIDATION` (400), `INVALID_DOCUMENT`
-(per document, in import results), `FORBIDDEN` and `RISK_REQUIRES_ADMIN` (403),
-`NOT_FOUND` (404), `CONFLICT` (409).
+Errors use the standard envelope: `VALIDATION` (400), `INVALID_DOCUMENT` and
+`ACTIVE_SKILL_CHANGE` (per document, in import results), `FORBIDDEN` (403, not
+a control-plane admin), `NOT_FOUND` (404), `CONFLICT`, `VERSION_MISMATCH` and
+`SKILL_HAS_BEEN_ACTIVE` (409).
 
 ## Skills as code
 
@@ -186,12 +220,20 @@ lumibase skills install @acme/lumibase-skills   # import a package's skills as d
 ```
 
 `push` and `install` are idempotent: a document whose hash matches the stored
-version is reported `unchanged` and writes nothing. `install` reads skills from
-a locally installed package (`package.json` → `lumibase.skills`, default
-`skills/`) or from a path; it downloads nothing. Installed skills arrive as
-drafts for a human to review in Studio. The token needs admin access to the
-site and is read from `LUMIBASE_TOKEN`, never from the config file. See
-[CLI](../cli/index.md).
+version is reported `unchanged` and writes nothing.
+
+`push` is the deploy path — the directory is the source of truth — so it sends
+`updateActive: true` and its changes to `active` skills go live at once.
+
+`install` reads skills from a locally installed package (`package.json` →
+`lumibase.skills`, default `skills/`) or from a path; it downloads nothing.
+New skills arrive as drafts for a human to review in Studio (unless
+`--activate`), and `install` never changes a skill that is already active: such
+a document is reported as `ACTIVE_SKILL_CHANGE` and the live skill is left as
+it was.
+
+The token needs control-plane admin access to the site and is read from
+`LUMIBASE_TOKEN`, never from the config file. See [CLI](../cli/index.md).
 
 ## Studio
 
@@ -199,13 +241,21 @@ site and is read from `LUMIBASE_TOKEN`, never from the config file. See
 scope; edits the front matter and the Markdown body; activates, archives and
 deletes; shows the version trail with restore; and has a **Test match** panel
 that calls `/match` so you can see which skills a sample request would receive.
+Saving and activating send the version you are looking at, so someone else's
+newer edit is reported instead of overwritten. **Delete** is offered only for
+skills that were never active; for the others, archive.
 
 ## MCP
 
 With the `contentOs.mcp` flag on, the MCP endpoint advertises the `prompts`
 capability. `prompts/list` returns the active skills offered to the caller
 (`name` is the slug); `prompts/get` returns the body as a single user message.
-A prompt the caller may not see and a prompt that does not exist answer
+
+Prompts are served only to callers that could read skills over REST: a
+principal that resolves to a control-plane admin for the site. For anyone else
+— a non-admin member, a site API key — `prompts/list` is empty. On top of that,
+each skill's `surfaces` and `requiredCapabilities` still filter what an admin
+sees. A prompt the caller may not see and a prompt that does not exist answer
 identically. Organization-plane calls (`org:*`) do not offer prompts.
 
 ## Multi-tenancy

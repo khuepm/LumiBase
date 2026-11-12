@@ -1,11 +1,11 @@
 ---
 title: LumiBase CLI
-version: 8
-lastUpdated: 2026-11-11T01:20:50.124Z
+version: 9
+lastUpdated: 2026-11-12T18:43:33.929Z
 sourceLang: en
-contentHash: ace01084052d0cc0
-codeVerified: 2026-11-11T01:20:50.124Z
-codeVerifiedHash: ace01084052d0cc0
+contentHash: 111bf5c2e41878da
+codeVerified: 2026-11-12T18:43:33.929Z
+codeVerifiedHash: 111bf5c2e41878da
 codeVerifiedClaims: 20
 ---
 
@@ -137,8 +137,8 @@ Syncs [Site Skills](../features/site-skills.md) — Markdown playbooks for the s
 | --- | --- |
 | `lumibase skills list` | Table of the site's skills. `--status <s>` filters; `--json` prints the raw rows. |
 | `lumibase skills pull` | Writes every skill to `<dir>/<slug>.skill.md`. `--dir` (default `skills`), `--status`. |
-| `lumibase skills push` | Creates or updates skills from the `*.md` files in `<dir>` (`README.md` is skipped). `--activate`, `--dry-run`, `--check`. |
-| `lumibase skills install <src>` | Pushes skills from a directory, a single `.md` file, or an npm package that is already installed locally. `--activate`, `--dry-run`. |
+| `lumibase skills push` | Creates or updates skills from the `*.md` files in `<dir>` (`README.md` is skipped), including skills that are already active. `--activate`, `--dry-run`, `--check`. |
+| `lumibase skills install <src>` | Adds skills from a directory, a single `.md` file, or an npm package that is already installed locally. Never changes a skill that is already active. `--activate`, `--dry-run`. |
 
 ```bash
 lumibase skills pull
@@ -147,12 +147,13 @@ lumibase skills push --check      # CI: exit 1 if the site differs from the dire
 lumibase skills install @acme/lumibase-skills
 ```
 
-- **New skills land as drafts.** Pass `--activate` to activate them; otherwise review and activate in Studio (Mission Control → Skills). Existing skills keep their status, so pushing an edit to an active skill changes agent behaviour immediately.
+- **New skills land as drafts.** Pass `--activate` to activate them; otherwise review and activate in Studio (Mission Control → Skills). Existing skills keep their status.
+- **`push` deploys; `install` does not touch live skills.** `push` treats the directory as the source of truth and sends `updateActive: true`, so pushing an edit to an active skill changes agent behaviour immediately. `install` does not: a file that would change an active skill is reported as `ACTIVE_SKILL_CHANGE` and the live skill is left as it was — review it in Studio, or deploy it with `push`.
 - **Idempotent.** A file whose content matches the stored version is reported `unchanged` and writes nothing.
 - **Exit codes.** `push` and `install` exit `1` when any document is rejected; the other documents are still applied. `--check` also exits `1` when anything would be created or updated.
-- **`install` downloads nothing.** A path that exists wins; otherwise the name is resolved under `node_modules`, walking up from the working directory. Inside a package the skills directory is `package.json` → `lumibase.skills`, or `skills/` when that key is absent. The package name and version are recorded as the version's source.
+- **`install` downloads nothing.** A path that exists wins; otherwise the name is resolved under `node_modules`, walking up from the working directory. Inside a package the skills directory is `package.json` → `lumibase.skills`, or `skills/` when that key is absent. The package name and version are recorded as the version's source — a label the CLI declares; the server-recorded author is the authoritative "who".
 - **One direction.** `push` never deletes: a skill that exists on the site but not in the directory is left alone, and `--check` does not report it.
-- **Token.** The endpoints are under `/api/v1/agent`, so the token needs admin access to the site (or the `skills:write` capability on top of it).
+- **Token.** The endpoints are under `/api/v1/agent`, and every skill read and write needs a control-plane admin, so the token needs admin access to the site. Non-admin skill authors are not supported.
 
 ## Related
 

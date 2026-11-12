@@ -1017,10 +1017,19 @@ components:
         tools: { type: array, items: { type: string } }
         collections: { type: array, items: { type: string } }
         requiredCapabilities: { type: array, items: { type: string } }
-        body: { type: string, maxLength: 20000 }
-        source: { type: string, enum: [studio, api, cli, package] }
-        sourceRef: { type: string, nullable: true }
+        body:
+          type: string
+          maxLength: 12000
+          description: >-
+            Markdown. Leading blank lines and trailing whitespace are removed before validation. At most
+            12,000 characters, the per-run injection budget, so any single skill can be injected.
+        source: { type: string, enum: [studio, api, cli, package], description: Client-declared label; the server-recorded author is authoritative }
+        sourceRef: { type: string, nullable: true, description: Client-declared label }
         changeNote: { type: string, nullable: true }
+    SiteSkillStatusRequest:
+      type: object
+      properties:
+        version: { type: integer, minimum: 1, description: Apply only if the skill is still at this version }
     AgentMemoryContext:
       type: object
       properties:
@@ -4705,8 +4714,8 @@ paths:
 
   # ---------------------------------------------------------------------------
   # Site Skills (#712) — playbooks injected into matching agent runs.
-  # Control plane (admin principals); writes also need skills:write or
-  # control-plane admin, and riskClass high is admin-only.
+  # Control plane (admin principals). Every write needs a control-plane admin;
+  # there is no delegated author, and riskClass is a review label only.
   # ---------------------------------------------------------------------------
   /agent/skills:
     get:
@@ -4726,13 +4735,17 @@ paths:
             schema: { $ref: '#/components/schemas/SiteSkillInput' }
       responses:
         '201': { description: Created skill at version 1 }
-        '403': { description: FORBIDDEN (needs skills:write) or RISK_REQUIRES_ADMIN }
+        '403': { description: FORBIDDEN, the caller is not a control-plane admin }
         '409': { description: CONFLICT, slug already exists }
 
   /agent/skills/import:
     post:
       summary: Upsert Markdown skill documents by slug
-      description: One result per document (created, updated, unchanged, error); a bad document does not abort the rest. New skills are drafts unless activate is set.
+      description: >-
+        One result per document (created, updated, unchanged, error); a bad document does not abort the rest.
+        New skills are drafts unless activate is set. A content change to an active skill is that document's
+        error (code ACTIVE_SKILL_CHANGE) unless updateActive is true. source and sourceRef are client-declared
+        labels; the server-recorded author is authoritative.
       parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
       requestBody:
         required: true
@@ -4754,10 +4767,12 @@ paths:
                       content: { type: string }
                 activate: { type: boolean }
                 dryRun: { type: boolean }
+                updateActive: { type: boolean, description: Allow content changes to skills that are already active }
                 source: { type: string, enum: [studio, api, cli, package] }
                 sourceRef: { type: string, nullable: true }
       responses:
         '200': { description: Per-document results plus counts in meta }
+        '403': { description: FORBIDDEN, the caller is not a control-plane admin }
 
   /agent/skills/export:
     get:
@@ -4804,16 +4819,26 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/SiteSkillInput' }
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/SiteSkillInput' }
+                - type: object
+                  properties:
+                    expectedVersion: { type: integer, minimum: 1, description: Apply only if the skill is still at this version }
       responses:
         '200': { description: Skill; meta.changed is false when the content hash is unchanged }
+        '403': { description: FORBIDDEN, the caller is not a control-plane admin }
+        '409': { description: 'VERSION_MISMATCH, the skill is no longer at that version; the error carries currentVersion' }
     delete:
-      summary: Delete a site skill and its version trail
+      summary: Delete a never-activated site skill and its version trail
+      description: A skill that has ever been activated is refused with 409 SKILL_HAS_BEEN_ACTIVE; archive it instead.
       parameters:
         - $ref: '#/components/parameters/SiteHeader'
         - { name: id, in: path, required: true, description: Skill id or slug, schema: { type: string } }
       responses:
         '200': { description: Deleted id and slug }
+        '403': { description: FORBIDDEN, the caller is not a control-plane admin }
+        '409': { description: SKILL_HAS_BEEN_ACTIVE, the skill has been active; archive it instead }
 
   /agent/skills/{id}/activate:
     post:
@@ -4821,8 +4846,15 @@ paths:
       parameters:
         - $ref: '#/components/parameters/SiteHeader'
         - { name: id, in: path, required: true, description: Skill id or slug, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SiteSkillStatusRequest' }
       responses:
         '200': { description: Active skill }
+        '403': { description: FORBIDDEN, the caller is not a control-plane admin }
+        '409': { description: 'VERSION_MISMATCH, the skill is no longer at that version; the error carries currentVersion' }
 
   /agent/skills/{id}/archive:
     post:
@@ -4830,8 +4862,15 @@ paths:
       parameters:
         - $ref: '#/components/parameters/SiteHeader'
         - { name: id, in: path, required: true, description: Skill id or slug, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SiteSkillStatusRequest' }
       responses:
         '200': { description: Archived skill }
+        '403': { description: FORBIDDEN, the caller is not a control-plane admin }
+        '409': { description: 'VERSION_MISMATCH, the skill is no longer at that version; the error carries currentVersion' }
 
   /agent/skills/{id}/draft:
     post:
@@ -4839,8 +4878,15 @@ paths:
       parameters:
         - $ref: '#/components/parameters/SiteHeader'
         - { name: id, in: path, required: true, description: Skill id or slug, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SiteSkillStatusRequest' }
       responses:
         '200': { description: Draft skill }
+        '403': { description: FORBIDDEN, the caller is not a control-plane admin }
+        '409': { description: 'VERSION_MISMATCH, the skill is no longer at that version; the error carries currentVersion' }
 
   /agent/skills/{id}/versions:
     get:

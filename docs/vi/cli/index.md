@@ -1,14 +1,14 @@
 ---
 title: LumiBase CLI
-version: 8
-lastUpdated: 2026-11-11T01:20:50.124Z
+version: 9
+lastUpdated: 2026-11-12T18:43:33.929Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ace01084052d0cc0
+sourceHash: 111bf5c2e41878da
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T01:20:50.124Z
-codeVerifiedHash: ace01084052d0cc0
+codeVerified: 2026-11-12T18:43:33.929Z
+codeVerifiedHash: 111bf5c2e41878da
 codeVerifiedClaims: 20
 ---
 
@@ -140,8 +140,8 @@ Bước health gọi endpoint `/health` không cần xác thực (`apps/cms/src/
 | --- | --- |
 | `lumibase skills list` | Bảng các skill của site. `--status <s>` để lọc; `--json` in các dòng thô. |
 | `lumibase skills pull` | Ghi mọi skill ra `<dir>/<slug>.skill.md`. `--dir` (mặc định `skills`), `--status`. |
-| `lumibase skills push` | Tạo hoặc cập nhật skill từ các file `*.md` trong `<dir>` (bỏ qua `README.md`). `--activate`, `--dry-run`, `--check`. |
-| `lumibase skills install <src>` | Push skill từ một thư mục, một file `.md` đơn lẻ, hoặc một package npm đã được cài cục bộ. `--activate`, `--dry-run`. |
+| `lumibase skills push` | Tạo hoặc cập nhật skill từ các file `*.md` trong `<dir>` (bỏ qua `README.md`), kể cả skill đang active. `--activate`, `--dry-run`, `--check`. |
+| `lumibase skills install <src>` | Thêm skill từ một thư mục, một file `.md` đơn lẻ, hoặc một package npm đã được cài cục bộ. Không bao giờ đổi một skill đang active. `--activate`, `--dry-run`. |
 
 ```bash
 lumibase skills pull
@@ -150,12 +150,13 @@ lumibase skills push --check      # CI: exit 1 if the site differs from the dire
 lumibase skills install @acme/lumibase-skills
 ```
 
-- **Skill mới tới ở dạng draft.** Truyền `--activate` để kích hoạt; nếu không thì rà soát và kích hoạt trong Studio (Mission Control → Skills). Skill đã có giữ nguyên status, nên push một chỉnh sửa lên skill active sẽ đổi hành vi agent ngay lập tức.
+- **Skill mới tới ở dạng draft.** Truyền `--activate` để kích hoạt; nếu không thì rà soát và kích hoạt trong Studio (Mission Control → Skills). Skill đã có giữ nguyên status.
+- **`push` để deploy; `install` không chạm vào skill đang chạy.** `push` coi thư mục là nguồn sự thật và gửi `updateActive: true`, nên push một chỉnh sửa lên skill active sẽ đổi hành vi agent ngay lập tức. `install` thì không: một file sẽ làm đổi skill active được báo `ACTIVE_SKILL_CHANGE` và skill đang chạy được giữ nguyên — hãy rà soát nó trong Studio, hoặc deploy bằng `push`.
 - **Idempotent.** File có nội dung khớp với phiên bản đang lưu được báo `unchanged` và không ghi gì.
 - **Mã thoát.** `push` và `install` thoát `1` khi có tài liệu bị từ chối; các tài liệu khác vẫn được áp dụng. `--check` cũng thoát `1` khi có thứ gì sẽ được tạo hoặc cập nhật.
-- **`install` không tải gì về.** Đường dẫn tồn tại được ưu tiên; nếu không, tên được resolve dưới `node_modules`, đi ngược lên từ thư mục làm việc. Bên trong một package, thư mục skill là `package.json` → `lumibase.skills`, hoặc `skills/` khi key đó vắng mặt. Tên và phiên bản package được ghi làm nguồn của phiên bản.
+- **`install` không tải gì về.** Đường dẫn tồn tại được ưu tiên; nếu không, tên được resolve dưới `node_modules`, đi ngược lên từ thư mục làm việc. Bên trong một package, thư mục skill là `package.json` → `lumibase.skills`, hoặc `skills/` khi key đó vắng mặt. Tên và phiên bản package được ghi làm nguồn của phiên bản — một nhãn do CLI tự khai; tác giả do server ghi lại mới là câu trả lời có thẩm quyền cho "ai".
 - **Một chiều.** `push` không bao giờ xoá: skill có trên site nhưng không có trong thư mục được để yên, và `--check` không báo nó.
-- **Token.** Các endpoint nằm dưới `/api/v1/agent`, nên token cần quyền admin trên site (hoặc thêm capability `skills:write`).
+- **Token.** Các endpoint nằm dưới `/api/v1/agent`, và mọi thao tác đọc và ghi skill đều cần control-plane admin, nên token cần quyền admin trên site. Chưa hỗ trợ tác giả skill không phải admin.
 
 ## Liên quan
 

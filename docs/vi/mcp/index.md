@@ -1,11 +1,11 @@
 ---
-version: 14
-lastUpdated: 2026-11-11T01:20:50.339Z
+version: 15
+lastUpdated: 2026-11-12T18:43:34.148Z
 sourceLang: vi
-contentHash: 3c01b3b8ca235d7f
-codeVerified: 2026-11-11T01:20:50.339Z
-codeVerifiedHash: 3c01b3b8ca235d7f
-codeVerifiedClaims: 28
+contentHash: c597a23454c862fd
+codeVerified: 2026-11-12T18:43:34.148Z
+codeVerifiedHash: c597a23454c862fd
+codeVerifiedClaims: 30
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -34,7 +34,7 @@ Nguồn: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`
   - `ping`.
   - `tools/list` — liệt kê tool **đang enabled** từ `ToolRegistryService`; inputSchema suy ra từ schema canonical trong `@lumibase/contracts` (chỉ skill chưa có schema mới rơi về `{ type: 'object' }`).
   - `tools/call` — chạy qua `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. Kết quả bọc `{ content, structuredContent, isError }`.
-  - `prompts/list`, `prompts/get` — các [Site Skills](../features/site-skills.md) đang `active` của site, lọc theo capability của người gọi; `name` là slug, thân trả về dưới dạng một user message. Prompt không tồn tại và prompt không được phép thấy trả lời giống hệt nhau.
+  - `prompts/list`, `prompts/get` — các [Site Skills](../features/site-skills.md) đang `active` của site; `name` là slug, thân trả về dưới dạng một user message. Chỉ phục vụ cho người gọi đọc được skill qua REST, tức principal được resolve thành control-plane admin của site (`grant.allowed && grant.controlPlaneAdmin` trong `routes/mcp.ts`): member không phải admin hay site API key nhận `prompts/list` rỗng. Với admin, `surfaces`/`requiredCapabilities` của từng skill vẫn lọc thêm. Prompt không tồn tại và prompt không được phép thấy trả lời giống hệt nhau.
   - `notifications/initialized`, `notifications/cancelled` → trả `null` ⇒ HTTP `202 Accepted` không body.
 - **Mapping quyết định → kết quả tool** (bất biến quan trọng):
   - `executed` → `isError: false`, data trong `structuredContent`.

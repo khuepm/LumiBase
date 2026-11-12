@@ -1,14 +1,14 @@
 ---
-version: 14
-lastUpdated: 2026-11-11T01:20:50.339Z
+version: 15
+lastUpdated: 2026-11-12T18:43:34.148Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 3c01b3b8ca235d7f
+sourceHash: c597a23454c862fd
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T01:20:50.339Z
-codeVerifiedHash: 3c01b3b8ca235d7f
-codeVerifiedClaims: 28
+codeVerified: 2026-11-12T18:43:34.148Z
+codeVerifiedHash: c597a23454c862fd
+codeVerifiedClaims: 30
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -37,7 +37,7 @@ Source: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`a
   - `ping`.
   - `tools/list` — lists the **currently enabled** tools from `ToolRegistryService`; the inputSchema is derived from the canonical schemas in `@lumibase/contracts` (only a skill with no schema still falls back to `{ type: 'object' }`).
   - `tools/call` — runs through `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. The result is wrapped as `{ content, structuredContent, isError }`.
-  - `prompts/list`, `prompts/get` — the site's `active` [Site Skills](../features/site-skills.md), filtered by the caller's capabilities; `name` is the slug and the body comes back as a single user message. A prompt that does not exist and one the caller may not see answer identically.
+  - `prompts/list`, `prompts/get` — the site's `active` [Site Skills](../features/site-skills.md); `name` is the slug and the body comes back as a single user message. Served only to callers that can read skills over REST, i.e. a principal that resolves to a control-plane admin for the site (`grant.allowed && grant.controlPlaneAdmin` in `routes/mcp.ts`): a non-admin member or a site API key gets an empty `prompts/list`. For an admin, each skill's `surfaces`/`requiredCapabilities` still filter further. A prompt that does not exist and one the caller may not see answer identically.
   - `notifications/initialized`, `notifications/cancelled` → return `null` ⇒ HTTP `202 Accepted` with no body.
 - **Mapping decision → tool result** (an important invariant):
   - `executed` → `isError: false`, data in `structuredContent`.
