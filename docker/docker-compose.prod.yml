@@ -7,6 +7,7 @@
 # - NODE_ENV=production
 # - Keeps stateful services on the private Compose network
 # - Supports Docker secret files via *_FILE environment variables
+# - Read-only root filesystem, no capabilities, no privilege escalation (#734)
 
 services:
   postgres:
@@ -52,6 +53,19 @@ services:
       ENCRYPTION_KEY_FILE: ${ENCRYPTION_KEY_FILE:-}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
     volumes: !reset []
+    # Hardened runtime (#734). The image is distroless and runs as UID 65532;
+    # the server writes nothing to its filesystem (state lives in PostgreSQL,
+    # Redis and S3), so the root filesystem is mounted read-only. /tmp is a
+    # small tmpfs only for third-party code that asks os.tmpdir() — LumiBase
+    # itself does not use it. `init: true` adds Docker's tiny init as PID 1 so
+    # the migration child processes the entrypoint spawns are always reaped.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    init: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
 
   bull-board:
     ports: !reset []

@@ -11,7 +11,7 @@ starter you own and extend.
 > |-----------|-----|--------------|
 > | A website with a CMS behind it | `create-lumibase` → `--template nextjs` (**preselected**) | A Next.js site plus the CMS image (Studio included) + PostgreSQL + Redis in Docker, a `posts` collection, seeded content, and a browser-safe publishable key. |
 > | A starter app you own, no CMS | `create-lumibase` → `--template default` or `--template cloudflare` | A minimal Hono + Drizzle project with a demo `posts` resource. **No** Collections API, Studio admin, Email, Flows, or AI harness. |
-> | The platform on its own | The CMS image `ghcr.io/khuepm/lumibase-cms`, or a clone of the [monorepo](https://github.com/khuepm/lumibase) | The complete platform with no app scaffold: Collections API, Studio admin, permissions, Flows, AI agents, multi-tenancy. See [Deployment overview](https://docs.lumibase.dev/en/docs/deployment/overview). |
+> | The platform on its own | The CMS image `ghcr.io/khuepm/lumibase-cms`, or a clone of the [monorepo](https://github.com/khuepm/lumibase) | The complete platform with no app scaffold: Collections API, Studio admin, permissions, Flows, AI agents, multi-tenancy. See [Deployment overview](https://docs.lumibase.dev/en/docs/deployment/overview), or [One-click deploys](https://docs.lumibase.dev/en/docs/deployment/one-click) for Render, Railway and Fly.io. |
 > | To talk to a CMS that already exists | [`lumibase`](https://www.npmjs.com/package/lumibase) or [`@lumibase/sdk`](https://www.npmjs.com/package/@lumibase/sdk) | A typed REST/realtime client plus a CLI for type generation. Install it as a **runtime** dependency (`npm install lumibase`), not with `-D` — your app imports from it at request time. |
 
 ```bash
