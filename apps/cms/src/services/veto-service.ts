@@ -295,9 +295,10 @@ export class VetoService {
     if (approval.status !== 'pending') {
       throw new VetoServiceError('ALREADY_DECIDED', 'Staging already committed or vetoed.', 409);
     }
-    agentVetoesTotal.inc();
-
-    await this.deps.db
+    // Guarded on `pending` (B131): an auto-commit holding the `deciding` claim
+    // owns the row, so a veto that lost the race reports it instead of
+    // overwriting a commit that is already applying the patch.
+    const rejected = await this.deps.db
       .update(agentApprovals)
       .set({
         status: 'rejected',
@@ -305,7 +306,18 @@ export class VetoService {
         decisionReason: reason ?? 'vetoed',
         decidedAt: new Date(),
       })
-      .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, this.deps.siteId)));
+      .where(
+        and(
+          eq(agentApprovals.id, approvalId),
+          eq(agentApprovals.siteId, this.deps.siteId),
+          eq(agentApprovals.status, 'pending'),
+        ),
+      )
+      .returning({ id: agentApprovals.id });
+    if (rejected.length === 0) {
+      throw new VetoServiceError('ALREADY_DECIDED', 'Staging already committed or vetoed.', 409);
+    }
+    agentVetoesTotal.inc();
 
     await this.discardStaging(approval.subjectId);
 
@@ -338,8 +350,44 @@ export class VetoService {
     if (decision === 'skip') return { outcome: 'skipped' };
     if (decision === 'wait') return { outcome: 'waiting' };
 
+    // CLAIM before applying anything (B131), the same `pending → deciding`
+    // conditional UPDATE the harness uses (#453). The queue job and the sweep
+    // both reach here, and on Workers two sweeps can overlap with no leader
+    // lock; reading `pending` and then acting let both apply the patch. The
+    // database picks one winner. A process that dies holding the claim is
+    // moved to `failed` by the approval-claim sweep, never silently retried.
+    const claimed = await this.deps.db
+      .update(agentApprovals)
+      .set({ status: 'deciding', decidedAt: new Date() })
+      .where(
+        and(
+          eq(agentApprovals.id, approval.id),
+          eq(agentApprovals.siteId, this.deps.siteId),
+          eq(agentApprovals.status, 'pending'),
+        ),
+      )
+      .returning({ id: agentApprovals.id });
+    if (claimed.length === 0) return { outcome: 'skipped' };
+
+    try {
+      return await this.commitClaimed(approval, itemService);
+    } catch (err) {
+      // Staging stays intact (Req 13.5): hand the row back so the worker's
+      // backoff retry and the sweep can try again.
+      await this.releaseCommitClaim(approval.id);
+      throw err;
+    }
+  }
+
+  private async commitClaimed(
+    approval: Awaited<ReturnType<VetoService['getVetoApproval']>>,
+    itemService: ItemService,
+  ): Promise<{ outcome: 'committed' | 'noop' | 'skipped'; droppedPinned?: string[] }> {
     const staging = await this.getStaging(approval.subjectId);
-    if (!staging || !staging.staged) return { outcome: 'skipped' };
+    if (!staging || !staging.staged) {
+      await this.releaseCommitClaim(approval.id);
+      return { outcome: 'skipped' };
+    }
 
     const delta = (staging.delta ?? {}) as { patch?: Record<string, unknown> };
     const patch = delta.patch ?? {};
@@ -457,11 +505,32 @@ export class VetoService {
   }
 
   private async finalizeCommit(approvalId: string, revisionId: string, reason: string): Promise<void> {
+    // Only the claim holder finalizes.
     await this.deps.db
       .update(agentApprovals)
       .set({ status: 'approved', decisionReason: reason, decidedAt: new Date() })
-      .where(and(eq(agentApprovals.id, approvalId), eq(agentApprovals.siteId, this.deps.siteId)));
+      .where(
+        and(
+          eq(agentApprovals.id, approvalId),
+          eq(agentApprovals.siteId, this.deps.siteId),
+          eq(agentApprovals.status, 'deciding'),
+        ),
+      );
     await this.discardStaging(revisionId);
+  }
+
+  /** Returns this caller's `deciding` claim to `pending`; a row decided elsewhere is left alone. */
+  private async releaseCommitClaim(approvalId: string): Promise<void> {
+    await this.deps.db
+      .update(agentApprovals)
+      .set({ status: 'pending', decidedAt: null })
+      .where(
+        and(
+          eq(agentApprovals.id, approvalId),
+          eq(agentApprovals.siteId, this.deps.siteId),
+          eq(agentApprovals.status, 'deciding'),
+        ),
+      );
   }
 
   private async capabilityOf(revisionId: string): Promise<string | null> {
