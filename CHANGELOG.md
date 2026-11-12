@@ -10,6 +10,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 ## [Unreleased]
 
 ### Added
+- Typed JSON filters (Cast_Rule): `_eq`/`_neq`/`_in`/`_nin`/`_gt`/`_gte`/`_lt`/`_lte` compare numeric, boolean and date fields by type instead of as text, so `filter={"price":{"_gt":9}}` matches `10`. Nested JSON paths infer the cast from a number/boolean value. A stored value of the wrong type drops out of the result instead of failing the query; a filter value that cannot be cast returns `400 INVALID_FILTER`. Sorting on numeric/boolean/date fields is typed too (#729, epic #673).
+- `GET /api/v1/collections/:name/index-advice?path=&cast=` (read-only, `schema:read`) returns `CREATE INDEX CONCURRENTLY` DDL whose expression matches the typed filter, partial on the collection (#729).
 - Collection export: `GET /api/v1/items/:collection/export` streams CSV or JSON with field selection, locale columns for translatable fields (`title.vi`), relation modes (`id`, `slug`, `embed`), the list filter/sort syntax and the caller's read permission. CSV neutralises spreadsheet formulas reversibly. Each export is audited as `items_exported`. Export → import → export round-trips losslessly, translations included (#727, epic #673).
 - Studio: an **Export** button and dialog on the collection list (format, fields, locales, relations, current filters).
 - SDK: `client.items(name).export(params)` returns the streaming `Response`; `client.rawFetch(path, init)` is the streaming counterpart of `rawRequest`.
@@ -38,6 +40,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   trust ledger shows question counts in promotion evidence.
 
 ### Changed
+- A string filter value on a numeric/boolean/date field that is not a valid number/boolean/date now returns `400 INVALID_FILTER`; previously it was compared as text and silently matched nothing or the wrong rows.
 
 - `GET /api/v1/agent/approvals` no longer lists `askUser` questions, and
   `POST /api/v1/agent/approvals/:id/decide` / `/reopen` refuse a question id with
