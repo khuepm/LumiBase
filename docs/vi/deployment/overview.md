@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-10-13T22:13:10.671Z
+version: 4
+lastUpdated: 2026-11-11T03:00:33.353Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 169f7e93758006ec
+sourceHash: 1bcc93cac3b51c59
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-13T22:13:10.671Z
-codeVerifiedHash: 169f7e93758006ec
+codeVerified: 2026-11-11T03:00:33.353Z
+codeVerifiedHash: 1bcc93cac3b51c59
 codeVerifiedClaims: 10
 ---
 
@@ -19,6 +19,10 @@ LumiBase hỗ trợ hai chế độ triển khai từ cùng một codebase CMS:
 - **Docker tự vận hành (self-hosting)** cho các nhóm muốn vận hành toàn bộ stack trong các container.
 
 Để tự vận hành trên cloud quản lý, xem [Google Cloud (single VM)](./google-cloud-vm.md) — cách rẻ nhất để chạy toàn bộ stack Docker trên Google Cloud với Gemini làm nhà cung cấp LLM, trong khi vẫn giữ cho các background job dài hạn của CMS hoạt động.
+
+Để có CMS và Studio chạy trên Render, Railway hoặc Fly.io cùng PostgreSQL, Redis
+và secret được sinh sẵn, xem [Deploy một cú nhấp](./one-click.md); trang đó cũng
+giải thích vì sao Cloudflare chưa có nút deploy.
 
 Trang web tài liệu công khai là một ứng dụng Vite tĩnh được triển khai riêng biệt trên **Cloudflare Pages**.
 Trang web Marketplace công khai cũng được triển khai trên **Cloudflare Pages** và đọc danh mục marketplace của CMS tại thời điểm build/revalidation runtime.

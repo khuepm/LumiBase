@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 16
-lastUpdated: 2026-11-10T01:58:25.627Z
+version: 18
+lastUpdated: 2026-11-12T18:23:47.524Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2539ffa0eafcebe0
+sourceHash: 53ad1f26a6a884dc
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-10T01:58:25.627Z
-codeVerifiedHash: 2539ffa0eafcebe0
-codeVerifiedClaims: 84
+codeVerified: 2026-11-12T18:23:47.524Z
+codeVerifiedHash: 53ad1f26a6a884dc
+codeVerifiedClaims: 88
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -31,6 +31,8 @@ Trang này liệt kê mọi biến môi trường và binding Cloudflare mà Lum
 |------|----------|----------|-------|
 | `LUMIBASE_ENV` | ✓ | — | Nhãn môi trường: `development`, `staging`, `production` |
 | `LUMIBASE_RUNTIME` | Chỉ Docker | `cloudflare` | `docker` cho Node.js/Docker; Cloudflare Workers tự suy ra từ binding |
+| `CORS_ALLOWED_ORIGINS` | ✓ ở production | — | Danh sách origin trình duyệt (phân cách bằng dấu phẩy) được phép gọi API; `*` bị từ chối ở production. Trên Docker, khi chưa đặt, entrypoint của image dùng chính origin của deployment này (`LUMIBASE_PUBLIC_URL`, rồi tới URL công khai của nền tảng) — Studio được phục vụ từ origin đó. Một giá trị không có host, như `https://`, được coi là chưa đặt |
+| `LUMIBASE_PUBLIC_URL` | ✗ (chỉ Docker) | — | Origin công khai của deployment này, ví dụ `https://cms.example.com`. Entrypoint của image đọc nó để đặt mặc định cho `CORS_ALLOWED_ORIGINS` và để in URL của setup wizard. Khi không có, entrypoint dùng `RENDER_EXTERNAL_URL`, `RAILWAY_PUBLIC_DOMAIN` hoặc `FLY_APP_NAME` nếu nền tảng có đặt. Xem [Deploy một cú nhấp](./one-click.md) |
 | `JWT_SECRET` | ✓ | — | Secret để ký/xác thực JWT ứng dụng. Tối thiểu 32 ký tự. **Với production Cloudflare, đặt bằng `wrangler secret put JWT_SECRET --env production`; không bao giờ commit hay đặt trong `[env.production.vars]`.** |
 | `LUMIBASE_DEV_AUTH` | Chỉ local dev | `false` | Đặt `true` để bỏ qua auth Logto trong local dev. **Không bao giờ bật ở production; `pnpm release:check` sẽ fail nếu production resolve thành `true`.** |
 | `LUMIBASE_ALLOW_ORG_SIGNUP` | Tuỳ chọn | không đặt | Đặt `true` để người dùng Studio đã xác thực được tạo organization. Bootstrap instance operator có thể tạo organization mà không cần cờ này. Tạo/xoá site dùng organization API; các route quản lý site admin cũ và cờ riêng cho test đã bị gỡ. |
@@ -83,7 +85,7 @@ thích thay vì nhận token. Ở đó hãy để cờ tắt và hoàn tất set
 
 | Biến | Bắt buộc | Mặc định | Mô tả |
 |------|----------|----------|-------|
-| `ENCRYPTION_KEY` | Trước lần dùng đầu tiên | — | Base64 của 32 byte ngẫu nhiên (`openssl rand -base64 32`). Bọc các field item được mã hoá và seed 2FA TOTP. Được hiểu là khoá version `v0`. **Đặt như một secret** (`wrangler secret put ENCRYPTION_KEY --env production`); không commit và không đặt trong `[env.production.vars]` |
+| `ENCRYPTION_KEY` | Trước lần dùng đầu tiên | — | Base64 của 32 byte ngẫu nhiên (`openssl rand -base64 32`). Bọc các field item được mã hoá và seed 2FA TOTP. Được hiểu là khoá version `v0`. Production yêu cầu base64 chuẩn, có padding, của 16, 24 hoặc 32 byte; giá trị được dùng đúng như được cung cấp (CDC suy ra khoá từ chính chuỗi đó), nên đừng bao giờ mã hóa lại một khoá đang dùng. **Đặt như một secret** (`wrangler secret put ENCRYPTION_KEY --env production`); không commit và không đặt trong `[env.production.vars]` |
 | `ENCRYPTION_KEY_<id>` | ✗ | — | Khoá có version, ví dụ `ENCRYPTION_KEY_v1`, dùng khi rotate |
 | `ENCRYPTION_ACTIVE_KEY_ID` | ✗ | khoá duy nhất đang cấu hình, nếu không thì `v0` | Version nào mã hoá dữ liệu mới |
 | `ENCRYPTION_KEY[_<id>]_FILE` | ✗ | — | Đường dẫn file để đọc khoá thay cho biến (Docker secrets). Biến trực tiếp thắng |

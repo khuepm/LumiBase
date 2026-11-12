@@ -105,6 +105,19 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
     ports:
       - "${CMS_PORT:-1989}:1989"
+    # Hardened runtime (#734). The image is distroless and runs as UID 65532;
+    # the server writes nothing to its filesystem (state lives in PostgreSQL,
+    # Redis and S3), so the root filesystem is mounted read-only. /tmp is a
+    # small tmpfs only for third-party code that asks os.tmpdir() — LumiBase
+    # itself does not use it. `init: true` adds Docker's tiny init as PID 1 so
+    # the migration child processes the entrypoint spawns are always reaped.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    init: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
 
   bull-board:
     ports: !reset []

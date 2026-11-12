@@ -1,0 +1,6 @@
+# Trivy exceptions for the CRITICAL gate in release.yml and docker.yml (#734).
+#
+# One vulnerability ID per line. Every entry needs a comment above it saying
+# why it does not apply (or why it cannot be fixed yet), who accepted it, and
+# when it must be re-checked. An entry without that reasoning should not be
+# merged: this file is the only thing that can turn the gate off.

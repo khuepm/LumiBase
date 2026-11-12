@@ -1,11 +1,11 @@
 ---
-version: 2
-lastUpdated: 2026-10-10T05:00:15.277Z
+version: 4
+lastUpdated: 2026-11-12T18:25:51.362Z
 sourceLang: en
-contentHash: 6552429e41352200
-codeVerified: 2026-10-13T19:22:02.312Z
-codeVerifiedHash: 6552429e41352200
-codeVerifiedClaims: 9
+contentHash: a8e0d457c7d0b3f8
+codeVerified: 2026-11-12T18:25:51.362Z
+codeVerifiedHash: a8e0d457c7d0b3f8
+codeVerifiedClaims: 20
 ---
 
 # Docker Deployment
@@ -69,6 +69,86 @@ docker compose \
   -f docker/docker-compose.build.yml \
   up -d --build
 ```
+
+## Hardened image
+
+The published image (`docker/Dockerfile`) is built to run with as little as
+possible:
+
+| Property | What it means for you |
+|----------|-----------------------|
+| Distroless runtime (`gcr.io/distroless/nodejs22-debian13:nonroot`) | Node.js and its runtime libraries only — no shell, no package manager, no `curl`. `docker exec -it <container> sh` does not work; use `docker debug` or an ephemeral debug container instead. |
+| Non-root, fixed UID | Runs as UID/GID `65532`. The previous image also ran unprivileged, as a `lumibase` system user whose UID `adduser --system` picked at build time; the user is now a fixed, numeric UID that `runAsNonRoot` checks can verify. The application files belong to root and are not writable by that user. |
+| Read-only root filesystem | The server writes nothing to disk, so the container runs with `read_only: true`. `docker/docker-compose.prod.yml` and `docker/docker-compose.gcp.yml` set it, together with `cap_drop: [ALL]`, `no-new-privileges` and `init: true`. |
+| Healthcheck | `HEALTHCHECK` runs `docker/scripts/healthcheck.mjs` with the image's own Node. It probes `PORT`, or the worker health port when `LUMIBASE_PROCESS_ROLE=worker`. |
+| Entrypoint | `docker/scripts/entrypoint.mjs` (Node) replaces `entrypoint.sh`. `SKIP_MIGRATIONS`, `RUN_MIGRATION_PREFLIGHT`, `MIGRATION_MODE` and the `*_FILE` secrets behave as before; `MIGRATION_MODE=preflight` (or `dry-run`) still needs only `DATABASE_URL`. Secret values, `ENCRYPTION_KEY` included, reach the server exactly as supplied. |
+
+### Where the server writes
+
+Nothing it needs is on the container filesystem:
+
+| Data | Where it goes |
+|------|---------------|
+| Content, users, audit log, setup state | PostgreSQL (`DATABASE_URL`) |
+| Cache, rate limits, queues, leader locks | Redis (`REDIS_URL`) |
+| Uploaded media | S3-compatible storage (`S3_ENDPOINT`) |
+| Search index | Meilisearch (`MEILISEARCH_HOST`) |
+| Logs | stdout/stderr |
+| `/tmp` | A 64 MiB `tmpfs` in the production compose files, only for third-party code that asks `os.tmpdir()`. LumiBase itself does not use it; a read-only `/tmp` also starts. |
+
+Read-only inputs: `/app/dist`, `/app/drizzle`, `/app/studio`, `*_FILE` secrets,
+`ENCRYPTION_KEY_<id>` files, and the optional GeoIP database at
+`/var/lib/lumibase/geoip/GeoLite2-Country.mmdb`.
+
+To run the published image the same way without Compose:
+
+```bash
+docker run --read-only --tmpfs /tmp:size=64m --cap-drop ALL \
+  --security-opt no-new-privileges:true --init \
+  --env-file docker/.env -p 1989:1989 ghcr.io/khuepm/lumibase-cms:<version>
+```
+
+### Verify what you pull
+
+Every release image is scanned before anything in the release is published —
+the GitHub Release, the image, the Worker and npm all wait for the gate. The
+release workflow fails on any **CRITICAL** finding, in the image or in the npm lockfile (the server is
+a bundle, so its npm dependencies are only visible through the lockfile).
+Accepted exceptions live in `.trivyignore`, each with its reason. The image is
+then signed with keyless cosign and carries an SPDX SBOM attestation; both SBOMs
+(`lumibase-cms-image.spdx.json`, `lumibase-dependencies.spdx.json`) are attached
+to the GitHub Release.
+
+```bash
+IMAGE=ghcr.io/khuepm/lumibase-cms:<version>
+cosign verify "$IMAGE" \
+  --certificate-identity-regexp '^https://github\.com/khuepm/LumiBase/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+cosign verify-attestation "$IMAGE" --type spdxjson \
+  --certificate-identity-regexp '^https://github\.com/khuepm/LumiBase/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+`edge` builds from `main` are not cosign-signed; pin a release tag in production.
+
+### Upgrading from the previous image (`lumibase` user, writable filesystem)
+
+- **Secret files** mounted for `*_FILE` must be readable by UID `65532`
+  (for example mode `0444`, or owned by `65532`). A file readable only by the
+  old `lumibase` UID is not. Docker Compose `file:` secrets are bind-mounted
+  with the host file's owner and mode, so a `0600` secret file owned by your
+  own user is unreadable inside the container until you change its mode or
+  owner on the host.
+- **Bind mounts or volumes** you added under `/app` for scratch space are no
+  longer writable. Nothing in LumiBase needs one; remove it, or mount a `tmpfs`.
+- **Custom entrypoints or commands** that called `/entrypoint.sh`, `bash` or `sh`
+  fail: there is no shell. The image entrypoint is
+  `["/nodejs/bin/node", "/app/bin/entrypoint.mjs"]`; to run one migration
+  command, override it with `--entrypoint /nodejs/bin/node` and pass
+  `dist/migrate.cjs preflight` (or `apply`).
+- **Orchestrator health probes** that used `curl` inside the container must
+  switch to an HTTP probe on `/health` or to
+  `/nodejs/bin/node /app/bin/healthcheck.mjs`.
 
 ## Note: `SERVICE_UNAVAILABLE` when the instance is under pressure
 

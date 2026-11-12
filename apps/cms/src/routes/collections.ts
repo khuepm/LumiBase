@@ -5,6 +5,8 @@ import type { AppEnv } from '../env';
 import { SchemaService, SchemaServiceError } from '../services/schema-service';
 import { requireSchemaPermission } from './schema-permissions';
 import { formatSafeError } from '@lumibase/contracts/utils';
+import { ItemServiceError, resolveFieldPath } from '../services/item-service';
+import { buildJsonPathIndexAdvice, castKindForFieldType, type CastKind } from '../services/json-filter-cast';
 
 /**
  * /collections, /fields, /relations — Phase A schema admin surface.
@@ -276,6 +278,56 @@ collectionsRouter.get('/:name/compiled', async (c) => {
   if (!data) {
     return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Collection not found.' }] }, 404);
   }
+  return c.json({ data });
+});
+
+// ---------- JSON path index advisor (#729) ----------
+
+const CAST_KINDS = ['numeric', 'boolean', 'timestamp', 'text'] as const;
+
+/**
+ * Advise an expression index for filtering `items.data` on a JSON path with
+ * the Cast_Rule's typed comparison. Read-only: returns DDL for an operator to
+ * review and run; it never executes it. `cast` defaults to the declared type
+ * of a top-level field; nested paths must name it (the schema cannot say).
+ */
+collectionsRouter.get('/:name/index-advice', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:read');
+  if (denied) return denied;
+  const path = c.req.query('path') ?? '';
+  const castParam = c.req.query('cast');
+  if (castParam !== undefined && !(CAST_KINDS as readonly string[]).includes(castParam)) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: `cast must be one of ${CAST_KINDS.join(', ')}.` }] }, 400);
+  }
+  let segments: string[];
+  try {
+    segments = resolveFieldPath(path);
+  } catch (err) {
+    const message = err instanceof ItemServiceError ? err.message : 'Invalid path.';
+    return c.json({ errors: [{ code: 'VALIDATION', message: path ? message : 'path is required.' }] }, 400);
+  }
+  const compiled = await buildService(c).getCompiled(c.req.param('name'));
+  if (!compiled) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Collection not found.' }] }, 404);
+  }
+  const field = compiled.fields.find((f) => f.name === segments[0]);
+  if (!field) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: `Field "${segments[0]}" not found.` }] }, 404);
+  }
+  const declared = segments.length === 1 ? castKindForFieldType(field.type) : null;
+  const cast = (castParam as CastKind | undefined) ?? declared;
+  if (!cast) {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: 'cast is required for nested or json paths (numeric, boolean, timestamp, text).' }] },
+      400,
+    );
+  }
+  const data = buildJsonPathIndexAdvice({
+    collectionId: compiled.id,
+    collectionName: compiled.name,
+    segments,
+    cast,
+  });
   return c.json({ data });
 });
 
