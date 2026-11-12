@@ -131,6 +131,12 @@ export interface LumiClient<TSchema extends DefaultSchema = DefaultSchema> {
   siteId: string;
   fetcher: typeof fetch;
   rawRequest: <T>(path: string, init?: RequestInit) => Promise<LumiResponse<T>>;
+  /**
+   * Like `rawRequest`, but resolves with the unread `Response` so the caller
+   * can stream the body (downloads, exports). Same auth headers and the same
+   * silent refresh on 401; a non-2xx status still throws `LumiError`.
+   */
+  rawFetch: (path: string, init?: RequestInit) => Promise<Response>;
   request: <Output>(command: (client: LumiClient<TSchema>) => Promise<Output>) => Promise<Output>;
   with: <Extension>(plugin: (client: LumiClient<TSchema>) => Extension) => LumiClient<TSchema> & Extension;
 }
@@ -188,11 +194,7 @@ export function createLumiClient<TSchema extends DefaultSchema = DefaultSchema>(
     return refreshInFlight;
   }
 
-  async function rawRequest<T>(
-    path: string,
-    init: RequestInit = {},
-    retried = false,
-  ): Promise<LumiResponse<T>> {
+  function buildHeaders(init: RequestInit): Headers {
     const headers = new Headers(init.headers);
     for (const [key, value] of Object.entries(opts.headers ?? {})) {
       headers.set(key, value);
@@ -202,6 +204,35 @@ export function createLumiClient<TSchema extends DefaultSchema = DefaultSchema>(
     if (!headers.has("content-type") && init.body) {
       headers.set("content-type", "application/json");
     }
+    return headers;
+  }
+
+  async function rawFetch(
+    path: string,
+    init: RequestInit = {},
+    retried = false,
+  ): Promise<Response> {
+    const res = await fetcher(`${base}${path}`, { ...init, headers: buildHeaders(init) });
+    if (res.ok) return res;
+    if (res.status === 401 && !retried && currentRefreshToken && (await attemptRefresh())) {
+      return rawFetch(path, init, true);
+    }
+    if (res.status === 401 && opts.onUnauthorized) {
+      try {
+        opts.onUnauthorized();
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new LumiError(res.status, toErrorBody(res.status, parseResponseBody(await res.text())), res.headers);
+  }
+
+  async function rawRequest<T>(
+    path: string,
+    init: RequestInit = {},
+    retried = false,
+  ): Promise<LumiResponse<T>> {
+    const headers = buildHeaders(init);
 
     const res = await fetcher(`${base}${path}`, { ...init, headers });
     const text = await res.text();
@@ -241,6 +272,7 @@ export function createLumiClient<TSchema extends DefaultSchema = DefaultSchema>(
     siteId: opts.siteId,
     fetcher,
     rawRequest,
+    rawFetch: (path: string, init?: RequestInit) => rawFetch(path, init),
     async request<Output>(command: (client: LumiClient<TSchema>) => Promise<Output>): Promise<Output> {
       return command(this as unknown as LumiClient<TSchema>);
     },

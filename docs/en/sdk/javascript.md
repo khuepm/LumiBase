@@ -1,10 +1,10 @@
 ---
-version: 5
-lastUpdated: 2026-10-26T15:54:55.091Z
+version: 6
+lastUpdated: 2026-11-12T06:32:59.652Z
 sourceLang: en
-contentHash: c6b8c8284912e170
-codeVerified: 2026-10-26T15:54:55.091Z
-codeVerifiedHash: c6b8c8284912e170
+contentHash: 30519b4e9b54cfb3
+codeVerified: 2026-11-12T06:32:59.652Z
+codeVerifiedHash: 30519b4e9b54cfb3
 codeVerifiedClaims: 8
 ---
 
@@ -176,6 +176,20 @@ await client.items('articles').delete('art_abc123')
 
 // op is 'create' | 'update' | 'delete'; see docs/en/features/data-import.md
 await client.items('articles').bulk('create', [{ title: 'A' }, { title: 'B' }])
+```
+
+### Export
+
+```typescript
+// Streams CSV or JSON; see docs/en/features/data-export.md
+const res = await client.items('articles').export({
+  format: 'csv',
+  fields: ['title', 'slug'],
+  locales: ['en', 'vi'],
+  relations: 'slug',
+  filter: { status: { _eq: 'published' } },
+})
+const csv = await res.text()
 ```
 
 ### Revisions and pins
