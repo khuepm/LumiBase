@@ -179,9 +179,35 @@ CREATE POLICY site_isolation_permit ON lumibase_extensions
 ALTER TABLE lumibase_role_policies DISABLE ROW LEVEL SECURITY;
 
 -- =============================================================================
--- core tables (lumibase_sites, lumibase_users) — managed by platform, no RLS needed.
+-- Core user identities are global; site and key rows have two possible scopes.
 -- =============================================================================
--- lumibase_sites, lumibase_users: intentionally excluded from site-scoped RLS.
+-- lumibase_users: intentionally excluded from site-scoped RLS.
+
+ALTER TABLE lumibase_sites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lumibase_sites FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS site_or_organization_isolation ON lumibase_sites;
+DROP POLICY IF EXISTS site_or_organization_isolation_permit ON lumibase_sites;
+CREATE POLICY site_or_organization_isolation ON lumibase_sites AS RESTRICTIVE FOR ALL
+  USING (id = app_site_id() OR organization_id = NULLIF(current_setting('lumibase.organization_id', true), ''))
+  WITH CHECK (id = app_site_id() OR organization_id = NULLIF(current_setting('lumibase.organization_id', true), ''));
+CREATE POLICY site_or_organization_isolation_permit ON lumibase_sites AS PERMISSIVE FOR ALL
+  USING (id = app_site_id() OR organization_id = NULLIF(current_setting('lumibase.organization_id', true), ''))
+  WITH CHECK (id = app_site_id() OR organization_id = NULLIF(current_setting('lumibase.organization_id', true), ''));
+
+ALTER TABLE lumibase_api_keys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lumibase_api_keys FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS key_scope_isolation ON lumibase_api_keys;
+DROP POLICY IF EXISTS key_scope_isolation_permit ON lumibase_api_keys;
+CREATE POLICY key_scope_isolation ON lumibase_api_keys AS RESTRICTIVE FOR ALL
+  USING ((scope = 'site' AND site_id = app_site_id()) OR
+    (scope = 'organization' AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')))
+  WITH CHECK ((scope = 'site' AND site_id = app_site_id()) OR
+    (scope = 'organization' AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')));
+CREATE POLICY key_scope_isolation_permit ON lumibase_api_keys AS PERMISSIVE FOR ALL
+  USING ((scope = 'site' AND site_id = app_site_id()) OR
+    (scope = 'organization' AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')))
+  WITH CHECK ((scope = 'site' AND site_id = app_site_id()) OR
+    (scope = 'organization' AND organization_id = NULLIF(current_setting('lumibase.organization_id', true), '')));
 
 COMMENT ON FUNCTION app_site_id IS
   'Returns the current request site_id from SET LOCAL app.site_id (NULL when

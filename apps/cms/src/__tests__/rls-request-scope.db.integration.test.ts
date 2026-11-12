@@ -293,7 +293,7 @@ describe.skipIf(!hasDbIntegrationUrl)('request-path RLS scope (B130) — real Po
 
     // Same request with the flag off on the NOBYPASSRLS role: nothing visible.
     const off = await (await get(app, `/api/v1/deliver/llms.txt/${SITE_A}`, null, OFF)).text();
-    expect(off).toContain('No public collections yet.');
+    expect(off).toContain('Site not found.');
   });
 
   it('system connection: cross-site worker sweeps and multi-site inserts work; the app role sees nothing', async () => {

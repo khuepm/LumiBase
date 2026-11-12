@@ -42,9 +42,12 @@ mcpRouter.post('/', async (c) => {
   const call = body as { method?: string; params?: { name?: unknown; arguments?: { organizationId?: unknown } } } | null;
   const orgCall = call?.method === 'tools/call' && typeof call.params?.name === 'string' && call.params.name.startsWith('org:');
   const orgKey = auth?.apiKey?.scope === 'organization';
-  let organizationId: string | undefined;
+  let organizationId: string | undefined = orgKey && typeof auth.apiKey?.organizationId === 'string'
+    ? auth.apiKey.organizationId : undefined;
   let organizationPort: OrganizationHarness | undefined;
-  if (orgKey || orgCall) {
+  // Site tools on a pinned organization key obey the site's MCP flag. The
+  // organization flag gates only organization tools (and the unpinned profile).
+  if (orgCall || (orgKey && !siteId)) {
     if (isFrontendAudience(auth?.raw?.aud) || (auth?.apiKeyId && !orgKey)) {
       await auditSecurityGuardDenied(c, 'organization_access_denied', { reason: 'site_scoped_credential_on_org_plane' });
       return c.json({ errors: [{ code: 'ORGANIZATION_FORBIDDEN' }] }, 403);

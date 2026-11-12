@@ -279,7 +279,8 @@ export interface GovernedDispatcherOptions {
 export class GovernedDispatcher {
   private readonly mode: GovernedMode;
   private readonly warn: (message: string) => void;
-  private available: Promise<boolean> | undefined;
+  private readonly available = new Map<string, Promise<boolean>>();
+  private readonly warnedSites = new Set<string>();
 
   constructor(
     private readonly client: LumiBaseClient,
@@ -340,7 +341,10 @@ export class GovernedDispatcher {
     // Wrapped in an async IIFE rather than `.then().catch()`: a client whose
     // `jsonRpc` is missing throws SYNCHRONOUSLY, and a synchronous throw never
     // reaches a `.catch` attached to the call expression.
-    this.available ??= (async () => {
+    const site = this.client.currentSiteId ?? '__unscoped__';
+    const cached = this.available.get(site);
+    if (cached) return cached;
+    const probe = (async () => {
       try {
         await this.client.jsonRpc('tools/list');
         return true;
@@ -350,7 +354,7 @@ export class GovernedDispatcher {
         // every subsequent call fail instead of degrading — worse for `auto`, and
         // for `on` the refusal below is what the operator asked for anyway.
         if (this.mode === 'on') return false;
-        this.warn(
+        if (!this.warnedSites.has(site)) this.warn(
           err instanceof McpUnavailableError
             ? '[lumibase-mcp] governed tool calls unavailable: this site has contentOs.mcp disabled. ' +
                 'Falling back to direct REST calls, which skip agent governance ' +
@@ -361,10 +365,14 @@ export class GovernedDispatcher {
               }); falling back to direct REST calls, which skip agent governance. ` +
                 'Set LUMIBASE_MCP_GOVERNED=on to refuse instead of falling back.',
         );
+        this.warnedSites.add(site);
         return false;
       }
     })();
-    return this.available;
+    this.available.set(site, probe);
+    // A disabled site or a transient failure must not poison future calls.
+    void probe.then((ready) => { if (!ready && this.available.get(site) === probe) this.available.delete(site); });
+    return probe;
   }
 
   /**

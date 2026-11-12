@@ -25,7 +25,8 @@
     "clean": "rm -rf .turbo drizzle dist",
     "migrate:preflight": "tsx scripts/migrate.ts preflight",
     "migrate:dry-run": "tsx scripts/migrate.ts dry-run",
-    "migrate:version": "tsx scripts/migrate.ts version"
+    "migrate:version": "tsx scripts/migrate.ts version",
+    "recover:organization-owner": "tsx scripts/recover-organization-owner.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",
