@@ -325,6 +325,13 @@ describe('richTextToMarkdown — table cells', () => {
     expect(columns(first)).toBe(1);
   });
 
+  it('renders a cell with a long backslash run in linear time', () => {
+    const started = Date.now();
+    const md = table([cell({ type: 'code', text: `${'\\'.repeat(200_000)}x` })]);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(md.length).toBeGreaterThan(200_000);
+  });
+
   it('escapes a pipe from an unescaped code block once', () => {
     const md = table([cell({ type: 'code', text: 'a | b' })]);
     expect(md.split('\n')[0]).toContain('a \\| b');

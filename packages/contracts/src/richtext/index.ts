@@ -304,7 +304,20 @@ function escapeMarkdown(text: string): string {
  * backslash, pipe: a literal backslash followed by a column break.
  */
 function tableCell(md: string): string {
-  return md.replace(/\n+/g, ' ').replace(/(\\*)\|/g, (m, bs: string) => (bs.length % 2 === 0 ? `${bs}\\|` : m));
+  // One linear pass (a regex over backslash runs backtracks quadratically).
+  let out = '';
+  let run = 0;
+  for (const ch of md) {
+    if (ch === '\n' || ch === '\r') {
+      if (!out.endsWith(' ')) out += ' ';
+      run = 0;
+      continue;
+    }
+    if (ch === '|' && run % 2 === 0) out += '\\';
+    out += ch;
+    run = ch === '\\' ? run + 1 : 0;
+  }
+  return out;
 }
 
 function refUrl(ref: RichTextRef, opts: RichTextRenderOptions): string {
