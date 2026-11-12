@@ -55,7 +55,7 @@ import { AuditLogger } from '../modules/audit/logger';
 import { writeFieldAccessLog as enqueueFieldAccessLog } from '../modules/audit/field-access';
 import { FirebaseSyncService } from '../modules/lumibase-firebase-sync';
 import { WriteCoalescer } from './load-guard-service';
-import type { PrimaryKeyType, StorageMode } from './schema-service';
+import type { CompiledField, PrimaryKeyType, StorageMode } from './schema-service';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import {
   dispatchItemRevalidation,
@@ -639,6 +639,64 @@ export class ItemService {
       throw new ItemServiceError('FORBIDDEN', `Action "${action}" on "${collectionName}" is not allowed.`, 403);
     }
     return granted;
+  }
+
+  /**
+   * Schema + relation metadata for a collection export (#727). Checks `read`
+   * permission first, so a caller without access gets 403 before any byte is
+   * streamed. Relations are scoped to this site.
+   */
+  async describeForExport(collectionName: string): Promise<{
+    fields: CompiledField[];
+    relations: Array<{ type: 'm2o' | 'o2m' | 'm2m'; field: string; alias: string; related: string }>;
+  }> {
+    await this.resolveCollection(collectionName);
+    await this.perm(collectionName, 'read');
+    const compiled = await this.schemaService.getCompiled(collectionName);
+    const relationRows = await this.deps.db
+      .select()
+      .from(relations)
+      .where(
+        and(
+          scopeSite(relations.siteId, this.deps.siteId),
+          sql`(${relations.manyCollection} = ${collectionName} or ${relations.oneCollection} = ${collectionName})`,
+        ),
+      );
+    const out: Array<{ type: 'm2o' | 'o2m' | 'm2m'; field: string; alias: string; related: string }> = [];
+    for (const rel of relationRows) {
+      const alias = relationAlias(rel);
+      if (rel.type === 'm2o' && rel.manyCollection === collectionName) {
+        out.push({ type: 'm2o', field: rel.manyField, alias, related: rel.oneCollection });
+      } else if (rel.type === 'o2m' && rel.oneCollection === collectionName) {
+        out.push({ type: 'o2m', field: alias, alias, related: rel.manyCollection });
+      } else if (rel.type === 'm2m' && rel.manyCollection === collectionName) {
+        out.push({ type: 'm2m', field: alias, alias, related: rel.oneCollection });
+      }
+    }
+    return { fields: compiled?.fields ?? [], relations: out };
+  }
+
+  /**
+   * Per-row transform for collection export (#727): runs the extensions'
+   * `items.export.before` hook. Returns `null` when no hook extension is
+   * enabled, so the exporter skips the call entirely. A hook returns
+   * `{ item }` to replace the exported record; throwing aborts the export.
+   */
+  async exportRowTransformer(
+    collectionName: string,
+  ): Promise<((record: Record<string, unknown>) => Promise<Record<string, unknown>>) | null> {
+    const hooks = await this.getHookDispatcher();
+    if (!hooks) return null;
+    return async (record) => {
+      const ctx = await hooks.dispatch('items.export.before', {
+        collection: collectionName,
+        item: record,
+        itemId: typeof record.id === 'string' ? record.id : undefined,
+        userId: this.deps.userId ?? null,
+        siteId: this.deps.siteId,
+      });
+      return ctx.item ?? record;
+    };
   }
 
   /**
