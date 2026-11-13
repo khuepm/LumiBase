@@ -48,7 +48,7 @@ const publicElevationError = (flags: string[]) => ({
 
 export const rolesRouter = new Hono<AppEnv>();
 
-const roleCreate = z.object({
+export const roleCreate = z.object({
   key: z.string().min(1).max(96).optional(),
   systemKey: z.string().min(1).max(96).optional(),
   name: z.string().min(1).max(64),
@@ -59,15 +59,15 @@ const roleCreate = z.object({
   appAccess: z.boolean().optional(),
 });
 
-const rolePatch = patchSchema(roleCreate);
+export const rolePatch = patchSchema(roleCreate);
 
-const attachPolicy = z.object({
+export const attachPolicy = z.object({
   policyId: z.string(),
   priority: z.number().int().optional(),
   overrideWarnings: z.boolean().optional(),
 });
 
-const assignUser = z.object({ userId: z.string() });
+export const assignUser = z.object({ userId: z.string() });
 
 rolesRouter.get('/', async (c) => {
   const db = c.get('db');

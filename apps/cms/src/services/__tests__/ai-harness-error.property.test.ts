@@ -10,6 +10,7 @@ import { vi } from 'vitest';
 // `argsForProperty` hands schema-bearing skills a valid set and leaves the rest
 // on the generated args.
 import { argsForProperty } from '../../test-utils/agent-tool-args';
+import { runErrorMessage } from '../agent-run-service';
 
 /**
  * Feature: ai-first-cms-engine, Property 4: Execution error handling
@@ -120,7 +121,10 @@ describe('Feature: ai-first-cms-engine, Property 4: Execution error handling', (
 
           // Assert: message must describe the error
           expect(result.message).toBeDefined();
-          expect(result.message).toBe(errorMsg);
+          // The harness records thrown errors through `runErrorMessage`, which masks
+          // emails / `token=...`-style secrets and strips query params — so the
+          // contract is "the redacted error message", not the raw one.
+          expect(result.message).toBe(runErrorMessage(new Error(errorMsg)));
 
           // Assert: no database changes (insert should not be called)
           expect(insertFn).not.toHaveBeenCalled();
@@ -196,7 +200,10 @@ describe('Feature: ai-first-cms-engine, Property 4: Execution error handling', (
           expect(result.status).toBe('denied');
 
           // Assert: message describes the error
-          expect(result.message).toBe(errorMsg);
+          // The harness records thrown errors through `runErrorMessage`, which masks
+          // emails / `token=...`-style secrets and strips query params — so the
+          // contract is "the redacted error message", not the raw one.
+          expect(result.message).toBe(runErrorMessage(new Error(errorMsg)));
 
           // Assert: no database changes
           expect(insertFn).not.toHaveBeenCalled();
@@ -204,5 +211,23 @@ describe('Feature: ai-first-cms-engine, Property 4: Execution error handling', (
       ),
       { numRuns: 100 },
     );
+  });
+
+  // Regression: fast-check seed -299950008 produced the email-shaped message
+  // "0@-.AA", which the harness masks. Pin that the secret never reaches the caller.
+  it('masks secret-looking content in a thrown error message', async () => {
+    const skillName = SAFE_SKILL_NAMES[0]!;
+    const skill = CORE_SKILLS[skillName]!;
+    skill.handler = async () => {
+      throw new Error('0@-.AA failed; token=abc123');
+    };
+
+    const { db, insertFn } = createMockDb();
+    const harness = new AISecureHarness({ db, siteId: 'test-site' });
+    const result = await harness.execute(skillName, argsForProperty(skillName, {}), [...skill.requiredCapabilities]);
+
+    expect(result.status).toBe('denied');
+    expect(result.message).toBe('[masked] failed; token=[masked]');
+    expect(insertFn).not.toHaveBeenCalled();
   });
 });
