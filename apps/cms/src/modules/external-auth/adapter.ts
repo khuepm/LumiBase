@@ -15,6 +15,8 @@ import { authExternalIssuers, roles, userSites, users } from '@lumibase/database
 import { scopeSite } from '@lumibase/database';
 import type { AppEnv } from '../../env';
 import { AuditLogger } from '../audit/logger';
+import { mcpResourceContext } from '../../middleware/mcp-oauth';
+import { isMcpResourceUri } from '../../services/mcp-oauth';
 import {
   verifyExternalJwt,
   type TrustedIssuer,
@@ -83,8 +85,26 @@ export async function tryExternalJwt(c: Context<AppEnv>, token: string): Promise
   // crash) if the runtime middleware has not populated the context.
   const cache = c.get('runtime')?.cache;
 
+  // MCP resource wall (#346, ADR-011 style). On an MCP path the token must have
+  // been minted for THIS resource — no pass-through of a token issued for some
+  // other API, even by a trusted issuer. Off the MCP path, a token whose only
+  // audience is an MCP resource is refused, so a connector token cannot be
+  // replayed against REST.
+  const checkAudience: VerifierDeps['checkAudience'] = (aud) => {
+    const mcp = mcpResourceContext(c);
+    if (mcp) {
+      return aud.includes(mcp.resource)
+        ? { ok: true }
+        : { ok: false, code: 'AUDIENCE_NOT_MCP_RESOURCE', reason: 'Token audience does not include this MCP resource.' };
+    }
+    return aud.length > 0 && aud.every(isMcpResourceUri)
+      ? { ok: false, code: 'AUDIENCE_MCP_ONLY', reason: 'Token is scoped to an MCP resource only.' }
+      : { ok: true };
+  };
+
   const deps: VerifierDeps = {
     requestSiteId: siteId,
+    checkAudience,
 
     getTrustedIssuers: async () => {
       const cached = cache ? await cache.get<TrustedIssuer[]>(issuerCacheKey(siteId)) : null;

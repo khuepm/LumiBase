@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:11:28.854Z
+version: 3
+lastUpdated: 2026-11-12T18:31:27.268Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 9730149bdbd5cb5c
+sourceHash: 8a58ca3d5d214c3e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-13T19:22:01.019Z
-codeVerifiedHash: 9730149bdbd5cb5c
+codeVerified: 2026-11-12T18:31:27.268Z
+codeVerifiedHash: 8a58ca3d5d214c3e
 codeVerifiedClaims: 10
 ---
 
@@ -46,6 +46,8 @@ Chọn agent của bạn để xem hướng dẫn từng bước về cách kế
 | [Cursor](./cursor.md) | Terminal · IDE · Standalone · Cloud | [Xem hướng dẫn →](./cursor.md) |
 | [GitHub Copilot](./github-copilot.md) | Terminal · Cloud · Extension | [Xem hướng dẫn →](./github-copilot.md) |
 | [Windsurf](./windsurf.md) | IDE · Standalone | [Xem hướng dẫn →](./windsurf.md) |
+
+**MCP client được host** (Claude / ChatGPT connectors, remote MCP trong IDE) xác thực bằng OAuth 2.1 thay vì dán token — xem [Remote MCP connector (OAuth 2.1)](./oauth-connector.md).
 
 ---
 
