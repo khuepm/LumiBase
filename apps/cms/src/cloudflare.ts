@@ -110,6 +110,23 @@ export default Sentry.withSentry(
       // `flow-schedule` cron runs; overlapping ticks enqueue each due flow once
       // (B132).
       ctx.waitUntil(runWorkerSweeps(MINUTE_SWEEPS, sweepDeps));
+      // Resume background imports whose lease expired (#726). The guarded
+      // claim on `lease_until` keeps overlapping ticks from double-processing.
+      ctx.waitUntil(
+        import('./services/import-service')
+          .then(({ runImportTick, resolveImportConfig }) =>
+            runImportTick(
+              {
+                db,
+                config: resolveImportConfig(env as unknown as Record<string, string | undefined>),
+                realtime: runtime.realtime,
+                env: env as unknown as Record<string, unknown>,
+              },
+              { budgetMs: 25_000 },
+            ),
+          )
+          .catch(() => console.error('[import] tick failed')),
+      );
       return;
     }
 

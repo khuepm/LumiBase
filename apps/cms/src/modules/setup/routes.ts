@@ -82,6 +82,10 @@ export const completeBodySchema = z.object({
     )
     .max(20)
     .optional(),
+  // #794 — instance email identity mode. `exact` (default): every distinct
+  // address is its own account. `root`: +tag / Gmail-dot aliases resolve to
+  // one account instance-wide.
+  emailIdentityMode: z.enum(['exact', 'root']).optional(),
 });
 
 // ── rate limit (distributed via RateLimiterProvider) ───────────────────

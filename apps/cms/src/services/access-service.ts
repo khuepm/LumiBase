@@ -11,9 +11,9 @@ import {
 } from '@lumibase/database';
 import type { CacheProvider } from '@lumibase/runtime';
 import { and, eq } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
 import { createPlaintextToken } from './api-key-token';
 import { PermissionService } from './permission-service';
+import { inviteUserToSite } from '../modules/email-identity/invite';
 
 /**
  * Thin, tenant-scoped service over RBAC + identity tables, used by the governed
@@ -190,20 +190,12 @@ export class AccessService {
 
   /** Create-or-find a user by email and bind them to the site (no email sent). */
   async inviteUser(input: { email: string; roleId?: string }) {
-    let [existing] = await this.deps.db.select().from(users).where(eq(users.email, input.email)).limit(1);
-    if (!existing) {
-      const [created] = await this.deps.db
-        .insert(users)
-        .values({ email: input.email, externalId: `shadow_${nanoid()}`, status: 'invited' })
-        .returning();
-      existing = created!;
+    const invited = await inviteUserToSite(this.deps.db, { siteId: this.deps.siteId, ...input });
+    if (!invited.ok) {
+      throw new Error(`${invited.code}: this mailbox is already a member of this site under another address`);
     }
-    await this.deps.db
-      .insert(userSites)
-      .values({ userId: existing.id, siteId: this.deps.siteId, roleId: input.roleId })
-      .onConflictDoNothing();
     if (input.roleId) await this.bumpPermissions();
-    return existing;
+    return invited.user;
   }
 
   async updateUser(id: string, patch: { roleId?: string | null; status?: string }) {
