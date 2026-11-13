@@ -4,7 +4,7 @@ import type { LumiBaseClient } from '../client.js';
 import { confirmDescription, okAfter, okText, run } from './_shared.js';
 import { encodePathSegment, idPathSegmentSchema } from './path.js';
 
-const relationInputSchema = {
+export const relationInputSchema = {
   manyCollection: z.string().min(1).describe('Collection that holds the foreign key (the "many" side).'),
   manyField: z.string().min(1).describe('Field on manyCollection that stores the relation.'),
   oneCollection: z.string().min(1).describe('Related collection (the "one" side).'),

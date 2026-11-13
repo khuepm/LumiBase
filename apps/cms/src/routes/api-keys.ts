@@ -38,13 +38,13 @@ const rotateApiKey = z.object({
   expiresAt: z.coerce.date().nullable().optional(),
 });
 
-const attachRole = z.object({
+export const attachRole = z.object({
   roleId: z.string().min(1),
   priority: z.number().int().optional(),
   overrideWarnings: z.boolean().optional(),
 });
 
-const attachPolicy = z.object({
+export const attachPolicy = z.object({
   policyId: z.string().min(1),
   priority: z.number().int().optional(),
   overrideWarnings: z.boolean().optional(),

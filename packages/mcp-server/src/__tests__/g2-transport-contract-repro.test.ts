@@ -720,15 +720,17 @@ describe('G2 repro · inventory có phân loại ngữ nghĩa (review vòng 3, P
     // candidate. Kết luận cuối cần soát ngữ nghĩa từng tool (Quyết định 1).
   });
 
-  it('S9: create_collection advertise 18 property và 32 tool toàn registry có confirm', async () => {
+  it('S9: create_collection advertise 22 property và 32 tool toàn registry có confirm', async () => {
     const { client } = await liveClient();
     const listed = await client.listTools();
 
-    // Sửa số của head trước (19 property / thiếu 17): đo lại đúng là 18, và
-    // skill chỉ đọc `name` + `singleton` ⇒ thiếu **16**.
+    // Sửa số của head trước (19 property / thiếu 17): đo lại đúng là 18. #716
+    // review thêm 4 key REST nhận mà stdio thiếu (`system`,
+    // `itemDuplicationFields`, `translations`, `meta`) ⇒ 22; skill chỉ đọc
+    // `name` + `singleton` ⇒ thiếu **20**.
     const cc = listed.tools.find((t) => t.name === 'create_collection');
     const props = Object.keys((cc!.inputSchema as { properties: Record<string, unknown> }).properties);
-    expect(props).toHaveLength(18);
+    expect(props).toHaveLength(22);
     expect(props).toContain('name');
     expect(props).toContain('singleton');
 
