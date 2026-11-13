@@ -52,6 +52,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `status: "waiting_user"` with `questionId`. Metrics
   `lumibase_agent_questions_total{status}` and `lumibase_agent_question_wait_seconds`; the
   trust ledger shows question counts in promotion evidence.
+- `POST /api/v1/deployments/webhook/:provider/:siteId` carries the tenant in the URL path so Vercel and Netlify outgoing deployment webhooks (which cannot send custom `X-Lumi-Site` headers) work on the shared API host (`api.lumibase.dev`) without a per-site host mapping. `POST /api/v1/deployments/webhook/:provider` remains supported via `withTenant` (#569, B163).
 
 ### Changed
 - A string filter value on a numeric/boolean/date field that is not a valid number/boolean/date now returns `400 INVALID_FILTER`; previously it was compared as text and silently matched nothing or the wrong rows.

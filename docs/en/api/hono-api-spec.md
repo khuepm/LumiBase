@@ -1,11 +1,11 @@
 ---
-version: 42
-lastUpdated: 2026-11-13T06:57:58.862Z
+version: 43
+lastUpdated: 2026-11-13T07:04:51.671Z
 sourceLang: en
-contentHash: 92881f467578cfc7
-codeVerified: 2026-11-13T06:57:58.862Z
-codeVerifiedHash: 92881f467578cfc7
-codeVerifiedClaims: 512
+contentHash: b412b64ec3b5532b
+codeVerified: 2026-11-13T07:04:51.671Z
+codeVerifiedHash: b412b64ec3b5532b
+codeVerifiedClaims: 514
 ---
 
 # Hono API Specification — LumiBase
@@ -962,6 +962,7 @@ Public (no session; signature-verified):
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `POST` | `/api/v1/deployments/webhook/:provider/:siteId` | Inbound status webhook (`vercel` \| `netlify`) with path tenant (works on the shared API host without `X-Lumi-Site`). `404 UNKNOWN_PROVIDER`, `400 TENANT_INVALID` / `TENANT_MISMATCH`, `401 INVALID_SIGNATURE`; otherwise `200 { data: null }`, including when the body matches no deployment |
 | `POST` | `/api/v1/deployments/webhook/:provider` | Inbound status webhook (`vercel` \| `netlify`). Tenant comes from `withTenant` (`X-Lumi-Site` or host mapping). `404 UNKNOWN_PROVIDER`, `401 INVALID_SIGNATURE`; otherwise `200 { data: null }`, including when the body matches no deployment |
 
 **Target shape** (`data` of the target routes): `{ id, provider, name, projectId, defaultBranch, productionUrl, status, createdAt, updatedAt }`.

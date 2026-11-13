@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 41
-lastUpdated: 2026-11-13T06:57:58.862Z
+version: 42
+lastUpdated: 2026-11-13T07:04:51.671Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 92881f467578cfc7
+sourceHash: b412b64ec3b5532b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T06:57:58.862Z
-codeVerifiedHash: 92881f467578cfc7
-codeVerifiedClaims: 512
+codeVerified: 2026-11-13T07:04:51.671Z
+codeVerifiedHash: b412b64ec3b5532b
+codeVerifiedClaims: 514
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -824,6 +824,7 @@ Công khai (không có phiên; xác thực bằng chữ ký):
 
 | Phương thức | Đường dẫn | Mô tả |
 |--------|------|-------------|
+| `POST` | `/api/v1/deployments/webhook/:provider/:siteId` | Inbound status webhook (`vercel` \| `netlify`) mang tenant trong path (hoạt động trên shared API host mà không cần `X-Lumi-Site`). `404 UNKNOWN_PROVIDER`, `400 TENANT_INVALID` / `TENANT_MISMATCH`, `401 INVALID_SIGNATURE`; còn lại `200 { data: null }`, kể cả khi body không khớp deployment nào |
 | `POST` | `/api/v1/deployments/webhook/:provider` | Inbound status webhook (`vercel` \| `netlify`). Tenant lấy từ `withTenant` (`X-Lumi-Site` hoặc host mapping). `404 UNKNOWN_PROVIDER`, `401 INVALID_SIGNATURE`; còn lại `200 { data: null }`, kể cả khi body không khớp deployment nào |
 
 **Shape của target** (`data` của các route target): `{ id, provider, name, projectId, defaultBranch, productionUrl, status, createdAt, updatedAt }`.
