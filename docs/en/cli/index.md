@@ -1,11 +1,11 @@
 ---
 title: LumiBase CLI
-version: 8
-lastUpdated: 2026-11-12T20:47:43.079Z
+version: 10
+lastUpdated: 2026-11-13T06:20:02.940Z
 sourceLang: en
-contentHash: 176e034324bab9cb
-codeVerified: 2026-11-12T20:47:43.079Z
-codeVerifiedHash: 176e034324bab9cb
+contentHash: 32b28106fb02ad1f
+codeVerified: 2026-11-13T06:20:02.940Z
+codeVerifiedHash: 32b28106fb02ad1f
 codeVerifiedClaims: 20
 ---
 
@@ -40,6 +40,7 @@ Node.js 22+ is required for the CLI; the launcher in `packages/cli/bin/lumibase.
 | `lumibase init [name]` | Scaffold a new project |
 | `lumibase types` | Generate TypeScript types from a running CMS |
 | `lumibase doctor` | Report resolved configuration and probe connectivity |
+| `lumibase skills <list\|pull\|push\|install>` | Sync Site Skills (agent playbooks) with a site |
 | `lumibase migrate <source>` | Migrate content from another CMS (Contentful); dry run unless `--apply` |
 
 `lumibase help` and `lumibase version` are also accepted, as are `--help` / `-h` and `--version` / `-v`.
@@ -128,6 +129,32 @@ Prints what was resolved, where each value came from, and whether the CMS answer
 The health probe calls the unauthenticated `/health` endpoint (`apps/cms/src/routes/health.ts`); the schema check exercises the same authenticated request `lumibase types` makes, so a green `doctor` means typegen will work. Tokens are masked: a short prefix is kept so an operator can tell which token was picked up without the value reaching CI logs.
 
 `doctor` exits non-zero if any check fails.
+
+## `lumibase skills`
+
+Syncs [Site Skills](../features/site-skills.md) — Markdown playbooks for the site's agents — between a directory in your repository and a site. The CLI only moves files: the CMS parses and validates each document, so the format has one implementation.
+
+| Command | What it does |
+| --- | --- |
+| `lumibase skills list` | Table of the site's skills. `--status <s>` filters; `--json` prints the raw rows. |
+| `lumibase skills pull` | Writes every skill to `<dir>/<slug>.skill.md`. `--dir` (default `skills`), `--status`. |
+| `lumibase skills push` | Creates or updates skills from the `*.md` files in `<dir>` (`README.md` is skipped), including skills that are already active. `--activate`, `--dry-run`, `--check`. |
+| `lumibase skills install <src>` | Adds skills from a directory, a single `.md` file, or an npm package that is already installed locally. Never changes a skill that is already active. `--activate`, `--dry-run`. |
+
+```bash
+lumibase skills pull
+lumibase skills push --dry-run
+lumibase skills push --check      # CI: exit 1 if the site differs from the directory
+lumibase skills install @acme/lumibase-skills
+```
+
+- **New skills land as drafts.** Pass `--activate` to activate them; otherwise review and activate in Studio (Mission Control → Skills). Existing skills keep their status.
+- **`push` deploys; `install` does not touch live skills.** `push` treats the directory as the source of truth and sends `updateActive: true`, so pushing an edit to an active skill changes agent behaviour immediately. `install` does not: a file that would change an active skill is reported as `ACTIVE_SKILL_CHANGE` and the live skill is left as it was — review it in Studio, or deploy it with `push`.
+- **Idempotent.** A file whose content matches the stored version is reported `unchanged` and writes nothing.
+- **Exit codes.** `push` and `install` exit `1` when any document is rejected; the other documents are still applied. `--check` also exits `1` when anything would be created or updated.
+- **`install` downloads nothing.** A path that exists wins; otherwise the name is resolved under `node_modules`, walking up from the working directory. Inside a package the skills directory is `package.json` → `lumibase.skills`, or `skills/` when that key is absent. The package name and version are recorded as the version's source — a label the CLI declares; the server-recorded author is the authoritative "who".
+- **One direction.** `push` never deletes: a skill that exists on the site but not in the directory is left alone, and `--check` does not report it.
+- **Token.** The endpoints are under `/api/v1/agent`, and every skill read and write needs a control-plane admin, so the token needs admin access to the site. Non-admin skill authors are not supported.
 
 ## `lumibase migrate contentful`
 

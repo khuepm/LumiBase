@@ -1685,6 +1685,9 @@ const FIELD_DIFF_KEYS = [
   'readonly',
   'hidden',
   'encrypted',
+  // A classification change (pii → none) is a security change: `diff_schema`
+  // must preview it, not report the field unchanged (#716 review).
+  'classification',
   'versioned',
   'rawEnabled',
   'width',
@@ -1753,7 +1756,7 @@ function riskForFieldChanges(changes: string[], populatedRows: number): SchemaDi
     ['type', 'nullable', 'required', 'unique', 'length', 'precision', 'scale'].includes(change),
   );
   if (structural && populatedRows > 0) return 'high';
-  if (structural || changes.some((change) => ['indexed', 'encrypted', 'versioned'].includes(change))) return 'medium';
+  if (structural || changes.some((change) => ['indexed', 'encrypted', 'classification', 'versioned'].includes(change))) return 'medium';
   return 'low';
 }
 
