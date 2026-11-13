@@ -5689,6 +5689,39 @@ paths:
                 type: object
                 properties:
                   data: { $ref: '#/components/schemas/Deployment' }
+  /deployments/webhook/{provider}/{siteId}:
+    post:
+      summary: Inbound provider status webhook with path tenant (public, signature-verified)
+      description: |
+        Public, pre-auth endpoint for providers (Vercel, Netlify) that only
+        configure a webhook URL and signing secret and cannot send custom HTTP
+        headers (`X-Lumi-Site`). Authenticated by the provider's request
+        signature over the raw body (Vercel HMAC-SHA1, Netlify JWS/HS256), not a
+        bearer token. The shared secret is the per-site setting
+        `deployment.webhook.<provider>`. Works on the shared API host
+        (`api.lumibase.dev`) without a per-site host mapping.
+      security: []
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [vercel, netlify] } }
+        - { name: siteId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Accepted (ref applied or ignored)
+        '400':
+          description: Invalid siteId format or conflicting X-Lumi-Site header
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: Invalid or missing signature
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /deployments/webhook/{provider}:
     post:
       summary: Inbound provider status webhook (public, signature-verified)
@@ -5696,7 +5729,9 @@ paths:
         Public, pre-auth endpoint. Authenticated by the provider's request
         signature over the raw body (Vercel HMAC-SHA1, Netlify JWS/HS256), not a
         bearer token. The shared secret is the per-site setting
-        `deployment.webhook.<provider>`. Requires the `X-Lumi-Site` header.
+        `deployment.webhook.<provider>`. Resolves the tenant via `withTenant`
+        (`X-Lumi-Site` header or per-site host mapping); on the shared API host
+        without custom headers, prefer `/deployments/webhook/{provider}/{siteId}`.
       security: []
       parameters:
         - { $ref: '#/components/parameters/SiteHeader' }

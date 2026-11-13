@@ -7,10 +7,13 @@ import {
   DeployTriggerSchema,
 } from '@lumibase/contracts';
 import type { AppEnv } from '../env';
+import { scopedDbFor } from '../middleware/db';
 import { requireSiteAdmin } from '../middleware/site-admin';
+import { withTenant } from '../middleware/tenant';
 import { DeploymentError, DeploymentService } from '../services/deployment/deployment-service';
 import { getProvider } from '../services/deployment/providers';
 import { ConfigService } from '../services/config-service';
+import { isValidSiteId } from '../services/identifier-guard';
 
 /**
  * Deployment integrations API (spec: deployment-integrations, design §7).
@@ -22,10 +25,10 @@ import { ConfigService } from '../services/config-service';
  * signature, not a bearer token.
  */
 
-function service(c: Context<AppEnv>): DeploymentService {
+function service(c: Context<AppEnv>, siteId = c.get('siteId')): DeploymentService {
   return new DeploymentService({
-    db: c.get('db'),
-    siteId: c.get('siteId'),
+    db: scopedDbFor(c, siteId),
+    siteId,
     keys: c.get('runtime').keys,
     // Per-target trigger brake (Req 9.5) — distributed limiter from the
     // runtime abstraction, never a Cloudflare binding.
@@ -38,8 +41,12 @@ function service(c: Context<AppEnv>): DeploymentService {
  * `deployment.webhook.<provider>` (value `{ secret: string }`). Returns '' when
  * not configured, which makes `verifyWebhook` reject every request.
  */
-async function webhookSecret(c: Context<AppEnv>, providerKey: string): Promise<string> {
-  const config = new ConfigService({ db: c.get('db'), siteId: c.get('siteId') });
+async function webhookSecret(
+  c: Context<AppEnv>,
+  providerKey: string,
+  siteId = c.get('siteId'),
+): Promise<string> {
+  const config = new ConfigService({ db: scopedDbFor(c, siteId), siteId });
   const rows = await config.listSettings();
   const row = rows.find((r) => r.key === `deployment.webhook.${providerKey}`);
   const value = row?.value as { secret?: unknown } | undefined;
@@ -188,10 +195,61 @@ deploymentsRouter.post('/:id/refresh', async (c) => {
 
 export const deploymentsWebhookRouter = new Hono<AppEnv>();
 
-deploymentsWebhookRouter.post('/:provider', async (c) => {
-  const providerKey = c.req.param('provider');
+async function handleDeploymentWebhook(
+  c: Context<AppEnv>,
+  siteId: string | undefined,
+  fromPath: boolean,
+): Promise<Response> {
+  const providerKey = c.req.param('provider') ?? '';
   const provider = getProvider(providerKey);
   if (!provider) return c.json({ errors: [{ code: 'UNKNOWN_PROVIDER' }] }, 404);
+
+  if (!siteId || !isValidSiteId(siteId)) {
+    return c.json(
+      {
+        errors: [
+          {
+            code: 'TENANT_INVALID',
+            message: 'siteId path parameter has an invalid format.',
+          },
+        ],
+      },
+      400,
+    );
+  }
+
+  if (fromPath) {
+    const headerSite = c.req.header('x-lumi-site');
+    if (headerSite) {
+      if (!isValidSiteId(headerSite)) {
+        return c.json(
+          {
+            errors: [
+              {
+                code: 'TENANT_INVALID',
+                message: 'X-Lumi-Site header has an invalid format.',
+              },
+            ],
+          },
+          400,
+        );
+      }
+      if (headerSite !== siteId) {
+        return c.json(
+          {
+            errors: [
+              {
+                code: 'TENANT_MISMATCH',
+                message: 'X-Lumi-Site header does not match path siteId.',
+              },
+            ],
+          },
+          400,
+        );
+      }
+    }
+    c.set('siteId', siteId);
+  }
 
   const rawBody = await c.req.text();
   const headers: Record<string, string> = {};
@@ -201,7 +259,7 @@ deploymentsWebhookRouter.post('/:provider', async (c) => {
   // NOT from a request header — the provider proves authenticity by signing the
   // body with this shared secret. Absence means inbound webhooks are not
   // configured for this provider, so every request is rejected.
-  const secret = await webhookSecret(c, providerKey);
+  const secret = await webhookSecret(c, providerKey, siteId);
   if (!(await provider.verifyWebhook({ headers, rawBody }, secret))) {
     return c.json({ errors: [{ code: 'INVALID_SIGNATURE' }] }, 401);
   }
@@ -209,6 +267,14 @@ deploymentsWebhookRouter.post('/:provider', async (c) => {
   const ref = provider.parseWebhook(rawBody);
   if (!ref) return c.json({ data: null });
 
-  await service(c).applyWebhookRef(ref);
+  await service(c, siteId).applyWebhookRef(ref);
   return c.json({ data: null });
-});
+}
+
+deploymentsWebhookRouter.post('/:provider/:siteId', (c) =>
+  handleDeploymentWebhook(c, c.req.param('siteId'), true),
+);
+
+deploymentsWebhookRouter.post('/:provider', withTenant(), (c) =>
+  handleDeploymentWebhook(c, c.get('siteId'), false),
+);
