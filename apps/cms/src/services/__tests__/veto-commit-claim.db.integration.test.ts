@@ -172,4 +172,31 @@ describe.skipIf(!hasDbIntegrationUrl)('VetoService.commit — claim before apply
     await sweepDueVetoCommits({ db });
     expect(await appliedRevisions(revisionId)).toBe(before + 1);
   });
+
+  describe('isStagingApplied — guards reopening a quarantined veto (B131)', () => {
+    it('is false while nothing reached live content', async () => {
+      const { approvalId } = await stageDue();
+      expect(await new VetoService({ db, siteId: SITE }).isStagingApplied(approvalId)).toBe(false);
+    });
+
+    it('is true when the commit died after the patch, before finalizing', async () => {
+      const { approvalId } = await stageDue();
+      // The process dies right after the patch: finalize never runs and the
+      // claim-recovery write never happens, so the staging is still staged.
+      vi.spyOn(internals, 'finalizeCommit').mockRejectedValue(new Error('killed'));
+      vi.spyOn(VetoService.prototype as unknown as { settleAppliedClaim: () => Promise<void> }, 'settleAppliedClaim')
+        .mockRejectedValue(new Error('killed'));
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      await sweepDueVetoCommits({ db });
+      await db.update(agentApprovals).set({ status: 'failed' }).where(eq(agentApprovals.id, approvalId));
+
+      expect(await new VetoService({ db, siteId: SITE }).isStagingApplied(approvalId)).toBe(true);
+    });
+
+    it('is true once the staging was finalized', async () => {
+      const { approvalId } = await stageDue();
+      await sweepDueVetoCommits({ db });
+      expect(await new VetoService({ db, siteId: SITE }).isStagingApplied(approvalId)).toBe(true);
+    });
+  });
 });

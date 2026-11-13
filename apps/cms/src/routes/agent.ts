@@ -1143,6 +1143,26 @@ agentRouter.post('/approvals/:id/reopen', async (c) => {
   if (existing.kind === QUESTION_KIND) {
     return questionNotDecidable(c, approvalId);
   }
+  // A veto commit that died after applying its patch is quarantined `failed`
+  // by the claim sweep. Reopening it would hand it back to the veto sweep,
+  // which would apply the same staging again (B131), so refuse it here and
+  // leave the decision on the live content to a human edit.
+  if (existing.kind === 'veto' && existing.status === 'failed') {
+    const { VetoService } = await import('../services/veto-service');
+    if (await new VetoService({ db, siteId }).isStagingApplied(approvalId)) {
+      return c.json(
+        {
+          errors: [
+            {
+              code: 'VETO_ALREADY_APPLIED',
+              message: 'The staged change is already live; reopening would apply it twice.',
+            },
+          ],
+        },
+        409,
+      );
+    }
+  }
 
   // The transition and its audit commit together. Reopening authorizes a second
   // run of an action that may already have taken effect, so the record of who

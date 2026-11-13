@@ -6,7 +6,7 @@ import {
   revisions,
   type Database,
 } from '@lumibase/database';
-import { and, asc, eq, isNull, lte } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lte, ne } from 'drizzle-orm';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentVetoesTotal, agentVetoStagingsTotal } from './agent-metrics';
 import { AutonomyService } from './autonomy-service';
@@ -451,6 +451,40 @@ export class VetoService {
       dropped.length > 0 ? `auto_commit_partial:dropped=${dropped.join(',')}` : 'auto_commit',
     );
     return { outcome: 'committed', droppedPinned: dropped };
+  }
+
+  /**
+   * Whether a veto staging's patch may already be live (B131).
+   *
+   * A commit that dies between `itemService.patch` and finalizing leaves the
+   * row `deciding`; the approval-claim sweep then moves it to `failed`, and
+   * reopening it would let the sweep apply the staging a second time. Two
+   * traces say the patch ran: the staging is no longer staged (finalize got
+   * far enough to discard it), or the item has a live revision written by the
+   * approval's run after the staging was created (`createdByRunId`, stamped
+   * by the commit's provenance). Either one answers yes.
+   */
+  async isStagingApplied(approvalId: string): Promise<boolean> {
+    const approval = await this.getVetoApproval(approvalId);
+    const staging = await this.getStaging(approval.subjectId);
+    if (!staging) return false;
+    if (!staging.staged) return true;
+    if (!approval.runId) return false;
+    const [live] = await this.deps.db
+      .select({ id: revisions.id })
+      .from(revisions)
+      .where(
+        and(
+          eq(revisions.siteId, this.deps.siteId),
+          eq(revisions.itemId, staging.itemId),
+          eq(revisions.staged, false),
+          eq(revisions.createdByRunId, approval.runId),
+          ne(revisions.id, staging.id),
+          gte(revisions.createdAt, staging.createdAt),
+        ),
+      )
+      .limit(1);
+    return !!live;
   }
 
   /** Due stagings for the sweep/queue runner. */
