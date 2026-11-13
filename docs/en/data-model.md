@@ -1,10 +1,10 @@
 ---
-version: 14
-lastUpdated: 2026-11-13T06:58:01.770Z
+version: 15
+lastUpdated: 2026-11-13T15:31:05.385Z
 sourceLang: en
-contentHash: 663fe1dec3a63ad7
-codeVerified: 2026-11-13T06:58:01.770Z
-codeVerifiedHash: 663fe1dec3a63ad7
+contentHash: ffe6886c5e7614f4
+codeVerified: 2026-11-13T15:31:05.385Z
+codeVerifiedHash: ffe6886c5e7614f4
 codeVerifiedClaims: 20
 ---
 
@@ -35,6 +35,7 @@ Schema files are split by domain:
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
 | `imports.ts` | `lumibase_import_jobs` |
+| `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
 
@@ -213,6 +214,10 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`, `(siteId, status, publ
 - One background import (#726): `collection`, `format` (`csv`/`json`), `mode` (`create`/`upsert`), `status` (`queued`/`running`/`succeeded`/`failed`/`cancelled`/`timed_out`), `principal` jsonb (re-resolved at every step), `created_by`.
 - Progress: `total_rows`, `cursor` (next row), `created_rows`, `updated_rows`, `failed_rows`, `errors` jsonb (`{ row, id?, message }[]`, capped) and `errors_truncated`.
 - Worker coordination: `lease_owner`, `lease_until`, `timeout_ms`, `cancel_requested_at`, `started_at`, `finished_at`. `source` holds the uploaded file until the job ends, then is cleared. Site-isolated under RLS.
+
+### `activation_milestones` and `telemetry_state` (`activation.ts`, migration `0029`)
+- `activation_milestones`: one row per `site_id` and `milestone` (`site_created`/`item_published`/`delivery_request`/`agent_run`), with `reached_at` and `source` (`event`/`derived`). Written once, never updated. Site-isolated under RLS.
+- `telemetry_state`: instance-level singleton (`id = 'singleton'`), not site-scoped. Holds the random `install_id` and `sent` jsonb (event name → day delivered). The row is created only after an operator opts in to usage telemetry.
 
 ### Schema diff/apply runtime contract
 

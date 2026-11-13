@@ -93,7 +93,7 @@
       {
         "type": "category",
         "label": "Operations",
-        "items": ["operations/upgrades", "operations/encryption-keys"]
+        "items": ["operations/upgrades", "operations/encryption-keys", "operations/usage-telemetry"]
       },
       {
         "type": "category",
