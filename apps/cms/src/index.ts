@@ -52,6 +52,7 @@ import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
 import { flowsRouter } from './routes/flows';
 import { itemsRouter } from './routes/items';
+import { importsRouter } from './routes/imports';
 import { handleGraphQL } from './graphql';
 import { permissionsRouter } from './routes/permissions';
 import { policiesRouter } from './routes/policies';
@@ -260,6 +261,8 @@ api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/pages', pagesRouter);
 api.route('/items', itemsRouter);
+// Background collection imports (#726).
+api.route('/imports', importsRouter);
 api.route('/releases', releasesRouter);
 api.route('/editorial', editorialRouter);
 // GraphQL surface (Yoga). Mounted inside the authenticated `api` sub-app so

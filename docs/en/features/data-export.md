@@ -1,11 +1,11 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-12T06:32:29.957Z
-contentHash: 35bbb3c580043861
-codeVerified: 2026-11-12T06:32:29.957Z
-codeVerifiedHash: 35bbb3c580043861
-codeVerifiedClaims: 4
+version: 2
+lastUpdated: 2026-11-12T10:11:39.685Z
+contentHash: fe376fc30fa5e639
+codeVerified: 2026-11-12T10:11:39.685Z
+codeVerifiedHash: fe376fc30fa5e639
+codeVerifiedClaims: 6
 ---
 
 # Data export
@@ -114,10 +114,10 @@ export default {
 
 ## Re-importing
 
-A JSON export's `items[].data` objects can be sent to the
-[bulk endpoint](./data-import.md) with `op: "create"` today. Background import
-jobs that read both formats directly, with progress and a row-level error report,
-are tracked in #726.
+Upload the file as a [background import job](./data-import.md#background-import-jobs):
+`POST /api/v1/imports?collection=…` reads both formats as written here, with
+progress, cancel and a row-level error report. Use `mode=upsert` to update the
+items whose `id` matches instead of creating copies.
 
 ## Related
 

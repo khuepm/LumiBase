@@ -2633,6 +2633,99 @@ paths:
                 sort: { type: integer }
       responses:
         '201': { description: Created }
+  /imports:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    post:
+      summary: Upload a CSV or JSON export file as a background import job
+      description: >-
+        Multipart (`file` field) or a raw body (`text/csv`,
+        `application/octet-stream`). The file is parsed before the job is
+        created; rows are written in the background in chunks under the
+        uploader's permissions. Limits come from `IMPORT_*` environment variables.
+      parameters:
+        - { name: collection, in: query, required: true, schema: { type: string } }
+        - { name: format, in: query, schema: { type: string, enum: [csv, json] }, description: Inferred from a .csv/.json file name or the content type when omitted }
+        - { name: mode, in: query, schema: { type: string, enum: [create, upsert], default: create } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object, properties: { file: { type: string, format: binary } } }
+          text/csv:
+            schema: { type: string }
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '202':
+          description: Job created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        collection: { type: string }
+                        format: { type: string, enum: [csv, json] }
+                        mode: { type: string, enum: [create, upsert] }
+                        status: { type: string, enum: [queued, running, succeeded, failed, cancelled, timed_out] }
+                        totalRows: { type: integer }
+                        processedRows: { type: integer }
+                        createdRows: { type: integer }
+                        updatedRows: { type: integer }
+                        failedRows: { type: integer }
+                        errorsTruncated: { type: integer }
+                        message: { type: string, nullable: true }
+                        createdBy: { type: string, nullable: true }
+                        cancelRequested: { type: boolean }
+                        createdAt: { type: string, format: date-time }
+                        startedAt: { type: string, format: date-time, nullable: true }
+                        finishedAt: { type: string, format: date-time, nullable: true }
+        '400': { description: VALIDATION (bad file, unknown column, no rows, no format) }
+        '403': { description: Missing create (or update for upsert) permission }
+        '404': { description: Collection not found }
+        '413': { description: File larger than IMPORT_MAX_BYTES }
+    get:
+      summary: List recent import jobs (own jobs; site admins see all)
+      parameters:
+        - { name: collection, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, cancelled, timed_out] } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200': { description: '{ data: ImportJob[] }' }
+  /imports/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Import job progress
+      responses:
+        '200': { description: '{ data: ImportJob }' }
+        '404': { description: Not found, or not visible to the caller }
+  /imports/{id}/errors:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Row-level errors of an import job
+      parameters:
+        - { name: format, in: query, schema: { type: string, enum: [csv] }, description: '`csv` downloads `row,id,message`' }
+      responses:
+        '200': { description: '{ data: { errors: [{ row, id?, message }], truncated } } or a CSV download' }
+        '404': { description: Not found }
+  /imports/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Stop a queued or running import job
+      responses:
+        '200': { description: '{ data: ImportJob }' }
+        '404': { description: Not found }
+        '409': { description: Job already finished }
   /items/{collection}/export:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'
