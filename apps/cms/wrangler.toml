@@ -101,12 +101,15 @@ crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]
 # ─── Queues ───────────────────────────────────────────────────────────────────
 # The Worker's `queue()` export (src/cloudflare-queue.ts) routes each batch by
 # queue name: `lumibase-<logical>-<profile>` → agent-runs / flow-runs /
-# flow-events. Keep the logical segment if you rename a queue. Every named
-# profile needs its queues (and `-dlq`) created before deploy, e.g.
+# flow-events / content-indexing / revalidation-dispatch. Keep the logical
+# segment if you rename a queue. Every named profile needs its queues (and
+# `-dlq`) created before deploy, e.g.
 #   wrangler queues create lumibase-flow-runs-production
 #   wrangler queues create lumibase-flow-runs-production-dlq
 # Flows consumers use `max_retries = 2` (3 deliveries), the same as Docker's
 # BullMQ default `attempts: 3`. See docs/en/features/flows-automation.md.
+# content-indexing and revalidation-dispatch (B131) batch up to 10 messages
+# (each is acked or retried on its own) with the same `max_retries = 2`.
 #
 # Used by ItemService to publish mutation events to SiteRoom without blocking.
 # [[queues.producers]]
@@ -146,6 +149,28 @@ max_batch_size = 1
 max_batch_timeout = 1
 max_retries = 2
 dead_letter_queue = "lumibase-flow-events-local-dlq"
+
+[[queues.producers]]
+binding = "CONTENT_INDEXING_QUEUE"
+queue = "lumibase-content-indexing-local"
+
+[[queues.consumers]]
+queue = "lumibase-content-indexing-local"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-content-indexing-local-dlq"
+
+[[queues.producers]]
+binding = "REVALIDATION_QUEUE"
+queue = "lumibase-revalidation-dispatch-local"
+
+[[queues.consumers]]
+queue = "lumibase-revalidation-dispatch-local"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-revalidation-dispatch-local-dlq"
 
 # ─── Environment Profiles ────────────────────────────────────────────────────
 # Top-level [vars] is intentionally local/development only. Named environments
@@ -289,6 +314,28 @@ max_batch_timeout = 1
 max_retries = 2
 dead_letter_queue = "lumibase-flow-events-staging-dlq"
 
+[[env.staging.queues.producers]]
+binding = "CONTENT_INDEXING_QUEUE"
+queue = "lumibase-content-indexing-staging"
+
+[[env.staging.queues.consumers]]
+queue = "lumibase-content-indexing-staging"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-content-indexing-staging-dlq"
+
+[[env.staging.queues.producers]]
+binding = "REVALIDATION_QUEUE"
+queue = "lumibase-revalidation-dispatch-staging"
+
+[[env.staging.queues.consumers]]
+queue = "lumibase-revalidation-dispatch-staging"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-revalidation-dispatch-staging-dlq"
+
 [env.staging.triggers]
 # Reserve the minute trigger for production on the shared Free account.
 crons = ["0 * * * *", "*/5 * * * *"]
@@ -422,6 +469,28 @@ max_batch_timeout = 1
 max_retries = 2
 dead_letter_queue = "lumibase-flow-events-production-dlq"
 
+[[env.production.queues.producers]]
+binding = "CONTENT_INDEXING_QUEUE"
+queue = "lumibase-content-indexing-production"
+
+[[env.production.queues.consumers]]
+queue = "lumibase-content-indexing-production"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-content-indexing-production-dlq"
+
+[[env.production.queues.producers]]
+binding = "REVALIDATION_QUEUE"
+queue = "lumibase-revalidation-dispatch-production"
+
+[[env.production.queues.consumers]]
+queue = "lumibase-revalidation-dispatch-production"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-revalidation-dispatch-production-dlq"
+
 [env.production.triggers]
 crons = ["0 * * * *", "*/5 * * * *", "* * * * *"]
 
@@ -509,6 +578,28 @@ max_batch_size = 1
 max_batch_timeout = 1
 max_retries = 2
 dead_letter_queue = "lumibase-flow-events-dev-dlq"
+
+[[env.dev.queues.producers]]
+binding = "CONTENT_INDEXING_QUEUE"
+queue = "lumibase-content-indexing-dev"
+
+[[env.dev.queues.consumers]]
+queue = "lumibase-content-indexing-dev"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-content-indexing-dev-dlq"
+
+[[env.dev.queues.producers]]
+binding = "REVALIDATION_QUEUE"
+queue = "lumibase-revalidation-dispatch-dev"
+
+[[env.dev.queues.consumers]]
+queue = "lumibase-revalidation-dispatch-dev"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-revalidation-dispatch-dev-dlq"
 
 [env.dev.triggers]
 # Reserve account cron capacity for production.
@@ -599,6 +690,28 @@ max_batch_size = 1
 max_batch_timeout = 1
 max_retries = 2
 dead_letter_queue = "lumibase-flow-events-demo-dlq"
+
+[[env.demo.queues.producers]]
+binding = "CONTENT_INDEXING_QUEUE"
+queue = "lumibase-content-indexing-demo"
+
+[[env.demo.queues.consumers]]
+queue = "lumibase-content-indexing-demo"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-content-indexing-demo-dlq"
+
+[[env.demo.queues.producers]]
+binding = "REVALIDATION_QUEUE"
+queue = "lumibase-revalidation-dispatch-demo"
+
+[[env.demo.queues.consumers]]
+queue = "lumibase-revalidation-dispatch-demo"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 2
+dead_letter_queue = "lumibase-revalidation-dispatch-demo-dlq"
 
 [env.demo.triggers]
 # Reserve account cron capacity for production.

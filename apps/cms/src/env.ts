@@ -15,6 +15,13 @@ export interface Bindings {
   FLOW_RUNS_QUEUE?: Queue;
   /** Producer for event and schedule flow runs (logical `flow-events`, B118). */
   FLOW_EVENTS_QUEUE?: Queue;
+  /** Producer for search index/remove jobs (logical `content-indexing`, B131). */
+  CONTENT_INDEXING_QUEUE?: Queue;
+  /** Producer for ISR revalidation dispatch jobs (logical `revalidation-dispatch`, B131). */
+  REVALIDATION_QUEUE?: Queue;
+  /** Meilisearch endpoint for the search provider. Unset: search is disabled. */
+  MEILISEARCH_HOST?: string;
+  MEILISEARCH_API_KEY?: string;
   HYPERDRIVE?: Hyperdrive;
   /**
    * Optional second Hyperdrive config for the system role (BYPASSRLS), used by

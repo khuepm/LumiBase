@@ -12,6 +12,8 @@ import { resolveLogicalQueue, WORKER_QUEUE_CONSUMERS } from '../cloudflare-queue
  * one side: `agent-runs` had no Workers consumer until B10, and `flow-runs` /
  * `flow-events` had none until B118, so async flow runs (including J10
  * `ai:decision` and the J11/J12 automation flows) never executed on Workers.
+ * `content-indexing` / `revalidation-dispatch` had none until B131, so on
+ * Workers the search index and ISR targets never saw a content change.
  * Nothing failed at build time; jobs just waited forever.
  *
  * This scan fails when:
@@ -28,6 +30,7 @@ const SERVE = read('serve.ts');
 const ENTRY = read('cloudflare.ts');
 const FLOW_HANDLERS = read('cloudflare-flow-queue.ts');
 const AGENT_HANDLER = read('cloudflare-agent-queue.ts');
+const CONTENT_HANDLERS = read('cloudflare-content-queue.ts');
 const WRANGLER = readFileSync(resolve(SRC, '../wrangler.toml'), 'utf8');
 
 const PROFILES = ['local', 'staging', 'production', 'dev', 'demo'] as const;
@@ -38,8 +41,6 @@ const PROFILES = ['local', 'staging', 'production', 'dev', 'demo'] as const;
  * appears in `serve.ts` fails the test.
  */
 const DOCKER_ONLY_CONSUMERS: Record<string, string> = {
-  registerContentIndexingWorker: 'B131',
-  registerRevalidationWorker: 'B131',
   registerAuditLogWorker: 'B131',
   registerCdcDispatchWorker: 'B131',
   registerVetoCommitWorker: 'B131',
@@ -179,6 +180,15 @@ describe('Workers consumers get the same providers as Docker (c)', () => {
     const docker = keysOf(SERVE, name);
     expect(docker).toEqual(['cache', 'db', 'env', 'keys', 'queue']);
     expect(keysOf(FLOW_HANDLERS, name)).toEqual(docker);
+  });
+
+  it.each([
+    ['registerContentIndexingWorker', ['queue', 'search']],
+    ['registerRevalidationWorker', ['db', 'queue']],
+  ])('%s: same deps keys on both entrypoints', (name, expected) => {
+    const docker = keysOf(SERVE, name);
+    expect(docker).toEqual(expected);
+    expect(keysOf(CONTENT_HANDLERS, name)).toEqual(docker);
   });
 
   it('agent-runs: the Workers handler passes at least the Docker providers', () => {

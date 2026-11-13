@@ -1,10 +1,11 @@
 import { processCloudflareAgentQueue } from './cloudflare-agent-queue';
+import { processCloudflareContentIndexingQueue, processCloudflareRevalidationQueue } from './cloudflare-content-queue';
 import { processCloudflareFlowEventsQueue, processCloudflareFlowRunsQueue } from './cloudflare-flow-queue';
 import { ackHealthProbes } from './cloudflare-queue-common';
 import type { Bindings } from './env';
 
 /**
- * Worker `queue()` dispatcher (B10, B118).
+ * Worker `queue()` dispatcher (B10, B118, B131).
  *
  * Cloudflare calls one `queue()` export for every consumer bound to the Worker;
  * `batch.queue` is the physical queue name (`lumibase-flow-runs-production`).
@@ -19,6 +20,8 @@ export const WORKER_QUEUE_CONSUMERS = {
   'agent-runs': { binding: 'AGENT_RUNS_QUEUE', dockerRegistration: 'registerAgentRunWorker' },
   'flow-runs': { binding: 'FLOW_RUNS_QUEUE', dockerRegistration: 'registerFlowRunsWorker' },
   'flow-events': { binding: 'FLOW_EVENTS_QUEUE', dockerRegistration: 'registerFlowEventWorker' },
+  'content-indexing': { binding: 'CONTENT_INDEXING_QUEUE', dockerRegistration: 'registerContentIndexingWorker' },
+  'revalidation-dispatch': { binding: 'REVALIDATION_QUEUE', dockerRegistration: 'registerRevalidationWorker' },
 } as const;
 
 export type WorkerLogicalQueue = keyof typeof WORKER_QUEUE_CONSUMERS;
@@ -30,9 +33,11 @@ const HANDLERS: Record<
   'agent-runs': processCloudflareAgentQueue,
   'flow-runs': processCloudflareFlowRunsQueue,
   'flow-events': processCloudflareFlowEventsQueue,
+  'content-indexing': processCloudflareContentIndexingQueue,
+  'revalidation-dispatch': processCloudflareRevalidationQueue,
 };
 
-const QUEUE_NAME = /^(agent-runs|flow-runs|flow-events)(-[a-z0-9-]+)?$/;
+const QUEUE_NAME = /^(agent-runs|flow-runs|flow-events|content-indexing|revalidation-dispatch)(-[a-z0-9-]+)?$/;
 
 /**
  * Physical queue name → logical queue. Accepts `lumibase-<logical>-<profile>`

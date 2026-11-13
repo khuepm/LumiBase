@@ -1,11 +1,11 @@
 ---
-version: 8
-lastUpdated: 2026-11-07T17:58:40.753Z
+version: 9
+lastUpdated: 2026-11-12T11:48:22.041Z
 sourceLang: en
-contentHash: 538fb6c776c5272d
-codeVerified: 2026-10-31T17:56:46.242Z
-codeVerifiedHash: ccd23a962e4574a2
-codeVerifiedClaims: 30
+contentHash: 2889d12e9b9d6437
+codeVerified: 2026-11-12T11:48:22.041Z
+codeVerifiedHash: 2889d12e9b9d6437
+codeVerifiedClaims: 32
 ---
 
 # LumiBase Production Deployment Checklist
@@ -14,7 +14,7 @@ codeVerifiedClaims: 30
 
 ---
 
-The CMS deploy and release workflows ensure missing flow queues and their dead-letter queues before deployment using `scripts/ensure-flow-queues.mjs`. Existing queues are preserved. The deploy token needs Queues edit permission. Local/manual deployment still uses the queue creation commands below.
+The CMS deploy and release workflows ensure the missing Flows queues (`flow-runs`, `flow-events`), content queues (`content-indexing`, `revalidation-dispatch`) and their dead-letter queues before deployment using `scripts/ensure-flow-queues.mjs`. Existing queues are preserved. The deploy token needs Queues edit permission. Local/manual deployment still uses the queue creation commands below.
 
 ## Table of Contents
 
@@ -76,11 +76,11 @@ The CMS deploy and release workflows ensure missing flow queues and their dead-l
   ```bash
   wrangler queues create lumibase-realtime
   ```
-- [ ] Queues created for agent runs and Flows, with their dead-letter queues, for every named profile you deploy (see [Flows queues](features/flows-automation.md#cloudflare-workers-flows-queues)):
+- [ ] Queues created for agent runs, Flows, search indexing and ISR revalidation, with their dead-letter queues, for every named profile you deploy (see [Flows queues](features/flows-automation.md#cloudflare-workers-flows-queues)):
   ```bash
   cd apps/cms
   for profile in staging production dev demo; do
-    for q in agent-runs flow-runs flow-events; do
+    for q in agent-runs flow-runs flow-events content-indexing revalidation-dispatch; do
       pnpm exec wrangler queues create "lumibase-$q-$profile"
       pnpm exec wrangler queues create "lumibase-$q-$profile-dlq"
     done
