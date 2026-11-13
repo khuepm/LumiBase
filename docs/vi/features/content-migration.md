@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-12T20:47:42.877Z
+version: 2
+lastUpdated: 2026-11-13T06:07:20.634Z
 translatedFrom: en
-sourceHash: f6db806a7a4f94a8
+sourceHash: aba9a12e52557a17
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T20:47:42.877Z
-codeVerifiedHash: f6db806a7a4f94a8
+codeVerified: 2026-11-13T06:07:20.634Z
+codeVerifiedHash: aba9a12e52557a17
 codeVerifiedClaims: 2
 ---
 
@@ -51,7 +51,7 @@ trị schema và quyền `create`/`update` trên các collection mới.
 | `--prefix <p>` | Tiền tố cho tên collection mới, ví dụ `cf_`. |
 | `--locale-map <a=b,…>` | Đổi tên locale nguồn, ví dụ `en-US=en,de-DE=de`. Locale không được map giữ nguyên mã. |
 | `--skip-assets` | Không tải xuống hay upload asset; các field file để trống. |
-| `--state <path>` | File để chạy tiếp cho các asset đã upload (mặc định `.lumibase/migrate-contentful-<space id>.json`, hoặc `.lumibase/migrate-contentful.json` khi file export không có space id). |
+| `--state <path>` | File để chạy tiếp cho các asset đã upload (mặc định `.lumibase/migrate-contentful-<space id>-<site>-<hash>.json`, mỗi space và mỗi đích một file). |
 | `--json` | In kế hoạch dạng JSON thay vì báo cáo dễ đọc. |
 
 ## Dry run cho thấy gì
@@ -150,13 +150,15 @@ kèm nút chuyển sang JSON thô; block editor được theo dõi ở #669 và 
    sẽ được đặt thành `<name>_contentful`.
 2. **Asset.** Mỗi asset (file của locale mặc định) được tải từ CDN của Contentful
    và upload qua luồng presigned upload, rồi đăng ký thành file. Storage key được
-   lưu vào file state sau mỗi lần upload.
+   lưu vào file state sau mỗi lần upload. File state ghi lại đích của nó (URL
+   CMS và site); file state viết cho một đích khác bị từ chối trước khi ghi bất
+   cứ thứ gì, nên một site không bao giờ dùng lại asset key của site khác.
 3. **Entry.** Mỗi entry được tạo với id Contentful làm id của item, giữ nguyên
    trạng thái (`published`, `draft`, `archived`). Nhờ vậy link được resolve trong
    một lượt.
 
 Chạy lại `--apply` là an toàn: item đã có được cập nhật tại chỗ (create trả `409 ITEM_ID_EXISTS`,
-CLI patch item đó), và asset đã có trong file state không bị upload lại. Lỗi `429`
+CLI patch item đó; mọi `409` khác được báo là lỗi), và asset đã có trong file state không bị upload lại. Lỗi `429`
 từ rate limiter được thử lại sau `Retry-After`.
 
 ## Agent skills
@@ -181,6 +183,9 @@ thấy schema đã sẵn sàng.
   item nhận id mới và link tới chúng không resolve được.
 - Collection có editorial workflow từ chối `published` khi tạo; hãy migrate vào
   collection không có workflow, hoặc xuất bản qua workflow sau đó.
+- Id của item là duy nhất trên mỗi instance LumiBase, không phải mỗi site:
+  migrate cùng một space vào hai site của một instance sẽ lỗi ở các entry của
+  site thứ hai. Asset và schema không bị ảnh hưởng.
 - Entry được ghi từng request một. Với space rất lớn, rate limit của API
   (`LUMIBASE_API_RATE_LIMIT`, mặc định 600 request/phút) quyết định tốc độ.
 

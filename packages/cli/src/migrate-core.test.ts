@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   buildMigrationPlan,
@@ -301,6 +302,19 @@ describe('importEntries — 409 handling', () => {
     expect(patched).toHaveLength(7);
   });
 
+  it.each([
+    ['an empty body', {}],
+    ['a non-JSON body', '<html>409 Conflict</html>'],
+    ['no body', null],
+    ['an unrelated code', { errors: [{ code: 'UNIQUE_VIOLATION', message: 'slug taken' }] }],
+    ['an error without a code', { errors: [{ message: 'conflict' }] }],
+  ])('does not patch on a 409 with %s', async (_label, body) => {
+    const { result, patched } = await run(body);
+    expect(patched).toHaveLength(0);
+    expect(result.updated).toBe(0);
+    expect(result.failed).toHaveLength(7);
+  });
+
   it('reports any other 409 as a failure instead of patching', async () => {
     const { result, patched } = await run({ errors: [{ code: 'EDITORIAL_GATE_REQUIRED', message: 'Item must be approved' }] });
     expect(patched).toHaveLength(0);
@@ -336,5 +350,54 @@ describe('richTextToMarkdown — table cells', () => {
     const md = table([cell({ type: 'code', text: 'a | b' })]);
     expect(md.split('\n')[0]).toContain('a \\| b');
     expect(columns(md.split('\n')[0]!)).toBe(1);
+  });
+});
+
+describe('migrate resume state — bound to its destination', () => {
+  const load = async () => import('./commands/migrate');
+  const tmp = () => mkdtempSync(join(tmpdir(), 'lumibase-state-'));
+
+  it('normalises the target URL', async () => {
+    const { migrateTarget } = await load();
+    expect(migrateTarget('https://CMS.example.dev/', 's1')).toEqual({ url: 'https://cms.example.dev', siteId: 's1' });
+    expect(migrateTarget('https://cms.example.dev/api/', 's1').url).toBe('https://cms.example.dev/api');
+  });
+
+  it('gives each destination its own default state file', async () => {
+    const { defaultStatePath, migrateTarget } = await load();
+    const a = defaultStatePath('contentful', 'space1', migrateTarget('https://cms.dev', 'site_a'));
+    const b = defaultStatePath('contentful', 'space1', migrateTarget('https://cms.dev', 'site_b'));
+    const c = defaultStatePath('contentful', 'space1', migrateTarget('https://other.dev', 'site_a'));
+    expect(new Set([a, b, c]).size).toBe(3);
+    expect(a).toMatch(/^\.lumibase\/migrate-contentful-space1-site_a-[0-9a-f]{10}\.json$/);
+  });
+
+  it('reuses cached keys only for the same source and destination', async () => {
+    const { loadMigrateState, migrateTarget } = await load();
+    const dir = tmp();
+    const path = join(dir, 'state.json');
+    const siteA = migrateTarget('https://cms.dev', 'site_a');
+    writeFileSync(path, JSON.stringify({ source: 'contentful', sourceId: 'space1', target: siteA, assets: { a1: 'key-a' } }));
+    try {
+      expect(loadMigrateState(path, 'contentful', 'space1', siteA).assets).toEqual({ a1: 'key-a' });
+      // Same space, another site or another CMS: refused, keys never reused.
+      expect(() => loadMigrateState(path, 'contentful', 'space1', migrateTarget('https://cms.dev', 'site_b'))).toThrow(/belongs to another migration/);
+      expect(() => loadMigrateState(path, 'contentful', 'space1', migrateTarget('https://other.dev', 'site_a'))).toThrow(/belongs to another migration/);
+      expect(() => loadMigrateState(path, 'contentful', 'space2', siteA)).toThrow(/belongs to another migration/);
+      // A state file without a destination (or with a bad assets map) is not trusted either.
+      writeFileSync(path, JSON.stringify({ source: 'contentful', sourceId: 'space1', assets: { a1: 'key-a' } }));
+      expect(() => loadMigrateState(path, 'contentful', 'space1', siteA)).toThrow(/belongs to another migration/);
+      writeFileSync(path, '{not json');
+      expect(() => loadMigrateState(path, 'contentful', 'space1', siteA)).toThrow(/not valid JSON/);
+      // No file: a fresh state for this destination.
+      expect(loadMigrateState(join(dir, 'none.json'), 'contentful', 'space1', siteA)).toEqual({
+        source: 'contentful',
+        sourceId: 'space1',
+        target: siteA,
+        assets: {},
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

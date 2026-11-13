@@ -46,7 +46,7 @@ ${pc.bold("lumibase migrate contentful")}
   --prefix <p>    Prefix for new collection names, e.g. cf_
   --locale-map <a=b,…>  Map source locales, e.g. en-US=en
   --skip-assets   Do not download/upload assets
-  --state <path>  Resume file ${pc.dim("(default: .lumibase/migrate-contentful-<space>.json)")}
+  --state <path>  Resume file ${pc.dim("(default: .lumibase/migrate-contentful-<space>-<site>-<hash>.json)")}
   --json          Print the plan as JSON
 
 ${pc.bold("Examples")}

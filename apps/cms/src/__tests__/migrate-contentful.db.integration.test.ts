@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -24,6 +24,7 @@ import { parseArgs } from '../../../../packages/cli/src/utils/args';
  */
 
 const SITE = 'site_migrate_cf_it';
+const SITE_B = 'site_migrate_cf_it_b';
 const ADMIN = 'usr_migrate_cf_admin';
 const FIXTURE = resolve(__dirname, '../../../../packages/cli/test/fixtures/contentful-space.json');
 const ASSET_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
@@ -38,7 +39,8 @@ describe.skipIf(!hasDbIntegrationUrl)('lumibase migrate contentful — end to en
   app.use('*', async (c, next) => {
     (c as unknown as { env: Record<string, unknown> }).env = { JWT_SECRET: 'test-upload-secret-0123456789' };
     c.set('db', db);
-    c.set('siteId', SITE);
+    // The CLI sends its site in `x-lumi-site`; honour it so two targets can be tested.
+    c.set('siteId', c.req.header('x-lumi-site') === SITE_B ? SITE_B : SITE);
     c.set('auth', { userId: ADMIN, email: 'admin@x.dev', roles: [], raw: {} } as unknown as AppEnv['Variables']['auth']);
     c.set('runtime', {
       cache: undefined,
@@ -83,6 +85,7 @@ describe.skipIf(!hasDbIntegrationUrl)('lumibase migrate contentful — end to en
   afterAll(async () => {
     if (!db) return;
     await db.delete(sites).where(eq(sites.id, SITE)).catch(() => undefined);
+    await db.delete(sites).where(eq(sites.id, SITE_B)).catch(() => undefined);
     await db.delete(users).where(eq(users.id, ADMIN)).catch(() => undefined);
   });
 
@@ -90,18 +93,27 @@ describe.skipIf(!hasDbIntegrationUrl)('lumibase migrate contentful — end to en
     cwd = mkdtempSync(join(tmpdir(), 'lumibase-migrate-'));
     stored.clear();
     cdnHits.length = 0;
-    await db.delete(sites).where(eq(sites.id, SITE));
-    await db.insert(sites).values({
-      organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`,
-      id: SITE,
-      name: 'Migrate IT',
-    });
     await db.insert(users).values({ id: ADMIN, email: 'migrate-admin@x.dev', status: 'active' }).onConflictDoNothing();
-    const role = (await db.insert(roles).values({ siteId: SITE, name: 'Admin', adminAccess: true, appAccess: true }).returning({ id: roles.id }))[0]!.id;
-    await db.insert(userSites).values({ userId: ADMIN, siteId: SITE, roleId: role });
+    for (const [id, name] of [[SITE, 'Migrate IT'], [SITE_B, 'Migrate IT B']] as const) {
+      await db.delete(sites).where(eq(sites.id, id));
+      await db.insert(sites).values({
+        organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`,
+        id,
+        name,
+      });
+      const role = (await db.insert(roles).values({ siteId: id, name: 'Admin', adminAccess: true, appAccess: true }).returning({ id: roles.id }))[0]!.id;
+      await db.insert(userSites).values({ userId: ADMIN, siteId: id, roleId: role });
+    }
   });
 
   afterEach(() => rmSync(cwd, { recursive: true, force: true }));
+
+  const stateFiles = () => readdirSync(join(cwd, '.lumibase')).filter((f) => f.startsWith('migrate-contentful-'));
+  const readState = (siteId = SITE) => {
+    const file = stateFiles().find((f) => f.includes(`-${siteId}-`));
+    if (!file) throw new Error(`no state file for ${siteId}`);
+    return JSON.parse(readFileSync(join(cwd, '.lumibase', file), 'utf8')) as { target: { siteId: string }; assets: Record<string, string> };
+  };
 
   const collectionRow = async (name: string) =>
     (await db.select().from(collections).where(and(eq(collections.siteId, SITE), eq(collections.name, name))))[0];
@@ -130,7 +142,7 @@ describe.skipIf(!hasDbIntegrationUrl)('lumibase migrate contentful — end to en
     expect(cdnHits.sort()).toEqual(['/space/asset-avatar/lan.png', '/space/asset-hero/hero.jpg']);
     expect(stored.size).toBe(2);
     expect(await db.select().from(files).where(eq(files.siteId, SITE))).toHaveLength(2);
-    const state = JSON.parse(readFileSync(join(cwd, '.lumibase/migrate-contentful.json'), 'utf8')) as { assets: Record<string, string> };
+    const state = readState();
     expect(Object.keys(state.assets).sort()).toEqual(['asset-avatar', 'asset-hero']);
 
     // Entries: ids, statuses and converted values.
@@ -177,6 +189,53 @@ describe.skipIf(!hasDbIntegrationUrl)('lumibase migrate contentful — end to en
     expect(before).toBe(7);
     expect(cdnHits).toHaveLength(0);
     expect(await db.select().from(files).where(eq(files.siteId, SITE))).toHaveLength(2);
+  });
+
+  it('keeps resume state per destination: a second site uploads its own assets (two targets, same cwd)', async () => {
+    expect(await run('--apply')).toBe(0);
+    const stateA = readState(SITE);
+    expect(stateA.target.siteId).toBe(SITE);
+    cdnHits.length = 0;
+
+    // Same space id and same asset ids: exactly what used to reuse A's keys.
+    // Entry ids get a suffix only because `lumibase_items.id` is unique across
+    // the whole instance (a string id taken in site A cannot be created in site
+    // B), which is a separate ItemService/schema issue, not the state file's.
+    const fixtureB = join(cwd, 'space-b.json');
+    writeFileSync(fixtureB, readFileSync(FIXTURE, 'utf8').replace(/"(author-lan|cat-guides|cat-news|post-brew|post-old|product-beans|page-home)"/g, '"$1-b"'));
+    const runB = await migrateCommand(parseArgs(['migrate', 'contentful', '--file', fixtureB, '--locale-map', 'en-US=en', '--apply']), {
+      cwd,
+      env: { ...env, LUMIBASE_SITE_ID: SITE_B },
+      fetcher,
+      sleep: async () => {},
+      confirm: async () => true,
+    });
+    expect(runB).toBe(0);
+
+    // Site B downloaded and registered both assets itself, under new keys.
+    expect(cdnHits).toHaveLength(2);
+    expect(stateFiles()).toHaveLength(2);
+    const stateB = readState(SITE_B);
+    expect(Object.keys(stateB.assets).sort()).toEqual(['asset-avatar', 'asset-hero']);
+    for (const id of Object.keys(stateA.assets)) expect(stateB.assets[id]).not.toBe(stateA.assets[id]);
+    const filesB = await db.select().from(files).where(eq(files.siteId, SITE_B));
+    expect(filesB.map((f) => f.filenameDisk).sort()).toEqual(Object.values(stateB.assets).sort());
+
+    // B's file fields point at B's own files, never at A's keys.
+    const coll = (await db.select().from(collections).where(and(eq(collections.siteId, SITE_B), eq(collections.name, 'blog_post'))))[0]!;
+    const brew = (await db.select().from(items).where(and(eq(items.collectionId, coll.id), eq(items.id, 'post-brew-b'))))[0]!;
+    expect((brew.data as Record<string, unknown>).hero_image).toBe(stateB.assets['asset-hero']);
+
+    // Pointing site B at site A's state file explicitly is refused before any write.
+    const fileA = stateFiles().find((f) => f.includes(`-${SITE}-`))!;
+    await expect(
+      migrateCommand(parseArgs(['migrate', 'contentful', '--file', FIXTURE, '--apply', '--state', join('.lumibase', fileA)]), {
+        cwd,
+        env: { ...env, LUMIBASE_SITE_ID: SITE_B },
+        fetcher,
+        confirm: async () => true,
+      }),
+    ).rejects.toThrow(/belongs to another migration/);
   });
 
   it('adds only missing fields to an existing collection and never changes existing ones', async () => {

@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-12T20:47:42.877Z
-contentHash: f6db806a7a4f94a8
-codeVerified: 2026-11-12T20:47:42.877Z
-codeVerifiedHash: f6db806a7a4f94a8
+version: 2
+lastUpdated: 2026-11-13T06:07:20.634Z
+contentHash: aba9a12e52557a17
+codeVerified: 2026-11-13T06:07:20.634Z
+codeVerifiedHash: aba9a12e52557a17
 codeVerifiedClaims: 2
 ---
 
@@ -48,7 +48,7 @@ needs schema-admin rights and `create`/`update` on the new collections.
 | `--prefix <p>` | Prefix for new collection names, e.g. `cf_`. |
 | `--locale-map <a=b,…>` | Rename source locales, e.g. `en-US=en,de-DE=de`. Unmapped locales keep their code. |
 | `--skip-assets` | Do not download or upload assets; file fields stay empty. |
-| `--state <path>` | Resume file for uploaded assets (default `.lumibase/migrate-contentful-<space id>.json`, or `.lumibase/migrate-contentful.json` when the export has no space id). |
+| `--state <path>` | Resume file for uploaded assets (default `.lumibase/migrate-contentful-<space id>-<site>-<hash>.json`, one per space and destination). |
 | `--json` | Print the plan as JSON instead of the readable report. |
 
 ## What the dry run shows
@@ -147,13 +147,17 @@ block editor is tracked in #669 and the `richtext` field type in #695.
    name clash with a different type goes to `<name>_contentful` instead.
 2. **Assets.** Each asset (default-locale file) is downloaded from the Contentful
    CDN and uploaded through the presigned upload flow, then registered as a file.
-   Its storage key is saved to the state file after each upload.
+   Its storage key is saved to the state file after each upload. The state file
+   records its destination (CMS URL and site); a state file written for another
+   destination is refused before anything is written, so one site never reuses
+   another site's asset keys.
 3. **Entries.** Each entry is created with its Contentful id as the item id, keeping
    its status (`published`, `draft`, `archived`). Links therefore resolve in one
    pass.
 
 Re-running `--apply` is safe: an item that already exists is updated in place
-(create returns `409 ITEM_ID_EXISTS`, the CLI patches it), and assets in the state file are not
+(create returns `409 ITEM_ID_EXISTS`, the CLI patches it; any other `409` is
+reported as a failure), and assets in the state file are not
 uploaded again. A `429` from the rate limiter is retried after `Retry-After`.
 
 ## Agent skills
@@ -177,6 +181,9 @@ finds the schema already in place.
   items get new ids and links to them do not resolve.
 - Collections with an editorial workflow refuse `published` on create; migrate
   into collections without one, or publish through the workflow afterwards.
+- Item ids are unique per LumiBase instance, not per site: migrating the same
+  space into two sites of one instance fails on the second site's entries.
+  Assets and schema are not affected.
 - Entries are written one request at a time. For very large spaces, expect the
   API rate limit (`LUMIBASE_API_RATE_LIMIT`, 600 requests/min by default) to set
   the pace.

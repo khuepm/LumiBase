@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import process from 'node:process';
@@ -30,19 +31,87 @@ import { log } from '../utils/log.js';
  *
  * Apply is idempotent and resumable:
  * - new collections use a string primary key, so items keep their source ids;
- *   re-running updates them (create → 409 → patch) instead of duplicating;
+ *   re-running updates them (create → 409 ITEM_ID_EXISTS → patch) instead of
+ *   duplicating;
  * - uploaded asset keys are saved to a state file after each upload, so an
- *   interrupted run does not upload the same file twice.
+ *   interrupted run does not upload the same file twice. The state records its
+ *   destination (CMS URL + site) and is refused for any other destination.
  */
 
 export const SUPPORTED_SOURCES = ['contentful'] as const;
 type Source = (typeof SUPPORTED_SOURCES)[number];
 
+export interface MigrateTarget {
+  /** CMS base URL, normalised (origin + path, no trailing slash). */
+  url: string;
+  siteId: string;
+}
+
 export interface MigrateState {
   source: Source;
   sourceId?: string;
-  /** Source asset id → LumiBase storage key. */
+  /** The LumiBase site the asset keys below were uploaded to. */
+  target: MigrateTarget;
+  /** Source asset id → LumiBase storage key (valid only on `target`). */
   assets: Record<string, string>;
+}
+
+/** Normalise a CMS URL so `https://x.dev/` and `https://X.dev` name the same target. */
+export function migrateTarget(url: string, siteId: string): MigrateTarget {
+  let normalised = url.trim();
+  try {
+    const u = new URL(normalised);
+    normalised = `${u.origin}${u.pathname}`;
+  } catch {
+    // Not a URL: keep it as given; requireConnection reports bad URLs elsewhere.
+  }
+  return { url: normalised.replace(/\/+$/, ''), siteId };
+}
+
+/**
+ * Default resume-state path. Keyed by source, source id AND destination, so
+ * migrating one space into two sites (or two CMS instances) from the same
+ * directory never shares uploaded asset keys.
+ */
+export function defaultStatePath(source: Source, sourceId: string | undefined, target: MigrateTarget): string {
+  const site = target.siteId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40);
+  const hash = createHash('sha256').update(`${target.url}\n${target.siteId}`).digest('hex').slice(0, 10);
+  return `.lumibase/migrate-${source}${sourceId ? `-${sourceId}` : ''}-${site}-${hash}.json`;
+}
+
+/**
+ * Load the resume state, trusting cached asset keys only when the file was
+ * written for this source and this destination. Anything else is an error:
+ * reusing another site's storage keys would point file fields at assets that
+ * do not exist there (or belong to another tenant).
+ */
+export function loadMigrateState(path: string, source: Source, sourceId: string | undefined, target: MigrateTarget): MigrateState {
+  const fresh: MigrateState = { source, ...(sourceId ? { sourceId } : {}), target, assets: {} };
+  if (!existsSync(path)) return fresh;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    throw new CliError(`State file ${path} is not valid JSON.`, 'Delete it to upload the assets again, or pass another --state path.');
+  }
+  const st = raw as Partial<MigrateState> | null;
+  const same =
+    !!st &&
+    st.source === source &&
+    (st.sourceId ?? undefined) === sourceId &&
+    st.target?.url === target.url &&
+    st.target?.siteId === target.siteId &&
+    !!st.assets &&
+    typeof st.assets === 'object' &&
+    Object.values(st.assets).every((k) => typeof k === 'string');
+  if (!same) {
+    const was = st?.target ? `${st.target.url} site ${st.target.siteId}` : 'an unknown destination';
+    throw new CliError(
+      `State file ${path} belongs to another migration (${st?.source ?? '?'}${st?.sourceId ? ` ${st.sourceId}` : ''} → ${was}).`,
+      `Its asset keys are only valid there. Use the default state path for ${target.url} site ${target.siteId}, or pass a new --state file.`,
+    );
+  }
+  return st as MigrateState;
 }
 
 export interface MigrateCommandOptions {
@@ -173,12 +242,14 @@ export async function migrateCommand(args: ParsedArgs, options: MigrateCommandOp
     return 1;
   }
 
+  // Check the resume state before writing anything: a state file from another
+  // destination is refused here, not after the schema changed.
+  const target = migrateTarget(config.url, config.siteId);
+  const statePath = resolve(cwd, stringFlag(args, 'state') ?? defaultStatePath(source, exported.sourceId, target));
+  const state = loadMigrateState(statePath, source, exported.sourceId, target);
+
   await applySchema(plan, client, call);
 
-  const statePath = resolve(cwd, stringFlag(args, 'state') ?? `.lumibase/migrate-${source}${exported.sourceId ? `-${exported.sourceId}` : ''}.json`);
-  const state: MigrateState = existsSync(statePath)
-    ? (JSON.parse(readFileSync(statePath, 'utf8')) as MigrateState)
-    : { source, ...(exported.sourceId ? { sourceId: exported.sourceId } : {}), assets: {} };
   const saveState = () => {
     mkdirSync(dirname(statePath), { recursive: true });
     writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
@@ -299,13 +370,16 @@ export async function importAssets(
 
 /**
  * Create each item with its source id; when that id already exists
- * (`409 ITEM_ID_EXISTS`) update it instead. Any other 409 (e.g. an editorial
- * gate refusing `published`) is a real failure for that entry.
+ * (`409` with code `ITEM_ID_EXISTS`) update it instead. Any other 409 (an
+ * editorial gate refusing `published`, a missing or unknown code, a non-JSON
+ * body) is a real failure for that entry.
  */
 function isItemIdExists(err: unknown): boolean {
   if (!(err instanceof LumiError) || err.status !== 409) return false;
-  const code = (err.body as { errors?: Array<{ code?: unknown }> } | null)?.errors?.[0]?.code;
-  return code === undefined || code === 'ITEM_ID_EXISTS';
+  // Only the explicit code proves the id exists. A 409 with no code, a
+  // non-JSON body or another code is a real conflict, never a reason to patch.
+  const body = err.body as { errors?: Array<{ code?: unknown }> } | null;
+  return typeof body === 'object' && body !== null && body.errors?.[0]?.code === 'ITEM_ID_EXISTS';
 }
 
 export async function importEntries(
