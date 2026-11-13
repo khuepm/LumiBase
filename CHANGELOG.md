@@ -87,8 +87,24 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   deployments create them as in `DEPLOYMENT-CHECKLIST.md`. Until a queue is
   bound, `ItemService` indexes inline and revalidation is dispatched inline
   instead of being dropped. Existing Workers search indexes are not rebuilt
-  automatically: run the reindex CLI. The other Docker-only consumers listed in
-  B131 are still open.
+  automatically: run the reindex CLI.
+
+- **Scheduled publish, veto-window commits, reconciler goals, deployment status,
+  Change Feed webhooks and envelope migration now run on Cloudflare Workers
+  (B131, parts 2-5).** Docker ran these on `node-cron` with a leader lock; the
+  Worker had no counterpart, so on Workers scheduled items were never published
+  or unpublished, veto-window stagings were never committed, reconciler goals
+  never dispatched, deployments stayed `building` and webhook subscriptions
+  received nothing. The Worker's Cron Trigger now runs the same sweeps
+  (`cloudflare-cron-parity.ts`): every minute on local/production, every five
+  minutes on staging, not at all on dev/demo (no crons there). Workers delivers
+  Change Feed events to webhook subscriptions only (extension subscribers stay
+  Docker/Node, B215), within about a minute. Envelope migrations continue on a
+  new `encryption-envelope-migration` queue, created by the deploy workflows.
+  Veto commits now claim the approval (`pending → deciding`) before applying
+  the patch: with no leader lock, two overlapping sweeps applied it twice. A
+  human veto that arrives while a commit holds the claim now returns `409
+  ALREADY_DECIDED` instead of overwriting it.
 
 ### Security
 - Hardened production image: both base images are pinned by digest (`node:22-slim@sha256:…`, `gcr.io/distroless/nodejs22-debian13:nonroot@sha256:…`; Dependabot bumps tag and digest); the runtime stage is distroless (no shell, no package manager), runs as UID/GID `65532`, keeps application files root-owned, and starts with a read-only root filesystem. The shell entrypoint is replaced by `docker/scripts/entrypoint.mjs` and the `HEALTHCHECK` by `docker/scripts/healthcheck.mjs`, which now probes the worker health port for `LUMIBASE_PROCESS_ROLE=worker` instead of always `1989`. `docker/docker-compose.prod.yml` and `docker/docker-compose.gcp.yml` set `read_only: true`, a `/tmp` tmpfs, `cap_drop: [ALL]`, `no-new-privileges` and `init: true` (#734).

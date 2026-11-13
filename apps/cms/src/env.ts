@@ -19,6 +19,8 @@ export interface Bindings {
   CONTENT_INDEXING_QUEUE?: Queue;
   /** Producer for ISR revalidation dispatch jobs (logical `revalidation-dispatch`, B131). */
   REVALIDATION_QUEUE?: Queue;
+  /** Producer for envelope-encryption migration continuations (logical `encryption-envelope-migration`, B131). */
+  ENVELOPE_MIGRATION_QUEUE?: Queue;
   /** Meilisearch endpoint for the search provider. Unset: search is disabled. */
   MEILISEARCH_HOST?: string;
   MEILISEARCH_API_KEY?: string;

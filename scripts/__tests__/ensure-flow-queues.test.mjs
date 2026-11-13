@@ -31,11 +31,12 @@ test('accepts a concurrent successful queue creation', async () => {
   } });
   assert.equal(created, true);
 });
-test('provisions the Flows and content queues with their dead-letter queues', () => {
+test('provisions the Flows, content and envelope-migration queues with their dead-letter queues', () => {
   assert.deepEqual(flowQueueNames('production'), [
     'lumibase-flow-runs-production', 'lumibase-flow-runs-production-dlq',
     'lumibase-flow-events-production', 'lumibase-flow-events-production-dlq',
     'lumibase-content-indexing-production', 'lumibase-content-indexing-production-dlq',
     'lumibase-revalidation-dispatch-production', 'lumibase-revalidation-dispatch-production-dlq',
+    'lumibase-encryption-envelope-migration-production', 'lumibase-encryption-envelope-migration-production-dlq',
   ]);
 });

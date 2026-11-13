@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fc from 'fast-check';
 import { processCloudflareAgentQueue } from '../cloudflare-agent-queue';
 import { processCloudflareContentIndexingQueue, processCloudflareRevalidationQueue } from '../cloudflare-content-queue';
+import { processCloudflareEnvelopeMigrationQueue } from '../cloudflare-envelope-queue';
 import { processCloudflareFlowEventsQueue, processCloudflareFlowRunsQueue } from '../cloudflare-flow-queue';
 import { processCloudflareQueue, resolveLogicalQueue, WORKER_QUEUE_CONSUMERS } from '../cloudflare-queue';
 import type { Bindings } from '../env';
@@ -17,6 +18,7 @@ vi.mock('../cloudflare-content-queue', () => ({
   processCloudflareContentIndexingQueue: vi.fn(async () => {}),
   processCloudflareRevalidationQueue: vi.fn(async () => {}),
 }));
+vi.mock('../cloudflare-envelope-queue', () => ({ processCloudflareEnvelopeMigrationQueue: vi.fn(async () => {}) }));
 
 const PROFILES = ['local', 'staging', 'production', 'dev', 'demo'];
 const LOGICAL = Object.keys(WORKER_QUEUE_CONSUMERS) as Array<keyof typeof WORKER_QUEUE_CONSUMERS>;
@@ -67,6 +69,7 @@ describe('processCloudflareQueue routing', () => {
     'flow-events': processCloudflareFlowEventsQueue,
     'content-indexing': processCloudflareContentIndexingQueue,
     'revalidation-dispatch': processCloudflareRevalidationQueue,
+    'encryption-envelope-migration': processCloudflareEnvelopeMigrationQueue,
   } as const;
 
   it.each(LOGICAL)('a %s batch reaches exactly its own handler, with the execution context', async (logical) => {

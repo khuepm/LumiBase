@@ -1,13 +1,13 @@
 ---
-version: 8
-lastUpdated: 2026-11-12T11:48:22.041Z
+version: 9
+lastUpdated: 2026-11-12T18:28:18.370Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 2889d12e9b9d6437
+sourceHash: fe285b6985adf0a9
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T11:48:22.041Z
-codeVerifiedHash: 2889d12e9b9d6437
+codeVerified: 2026-11-12T18:28:18.370Z
+codeVerifiedHash: fe285b6985adf0a9
 codeVerifiedClaims: 32
 ---
 
@@ -17,7 +17,7 @@ codeVerifiedClaims: 32
 
 ---
 
-Workflow triển khai CMS và phát hành tạo các queue còn thiếu của Flows (`flow-runs`, `flow-events`), queue nội dung (`content-indexing`, `revalidation-dispatch`) cùng dead-letter queue của chúng trước khi triển khai bằng `scripts/ensure-flow-queues.mjs`. Queue đã có được giữ nguyên. Token triển khai cần quyền chỉnh sửa Queues. Triển khai thủ công/cục bộ vẫn dùng các lệnh tạo queue bên dưới.
+Workflow triển khai CMS và phát hành tạo các queue còn thiếu của Flows (`flow-runs`, `flow-events`), queue nội dung (`content-indexing`, `revalidation-dispatch`), queue envelope migration (`encryption-envelope-migration`) cùng dead-letter queue của chúng trước khi triển khai bằng `scripts/ensure-flow-queues.mjs`. Queue đã có được giữ nguyên. Token triển khai cần quyền chỉnh sửa Queues. Triển khai thủ công/cục bộ vẫn dùng các lệnh tạo queue bên dưới.
 
 ## Mục lục
 
@@ -79,11 +79,11 @@ Workflow triển khai CMS và phát hành tạo các queue còn thiếu của Fl
   ```bash
   wrangler queues create lumibase-realtime
   ```
-- [ ] Đã tạo queue cho agent run, Flows, index search và ISR revalidation, kèm dead-letter queue, cho mọi profile có tên mà bạn deploy (xem [queue của Flows](features/flows-automation.md#cloudflare-workers-queue-của-flows)):
+- [ ] Đã tạo queue cho agent run, Flows, index search, ISR revalidation và envelope migration, kèm dead-letter queue, cho mọi profile có tên mà bạn deploy (xem [queue của Flows](features/flows-automation.md#cloudflare-workers-queue-của-flows)):
   ```bash
   cd apps/cms
   for profile in staging production dev demo; do
-    for q in agent-runs flow-runs flow-events content-indexing revalidation-dispatch; do
+    for q in agent-runs flow-runs flow-events content-indexing revalidation-dispatch encryption-envelope-migration; do
       pnpm exec wrangler queues create "lumibase-$q-$profile"
       pnpm exec wrangler queues create "lumibase-$q-$profile-dlq"
     done
