@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-13T01:32:34.906Z",
+  "generatedAt": "2026-11-13T07:13:27.588Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 163,
+    "upToDate": 164,
     "planned": 0
   },
   "actions": [
@@ -1478,6 +1478,18 @@
     },
     {
       "rel": "features/search.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/site-skills.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",

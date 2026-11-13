@@ -72,6 +72,8 @@ import {
   validateAdminPath,
 } from './path-validator';
 import { verifySetupToken } from './setup-token';
+import { canonicalEmail, type EmailIdentityMode } from '../email-identity/normalize';
+import { userEmailCondition } from '../email-identity/service';
 
 // ── public types ────────────────────────────────────────────────────────
 
@@ -110,6 +112,11 @@ export interface SetupCompleteInput {
   readonly policy: LockoutPolicy;
   readonly project?: SetupCompleteProject;
   readonly invites?: ReadonlyArray<SetupCompleteInvite>;
+  /**
+   * Instance email identity mode (#794). Omitted → `exact` (every distinct
+   * address is its own account — the pre-#794 behaviour).
+   */
+  readonly emailIdentityMode?: EmailIdentityMode;
 }
 
 export interface SetupCompleteInvite {
@@ -426,7 +433,8 @@ export class SetupService {
     //        the tx. We lowercase emails, drop exact duplicates, and reject
     //        any invite that collides with the bootstrap admin (that account
     //        is created separately and owns the only `is_bootstrap` row).
-    const inviteCheck = normalizeInvites(input.invites, input.account.email);
+    const emailIdentityMode: EmailIdentityMode = input.emailIdentityMode ?? 'exact';
+    const inviteCheck = normalizeInvites(input.invites, input.account.email, emailIdentityMode);
     if (!inviteCheck.ok) {
       return {
         ok: false,
@@ -527,6 +535,14 @@ export class SetupService {
             throw new SetupAbort({ code: 'SETUP_TOKEN_INVALID' });
           }
         }
+
+        // ── 5a-bis. Persist the email identity mode (#794) BEFORE any
+        //        account is inserted: the users trigger derives
+        //        `email_canonical` from this column at insert time.
+        await tx
+          .update(systemState)
+          .set({ emailIdentityMode, updatedAt: new Date() })
+          .where(eq(systemState.id, 'singleton'));
 
         // ── 5b. `setup_started` audit entry (Req 15.1; task 11.2). Emit it
         //        only after the cheap initialized/token gates pass so an
@@ -694,16 +710,15 @@ export class SetupService {
             : null;
 
           for (const invite of normalizedInvites) {
-            // `users.email` has no unique index (only `external_id` does), so
-            // we cannot rely on an email upsert — look the account up first,
-            // mirroring `routes/users.ts`. On a fresh instance the only
+            // Look the account up first (identity-aware, #794) rather than
+            // relying on an email upsert, mirroring `routes/users.ts`. On a fresh instance the only
             // pre-existing email is the bootstrap admin, already rejected by
             // `normalizeInvites`, but the lookup keeps this safe if that ever
             // changes.
             const existing = await tx
               .select({ id: users.id })
               .from(users)
-              .where(eq(users.email, invite.email))
+              .where(userEmailCondition(invite.email, emailIdentityMode))
               .limit(1);
 
             let invitedUserId = existing[0]?.id;
@@ -971,7 +986,7 @@ export class SetupService {
           ...base,
           event: 'setup_completed',
           targetEmail: outcome.value.user.email,
-          metadata: { adminPathHash, policy: policyValue },
+          metadata: { adminPathHash, policy: policyValue, emailIdentityMode },
         }),
         // One `user_invited` entry per teammate created in this run. Same
         // best-effort guarantees as the events above (never throws).
@@ -1044,13 +1059,16 @@ type NormalizeInvitesResult =
 function normalizeInvites(
   invites: ReadonlyArray<SetupCompleteInvite> | undefined,
   adminEmail: string,
+  mode: EmailIdentityMode = 'exact',
 ): NormalizeInvitesResult {
   if (!invites || invites.length === 0) {
     return { ok: true, value: [] };
   }
 
   const issues: Array<{ path: Array<string>; message: string }> = [];
-  const adminLower = adminEmail.trim().toLowerCase();
+  // Compare on the account key for the chosen mode (#794): under `root`, an
+  // alias of the admin or of an earlier invite is the same account.
+  const adminKey = canonicalEmail(adminEmail, mode);
   const seen = new Set<string>();
   const value: SetupCompleteInvite[] = [];
 
@@ -1064,19 +1082,20 @@ function normalizeInvites(
       issues.push({ path: ['invites', String(index), 'role'], message: 'invalid role' });
       return;
     }
-    if (email === adminLower) {
+    const key = canonicalEmail(email, mode);
+    if (key === adminKey) {
       issues.push({
         path: ['invites', String(index), 'email'],
         message: 'cannot invite the admin email',
       });
       return;
     }
-    if (seen.has(email)) {
+    if (seen.has(key)) {
       // Silently drop later duplicates rather than erroring — the wizard may
       // submit the same row twice; first one wins.
       return;
     }
-    seen.add(email);
+    seen.add(key);
     value.push({ email, role: invite.role });
   });
 

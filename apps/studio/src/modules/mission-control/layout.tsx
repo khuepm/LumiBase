@@ -24,6 +24,7 @@ const SECTIONS = [
   { id: 'agents', label: 'Agents', path: '/agents' },
   { id: 'trust', label: 'Trust ledger', path: '/trust' },
   { id: 'constitution', label: 'Constitution', path: '/constitution' },
+  { id: 'skills', label: 'Skills', path: '/skills' },
 ] as const;
 
 /** Optional `/$adminPath` prefix of the current location ('' when absent). */

@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
+import { inviteUserToSite } from '../modules/email-identity/invite';
 import type { AppEnv } from '../env';
 import { runDetached } from '../lib/detached';
 import { requireSiteAdmin } from '../middleware/site-admin';
@@ -168,29 +169,16 @@ usersRouter.post('/invite', async (c) => {
   }
   const input = parsed.data;
 
-  // Check if user exists globally by email
-  let [existingUser] = await db.select().from(users).where(eq(users.email, input.email)).limit(1);
-
-  if (!existingUser) {
-    const dummyLogtoId = `shadow_${nanoid()}`;
-    const [newUser] = await db.insert(users).values({
-      email: input.email,
-      externalId: dummyLogtoId,
-      status: 'invited',
-    }).returning();
-    existingUser = newUser!;
+  // #794: identity-aware, case-insensitive lookup + atomic membership bind.
+  const invited = await inviteUserToSite(db, { siteId, email: input.email, roleId: input.roleId });
+  if (!invited.ok) {
+    return c.json({
+      errors: [{
+        code: invited.code,
+        message: 'This mailbox is already a member of this site under another address.',
+      }],
+    }, 409);
   }
-
-  if (!existingUser) {
-    return c.json({ errors: [{ code: 'INTERNAL_ERROR' }] }, 500);
-  }
-
-  // Bind to site
-  await db.insert(userSites).values({
-    userId: existingUser.id,
-    siteId,
-    roleId: input.roleId,
-  }).onConflictDoNothing(); // If already in site, do nothing
   await bumpPermissionVersion(c, siteId);
 
   // Best-effort invite email — sent AFTER the binding so a mail failure can't
@@ -205,7 +193,7 @@ usersRouter.post('/invite', async (c) => {
   });
   runDetached(c, inviteEmail);
 
-  return c.json({ data: existingUser });
+  return c.json({ data: invited.user });
 });
 
 // Update user inside site (mainly role mapping)

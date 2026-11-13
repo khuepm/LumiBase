@@ -10,6 +10,7 @@ import { resolvePrincipalCapabilities } from './governed-capabilities';
 import { itemServiceForPrincipal, itemServiceForSystem } from './item-service-factory';
 import { createConfiguredLLMProvider, createLLMProvider } from './llm-provider';
 import { SchemaService } from './schema-service';
+import { resolveCopilotPlaybooks } from './site-skill-service';
 import { markRunRunning, persistAiChatOutcome, type AiChatRunJob } from './flow-run-service';
 
 /**
@@ -31,35 +32,6 @@ export async function executeAiChatRun(
     // Same newest-first window as the synchronous route (#582).
     const llmMessages = await loadCopilotHistory(db, job.conversationId);
 
-    const llmProvider = createLLMProvider(envRecord);
-    const llmResponse = await llmProvider.chat(llmMessages);
-
-    if (llmResponse.toolCalls.length === 0) {
-      const responseText =
-        llmResponse.content ?? 'Could not determine action from your message.';
-      await db.insert(aiMessages).values({
-        conversationId: job.conversationId,
-        role: 'assistant',
-        content: responseText,
-        metadata: { status: 'denied', runId: job.runId },
-      });
-      await persistAiChatOutcome(
-        db,
-        job.runId,
-        job.siteId,
-        {
-          status: 'denied',
-          message: responseText,
-          conversationId: job.conversationId,
-        },
-        'success',
-      );
-      return;
-    }
-
-    const toolCall = llmResponse.toolCalls[0]!;
-    const schemaService = new SchemaService({ db, siteId: job.siteId });
-
     // Capabilities are re-resolved at pickup, not taken from the enqueued
     // snapshot (#472), so a grant revoked while the job queued is honoured.
     // Jobs enqueued before `principal` existed fall back to their snapshot.
@@ -74,6 +46,48 @@ export async function executeAiChatRun(
           controlPlaneAdmin: false,
           callerClass: 'standard' as const,
         };
+
+    // Site playbooks (#712), resolved with the same inputs as the synchronous
+    // route — which is why the capability resolution above runs before the
+    // model call rather than after it.
+    const playbooks = await resolveCopilotPlaybooks(
+      { db, siteId: job.siteId },
+      { text: job.message, history: llmMessages, capabilities: capabilities.capabilities },
+    );
+    const siteSkillsMeta = playbooks.applied.length > 0 ? { siteSkills: playbooks.applied } : {};
+
+    const llmProvider = createLLMProvider(envRecord);
+    const llmResponse = await llmProvider.chat(
+      llmMessages,
+      playbooks.systemPrompt ? { systemPrompt: playbooks.systemPrompt } : undefined,
+    );
+
+    if (llmResponse.toolCalls.length === 0) {
+      const responseText =
+        llmResponse.content ?? 'Could not determine action from your message.';
+      await db.insert(aiMessages).values({
+        conversationId: job.conversationId,
+        role: 'assistant',
+        content: responseText,
+        metadata: { status: 'denied', runId: job.runId, ...siteSkillsMeta },
+      });
+      await persistAiChatOutcome(
+        db,
+        job.runId,
+        job.siteId,
+        {
+          status: 'denied',
+          message: responseText,
+          conversationId: job.conversationId,
+          ...siteSkillsMeta,
+        },
+        'success',
+      );
+      return;
+    }
+
+    const toolCall = llmResponse.toolCalls[0]!;
+    const schemaService = new SchemaService({ db, siteId: job.siteId });
 
     // ItemService must be PRINCIPAL-BOUND here, and this is the reason it has to
     // be built after resolution rather than before.
@@ -159,6 +173,7 @@ export async function executeAiChatRun(
         status: result.status,
         approvalId: result.approvalId,
         runId: job.runId,
+        ...siteSkillsMeta,
       },
     });
 
@@ -170,6 +185,7 @@ export async function executeAiChatRun(
         ...result,
         message: responseMessage,
         conversationId: job.conversationId,
+        ...siteSkillsMeta,
       },
       'success',
     );

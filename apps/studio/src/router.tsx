@@ -75,6 +75,7 @@ const MissionControlGoalsPage = lazy(() => import('./modules/mission-control/goa
 const MissionControlAgentsPage = lazy(() => import('./modules/mission-control/agents-page').then((m) => ({ default: m.AgentsPage })));
 const MissionControlTrustPage = lazy(() => import('./modules/mission-control/trust-page').then((m) => ({ default: m.TrustPage })));
 const MissionControlConstitutionPage = lazy(() => import('./modules/mission-control/constitution-page').then((m) => ({ default: m.ConstitutionPage })));
+const MissionControlSkillsPage = lazy(() => import('./modules/mission-control/skills-page').then((m) => ({ default: m.SkillsPage })));
 const InsightsListPage = lazy(() => import('./modules/insights/list-page').then((m) => ({ default: m.InsightsListPage })));
 const InsightsDashboardPage = lazy(() => import('./modules/insights/dashboard-page').then((m) => ({ default: m.DashboardViewPage })));
 const UsersLayout = lazy(() => import('./modules/users/layout').then((m) => ({ default: m.UsersLayout })));
@@ -999,6 +1000,13 @@ const missionControlConstitutionRoute = createRoute({
   component: withSuspense(MissionControlConstitutionPage),
 });
 
+// Site Skills — editorial playbooks for the site's agents (#712).
+const missionControlSkillsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/skills',
+  component: withSuspense(MissionControlSkillsPage),
+});
+
 const adminPathMissionControlRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/mission-control',
@@ -1046,6 +1054,13 @@ const adminPathMissionControlConstitutionRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/mission-control/constitution',
   component: withSuspense(MissionControlConstitutionPage),
+});
+
+// Site Skills — editorial playbooks for the site's agents (#712).
+const adminPathMissionControlSkillsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/skills',
+  component: withSuspense(MissionControlSkillsPage),
 });
 
 // Insights — dashboards built from content (insights-dashboard spec).
@@ -1347,6 +1362,7 @@ const routeTree = rootRoute.addChildren([
     missionControlAgentsRoute,
     missionControlTrustRoute,
     missionControlConstitutionRoute,
+    missionControlSkillsRoute,
     adminPathMissionControlRoute,
     adminPathMissionControlInboxRoute,
     adminPathMissionControlIntentsRoute,
@@ -1355,6 +1371,7 @@ const routeTree = rootRoute.addChildren([
     adminPathMissionControlAgentsRoute,
     adminPathMissionControlTrustRoute,
     adminPathMissionControlConstitutionRoute,
+    adminPathMissionControlSkillsRoute,
     insightsRoute,
     insightsDashboardRoute,
     adminPathInsightsRoute,

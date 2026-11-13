@@ -1,10 +1,10 @@
 ---
-version: 10
-lastUpdated: 2026-11-11T02:57:07.105Z
+version: 14
+lastUpdated: 2026-11-13T06:58:01.770Z
 sourceLang: en
-contentHash: edb7b7484da75d3f
-codeVerified: 2026-11-11T02:57:07.105Z
-codeVerifiedHash: edb7b7484da75d3f
+contentHash: 663fe1dec3a63ad7
+codeVerified: 2026-11-13T06:58:01.770Z
+codeVerifiedHash: 663fe1dec3a63ad7
 codeVerifiedClaims: 20
 ---
 
@@ -34,6 +34,7 @@ Schema files are split by domain:
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
+| `imports.ts` | `lumibase_import_jobs` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
 
@@ -50,6 +51,7 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 ### `sites`
 - `organizationId` is a required FK to `organizations` with delete RESTRICT. Migration `0024_organizations` backfills existing sites into the `default` organization before enforcing NOT NULL. Setup creates the personal organization and its bootstrap owner before creating the default site.
 - `id`, `name`, `domain`, `createdAt`, plus identity/branding/theme columns and `defaultLanguage`, `defaultAppearance`, and `defaultSaveAction` (`stay`|`return`|`create_new`, default `stay` — the site-wide default Studio save action; per-user override lives in `users.preferences.saveAction`).
+- `emailIdentityStrict` boolean, default `false` (migration `0027`) — per-site email identity tier: when on, one membership per root mailbox (see `user_sites.identityKey`).
 
 ### `users`
 | Column | Type | Note |
@@ -62,12 +64,17 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 | `preferences` | jsonb | per-user UI prefs: `{ language, theme, timezone, defaultPresets, saveAction }`. `saveAction` (`stay`/`return`/`create_new`) overrides `sites.default_save_action`. |
 | `lastSeenAt` | timestamp |
 | `passwordChangedAt` | timestamp | Set on every reset/change (migration `0006`). A password-reset token whose `iat` predates it is rejected → single-use reset links. |
+| `emailCanonical` | text unique | Account key under the instance email identity mode: `lower(email)` (`exact`) or the root mailbox (`root`). Written by a trigger (migration `0027`), never by the app. Nullable for one release; lookups fall back to `lower(email)` for null rows. |
+| `emailRoot` | text | Root mailbox: `+tag` stripped on every domain; Gmail dots removed and `googlemail.com` → `gmail.com`. Derived by `lumibase_email_root()` in the same trigger. Plain index. |
 | `createdAt`, `updatedAt` | timestamp |
 
-Unique indexes: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, `is_bootstrap = true`), and `users_email_lower_unique` on `lower(email)` (migration `0006`) — email is identity-global, one account per address. ⚠️ Migrating an existing instance fails if it already holds case-insensitive duplicate emails; de-duplicate first.
+Unique indexes: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, `is_bootstrap = true`), and `users_email_lower_unique` on `lower(email)` (migration `0006`) — email is identity-global, one account per address. ⚠️ Migrating an existing instance fails if it already holds case-insensitive duplicate emails; de-duplicate first. Migration `0027` adds `users_email_canonical_unique` on `email_canonical` and `users_email_root_idx` on `email_root`; under the `root` mode the canonical index makes "one root mailbox = one account" a database guarantee.
 
 ### `user_sites` (membership N-N)
-- `userId`, `siteId`, `roleId`, `joinedAt`. PK composite.
+- `userId`, `siteId`, `roleId`, `createdAt`. PK composite.
+- `identityKey` text (migration `0027`) — `users.email_root` when the site is strict, otherwise null. Unique index `user_sites_site_identity_unique` on `(site_id, identity_key)` allows one membership per root mailbox on a strict site (nulls never collide). Set by a trigger on insert and re-keyed when the member's email changes.
+
+**Email identity policy (migration `0027`).** The instance tier lives in `system_state.email_identity_mode` (`exact` | `root`, default `exact`; existing instances are backfilled to `exact`, so nothing changes on upgrade). Every writer — routes, SCIM, setup, seeds, an older app version — gets the same derived columns because triggers compute them: `lumibase_users_email_identity()` on `users` (reads the singleton `FOR SHARE`), `lumibase_user_sites_identity_key()` on `user_sites` (reads the site `FOR SHARE`) and `lumibase_users_rekey_memberships()` after an email change. The guarded change endpoint holds `FOR UPDATE` on the same rows, so a row is never keyed under a stale policy. See [User management](./security/user-management.md) and `/api/v1/admin/email-identity` in the API spec.
 
 ### `teams` / `team_members`
 - `teams`: `id`, `siteId`, `name`, `description`.
@@ -201,6 +208,11 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`, `(siteId, status, publ
 ### `materialized_collections` (POST-GA6)
 - Defines denormalized read tables for hot paths.
 - `target`, `refreshStrategy` (`auto`/`cron`/`manual`), `refreshCron`, `projection jsonb`, `filter jsonb`, `lastRefreshedAt`, `rowCount`, `status`, `error`.
+
+### `import_jobs` (`imports.ts`, migration `0028`)
+- One background import (#726): `collection`, `format` (`csv`/`json`), `mode` (`create`/`upsert`), `status` (`queued`/`running`/`succeeded`/`failed`/`cancelled`/`timed_out`), `principal` jsonb (re-resolved at every step), `created_by`.
+- Progress: `total_rows`, `cursor` (next row), `created_rows`, `updated_rows`, `failed_rows`, `errors` jsonb (`{ row, id?, message }[]`, capped) and `errors_truncated`.
+- Worker coordination: `lease_owner`, `lease_until`, `timeout_ms`, `cancel_requested_at`, `started_at`, `finished_at`. `source` holds the uploaded file until the job ends, then is cleared. Site-isolated under RLS.
 
 ### Schema diff/apply runtime contract
 
@@ -392,6 +404,8 @@ Turning the draft-review pilot off deletes none of these rows.
 | `agent_freezes` | Kill-switch freezes (scope `site`/`role`); `liftedAt IS NULL` = active; doubles as audit trail |
 | `agent_roles` | Multi-agent role library with minimal capability sets; harness enforces role ∩ grant |
 | `constitutions` | Versioned publish-gate evaluator sets; sha256 hash identity; at most one `active` per site |
+| `site_skills` | Site Skills (`site-skills.ts`, migration 0026): playbooks injected into matching agent runs. Unique `(siteId, slug)`; `status` `draft`/`active`/`archived`; `riskClass`; scope columns `surfaces`, `tools`, `collections`, `triggers`, `requiredCapabilities`; current `body`, `version`, `hash` |
+| `site_skill_versions` | Immutable version trail of a site skill: unique `(skillId, version)`, content `snapshot`, sha256 `hash`, `source`/`sourceRef`, `changeNote`, author. Both tables are in the `site_isolation` RLS list |
 
 Content OS columns on existing tables:
 

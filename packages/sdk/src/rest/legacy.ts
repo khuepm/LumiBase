@@ -17,6 +17,9 @@ import {
   TypegenSchemaFilters,
   ListItemsParams,
   ExportItemsParams,
+  ImportJob,
+  ImportJobStatus,
+  ImportRowError,
   ItemRow,
   ListItemsResponse,
   RevisionRow,
@@ -965,9 +968,48 @@ export function legacyRest() {
         client.rawRequest<DeploymentResource>(`/api/v1/deployments/${id}/refresh`, { method: "POST" }),
     };
 
+    // Background collection imports (#726).
+    const imports = {
+      /**
+       * Upload a CSV or JSON export file and queue it. Resolves with the job
+       * (`202`); poll `get(id)` until `status` is terminal.
+       */
+      create: (
+        collection: string,
+        file: Blob | string,
+        opts: { format?: "csv" | "json"; mode?: "create" | "upsert"; filename?: string } = {},
+      ) => {
+        const qs = new URLSearchParams({ collection });
+        if (opts.format) qs.set("format", opts.format);
+        if (opts.mode) qs.set("mode", opts.mode);
+        const form = new FormData();
+        const blob = typeof file === "string" ? new Blob([file], { type: "application/octet-stream" }) : file;
+        form.append("file", blob, opts.filename ?? `${collection}.${opts.format ?? "csv"}`);
+        return client.rawRequest<ImportJob>(`/api/v1/imports?${qs.toString()}`, { method: "POST", body: form });
+      },
+      list: (params: { collection?: string; status?: ImportJobStatus; limit?: number } = {}) => {
+        const qs = new URLSearchParams();
+        if (params.collection) qs.set("collection", params.collection);
+        if (params.status) qs.set("status", params.status);
+        if (params.limit !== undefined) qs.set("limit", String(params.limit));
+        const s = qs.toString();
+        return client.rawRequest<ImportJob[]>(`/api/v1/imports${s ? `?${s}` : ""}`);
+      },
+      get: (id: string) => client.rawRequest<ImportJob>(`/api/v1/imports/${encodeURIComponent(id)}`),
+      errors: (id: string) =>
+        client.rawRequest<{ errors: ImportRowError[]; truncated: number }>(
+          `/api/v1/imports/${encodeURIComponent(id)}/errors`,
+        ),
+      /** The error report as a CSV download (`row,id,message`). */
+      errorsCsv: (id: string) => client.rawFetch(`/api/v1/imports/${encodeURIComponent(id)}/errors?format=csv`),
+      cancel: (id: string) =>
+        client.rawRequest<ImportJob>(`/api/v1/imports/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
+    };
+
     return {
       schema,
       items,
+      imports,
       roles,
       policies,
       access,
