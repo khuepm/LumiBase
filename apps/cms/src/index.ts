@@ -415,7 +415,10 @@ app.route('/api/v1/email', emailPublicRouter);
 // with 400/401 before it can reach the handler. Registering the public
 // handlers first makes them win for their disjoint paths (same mechanism as
 // the shares/email mounts above).
-app.use('/api/v1/deliver/*', withDb(), withDeliverRateLimit(), withDeliveryMilestone(deliverPathSiteId));
+app.use('/api/v1/deliver/*', withDb(), withDeliverRateLimit());
+// Separate mount so the rate-limit wiring line above stays exactly as the
+// security-guards wiring test pins it. Runs after the limiter.
+app.use('/api/v1/deliver/*', withDeliveryMilestone(deliverPathSiteId));
 app.route('/api/v1/deliver', deliverRouter);
 
 // Public pageview beacon — tenancy in the URL, unauthenticated. `withRuntime`
