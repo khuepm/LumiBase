@@ -1,10 +1,10 @@
 ---
-version: 40
-lastUpdated: 2026-11-12T20:20:07.510Z
+version: 41
+lastUpdated: 2026-11-13T06:25:10.452Z
 sourceLang: en
-contentHash: fd53db6903de4fb8
-codeVerified: 2026-11-12T20:20:07.510Z
-codeVerifiedHash: fd53db6903de4fb8
+contentHash: 519dc62fa04327c7
+codeVerified: 2026-11-13T06:25:10.452Z
+codeVerifiedHash: 519dc62fa04327c7
 codeVerifiedClaims: 504
 ---
 
@@ -1131,10 +1131,11 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `GET` | `/api/v1/agent/questions/:id` | One question; `404` for an unknown or other-tenant id |
 | `POST` | `/api/v1/agent/questions/:id/answer` | Answer a question and resume its `waiting_user` run. Body `{ answer }` (1–2000 chars, trimmed; one of `options` when `allowFreeText` is false). Only a signed-in user answers: any API key, site- or organization-scoped and whatever its capabilities, gets `403`. Allowed for a holder of `approvals:decide` (or control-plane admin) and for the run's requesting **user**; today only site administrators reach the route (control-plane guard), so the requester rule takes effect once backlog B207 moves it out of the control plane. The claim and the resume are one transaction. `200` with the answered question (run `succeeded`); `400` `VALIDATION` / `ANSWER_INVALID` / `ANSWER_NOT_AN_OPTION`; `403`; `404`; `409` `ALREADY_ANSWERED`, `EXPIRED`, `QUESTION_CLOSED`, `RUN_NOT_WAITING`, `REQUESTER_REVOKED` (the requester lost access; the run is failed); `423` `FROZEN` (the run is cancelled) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Versions, draft, `/compile` (NL→evaluators), `:id/dry-run`, `:id/activate` |
+| `*` | `/api/v1/agent/skills[...]` | Site Skills — playbooks injected into matching agent runs: CRUD by id or slug, `:id/activate\|archive\|draft`, `:id/versions`, `:id/versions/:version/restore`, `/import`, `/export`, `/match`. Every write needs a control-plane admin (`403 FORBIDDEN` otherwise; there is no delegated author and `riskClass` is a label only). `PATCH` takes `expectedVersion` and status actions take `version` (`409 VERSION_MISMATCH`); `DELETE` refuses a skill that was ever active (`409 SKILL_HAS_BEEN_ACTIVE`); `/import` refuses content changes to active skills unless `updateActive: true` (`ACTIVE_SKILL_CHANGE`). See [features/site-skills.md](../features/site-skills.md) |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze`. Freezing a role or the site, pausing an intent and cancelling a run also cancel runs waiting on an `askUser` question in that scope (`stopReason: frozen`) and close their questions |
 | `*` | `/api/v1/agent/intents[...]` | Content intents CRUD, `:id/pause|resume|scan|drifts`, `/compile` |
 | `POST` | `/api/v1/intents/:id/scan` | One reconciliation cycle: `{ scan, reconcile, dispatch }`. `dispatch` advances each reconciler goal one step (draft → promote → verify) and reports `dispatched/completed/skipped/blocked` plus `queueUnavailable` on runtimes without a queue adapter. See [reconciler repair loop](../features/reconciler-repair-loop.md). When the intent has `semantic` rules, `scan.semantic` reports the separately budgeted semantic pass (`status` `ran`/`off`/`unavailable`, counts, `completed`, `cursor`), and `scan.semanticOrphansResolved` counts rows of removed semantic rules it resolved. Updating an intent so a stored semantic rule changes profile, question, context or fields without a `version` bump returns `422 SEMANTIC_RULE_VERSION_REQUIRED`; see [semantic drift](../features/jev-semantic-drift.md) |
-| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag. A `tools/call` of `askUser` returns a normal tool result with `status: "waiting_user"`, `questionId` and `runId` |
+| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag. Besides `tools/*`, `prompts/list` and `prompts/get` expose the site's active skills to control-plane admins (empty for any other caller). A `tools/call` of `askUser` returns a normal tool result with `status: "waiting_user"`, `questionId` and `runId` |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Law Zero pins: list / release |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Public llms.txt index per site |
 

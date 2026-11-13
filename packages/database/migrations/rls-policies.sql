@@ -116,6 +116,9 @@ DECLARE
     'lumibase_review_sessions',
     -- Jev automation actions (J11, site-isolated; every read/write is per site, no cross-site job).
     'lumibase_ai_automation_actions',
+    -- Site Skills (#712, site-isolated playbooks + their version trail). Workers
+    -- that inject them read through the system connection, scoped by site_id.
+    'lumibase_site_skills', 'lumibase_site_skill_versions',
     -- Background collection imports (#726). Requests read/write their own site;
     -- the resume tick claims jobs across sites on the system connection.
     'lumibase_import_jobs'

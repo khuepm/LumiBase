@@ -27,7 +27,7 @@ const itemInputSchema = z.object({
   revisionId: z.string().nullable().optional(),
 });
 
-const createSchema = z.object({
+export const createSchema = z.object({
   name: z.string().min(1),
   description: z.string().nullable().optional(),
   atomicityMode: z.enum(['all_or_nothing', 'best_effort']).optional(),
@@ -35,7 +35,7 @@ const createSchema = z.object({
   maintenanceWindow: z.unknown().optional(),
 });
 
-const patchSchema = z.object({
+export const patchSchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
   atomicityMode: z.enum(['all_or_nothing', 'best_effort']).optional(),

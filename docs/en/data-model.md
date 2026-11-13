@@ -1,10 +1,10 @@
 ---
-version: 11
-lastUpdated: 2026-11-12T18:56:19.246Z
+version: 12
+lastUpdated: 2026-11-13T06:25:07.521Z
 sourceLang: en
-contentHash: 5c01feaf33a583e1
-codeVerified: 2026-11-12T18:56:19.246Z
-codeVerifiedHash: 5c01feaf33a583e1
+contentHash: c146e4aa64397660
+codeVerified: 2026-11-13T06:25:07.521Z
+codeVerifiedHash: c146e4aa64397660
 codeVerifiedClaims: 20
 ---
 
@@ -203,7 +203,7 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`, `(siteId, status, publ
 - Defines denormalized read tables for hot paths.
 - `target`, `refreshStrategy` (`auto`/`cron`/`manual`), `refreshCron`, `projection jsonb`, `filter jsonb`, `lastRefreshedAt`, `rowCount`, `status`, `error`.
 
-### `import_jobs` (`imports.ts`, migration `0026`)
+### `import_jobs` (`imports.ts`, migration `0027`)
 - One background import (#726): `collection`, `format` (`csv`/`json`), `mode` (`create`/`upsert`), `status` (`queued`/`running`/`succeeded`/`failed`/`cancelled`/`timed_out`), `principal` jsonb (re-resolved at every step), `created_by`.
 - Progress: `total_rows`, `cursor` (next row), `created_rows`, `updated_rows`, `failed_rows`, `errors` jsonb (`{ row, id?, message }[]`, capped) and `errors_truncated`.
 - Worker coordination: `lease_owner`, `lease_until`, `timeout_ms`, `cancel_requested_at`, `started_at`, `finished_at`. `source` holds the uploaded file until the job ends, then is cleared. Site-isolated under RLS.
@@ -398,6 +398,8 @@ Turning the draft-review pilot off deletes none of these rows.
 | `agent_freezes` | Kill-switch freezes (scope `site`/`role`); `liftedAt IS NULL` = active; doubles as audit trail |
 | `agent_roles` | Multi-agent role library with minimal capability sets; harness enforces role ∩ grant |
 | `constitutions` | Versioned publish-gate evaluator sets; sha256 hash identity; at most one `active` per site |
+| `site_skills` | Site Skills (`site-skills.ts`, migration 0026): playbooks injected into matching agent runs. Unique `(siteId, slug)`; `status` `draft`/`active`/`archived`; `riskClass`; scope columns `surfaces`, `tools`, `collections`, `triggers`, `requiredCapabilities`; current `body`, `version`, `hash` |
+| `site_skill_versions` | Immutable version trail of a site skill: unique `(skillId, version)`, content `snapshot`, sha256 `hash`, `source`/`sourceRef`, `changeNote`, author. Both tables are in the `site_isolation` RLS list |
 
 Content OS columns on existing tables:
 
