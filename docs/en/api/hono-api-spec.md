@@ -1,11 +1,11 @@
 ---
-version: 42
-lastUpdated: 2026-11-13T07:00:51.839Z
+version: 44
+lastUpdated: 2026-11-13T07:14:32.781Z
 sourceLang: en
-contentHash: 77ab07f032bd1179
-codeVerified: 2026-11-13T07:00:51.839Z
-codeVerifiedHash: 77ab07f032bd1179
-codeVerifiedClaims: 508
+contentHash: 724f7ac3a2520041
+codeVerified: 2026-11-13T07:14:32.781Z
+codeVerifiedHash: 724f7ac3a2520041
+codeVerifiedClaims: 516
 ---
 
 # Hono API Specification — LumiBase
@@ -677,6 +677,20 @@ neutralises spreadsheet formulas; JSON is
 Errors before streaming: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`,
 `403 FORBIDDEN`, `404 NOT_FOUND`. See [Data export](../features/data-export.md).
 
+**Imports.** Background jobs that read the export formats back:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/imports?collection=&format=csv\|json&mode=create\|upsert` | Upload a file (multipart `file` or raw body) → `202 { data: job }` |
+| `GET` | `/api/v1/imports?collection=&status=&limit=` | Recent jobs (own; site admins see all) |
+| `GET` | `/api/v1/imports/:id` | Job progress and counters |
+| `GET` | `/api/v1/imports/:id/errors` | Row errors; `?format=csv` downloads them |
+| `POST` | `/api/v1/imports/:id/cancel` | Stop a queued or running job |
+
+Bad files fail with `400 VALIDATION` / `413 PAYLOAD_TOO_LARGE` before a job is
+created; missing `create` (or `update` for `upsert`) permission is `403`. See
+[Data import](../features/data-import.md#background-import-jobs).
+
 **List pagination & totals.** `GET /items/:collection` accepts `limit`
 (1–200, default 25), `offset`, and `meta`:
 
@@ -948,6 +962,7 @@ Public (no session; signature-verified):
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `POST` | `/api/v1/deployments/webhook/:provider/:siteId` | Inbound status webhook (`vercel` \| `netlify`) with path tenant (works on the shared API host without `X-Lumi-Site`). `404 UNKNOWN_PROVIDER`, `400 TENANT_INVALID` / `TENANT_MISMATCH`, `401 INVALID_SIGNATURE`; otherwise `200 { data: null }`, including when the body matches no deployment |
 | `POST` | `/api/v1/deployments/webhook/:provider` | Inbound status webhook (`vercel` \| `netlify`). Tenant comes from `withTenant` (`X-Lumi-Site` or host mapping). `404 UNKNOWN_PROVIDER`, `401 INVALID_SIGNATURE`; otherwise `200 { data: null }`, including when the body matches no deployment |
 
 **Target shape** (`data` of the target routes): `{ id, provider, name, projectId, defaultBranch, productionUrl, status, createdAt, updatedAt }`.

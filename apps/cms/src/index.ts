@@ -52,6 +52,7 @@ import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
 import { flowsRouter } from './routes/flows';
 import { itemsRouter } from './routes/items';
+import { importsRouter } from './routes/imports';
 import { handleGraphQL } from './graphql';
 import { permissionsRouter } from './routes/permissions';
 import { policiesRouter } from './routes/policies';
@@ -208,9 +209,12 @@ app.route('/scim/v2', scimRouter);
 
 // Inbound deployment status webhook. PUBLIC / pre-auth on purpose: the
 // provider (Vercel/Netlify) authenticates via request signature, not a bearer
-// token. Needs `withTenant` (X-Lumi-Site → siteId) + `withDb` to update the
-// `deployments` row; `withRuntime` already ran globally for the KeyProvider.
-app.use('/api/v1/deployments/webhook/*', withTenant(), withDb());
+// token. `/:provider/:siteId` carries the tenant in the path so webhooks work
+// on the shared API host (`api.lumibase.dev`) where providers cannot send
+// custom headers (`X-Lumi-Site`); `/:provider` remains supported via
+// `withTenant` for per-site host mappings or callers that send `X-Lumi-Site`.
+// Both routes scope their DB handle with `scopedDbFor(c, siteId)` (#569, B130).
+app.use('/api/v1/deployments/webhook/*', withDb());
 app.route('/api/v1/deployments/webhook', deploymentsWebhookRouter);
 
 // Git integration public surface — OAuth callback + signature-verified webhook
@@ -263,6 +267,8 @@ api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/pages', pagesRouter);
 api.route('/items', itemsRouter);
+// Background collection imports (#726).
+api.route('/imports', importsRouter);
 api.route('/releases', releasesRouter);
 api.route('/editorial', editorialRouter);
 // GraphQL surface (Yoga). Mounted inside the authenticated `api` sub-app so

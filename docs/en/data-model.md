@@ -1,10 +1,10 @@
 ---
-version: 13
-lastUpdated: 2026-11-13T06:05:34.491Z
+version: 14
+lastUpdated: 2026-11-13T06:58:01.770Z
 sourceLang: en
-contentHash: ee5af4598f5b83b5
-codeVerified: 2026-11-13T06:05:34.491Z
-codeVerifiedHash: ee5af4598f5b83b5
+contentHash: 663fe1dec3a63ad7
+codeVerified: 2026-11-13T06:58:01.770Z
+codeVerifiedHash: 663fe1dec3a63ad7
 codeVerifiedClaims: 20
 ---
 
@@ -34,6 +34,7 @@ Schema files are split by domain:
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
+| `imports.ts` | `lumibase_import_jobs` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
 
@@ -207,6 +208,11 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`, `(siteId, status, publ
 ### `materialized_collections` (POST-GA6)
 - Defines denormalized read tables for hot paths.
 - `target`, `refreshStrategy` (`auto`/`cron`/`manual`), `refreshCron`, `projection jsonb`, `filter jsonb`, `lastRefreshedAt`, `rowCount`, `status`, `error`.
+
+### `import_jobs` (`imports.ts`, migration `0028`)
+- One background import (#726): `collection`, `format` (`csv`/`json`), `mode` (`create`/`upsert`), `status` (`queued`/`running`/`succeeded`/`failed`/`cancelled`/`timed_out`), `principal` jsonb (re-resolved at every step), `created_by`.
+- Progress: `total_rows`, `cursor` (next row), `created_rows`, `updated_rows`, `failed_rows`, `errors` jsonb (`{ row, id?, message }[]`, capped) and `errors_truncated`.
+- Worker coordination: `lease_owner`, `lease_until`, `timeout_ms`, `cancel_requested_at`, `started_at`, `finished_at`. `source` holds the uploaded file until the job ends, then is cleared. Site-isolated under RLS.
 
 ### Schema diff/apply runtime contract
 

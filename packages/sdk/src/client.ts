@@ -201,7 +201,9 @@ export function createLumiClient<TSchema extends DefaultSchema = DefaultSchema>(
     }
     headers.set("authorization", `Bearer ${currentToken}`);
     headers.set("x-lumi-site", opts.siteId);
-    if (!headers.has("content-type") && init.body) {
+    // FormData sets its own multipart boundary; never override it.
+    const isForm = typeof FormData !== "undefined" && init.body instanceof FormData;
+    if (!headers.has("content-type") && init.body && !isForm) {
       headers.set("content-type", "application/json");
     }
     return headers;

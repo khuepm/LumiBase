@@ -475,6 +475,37 @@ export interface ExportItemsParams {
   status?: string;
 }
 
+export type ImportJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
+
+/** A background import job (`/api/v1/imports`, #726). The uploaded file is never returned. */
+export interface ImportJob {
+  id: string;
+  collection: string;
+  format: 'csv' | 'json';
+  mode: 'create' | 'upsert';
+  status: ImportJobStatus;
+  totalRows: number;
+  processedRows: number;
+  createdRows: number;
+  updatedRows: number;
+  failedRows: number;
+  /** Row errors beyond the stored cap, counted but not kept. */
+  errorsTruncated: number;
+  message: string | null;
+  createdBy: string | null;
+  cancelRequested: boolean;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface ImportRowError {
+  /** 1-based data row (CSV: line after the header; JSON: position in `items`). */
+  row: number;
+  id?: string;
+  message: string;
+}
+
 /** Reserved metadata attributes present on every search hit. */
 export interface SearchHitMeta {
   /** Which collection the hit belongs to. */

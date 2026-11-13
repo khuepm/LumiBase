@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 41
-lastUpdated: 2026-11-13T07:00:51.839Z
+version: 43
+lastUpdated: 2026-11-13T07:14:32.781Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 77ab07f032bd1179
+sourceHash: 724f7ac3a2520041
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T07:00:51.839Z
-codeVerifiedHash: 77ab07f032bd1179
-codeVerifiedClaims: 508
+codeVerified: 2026-11-13T07:14:32.781Z
+codeVerifiedHash: 724f7ac3a2520041
+codeVerifiedClaims: 516
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -577,6 +577,18 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 
 **Export.** `GET /items/:collection/export?format=csv|json&fields=&locales=&relations=id|slug|embed&filter=&sort=&status=` xuất theo luồng mọi dòng khớp (phân trang keyset, nên không giới hạn kích thước). Endpoint dùng quyền `read` của người gọi và cú pháp `filter`/`sort` của endpoint danh sách, chạy hook `items.export.before` của extension cho từng dòng, và ghi một mục audit `items_exported`. CSV ghi một cột `field.locale` cho mỗi locale của trường dịch được và vô hiệu hoá công thức bảng tính; JSON có dạng `{ collection, format: "lumibase-export@1", exportedAt, fields, locales, relations, items: [{ id, status, sort, created_at, updated_at, data }] }`. Lỗi trả về trước khi bắt đầu stream: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`, `403 FORBIDDEN`, `404 NOT_FOUND`. Xem [Data export](../features/data-export.md).
 
+**Imports.** Job chạy nền đọc lại các định dạng export:
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `POST` | `/api/v1/imports?collection=&format=csv\|json&mode=create\|upsert` | Upload một file (multipart `file` hoặc body thô) → `202 { data: job }` |
+| `GET` | `/api/v1/imports?collection=&status=&limit=` | Các job gần đây (của mình; admin của site thấy tất cả) |
+| `GET` | `/api/v1/imports/:id` | Tiến độ và các bộ đếm của job |
+| `GET` | `/api/v1/imports/:id/errors` | Lỗi theo dòng; `?format=csv` để tải về |
+| `POST` | `/api/v1/imports/:id/cancel` | Dừng một job đang chờ hoặc đang chạy |
+
+File không hợp lệ bị từ chối với `400 VALIDATION` / `413 PAYLOAD_TOO_LARGE` trước khi tạo job; thiếu quyền `create` (hoặc `update` với `upsert`) trả `403`. Xem [Data import](../features/data-import.md#job-import-chạy-nền).
+
 **Phân trang danh sách & Tổng số.** `GET /items/:collection` chấp nhận `limit` (1–200, mặc định 25), `offset`, và `meta`:
 
 - `meta=total_count` (mặc định) — phản hồi là `{ data, meta: { total, limit, offset } }`.
@@ -812,6 +824,7 @@ Công khai (không có phiên; xác thực bằng chữ ký):
 
 | Phương thức | Đường dẫn | Mô tả |
 |--------|------|-------------|
+| `POST` | `/api/v1/deployments/webhook/:provider/:siteId` | Inbound status webhook (`vercel` \| `netlify`) mang tenant trong path (hoạt động trên shared API host mà không cần `X-Lumi-Site`). `404 UNKNOWN_PROVIDER`, `400 TENANT_INVALID` / `TENANT_MISMATCH`, `401 INVALID_SIGNATURE`; còn lại `200 { data: null }`, kể cả khi body không khớp deployment nào |
 | `POST` | `/api/v1/deployments/webhook/:provider` | Inbound status webhook (`vercel` \| `netlify`). Tenant lấy từ `withTenant` (`X-Lumi-Site` hoặc host mapping). `404 UNKNOWN_PROVIDER`, `401 INVALID_SIGNATURE`; còn lại `200 { data: null }`, kể cả khi body không khớp deployment nào |
 
 **Shape của target** (`data` của các route target): `{ id, provider, name, projectId, defaultBranch, productionUrl, status, createdAt, updatedAt }`.

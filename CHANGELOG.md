@@ -23,6 +23,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - Studio: an **Export** button and dialog on the collection list (format, fields, locales, relations, current filters).
 - SDK: `client.items(name).export(params)` returns the streaming `Response`; `client.rawFetch(path, init)` is the streaming counterpart of `rawRequest`.
 - Extensions: `items.export.before` hook to transform or drop fields from each exported row.
+- Background imports: `POST /api/v1/imports` takes a CSV or JSON export file, answers `202` and writes the rows in chunks under the uploader's permissions, re-checked every chunk. Progress at `GET /api/v1/imports/:id`, cancel at `POST …/cancel`, row-level error report at `GET …/errors` (`?format=csv`). `create` or `upsert` (by `id`). Jobs survive restarts: a one-minute tick resumes any job whose lease expired. Limits: `IMPORT_TIMEOUT`, `IMPORT_MAX_CONCURRENCY` (per site), `IMPORT_MAX_BYTES`, `IMPORT_CHUNK_SIZE` (#726, epic #673).
+- Studio: **Import** button and dialog on the collection list with live progress, cancel and the error report download.
+- SDK: `client.imports.create / list / get / errors / errorsCsv / cancel`.
+- Database: migration `0028_import_jobs` adds `lumibase_import_jobs` (site-isolated under RLS).
+
+### Fixed
+- SDK: `rawRequest` no longer forces `content-type: application/json` on a `FormData` body, which broke multipart uploads.
 
 - **Agent harness: `askUser` clarification tool (#710).** An agent that cannot continue
   without a decision it may not make asks a human instead of guessing. The run parks in
@@ -45,6 +52,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   `status: "waiting_user"` with `questionId`. Metrics
   `lumibase_agent_questions_total{status}` and `lumibase_agent_question_wait_seconds`; the
   trust ledger shows question counts in promotion evidence.
+- `POST /api/v1/deployments/webhook/:provider/:siteId` carries the tenant in the URL path so Vercel and Netlify outgoing deployment webhooks (which cannot send custom `X-Lumi-Site` headers) work on the shared API host (`api.lumibase.dev`) without a per-site host mapping. `POST /api/v1/deployments/webhook/:provider` remains supported via `withTenant` (#569, B163).
 - MCP: OAuth 2.1 protected-resource support for hosted connectors (Claude, ChatGPT, IDE remote MCP) — #346. RFC 9728 metadata at `/.well-known/oauth-protected-resource[/api/v1/mcp[/sites/<siteId>]]` advertising the site's trusted external issuers as authorization servers; `WWW-Authenticate: Bearer resource_metadata=…` on MCP 401s; site-addressed endpoint `POST /api/v1/mcp/sites/<siteId>`; scopes `mcp:read`/`mcp:write`/`mcp:delete`/`mcp:admin` that only narrow the RBAC capability set, with `403 INSUFFICIENT_SCOPE` step-up challenges. No Dynamic Client Registration in LumiBase (use the IdP's, or register the client manually). Guide: `docs/en/agent-setup/oauth-connector.md`.
 
 ### Changed

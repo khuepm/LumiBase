@@ -1,13 +1,13 @@
 ---
-version: 6
-lastUpdated: 2026-11-12T06:32:59.652Z
+version: 7
+lastUpdated: 2026-11-12T10:11:46.996Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 30519b4e9b54cfb3
+sourceHash: 88e0270e2e7e332c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T06:32:59.652Z
-codeVerifiedHash: 30519b4e9b54cfb3
+codeVerified: 2026-11-12T10:11:46.996Z
+codeVerifiedHash: 88e0270e2e7e332c
 codeVerifiedClaims: 8
 ---
 
@@ -196,6 +196,19 @@ const res = await client.items('articles').export({
   filter: { status: { _eq: 'published' } },
 })
 const csv = await res.text()
+```
+
+### Import
+
+```typescript
+// Upload bản export CSV/JSON thành job chạy nền; xem docs/vi/features/data-import.md
+const { data: job } = await client.imports.create('articles', file, { mode: 'upsert' })
+let current = job
+while (!['succeeded', 'failed', 'cancelled', 'timed_out'].includes(current.status)) {
+  await new Promise((r) => setTimeout(r, 2000))
+  current = (await client.imports.get(job.id)).data
+}
+if (current.failedRows > 0) console.table((await client.imports.errors(job.id)).data.errors)
 ```
 
 ### Revision và pin

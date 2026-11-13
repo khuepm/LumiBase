@@ -1,14 +1,14 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-12T06:32:29.957Z
+version: 2
+lastUpdated: 2026-11-12T10:11:39.685Z
 translatedFrom: en
-sourceHash: 35bbb3c580043861
+sourceHash: fe376fc30fa5e639
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T06:32:29.957Z
-codeVerifiedHash: 35bbb3c580043861
-codeVerifiedClaims: 4
+codeVerified: 2026-11-12T10:11:39.685Z
+codeVerifiedHash: fe376fc30fa5e639
+codeVerifiedClaims: 6
 ---
 
 # Data export
@@ -117,9 +117,10 @@ export default {
 
 ## Import lại
 
-Hiện tại có thể gửi các object `items[].data` của một bản export JSON tới
-[bulk endpoint](./data-import.md) với `op: "create"`. Job import chạy nền đọc trực
-tiếp cả hai định dạng, có báo tiến độ và báo cáo lỗi theo từng dòng, được theo dõi ở #726.
+Upload file dưới dạng [job import chạy nền](./data-import.md#job-import-chạy-nền):
+`POST /api/v1/imports?collection=…` đọc cả hai định dạng đúng như mô tả ở đây, có
+báo tiến độ, huỷ và báo cáo lỗi theo từng dòng. Dùng `mode=upsert` để cập nhật các
+item có `id` khớp thay vì tạo bản sao.
 
 ## Liên quan
 
