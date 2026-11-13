@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-13T19:11:43.733Z",
+  "generatedAt": "2026-11-13T22:21:19.192Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 165,
+    "upToDate": 166,
     "planned": 0
   },
   "actions": [
@@ -1670,6 +1670,18 @@
     },
     {
       "rel": "operations/upgrades.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "operations/usage-telemetry.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
