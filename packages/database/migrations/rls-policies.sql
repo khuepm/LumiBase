@@ -182,6 +182,14 @@ CREATE POLICY site_isolation_permit ON lumibase_extensions
 ALTER TABLE lumibase_role_policies DISABLE ROW LEVEL SECURITY;
 
 -- =============================================================================
+-- Operator error capture (.kiro/specs/ops-diagnostics) — platform table, no
+-- site scope. RLS on and forced with NO policy: the app role sees no rows; only
+-- the BYPASSRLS system role (the ops routes and the capture writer) reads it.
+-- =============================================================================
+ALTER TABLE lumibase_ops_errors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lumibase_ops_errors FORCE ROW LEVEL SECURITY;
+
+-- =============================================================================
 -- Core user identities are global; site and key rows have two possible scopes.
 -- =============================================================================
 -- lumibase_users: intentionally excluded from site-scoped RLS.

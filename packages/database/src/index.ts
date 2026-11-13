@@ -3,3 +3,4 @@ export { schema } from './client';
 export { createDb, type Database } from './client';
 export * from './backfill/role-policies';
 export * from './migration-guard';
+export * from './migration-journal';
