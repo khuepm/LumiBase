@@ -222,6 +222,34 @@ describe('G1 — reopening a failed approval', () => {
     }
   });
 
+  it('refuses to reopen a veto whose staged patch is already live (B131)', async () => {
+    const { VetoService } = await import('../../services/veto-service');
+    const applied = vi.spyOn(VetoService.prototype, 'isStagingApplied').mockResolvedValueOnce(true);
+    const fake = seedFakeDb({ status: 'failed', kind: 'veto' });
+    fake.tables[AGENT_APPROVALS]!.updateGuards = { pending: ['failed'] };
+
+    const res = await reopen(fake, { reason: 'retry the commit' });
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { errors: Array<{ code: string }> }).errors[0]!.code).toBe('VETO_ALREADY_APPLIED');
+    expect(applied).toHaveBeenCalledWith('appr_1');
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('failed');
+    applied.mockRestore();
+  });
+
+  it('reopens a failed veto whose patch never reached live content', async () => {
+    const { VetoService } = await import('../../services/veto-service');
+    const applied = vi.spyOn(VetoService.prototype, 'isStagingApplied').mockResolvedValueOnce(false);
+    const fake = seedFakeDb({ status: 'failed', kind: 'veto' });
+    fake.tables[AGENT_APPROVALS]!.updateGuards = { pending: ['failed'] };
+
+    const res = await reopen(fake, { reason: 'commit never ran' });
+
+    expect(res.status).toBe(200);
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('pending');
+    applied.mockRestore();
+  });
+
   it('requires the approval capability', async () => {
     const fake = seedFakeDb({ status: 'failed' });
     fake.tables[AGENT_APPROVALS]!.updateGuards = { pending: ['failed'] };

@@ -1,15 +1,18 @@
 ---
-version: 2
-lastUpdated: 2026-09-01T19:25:55.310Z
+version: 3
+lastUpdated: 2026-11-12T18:28:18.599Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f969bfdcd82da644
+sourceHash: e68474f4497e2855
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-01T19:25:55.310Z
-codeVerifiedHash: f969bfdcd82da644
+codeVerified: 2026-11-12T18:28:18.599Z
+codeVerifiedHash: e68474f4497e2855
 codeVerifiedClaims: 10
 ---
+
+<!-- check-parity: allow code-fences inline-code -->
+<!-- Recorded by stamp-pair --allow-structure-drift on 2026-11-12T18:28:18.599Z. See commit history for rationale. -->
 
 # Change Feed (CDC Extension Integration)
 
@@ -33,6 +36,7 @@ ItemService mutation ──(cùng request)──▶ lumibase_cdc_change_events (
 
 - **Capture** — `OutboxWriter` chạy trong cụm side-effect sau mutation của `ItemService`. Nó không bao giờ throw: một lần insert lỗi sẽ phát audit warning `cdc_event_write_failed` và mutation vẫn tiếp tục. Các site không có subscription active (và không có `cdc_feed.enabled`) bỏ hẳn lần ghi đó (một flag theo site được cache).
 - **Thứ tự** — id của event là nanoid (không mang nghĩa thứ tự). Thứ tự toàn phần của feed theo từng site là keyset ghép `(occurred_at, id)`, với `occurred_at` do Postgres `now()` đóng dấu — một đồng hồ duy nhất. Mọi đường đọc đều áp một **safety lag 2s** để một transaction dài đang giữ một `now()` sớm hơn không bị vượt qua rồi bị bỏ sót.
+- **Runtime** — trên Docker/Node, sweep chốt hạ chạy mỗi 30s. Trên Cloudflare Workers, nó chạy từ Cron Trigger mỗi phút (mỗi năm phút với các profile không có trigger mỗi phút), và queue `cdc-dispatch` của đường độ trễ không được bind, nên Workers gửi trong khoảng một phút thay vì vài giây (backlog B131). Workers chỉ gửi tới subscription **webhook**: một extension subscriber nạp bundle của nó bằng `import()` động mà runtime Workers không cho phép, nên lane extension bị bỏ qua ở đó (không tính là lỗi, nên không bao giờ bị đánh dấu dead) và được gửi bởi một bản triển khai Docker/Node.
 - **Ngữ nghĩa gửi** — at-least-once, không bao giờ exactly-once. `event.id` là idempotency key; consumer **bắt buộc** phải dedupe theo nó. Một cursor chỉ tiến qua một batch đã gửi thành công, nên event không bao giờ bị bỏ sót. Về lâu dài: trên driver HTTP (Workers), việc ghi outbox là best-effort sau commit — hãy hoà giải bằng cách so `updatedAt` của item với feed nếu bạn cần một đảm bảo chắc chắn.
 
 ## 2. Envelope của event (schemaVersion 1)
