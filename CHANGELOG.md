@@ -91,7 +91,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   (`cloudflare-cron-parity.ts`): every minute on local/production, every five
   minutes on staging, not at all on dev/demo (no crons there). Workers delivers
   Change Feed events to webhook subscriptions only (extension subscribers stay
-  Docker/Node, B199), within about a minute. Envelope migrations continue on a
+  Docker/Node, B215), within about a minute. Envelope migrations continue on a
   new `encryption-envelope-migration` queue, created by the deploy workflows.
   Veto commits now claim the approval (`pending → deciding`) before applying
   the patch: with no leader lock, two overlapping sweeps applied it twice. A
