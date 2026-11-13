@@ -104,7 +104,7 @@ presetsRouter.get('/:id', async (c) => {
   return c.json({ data: row });
 });
 
-const presetSchema = z.object({
+export const presetSchema = z.object({
   bookmark: z.string().nullable().optional(),
   collection: z.string(),
   userId: z.string().nullable().optional(),
@@ -118,6 +118,8 @@ const presetSchema = z.object({
   color: z.string().nullable().optional(),
   refreshInterval: z.number().int().min(0).optional(),
 });
+
+export const presetPatchSchema = patchSchema(presetSchema);
 
 /**
  * Enforce the scope-ownership rule for a write:
@@ -199,7 +201,7 @@ presetsRouter.patch('/:id', async (c) => {
   const siteId = c.get('siteId');
   const db = c.get('db');
   const body = await c.req.json();
-  const parsed = patchSchema(presetSchema).parse(body);
+  const parsed = presetPatchSchema.parse(body);
 
   const [existing] = await db
     .select()

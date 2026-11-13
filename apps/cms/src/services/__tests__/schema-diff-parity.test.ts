@@ -107,6 +107,23 @@ describe('SchemaService schema diff parity', () => {
     ]);
   });
 
+  it('previews a classification change (diff_schema must not report pii → none as unchanged)', () => {
+    const piiField = { ...titleField, encrypted: true, classification: 'pii' };
+    const diff = buildSchemaDiff(
+      collection as never,
+      [piiField as never],
+      [],
+      { fields: [{ name: 'title', type: 'string', interface: 'input', encrypted: true, classification: 'none' }] },
+    );
+    expect(diff.fields.changed).toEqual([
+      expect.objectContaining({ name: 'title', changes: ['classification'], risk: 'medium' }),
+    ]);
+    const same = buildSchemaDiff(collection as never, [piiField as never], [], {
+      fields: [{ name: 'title', type: 'string', interface: 'input', encrypted: true, classification: 'pii' }],
+    });
+    expect(same.fields.changed).toEqual([]);
+  });
+
   it('classifies collection and populated field runtime impact', () => {
     const diff = buildSchemaDiff(
       collection as never,

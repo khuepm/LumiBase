@@ -13,6 +13,8 @@ import { createConfiguredLLMProvider } from '../services/llm-provider';
  * Mutations require the `intents:write` capability (admin role or an
  * explicit grant), mirroring how the AI chat route derives capabilities.
  */
+export const intentPatchSchema = patchSchema(intentInputSchema);
+
 export const intentsRouter = new Hono<AppEnv>();
 
 const compileSchema = z.object({
@@ -88,7 +90,7 @@ intentsRouter.post('/', async (c) => {
 
 intentsRouter.patch('/:id', async (c) => {
   if (!canWriteIntents(c)) return forbidden(c);
-  const parsed = patchSchema(intentInputSchema).safeParse(await c.req.json().catch(() => null));
+  const parsed = intentPatchSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return handleError(c, parsed.error);
   try {
     const data = await service(c).update(c.req.param('id'), parsed.data);
