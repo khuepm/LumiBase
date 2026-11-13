@@ -6,6 +6,7 @@ import { canOrg, classifyTokenPrefix, OrgKeyCreateSchema, OrgMemberUpsertSchema,
   OrgSiteCreateSchema, OrgSiteTransferSchema, type OrgAction, type OrgRole } from '@lumibase/contracts';
 import { createPlaintextToken } from './api-key-token';
 import { provisionSite } from './site-provisioning';
+import { emailLookup } from '../modules/email-identity/service';
 
 export type OrganizationActor = { type: 'user'; userId: string } | { type: 'api_key'; apiKeyId: string };
 export function organizationActorFromAuth(auth: AuthPrincipal): OrganizationActor {
@@ -92,8 +93,9 @@ export async function executeOrganizationMutation(
   }
   if (operation === 'invite_org_member') {
     const input = parse(OrgMemberUpsertSchema, args);
+    // #794: identity-aware lookup (case-insensitive; alias-aware under `root` mode).
     const [user] = await db.select({ id: users.id }).from(users)
-      .where(input.userId ? eq(users.id, input.userId) : sql`lower(${users.email}) = ${input.email}`).limit(1);
+      .where(input.userId ? eq(users.id, input.userId) : (await emailLookup(db, input.email ?? '')).where).limit(1);
     let userId = user?.id;
     if (!userId && input.email) {
       const [created] = await db.insert(users).values({ email: input.email, status: 'invited' }).returning({ id: users.id });

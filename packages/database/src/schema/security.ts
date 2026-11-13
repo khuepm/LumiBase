@@ -54,6 +54,16 @@ export const systemState = pgTable(
     adminPath: text('admin_path'),
     /** sha256 hex of the bootstrap Setup Token; null after init. */
     setupTokenHash: text('setup_token_hash'),
+    /**
+     * Instance-tier email identity policy (#794). `exact`: every distinct
+     * address (incl. `+tag` / Gmail-dot aliases) is its own account — the
+     * pre-#794 behaviour and the backfilled value. `root`: one root mailbox
+     * = one account instance-wide. Chosen in the Setup Wizard; changed later
+     * only by the bootstrap admin through the guarded endpoint.
+     */
+    emailIdentityMode: text('email_identity_mode', { enum: ['exact', 'root'] })
+      .default('exact')
+      .notNull(),
     /** Wall-clock time at which `state` flipped to `initialized`. */
     initializedAt: timestamp('initialized_at'),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
