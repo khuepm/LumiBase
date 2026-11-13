@@ -74,9 +74,22 @@ export function migrateTarget(url: string, siteId: string): MigrateTarget {
  * directory never shares uploaded asset keys.
  */
 export function defaultStatePath(source: Source, sourceId: string | undefined, target: MigrateTarget): string {
-  const site = target.siteId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40);
-  const hash = createHash('sha256').update(`${target.url}\n${target.siteId}`).digest('hex').slice(0, 10);
-  return `.lumibase/migrate-${source}${sourceId ? `-${sourceId}` : ''}-${site}-${hash}.json`;
+  // The space id comes from the export file and the site id from config: both
+  // are reduced to one safe file-name component (no `/`, `\`, `..`, bounded
+  // length) so the state file always lands directly in `.lumibase/`. The hash
+  // covers the raw values, so ids that sanitize alike still get distinct files.
+  const space = sourceId ? `-${safeFileComponent(sourceId)}` : '';
+  const site = safeFileComponent(target.siteId);
+  const hash = createHash('sha256')
+    .update(JSON.stringify([source, sourceId ?? null, target.url, target.siteId]))
+    .digest('hex')
+    .slice(0, 10);
+  return `.lumibase/migrate-${source}${space}-${site}-${hash}.json`;
+}
+
+/** `[A-Za-z0-9_-]` only, at most 40 characters, never empty. */
+function safeFileComponent(value: string): string {
+  return value.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40) || '_';
 }
 
 /**

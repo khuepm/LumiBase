@@ -372,6 +372,29 @@ describe('migrate resume state — bound to its destination', () => {
     expect(a).toMatch(/^\.lumibase\/migrate-contentful-space1-site_a-[0-9a-f]{10}\.json$/);
   });
 
+  it('keeps the default state file inside .lumibase whatever the space or site id', async () => {
+    const { defaultStatePath, migrateTarget } = await load();
+    const { basename, dirname, resolve: resolvePath } = await import('node:path');
+    const cwd = resolvePath('/work/project');
+    const hostile = ['x/../../../outside', '..', '../..', 'a\\..\\b', '/etc/passwd', 'space\u0000id', 'x'.repeat(5000), '', '.'];
+    const seen = new Set<string>();
+    for (const sourceId of hostile) {
+      for (const siteId of ['site_a', '../../site', 'x'.repeat(5000)]) {
+        const rel = defaultStatePath('contentful', sourceId, migrateTarget('https://cms.dev', siteId));
+        const abs = resolvePath(cwd, rel);
+        expect(dirname(abs), rel).toBe(resolvePath(cwd, '.lumibase'));
+        expect(basename(rel)).toMatch(/^migrate-contentful(-[A-Za-z0-9_-]{1,40})?-[A-Za-z0-9_-]{1,40}-[0-9a-f]{10}\.json$/);
+        expect(rel.length).toBeLessThan(140);
+        seen.add(rel);
+      }
+    }
+    // Distinct raw ids never share a state file, even when they sanitize alike.
+    expect(seen.size).toBe(hostile.length * 3);
+    expect(defaultStatePath('contentful', 'a/b', migrateTarget('https://cms.dev', 's'))).not.toBe(
+      defaultStatePath('contentful', 'a_b', migrateTarget('https://cms.dev', 's')),
+    );
+  });
+
   it('reuses cached keys only for the same source and destination', async () => {
     const { loadMigrateState, migrateTarget } = await load();
     const dir = tmp();
