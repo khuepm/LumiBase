@@ -10,6 +10,7 @@ import type { AppEnv, AuthPrincipal } from '../env';
 import { runDetached } from '../lib/detached';
 import { AuditLogger } from '../modules/audit/logger';
 import { tryExternalJwt } from '../modules/external-auth/adapter';
+import { externalPrincipalRaw } from '../modules/external-auth/principal-raw';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { TOKEN_AUDIENCE, audienceValues } from '../services/auth/token-audience';
 import { resolvePublicRoleIdCached } from '../services/auth/public-role';
@@ -437,7 +438,10 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         externalId: ext.externalId,
         email: ext.email,
         roles: ext.roleIds,
-        raw: ext.payload as Record<string, unknown>,
+        // Never the payload verbatim: LumiBase-reserved markers (`dev`,
+        // `isBootstrap`, `tfaVerified`, …) are dropped so an external issuer
+        // cannot assert them. See `external-auth/principal-raw.ts`.
+        raw: externalPrincipalRaw(ext.payload),
       };
       c.set('auth', principal);
       return next();
