@@ -90,6 +90,7 @@ import { aiReviewRouter } from './routes/ai-review';
 import { aiAutomationRouter } from './routes/ai-automation';
 import { agentRouter } from './routes/agent';
 import { intentsRouter } from './routes/intents';
+import { siteSkillsRouter } from './routes/site-skills';
 import { mcpRouter } from './routes/mcp';
 import { emailRouter } from './modules/email/routes';
 import { setupRouter } from './modules/setup/routes';
@@ -344,6 +345,8 @@ api.route('/ai', aiReviewRouter);
 // Jev metadata automation (J11, #518): control plane, admin-only. Disjoint leaf paths.
 api.route('/ai', aiAutomationRouter);
 api.route('/agent/intents', intentsRouter);
+// Site Skills (#712): playbooks for agents. Under /agent, so control-plane guarded.
+api.route('/agent/skills', siteSkillsRouter);
 api.route('/agent', agentRouter);
 // MCP server (content-os task 4; Req 4.1). Same authenticated chain as the
 // Agent API — the MCP adapter passes the token's roles to the harness, so

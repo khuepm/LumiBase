@@ -30,6 +30,7 @@ npx lumibase --help
 | --- | --- |
 | `lumibase init [name]` | Scaffold a new project (runs `create-lumibase@<same version>` via `npx` / `pnpm dlx` / `yarn dlx` / `bunx`) |
 | `lumibase types` | Generate TypeScript types from a running CMS |
+| `lumibase skills <list\|pull\|push\|install>` | Sync Site Skills (Markdown playbooks for the site's AI agents) between a directory and the CMS |
 | `lumibase doctor` | Report resolved configuration and probe connectivity |
 
 ## Connection settings
@@ -79,6 +80,44 @@ Output is **deterministic** — no timestamp, host, or site id in the header —
 ```
 
 `--check` exits non-zero when the committed file is missing or stale, and never writes anything.
+
+## `lumibase skills`
+
+Site Skills are Markdown playbooks (front matter + body) a site stores for its AI agents. Keep them in git as `skills/*.skill.md` and push from CI — the server parses and validates the documents; the CLI only moves files. Needs a token with control-plane admin access to the site — every skill read and write does.
+
+```bash
+lumibase skills list [--status draft|active|archived] [--json]
+lumibase skills pull [--dir skills] [--status <s>]   # write <dir>/<slug>.skill.md for every skill
+lumibase skills push [--dir skills] [--activate] [--dry-run] [--check]
+lumibase skills install <dir | file.md | package-name> [--activate] [--dry-run]
+```
+
+```markdown
+---
+slug: house-style
+name: House style
+description: Voice and formatting rules
+riskClass: low
+surfaces: [copilot, generation]
+collections: [posts]
+triggers: [headline, intro]
+---
+
+# House style
+Write in active voice…
+```
+
+- `push` sends every `*.md` directly inside `--dir` (sorted, non-recursive, `README.md` skipped) and prints one line per file. It exits non-zero if the server rejects any document.
+- New skills arrive as **drafts** unless `--activate` is passed; existing skills keep their status. Review and activate drafts in Studio (Mission Control → Skills).
+- `push` is the deploy path: it also updates skills that are already **active**, and the change is live at once. `install` never changes an active skill — that file is reported as `ACTIVE_SKILL_CHANGE` and left for review.
+- `push --check` is a dry run that also exits non-zero when anything would be created or updated — a CI drift gate. It only compares the files you have: a skill that exists on the site but not in the directory is not reported.
+
+  ```yaml
+  - run: npx lumibase skills push --check
+  ```
+
+- `install <package-name>` reads a package that is **already installed** (`node_modules/<name>`, looked up from the current directory upwards) — the CLI never downloads anything. The skills directory is `package.json` → `"lumibase": { "skills": "<dir>" }`, else `skills/`. A path that exists on disk wins over a package of the same name.
+- `pull` only ever writes plain `*.md` file names directly inside `--dir`.
 
 ## `lumibase doctor`
 
