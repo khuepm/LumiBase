@@ -71,16 +71,30 @@ function makeFakeDb(initial: { rows?: UsersRow[] } = {}): {
       // the Drizzle source), so the email we want to match is "the
       // first plain-string entry in queryChunks". We capture it for
       // row lookup and for the test's own assertions on shape.
-      const sqlChunk = predicate as { queryChunks?: unknown[] };
-      let captured = '';
-      if (sqlChunk && Array.isArray(sqlChunk.queryChunks)) {
-        for (const chunk of sqlChunk.queryChunks) {
-          if (typeof chunk === 'string') {
-            captured = chunk;
-            break;
+      // #794: the users lookup is now built by `userEmailCondition`
+      // (`email_canonical = $1 OR (email_canonical IS NULL AND lower(email) = $2)`),
+      // so the bound email sits inside nested SQL / Param chunks — walk them.
+      const findEmail = (node: unknown): string | undefined => {
+        if (typeof node === 'string') return node;
+        if (!node || typeof node !== 'object') return undefined;
+        const n = node as { queryChunks?: unknown[]; value?: unknown; encoder?: unknown };
+        if (Array.isArray(n.queryChunks)) {
+          for (const chunk of n.queryChunks) {
+            const hit = findEmail(chunk);
+            if (hit !== undefined) return hit;
           }
+          return undefined;
         }
+        // Drizzle `Param` (bound value): has `value` + `encoder`.
+        if ('encoder' in n && typeof n.value === 'string') return n.value;
+        return undefined;
+      };
+      if (nextSelection && 'mode' in nextSelection) {
+        // Instance email identity mode lookup (system_state singleton):
+        // no row → `exact`, the pre-#794 behaviour these tests pin.
+        return { limit: () => Promise.resolve([]) };
       }
+      const captured = findEmail(predicate) ?? '';
       state.selectCalls.push({ predicateText: captured });
       return {
         limit(_n: number) {

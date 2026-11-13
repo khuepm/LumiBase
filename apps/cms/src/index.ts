@@ -31,6 +31,7 @@ import { configRouter } from './routes/config';
 import { authRouter, meRouter } from './routes/auth';
 import { tfaAuthRouter, tfaMeRouter } from './routes/tfa';
 import { adminSecurityRouter } from './routes/admin-security';
+import { adminEmailIdentityRouter } from './routes/admin-email-identity';
 import { adminAuthIssuersRouter } from './routes/admin-auth-issuers';
 import { adminEncryptionRouter } from './routes/admin-encryption';
 import { editorialRouter } from './routes/editorial';
@@ -310,6 +311,8 @@ api.route('/admin', adminRouter);
 // being populated. Sibling to `/admin` rather than nested so future
 // recovery routes (task 10.7) can mount alongside without reshuffling.
 api.route('/admin/security', adminSecurityRouter);
+// Email identity policy (#794): instance mode (bootstrap admin) + per-site strict.
+api.route('/admin/email-identity', adminEmailIdentityRouter);
 // Admin Encryption surface (regulated-content-readiness task 3.4; Req 3.5).
 // Sibling to `/admin/security`, also under `withAuth` with an in-router
 // admin-role gate. Handles key-rotation metadata + key listing.

@@ -1,10 +1,10 @@
 ---
-version: 11
-lastUpdated: 2026-11-12T19:09:53.181Z
+version: 13
+lastUpdated: 2026-11-13T06:05:34.491Z
 sourceLang: en
-contentHash: c7258c140c90de90
-codeVerified: 2026-11-12T19:09:53.181Z
-codeVerifiedHash: c7258c140c90de90
+contentHash: ee5af4598f5b83b5
+codeVerified: 2026-11-13T06:05:34.491Z
+codeVerifiedHash: ee5af4598f5b83b5
 codeVerifiedClaims: 20
 ---
 
@@ -50,6 +50,7 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 ### `sites`
 - `organizationId` is a required FK to `organizations` with delete RESTRICT. Migration `0024_organizations` backfills existing sites into the `default` organization before enforcing NOT NULL. Setup creates the personal organization and its bootstrap owner before creating the default site.
 - `id`, `name`, `domain`, `createdAt`, plus identity/branding/theme columns and `defaultLanguage`, `defaultAppearance`, and `defaultSaveAction` (`stay`|`return`|`create_new`, default `stay` — the site-wide default Studio save action; per-user override lives in `users.preferences.saveAction`).
+- `emailIdentityStrict` boolean, default `false` (migration `0027`) — per-site email identity tier: when on, one membership per root mailbox (see `user_sites.identityKey`).
 
 ### `users`
 | Column | Type | Note |
@@ -62,12 +63,17 @@ Migrations live in `packages/database/migrations/` and `packages/database/drizzl
 | `preferences` | jsonb | per-user UI prefs: `{ language, theme, timezone, defaultPresets, saveAction }`. `saveAction` (`stay`/`return`/`create_new`) overrides `sites.default_save_action`. |
 | `lastSeenAt` | timestamp |
 | `passwordChangedAt` | timestamp | Set on every reset/change (migration `0006`). A password-reset token whose `iat` predates it is rejected → single-use reset links. |
+| `emailCanonical` | text unique | Account key under the instance email identity mode: `lower(email)` (`exact`) or the root mailbox (`root`). Written by a trigger (migration `0027`), never by the app. Nullable for one release; lookups fall back to `lower(email)` for null rows. |
+| `emailRoot` | text | Root mailbox: `+tag` stripped on every domain; Gmail dots removed and `googlemail.com` → `gmail.com`. Derived by `lumibase_email_root()` in the same trigger. Plain index. |
 | `createdAt`, `updatedAt` | timestamp |
 
-Unique indexes: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, `is_bootstrap = true`), and `users_email_lower_unique` on `lower(email)` (migration `0006`) — email is identity-global, one account per address. ⚠️ Migrating an existing instance fails if it already holds case-insensitive duplicate emails; de-duplicate first.
+Unique indexes: `users_external_id_unique`, `users_is_bootstrap_unique` (partial, `is_bootstrap = true`), and `users_email_lower_unique` on `lower(email)` (migration `0006`) — email is identity-global, one account per address. ⚠️ Migrating an existing instance fails if it already holds case-insensitive duplicate emails; de-duplicate first. Migration `0027` adds `users_email_canonical_unique` on `email_canonical` and `users_email_root_idx` on `email_root`; under the `root` mode the canonical index makes "one root mailbox = one account" a database guarantee.
 
 ### `user_sites` (membership N-N)
-- `userId`, `siteId`, `roleId`, `joinedAt`. PK composite.
+- `userId`, `siteId`, `roleId`, `createdAt`. PK composite.
+- `identityKey` text (migration `0027`) — `users.email_root` when the site is strict, otherwise null. Unique index `user_sites_site_identity_unique` on `(site_id, identity_key)` allows one membership per root mailbox on a strict site (nulls never collide). Set by a trigger on insert and re-keyed when the member's email changes.
+
+**Email identity policy (migration `0027`).** The instance tier lives in `system_state.email_identity_mode` (`exact` | `root`, default `exact`; existing instances are backfilled to `exact`, so nothing changes on upgrade). Every writer — routes, SCIM, setup, seeds, an older app version — gets the same derived columns because triggers compute them: `lumibase_users_email_identity()` on `users` (reads the singleton `FOR SHARE`), `lumibase_user_sites_identity_key()` on `user_sites` (reads the site `FOR SHARE`) and `lumibase_users_rekey_memberships()` after an email change. The guarded change endpoint holds `FOR UPDATE` on the same rows, so a row is never keyed under a stale policy. See [User management](./security/user-management.md) and `/api/v1/admin/email-identity` in the API spec.
 
 ### `teams` / `team_members`
 - `teams`: `id`, `siteId`, `name`, `description`.

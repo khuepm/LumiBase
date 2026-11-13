@@ -1,11 +1,11 @@
 ---
 version: 42
-lastUpdated: 2026-11-13T06:46:26.910Z
+lastUpdated: 2026-11-13T07:00:51.839Z
 sourceLang: en
-contentHash: be726dd102cf7dba
-codeVerified: 2026-11-13T06:46:26.910Z
-codeVerifiedHash: be726dd102cf7dba
-codeVerifiedClaims: 500
+contentHash: 77ab07f032bd1179
+codeVerified: 2026-11-13T07:00:51.839Z
+codeVerifiedHash: 77ab07f032bd1179
+codeVerifiedClaims: 508
 ---
 
 # Hono API Specification — LumiBase
@@ -307,6 +307,67 @@ validated patch into `users.preferences` (other sections like `language` /
 "create_new" }` to set the Studio editor's post-save navigation; send
 `{ "saveAction": null }` to fall back to the site default
 (`sites.default_save_action`, set via `PATCH /api/v1/site`). Invalid enum → 400.
+
+### Email identity policy
+
+`users` is identity-global (one row per human across sites), so the rule that
+decides whether two addresses are the same account is set in two tiers. A
+site can only be **stricter** than the instance, never looser.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/admin/email-identity` | site-admin | `{ instanceMode, siteStrict, effective }` for the active site |
+| `PUT` | `/api/v1/admin/email-identity/instance` | bootstrap admin | Change the instance mode — body `{ mode: "exact" \| "root", dryRun? }` |
+| `PUT` | `/api/v1/admin/email-identity/site` | site-admin | Toggle per-site strict — body `{ strict: boolean, dryRun? }` |
+
+- **Instance mode** (`exact` default, `root`). `exact` keeps every distinct
+  address as its own account. `root` makes one root mailbox one account
+  instance-wide: `+tag` is stripped on every domain, and for Gmail the local
+  part also loses its dots and `googlemail.com` folds to `gmail.com`. Stripping
+  `+tag` on every domain is a policy choice, not a guarantee that the alias
+  reaches the same mailbox (sub-addressing is a provider convention). It is
+  chosen in the Setup Wizard (`emailIdentityMode` in the
+  `POST /api/v1/setup/complete` body; omitted → `exact`) and changed later only
+  by the bootstrap admin — a user principal, never an API key (`403 FORBIDDEN`
+  otherwise).
+- **Site strict** (`false` default). Under `exact`, a strict site allows one
+  membership per root mailbox, enforced by a unique index on
+  `(site_id, identity_key)` rather than a check-then-insert. Under `root` the
+  site flag is a no-op (`effective: "root"`).
+- **Tightening** (`exact → root`, `strict: false → true`) first checks the
+  existing data and answers `409 IDENTITY_COLLISION` with the colliding
+  accounts — nothing changes. **Loosening** always succeeds. `dryRun: true`
+  runs the same transaction and rolls it back.
+
+```jsonc
+// PUT /api/v1/admin/email-identity/instance  { "mode": "root" }  →  409
+{ "errors": [{ "code": "IDENTITY_COLLISION",
+               "message": "Existing accounts share a root mailbox; resolve them before tightening the policy.",
+               "collisions": [{ "root": "test@gmail.com",
+                                "accounts": [{ "userId": "u_1", "email": "test@gmail.com" },
+                                             { "userId": "u_2", "email": "t.est+news@gmail.com" }] }] }] }
+
+// …after resolving the duplicates  →  200
+{ "data": { "previous": "exact", "current": "root", "changed": true, "dryRun": false } }
+```
+
+Every applied change writes an audit event (`email_identity_mode_changed` /
+`site_email_identity_changed`). Effects on the other endpoints:
+
+- `POST /api/v1/auth/register` keeps the identical generic `202` when the
+  address — or, under `root`, any alias of it — already exists, or when a
+  strict site already has a member with the same root mailbox. The account and
+  its membership commit in one transaction, so a refused membership never
+  leaves an orphan account.
+- `POST /api/v1/auth/login`, `/forgot-password` and `/resend-verification`
+  resolve the account under the instance mode: under `root`, any alias reaches
+  the account. Lockout is tracked on the resolved account row, so rotating
+  aliases does not reset or dodge it.
+- `POST /api/v1/users/invite` looks the account up case-insensitively (and by
+  root mailbox under `root`) and returns public fields only. Inviting an alias
+  of an existing member of a strict site answers `409 EMAIL_IDENTITY_CONFLICT`.
+- SCIM (`/scim/v2/Users`) answers `409` with `scimType: "uniqueness"` when the
+  address resolves to an existing account or collides on a strict site.
 
 ### External JWT authentication
 
