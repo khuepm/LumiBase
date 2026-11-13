@@ -10,7 +10,7 @@
  *     membership carries `user_sites.identity_key = users.email_root` and the
  *     `(site_id, identity_key)` unique index allows one membership per mailbox.
  *
- * The derived columns are written by triggers (migration 0026), not by the app,
+ * The derived columns are written by triggers (migration 0027), not by the app,
  * so every writer — routes, SCIM, setup, seeds, an older app version — keys rows
  * the same way. This module reads the policy, builds lookups, and runs the
  * guarded policy changes: tightening refuses (with the colliding accounts) when
@@ -62,7 +62,7 @@ export async function loadEmailIdentityMode(db: SelectCapableDb): Promise<EmailI
 
 /**
  * `WHERE` fragment matching the account `email` resolves to under `mode`.
- * Rows whose `email_canonical` is still null (written before migration 0026's
+ * Rows whose `email_canonical` is still null (written before migration 0027's
  * trigger existed) fall back to the pre-#794 `lower(email)` comparison.
  */
 export function userEmailCondition(email: string, mode: EmailIdentityMode): SQL {

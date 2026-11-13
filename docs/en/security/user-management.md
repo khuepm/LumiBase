@@ -1,10 +1,10 @@
 ---
-version: 9
-lastUpdated: 2026-11-12T18:39:23.133Z
+version: 10
+lastUpdated: 2026-11-13T06:05:36.387Z
 sourceLang: en
-contentHash: 8642aaaed806d710
-codeVerified: 2026-11-12T18:39:23.133Z
-codeVerifiedHash: 8642aaaed806d710
+contentHash: dc71a4b0f99e7e47
+codeVerified: 2026-11-13T06:05:36.387Z
+codeVerifiedHash: dc71a4b0f99e7e47
 codeVerifiedClaims: 120
 ---
 
@@ -103,9 +103,11 @@ leading `+` is kept); for Gmail the local part also loses its dots and
 > can be a different mailbox from `a@example.com`, and `root` mode (or a strict
 > site) will still treat them as one identity — so its holders compete for one
 > account or one membership. Choose `root` / strict only when that trade-off is
-> acceptable for your user base; the default `exact` mode never applies it. The rule lives twice, in `emailRoot()`
+> acceptable for your user base; the default `exact` mode never applies it.
+
+The rule lives twice, in `emailRoot()`
 (`apps/cms/src/modules/email-identity/normalize.ts`) and in the SQL function
-`lumibase_email_root()` (migration `0026`); an integration test pins both to
+`lumibase_email_root()` (migration `0027`); an integration test pins both to
 one fixture list. Database triggers write `users.email_canonical` /
 `users.email_root` and `user_sites.identity_key`, so every writer — register,
 invite, SCIM, setup, seeds — is keyed the same way, and unique indexes (not a

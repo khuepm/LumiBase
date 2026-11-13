@@ -1,13 +1,13 @@
 ---
-version: 9
-lastUpdated: 2026-11-12T18:39:23.133Z
+version: 10
+lastUpdated: 2026-11-13T06:05:36.387Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8642aaaed806d710
+sourceHash: dc71a4b0f99e7e47
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T18:39:23.133Z
-codeVerifiedHash: 8642aaaed806d710
+codeVerified: 2026-11-13T06:05:36.387Z
+codeVerifiedHash: dc71a4b0f99e7e47
 codeVerifiedClaims: 120
 ---
 
@@ -107,9 +107,10 @@ với Gmail phần local còn bỏ dấu chấm và `googlemail.com` quy về `g
 > đó tranh nhau một tài khoản hoặc một membership. Chỉ chọn `root` / strict khi
 > chấp nhận được đánh đổi này với tập người dùng của mình; mode mặc định `exact`
 > không bao giờ áp dụng nó.
+
 Quy tắc nằm ở hai nơi, `emailRoot()`
 (`apps/cms/src/modules/email-identity/normalize.ts`) và hàm SQL
-`lumibase_email_root()` (migration `0026`); một integration test ghim cả hai
+`lumibase_email_root()` (migration `0027`); một integration test ghim cả hai
 vào cùng một danh sách fixture. Trigger database ghi `users.email_canonical` /
 `users.email_root` và `user_sites.identity_key`, nên mọi writer — register,
 invite, SCIM, setup, seed — đều gán khoá giống nhau, và unique index (không
