@@ -29,6 +29,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - Database: migration `0028_import_jobs` adds `lumibase_import_jobs` (site-isolated under RLS).
 
 ### Fixed
+- Item ids are unique per site, not per instance. `lumibase_items` had `PRIMARY KEY (id)` while the create path only checked the caller's site, so a string id another site already used answered `500`, and one site could take an id another site could then never use. Migration `0029_items_site_scoped_pk` makes the key `(site_id, id)` and turns the foreign keys from revisions, release items and content reviews into same-site composite keys (content reviews keep `site_id` on item deletion via `ON DELETE SET NULL (item_id)`, PostgreSQL 15+). A reused id inside one site — now also across collections, or repeated in one bulk payload — is `409 ITEM_ID_EXISTS`. Scheduler publish/unpublish/retention updates and the automated-decisions report now match items by site as well as id. **Upgrade:** the migration rebuilds the items primary key under an exclusive lock; run it in a maintenance window on very large tables.
 - SDK: `rawRequest` no longer forces `content-type: application/json` on a `FormData` body, which broke multipart uploads.
 
 - **Agent harness: `askUser` clarification tool (#710).** An agent that cannot continue
