@@ -6,7 +6,7 @@ import {
   revisions,
   type Database,
 } from '@lumibase/database';
-import { and, asc, eq, isNull, lte } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lte, ne } from 'drizzle-orm';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentVetoesTotal, agentVetoStagingsTotal } from './agent-metrics';
 import { AutonomyService } from './autonomy-service';
@@ -373,10 +373,22 @@ export class VetoService {
     try {
       return await this.commitClaimed(approval, itemService, progress);
     } catch (err) {
-      if (!progress.applied) {
+      // `progress.applied` only knows that `patch` RESOLVED. A write can commit
+      // and still reject (connection lost after COMMIT, an ambiguous ack), so
+      // before handing the row back ask the database whether the patch is live.
+      // Only a positive "not applied" releases the claim; an unanswerable check
+      // leaves it `deciding` for the approval-claim sweep.
+      const applied =
+        progress.applied ||
+        (await this.isStagingApplied(approval.id).catch(() => null));
+      if (applied === false) {
         // Nothing reached live content (Req 13.5): hand the row back so the
         // worker's backoff retry and the sweep can try again.
         await this.releaseCommitClaim(approval.id);
+      } else if (applied === null) {
+        console.error('[veto-commit] could not tell whether the patch applied; left claimed', {
+          approvalId: approval.id,
+        });
       } else {
         // The patch is live; only the bookkeeping failed. Returning the row to
         // `pending` would let the next sweep apply the staging a second time,
@@ -451,6 +463,40 @@ export class VetoService {
       dropped.length > 0 ? `auto_commit_partial:dropped=${dropped.join(',')}` : 'auto_commit',
     );
     return { outcome: 'committed', droppedPinned: dropped };
+  }
+
+  /**
+   * Whether a veto staging's patch may already be live (B131).
+   *
+   * A commit that dies between `itemService.patch` and finalizing leaves the
+   * row `deciding`; the approval-claim sweep then moves it to `failed`, and
+   * reopening it would let the sweep apply the staging a second time. Two
+   * traces say the patch ran: the staging is no longer staged (finalize got
+   * far enough to discard it), or the item has a live revision written by the
+   * approval's run after the staging was created (`createdByRunId`, stamped
+   * by the commit's provenance). Either one answers yes.
+   */
+  async isStagingApplied(approvalId: string): Promise<boolean> {
+    const approval = await this.getVetoApproval(approvalId);
+    const staging = await this.getStaging(approval.subjectId);
+    if (!staging) return false;
+    if (!staging.staged) return true;
+    if (!approval.runId) return false;
+    const [live] = await this.deps.db
+      .select({ id: revisions.id })
+      .from(revisions)
+      .where(
+        and(
+          eq(revisions.siteId, this.deps.siteId),
+          eq(revisions.itemId, staging.itemId),
+          eq(revisions.staged, false),
+          eq(revisions.createdByRunId, approval.runId),
+          ne(revisions.id, staging.id),
+          gte(revisions.createdAt, staging.createdAt),
+        ),
+      )
+      .limit(1);
+    return !!live;
   }
 
   /** Due stagings for the sweep/queue runner. */
