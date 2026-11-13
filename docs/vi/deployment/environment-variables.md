@@ -7,7 +7,7 @@ translatedFrom: en
 sourceHash: a5f4809eb95a93bc
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T15:31:04.103Z
+codeVerified: 2026-11-13T15:32:52.559Z
 codeVerifiedHash: a5f4809eb95a93bc
 codeVerifiedClaims: 96
 ---

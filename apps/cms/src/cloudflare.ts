@@ -18,6 +18,7 @@
 import * as Sentry from '@sentry/cloudflare';
 import { createCloudflareRuntime } from '@lumibase/runtime';
 import app from './index';
+import { FIVE_MINUTE_SWEEPS, HOURLY_SWEEPS, MINUTE_SWEEPS, runWorkerSweeps } from './cloudflare-cron-parity';
 import { processCloudflareQueue } from './cloudflare-queue';
 import { createCloudflareSystemDb } from './cloudflare-system-db';
 import type { Bindings } from './env';
@@ -91,24 +92,27 @@ export default Sentry.withSentry(
     const db = system.db;
 
     // Three triggers share this handler (wrangler [triggers] crons):
-    //   "* * * * *"    → schedule-flow sweep onto `flow-events` (B118); only that
-    //   "*/5 * * * *"  → pageview flush + stale-claim/run sweeps (every 5 min)
+    //   "* * * * *"    → the minute sweeps Docker runs on node-cron (B131):
+    //                    content scheduler (incl. schedule flows, B118), goal
+    //                    dispatch, deployment poll, CDC backstop, plus the
+    //                    import resume tick (#726); only those
+    //   "*/5 * * * *"  → pageview flush + stale-claim/run sweeps + veto commits,
+    //                    and the minute sweeps again for profiles with no
+    //                    minute trigger (staging); overlap-safe, see
+    //                    cloudflare-cron-parity.ts
     //   "0 * * * *"    → the 5-minute work plus audit rotation, refresh-token
-    //                    prune and review-run purge (top of the hour)
+    //                    prune, review-run purge and retention (top of the hour)
     // `controller.cron` names the schedule that fired; branch so the minute
     // tick doesn't run the 5-minute work and the hourly work doesn't run 12×
     // per hour.
     const runtime = createCloudflareRuntime(env as unknown as Record<string, unknown>);
 
+    const sweepDeps = { db, runtime };
     if (controller.cron === '* * * * *') {
-      // Same sweep the Docker `flow-schedule` cron runs. Workers has no leader
-      // lock; the conditional `next_run_at` advance makes overlapping ticks
-      // enqueue each due flow once (B132).
-      ctx.waitUntil(
-        import('./services/flow-scheduler')
-          .then(({ runDueScheduledFlows }) => runDueScheduledFlows({ db, queue: runtime.queue }))
-          .catch(() => console.error('[flow-schedule] tick failed')),
-      );
+      // The scheduler tick includes the schedule-flow sweep Docker's
+      // `flow-schedule` cron runs; overlapping ticks enqueue each due flow once
+      // (B132).
+      ctx.waitUntil(runWorkerSweeps(MINUTE_SWEEPS, sweepDeps));
       // Resume background imports whose lease expired (#726). The guarded
       // claim on `lease_until` keeps overlapping ticks from double-processing.
       ctx.waitUntil(
@@ -129,6 +133,7 @@ export default Sentry.withSentry(
       return;
     }
 
+    ctx.waitUntil(runWorkerSweeps({ ...MINUTE_SWEEPS, ...FIVE_MINUTE_SWEEPS }, sweepDeps));
     ctx.waitUntil(runScheduledPageviewFlush(db, runtime));
 
     // Abandoned approval claims (#453). A Worker eviction mid-execution leaves
@@ -189,6 +194,7 @@ export default Sentry.withSentry(
           version: resolveBuildMetadata(env).version,
         }).then(() => undefined),
       );
+      ctx.waitUntil(runWorkerSweeps(HOURLY_SWEEPS, sweepDeps));
     }
   },
   } satisfies ExportedHandler<Bindings>,
