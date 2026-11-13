@@ -1,11 +1,11 @@
 ---
-version: 44
-lastUpdated: 2026-11-13T10:46:06.071Z
+version: 45
+lastUpdated: 2026-11-13T15:34:28.539Z
 sourceLang: en
-contentHash: c64b23b788364923
-codeVerified: 2026-11-13T10:46:06.071Z
-codeVerifiedHash: c64b23b788364923
-codeVerifiedClaims: 514
+contentHash: c05f5a0cfa685cf1
+codeVerified: 2026-11-13T15:34:28.539Z
+codeVerifiedHash: c05f5a0cfa685cf1
+codeVerifiedClaims: 516
 ---
 
 # Hono API Specification — LumiBase
@@ -1198,6 +1198,8 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `*` | `/api/v1/agent/intents[...]` | Content intents CRUD, `:id/pause|resume|scan|drifts`, `/compile` |
 | `POST` | `/api/v1/intents/:id/scan` | One reconciliation cycle: `{ scan, reconcile, dispatch }`. `dispatch` advances each reconciler goal one step (draft → promote → verify) and reports `dispatched/completed/skipped/blocked` plus `queueUnavailable` on runtimes without a queue adapter. See [reconciler repair loop](../features/reconciler-repair-loop.md). When the intent has `semantic` rules, `scan.semantic` reports the separately budgeted semantic pass (`status` `ran`/`off`/`unavailable`, counts, `completed`, `cursor`), and `scan.semanticOrphansResolved` counts rows of removed semantic rules it resolved. Updating an intent so a stored semantic rule changes profile, question, context or fields without a `version` bump returns `422 SEMANTIC_RULE_VERSION_REQUIRED`; see [semantic drift](../features/jev-semantic-drift.md) |
 | `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag. Besides `tools/*`, `prompts/list` and `prompts/get` expose the site's active skills to control-plane admins (empty for any other caller). A `tools/call` of `askUser` returns a normal tool result with `status: "waiting_user"`, `questionId` and `runId` |
+| `POST` | `/api/v1/mcp/sites/:siteId` | Same MCP server, site taken from the path (for hosted OAuth connectors that cannot send `X-Lumi-Site`) |
+| `GET` | `/.well-known/oauth-protected-resource/api/v1/mcp[/sites/:siteId]` | RFC 9728 Protected Resource Metadata (public; `404` unless MCP is on and a trusted issuer lists the resource URI in `audience`) — see [OAuth connector](../agent-setup/oauth-connector.md) |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Law Zero pins: list / release |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Public llms.txt index per site |
 

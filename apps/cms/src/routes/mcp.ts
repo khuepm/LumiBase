@@ -4,7 +4,7 @@ import { systemDbFor } from '../middleware/db';
 import { organizationActorFromAuth, resolveOrganizationActorRole } from '../services/organization-operations';
 import { OrganizationHarness, organizationMcpEnabled } from '../services/organization-harness';
 import { isFrontendAudience } from '../services/auth/token-audience';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../env';
 import { isAdminPrincipal } from '../middleware/control-plane-access-guard';
 import { auditSecurityGuardDenied } from '../middleware/security-audit';
@@ -18,10 +18,13 @@ import { approvalRequesterFromAuth, resolveRequestCapabilities } from '../servic
 import { IntentService } from '../services/intent-service';
 import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
 import { createConfiguredLLMProvider } from '../services/llm-provider';
-import { McpService, type McpHarnessPort } from '../services/mcp-service';
+import { McpService, toolAnnotations, toolTitle, type McpHarnessPort } from '../services/mcp-service';
 import { SchemaService } from '../services/schema-service';
 import { SiteSkillService } from '../services/site-skill-service';
 import { ToolRegistryService } from '../services/tool-registry-service';
+import { mcpResourceContext } from '../middleware/mcp-oauth';
+import { DECISION_CAPABILITY, satisfiesCapability } from '../services/effective-capability-service';
+import { MCP_SCOPES, bearerChallenge, narrowCapabilitiesByScopes, scopesForCapabilities } from '../services/mcp-oauth';
 
 /**
  * MCP server endpoint — Streamable HTTP transport (content-os task 4.1;
@@ -34,7 +37,32 @@ import { ToolRegistryService } from '../services/tool-registry-service';
  */
 export const mcpRouter = new Hono<AppEnv>();
 
-mcpRouter.post('/', async (c) => {
+/**
+ * Every capability string a core skill can require — the universe an OAuth
+ * principal's unlimited `admin` marker is expanded into when its scopes do not
+ * cover everything (#346). Skills outside `CORE_SKILLS` are then denied for
+ * that principal, which is the fail-closed direction.
+ */
+const CORE_CAPABILITY_UNIVERSE: readonly string[] = [
+  ...new Set([
+    ...Object.values(CORE_SKILLS).flatMap((skill) => skill.requiredCapabilities),
+    DECISION_CAPABILITY,
+  ]),
+].sort();
+
+/** 403 + RFC 6750 `insufficient_scope` challenge so the client can step up. */
+function insufficientScope(c: Context<AppEnv>, scopes: readonly string[]) {
+  const ctx = mcpResourceContext(c);
+  if (ctx) {
+    c.header('WWW-Authenticate', bearerChallenge({ resourceMetadata: ctx.resourceMetadata, error: 'insufficient_scope', scope: scopes }));
+  }
+  return c.json(
+    { errors: [{ code: 'INSUFFICIENT_SCOPE', message: `The access token lacks the scope(s): ${scopes.join(' ')}.`, scope: scopes.join(' ') }] },
+    403,
+  );
+}
+
+async function handleMcp(c: Context<AppEnv>) {
   const db = c.get('db');
   const siteId = c.get('siteId');
   const auth = c.get('auth');
@@ -48,7 +76,9 @@ mcpRouter.post('/', async (c) => {
   // Site tools on a pinned organization key obey the site's MCP flag. The
   // organization flag gates only organization tools (and the unpinned profile).
   if (orgCall || (orgKey && !siteId)) {
-    if (isFrontendAudience(auth?.raw?.aud) || (auth?.apiKeyId && !orgKey)) {
+    // OAuth connector tokens are site-scoped by construction (the resource URI
+    // names a site endpoint); the organization plane is not offered to them.
+    if (isFrontendAudience(auth?.raw?.aud) || (auth?.apiKeyId && !orgKey) || auth?.oauth) {
       await auditSecurityGuardDenied(c, 'organization_access_denied', { reason: 'site_scoped_credential_on_org_plane' });
       return c.json({ errors: [{ code: 'ORGANIZATION_FORBIDDEN' }] }, 403);
     }
@@ -148,11 +178,13 @@ mcpRouter.post('/', async (c) => {
         : null;
     },
     listTools: async () => [
-      ...(await registry.listTools()).map(({ name, description, inputSchema, enabled }) => ({
-        name,
-        description,
-        inputSchema,
-        enabled,
+      ...(await registry.listTools()).map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        enabled: tool.enabled,
+        title: toolTitle(tool.name),
+        annotations: toolAnnotations(tool),
       })),
       ...(organizationPort ? (await organizationPort.listTools()).filter((tool) => tool.name === 'org:get_organization' || tool.name === 'org:list_sites') : []),
     ],
@@ -203,13 +235,46 @@ mcpRouter.post('/', async (c) => {
     );
   }
 
-  const response = await new McpService(port, { organizationId }).handle(body, grant.capabilities);
+  // OAuth scope narrowing (#346). Runs AFTER the backstop above, which is
+  // therefore unchanged for OAuth principals; scopes can only take more away.
+  let capabilities = grant.capabilities;
+  if (auth?.oauth) {
+    const scopes = auth.oauth.scopes;
+    capabilities = narrowCapabilitiesByScopes(grant.capabilities, scopes, CORE_CAPABILITY_UNIVERSE);
+    if (controlPlaneSkill && !scopes.includes(MCP_SCOPES.admin)) {
+      return insufficientScope(c, [MCP_SCOPES.admin]);
+    }
+    // A capability the RBAC grant HAS but the token's scopes removed is a scope
+    // problem the client can fix by re-authorizing — say so with a step-up
+    // challenge. A capability the grant never had stays a harness denial.
+    const skill = calledSkill(body);
+    const required = skill ? CORE_SKILLS[skill]?.requiredCapabilities ?? [] : [];
+    const scopedOut = required.filter(
+      (cap) => satisfiesCapability(grant.capabilities, cap) && !satisfiesCapability(capabilities, cap),
+    );
+    if (scopedOut.length > 0) return insufficientScope(c, scopesForCapabilities(scopedOut));
+  }
+
+  const response = await new McpService(port, { organizationId }).handle(body, capabilities);
   if (response === null) {
     // Notification — Streamable HTTP answers 202 Accepted with no body.
     return c.body(null, 202);
   }
   return c.json(response);
-});
+}
+
+mcpRouter.post('/', handleMcp);
+// Site-addressed form (#346): the site rides in the path for hosted OAuth
+// connectors that cannot send `X-Lumi-Site`. `withTenant` resolves it.
+mcpRouter.post('/sites/:siteId', handleMcp);
+
+/** Skill name of a `tools/call`, or `null`. */
+function calledSkill(body: unknown): string | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const request = body as { method?: unknown; params?: { name?: unknown } };
+  if (request.method !== 'tools/call') return null;
+  return typeof request.params?.name === 'string' ? request.params.name : null;
+}
 
 /**
  * If `body` is a JSON-RPC `tools/call` whose target skill is a control-plane
@@ -239,9 +304,10 @@ function controlPlaneSkillFromCall(body: unknown): string | null {
 
 // The optional SSE stream of the Streamable HTTP transport is not offered;
 // clients fall back to plain request/response per the MCP spec.
-mcpRouter.get('/', (c) =>
+const noStream = (c: Context<AppEnv>) =>
   c.json(
     { errors: [{ code: 'METHOD_NOT_ALLOWED', message: 'This MCP server does not offer a server-initiated stream; POST JSON-RPC messages instead.' }] },
     405,
-  ),
-);
+  );
+mcpRouter.get('/', noStream);
+mcpRouter.get('/sites/:siteId', noStream);
