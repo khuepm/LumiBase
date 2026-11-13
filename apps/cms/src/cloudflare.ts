@@ -92,7 +92,8 @@ export default Sentry.withSentry(
     // Three triggers share this handler (wrangler [triggers] crons):
     //   "* * * * *"    → the minute sweeps Docker runs on node-cron (B131):
     //                    content scheduler (incl. schedule flows, B118), goal
-    //                    dispatch, deployment poll, CDC backstop; only those
+    //                    dispatch, deployment poll, CDC backstop, plus the
+    //                    import resume tick (#726); only those
     //   "*/5 * * * *"  → pageview flush + stale-claim/run sweeps + veto commits,
     //                    and the minute sweeps again for profiles with no
     //                    minute trigger (staging); overlap-safe, see
