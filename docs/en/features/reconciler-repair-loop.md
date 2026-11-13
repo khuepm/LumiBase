@@ -1,11 +1,11 @@
 ---
-version: 3
+version: 4
 sourceLang: en
-lastUpdated: 2026-09-23T12:16:23.556Z
-contentHash: 028b26a85a1c849b
-codeVerified: 2026-09-23T12:16:23.556Z
-codeVerifiedHash: 028b26a85a1c849b
-codeVerifiedClaims: 2
+lastUpdated: 2026-11-12T18:28:17.986Z
+contentHash: afea72ea260ab1d2
+codeVerified: 2026-11-12T18:28:17.986Z
+codeVerifiedHash: afea72ea260ab1d2
+codeVerifiedClaims: 4
 ---
 
 # Reconciler repair loop
@@ -90,9 +90,7 @@ Verified with two sites in `g3-repair-loop.db.integration.test.ts`: dispatching 
 
 ## Runtime support
 
-Dispatch runs on the **Node/Docker** runtime, driven by a leader-locked cron tick every minute. The lock matters: two processes dispatching one goal would create two runs for one drift.
-
-On **Cloudflare Workers** the `agent-runs` queue has no consumer export, so asynchronous runs — including this loop — do not execute there. That is a pre-existing limitation of async agent execution, not of this loop. Use the manual endpoint below, or run the Docker deployment, until a Workers queue consumer exists.
+Dispatch runs every minute on both runtimes. On **Node/Docker** a leader-locked `node-cron` tick runs `runGoalDispatchTick`. On **Cloudflare Workers** the `* * * * *` Cron Trigger runs the same function (`apps/cms/src/cloudflare-cron-parity.ts`, backlog B131); profiles without that trigger, such as staging, run it every five minutes. Workers has no leader lock, and does not need one: each goal is advanced under its own dispatch lease, a conditional UPDATE, so two overlapping ticks never create two runs for one drift. The runs themselves execute on the `agent-runs` queue, which has a Workers consumer since backlog B10. The Workers tick is verified by unit tests, not on a deployed Worker.
 
 ## Triggering a cycle
 

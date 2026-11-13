@@ -1,10 +1,10 @@
 ---
-version: 44
-lastUpdated: 2026-11-13T07:14:32.781Z
+version: 45
+lastUpdated: 2026-11-13T15:34:28.539Z
 sourceLang: en
-contentHash: 724f7ac3a2520041
-codeVerified: 2026-11-13T07:14:32.781Z
-codeVerifiedHash: 724f7ac3a2520041
+contentHash: c05f5a0cfa685cf1
+codeVerified: 2026-11-13T15:34:28.539Z
+codeVerifiedHash: c05f5a0cfa685cf1
 codeVerifiedClaims: 516
 ---
 
@@ -1187,7 +1187,7 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `GET/POST` | `/api/v1/agent/staged[...]` | Veto window: pending stagings enriched with `approvalId/collection/itemId/patch/agentRole` from the staging revision (null fields when the staging is gone); `POST :id/veto` discards a staging |
 | `GET` | `/api/v1/agent/approvals` | Approval inbox (`status` filter; defaults to `pending`) |
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Human decision on a parked action. Body `{ decision: 'approved' \| 'rejected', reason? }`; needs `approvals:decide` (403 otherwise), `404` for an unknown or other-tenant id, `409` when the approval already left `pending`. On `approved` the harness owns the state transition, so execution and the status write happen once. Execution re-resolves **the requester's** current rights and runs with `requester ∩ decider`: an approval whose requester was since revoked, demoted or removed is denied, and one with no recorded requester (parked before provenance existed) is denied with `APPROVAL_PROVENANCE_MISSING` |
-| `POST` | `/api/v1/agent/approvals/:id/reopen` | Return a `failed` approval to `pending` so it can be decided again. Body `{ reason }` is **required** and audited; needs `approvals:decide`. A skill that reached a service and then failed is parked rather than re-offered, because retrying could repeat a non-idempotent write — this is the deliberate way back |
+| `POST` | `/api/v1/agent/approvals/:id/reopen` | Return a `failed` approval to `pending` so it can be decided again. Body `{ reason }` is **required** and audited; needs `approvals:decide`. A skill that reached a service and then failed is parked rather than re-offered, because retrying could repeat a non-idempotent write — this is the deliberate way back. A `veto` approval whose staged patch is already live (a commit that died after applying it) answers `409 VETO_ALREADY_APPLIED` instead, since reopening would apply it twice |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Agent-as-reviewer decision (needs `review:<domain>`; self-review forbidden) |
 | `GET` | `/api/v1/agent/questions` | `askUser` clarification questions, newest first. `?status=pending` (default) \| `answered` \| `expired` \| `cancelled` \| `all`. Each item: `{ id, runId, goalId, toolCallId, agentName, question, options, allowFreeText, context, status, expiresAt, createdAt, answer, answeredAt, answeredBy }`. Questions are not listed by `/approvals`, and `/approvals/:id/decide` and `/reopen` answer `409 NOT_AN_APPROVAL` for a question id. See [agent harness](../features/agent-harness-layer.md#asking-a-human-askuser-710) |
 | `GET` | `/api/v1/agent/questions/:id` | One question; `404` for an unknown or other-tenant id |

@@ -506,6 +506,29 @@ export interface CdcDispatchWorkerDeps {
 }
 
 /**
+ * One correctness-backstop pass: dispatch, then prune, every site with an
+ * active subscription. Never throws. Docker runs it every 30s from
+ * {@link registerCdcDispatchWorker}; Cloudflare Workers runs it from the
+ * Cron Trigger (B131). Lanes take a best-effort cache lock and delivery is
+ * at-least-once, so overlapping passes are safe.
+ */
+export async function runCdcDispatchSweep(
+  deps: Pick<CdcDispatchWorkerDeps, 'buildDispatcher' | 'subscriptions' | 'prune'>,
+): Promise<void> {
+  try {
+    const sites = await deps.subscriptions.listActiveSiteIds();
+    const dispatcher = deps.buildDispatcher();
+    for (const siteId of sites) {
+      await dispatcher.dispatchSite(siteId);
+      await deps.prune?.(siteId);
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[cdc-dispatch] sweep failed:', err instanceof Error ? err.message : err);
+  }
+}
+
+/**
  * Consumes `cdc-dispatch` jobs (latency path) and runs the 30s sweep
  * (correctness backstop) — the `content-indexing` worker pattern. Returns a
  * stop handle for graceful shutdown/tests.
@@ -517,19 +540,7 @@ export function registerCdcDispatchWorker(deps: CdcDispatchWorkerDeps): () => vo
     await deps.buildDispatcher().dispatchSite(siteId);
   });
 
-  const interval = setInterval(async () => {
-    try {
-      const sites = await deps.subscriptions.listActiveSiteIds();
-      const dispatcher = deps.buildDispatcher();
-      for (const siteId of sites) {
-        await dispatcher.dispatchSite(siteId);
-        await deps.prune?.(siteId);
-      }
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[cdc-dispatch] sweep failed:', err instanceof Error ? err.message : err);
-    }
-  }, deps.sweepIntervalMs ?? SWEEP_INTERVAL_MS);
+  const interval = setInterval(() => runCdcDispatchSweep(deps), deps.sweepIntervalMs ?? SWEEP_INTERVAL_MS);
   // Don't hold the process open just for the sweep.
   (interval as unknown as { unref?: () => void }).unref?.();
 
