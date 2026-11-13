@@ -17,8 +17,8 @@ import { EditorialService, EditorialError } from '../services/editorial-service'
 
 export const editorialRouter = new Hono<AppEnv>();
 
-const submitSchema = z.object({ assignedTo: z.string().min(1).max(128).nullable().optional() });
-const decideSchema = z.object({ reason: z.string().max(2000).optional() });
+export const submitSchema = z.object({ assignedTo: z.string().min(1).max(128).nullable().optional() });
+export const decideSchema = z.object({ reason: z.string().max(2000).optional() });
 
 const buildService = (c: Context<AppEnv>) => {
   const auth = c.get('auth');
