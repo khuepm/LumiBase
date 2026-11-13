@@ -80,6 +80,45 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - `publish_extension` matches the route: `publisher` is a string, and `signature`, `publisherKeyId` and a hex `bundleSha256` are required. Every call that the previous shape described was refused. `create_release` and `update_release` forward `maintenanceWindow`. Flow nodes accept `branches` on `create_flow` and `update_flow`. The canonical `createFlow` contract, used by HTTP MCP and governed stdio, previously stripped `branches` from a branching node (#716).
 - The `upsert_field` description lists the canonical `FieldType` spellings (`datetime`, not `dateTime`; no `float`) (#716).
 - Organization MCP `tools/list` omits the `$schema` 2020-12 dialect URI, as site tools do. Draft-07 validators, including Ajv's default class, can now compile those schemas (#716).
+
+- **Search indexing and ISR revalidation now run on Cloudflare Workers (B131,
+  part 1).** The Worker had no `content-indexing` or `revalidation-dispatch`
+  queue, so every item write logged `Queue binding not found` and on Workers the
+  search index and the revalidation targets never saw a content change. Each
+  queue now has a producer, consumer and dead-letter queue in every
+  `wrangler.toml` profile, and the Worker's `queue()` runs the same handlers as
+  Docker. Deploy and release workflows create the missing queues; manual
+  deployments create them as in `DEPLOYMENT-CHECKLIST.md`. Until a queue is
+  bound, `ItemService` indexes inline and revalidation is dispatched inline
+  instead of being dropped. Existing Workers search indexes are not rebuilt
+  automatically: run the reindex CLI.
+
+- **Scheduled publish, veto-window commits, reconciler goals, deployment status,
+  Change Feed webhooks and envelope migration now run on Cloudflare Workers
+  (B131, parts 2-5).** Docker ran these on `node-cron` with a leader lock; the
+  Worker had no counterpart, so on Workers scheduled items were never published
+  or unpublished, veto-window stagings were never committed, reconciler goals
+  never dispatched, deployments stayed `building` and webhook subscriptions
+  received nothing. The Worker's Cron Trigger now runs the same sweeps
+  (`cloudflare-cron-parity.ts`): every minute on local/production, every five
+  minutes on staging, not at all on dev/demo (no crons there). Workers delivers
+  Change Feed events to webhook subscriptions only (extension subscribers stay
+  Docker/Node, B215), within about a minute. Envelope migrations continue on a
+  new `encryption-envelope-migration` queue, created by the deploy workflows.
+  Veto commits now claim the approval (`pending → deciding`) before applying
+  the patch: with no leader lock, two overlapping sweeps applied it twice. A
+  human veto that arrives while a commit holds the claim now returns `409
+  ALREADY_DECIDED` instead of overwriting it.
+
+- **Reopening a veto whose patch is already live is refused.** A veto commit
+  that dies after applying its patch is quarantined `failed` by the claim sweep;
+  `POST /agent/approvals/:id/reopen` used to put it back to `pending`, and the
+  next sweep applied the same staging again. It now answers `409
+  VETO_ALREADY_APPLIED` when a live revision carries this staging's commit
+  marker (`{ kind: 'veto_staging', revisionId }` in its provenance `sources`,
+  written in the same transaction as the item update). Commits made before the
+  marker existed read as not applied.
+
 ### Security
 - Hardened production image: both base images are pinned by digest (`node:22-slim@sha256:…`, `gcr.io/distroless/nodejs22-debian13:nonroot@sha256:…`; Dependabot bumps tag and digest); the runtime stage is distroless (no shell, no package manager), runs as UID/GID `65532`, keeps application files root-owned, and starts with a read-only root filesystem. The shell entrypoint is replaced by `docker/scripts/entrypoint.mjs` and the `HEALTHCHECK` by `docker/scripts/healthcheck.mjs`, which now probes the worker health port for `LUMIBASE_PROCESS_ROLE=worker` instead of always `1989`. `docker/docker-compose.prod.yml` and `docker/docker-compose.gcp.yml` set `read_only: true`, a `/tmp` tmpfs, `cap_drop: [ALL]`, `no-new-privileges` and `init: true` (#734).
 - Release supply chain: `release.yml` builds the image and fails on any CRITICAL Trivy finding in the image or in `pnpm-lock.yaml` in a job that the GitHub Release — and through it every publish job (Docker image, Worker, Pages, npm) — depends on, so a failed gate stops the release as a whole rather than leaving one without its image; it then signs the pushed digest with keyless cosign (GitHub OIDC, no stored key), attests an SPDX SBOM, verifies both in the smoke job, and attaches image and dependency SBOMs to the GitHub Release. `docker.yml` builds once, locally, runs the same Trivy gate and a read-only, capability-free container health check on every PR and on `main`, and pushes that same image from `main` only after both pass. Trivy, Syft and cosign are installed by `scripts/install-image-tools.sh`, pinned by version and SHA-256 (#734).

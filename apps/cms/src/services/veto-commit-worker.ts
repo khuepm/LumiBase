@@ -2,6 +2,7 @@ import { agentApprovals, type Database } from '@lumibase/database';
 import { and, asc, eq, lte } from 'drizzle-orm';
 import type { CacheProvider, QueueProvider, SearchProvider } from '@lumibase/runtime';
 import { itemServiceForSystem } from './item-service-factory';
+import { queueAccepts } from './queue-routing';
 import { VETO_COMMIT_MAX_ATTEMPTS, VetoService } from './veto-service';
 
 /**
@@ -54,9 +55,12 @@ export async function processVetoCommitJob(
     'background-worker',
   );
 
+  // Retries go on the queue only where it is bound. Workers has no
+  // `agent-veto-commits` binding (B131): there the next sweep is the retry, and
+  // an enqueue that threw would abort the sweep's remaining approvals.
   try {
     const result = await veto.commit(payload.approvalId, itemService);
-    if (result.outcome === 'waiting' && deps.queue) {
+    if (result.outcome === 'waiting' && queueAccepts(deps.queue, VETO_COMMITS_QUEUE)) {
       // Fired early (clock skew / re-delivery): try again at the deadline.
       await deps.queue.enqueue<VetoCommitJobPayload>(
         VETO_COMMITS_QUEUE,
@@ -70,7 +74,7 @@ export async function processVetoCommitJob(
     // open an incident once the attempts are exhausted.
     const message = err instanceof Error ? err.message : String(err);
     await veto.recordCommitFailure(payload.approvalId, attempt, message);
-    if (attempt < VETO_COMMIT_MAX_ATTEMPTS && deps.queue) {
+    if (attempt < VETO_COMMIT_MAX_ATTEMPTS && queueAccepts(deps.queue, VETO_COMMITS_QUEUE)) {
       await deps.queue.enqueue<VetoCommitJobPayload>(
         VETO_COMMITS_QUEUE,
         'commit',
