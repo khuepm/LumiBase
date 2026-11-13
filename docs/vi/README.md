@@ -1,10 +1,10 @@
 ---
-version: 6
-lastUpdated: 2026-10-10T04:59:56.112Z
+version: 7
+lastUpdated: 2026-11-11T01:21:15.680Z
 sourceLang: vi
-contentHash: 3288ce23dde726e0
-codeVerified: 2026-10-13T19:22:00.109Z
-codeVerifiedHash: 3288ce23dde726e0
+contentHash: 61bbd0dc2cc03957
+codeVerified: 2026-11-11T01:21:15.680Z
+codeVerifiedHash: 61bbd0dc2cc03957
 codeVerifiedClaims: 4
 ---
 
@@ -68,6 +68,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - **Tính năng nâng cao (POST-GA / Dual-runtime)** (`features/`)
   - [ai-copilot.md](./features/ai-copilot.md) — AI Chat + Human-in-the-Loop approvals (Studio Copilot).
   - [agent-harness-layer.md](./features/agent-harness-layer.md) — Agent goals, runs, tools, memory, approvals, artifacts, evaluations, và quản trị sinh ứng dụng.
+  - [site-skills.md](./features/site-skills.md) — Site Skills: playbook có phiên bản được chèn vào agent run, CLI skills-as-code, MCP prompts.
   - [runtime-abstraction.md](./features/runtime-abstraction.md) — Lớp `@lumibase/runtime` cho phép chạy trên Cloudflare và Docker.
   - [flows-automation.md](./features/flows-automation.md) — Flows / Operations engine (workflow automation).
   - [marketplace.md](./features/marketplace.md) — Marketplace extensions có ký số (signed bundles).

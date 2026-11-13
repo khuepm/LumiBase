@@ -8,7 +8,7 @@ import { formatSafeError } from '@lumibase/contracts/utils';
 export const sharePublicRouter = new Hono<AppEnv>();
 export const shareAdminRouter = new Hono<AppEnv>();
 
-const createShareSchema = z.object({
+export const createShareSchema = z.object({
   collection: z.string().min(1),
   itemId: z.string().min(1),
   roleId: z.string().min(1),

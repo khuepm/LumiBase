@@ -1,10 +1,10 @@
 ---
-version: 11
-lastUpdated: 2026-11-12T18:59:17.123Z
+version: 12
+lastUpdated: 2026-11-13T06:03:05.534Z
 sourceLang: en
-contentHash: 72313030905be80f
-codeVerified: 2026-11-12T18:59:17.123Z
-codeVerifiedHash: 72313030905be80f
+contentHash: 3829eaf5cdc1a38e
+codeVerified: 2026-11-13T06:03:05.534Z
+codeVerifiedHash: 3829eaf5cdc1a38e
 codeVerifiedClaims: 20
 ---
 
@@ -398,6 +398,8 @@ Turning the draft-review pilot off deletes none of these rows.
 | `agent_freezes` | Kill-switch freezes (scope `site`/`role`); `liftedAt IS NULL` = active; doubles as audit trail |
 | `agent_roles` | Multi-agent role library with minimal capability sets; harness enforces role ∩ grant |
 | `constitutions` | Versioned publish-gate evaluator sets; sha256 hash identity; at most one `active` per site |
+| `site_skills` | Site Skills (`site-skills.ts`, migration 0026): playbooks injected into matching agent runs. Unique `(siteId, slug)`; `status` `draft`/`active`/`archived`; `riskClass`; scope columns `surfaces`, `tools`, `collections`, `triggers`, `requiredCapabilities`; current `body`, `version`, `hash` |
+| `site_skill_versions` | Immutable version trail of a site skill: unique `(skillId, version)`, content `snapshot`, sha256 `hash`, `source`/`sourceRef`, `changeNote`, author. Both tables are in the `site_isolation` RLS list |
 
 Content OS columns on existing tables:
 

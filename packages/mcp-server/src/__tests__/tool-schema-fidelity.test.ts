@@ -1,0 +1,825 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { ListToolsResultSchema, type Tool } from '@modelcontextprotocol/sdk/types.js';
+import { agentToolNamesWithSchema, jsonSchemaFor, validateAgentToolInput } from '@lumibase/contracts';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
+import type { LumiBaseClient } from '../client.js';
+import { GOVERNED_TOOLS, UNGOVERNED_MUTATIONS, toSkillArgs } from '../governed.js';
+import { registerAllTools } from '../tools/index.js';
+import { FIELD_TYPES, FIELD_TYPES_EXHAUSTIVE, matrix } from './fidelity/field-matrix.js';
+import {
+  fullSampleFor,
+  probesFor,
+  rejectedAt,
+  sampleFor,
+  schemaAccepts,
+  schemaProblems,
+  shapeMismatches,
+} from './fidelity/json-schema.js';
+import {
+  ACCEPTED_SHAPE_GAPS,
+  ACCEPTED_VALUE_GAPS,
+  NO_BODY,
+  OPAQUE_BODY,
+  REST_BODIES,
+  type RestBody,
+} from './fidelity/rest-bindings.js';
+
+/**
+ * Tool-schema fidelity suite (#716).
+ *
+ * The defect class: an auto-generated MCP tool schema that disagrees with what
+ * the server accepts. Payload #16214 advertised nullable relations without
+ * `{type:"null"}`; Directus #27039 advertised an array where the server wanted
+ * an object. Either way a schema-respecting client cannot send a valid call, or
+ * sends one the server then refuses — or, the worst case found here, sends one
+ * the server accepts after silently dropping a key (`apply_schema` with
+ * `encrypted: true` created a plaintext field).
+ *
+ * Where LumiBase's schemas come from (both transports):
+ *   - stdio (`packages/mcp-server`): hand-written Zod shapes per tool module,
+ *     converted by the MCP SDK (`$schema: draft-07`). The SDK parses arguments
+ *     with the same Zod (unknown keys are stripped, not refused); governed tools
+ *     then go through the harness, ungoverned ones straight to a REST route.
+ *   - HTTP (`POST /api/v1/mcp`): `CORE_SKILLS` in `apps/cms` →
+ *     `ToolRegistryService` → `McpService`. Write skills advertise
+ *     `jsonSchemaFor()` from `@lumibase/contracts`; the harness validates with
+ *     `validateAgentToolInput()` over the same Zod. Pinned by the committed
+ *     golden `fidelity/golden/http-tools-list.json`, which
+ *     `apps/cms/.../mcp-tool-schema-golden.test.ts` proves equal to the live server.
+ *   - No transport derives an input schema from collection field definitions:
+ *     item tools take `data` as an open record. The field-type matrix therefore
+ *     exercises VALUES of every field type through that record (see
+ *     `fidelity/field-matrix.ts`), plus the field/relation/collection definition
+ *     tools whose arguments are typed.
+ *
+ * What each check proves, and what it does not:
+ *
+ *   §1 Every advertised schema (both transports, every profile) is valid JSON
+ *      Schema: meta-schema and Ajv strict compile in draft-07 and 2020-12.
+ *      Says nothing about agreement with the server.
+ *
+ *   §2 Goldens pin `{name, description, inputSchema}` of both `tools/list`
+ *      outputs, so any change is a reviewed diff. Proves stability, not
+ *      correctness.
+ *
+ *   §3 HTTP: for every canonical skill, each property probed with fixed values,
+ *      every enum member and invalid array elements; the advertised JSON Schema
+ *      and `validateAgentToolInput` must give the same verdict. This one IS a
+ *      comparison of two independent artefacts (JSON Schema vs the Zod the
+ *      harness runs).
+ *      stdio "SDK schema vs SDK Zod": compares the SDK's JSON Schema with
+ *      `z.object(shape)` over the SAME shape. It only proves the SDK's
+ *      conversion did not lose a constraint; it cannot find a schema that is
+ *      wrong about the server, and stripped unknown keys pass. Kept as a guard
+ *      on the converter, not as evidence of fidelity.
+ *      stdio → governed (every GOVERNED_TOOLS entry): every probed value the
+ *      stdio schema accepts, translated by `toSkillArgs`, passes the canonical
+ *      skill contract. Key sets are checked one way only, elsewhere
+ *      (`governed-binding-contract.test.ts`: advertised ⊆ canonical, top
+ *      level); a key the skill accepts but the tool omits is not caught, and
+ *      the skill handler is not reached.
+ *
+ *   §3b stdio → REST (the 53 ungoverned mutations, where every #716 bug lived):
+ *      each is classified as a JSON body, no body, or an opaque document
+ *      (`fidelity/rest-bindings.ts`; an unclassified tool fails). For the 33
+ *      body tools, plus `diff_schema`, the advertised schema is compared with
+ *      the Zod object the route parses with — exported from the route module,
+ *      converted in `apps/cms` (`mcp-rest-body-golden.test.ts`, which pins it
+ *      against the live code) into `golden/rest-body-schemas.json`:
+ *        (a) every key the route accepts is advertised, at every depth;
+ *        (b) every advertised key is one the route declares;
+ *        (c) advertised types / enum values are within the route's, and keys
+ *            the route requires are required;
+ *        (d) the handler sends every advertised key, unchanged, to the bound
+ *            method + path (no handler-side dropping);
+ *        (e) every probed value the tool accepts is accepted by the route body
+ *            schema.
+ *      Accepted gaps are listed with a reason and fail when stale. Not proven:
+ *      Zod refinements, transforms and coercions (they do not survive JSON
+ *      Schema: `.refine` cross-field rules, cursor decoding, `z.coerce.date`),
+ *      probe coverage of nested values (probes are top-level; nested shape is
+ *      covered by (a)–(c)), what the service does after parsing, and the body a
+ *      no-body route reads (read from the handlers, not tested).
+ *
+ *   §4 Field-type matrix: values of every `FieldType` and reference kind, in all
+ *      nullable × localized × repeatable shapes, pass both transports unchanged.
+ *      It does not prove the server validates `type` (it does not; B206).
+ *
+ *   §5 Nullable relation / metadata columns advertise and accept `null`.
+ *
+ * Out of scope here: read tools' query parameters, HTTP read skills without a
+ * canonical schema (B204), per-site `agent_tools` schema overrides (B205).
+ */
+
+// `fileURLToPath`, not `URL#pathname`: the latter stays percent-encoded and
+// breaks on a checkout path with a space in it.
+const PACKAGE_DIR = fileURLToPath(new URL('../..', import.meta.url));
+const GOLDEN_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'fidelity', 'golden');
+const HTTP_GOLDEN = JSON.parse(readFileSync(join(GOLDEN_DIR, 'http-tools-list.json'), 'utf8')) as {
+  site: Tool[];
+  organization: Tool[];
+};
+/** Route → JSON Schema of the body its handler parses (generated by the CMS half). */
+const REST_GOLDEN = JSON.parse(readFileSync(join(GOLDEN_DIR, 'rest-body-schemas.json'), 'utf8')) as Record<
+  string,
+  Record<string, unknown>
+>;
+
+// ── stdio harness ───────────────────────────────────────────────────────────
+
+interface Recorded {
+  method: string;
+  path: string;
+  body?: unknown;
+}
+
+function fakeClient() {
+  const calls: Recorded[] = [];
+  const record = (method: string) => (path: string, body?: unknown) => {
+    calls.push({ method, path, body });
+    return Promise.resolve({ ok: true });
+  };
+  const client = {
+    tokenKind: 'site',
+    readOnly: false,
+    get: vi.fn(record('GET')),
+    post: vi.fn(record('POST')),
+    patch: vi.fn(record('PATCH')),
+    put: vi.fn(record('PUT')),
+    delete: vi.fn(record('DELETE')),
+    getText: vi.fn(() => Promise.resolve('')),
+    getRootText: vi.fn(() => Promise.resolve('')),
+    postRaw: vi.fn(record('POST_RAW')),
+    withSite: <T>(_site: string, fn: () => Promise<T>) => fn(),
+  };
+  return { client: client as unknown as LumiBaseClient, calls };
+}
+
+type Profile = 'site' | 'organization' | 'readOnly';
+
+const PROFILE_OPTIONS: Record<Profile, Parameters<typeof registerAllTools>[2]> = {
+  site: { dispatcher: null, tokenKind: 'site', siteId: 'site_fidelity' },
+  // An organization key not pinned to a site: every site tool gains `site`.
+  organization: { dispatcher: null, tokenKind: 'organization' },
+  readOnly: { dispatcher: null, tokenKind: 'site', siteId: 'site_fidelity', readOnly: true },
+};
+
+interface Connected {
+  client: Client;
+  tools: Tool[];
+  /** Zod shape each tool registered — what the SDK validates arguments with. */
+  shapes: Map<string, Record<string, z.ZodType>>;
+  calls: Recorded[];
+}
+
+async function connect(profile: Profile): Promise<Connected> {
+  const server = new McpServer({ name: 'lumibase', version: 'fidelity' });
+  const shapes = new Map<string, Record<string, z.ZodType>>();
+  const recording = new Proxy(server, {
+    get(target, prop, receiver) {
+      if (prop !== 'registerTool') return Reflect.get(target, prop, receiver);
+      return (name: string, config: { inputSchema?: Record<string, z.ZodType> }, handler: unknown) => {
+        shapes.set(name, config.inputSchema ?? {});
+        return (target.registerTool as (...a: unknown[]) => unknown).call(target, name, config, handler);
+      };
+    },
+  });
+  const { client: api, calls } = fakeClient();
+  registerAllTools(recording, api, PROFILE_OPTIONS[profile]);
+  const client = new Client({ name: 'fidelity-suite', version: 'test' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  const { tools } = await client.listTools();
+  return { client, tools, shapes, calls };
+}
+
+const connected = {} as Record<Profile, Connected>;
+
+beforeAll(async () => {
+  for (const profile of Object.keys(PROFILE_OPTIONS) as Profile[]) connected[profile] = await connect(profile);
+});
+
+afterAll(async () => {
+  await Promise.all(Object.values(connected).map((c) => c.client.close()));
+});
+
+function advertised(tools: Tool[], name: string): Record<string, unknown> {
+  const tool = tools.find((t) => t.name === name);
+  if (!tool) throw new Error(`tool not advertised: ${name}`);
+  return tool.inputSchema as Record<string, unknown>;
+}
+
+const httpSchema = (name: string) => advertised(HTTP_GOLDEN.site, name);
+const stdioSchema = (name: string) => advertised(connected.site.tools, name);
+
+/** Calls a stdio tool through the SDK client; returns the request it made upstream. */
+async function callStdio(name: string, args: Record<string, unknown>): Promise<Recorded> {
+  const { client, calls } = connected.site;
+  const before = calls.length;
+  const result = await client.callTool({ name, arguments: args });
+  expect(result.isError, `${name} refused ${JSON.stringify(args)}: ${JSON.stringify(result.content)}`).toBeFalsy();
+  expect(calls.length, `${name} made no upstream request`).toBe(before + 1);
+  return calls[calls.length - 1]!;
+}
+
+/** stdio arguments as the SDK hands them to the handler (Zod-parsed). */
+function stdioParsed(name: string, args: Record<string, unknown>): Record<string, unknown> {
+  return z.object(connected.site.shapes.get(name)!).parse(args) as Record<string, unknown>;
+}
+
+// ── 1. every advertised schema is a valid JSON Schema ─────────────────────────
+
+describe('every advertised inputSchema is a valid JSON Schema', () => {
+  it('the matrix of field types is exhaustive over FieldType', () => {
+    expect(FIELD_TYPES_EXHAUSTIVE).toBe(true);
+  });
+
+  for (const profile of Object.keys(PROFILE_OPTIONS) as Profile[]) {
+    it(`stdio (${profile} profile)`, () => {
+      const { tools } = connected[profile];
+      expect(tools.length).toBeGreaterThan(profile === 'readOnly' ? 40 : 100);
+      const invalid = tools
+        .map((t) => [t.name, schemaProblems(t.inputSchema)] as const)
+        .filter(([, problems]) => problems.length > 0);
+      expect(invalid).toEqual([]);
+    });
+  }
+
+  it('HTTP (site and organization endpoints, from the golden)', () => {
+    // The MCP SDK's own result schema — what an MCP client parses `tools/list` with.
+    expect(() => ListToolsResultSchema.parse({ tools: HTTP_GOLDEN.site })).not.toThrow();
+    expect(() => ListToolsResultSchema.parse({ tools: HTTP_GOLDEN.organization })).not.toThrow();
+    const invalid = [...HTTP_GOLDEN.site, ...HTTP_GOLDEN.organization]
+      .map((t) => [t.name, schemaProblems(t.inputSchema)] as const)
+      .filter(([, problems]) => problems.length > 0);
+    expect(invalid).toEqual([]);
+  });
+
+  it('the canonical contract emits valid schemas for every skill, advertised verbatim over HTTP', () => {
+    for (const name of agentToolNamesWithSchema()) {
+      const schema = jsonSchemaFor(name)!;
+      expect(schemaProblems(schema), name).toEqual([]);
+      expect(httpSchema(name), `${name}: HTTP golden differs from jsonSchemaFor`).toEqual(schema);
+    }
+  });
+
+  it('the validator really refuses broken schemas (guards the guard)', () => {
+    expect(schemaProblems({ type: 'object', properties: { a: { type: 'strng' } } })).not.toEqual([]);
+    expect(schemaProblems({ type: 'object', properties: { a: { type: 'string', minLenght: 1 } } })).not.toEqual([]);
+    expect(schemaProblems({ type: 'array', items: {} })).not.toEqual([]);
+    // Draft-04 boolean `exclusiveMinimum`: legal in old generators, invalid in both dialects here.
+    expect(schemaProblems({ type: 'object', properties: { a: { type: 'number', exclusiveMinimum: true } } })).not.toEqual([]);
+    expect(schemaProblems({ type: 'object', properties: { a: { type: 'string', example: 'x' } } })).not.toEqual([]);
+  });
+});
+
+// ── 2. golden tool lists ──────────────────────────────────────────────────────
+
+describe('golden tools/list', () => {
+  it('stdio tool list and schemas match the committed golden', async () => {
+    // Full schemas for the site profile; the other profiles are pinned by name
+    // and derived from it (next test), so the golden does not repeat 150 schemas.
+    // Only what this suite is about. The SDK also emits `execution` and
+    // `annotations` defaults; pinning those would fail on an SDK minor bump
+    // (caret range) without any LumiBase change. Read-only hints are asserted
+    // in the next test instead.
+    const golden = {
+      site: connected.site.tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+      organization: connected.organization.tools.map((t) => t.name),
+      readOnly: connected.readOnly.tools.map((t) => t.name),
+    };
+    // Intended change: `pnpm -F @lumibase/mcp-server exec vitest run
+    // src/__tests__/tool-schema-fidelity.test.ts -u`, then review the diff.
+    await expect(`${JSON.stringify(golden, null, 2)}\n`).toMatchFileSnapshot(
+      './fidelity/golden/stdio-tools-list.json',
+    );
+  });
+
+  it('organization and read-only profiles are the site schemas, plus a required `site` / minus writes', () => {
+    const site = new Map(connected.site.tools.map((t) => [t.name, t]));
+    for (const tool of connected.organization.tools) {
+      const base = site.get(tool.name);
+      if (!base) continue; // organization-only tools: pinned by name, validated above
+      const schema = tool.inputSchema as { properties?: Record<string, unknown>; required?: string[] };
+      const { site: siteArg, ...rest } = schema.properties ?? {};
+      expect(siteArg, `${tool.name} lacks the site argument`).toBeDefined();
+      expect(schema.required, tool.name).toContain('site');
+      expect({ ...schema, properties: rest, required: schema.required?.filter((r) => r !== 'site') }, tool.name).toEqual({
+        ...base.inputSchema,
+        properties: base.inputSchema.properties ?? {},
+        required: base.inputSchema.required ?? [],
+      });
+    }
+    for (const tool of connected.readOnly.tools) {
+      // Only the read-only profile annotates its tools (#789); the site
+      // profile leaves `annotations` unset. Everything else must be identical.
+      const { annotations, ...rest } = tool;
+      const { annotations: _siteAnnotations, ...siteRest } = site.get(tool.name)!;
+      expect(rest, tool.name).toEqual(siteRest);
+      expect(annotations?.readOnlyHint, tool.name).toBe(true);
+    }
+  });
+
+  it('the real stdio entrypoint (spawned process) advertises the same list', async () => {
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: ['--import', 'tsx', 'src/index.ts'],
+      cwd: PACKAGE_DIR,
+      env: {
+        PATH: process.env['PATH'] ?? '',
+        // Never contacted: listing tools makes no upstream request, and
+        // governance is off so no probe is sent either.
+        LUMIBASE_URL: 'http://127.0.0.1:9',
+        LUMIBASE_SITE_ID: 'site_fidelity',
+        LUMIBASE_TOKEN: 'fidelity-placeholder',
+        LUMIBASE_MCP_GOVERNED: 'off',
+      },
+      stderr: 'pipe',
+    });
+    const client = new Client({ name: 'fidelity-stdio', version: 'test' });
+    await client.connect(transport);
+    try {
+      const { tools } = await client.listTools();
+      expect(tools).toEqual(connected.site.tools);
+    } finally {
+      await client.close();
+    }
+  }, 60_000);
+});
+
+// ── 3. advertised schema vs what the server accepts ────────────────────────────
+
+/**
+ * Zod `.refine()` checks that JSON Schema cannot express. Listed so they stay
+ * visible; each entry must still be a real mismatch or the test fails.
+ */
+const UNREPRESENTABLE = new Set([
+  // `extensionBundleUrl`: protocol allow-list via `new URL()`.
+  'installExtension.bundleUrl',
+  'updateExtension.bundleUrl',
+  'install_extension.bundleUrl',
+  'update_extension.bundleUrl',
+  // `CdcSubscriptionCreateSchema.superRefine`: `webhook_id` is required when
+  // `kind` is "webhook", `extension_name` when it is "extension". MCP requires
+  // an object `inputSchema` built from a flat shape, so neither transport can
+  // advertise the conditional; both descriptions state it. Found once every
+  // enum member was probed (#716 review: only "pull" was sampled before).
+  'createCdcSubscription.kind',
+  'create_cdc_subscription.webhookId',
+  'create_cdc_subscription.extensionName',
+]);
+
+describe('advertised schema and server validation agree', () => {
+  it('HTTP: every canonical tool, every property, every probe value', () => {
+    const mismatches: string[] = [];
+    for (const name of agentToolNamesWithSchema()) {
+      const schema = httpSchema(name);
+      const base = sampleFor(schema) as Record<string, unknown>;
+      expect(schemaAccepts(schema, base), `${name} sample ${JSON.stringify(base)}`).toBe(true);
+      expect(validateAgentToolInput(name, base).ok, `${name} sample ${JSON.stringify(base)}`).toBe(true);
+      for (const [key, property] of Object.entries((schema['properties'] ?? {}) as Record<string, unknown>)) {
+        for (const probe of probesFor(property)) {
+          const args = { ...base, [key]: probe };
+          const json = schemaAccepts(schema, args);
+          const server = validateAgentToolInput(name, args).ok;
+          if (json !== server) mismatches.push(`${name}.${key}`);
+        }
+      }
+      // Unknown keys: `.strict()` refuses them, so the schema must say so.
+      const extra = { ...base, __unknown: 1 };
+      if (schemaAccepts(schema, extra) !== validateAgentToolInput(name, extra).ok) mismatches.push(`${name}.<extra>`);
+    }
+    const unexpected = [...new Set(mismatches)].filter((m) => !UNREPRESENTABLE.has(m));
+    expect(unexpected).toEqual([]);
+    for (const known of UNREPRESENTABLE) {
+      if (/^[a-z]+[A-Z]/.test(known)) expect(mismatches, `stale allow-list entry ${known}`).toContain(known);
+    }
+  });
+
+  it('stdio: the SDK-advertised schema and the Zod the SDK validates with agree', () => {
+    const mismatches: string[] = [];
+    for (const tool of connected.site.tools) {
+      const schema = tool.inputSchema as Record<string, unknown>;
+      const zod = z.object(connected.site.shapes.get(tool.name)!);
+      const base = sampleFor(schema) as Record<string, unknown>;
+      expect(schemaAccepts(schema, base) && zod.safeParse(base).success, `${tool.name} sample`).toBe(true);
+      for (const [key, property] of Object.entries((schema['properties'] ?? {}) as Record<string, unknown>)) {
+        for (const probe of probesFor(property)) {
+          const args = { ...base, [key]: probe };
+          if (schemaAccepts(schema, args) !== zod.safeParse(args).success) {
+            mismatches.push(`${tool.name}.${key}=${JSON.stringify(probe)}`);
+          }
+        }
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  it('stdio → governed: whatever a governed tool advertises, its canonical skill accepts', () => {
+    const rejected: string[] = [];
+    const seen = new Set<string>();
+    for (const [toolName, binding] of Object.entries(GOVERNED_TOOLS)) {
+      const schema = stdioSchema(toolName);
+      const zod = z.object(connected.site.shapes.get(toolName)!);
+      const base = sampleFor(schema) as Record<string, unknown>;
+      const candidates = [base];
+      for (const [key, property] of Object.entries((schema['properties'] ?? {}) as Record<string, unknown>)) {
+        for (const probe of probesFor(property)) candidates.push({ ...base, [key]: probe });
+      }
+      for (const args of candidates) {
+        if (!schemaAccepts(schema, args)) continue;
+        const parsed = zod.parse(args) as Record<string, unknown>;
+        const verdict = validateAgentToolInput(binding.skill, toSkillArgs(parsed, binding));
+        if (!verdict.ok) {
+          const key = `${toolName}.${verdict.issues.map((i) => i.path).join(',')}`;
+          seen.add(key);
+          if (!UNREPRESENTABLE.has(key)) rejected.push(`${key} ← ${JSON.stringify(args)}`);
+        }
+      }
+    }
+    expect(rejected).toEqual([]);
+    for (const known of [...UNREPRESENTABLE].filter((k) => k.includes('_'))) {
+      expect(seen, `stale allow-list entry ${known}`).toContain(known);
+    }
+  });
+
+  it('array vs object (Directus #27039): `data` is an object on both transports, consistently', () => {
+    for (const bad of [[], [{ title: 'x' }], 'x', null]) {
+      for (const [name, tool] of [
+        ['createItem', 'create_item'],
+        ['updateItem', 'update_item'],
+      ] as const) {
+        const httpArgs = { collection: 'posts', id: 'post_1', data: bad };
+        if (name === 'createItem') delete (httpArgs as { id?: string }).id;
+        expect(schemaAccepts(httpSchema(name), httpArgs), `${name} advertised ${JSON.stringify(bad)}`).toBe(false);
+        expect(validateAgentToolInput(name, httpArgs).ok, `${name} harness ${JSON.stringify(bad)}`).toBe(false);
+        const stdioArgs = { collection: 'posts', id: 'post_1', data: bad };
+        expect(schemaAccepts(stdioSchema(tool), stdioArgs), `${tool} advertised ${JSON.stringify(bad)}`).toBe(false);
+      }
+    }
+  });
+});
+
+// ── 3b. ungoverned mutations vs the REST body they post ───────────────────────
+
+const restBody = (route: string): Record<string, unknown> => {
+  const schema = REST_GOLDEN[route];
+  if (!schema) throw new Error(`no REST body golden for ${route}`);
+  return schema;
+};
+
+/** The part of a tool's advertised schema that becomes the request body. */
+function advertisedBody(tool: string, binding: RestBody): Record<string, unknown> {
+  const schema = stdioSchema(tool) as { properties?: Record<string, unknown>; required?: string[] };
+  const properties = schema.properties ?? {};
+  if (binding.body) return properties[binding.body] as Record<string, unknown>;
+  const skip = new Set([...(binding.path ?? []), 'confirm']);
+  return {
+    type: 'object',
+    properties: Object.fromEntries(Object.entries(properties).filter(([k]) => !skip.has(k))),
+    required: (schema.required ?? []).filter((k) => !skip.has(k)),
+  };
+}
+
+/** The request body the tool's arguments become, per the binding. */
+function bodyOf(args: Record<string, unknown>, binding: RestBody): unknown {
+  if (binding.body) return args[binding.body];
+  const skip = new Set([...(binding.path ?? []), 'confirm']);
+  return Object.fromEntries(Object.entries(args).filter(([k]) => !skip.has(k)));
+}
+
+function routeMatches(route: string, sent: Recorded): boolean {
+  const [method, pattern] = route.split(' ') as [string, string];
+  const re = new RegExp(`^${pattern.replace(/:[A-Za-z]+/g, '[^/?]+')}$`);
+  return sent.method === method && re.test(sent.path);
+}
+
+describe('ungoverned mutations: the stdio tool and the REST body it posts agree', () => {
+  it('every ungoverned mutation is classified exactly once (REST body, no body, or opaque)', () => {
+    const unclassified: string[] = [];
+    for (const tool of Object.keys(UNGOVERNED_MUTATIONS)) {
+      const n = [tool in REST_BODIES, NO_BODY.has(tool), tool in OPAQUE_BODY].filter(Boolean).length;
+      if (n !== 1) unclassified.push(`${tool} (${n})`);
+    }
+    expect(unclassified).toEqual([]);
+    for (const tool of [...Object.keys(REST_BODIES), ...NO_BODY, ...Object.keys(OPAQUE_BODY)]) {
+      expect(connected.site.tools.some((t) => t.name === tool), `${tool} is not advertised`).toBe(true);
+    }
+  });
+
+  it('key sets, types, enums and required keys match the route body, at every depth', () => {
+    const gaps: string[] = [];
+    for (const [tool, binding] of Object.entries(REST_BODIES)) {
+      for (const gap of shapeMismatches(advertisedBody(tool, binding), restBody(binding.route))) {
+        gaps.push(`${tool} ${gap}`);
+      }
+    }
+    expect(gaps.filter((g) => !(g in ACCEPTED_SHAPE_GAPS))).toEqual([]);
+    for (const accepted of Object.keys(ACCEPTED_SHAPE_GAPS)) {
+      expect(gaps, `stale ACCEPTED_SHAPE_GAPS entry: ${accepted}`).toContain(accepted);
+    }
+  });
+
+  it('the handler sends every advertised body key, unchanged, to the bound route', async () => {
+    for (const [tool, binding] of Object.entries(REST_BODIES)) {
+      const args = fullSampleFor(stdioSchema(tool)) as Record<string, unknown>;
+      const sent = await callStdio(tool, args);
+      expect(routeMatches(binding.route, sent), `${tool} sent ${sent.method} ${sent.path}, bound to ${binding.route}`).toBe(true);
+      expect(sent.body, tool).toEqual(bodyOf(stdioParsed(tool, args), binding));
+    }
+  });
+
+  it('every value the tool advertises as valid, the route body schema accepts', () => {
+    const refused: string[] = [];
+    const seen = new Set<string>();
+    for (const [tool, binding] of Object.entries(REST_BODIES)) {
+      const schema = stdioSchema(tool);
+      const server = restBody(binding.route);
+      const candidates: Array<[string, Record<string, unknown>]> = [
+        ['<minimal>', sampleFor(schema) as Record<string, unknown>],
+        ['<every key>', fullSampleFor(schema) as Record<string, unknown>],
+      ];
+      const base = candidates[0]![1];
+      for (const [key, property] of Object.entries((schema['properties'] ?? {}) as Record<string, unknown>)) {
+        for (const probe of probesFor(property)) candidates.push([`${key}=${JSON.stringify(probe)}`, { ...base, [key]: probe }]);
+      }
+      for (const [label, args] of candidates) {
+        if (!schemaAccepts(schema, args)) continue;
+        const body = bodyOf(stdioParsed(tool, args), binding);
+        for (const at of rejectedAt(server, body)) {
+          seen.add(`${tool} ${at}`);
+          if (!(`${tool} ${at}` in ACCEPTED_VALUE_GAPS)) refused.push(`${tool} ${at} ← ${label}`);
+        }
+      }
+    }
+    expect(refused).toEqual([]);
+    for (const accepted of Object.keys(ACCEPTED_VALUE_GAPS)) {
+      expect(seen, `stale ACCEPTED_VALUE_GAPS entry: ${accepted}`).toContain(accepted);
+    }
+  });
+
+  it('no-body tools send no body', async () => {
+    for (const tool of NO_BODY) {
+      const sent = await callStdio(tool, sampleFor(stdioSchema(tool)) as Record<string, unknown>);
+      expect(sent.body === undefined || JSON.stringify(sent.body) === '{}', `${tool} sent ${JSON.stringify(sent.body)}`).toBe(true);
+    }
+  });
+});
+
+// ── 4. field-type matrix round-trip ───────────────────────────────────────────
+
+describe('field-type matrix: type × nullable × localized × repeatable', () => {
+  const cases = matrix();
+
+  it('covers every storage type and reference kind in all 8 shape combinations', () => {
+    const kinds = new Set(cases.map((c) => c.kind));
+    for (const t of FIELD_TYPES) expect(kinds).toContain(t);
+    for (const k of ['m2o', 'o2m', 'm2m', 'm2a', 'file', 'image', 'files']) expect(kinds).toContain(k);
+    expect(cases.length).toBe(kinds.size * 8);
+  });
+
+  it.each(cases.map((c) => [c.label, c] as const))('%s', async (_label, c) => {
+    const data = { [c.field]: c.value };
+
+    // HTTP: advertised schema and harness validation both accept, data unchanged.
+    for (const [name, args] of [
+      ['createItem', { collection: 'posts', data, status: 'draft' }],
+      ['updateItem', { collection: 'posts', id: 'post_1', data, expect: { [c.field]: c.value } }],
+    ] as const) {
+      expect(schemaAccepts(httpSchema(name), args), `${name} advertised`).toBe(true);
+      const verdict = validateAgentToolInput(name, args);
+      expect(verdict.ok, `${name} harness`).toBe(true);
+      if (verdict.ok) expect(verdict.data['data']).toEqual(data);
+    }
+
+    // stdio: advertised schema accepts, the SDK passes it, REST receives it unchanged.
+    const created = await callStdio('create_item', { collection: 'posts', data });
+    expect(created).toMatchObject({ method: 'POST', path: '/items/posts' });
+    expect((created.body as { data: unknown }).data).toEqual(data);
+    const updated = await callStdio('update_item', { collection: 'posts', id: 'post_1', data });
+    expect(updated).toMatchObject({ method: 'PATCH', path: '/items/posts/post_1' });
+    expect(updated.body).toEqual({ data });
+    expect(schemaAccepts(stdioSchema('create_item'), { collection: 'posts', data })).toBe(true);
+
+    // stdio → governed: the translated arguments pass the canonical contract.
+    for (const tool of ['create_item', 'update_item'] as const) {
+      const args = stdioParsed(tool, { collection: 'posts', id: 'post_1', data });
+      const binding = GOVERNED_TOOLS[tool]!;
+      const verdict = validateAgentToolInput(binding.skill, toSkillArgs(args, binding));
+      expect(verdict.ok, `${tool} → ${binding.skill}`).toBe(true);
+      if (verdict.ok) expect(verdict.data['data']).toEqual(data);
+    }
+  });
+
+  it.each(FIELD_TYPES.flatMap((type) => [[type, false], [type, true]] as const))(
+    'defining a %s field (nullable=%s) is accepted by both transports',
+    async (type, nullable) => {
+      const http = { collection: 'posts', name: `f_${type.toLowerCase()}`, type, required: !nullable, interface: 'input', note: null };
+      expect(schemaAccepts(httpSchema('createField'), http)).toBe(true);
+      expect(validateAgentToolInput('createField', http).ok).toBe(true);
+
+      const stdio = { collection: 'posts', field_name: `f_${type.toLowerCase()}`, type, interface: 'input', nullable, note: null, label: null };
+      expect(schemaAccepts(stdioSchema('upsert_field'), stdio)).toBe(true);
+      const sent = await callStdio('upsert_field', stdio);
+      expect(sent.method).toBe('PUT');
+      // Exactly what the caller set: no `null` dropped, no Zod default injected
+      // into what REST treats as a partial update.
+      expect(sent.body).toEqual({ type, interface: 'input', nullable, note: null, label: null });
+    },
+  );
+});
+
+// ── 5. nullable references (Payload #16214) ───────────────────────────────────
+
+describe('nullable relation and metadata columns advertise and accept null', () => {
+  const NULLABLE_RELATION_KEYS = [
+    'oneField',
+    'junctionCollection',
+    'aliasField',
+    'relatedDisplayTemplate',
+    'junctionManyField',
+    'junctionOneField',
+    'sortField',
+  ];
+
+  it('createRelation / create_relation: every nullable key takes null end to end', async () => {
+    const args: Record<string, unknown> = { manyCollection: 'posts', manyField: 'author', oneCollection: 'authors', type: 'm2o' };
+    for (const key of NULLABLE_RELATION_KEYS) args[key] = null;
+
+    expect(schemaAccepts(httpSchema('createRelation'), args)).toBe(true);
+    expect(validateAgentToolInput('createRelation', args).ok).toBe(true);
+    expect(schemaAccepts(stdioSchema('create_relation'), args)).toBe(true);
+    const sent = await callStdio('create_relation', args);
+    expect(sent.body).toEqual(args);
+    const binding = GOVERNED_TOOLS['create_relation']!;
+    expect(validateAgentToolInput(binding.skill, toSkillArgs(stdioParsed('create_relation', args), binding)).ok).toBe(true);
+  });
+
+  it('update_collection can clear nullable collection metadata (REST accepts null)', async () => {
+    const patch = { label: null, note: null, icon: null, color: null, displayTemplate: null, sortField: null, archiveField: null };
+    expect(schemaAccepts(stdioSchema('update_collection'), { name: 'posts', patch })).toBe(true);
+    const sent = await callStdio('update_collection', { name: 'posts', patch });
+    expect(sent).toMatchObject({ method: 'PATCH', path: '/collections/posts', body: patch });
+  });
+
+  it('apply_schema field inputs take null for clearable columns', async () => {
+    const field = { name: 'subtitle', type: 'string', interface: 'input', display: null, label: null, note: null, group: null };
+    expect(schemaAccepts(stdioSchema('apply_schema'), { name: 'posts', fields: [field], note: null })).toBe(true);
+    const sent = await callStdio('apply_schema', { name: 'posts', fields: [field], note: null });
+    expect(sent.body).toEqual({ fields: [field], note: null });
+  });
+
+  it('upsert_field forwards REST-only keys instead of stripping them', async () => {
+    const args = {
+      collection: 'customers',
+      field_name: 'email',
+      type: 'string',
+      interface: 'input',
+      classification: 'pii',
+      encrypted: true,
+      rawEnabled: false,
+      validation: { rules: [] },
+    };
+    const sent = await callStdio('upsert_field', args);
+    const { collection: _c, field_name: _f, ...body } = args;
+    expect(sent.body).toEqual(body);
+  });
+});
+
+// ── 6. recorded requests, replayed against the real routes ────────────────────
+
+/**
+ * The #716 review asked for a tool → REST regression, not only a comparison of
+ * schemas. `apps/cms` and this package do not depend on each other, so the
+ * check is split at the wire: this half calls the REGISTERED tools through the
+ * SDK client and pins the exact `{method, path, body}` each one sends in
+ * `golden/mcp-recorded-requests.json`; the CMS half
+ * (`apps/cms/src/routes/__tests__/mcp-recorded-requests.db.integration.test.ts`)
+ * replays every entry, in order, against the real Hono routes over PostgreSQL
+ * and asserts the persisted rows (an `encrypted: true, classification: "pii"`
+ * field is stored encrypted and classified; `status` pauses and resumes a
+ * subscription whose `kind` stays put). It also parses every body with the
+ * route's own Zod and requires nothing to be stripped, without a database.
+ *
+ * Path placeholder: `{subscriptionId}` is the id the replayed create returns.
+ * An intended change: `pnpm -F @lumibase/mcp-server exec vitest run
+ * src/__tests__/tool-schema-fidelity.test.ts -u`, then review the diff.
+ */
+const REPLAY_COLLECTION = 'mcp716_customers';
+
+/** `[label, tool, arguments]`, in replay order. */
+const REPLAY_CALLS: Array<[string, string, Record<string, unknown>]> = [
+  [
+    'apply_schema creates an encrypted PII field and the length/precision/scale/validation/display keys',
+    'apply_schema',
+    {
+      name: REPLAY_COLLECTION,
+      note: 'Created through the stdio MCP tool',
+      fields: [
+        {
+          name: 'email',
+          type: 'string',
+          interface: 'input',
+          label: 'Email',
+          required: true,
+          encrypted: true,
+          classification: 'pii',
+          length: 320,
+          validation: { _and: [{ email: { _regex: '^.+@.+$' } }] },
+          displayOptions: { mask: true },
+          rawEnabled: false,
+          width: 'half',
+        },
+        { name: 'total', type: 'decimal', interface: 'input', precision: 12, scale: 2 },
+      ],
+    },
+  ],
+  [
+    'diff_schema previews a classification change and new precision/scale',
+    'diff_schema',
+    {
+      name: REPLAY_COLLECTION,
+      fields: [
+        { name: 'email', type: 'string', interface: 'input', encrypted: true, classification: 'phi', length: 320 },
+        { name: 'total', type: 'decimal', interface: 'input', precision: 14, scale: 4 },
+      ],
+    },
+  ],
+  [
+    'apply_schema passes the risky-change guard with migrationPlan alone (populated field, type change)',
+    'apply_schema',
+    {
+      name: REPLAY_COLLECTION,
+      fields: [
+        { name: 'email', type: 'string', interface: 'input', encrypted: true, classification: 'pii', length: 320 },
+        { name: 'total', type: 'integer', interface: 'input', migrationPlan: { strategy: 'cast' } },
+      ],
+    },
+  ],
+  ['create_cdc_subscription creates a pull subscription', 'create_cdc_subscription', { name: 'mcp716_pull', kind: 'pull' }],
+  [
+    'update_cdc_subscription pauses it (immutable kind/webhook_id are not forwarded)',
+    'update_cdc_subscription',
+    { id: '{subscriptionId}', status: 'paused', kind: 'webhook', webhook_id: 'wh_never_sent' },
+  ],
+  [
+    'update_cdc_subscription resumes and renames it',
+    'update_cdc_subscription',
+    { id: '{subscriptionId}', status: 'active', name: 'mcp716_pull_renamed' },
+  ],
+];
+
+describe('recorded requests for the REST replay (#716 review)', () => {
+  it('the registered tools send exactly the committed requests', async () => {
+    const recorded: Array<Recorded & { label: string; tool: string }> = [];
+    for (const [label, tool, args] of REPLAY_CALLS) {
+      const sent = await callStdio(tool, args);
+      recorded.push({ label, tool, method: sent.method, path: decodeURIComponent(sent.path), body: sent.body });
+    }
+    await expect(`${JSON.stringify(recorded, null, 2)}\n`).toMatchFileSnapshot(
+      join(GOLDEN_DIR, 'mcp-recorded-requests.json'),
+    );
+  });
+
+  it('immutable CDC keys never reach PATCH /cdc/subscriptions/:id; status does', async () => {
+    const sent = await callStdio('update_cdc_subscription', {
+      id: 'sub_1',
+      status: 'paused',
+      kind: 'webhook',
+      webhook_id: 'wh_1',
+      extension_name: 'ext',
+    });
+    expect(sent).toEqual({ method: 'PATCH', path: '/cdc/subscriptions/sub_1', body: { status: 'paused' } });
+    const advertised = Object.keys((stdioSchema('update_cdc_subscription')['properties'] ?? {}) as object);
+    expect(advertised).toContain('status');
+    for (const key of ['kind', 'webhook_id', 'extension_name']) expect(advertised).not.toContain(key);
+  });
+
+  it('apply_schema / diff_schema forward every security-sensitive field key unchanged', async () => {
+    const field = {
+      name: 'ssn',
+      type: 'string',
+      interface: 'input',
+      encrypted: true,
+      classification: 'phi',
+      length: 11,
+      precision: 3,
+      scale: 0,
+      validation: { _and: [] },
+      displayOptions: { mask: true },
+      rawEnabled: false,
+      migrationPlan: { strategy: 'cast' },
+    };
+    for (const tool of ['apply_schema', 'diff_schema']) {
+      const sent = await callStdio(tool, { name: 'patients', fields: [field] });
+      expect((sent.body as { fields: unknown[] }).fields, tool).toEqual([field]);
+    }
+  });
+});

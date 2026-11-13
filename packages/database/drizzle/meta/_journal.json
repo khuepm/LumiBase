@@ -187,8 +187,15 @@
     {
       "idx": 26,
       "version": "7",
-      "when": 1794327773412,
-      "tag": "0026_email_identity_policy",
+      "when": 1794380400000,
+      "tag": "0026_site_skills",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794466800000,
+      "tag": "0027_email_identity_policy",
       "breakpoints": true
     }
   ]

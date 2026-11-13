@@ -1,0 +1,6312 @@
+{
+  "site": [
+    {
+      "name": "list_collections",
+      "description": "List all collections in the LumiBase site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_collection",
+      "description": "Get a collection with its compiled schema (all fields, system fields, meta).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_collection",
+      "description": "Create a new collection. Name must be lowercase snake_case (e.g. \"blog_posts\"). storageMode defaults to \"jsonb\" (recommended for most use-cases). primaryKeyType defaults to \"nanoid\".",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pluralLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "system": {
+            "description": "Marks a LumiBase-internal collection: excluded from delivery and access-grant listings.",
+            "type": "boolean"
+          },
+          "singleton": {
+            "type": "boolean"
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primaryKeyField": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "primaryKeyType": {
+            "type": "string",
+            "enum": [
+              "nanoid",
+              "uuid",
+              "integer",
+              "bigInteger",
+              "string"
+            ]
+          },
+          "storageMode": {
+            "type": "string",
+            "enum": [
+              "jsonb",
+              "materialized",
+              "physical",
+              "external"
+            ]
+          },
+          "displayTemplate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sortField": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "archiveField": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "archiveValue": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unarchiveValue": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "itemDuplicationFields": {
+            "description": "Fields copied when an item is duplicated.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "translations": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "accountability": {
+            "type": "string",
+            "enum": [
+              "all",
+              "activity",
+              "none"
+            ]
+          },
+          "versioning": {
+            "type": "boolean"
+          },
+          "meta": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_collection",
+      "description": "Update metadata on an existing collection (label, icon, note, accountability, etc.).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "patch": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "pluralLabel": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "hidden": {
+                "type": "boolean"
+              },
+              "system": {
+                "description": "Marks a LumiBase-internal collection: excluded from delivery and access-grant listings.",
+                "type": "boolean"
+              },
+              "singleton": {
+                "type": "boolean"
+              },
+              "icon": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "color": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "primaryKeyField": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+              },
+              "primaryKeyType": {
+                "type": "string",
+                "enum": [
+                  "nanoid",
+                  "uuid",
+                  "integer",
+                  "bigInteger",
+                  "string"
+                ]
+              },
+              "storageMode": {
+                "type": "string",
+                "enum": [
+                  "jsonb",
+                  "materialized",
+                  "physical",
+                  "external"
+                ]
+              },
+              "displayTemplate": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "sortField": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "archiveField": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "archiveValue": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "unarchiveValue": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "itemDuplicationFields": {
+                "description": "Fields copied when an item is duplicated.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "translations": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "accountability": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "activity",
+                  "none"
+                ]
+              },
+              "versioning": {
+                "type": "boolean"
+              },
+              "meta": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "required": [
+          "name",
+          "patch"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_collection",
+      "description": "Delete a collection and all its items. DESTRUCTIVE — cannot be undone. You MUST pass confirm=true explicitly after warning the user.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm destructive operation"
+          }
+        },
+        "required": [
+          "name",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "diff_schema",
+      "description": "Preview what would change if you applied a schema update. Returns added/modified/removed fields and any risky changes. Always call this before apply_schema to check for breaking changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pluralLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "system": {
+            "description": "Marks a LumiBase-internal collection: excluded from delivery and access-grant listings.",
+            "type": "boolean"
+          },
+          "singleton": {
+            "type": "boolean"
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primaryKeyField": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "primaryKeyType": {
+            "type": "string",
+            "enum": [
+              "nanoid",
+              "uuid",
+              "integer",
+              "bigInteger",
+              "string"
+            ]
+          },
+          "storageMode": {
+            "type": "string",
+            "enum": [
+              "jsonb",
+              "materialized",
+              "physical",
+              "external"
+            ]
+          },
+          "displayTemplate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sortField": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "archiveField": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "archiveValue": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unarchiveValue": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "itemDuplicationFields": {
+            "description": "Fields copied when an item is duplicated.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "translations": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "accountability": {
+            "type": "string",
+            "enum": [
+              "all",
+              "activity",
+              "none"
+            ]
+          },
+          "versioning": {
+            "type": "boolean"
+          },
+          "meta": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "fields": {
+            "description": "Complete field list; existing fields missing from it are deleted on apply.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias. Not validated server-side; GraphQL currently types `datetime` as String (B206)."
+                },
+                "interface": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "UI widget: input, textarea, select, toggle, datetime, file, image, repeater, relation-m2o, relation-o2m, relation-m2m, code, markdown, wysiwyg, …"
+                },
+                "display": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "label": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "defaultValue": {},
+                "nullable": {
+                  "type": "boolean"
+                },
+                "unique": {
+                  "type": "boolean"
+                },
+                "indexed": {
+                  "type": "boolean"
+                },
+                "searchable": {
+                  "type": "boolean"
+                },
+                "length": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "precision": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "scale": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "special": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "options": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "displayOptions": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "validation": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "conditions": {
+                  "type": "array",
+                  "items": {}
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "readonly": {
+                  "type": "boolean"
+                },
+                "hidden": {
+                  "type": "boolean"
+                },
+                "encrypted": {
+                  "type": "boolean"
+                },
+                "classification": {
+                  "description": "Data sensitivity; pii/phi require encrypted=true.",
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "internal",
+                    "pii",
+                    "phi"
+                  ]
+                },
+                "versioned": {
+                  "type": "boolean"
+                },
+                "rawEnabled": {
+                  "type": "boolean"
+                },
+                "width": {
+                  "type": "string",
+                  "enum": [
+                    "half",
+                    "full",
+                    "fill"
+                  ]
+                },
+                "group": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "sortOrder": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "renameFrom": {
+                  "description": "Previous field name if this is a rename operation",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                },
+                "migrationPlan": {
+                  "description": "Counts as confirmation of a risky change, like confirmRiskyChange=true. The plan is not executed yet.",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "confirmRiskyChange": {
+                  "description": "Set true to confirm type-change or destructive migration",
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                }
+              },
+              "required": [
+                "type",
+                "interface",
+                "name"
+              ]
+            }
+          },
+          "relations": {
+            "description": "Complete relation list; existing relations missing from it are deleted on apply.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "manyCollection": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Collection that holds the foreign key (the \"many\" side)."
+                },
+                "manyField": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Field on manyCollection that stores the relation."
+                },
+                "oneCollection": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Related collection (the \"one\" side)."
+                },
+                "oneField": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "junctionCollection": {
+                  "description": "Junction table for m2m relations.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "m2o",
+                    "o2m",
+                    "m2m",
+                    "m2a"
+                  ]
+                },
+                "aliasField": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "relatedDisplayTemplate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "junctionManyField": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "junctionOneField": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "sortField": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "onDelete": {
+                  "type": "string",
+                  "enum": [
+                    "restrict",
+                    "cascade",
+                    "set null",
+                    "no action"
+                  ]
+                },
+                "meta": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "manyCollection",
+                "manyField",
+                "oneCollection"
+              ]
+            }
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "apply_schema",
+      "description": "Atomically apply a schema migration to a collection (add/update/remove fields and relations). Call diff_schema first to preview changes. Pass confirmRiskyChange=true on field inputs that have risky changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pluralLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "system": {
+            "description": "Marks a LumiBase-internal collection: excluded from delivery and access-grant listings.",
+            "type": "boolean"
+          },
+          "singleton": {
+            "type": "boolean"
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primaryKeyField": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "primaryKeyType": {
+            "type": "string",
+            "enum": [
+              "nanoid",
+              "uuid",
+              "integer",
+              "bigInteger",
+              "string"
+            ]
+          },
+          "storageMode": {
+            "type": "string",
+            "enum": [
+              "jsonb",
+              "materialized",
+              "physical",
+              "external"
+            ]
+          },
+          "displayTemplate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sortField": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "archiveField": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "archiveValue": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unarchiveValue": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "itemDuplicationFields": {
+            "description": "Fields copied when an item is duplicated.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "translations": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "accountability": {
+            "type": "string",
+            "enum": [
+              "all",
+              "activity",
+              "none"
+            ]
+          },
+          "versioning": {
+            "type": "boolean"
+          },
+          "meta": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "fields": {
+            "description": "Complete field list; existing fields missing from it are deleted on apply.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias. Not validated server-side; GraphQL currently types `datetime` as String (B206)."
+                },
+                "interface": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "UI widget: input, textarea, select, toggle, datetime, file, image, repeater, relation-m2o, relation-o2m, relation-m2m, code, markdown, wysiwyg, …"
+                },
+                "display": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "label": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "defaultValue": {},
+                "nullable": {
+                  "type": "boolean"
+                },
+                "unique": {
+                  "type": "boolean"
+                },
+                "indexed": {
+                  "type": "boolean"
+                },
+                "searchable": {
+                  "type": "boolean"
+                },
+                "length": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "precision": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "scale": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "special": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "options": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "displayOptions": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "validation": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "conditions": {
+                  "type": "array",
+                  "items": {}
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "readonly": {
+                  "type": "boolean"
+                },
+                "hidden": {
+                  "type": "boolean"
+                },
+                "encrypted": {
+                  "type": "boolean"
+                },
+                "classification": {
+                  "description": "Data sensitivity; pii/phi require encrypted=true.",
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "internal",
+                    "pii",
+                    "phi"
+                  ]
+                },
+                "versioned": {
+                  "type": "boolean"
+                },
+                "rawEnabled": {
+                  "type": "boolean"
+                },
+                "width": {
+                  "type": "string",
+                  "enum": [
+                    "half",
+                    "full",
+                    "fill"
+                  ]
+                },
+                "group": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "sortOrder": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "renameFrom": {
+                  "description": "Previous field name if this is a rename operation",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                },
+                "migrationPlan": {
+                  "description": "Counts as confirmation of a risky change, like confirmRiskyChange=true. The plan is not executed yet.",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "confirmRiskyChange": {
+                  "description": "Set true to confirm type-change or destructive migration",
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                }
+              },
+              "required": [
+                "type",
+                "interface",
+                "name"
+              ]
+            }
+          },
+          "relations": {
+            "description": "Complete relation list; existing relations missing from it are deleted on apply.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "manyCollection": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Collection that holds the foreign key (the \"many\" side)."
+                },
+                "manyField": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Field on manyCollection that stores the relation."
+                },
+                "oneCollection": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Related collection (the \"one\" side)."
+                },
+                "oneField": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "junctionCollection": {
+                  "description": "Junction table for m2m relations.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "m2o",
+                    "o2m",
+                    "m2m",
+                    "m2a"
+                  ]
+                },
+                "aliasField": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "relatedDisplayTemplate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "junctionManyField": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "junctionOneField": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "sortField": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "onDelete": {
+                  "type": "string",
+                  "enum": [
+                    "restrict",
+                    "cascade",
+                    "set null",
+                    "no action"
+                  ]
+                },
+                "meta": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "manyCollection",
+                "manyField",
+                "oneCollection"
+              ]
+            }
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_fields",
+      "description": "List all fields in a collection, including system fields.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          }
+        },
+        "required": [
+          "collection"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "upsert_field",
+      "description": "Create or update a field in a collection. field_name must be lowercase snake_case (e.g. \"published_at\"). Common types: string (varchar), text (longtext), integer, decimal, boolean, datetime, json, uuid. Common interfaces: input, textarea, datetime, toggle, select, file, markdown.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "field_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$",
+            "description": "Machine name of the field"
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias. Not validated server-side; GraphQL currently types `datetime` as String (B206)."
+          },
+          "interface": {
+            "type": "string",
+            "minLength": 1,
+            "description": "UI widget: input, textarea, select, toggle, datetime, file, image, repeater, relation-m2o, relation-o2m, relation-m2m, code, markdown, wysiwyg, …"
+          },
+          "display": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "defaultValue": {},
+          "nullable": {
+            "type": "boolean"
+          },
+          "unique": {
+            "type": "boolean"
+          },
+          "indexed": {
+            "type": "boolean"
+          },
+          "searchable": {
+            "type": "boolean"
+          },
+          "length": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "precision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "special": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "options": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "displayOptions": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "validation": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "conditions": {
+            "type": "array",
+            "items": {}
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "readonly": {
+            "type": "boolean"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "encrypted": {
+            "type": "boolean"
+          },
+          "classification": {
+            "description": "Data sensitivity; pii/phi require encrypted=true.",
+            "type": "string",
+            "enum": [
+              "none",
+              "internal",
+              "pii",
+              "phi"
+            ]
+          },
+          "versioned": {
+            "type": "boolean"
+          },
+          "rawEnabled": {
+            "type": "boolean"
+          },
+          "width": {
+            "type": "string",
+            "enum": [
+              "half",
+              "full",
+              "fill"
+            ]
+          },
+          "group": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sortOrder": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "renameFrom": {
+            "description": "Previous field name if this is a rename operation",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "migrationPlan": {
+            "description": "Counts as confirmation of a risky change, like confirmRiskyChange=true. The plan is not executed yet.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "confirmRiskyChange": {
+            "description": "Set true to confirm type-change or destructive migration",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "collection",
+          "field_name",
+          "type",
+          "interface"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_field",
+      "description": "Delete a field from a collection. Data stored in this field will be lost. Pass confirm=true to confirm the destructive operation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "field_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm destructive operation"
+          },
+          "force": {
+            "description": "Force deletion even if risky (foreign keys, etc.)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "collection",
+          "field_name",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_items",
+      "description": "List items from a collection with optional filtering, sorting, and pagination.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "limit": {
+            "default": 25,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "archived"
+            ]
+          },
+          "sort": {
+            "description": "Comma-separated field names; prefix with - for descending (e.g. \"-created_at\")",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Comma-separated field names to return (e.g. \"id,title,status\")",
+            "type": "string"
+          },
+          "search": {
+            "description": "Full-text search across searchable fields",
+            "type": "string"
+          }
+        },
+        "required": [
+          "collection"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_item",
+      "description": "Get a single item by ID from a collection.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fields": {
+            "description": "Comma-separated field names to return",
+            "type": "string"
+          }
+        },
+        "required": [
+          "collection",
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_item",
+      "description": "Create a new item in a collection.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "data": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "description": "Field values for the new item"
+          },
+          "status": {
+            "default": "draft",
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          }
+        },
+        "required": [
+          "collection",
+          "data"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_item",
+      "description": "Partially update an item (PATCH — only provided fields are changed).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "data": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "description": "Fields to update"
+          }
+        },
+        "required": [
+          "collection",
+          "id",
+          "data"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_item",
+      "description": "Soft-delete an item (sets deleted_at, recoverable). Pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm deletion"
+          }
+        },
+        "required": [
+          "collection",
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_relations",
+      "description": "List all relations configured in the schema.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_relation",
+      "description": "Create a relation between two collections (m2o, o2m, m2m, or m2a). Schema-changing operation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "manyCollection": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Collection that holds the foreign key (the \"many\" side)."
+          },
+          "manyField": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Field on manyCollection that stores the relation."
+          },
+          "oneCollection": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Related collection (the \"one\" side)."
+          },
+          "oneField": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "junctionCollection": {
+            "description": "Junction table for m2m relations.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "m2o",
+              "o2m",
+              "m2m",
+              "m2a"
+            ]
+          },
+          "aliasField": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "relatedDisplayTemplate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "junctionManyField": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "junctionOneField": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sortField": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "onDelete": {
+            "type": "string",
+            "enum": [
+              "restrict",
+              "cascade",
+              "set null",
+              "no action"
+            ]
+          },
+          "meta": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "manyCollection",
+          "manyField",
+          "oneCollection"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_relation",
+      "description": "Delete a relation by id. DESTRUCTIVE — warn the user first and pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_presets",
+      "description": "List presets for the current site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string"
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_preset",
+      "description": "Get a single preset by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_preset",
+      "description": "Create a new preset.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "bookmark": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "collection": {
+            "type": "string"
+          },
+          "userId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roleId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "layout": {
+            "type": "string"
+          },
+          "layoutQuery": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "layoutOptions": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "filter": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "refreshInterval": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "collection"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_preset",
+      "description": "Update an existing preset (partial PATCH).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "bookmark": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "collection": {
+            "type": "string"
+          },
+          "userId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roleId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "layout": {
+            "type": "string"
+          },
+          "layoutQuery": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "layoutOptions": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "filter": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "refreshInterval": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_preset",
+      "description": "Delete a preset. DESTRUCTIVE — warn the user first and pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_effective_preset",
+      "description": "Resolve the effective default view for a collection (user > role-chain > global precedence).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "collection"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_preset_bookmarks",
+      "description": "List the named preset bookmarks visible to the principal for a collection (with scope).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "collection"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_translations",
+      "description": "List translations for the current site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "namespace": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_translation",
+      "description": "Get a single translation by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_translation",
+      "description": "Create a new translation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "minLength": 1
+          },
+          "namespace": {
+            "type": "string",
+            "minLength": 1
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "language",
+          "namespace",
+          "key",
+          "value"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_translation",
+      "description": "Update an existing translation (partial PATCH).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "language": {
+            "type": "string",
+            "minLength": 1
+          },
+          "namespace": {
+            "type": "string",
+            "minLength": 1
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_translation",
+      "description": "Delete a translation. DESTRUCTIVE — warn the user first and pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_settings",
+      "description": "List site settings, optionally filtered by scope.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string"
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_setting",
+      "description": "Get a single setting by key.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "upsert_setting",
+      "description": "Create or update a setting (upsert by key).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "description": "Arbitrary JSON value object for the setting."
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_setting",
+      "description": "Delete a setting by key. DESTRUCTIVE — warn the user first and pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "key",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "search",
+      "description": "Full-text search within a collection. Returns ranked hits from the search backend. The `collection` parameter is required.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Query string."
+          },
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Collection to search."
+          },
+          "filter": {
+            "description": "Backend filter expression.",
+            "type": "string"
+          },
+          "sort": {
+            "description": "Comma-separated sort fields.",
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "q",
+          "collection"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_media",
+      "description": "List media asset keys, optionally filtered by key prefix.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string"
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_media",
+      "description": "Delete a media asset by key. DESTRUCTIVE — warn the user first and pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Full storage key of the asset."
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "key",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_transform_presets",
+      "description": "List named image-transform presets available for media delivery (key + DSL).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_tm",
+      "description": "List translation-memory entries, optionally filtered by source/target language.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "description": "Source language code.",
+            "type": "string"
+          },
+          "target": {
+            "description": "Target language code.",
+            "type": "string"
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "upsert_tm",
+      "description": "Add or update a translation-memory entry.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sourceLang": {
+            "type": "string",
+            "minLength": 2
+          },
+          "targetLang": {
+            "type": "string",
+            "minLength": 2
+          },
+          "sourceText": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targetText": {
+            "type": "string",
+            "minLength": 1
+          },
+          "context": {
+            "type": "string"
+          },
+          "quality": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "human",
+              "mt",
+              "imported"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceLang",
+          "targetLang",
+          "sourceText",
+          "targetText"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "lookup_tm",
+      "description": "Fuzzy-match a query string against translation memory for a language pair.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceLang": {
+            "type": "string",
+            "minLength": 2
+          },
+          "targetLang": {
+            "type": "string",
+            "minLength": 2
+          },
+          "threshold": {
+            "description": "Minimum match score (default 75).",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "query",
+          "sourceLang",
+          "targetLang"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "translate_text",
+      "description": "Run the full translation pipeline (TM + glossary + MT provider) for a text.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "from": {
+            "type": "string",
+            "minLength": 2
+          },
+          "to": {
+            "type": "string",
+            "minLength": 2
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "from",
+          "to"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_tm",
+      "description": "Edit an existing translation-memory entry (partial PATCH).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targetText": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quality": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "context": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "human",
+              "mt",
+              "imported"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_tm",
+      "description": "Delete a translation-memory entry. DESTRUCTIVE — warn the user first and pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_dashboards",
+      "description": "List insight dashboards for the current site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_dashboard",
+      "description": "Get a single dashboard by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_dashboard_panels",
+      "description": "List the panels of a dashboard (their definitions, not the computed data).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "run_panel",
+      "description": "Run a saved panel and return its computed result. Optionally override the panel’s filter or date range for this run only (does not modify the panel).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dashboardId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "panelId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "filter": {
+            "description": "Override the panel filter for this run (Directus-style condition rule).",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "dateRange": {
+            "description": "Override the panel date range for this run.",
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1
+              },
+              "gte": {
+                "type": "string"
+              },
+              "lte": {
+                "type": "string"
+              },
+              "preset": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ]
+          }
+        },
+        "required": [
+          "dashboardId",
+          "panelId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "query_insights",
+      "description": "Ad-hoc aggregate query over a collection — no saved panel required. Answers operational questions (counts, sums, averages, breakdowns) directly. Read-only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dashboardId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Any dashboard id you can access; the query runs ad-hoc and does not read that dashboard."
+          },
+          "collection": {
+            "type": "string",
+            "minLength": 1
+          },
+          "aggregate": {
+            "type": "string",
+            "enum": [
+              "count",
+              "sum",
+              "avg",
+              "min",
+              "max"
+            ],
+            "description": "Aggregate function. `field` is required for everything except `count`."
+          },
+          "field": {
+            "description": "Field to aggregate (required unless aggregate=count).",
+            "type": "string",
+            "minLength": 1
+          },
+          "groupBy": {
+            "description": "Field to group rows by (produces a series).",
+            "type": "string",
+            "minLength": 1
+          },
+          "filter": {
+            "description": "Directus-style condition rule, e.g. { status: { _eq: \"published\" } }.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "dateRange": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1
+              },
+              "gte": {
+                "type": "string"
+              },
+              "lte": {
+                "type": "string"
+              },
+              "preset": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "description": "Restrict the query to a date window on the given field."
+          },
+          "limit": {
+            "description": "Max grouped rows to return (default 50).",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "dashboardId",
+          "collection",
+          "aggregate"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_reviews",
+      "description": "List the editorial review queue, optionally filtered by status or assignee.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ]
+          },
+          "assignedTo": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "submit_review",
+      "description": "Submit an item for editorial review, optionally assigning a reviewer.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "assignedTo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "collection",
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "approve_content",
+      "description": "Approve an item in editorial review (a publish-gate decision). Optional reason is audited.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "collection",
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "reject_content",
+      "description": "Reject an item in editorial review. Optional reason is audited.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "collection",
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_releases",
+      "description": "List content releases for the site, optionally filtered by status.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_release",
+      "description": "Get a single content release by id (with its staged items).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_release",
+      "description": "Create a content release. Set publishAt for a scheduled release; omit for a manual one.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "atomicityMode": {
+            "type": "string",
+            "enum": [
+              "all_or_nothing",
+              "best_effort"
+            ]
+          },
+          "publishAt": {
+            "description": "ISO datetime to auto-publish, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "maintenanceWindow": {
+            "description": "Scheduled publish only inside these UTC windows: { windows: [{ dow: 0-6, start: \"HH:MM\", end: \"HH:MM\" }] }. null or omitted = any time.",
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_release",
+      "description": "Update a release and/or stage/unstage items (partial PATCH).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "atomicityMode": {
+            "type": "string",
+            "enum": [
+              "all_or_nothing",
+              "best_effort"
+            ]
+          },
+          "publishAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "maintenanceWindow": {
+            "description": "Scheduled publish only inside these UTC windows: { windows: [{ dow: 0-6, start: \"HH:MM\", end: \"HH:MM\" }] }. null or omitted = any time.",
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "addItems": {
+            "description": "Items to stage into the release.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "collection": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "itemId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "targetStatus": {
+                  "type": "string",
+                  "enum": [
+                    "draft",
+                    "published",
+                    "archived"
+                  ]
+                },
+                "revisionId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "collection",
+                "itemId"
+              ]
+            }
+          },
+          "removeItems": {
+            "description": "Items to unstage.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "collection": {
+                  "type": "string"
+                },
+                "itemId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "collection",
+                "itemId"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "publish_release",
+      "description": "Publish a release now (applies every staged item’s target status per the atomicity mode).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_release",
+      "description": "Delete a content release. DESTRUCTIVE — warn the user first and pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_share",
+      "description": "Create a scoped public share link for a single item, viewed through a given role.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1
+          },
+          "itemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "roleId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Role whose permissions the link is viewed through."
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1
+          },
+          "validFrom": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "validUntil": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxUses": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "collection",
+          "itemId",
+          "roleId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "revoke_share",
+      "description": "Revoke a share link by id. DESTRUCTIVE — warn the user first and pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_my_permissions",
+      "description": "Get the compiled permission bundle for the authenticated principal.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "check_permission",
+      "description": "Evaluate whether the current principal may perform an action on a collection (optionally against a specific item), returning { allowed, reason, fields }.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "read",
+              "update",
+              "delete",
+              "share"
+            ]
+          },
+          "item": {
+            "description": "Item payload to evaluate row-level rules against.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "collection",
+          "action"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_roles",
+      "description": "List roles for the current site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_role",
+      "description": "Get a single role by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_role",
+      "description": "Create a new role.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          },
+          "systemKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "icon": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "adminAccess": {
+            "type": "boolean"
+          },
+          "appAccess": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_role",
+      "description": "Update an existing role (partial PATCH).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          },
+          "systemKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "icon": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "adminAccess": {
+            "type": "boolean"
+          },
+          "appAccess": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_role",
+      "description": "Delete a role. DESTRUCTIVE — warn the user first and pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "attach_role_policy",
+      "description": "Attach a policy to a role. Conflicts/warnings may require overrideWarnings=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Role id."
+          },
+          "policyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "overrideWarnings": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "policyId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "detach_role_policy",
+      "description": "Detach a policy from a role. DESTRUCTIVE — pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Role id."
+          },
+          "policyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "policyId",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "assign_role_user",
+      "description": "Assign a role to a user (sets the user's primary role for this site).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Role id."
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "userId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "remove_role_user",
+      "description": "Remove a user's role assignment. DESTRUCTIVE — pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Role id."
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_policies",
+      "description": "List policys for the current site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_policy",
+      "description": "Get a single policy by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_policy",
+      "description": "Create a new policy.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "icon": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "adminAccess": {
+            "type": "boolean"
+          },
+          "appAccess": {
+            "type": "boolean"
+          },
+          "enforceTfa": {
+            "type": "boolean"
+          },
+          "ipAllow": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ipDeny": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "validFrom": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "validUntil": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rules": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_policy",
+      "description": "Update an existing policy (partial PATCH).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "icon": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "adminAccess": {
+            "type": "boolean"
+          },
+          "appAccess": {
+            "type": "boolean"
+          },
+          "enforceTfa": {
+            "type": "boolean"
+          },
+          "ipAllow": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ipDeny": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "validFrom": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "validUntil": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rules": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_policy",
+      "description": "Delete a policy. DESTRUCTIVE — warn the user first and pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "add_policy_permission",
+      "description": "Add a permission row (collection + action) to a policy.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Policy id."
+          },
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "read",
+              "update",
+              "delete",
+              "share"
+            ]
+          },
+          "permissions": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "validation": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "presets": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "collection",
+          "action"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_policy_permission",
+      "description": "Update a permission row on a policy (partial PATCH).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Policy id."
+          },
+          "permId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Permission row id."
+          },
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "read",
+              "update",
+              "delete",
+              "share"
+            ]
+          },
+          "permissions": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "validation": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "presets": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "permId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_policy_permission",
+      "description": "Delete a permission row from a policy. DESTRUCTIVE — pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Policy id."
+          },
+          "permId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Permission row id."
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "permId",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "attach_policy_user",
+      "description": "Attach a policy directly to a user. Warnings may require overrideWarnings=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Policy id."
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "overrideWarnings": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "userId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "detach_policy_user",
+      "description": "Detach a policy from a user. DESTRUCTIVE — pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Policy id."
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "export_access",
+      "description": "Export the full RBAC manifest (roles, policies, permissions, bindings).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "dry_run_access_import",
+      "description": "Validate an RBAC manifest import without applying it. Returns the planned changes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "manifest": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "description": "RBAC manifest from export_access."
+          }
+        },
+        "required": [
+          "manifest"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "apply_access_import",
+      "description": "Apply an RBAC manifest import. High-impact — changes roles/policies/permissions. Pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "manifest": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "description": "RBAC manifest from export_access."
+          },
+          "mode": {
+            "description": "Import mode (default merge).",
+            "type": "string",
+            "enum": [
+              "merge",
+              "replace-managed",
+              "replace-all"
+            ]
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "manifest",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "check_access_conflicts",
+      "description": "Check for permission conflicts before attaching/detaching policies on a target.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "role",
+                  "user",
+                  "api_key"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "description": "The role/user/api_key the policies would apply to."
+          },
+          "addPolicies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removePolicies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_api_keys",
+      "description": "List API keys for the site (token values are never returned).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_api_key",
+      "description": "Get a single API key by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_api_key",
+      "description": "Create a new API key. The plaintext token is returned ONCE in the response — surface it to the user and tell them it cannot be retrieved again.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "rotate_api_key",
+      "description": "Rotate an API key — issues a new token (returned once) and invalidates the old one. DESTRUCTIVE for existing integrations — pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "revoke_api_key",
+      "description": "Revoke an API key permanently. DESTRUCTIVE — pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "attach_api_key_role",
+      "description": "Attach a role to an API key (grants the role’s policies to the key).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "API key id."
+          },
+          "roleId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "overrideWarnings": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "roleId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "detach_api_key_role",
+      "description": "Detach a role from an API key. DESTRUCTIVE — pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "API key id."
+          },
+          "roleId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "roleId",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "attach_api_key_policy",
+      "description": "Attach a policy directly to an API key.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "API key id."
+          },
+          "policyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "overrideWarnings": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "policyId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "detach_api_key_policy",
+      "description": "Detach a policy from an API key. DESTRUCTIVE — pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "API key id."
+          },
+          "policyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "policyId",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_users",
+      "description": "List users belonging to the active site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_user",
+      "description": "Get a single user in the active site by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "invite_user",
+      "description": "Invite a user to the site by email, optionally assigning a role. Sends an invite email.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          },
+          "roleId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_user",
+      "description": "Update a user's site membership (role and/or status).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "roleId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "e.g. active, suspended.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "remove_user",
+      "description": "Remove a user from the site. DESTRUCTIVE — pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_teams",
+      "description": "List teams in the active site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_team",
+      "description": "Get a single team by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_team",
+      "description": "Create a team.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_team",
+      "description": "Update a team (partial PATCH).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_team",
+      "description": "Delete a team. DESTRUCTIVE — pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_team_members",
+      "description": "List members of a team.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Team id."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "add_team_member",
+      "description": "Add a user to a team.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Team id."
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "userId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "remove_team_member",
+      "description": "Remove a user from a team. DESTRUCTIVE — pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Team id."
+          },
+          "userId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_webhooks",
+      "description": "List webhooks for the current site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_webhook",
+      "description": "Create a new webhook.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "actions": {
+            "description": "Item events that trigger the webhook (e.g. create, update, delete).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "collections": {
+            "description": "Collections to filter on (empty = all).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "headers": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive"
+            ]
+          },
+          "secret": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_webhook",
+      "description": "Update an existing webhook (partial PATCH).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "actions": {
+            "description": "Item events that trigger the webhook (e.g. create, update, delete).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "collections": {
+            "description": "Collections to filter on (empty = all).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "headers": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive"
+            ]
+          },
+          "secret": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_webhook",
+      "description": "Delete a webhook. DESTRUCTIVE — warn the user first and pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_cdc_subscriptions",
+      "description": "List CDC change-feed subscriptions for the current site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_cdc_subscription",
+      "description": "Get a single CDC change-feed subscription by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_cdc_subscription",
+      "description": "Create a new CDC change-feed subscription.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "pull",
+              "webhook",
+              "extension"
+            ]
+          },
+          "collections": {
+            "description": "Collections to include; empty = all.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "operations": {
+            "description": "Operations to include; empty = all.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "create",
+                "update",
+                "delete"
+              ]
+            }
+          },
+          "payload_mode": {
+            "description": "reference = ids only (consumer re-fetches); snapshot = masked data inline.",
+            "type": "string",
+            "enum": [
+              "reference",
+              "snapshot"
+            ]
+          },
+          "webhook_id": {
+            "description": "Required for kind=webhook (must have a secret).",
+            "type": "string",
+            "minLength": 1
+          },
+          "extension_name": {
+            "description": "Required for kind=extension.",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name",
+          "kind"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_cdc_subscription",
+      "description": "Update an existing CDC change-feed subscription (partial PATCH).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "collections": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "create",
+                "update",
+                "delete"
+              ]
+            }
+          },
+          "payload_mode": {
+            "type": "string",
+            "enum": [
+              "reference",
+              "snapshot"
+            ]
+          },
+          "status": {
+            "description": "active | paused — pause or resume delivery.",
+            "type": "string",
+            "enum": [
+              "active",
+              "paused"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_cdc_subscription",
+      "description": "Delete a CDC change-feed subscription. DESTRUCTIVE — warn the user first and pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "cdc_events_read",
+      "description": "Read the change feed (keyset pagination). Pass the previous meta.nextCursor to continue; filter by collections/operations CSV.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "description": "Opaque cursor from meta.nextCursor.",
+            "type": "string"
+          },
+          "collections": {
+            "description": "CSV of collections to include.",
+            "type": "string"
+          },
+          "operations": {
+            "description": "CSV of create,update,delete.",
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "cdc_subscription_replay",
+      "description": "Rewind a subscription checkpoint inside the retention window (resets dead/stale back to active).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Subscription id."
+          },
+          "occurred_after": {
+            "description": "ISO timestamp to rewind to (within retention). Exactly one of occurred_after / cursor.",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "cursor": {
+            "description": "Exact cursor token to rewind to (from meta.nextCursor).",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "subscription_id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_intents",
+      "description": "List intents for the current site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_intent",
+      "description": "Get a single intent by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_intent",
+      "description": "Create a new intent.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "rules": {
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "description": "SLO rules (required_fields, freshness, translations, link_health, …)."
+          },
+          "schedule": {
+            "type": "string",
+            "pattern": "^(\\S+\\s+){4}\\S+$",
+            "description": "5-field cron expression for reconciliation cadence."
+          },
+          "budget": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "autonomyCap": {
+            "description": "Max autonomy level L0–L4 for this intent.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "maintenanceWindow": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "collection",
+          "rules",
+          "schedule"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_intent",
+      "description": "Update an existing intent (partial PATCH).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "rules": {
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "description": "SLO rules (required_fields, freshness, translations, link_health, …)."
+          },
+          "schedule": {
+            "type": "string",
+            "pattern": "^(\\S+\\s+){4}\\S+$",
+            "description": "5-field cron expression for reconciliation cadence."
+          },
+          "budget": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "autonomyCap": {
+            "description": "Max autonomy level L0–L4 for this intent.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "maintenanceWindow": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_intent",
+      "description": "Delete a intent. DESTRUCTIVE — warn the user first and pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "pause_intent",
+      "description": "Pause an intent (stops scheduled reconciliation).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "resume_intent",
+      "description": "Resume a paused intent.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_intent_drifts",
+      "description": "List detected drifts (intent violations) for an intent.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "scan_intent",
+      "description": "Trigger an on-demand drift scan for an intent.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "compile_intent",
+      "description": "Compile a natural-language description into structured intent rules (preview, does not persist).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "description",
+          "collection"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_flows",
+      "description": "List flows for the current site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_flow",
+      "description": "Get a single flow by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "create_flow",
+      "description": "Create a new flow.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "draft"
+            ]
+          },
+          "triggerType": {
+            "type": "string",
+            "enum": [
+              "webhook",
+              "event",
+              "schedule",
+              "manual"
+            ]
+          },
+          "triggerOptions": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "graph": {
+            "type": "object",
+            "properties": {
+              "entry": {
+                "type": "string"
+              },
+              "nodes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "options": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "onError": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "branches": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                      },
+                      "additionalProperties": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "key"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "name",
+          "triggerType",
+          "graph"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_flow",
+      "description": "Update an existing flow (partial PATCH).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "draft"
+            ]
+          },
+          "triggerType": {
+            "type": "string",
+            "enum": [
+              "webhook",
+              "event",
+              "schedule",
+              "manual"
+            ]
+          },
+          "triggerOptions": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "graph": {
+            "type": "object",
+            "properties": {
+              "entry": {
+                "type": "string"
+              },
+              "nodes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "options": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
+                    "next": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "onError": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "branches": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                      },
+                      "additionalProperties": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "key"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "delete_flow",
+      "description": "Delete a flow. DESTRUCTIVE — warn the user first and pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "run_flow",
+      "description": "Trigger a manual run of a flow with an optional input payload.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "input": {
+            "description": "Initial context passed to the flow.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_flow_runs",
+      "description": "List recent runs of a flow.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_flow_run",
+      "description": "Get a single flow run by id (status, per-step results, error) for diagnosis.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "runId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_activity",
+      "description": "List the site activity / audit trail (most recent first).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_site",
+      "description": "Get the current site’s configuration record (name, domain, settings).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_health",
+      "description": "Check the CMS health endpoint.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_metrics",
+      "description": "Fetch Prometheus metrics exposition text from the CMS.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "export_backup",
+      "description": "Export the full site configuration (collections, fields, RBAC, …) as an NDJSON bundle.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "restore_backup",
+      "description": "Restore a site configuration from an NDJSON bundle (as produced by export_backup). Existing rows are skipped (idempotent). DESTRUCTIVE / high-impact — pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ndjson": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Raw NDJSON backup content, one JSON object per line."
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "ndjson",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_materializations",
+      "description": "List materialized collections (physical tables).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "register_materialization",
+      "description": "Register a materialized collection and create its physical table.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Source collection name."
+          },
+          "target": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,62}$",
+            "description": "Physical table name (snake_case)."
+          },
+          "refreshStrategy": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "cron",
+              "manual"
+            ]
+          },
+          "refreshCron": {
+            "type": "string"
+          },
+          "projection": {
+            "type": "object",
+            "properties": {
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "orderBy": {
+                "type": "string"
+              }
+            }
+          },
+          "filter": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "collection",
+          "target"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "refresh_materialization",
+      "description": "Refresh a materialized collection (truncate + re-insert from source).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "query_materialization",
+      "description": "Query the physical table of a materialized collection directly.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "drop_materialization",
+      "description": "Drop a materialized collection (physical table + metadata). DESTRUCTIVE — pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_extensions",
+      "description": "List extensions installed on the active site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "install_extension",
+      "description": "Install (register) an extension on the active site from a bundle URL.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z0-9_:-]+$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "interface",
+              "display",
+              "layout",
+              "panel",
+              "module",
+              "hook",
+              "endpoint"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "bundleUrl": {
+            "type": "string",
+            "minLength": 1,
+            "description": "https:, http:, or data:text/javascript bundle URL."
+          },
+          "manifest": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "type",
+          "bundleUrl"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "update_extension",
+      "description": "Update an installed extension (enable/disable, version, config). Partial PATCH.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z0-9_:-]+$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "interface",
+              "display",
+              "layout",
+              "panel",
+              "module",
+              "hook",
+              "endpoint"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "bundleUrl": {
+            "type": "string",
+            "minLength": 1,
+            "description": "https:, http:, or data:text/javascript bundle URL."
+          },
+          "manifest": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "uninstall_extension",
+      "description": "Uninstall an extension from the site. DESTRUCTIVE — pass confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true to confirm the destructive operation"
+          }
+        },
+        "required": [
+          "id",
+          "confirm"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_marketplace_extensions",
+      "description": "Browse the published extension marketplace.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "tags": {
+            "description": "Comma-separated tags.",
+            "type": "string"
+          },
+          "sort": {
+            "type": "string"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "perPage": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_marketplace_extension",
+      "description": "Get a single marketplace extension by slug.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_marketplace_updates",
+      "description": "List available updates for installed marketplace extensions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "install_marketplace_extension",
+      "description": "Install a published marketplace extension onto the active site by slug.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "publish_extension",
+      "description": "Publish an extension to the marketplace (signs + marks it published).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "extensionId": {
+            "type": "string"
+          },
+          "marketplaceSlug": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$",
+            "description": "Lowercase slug: a-z, 0-9, hyphen."
+          },
+          "publisher": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Publisher identity the signature is made by."
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 1
+          },
+          "signatureAlg": {
+            "description": "Default ed25519.",
+            "type": "string",
+            "enum": [
+              "ed25519",
+              "rsa-pss-sha256"
+            ]
+          },
+          "publisherKeyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "bundleSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Lowercase hex SHA-256 of the bundle."
+          }
+        },
+        "required": [
+          "extensionId",
+          "marketplaceSlug",
+          "publisher",
+          "signature",
+          "publisherKeyId",
+          "bundleSha256"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_deployment_targets",
+      "description": "List configured deployment targets (Vercel/Netlify connections) for the site.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_deployments",
+      "description": "List recent deployments, optionally filtered by target or status.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "targetId": {
+            "type": "string"
+          },
+          "status": {
+            "description": "queued | building | ready | error | canceled.",
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_deployment",
+      "description": "Get a single deployment’s status and details by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "get_deployment_logs",
+      "description": "Fetch the build/deploy logs for a deployment (for diagnosing a failed build).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    }
+  ],
+  "organization": [
+    "list_collections",
+    "get_collection",
+    "create_collection",
+    "update_collection",
+    "delete_collection",
+    "diff_schema",
+    "apply_schema",
+    "list_fields",
+    "upsert_field",
+    "delete_field",
+    "list_items",
+    "get_item",
+    "create_item",
+    "update_item",
+    "delete_item",
+    "list_relations",
+    "create_relation",
+    "delete_relation",
+    "list_presets",
+    "get_preset",
+    "create_preset",
+    "update_preset",
+    "delete_preset",
+    "get_effective_preset",
+    "list_preset_bookmarks",
+    "list_translations",
+    "get_translation",
+    "create_translation",
+    "update_translation",
+    "delete_translation",
+    "list_settings",
+    "get_setting",
+    "upsert_setting",
+    "delete_setting",
+    "search",
+    "list_media",
+    "delete_media",
+    "list_transform_presets",
+    "list_tm",
+    "upsert_tm",
+    "lookup_tm",
+    "translate_text",
+    "update_tm",
+    "delete_tm",
+    "list_dashboards",
+    "get_dashboard",
+    "list_dashboard_panels",
+    "run_panel",
+    "query_insights",
+    "list_reviews",
+    "submit_review",
+    "approve_content",
+    "reject_content",
+    "list_releases",
+    "get_release",
+    "create_release",
+    "update_release",
+    "publish_release",
+    "delete_release",
+    "create_share",
+    "revoke_share",
+    "get_my_permissions",
+    "check_permission",
+    "list_roles",
+    "get_role",
+    "create_role",
+    "update_role",
+    "delete_role",
+    "attach_role_policy",
+    "detach_role_policy",
+    "assign_role_user",
+    "remove_role_user",
+    "list_policies",
+    "get_policy",
+    "create_policy",
+    "update_policy",
+    "delete_policy",
+    "add_policy_permission",
+    "update_policy_permission",
+    "delete_policy_permission",
+    "attach_policy_user",
+    "detach_policy_user",
+    "export_access",
+    "dry_run_access_import",
+    "apply_access_import",
+    "check_access_conflicts",
+    "list_api_keys",
+    "get_api_key",
+    "create_api_key",
+    "rotate_api_key",
+    "revoke_api_key",
+    "attach_api_key_role",
+    "detach_api_key_role",
+    "attach_api_key_policy",
+    "detach_api_key_policy",
+    "list_users",
+    "get_user",
+    "invite_user",
+    "update_user",
+    "remove_user",
+    "list_teams",
+    "get_team",
+    "create_team",
+    "update_team",
+    "delete_team",
+    "list_team_members",
+    "add_team_member",
+    "remove_team_member",
+    "list_webhooks",
+    "create_webhook",
+    "update_webhook",
+    "delete_webhook",
+    "list_cdc_subscriptions",
+    "get_cdc_subscription",
+    "create_cdc_subscription",
+    "update_cdc_subscription",
+    "delete_cdc_subscription",
+    "cdc_events_read",
+    "cdc_subscription_replay",
+    "list_intents",
+    "get_intent",
+    "create_intent",
+    "update_intent",
+    "delete_intent",
+    "pause_intent",
+    "resume_intent",
+    "list_intent_drifts",
+    "scan_intent",
+    "compile_intent",
+    "list_flows",
+    "get_flow",
+    "create_flow",
+    "update_flow",
+    "delete_flow",
+    "run_flow",
+    "list_flow_runs",
+    "get_flow_run",
+    "list_activity",
+    "get_site",
+    "get_health",
+    "get_metrics",
+    "export_backup",
+    "restore_backup",
+    "list_materializations",
+    "register_materialization",
+    "refresh_materialization",
+    "query_materialization",
+    "drop_materialization",
+    "list_extensions",
+    "install_extension",
+    "update_extension",
+    "uninstall_extension",
+    "list_marketplace_extensions",
+    "get_marketplace_extension",
+    "list_marketplace_updates",
+    "install_marketplace_extension",
+    "publish_extension",
+    "list_deployment_targets",
+    "list_deployments",
+    "get_deployment",
+    "get_deployment_logs",
+    "get_organization",
+    "list_sites",
+    "create_site",
+    "delete_site",
+    "transfer_site",
+    "list_org_members",
+    "invite_org_member",
+    "create_org_key"
+  ],
+  "readOnly": [
+    "list_collections",
+    "get_collection",
+    "diff_schema",
+    "list_fields",
+    "list_items",
+    "get_item",
+    "list_relations",
+    "list_presets",
+    "get_preset",
+    "get_effective_preset",
+    "list_preset_bookmarks",
+    "list_translations",
+    "get_translation",
+    "list_settings",
+    "get_setting",
+    "search",
+    "list_media",
+    "list_transform_presets",
+    "list_tm",
+    "lookup_tm",
+    "list_dashboards",
+    "get_dashboard",
+    "list_dashboard_panels",
+    "run_panel",
+    "query_insights",
+    "list_reviews",
+    "list_releases",
+    "get_release",
+    "get_my_permissions",
+    "check_permission",
+    "list_roles",
+    "get_role",
+    "list_policies",
+    "get_policy",
+    "export_access",
+    "dry_run_access_import",
+    "check_access_conflicts",
+    "list_api_keys",
+    "get_api_key",
+    "list_users",
+    "get_user",
+    "list_teams",
+    "get_team",
+    "list_team_members",
+    "list_webhooks",
+    "list_cdc_subscriptions",
+    "get_cdc_subscription",
+    "cdc_events_read",
+    "list_intents",
+    "get_intent",
+    "list_intent_drifts",
+    "compile_intent",
+    "list_flows",
+    "get_flow",
+    "list_flow_runs",
+    "get_flow_run",
+    "list_activity",
+    "get_site",
+    "get_health",
+    "get_metrics",
+    "export_backup",
+    "list_materializations",
+    "query_materialization",
+    "list_extensions",
+    "list_marketplace_extensions",
+    "get_marketplace_extension",
+    "list_marketplace_updates",
+    "list_deployment_targets",
+    "list_deployments",
+    "get_deployment",
+    "get_deployment_logs"
+  ]
+}

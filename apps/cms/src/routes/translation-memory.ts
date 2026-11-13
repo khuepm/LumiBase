@@ -80,7 +80,7 @@ tmRouter.get('/', async (c) => {
 
 // ── POST /tm  (upsert entry) ───────────────────────────────────────────────
 
-const upsertSchema = z.object({
+export const upsertSchema = z.object({
   sourceLang: z.string().min(2),
   targetLang: z.string().min(2),
   sourceText: z.string().min(1),
@@ -113,7 +113,7 @@ tmRouter.post('/', async (c) => {
 
 // ── PATCH /tm/:id  (edit entry) ─────────────────────────────────────────────
 
-const patchSchema = z.object({
+export const patchSchema = z.object({
   targetText: z.string().min(1).optional(),
   quality: z.number().min(0).max(100).optional(),
   context: z.string().nullable().optional(),
@@ -209,7 +209,7 @@ tmRouter.post('/lookup', async (c) => {
 
 // ── POST /tm/translate  (full pipeline) ────────────────────────────────────
 
-const translateSchema = z.object({
+export const translateSchema = z.object({
   text: z.string().min(1),
   from: z.string().min(2),
   to: z.string().min(2),

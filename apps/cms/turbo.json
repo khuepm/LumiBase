@@ -1,0 +1,20 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      // These CMS tests snapshot or read files that live in
+      // packages/mcp-server, which @lumibase/cms does not depend on, so they are
+      // outside this package's default hash. Without them a golden-only change
+      // replayed a cached pass (#716 review). Keep $TURBO_DEFAULT$ first.
+      //   - fidelity/golden/*: mcp-tool-schema-golden + mcp-rest-body-golden
+      //     + mcp-recorded-requests (replays the stdio tools' recorded requests)
+      //   - canonical-agent-tool-schemas.json: g2-agent-tool-schemas
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/mcp-server/src/__tests__/fidelity/golden/**",
+        "$TURBO_ROOT$/packages/mcp-server/src/__tests__/canonical-agent-tool-schemas.json"
+      ]
+    }
+  }
+}

@@ -19,6 +19,16 @@ const releaseItemSchema = z.object({
   revisionId: z.string().nullable().optional(),
 });
 
+/** Accepted by `POST`/`PATCH /releases` and stored as-is; read by the scheduled-publish sweep. */
+const maintenanceWindowSchema = z
+  .record(z.string(), z.unknown())
+  .nullable()
+  .optional()
+  .describe(
+    'Scheduled publish only inside these UTC windows: { windows: [{ dow: 0-6, start: "HH:MM", end: "HH:MM" }] }. ' +
+      'null or omitted = any time.',
+  );
+
 export function registerReleaseTools(server: McpServer, client: LumiBaseClient) {
   server.registerTool(
     'list_releases',
@@ -56,6 +66,7 @@ export function registerReleaseTools(server: McpServer, client: LumiBaseClient) 
         description: z.string().nullable().optional(),
         atomicityMode: z.enum(['all_or_nothing', 'best_effort']).optional(),
         publishAt: z.string().nullable().optional().describe('ISO datetime to auto-publish, or null.'),
+        maintenanceWindow: maintenanceWindowSchema,
       },
     },
     async (input) => run(() => client.post<unknown>('/releases', input)),
@@ -71,6 +82,7 @@ export function registerReleaseTools(server: McpServer, client: LumiBaseClient) 
         description: z.string().nullable().optional(),
         atomicityMode: z.enum(['all_or_nothing', 'best_effort']).optional(),
         publishAt: z.string().nullable().optional(),
+        maintenanceWindow: maintenanceWindowSchema,
         addItems: z.array(releaseItemSchema).optional().describe('Items to stage into the release.'),
         removeItems: z
           .array(z.object({ collection: z.string(), itemId: z.string() }))
