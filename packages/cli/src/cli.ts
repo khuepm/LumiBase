@@ -1,6 +1,7 @@
 import pc from "picocolors";
 import { doctorCommand } from "./commands/doctor.js";
 import { initCommand } from "./commands/init.js";
+import { migrateCommand } from "./commands/migrate.js";
 import { DEFAULT_SKILLS_DIR, skillsCommand } from "./commands/skills.js";
 import { typesCommand, DEFAULT_OUT } from "./commands/types.js";
 import { CliError } from "./errors.js";
@@ -21,6 +22,7 @@ ${pc.bold("Commands")}
   types           Generate TypeScript types from a live schema
   skills          Sync Site Skills (AI agent playbooks) with a site
   doctor          Check configuration and connectivity
+  migrate <source>  Migrate content from another CMS ${pc.dim("(contentful)")}
 
 ${pc.bold("Connection")}
   Resolved with precedence flag > environment > ${pc.cyan("lumibase.config.json")}.
@@ -56,6 +58,16 @@ ${pc.bold("lumibase skills")} ${pc.dim("— Markdown playbooks (skills/*.skill.m
                   ${pc.dim('(package dir: package.json "lumibase.skills", else skills/)')}
     --activate    Activate on install ${pc.dim("(default: drafts, to review in Studio)")}
     --dry-run     Show what would change without writing
+
+${pc.bold("lumibase migrate contentful")}
+  --file <path>   Output of ${pc.cyan("contentful space export --include-drafts")}
+  --apply         Write the schema and content ${pc.dim("(default: dry run)")}
+  --yes           Skip the confirmation prompt ${pc.dim("(required without a TTY)")}
+  --prefix <p>    Prefix for new collection names, e.g. cf_
+  --locale-map <a=b,…>  Map source locales, e.g. en-US=en
+  --skip-assets   Do not download/upload assets
+  --state <path>  Resume file ${pc.dim("(default: .lumibase/migrate-contentful-<space>-<site>-<hash>.json)")}
+  --json          Print the plan as JSON
 
 ${pc.bold("Examples")}
   ${pc.dim("$")} lumibase init my-site
@@ -94,6 +106,8 @@ export async function run(argv: string[]): Promise<number> {
       return skillsCommand(args);
     case "doctor":
       return doctorCommand(args);
+    case "migrate":
+      return migrateCommand(args);
     case "help":
       log.plain(HELP);
       return 0;

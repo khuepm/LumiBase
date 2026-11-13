@@ -1,11 +1,11 @@
 ---
 title: LumiBase CLI
-version: 9
-lastUpdated: 2026-11-12T18:43:33.929Z
+version: 10
+lastUpdated: 2026-11-13T06:20:02.940Z
 sourceLang: en
-contentHash: 111bf5c2e41878da
-codeVerified: 2026-11-12T18:43:33.929Z
-codeVerifiedHash: 111bf5c2e41878da
+contentHash: 32b28106fb02ad1f
+codeVerified: 2026-11-13T06:20:02.940Z
+codeVerifiedHash: 32b28106fb02ad1f
 codeVerifiedClaims: 20
 ---
 
@@ -41,6 +41,7 @@ Node.js 22+ is required for the CLI; the launcher in `packages/cli/bin/lumibase.
 | `lumibase types` | Generate TypeScript types from a running CMS |
 | `lumibase doctor` | Report resolved configuration and probe connectivity |
 | `lumibase skills <list\|pull\|push\|install>` | Sync Site Skills (agent playbooks) with a site |
+| `lumibase migrate <source>` | Migrate content from another CMS (Contentful); dry run unless `--apply` |
 
 `lumibase help` and `lumibase version` are also accepted, as are `--help` / `-h` and `--version` / `-v`.
 
@@ -155,9 +156,27 @@ lumibase skills install @acme/lumibase-skills
 - **One direction.** `push` never deletes: a skill that exists on the site but not in the directory is left alone, and `--check` does not report it.
 - **Token.** The endpoints are under `/api/v1/agent`, and every skill read and write needs a control-plane admin, so the token needs admin access to the site. Non-admin skill authors are not supported.
 
+## `lumibase migrate contentful`
+
+Moves a Contentful space into the connected site: content types become
+collections, entries become items with their Contentful ids, assets are uploaded
+as files, and rich text becomes LumiBase's portable rich-text JSON.
+
+```bash
+lumibase migrate contentful --file space.json                 # dry run: prints the plan
+lumibase migrate contentful --file space.json --apply         # asks, then writes
+lumibase migrate contentful --file space.json --apply --yes   # CI
+```
+
+Without `--apply` nothing is written. `--apply` asks for confirmation before it
+changes the schema; a non-interactive shell needs `--yes`. Re-running is safe:
+existing items are updated, uploaded assets are skipped. Flags, the field mapping
+and limits: [Content migration](../features/content-migration.md).
+
 ## Related
 
 - [SDK — typegen](../sdk/typegen.md) — the programmatic API behind `lumibase types`
 - [Getting started](../getting-started.md#which-one-do-you-actually-want) — starter vs platform vs consumer client, and where `lumibase` fits
 - [Local development](../deployment/local-development.md) — running the CMS and Studio this CLI points at
 - [npm publishing](../release/npm-publishing.md) — how the package is released
+- [Content migration](../features/content-migration.md) — `lumibase migrate` in full

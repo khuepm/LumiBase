@@ -12,7 +12,9 @@ export default defineConfig([
     // The typegen core is pure (manifest -> TS source) and tiny. Bundling it keeps
     // the CLI self-contained for `npx lumibase`, and avoids a runtime import of
     // @lumibase/sdk — which resolves to raw .ts inside the monorepo.
-    noExternal: ["@lumibase/sdk"],
+    // The migration core (`@lumibase/contracts/migrate`) is bundled for the
+    // same reason.
+    noExternal: ["@lumibase/sdk", "@lumibase/contracts"],
   },
   {
     // Library entry — `import ... from 'lumibase'`. Here the SDK must stay a

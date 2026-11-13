@@ -1,14 +1,14 @@
 ---
 title: LumiBase CLI
-version: 9
-lastUpdated: 2026-11-12T18:43:33.929Z
+version: 10
+lastUpdated: 2026-11-13T06:20:02.940Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 111bf5c2e41878da
+sourceHash: 32b28106fb02ad1f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T18:43:33.929Z
-codeVerifiedHash: 111bf5c2e41878da
+codeVerified: 2026-11-13T06:20:02.940Z
+codeVerifiedHash: 32b28106fb02ad1f
 codeVerifiedClaims: 20
 ---
 
@@ -44,6 +44,7 @@ CLI yêu cầu Node.js 22+; launcher tại `packages/cli/bin/lumibase.js` từ c
 | `lumibase types` | Sinh type TypeScript từ một CMS đang chạy |
 | `lumibase doctor` | Báo cáo cấu hình đã resolve và thăm dò kết nối |
 | `lumibase skills <list\|pull\|push\|install>` | Đồng bộ Site Skills (playbook cho agent) với một site |
+| `lumibase migrate <source>` | Migrate nội dung từ CMS khác (Contentful); chỉ dry run nếu không có `--apply` |
 
 `lumibase help` và `lumibase version` cũng được chấp nhận, cùng với `--help` / `-h` và `--version` / `-v`.
 
@@ -158,9 +159,27 @@ lumibase skills install @acme/lumibase-skills
 - **Một chiều.** `push` không bao giờ xoá: skill có trên site nhưng không có trong thư mục được để yên, và `--check` không báo nó.
 - **Token.** Các endpoint nằm dưới `/api/v1/agent`, và mọi thao tác đọc và ghi skill đều cần control-plane admin, nên token cần quyền admin trên site. Chưa hỗ trợ tác giả skill không phải admin.
 
+## `lumibase migrate contentful`
+
+Chuyển một space Contentful vào site đang kết nối: content type thành collection,
+entry thành item giữ nguyên id Contentful, asset được upload thành file, và rich
+text thành JSON rich-text portable của LumiBase.
+
+```bash
+lumibase migrate contentful --file space.json                 # dry run: prints the plan
+lumibase migrate contentful --file space.json --apply         # asks, then writes
+lumibase migrate contentful --file space.json --apply --yes   # CI
+```
+
+Không có `--apply` thì không ghi gì. `--apply` hỏi xác nhận trước khi đổi schema;
+shell không tương tác cần `--yes`. Chạy lại là an toàn: item đã có được cập nhật,
+asset đã upload được bỏ qua. Các flag, bảng ánh xạ field và giới hạn:
+[Content migration](../features/content-migration.md).
+
 ## Liên quan
 
 - [SDK — typegen](../sdk/typegen.md) — API lập trình nằm sau `lumibase types`
 - [Bắt đầu](../getting-started.md#bạn-thật-sự-cần-cái-nào) — starter vs platform vs consumer client, và `lumibase` nằm ở đâu
 - [Phát triển cục bộ](../deployment/local-development.md) — chạy CMS và Studio mà CLI này trỏ vào
 - [npm publishing](../release/npm-publishing.md) — cách package được phát hành
+- [Content migration](../features/content-migration.md) — `lumibase migrate` đầy đủ
