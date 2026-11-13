@@ -1,0 +1,125 @@
+[
+  {
+    "label": "apply_schema creates an encrypted PII field and the length/precision/scale/validation/display keys",
+    "tool": "apply_schema",
+    "method": "PUT",
+    "path": "/collections/mcp716_customers/schema",
+    "body": {
+      "note": "Created through the stdio MCP tool",
+      "fields": [
+        {
+          "type": "string",
+          "interface": "input",
+          "label": "Email",
+          "length": 320,
+          "displayOptions": {
+            "mask": true
+          },
+          "validation": {
+            "_and": [
+              {
+                "email": {
+                  "_regex": "^.+@.+$"
+                }
+              }
+            ]
+          },
+          "required": true,
+          "encrypted": true,
+          "classification": "pii",
+          "rawEnabled": false,
+          "width": "half",
+          "name": "email"
+        },
+        {
+          "type": "decimal",
+          "interface": "input",
+          "precision": 12,
+          "scale": 2,
+          "name": "total"
+        }
+      ]
+    }
+  },
+  {
+    "label": "diff_schema previews a classification change and new precision/scale",
+    "tool": "diff_schema",
+    "method": "POST",
+    "path": "/collections/diff",
+    "body": {
+      "name": "mcp716_customers",
+      "fields": [
+        {
+          "type": "string",
+          "interface": "input",
+          "length": 320,
+          "encrypted": true,
+          "classification": "phi",
+          "name": "email"
+        },
+        {
+          "type": "decimal",
+          "interface": "input",
+          "precision": 14,
+          "scale": 4,
+          "name": "total"
+        }
+      ]
+    }
+  },
+  {
+    "label": "apply_schema passes the risky-change guard with migrationPlan alone (populated field, type change)",
+    "tool": "apply_schema",
+    "method": "PUT",
+    "path": "/collections/mcp716_customers/schema",
+    "body": {
+      "fields": [
+        {
+          "type": "string",
+          "interface": "input",
+          "length": 320,
+          "encrypted": true,
+          "classification": "pii",
+          "name": "email"
+        },
+        {
+          "type": "integer",
+          "interface": "input",
+          "migrationPlan": {
+            "strategy": "cast"
+          },
+          "name": "total"
+        }
+      ]
+    }
+  },
+  {
+    "label": "create_cdc_subscription creates a pull subscription",
+    "tool": "create_cdc_subscription",
+    "method": "POST",
+    "path": "/cdc/subscriptions",
+    "body": {
+      "name": "mcp716_pull",
+      "kind": "pull"
+    }
+  },
+  {
+    "label": "update_cdc_subscription pauses it (immutable kind/webhook_id are not forwarded)",
+    "tool": "update_cdc_subscription",
+    "method": "PATCH",
+    "path": "/cdc/subscriptions/{subscriptionId}",
+    "body": {
+      "status": "paused"
+    }
+  },
+  {
+    "label": "update_cdc_subscription resumes and renames it",
+    "tool": "update_cdc_subscription",
+    "method": "PATCH",
+    "path": "/cdc/subscriptions/{subscriptionId}",
+    "body": {
+      "name": "mcp716_pull_renamed",
+      "status": "active"
+    }
+  }
+]
