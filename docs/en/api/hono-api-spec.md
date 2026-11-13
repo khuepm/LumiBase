@@ -1,11 +1,11 @@
 ---
-version: 39
-lastUpdated: 2026-11-12T19:28:54.605Z
+version: 41
+lastUpdated: 2026-11-13T06:15:32.421Z
 sourceLang: en
-contentHash: 7bdda06cde1e95af
-codeVerified: 2026-11-12T19:28:54.605Z
-codeVerifiedHash: 7bdda06cde1e95af
-codeVerifiedClaims: 496
+contentHash: 4cb309a67e272a09
+codeVerified: 2026-11-13T06:15:32.421Z
+codeVerifiedHash: 4cb309a67e272a09
+codeVerifiedClaims: 500
 ---
 
 # Hono API Specification — LumiBase
@@ -124,6 +124,35 @@ restricted to `[A-Za-z0-9_]` and bound as parameters (injection-safe); depth is
 capped at 8. The `_json_contains` / `_has_*` operators run against the JSONB and
 use the existing GIN index. Top-level keys and structural fields behave exactly
 as before.
+
+**Typed comparisons (Cast_Rule).** Item values are stored as JSONB, so a naive
+comparison is textual (`'10' > '9'` is false). `_eq`, `_neq`, `_in`, `_nin`,
+`_gt`, `_gte`, `_lt` and `_lte` therefore cast both sides by type:
+
+| Field / value | Comparison |
+|---------------|------------|
+| Top-level field of type `integer`, `bigInteger`, `decimal`, `float` | `numeric` |
+| Top-level field of type `boolean` | `boolean` |
+| Top-level field of type `date`, `datetime`, `timestamp` | `timestamptz` |
+| Nested path, `json` field or unknown key with a JSON number / boolean value | `numeric` / `boolean`, inferred from the value |
+| Anything else (`string`, `text`, `uuid`, string values on nested paths) | text, as before |
+
+The stored side uses a guarded cast: a row whose value does not look like the
+type (for example `"n/a"` in a `decimal` field) compares as `NULL` and drops
+out, instead of failing the query. A filter value that cannot be cast (for
+example `{"price":{"_gt":"cheap"}}`) is rejected with `400 INVALID_FILTER`.
+String operators (`_contains`, `_starts_with`, `_ends_with`) always compare text.
+Sorting on a top-level numeric, boolean or date field uses the same cast, so
+`sort=-price` orders numerically. Structural fields (`id`, `status`, `sort`,
+`created_at`, …) keep their native column types.
+
+```
+GET /api/v1/items/products?filter={"price":{"_gt":10}}&sort=-price
+GET /api/v1/items/products?filter={"metadata.rating":{"_gte":4.5}}
+```
+
+To make a typed filter on a hot path use an index, ask the
+[index advisor](#json-path-index-advisor) for matching DDL.
 
 ### Filter forms
 
@@ -395,6 +424,7 @@ Organization errors additionally include `400 VALIDATION`, `400 SCOPE_NOT_ALLOWE
 | `GET` | `/api/v1/collections/:name/schema` | Export collection schema as JSON |
 | `PUT` | `/api/v1/collections/:name/schema` | Apply schema (idempotent, diff-aware) |
 | `POST` | `/api/v1/collections/diff` | Compare bundle schema vs current |
+| `GET` | `/api/v1/collections/:name/index-advice?path=&cast=` | JSON path index advisor (read-only, `schema:read`) |
 
 **Create collection request:**
 ```json
@@ -408,6 +438,34 @@ Organization errors additionally include `400 VALIDATION`, `400 SCOPE_NOT_ALLOWE
   "sort_field": "sort"
 }
 ```
+
+#### JSON path index advisor
+
+`GET /api/v1/collections/:name/index-advice?path=<dot.path>[&cast=numeric|boolean|timestamp|text]`
+returns `CREATE INDEX` DDL whose expression matches exactly what the filter
+builder emits for that path and cast, so Postgres can use it for typed
+`_eq`/`_in`/range filters. The index is partial on the collection
+(`WHERE collection_id = … AND deleted_at IS NULL`). `cast` defaults to the
+declared type of a top-level field; it is required for nested or `json` paths.
+The endpoint never runs the DDL: an operator reviews it and runs it outside a
+transaction (`CONCURRENTLY`). `timestamp` returns `ddl: null`, because
+`timestamptz` casts are not `IMMUTABLE` and Postgres refuses to index them.
+
+```json
+{
+  "data": {
+    "path": "price",
+    "cast": "numeric",
+    "indexName": "items_products_price_numeric_idx",
+    "expression": "(case when (data ->> 'price') ~ '…' then (data ->> 'price')::numeric end)",
+    "ddl": "CREATE INDEX CONCURRENTLY IF NOT EXISTS items_products_price_numeric_idx ON lumibase_items ((…)) WHERE collection_id = '…' AND deleted_at IS NULL;",
+    "notes": ["Run outside a transaction (CONCURRENTLY).", "…"]
+  }
+}
+```
+
+Errors: `400 VALIDATION` (missing/invalid `path`, unknown `cast`, or no `cast`
+for a nested path), `404 NOT_FOUND` (collection or top-level field).
 
 ### Fields
 
@@ -1060,10 +1118,11 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `GET` | `/api/v1/agent/questions/:id` | One question; `404` for an unknown or other-tenant id |
 | `POST` | `/api/v1/agent/questions/:id/answer` | Answer a question and resume its `waiting_user` run. Body `{ answer }` (1–2000 chars, trimmed; one of `options` when `allowFreeText` is false). Only a signed-in user answers: any API key, site- or organization-scoped and whatever its capabilities, gets `403`. Allowed for a holder of `approvals:decide` (or control-plane admin) and for the run's requesting **user**; today only site administrators reach the route (control-plane guard), so the requester rule takes effect once backlog B207 moves it out of the control plane. The claim and the resume are one transaction. `200` with the answered question (run `succeeded`); `400` `VALIDATION` / `ANSWER_INVALID` / `ANSWER_NOT_AN_OPTION`; `403`; `404`; `409` `ALREADY_ANSWERED`, `EXPIRED`, `QUESTION_CLOSED`, `RUN_NOT_WAITING`, `REQUESTER_REVOKED` (the requester lost access; the run is failed); `423` `FROZEN` (the run is cancelled) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Versions, draft, `/compile` (NL→evaluators), `:id/dry-run`, `:id/activate` |
+| `*` | `/api/v1/agent/skills[...]` | Site Skills — playbooks injected into matching agent runs: CRUD by id or slug, `:id/activate\|archive\|draft`, `:id/versions`, `:id/versions/:version/restore`, `/import`, `/export`, `/match`. Every write needs a control-plane admin (`403 FORBIDDEN` otherwise; there is no delegated author and `riskClass` is a label only). `PATCH` takes `expectedVersion` and status actions take `version` (`409 VERSION_MISMATCH`); `DELETE` refuses a skill that was ever active (`409 SKILL_HAS_BEEN_ACTIVE`); `/import` refuses content changes to active skills unless `updateActive: true` (`ACTIVE_SKILL_CHANGE`). See [features/site-skills.md](../features/site-skills.md) |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Four-scope stop (`run/intent/role/site`); freezes need `agents:freeze`. Freezing a role or the site, pausing an intent and cancelling a run also cancel runs waiting on an `askUser` question in that scope (`stopReason: frozen`) and close their questions |
 | `*` | `/api/v1/agent/intents[...]` | Content intents CRUD, `:id/pause|resume|scan|drifts`, `/compile` |
 | `POST` | `/api/v1/intents/:id/scan` | One reconciliation cycle: `{ scan, reconcile, dispatch }`. `dispatch` advances each reconciler goal one step (draft → promote → verify) and reports `dispatched/completed/skipped/blocked` plus `queueUnavailable` on runtimes without a queue adapter. See [reconciler repair loop](../features/reconciler-repair-loop.md). When the intent has `semantic` rules, `scan.semantic` reports the separately budgeted semantic pass (`status` `ran`/`off`/`unavailable`, counts, `completed`, `cursor`), and `scan.semanticOrphansResolved` counts rows of removed semantic rules it resolved. Updating an intent so a stored semantic rule changes profile, question, context or fields without a `version` bump returns `422 SEMANTIC_RULE_VERSION_REQUIRED`; see [semantic drift](../features/jev-semantic-drift.md) |
-| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag. A `tools/call` of `askUser` returns a normal tool result with `status: "waiting_user"`, `questionId` and `runId` |
+| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — gated by `contentOs.mcp` flag. Besides `tools/*`, `prompts/list` and `prompts/get` expose the site's active skills to control-plane admins (empty for any other caller). A `tools/call` of `askUser` returns a normal tool result with `status: "waiting_user"`, `questionId` and `runId` |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Law Zero pins: list / release |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Public llms.txt index per site |
 

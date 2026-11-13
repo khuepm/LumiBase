@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 38
-lastUpdated: 2026-11-12T19:28:54.605Z
+version: 40
+lastUpdated: 2026-11-13T06:15:32.421Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7bdda06cde1e95af
+sourceHash: 4cb309a67e272a09
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T19:28:54.605Z
-codeVerifiedHash: 7bdda06cde1e95af
-codeVerifiedClaims: 496
+codeVerified: 2026-11-13T06:15:32.421Z
+codeVerifiedHash: 4cb309a67e272a09
+codeVerifiedClaims: 500
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -118,6 +118,25 @@ Phản hồi lỗi:
 | `_has_any_keys`, `_has_all_keys` | Trường JSON object chứa bất kỳ / tất cả các key này (mảng chuỗi) |
 
 **Tìm kiếm bên trong JSON.** Một key trường lọc có thể là **đường dẫn dấu chấm** vào trường JSON/JSONB lồng nhau — ví dụ `filter={"metadata.author.country":{"_eq":"VN"}}` biên dịch thành tra cứu `data #>> '{metadata,author,country}'`. Các phân đoạn đường dẫn bị giới hạn trong `[A-Za-z0-9_]` và được bind dưới dạng tham số (an toàn trước SQL injection); độ sâu tối đa là 8. Các toán tử `_json_contains` / `_has_*` chạy trên JSONB và sử dụng index GIN hiện có. Các key cấp cao nhất và các trường cấu trúc hoạt động chính xác như trước.
+
+**So sánh theo kiểu (Cast_Rule).** Giá trị item được lưu dạng JSONB, nên phép so sánh thô là so sánh chuỗi (`'10' > '9'` là false). Vì vậy `_eq`, `_neq`, `_in`, `_nin`, `_gt`, `_gte`, `_lt` và `_lte` ép kiểu cả hai vế theo kiểu dữ liệu:
+
+| Trường / giá trị | Phép so sánh |
+|------------------|--------------|
+| Trường cấp cao nhất kiểu `integer`, `bigInteger`, `decimal`, `float` | `numeric` |
+| Trường cấp cao nhất kiểu `boolean` | `boolean` |
+| Trường cấp cao nhất kiểu `date`, `datetime`, `timestamp` | `timestamptz` |
+| Đường dẫn lồng nhau, trường `json` hoặc key không có trong schema, với giá trị JSON là số / boolean | `numeric` / `boolean`, suy ra từ giá trị |
+| Mọi trường hợp khác (`string`, `text`, `uuid`, giá trị chuỗi trên đường dẫn lồng nhau) | chuỗi, như trước |
+
+Vế dữ liệu được ép kiểu có kiểm tra trước: một dòng có giá trị không giống kiểu đích (ví dụ `"n/a"` trong trường `decimal`) được so sánh như `NULL` và bị loại, thay vì làm hỏng cả truy vấn. Giá trị lọc không ép kiểu được (ví dụ `{"price":{"_gt":"cheap"}}`) bị từ chối với `400 INVALID_FILTER`. Các toán tử chuỗi (`_contains`, `_starts_with`, `_ends_with`) luôn so sánh chuỗi. Sắp xếp theo trường số, boolean hoặc ngày ở cấp cao nhất dùng cùng phép ép kiểu, nên `sort=-price` sắp theo thứ tự số. Các trường cấu trúc (`id`, `status`, `sort`, `created_at`, …) giữ kiểu cột gốc.
+
+```
+GET /api/v1/items/products?filter={"price":{"_gt":10}}&sort=-price
+GET /api/v1/items/products?filter={"metadata.rating":{"_gte":4.5}}
+```
+
+Để một bộ lọc có kiểu trên đường dẫn được truy vấn nhiều dùng được index, hãy hỏi [index advisor](#json-path-index-advisor) để lấy DDL khớp.
 
 ### Định dạng bộ lọc (Filter forms)
 
@@ -352,6 +371,7 @@ Mã lỗi organization bổ sung gồm `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`
 | `GET` | `/api/v1/collections/:name/schema` | Xuất schema collection dạng JSON |
 | `PUT` | `/api/v1/collections/:name/schema` | Áp dụng schema (idempotent, nhận biết diff) |
 | `POST` | `/api/v1/collections/diff` | So sánh schema bundle với hiện tại |
+| `GET` | `/api/v1/collections/:name/index-advice?path=&cast=` | Gợi ý index cho đường dẫn JSON (chỉ đọc, `schema:read`) |
 
 **Request tạo collection:**
 ```json
@@ -365,6 +385,25 @@ Mã lỗi organization bổ sung gồm `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`
   "sort_field": "sort"
 }
 ```
+
+#### JSON path index advisor
+
+`GET /api/v1/collections/:name/index-advice?path=<dot.path>[&cast=numeric|boolean|timestamp|text]` trả về DDL `CREATE INDEX` có biểu thức khớp chính xác với biểu thức mà bộ dựng filter sinh ra cho đường dẫn và kiểu ép đó, để Postgres dùng được index cho các filter `_eq`/`_in`/khoảng có kiểu. Index là partial theo collection (`WHERE collection_id = … AND deleted_at IS NULL`). `cast` mặc định lấy theo kiểu khai báo của trường cấp cao nhất; bắt buộc với đường dẫn lồng nhau hoặc trường `json`. Endpoint không bao giờ tự chạy DDL: người vận hành xem lại rồi chạy ngoài transaction (`CONCURRENTLY`). `timestamp` trả về `ddl: null`, vì phép ép `timestamptz` không `IMMUTABLE` nên Postgres từ chối tạo index.
+
+```json
+{
+  "data": {
+    "path": "price",
+    "cast": "numeric",
+    "indexName": "items_products_price_numeric_idx",
+    "expression": "(case when (data ->> 'price') ~ '…' then (data ->> 'price')::numeric end)",
+    "ddl": "CREATE INDEX CONCURRENTLY IF NOT EXISTS items_products_price_numeric_idx ON lumibase_items ((…)) WHERE collection_id = '…' AND deleted_at IS NULL;",
+    "notes": ["Run outside a transaction (CONCURRENTLY).", "…"]
+  }
+}
+```
+
+Lỗi: `400 VALIDATION` (thiếu/sai `path`, `cast` không hợp lệ, hoặc thiếu `cast` cho đường dẫn lồng nhau), `404 NOT_FOUND` (collection hoặc trường cấp cao nhất).
 
 ### Fields
 
@@ -943,10 +982,11 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `GET` | `/api/v1/agent/questions/:id` | Một câu hỏi; `404` cho id không tồn tại hoặc thuộc tenant khác |
 | `POST` | `/api/v1/agent/questions/:id/answer` | Trả lời một câu hỏi và tiếp tục run `waiting_user` của nó. Body `{ answer }` (1–2000 ký tự, đã trim; phải là một trong `options` khi `allowFreeText` là false). Chỉ user đã đăng nhập mới trả lời được: mọi API key, scope site hay organization và dù mang capability gì, đều nhận `403`. Được phép với người giữ `approvals:decide` (hoặc control-plane admin) và với **user** đã yêu cầu run; hiện tại chỉ quản trị viên site tới được route (control-plane guard), nên quy tắc người yêu cầu có hiệu lực khi backlog B207 đưa route ra khỏi control plane. Việc claim và việc tiếp tục run là một transaction. `200` kèm câu hỏi đã trả lời (run `succeeded`); `400` `VALIDATION` / `ANSWER_INVALID` / `ANSWER_NOT_AN_OPTION`; `403`; `404`; `409` `ALREADY_ANSWERED`, `EXPIRED`, `QUESTION_CLOSED`, `RUN_NOT_WAITING`, `REQUESTER_REVOKED` (người yêu cầu đã mất quyền; run bị fail); `423` `FROZEN` (run bị huỷ) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Các phiên bản, bản nháp, `/compile` (NL→đánh giá), `:id/dry-run`, `:id/activate` |
+| `*` | `/api/v1/agent/skills[...]` | Site Skills — playbook được chèn vào các agent run khớp: CRUD theo id hoặc slug, `:id/activate\|archive\|draft`, `:id/versions`, `:id/versions/:version/restore`, `/import`, `/export`, `/match`. Mọi thao tác ghi cần control-plane admin (nếu không thì `403 FORBIDDEN`; không có tác giả được uỷ quyền và `riskClass` chỉ là nhãn). `PATCH` nhận `expectedVersion` và các thao tác status nhận `version` (`409 VERSION_MISMATCH`); `DELETE` từ chối skill đã từng active (`409 SKILL_HAS_BEEN_ACTIVE`); `/import` từ chối thay đổi nội dung của skill active trừ khi `updateActive: true` (`ACTIVE_SKILL_CHANGE`). Xem [features/site-skills.md](../features/site-skills.md) |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Dừng ở 4 phạm vi (`run/intent/role/site`); việc đóng đóng băng cần `agents:freeze`. Đóng băng một role hoặc cả site, tạm dừng một intent và huỷ một run cũng huỷ các run đang chờ câu hỏi `askUser` trong phạm vi đó (`stopReason: frozen`) và đóng câu hỏi của chúng |
 | `*` | `/api/v1/agent/intents[...]` | CRUD ý định nội dung, `:id/pause|resume|scan|drifts`, `/compile` |
 | `POST` | `/api/v1/intents/:id/scan` | Một chu kỳ reconcile: `{ scan, reconcile, dispatch }`. `dispatch` đẩy mỗi reconciler goal tiến một bước (draft → promote → verify) và báo `dispatched/completed/skipped/blocked` cùng `queueUnavailable` trên runtime không có queue adapter. Xem [vòng sửa của reconciler](../features/reconciler-repair-loop.md). Khi intent có rule `semantic`, `scan.semantic` báo pass ngữ nghĩa có budget riêng (`status` `ran`/`off`/`unavailable`, các số đếm, `completed`, `cursor`), và `scan.semanticOrphansResolved` đếm các hàng của rule ngữ nghĩa bị gỡ mà scan đã resolve. Cập nhật intent làm một rule ngữ nghĩa đã lưu đổi profile, câu hỏi, context hoặc fields mà không tăng `version` trả về `422 SEMANTIC_RULE_VERSION_REQUIRED`; xem [drift ngữ nghĩa](../features/jev-semantic-drift.md) |
-| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp`. Một `tools/call` tới `askUser` trả về một tool result bình thường với `status: "waiting_user"`, `questionId` và `runId` |
+| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp`. Ngoài `tools/*`, `prompts/list` và `prompts/get` phơi bày các skill active của site cho control-plane admin (rỗng với mọi caller khác). Một `tools/call` tới `askUser` trả về một tool result bình thường với `status: "waiting_user"`, `questionId` và `runId` |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Ghim Law Zero: liệt kê / giải phóng |
 | `GET` | `/api/v1/deliver/llms.txt/:site_id` | Chỉ mục llms.txt công khai mỗi site |
 

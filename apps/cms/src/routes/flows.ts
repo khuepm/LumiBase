@@ -27,6 +27,8 @@ import {
   runFlowSyncWithTimeout,
 } from '../services/flow-run-service';
 
+export const flowPatchSchema = patchSchema(flowSchema);
+
 export const flowsRouter = new Hono<AppEnv>();
 
 const requireFlowAdmin = createMiddleware<AppEnv>(async (c, next) => {
@@ -166,7 +168,7 @@ flowsRouter.patch('/:id', async (c) => {
   const siteId = c.get('siteId');
   const db = c.get('db');
   const id = c.req.param('id');
-  const parsed = patchSchema(flowSchema).safeParse(await c.req.json());
+  const parsed = flowPatchSchema.safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json(
       { errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) },

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-12T19:22:46.699Z",
+  "generatedAt": "2026-11-13T06:00:52.011Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 162,
+    "upToDate": 164,
     "planned": 0
   },
   "actions": [
@@ -853,6 +853,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "deployment/one-click.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "deployment/overview.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1466,6 +1478,18 @@
     },
     {
       "rel": "features/search.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/site-skills.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",

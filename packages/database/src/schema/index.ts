@@ -13,6 +13,7 @@ export * from './ai';
 export * from './security';
 export * from './cdc';
 export * from './content-os';
+export * from './site-skills';
 export * from './firebase-sync';
 export * from './regulated';
 export * from './deployments';
