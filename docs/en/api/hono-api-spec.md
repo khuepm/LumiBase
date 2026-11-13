@@ -1,11 +1,11 @@
 ---
-version: 40
-lastUpdated: 2026-11-12T20:38:40.908Z
+version: 43
+lastUpdated: 2026-11-13T07:04:51.671Z
 sourceLang: en
-contentHash: 9a6c11835e29b8ef
-codeVerified: 2026-11-12T20:38:40.908Z
-codeVerifiedHash: 9a6c11835e29b8ef
-codeVerifiedClaims: 498
+contentHash: b412b64ec3b5532b
+codeVerified: 2026-11-13T07:04:51.671Z
+codeVerifiedHash: b412b64ec3b5532b
+codeVerifiedClaims: 514
 ---
 
 # Hono API Specification — LumiBase
@@ -307,6 +307,67 @@ validated patch into `users.preferences` (other sections like `language` /
 "create_new" }` to set the Studio editor's post-save navigation; send
 `{ "saveAction": null }` to fall back to the site default
 (`sites.default_save_action`, set via `PATCH /api/v1/site`). Invalid enum → 400.
+
+### Email identity policy
+
+`users` is identity-global (one row per human across sites), so the rule that
+decides whether two addresses are the same account is set in two tiers. A
+site can only be **stricter** than the instance, never looser.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/admin/email-identity` | site-admin | `{ instanceMode, siteStrict, effective }` for the active site |
+| `PUT` | `/api/v1/admin/email-identity/instance` | bootstrap admin | Change the instance mode — body `{ mode: "exact" \| "root", dryRun? }` |
+| `PUT` | `/api/v1/admin/email-identity/site` | site-admin | Toggle per-site strict — body `{ strict: boolean, dryRun? }` |
+
+- **Instance mode** (`exact` default, `root`). `exact` keeps every distinct
+  address as its own account. `root` makes one root mailbox one account
+  instance-wide: `+tag` is stripped on every domain, and for Gmail the local
+  part also loses its dots and `googlemail.com` folds to `gmail.com`. Stripping
+  `+tag` on every domain is a policy choice, not a guarantee that the alias
+  reaches the same mailbox (sub-addressing is a provider convention). It is
+  chosen in the Setup Wizard (`emailIdentityMode` in the
+  `POST /api/v1/setup/complete` body; omitted → `exact`) and changed later only
+  by the bootstrap admin — a user principal, never an API key (`403 FORBIDDEN`
+  otherwise).
+- **Site strict** (`false` default). Under `exact`, a strict site allows one
+  membership per root mailbox, enforced by a unique index on
+  `(site_id, identity_key)` rather than a check-then-insert. Under `root` the
+  site flag is a no-op (`effective: "root"`).
+- **Tightening** (`exact → root`, `strict: false → true`) first checks the
+  existing data and answers `409 IDENTITY_COLLISION` with the colliding
+  accounts — nothing changes. **Loosening** always succeeds. `dryRun: true`
+  runs the same transaction and rolls it back.
+
+```jsonc
+// PUT /api/v1/admin/email-identity/instance  { "mode": "root" }  →  409
+{ "errors": [{ "code": "IDENTITY_COLLISION",
+               "message": "Existing accounts share a root mailbox; resolve them before tightening the policy.",
+               "collisions": [{ "root": "test@gmail.com",
+                                "accounts": [{ "userId": "u_1", "email": "test@gmail.com" },
+                                             { "userId": "u_2", "email": "t.est+news@gmail.com" }] }] }] }
+
+// …after resolving the duplicates  →  200
+{ "data": { "previous": "exact", "current": "root", "changed": true, "dryRun": false } }
+```
+
+Every applied change writes an audit event (`email_identity_mode_changed` /
+`site_email_identity_changed`). Effects on the other endpoints:
+
+- `POST /api/v1/auth/register` keeps the identical generic `202` when the
+  address — or, under `root`, any alias of it — already exists, or when a
+  strict site already has a member with the same root mailbox. The account and
+  its membership commit in one transaction, so a refused membership never
+  leaves an orphan account.
+- `POST /api/v1/auth/login`, `/forgot-password` and `/resend-verification`
+  resolve the account under the instance mode: under `root`, any alias reaches
+  the account. Lockout is tracked on the resolved account row, so rotating
+  aliases does not reset or dodge it.
+- `POST /api/v1/users/invite` looks the account up case-insensitively (and by
+  root mailbox under `root`) and returns public fields only. Inviting an alias
+  of an existing member of a strict site answers `409 EMAIL_IDENTITY_CONFLICT`.
+- SCIM (`/scim/v2/Users`) answers `409` with `scimType: "uniqueness"` when the
+  address resolves to an existing account or collides on a strict site.
 
 ### External JWT authentication
 
@@ -616,6 +677,20 @@ neutralises spreadsheet formulas; JSON is
 Errors before streaming: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`,
 `403 FORBIDDEN`, `404 NOT_FOUND`. See [Data export](../features/data-export.md).
 
+**Imports.** Background jobs that read the export formats back:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/imports?collection=&format=csv\|json&mode=create\|upsert` | Upload a file (multipart `file` or raw body) → `202 { data: job }` |
+| `GET` | `/api/v1/imports?collection=&status=&limit=` | Recent jobs (own; site admins see all) |
+| `GET` | `/api/v1/imports/:id` | Job progress and counters |
+| `GET` | `/api/v1/imports/:id/errors` | Row errors; `?format=csv` downloads them |
+| `POST` | `/api/v1/imports/:id/cancel` | Stop a queued or running job |
+
+Bad files fail with `400 VALIDATION` / `413 PAYLOAD_TOO_LARGE` before a job is
+created; missing `create` (or `update` for `upsert`) permission is `403`. See
+[Data import](../features/data-import.md#background-import-jobs).
+
 **List pagination & totals.** `GET /items/:collection` accepts `limit`
 (1–200, default 25), `offset`, and `meta`:
 
@@ -887,6 +962,7 @@ Public (no session; signature-verified):
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `POST` | `/api/v1/deployments/webhook/:provider/:siteId` | Inbound status webhook (`vercel` \| `netlify`) with path tenant (works on the shared API host without `X-Lumi-Site`). `404 UNKNOWN_PROVIDER`, `400 TENANT_INVALID` / `TENANT_MISMATCH`, `401 INVALID_SIGNATURE`; otherwise `200 { data: null }`, including when the body matches no deployment |
 | `POST` | `/api/v1/deployments/webhook/:provider` | Inbound status webhook (`vercel` \| `netlify`). Tenant comes from `withTenant` (`X-Lumi-Site` or host mapping). `404 UNKNOWN_PROVIDER`, `401 INVALID_SIGNATURE`; otherwise `200 { data: null }`, including when the body matches no deployment |
 
 **Target shape** (`data` of the target routes): `{ id, provider, name, projectId, defaultBranch, productionUrl, status, createdAt, updatedAt }`.

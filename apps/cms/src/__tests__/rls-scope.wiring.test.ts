@@ -211,7 +211,7 @@ const ROUTER_DB_CLASS: Record<string, { class: RouterClass; file?: string; note?
   '/api/v1/setup': { class: 'system', file: 'modules/setup/routes.ts' },
   '/api/v1/admin/security': { class: 'system', file: 'modules/recovery/routes.ts' },
   '/scim/v2': { class: 'system' },
-  '/api/v1/deployments/webhook': { class: 'request-scoped' },
+  '/api/v1/deployments/webhook': { class: 'self-scoped', file: 'routes/deployments.ts' },
   '/api/v1': { class: 'request-scoped' },
   '/api/v1/shares': { class: 'self-scoped', file: 'routes/shares.ts' },
   '/api/v1/email': { class: 'self-scoped', file: 'routes/email-public.ts' },

@@ -126,6 +126,34 @@ export function setPolicyDraft(value: LockoutPolicyFormValues): void {
 }
 
 // ────────────────────────────────────────────────────────────────────────
+// Email identity mode draft (#794)
+//
+// Instance-wide account-key policy sent as `emailIdentityMode` in the
+// `POST /setup/complete` body. Same module-memory pattern as the policy
+// draft. `exact` is the default and the pre-#794 behaviour.
+// ────────────────────────────────────────────────────────────────────────
+
+export const EMAIL_IDENTITY_MODES = ['exact', 'root'] as const;
+export type EmailIdentityMode = (typeof EMAIL_IDENTITY_MODES)[number];
+export const DEFAULT_EMAIL_IDENTITY_MODE: EmailIdentityMode = 'exact';
+
+let emailIdentityModeDraft: EmailIdentityMode = DEFAULT_EMAIL_IDENTITY_MODE;
+
+/** The chosen instance email identity mode (`exact` until the operator picks). */
+export function getEmailIdentityModeDraft(): EmailIdentityMode {
+  return emailIdentityModeDraft;
+}
+
+export function setEmailIdentityModeDraft(value: EmailIdentityMode): void {
+  emailIdentityModeDraft = value;
+}
+
+/** Reset to the default. Call after `POST /setup/complete` succeeds. */
+export function clearEmailIdentityModeDraft(): void {
+  emailIdentityModeDraft = DEFAULT_EMAIL_IDENTITY_MODE;
+}
+
+// ────────────────────────────────────────────────────────────────────────
 // Form values type
 // ────────────────────────────────────────────────────────────────────────
 
@@ -248,6 +276,16 @@ export interface StepSecurityProps {
 
 export function StepSecurity({ onSubmitted }: StepSecurityProps) {
   const setPolicyValid = useSetupStore((s) => s.setPolicyValid);
+
+  // Instance email identity mode (#794). Not part of the lockout policy
+  // schema — held in its own module draft and sent alongside it.
+  const [emailIdentityMode, setEmailIdentityModeState] = useState<EmailIdentityMode>(
+    getEmailIdentityModeDraft,
+  );
+  const handleEmailIdentityModeChange = useCallback((mode: EmailIdentityMode) => {
+    setEmailIdentityModeDraft(mode);
+    setEmailIdentityModeState(mode);
+  }, []);
 
   // ── Capabilities probe ────────────────────────────────────────────
   // The "Geographic Anomaly" group surfaces a warning when the
@@ -457,6 +495,12 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
         webhookSelected={webhookSelected}
       />
 
+      {/* ── Email identity (#794) ─────────────────────────────────── */}
+      <EmailIdentityGroup
+        value={emailIdentityMode}
+        onChange={handleEmailIdentityModeChange}
+      />
+
       {/* ── Submit ────────────────────────────────────────────────── */}
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
@@ -468,6 +512,91 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
         </button>
       </div>
     </form>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Email identity group (#794)
+// ────────────────────────────────────────────────────────────────────────
+
+interface EmailIdentityOption {
+  id: EmailIdentityMode;
+  label: string;
+  description: string;
+}
+
+/**
+ * Copy mirrors `setup.steps.security.groups.emailIdentity.*` in the locale
+ * bundles (inline for now, like the rest of this step — see module doc).
+ */
+export const EMAIL_IDENTITY_OPTIONS: ReadonlyArray<EmailIdentityOption> = [
+  {
+    id: 'exact',
+    label: 'Exact address (default)',
+    description:
+      'Every distinct address is its own account: test+a@gmail.com and test+b@gmail.com can register separately.',
+  },
+  {
+    id: 'root',
+    label: 'One account per mailbox',
+    description:
+      '+tag aliases (and, for Gmail, dots and googlemail.com) resolve to one account instance-wide. Signing in with any alias reaches that account.',
+  },
+];
+
+export interface EmailIdentityGroupProps {
+  value: EmailIdentityMode;
+  onChange: (mode: EmailIdentityMode) => void;
+}
+
+/**
+ * Instance-wide email identity mode radio group. Shared by the advanced
+ * Security step and the quick-setup review step.
+ */
+export function EmailIdentityGroup({ value, onChange }: EmailIdentityGroupProps) {
+  const name = useId();
+  return (
+    <fieldset
+      className="space-y-3 rounded-md border border-border p-4"
+      data-testid="email-identity-group"
+    >
+      <legend className="px-1 text-sm font-medium">Email identity</legend>
+      <p className="text-sm text-muted-foreground">
+        How email aliases map to accounts on this instance. Applies to
+        registration, invites and SCIM. Only the bootstrap admin can change it
+        later, and switching to one account per mailbox is refused while
+        existing accounts share a mailbox.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {EMAIL_IDENTITY_OPTIONS.map((option) => {
+          const selected = option.id === value;
+          return (
+            <label
+              key={option.id}
+              className={cn(
+                'flex cursor-pointer flex-col gap-1 rounded-md border p-3 text-sm transition',
+                selected
+                  ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                  : 'border-border hover:bg-muted',
+              )}
+            >
+              <span className="flex items-center gap-2 font-medium">
+                <input
+                  type="radio"
+                  name={name}
+                  value={option.id}
+                  checked={selected}
+                  onChange={() => onChange(option.id)}
+                  className="h-4 w-4"
+                />
+                {option.label}
+              </span>
+              <span className="text-muted-foreground">{option.description}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
