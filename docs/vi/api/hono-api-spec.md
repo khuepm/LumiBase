@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 38
-lastUpdated: 2026-11-12T19:23:17.121Z
+version: 39
+lastUpdated: 2026-11-13T01:28:12.896Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 09a8f790d668fe5d
+sourceHash: 35eb961f1c19eec3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T19:23:17.121Z
-codeVerifiedHash: 09a8f790d668fe5d
+codeVerified: 2026-11-13T01:28:12.896Z
+codeVerifiedHash: 35eb961f1c19eec3
 codeVerifiedClaims: 498
 ---
 
@@ -975,7 +975,7 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `GET/POST` | `/api/v1/agent/staged[...]` | Cửa sổ veto: các bản staging đang chờ bổ sung `approvalId/collection/itemId/patch/agentRole` từ bản sửa đổi staging (trường null khi staging không còn); `POST :id/veto` loại bỏ một staging |
 | `GET` | `/api/v1/agent/approvals` | Hộp thư approval (bộ lọc `status`; mặc định `pending`) |
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Quyết định của con người cho một hành động đang bị giữ. Body `{ decision: 'approved' \| 'rejected', reason? }`; cần `approvals:decide` (nếu không thì 403), `404` cho id không tồn tại hoặc thuộc tenant khác, `409` khi approval đã rời `pending`. Với `approved`, harness là nơi duy nhất đổi trạng thái, nên việc thực thi và việc ghi status xảy ra đúng một lần. Lúc thực thi, quyền của **người yêu cầu** được resolve lại và hành động chạy với `requester ∩ decider`: approval mà người yêu cầu đã bị thu hồi, hạ quyền hay rời site sẽ bị từ chối, và approval không có thông tin người yêu cầu (bị giữ từ trước khi có cột provenance) bị từ chối với `APPROVAL_PROVENANCE_MISSING` |
-| `POST` | `/api/v1/agent/approvals/:id/reopen` | Đưa một approval đang ở `failed` về `pending` để quyết định lại. Body `{ reason }` là **bắt buộc** và được ghi audit; cần `approvals:decide`. Một skill đã chạm tới service rồi mới lỗi thì bị giữ lại chứ không tự mời lại, vì thử lại có thể lặp một phép ghi không idempotent — đây là đường về có chủ ý |
+| `POST` | `/api/v1/agent/approvals/:id/reopen` | Đưa một approval đang ở `failed` về `pending` để quyết định lại. Body `{ reason }` là **bắt buộc** và được ghi audit; cần `approvals:decide`. Một skill đã chạm tới service rồi mới lỗi thì bị giữ lại chứ không tự mời lại, vì thử lại có thể lặp một phép ghi không idempotent — đây là đường về có chủ ý. Một approval `veto` mà patch đã staged của nó đã live (một lần commit chết sau khi áp patch) thì trả `409 VETO_ALREADY_APPLIED`, vì reopen sẽ áp patch đó lần thứ hai |
 | `POST` | `/api/v1/agent/approvals/:id/agent-decide` | Quyết định của Agent với tư cách người đánh giá (cần `review:<domain>`; cấm tự đánh giá) |
 | `GET` | `/api/v1/agent/questions` | Các câu hỏi làm rõ `askUser`, mới nhất trước. `?status=pending` (mặc định) \| `answered` \| `expired` \| `cancelled` \| `all`. Mỗi phần tử: `{ id, runId, goalId, toolCallId, agentName, question, options, allowFreeText, context, status, expiresAt, createdAt, answer, answeredAt, answeredBy }`. Câu hỏi không xuất hiện trong `/approvals`, và `/approvals/:id/decide` cùng `/reopen` trả `409 NOT_AN_APPROVAL` cho id của câu hỏi. Xem [agent harness](../features/agent-harness-layer.md#54-hỏi-người-dùng-askuser-710) |
 | `GET` | `/api/v1/agent/questions/:id` | Một câu hỏi; `404` cho id không tồn tại hoặc thuộc tenant khác |
