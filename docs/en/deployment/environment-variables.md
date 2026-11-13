@@ -1,11 +1,11 @@
 ---
-version: 19
-lastUpdated: 2026-11-12T20:20:04.460Z
+version: 20
+lastUpdated: 2026-11-13T15:46:51.283Z
 sourceLang: en
-contentHash: 3d5fe859a4227088
-codeVerified: 2026-11-12T20:20:04.460Z
-codeVerifiedHash: 3d5fe859a4227088
-codeVerifiedClaims: 90
+contentHash: 979f188ba94cf954
+codeVerified: 2026-11-13T19:16:14.761Z
+codeVerifiedHash: 979f188ba94cf954
+codeVerifiedClaims: 92
 ---
 
 # Environment Variables Reference
@@ -121,6 +121,7 @@ rather than a typed error.
 | `DATABASE_POOL_MAX` | ✗ | Maximum DB pool connections (default: `10`) |
 | `DATABASE_SSL` | ✗ | `true` to require SSL for DB connection |
 | `LUMIBASE_DB_RLS` | ✗ | Request-path RLS scope: `off` (default) or `enforce`. Any other value fails closed (startup error on Docker, `503 RLS_MISCONFIGURED` on Workers). See [Request-path RLS scope](../features/rls-request-scope.md) |
+| `LUMIBASE_OPS_TOKEN` | ✗ | Static bearer secret (≥ 32 chars) for the read-only ops diagnostics plane `/api/v1/ops/*` and error capture lookup. Unset or shorter: the plane answers 404 everywhere. See [Ops diagnostics](../features/ops-diagnostics.md) |
 | `DATABASE_SYSTEM_URL` | With `LUMIBASE_DB_RLS=enforce` (Docker) | Connection string of the system role (`BYPASSRLS`) used by workers, cron and system routes. Unset: those paths use `DATABASE_URL`. Also read from `DATABASE_SYSTEM_URL_FILE` |
 
 For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](#cloudflare-bindings)).

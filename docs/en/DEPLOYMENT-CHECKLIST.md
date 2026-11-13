@@ -1,11 +1,11 @@
 ---
-version: 10
-lastUpdated: 2026-11-12T18:28:18.370Z
+version: 11
+lastUpdated: 2026-11-13T19:16:12.263Z
 sourceLang: en
-contentHash: fe285b6985adf0a9
-codeVerified: 2026-11-12T18:28:18.370Z
-codeVerifiedHash: fe285b6985adf0a9
-codeVerifiedClaims: 32
+contentHash: 440989947c2b355b
+codeVerified: 2026-11-13T19:16:12.263Z
+codeVerifiedHash: 440989947c2b355b
+codeVerifiedClaims: 34
 ---
 
 # LumiBase Production Deployment Checklist
@@ -132,6 +132,7 @@ Set via `wrangler secret put --env production`:
 | `CF_ACCESS_AUDIENCE` | If using CF Access | `wrangler secret put CF_ACCESS_AUDIENCE --env production` |
 | `SENTRY_DSN` | Recommended | `wrangler secret put SENTRY_DSN --env production` |
 | `METRICS_TOKEN` | Recommended | `wrangler secret put METRICS_TOKEN --env production` |
+| `LUMIBASE_OPS_TOKEN` | Optional | `wrangler secret put LUMIBASE_OPS_TOKEN --env production` |
 | `OPENAI_API_KEY` | If using AI | `wrangler secret put OPENAI_API_KEY --env production` |
 
 ### Docker Environment
@@ -412,6 +413,7 @@ curl https://api.yourdomain.com/api/v1/health
 ### API Security
 
 - [ ] `/metrics` endpoint protected by `METRICS_TOKEN`
+- [ ] `/api/v1/ops/*` answers 404 unless `LUMIBASE_OPS_TOKEN` (≥ 32 chars) is set — see [Ops diagnostics](./features/ops-diagnostics.md)
 - [ ] SCIM endpoint protected (if used)
 - [ ] GraphQL introspection disabled in production
 - [ ] File upload MIME type validation enabled
@@ -560,6 +562,7 @@ docker compose up -d
 | `CF_ACCESS_AUDIENCE` | If using CF Access | From CF dashboard |
 | `SENTRY_DSN` | Recommended | From Sentry project |
 | `METRICS_TOKEN` | Recommended | `openssl rand -base64 24` |
+| `LUMIBASE_OPS_TOKEN` | Optional | `openssl rand -base64 36` |
 
 ### Docker
 

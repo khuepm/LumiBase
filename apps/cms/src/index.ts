@@ -109,6 +109,8 @@ import {
   gitPublicRouter,
 } from './modules/git-integration/routes';
 import { formatSafeError } from '@lumibase/contracts/utils';
+import { captureOpsError } from './modules/ops/capture';
+import { opsRouter } from './modules/ops/routes';
 
 const app = new Hono<AppEnv>();
 
@@ -171,6 +173,10 @@ app.route('/api/v1/utils', utilsRouter);
 app.route('/api/v1/system', systemRouter);
 // Prometheus metrics endpoint (public, no auth).
 app.route('/metrics', metricsRouter);
+// Read-only ops diagnostics plane (`.kiro/specs/ops-diagnostics`). Gated by the
+// static `LUMIBASE_OPS_TOKEN` inside the router (unset → 404); not a tenant
+// route, so it is mounted outside `api` (no withTenant/withAuth).
+app.route('/api/v1/ops', opsRouter);
 // Comprehensive health check — tests DB, cache, search, storage, queue connectivity.
 app.route('/health', healthRouter);
 // Serves interactive auth testing page
@@ -440,6 +446,7 @@ app.notFound((c) =>
 app.onError((err, c) => {
   const requestId = c.get('requestId');
   console.error('[lumibase-cms] unhandled error', { requestId, err: formatSafeError(err) });
+  captureOpsError(c, { err, status: 500, errorCode: 'INTERNAL' });
   return c.json(
     { errors: [{ code: 'INTERNAL', message: 'Internal Server Error', requestId }] },
     500,

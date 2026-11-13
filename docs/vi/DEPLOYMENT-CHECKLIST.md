@@ -1,14 +1,14 @@
 ---
-version: 9
-lastUpdated: 2026-11-12T18:28:18.370Z
+version: 10
+lastUpdated: 2026-11-13T19:16:12.263Z
 sourceLang: en
 translatedFrom: en
-sourceHash: fe285b6985adf0a9
+sourceHash: 440989947c2b355b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T18:28:18.370Z
-codeVerifiedHash: fe285b6985adf0a9
-codeVerifiedClaims: 32
+codeVerified: 2026-11-13T19:16:12.263Z
+codeVerifiedHash: 440989947c2b355b
+codeVerifiedClaims: 34
 ---
 
 # Checklist deploy LumiBase lên production
@@ -135,6 +135,7 @@ openssl rand -base64 24
 | `CF_ACCESS_AUDIENCE` | Nếu dùng CF Access | `wrangler secret put CF_ACCESS_AUDIENCE --env production` |
 | `SENTRY_DSN` | Khuyến nghị | `wrangler secret put SENTRY_DSN --env production` |
 | `METRICS_TOKEN` | Khuyến nghị | `wrangler secret put METRICS_TOKEN --env production` |
+| `LUMIBASE_OPS_TOKEN` | Tùy chọn | `wrangler secret put LUMIBASE_OPS_TOKEN --env production` |
 | `OPENAI_API_KEY` | Nếu dùng AI | `wrangler secret put OPENAI_API_KEY --env production` |
 
 ### Environment cho Docker
@@ -415,6 +416,7 @@ curl https://api.yourdomain.com/api/v1/health
 ### Bảo mật API
 
 - [ ] Endpoint `/metrics` được bảo vệ bởi `METRICS_TOKEN`
+- [ ] `/api/v1/ops/*` trả về 404 trừ khi `LUMIBASE_OPS_TOKEN` (≥ 32 ký tự) được đặt — xem [Chẩn đoán vận hành](./features/ops-diagnostics.md)
 - [ ] Endpoint SCIM được bảo vệ (nếu dùng)
 - [ ] Đã tắt introspection GraphQL ở production
 - [ ] Đã bật validate MIME type khi upload file
@@ -563,6 +565,7 @@ docker compose up -d
 | `CF_ACCESS_AUDIENCE` | Nếu dùng CF Access | Từ dashboard CF |
 | `SENTRY_DSN` | Khuyến nghị | Từ project Sentry |
 | `METRICS_TOKEN` | Khuyến nghị | `openssl rand -base64 24` |
+| `LUMIBASE_OPS_TOKEN` | Tùy chọn | `openssl rand -base64 36` |
 
 ### Docker
 

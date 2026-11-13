@@ -145,6 +145,12 @@ export interface Bindings {
   FILE_UPLOAD_ALLOWED_MIME_TYPES?: string;
   /** Bearer token required to read Prometheus metrics in production. */
   METRICS_TOKEN?: string;
+  /**
+   * Static bearer secret for the read-only ops diagnostics plane
+   * (`/api/v1/ops/*`, `.kiro/specs/ops-diagnostics`). Unset (or < 32 chars)
+   * → the plane answers 404 everywhere.
+   */
+  LUMIBASE_OPS_TOKEN?: string;
   /** Delivery API shared-cache lifetime in seconds (`0` disables public caching). Default 60. */
   LUMIBASE_DELIVER_SMAXAGE?: string;
   /** Delivery API stale-while-revalidate window in seconds. Default 300. */
@@ -340,6 +346,8 @@ export interface Variables {
   auth: AuthPrincipal;
   /** Correlation id for log lines. */
   requestId: string;
+  /** Set once this request's 5xx was handed to the ops error capture (`modules/ops/capture.ts`). */
+  opsErrorCaptured?: boolean;
   /**
    * Resolved client IP for the current request (admin-setup-wizard
    * task 11.2; Req 15.1, 15.2; design §6.2). Populated by the
