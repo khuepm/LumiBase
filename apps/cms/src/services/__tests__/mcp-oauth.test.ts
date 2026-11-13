@@ -149,3 +149,33 @@ describe('challenge + metadata', () => {
     });
   });
 });
+
+describe('tools/list title + annotations (ported from #805)', async () => {
+  const { McpService, toolAnnotations, toolTitle } = await import('../mcp-service');
+
+  it('humanises tool names', () => {
+    expect(toolTitle('listItems')).toBe('List items');
+    expect(toolTitle('org:list_sites')).toBe('Org list sites');
+  });
+
+  it('marks read-only only for safe, all-:read tools; destructive only for dangerous', () => {
+    expect(toolAnnotations({ requiredCapabilities: ['items:read'], riskPolicy: { level: 'safe' } })).toEqual({ readOnlyHint: true, destructiveHint: false });
+    expect(toolAnnotations({ requiredCapabilities: [], riskPolicy: { level: 'safe' } })).toEqual({ readOnlyHint: false, destructiveHint: false });
+    expect(toolAnnotations({ requiredCapabilities: ['items:read', 'items:write'], riskPolicy: { level: 'safe' } })).toEqual({ readOnlyHint: false, destructiveHint: false });
+    expect(toolAnnotations({ requiredCapabilities: ['schema:delete'], riskPolicy: { level: 'dangerous' } })).toEqual({ readOnlyHint: false, destructiveHint: true });
+  });
+
+  it('projects title and annotations into tools/list', async () => {
+    const service = new McpService({
+      listTools: async () => [
+        { name: 'listItems', description: 'd', title: 'List items', annotations: { readOnlyHint: true, destructiveHint: false } },
+        { name: 'plain', description: 'd' },
+      ],
+      execute: async () => ({ status: 'executed' }) as never,
+    });
+    const res = (await service.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, [])) as { result: { tools: Array<Record<string, unknown>> } };
+    expect(res.result.tools[0]).toMatchObject({ title: 'List items', annotations: { readOnlyHint: true, destructiveHint: false } });
+    expect(res.result.tools[1]).not.toHaveProperty('title');
+    expect(res.result.tools[1]).not.toHaveProperty('annotations');
+  });
+});

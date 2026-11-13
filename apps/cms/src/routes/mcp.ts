@@ -18,7 +18,7 @@ import { approvalRequesterFromAuth, resolveRequestCapabilities } from '../servic
 import { IntentService } from '../services/intent-service';
 import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
 import { createConfiguredLLMProvider } from '../services/llm-provider';
-import { McpService, type McpHarnessPort } from '../services/mcp-service';
+import { McpService, toolAnnotations, toolTitle, type McpHarnessPort } from '../services/mcp-service';
 import { SchemaService } from '../services/schema-service';
 import { SiteSkillService } from '../services/site-skill-service';
 import { ToolRegistryService } from '../services/tool-registry-service';
@@ -178,11 +178,13 @@ async function handleMcp(c: Context<AppEnv>) {
         : null;
     },
     listTools: async () => [
-      ...(await registry.listTools()).map(({ name, description, inputSchema, enabled }) => ({
-        name,
-        description,
-        inputSchema,
-        enabled,
+      ...(await registry.listTools()).map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        enabled: tool.enabled,
+        title: toolTitle(tool.name),
+        annotations: toolAnnotations(tool),
       })),
       ...(organizationPort ? (await organizationPort.listTools()).filter((tool) => tool.name === 'org:get_organization' || tool.name === 'org:list_sites') : []),
     ],

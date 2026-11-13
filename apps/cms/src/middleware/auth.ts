@@ -454,6 +454,17 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
           scopes: scopesFromClaims(claims),
           ...(clientId ? { clientId } : {}),
         };
+        // Built field by field, never spread from the token (ported from #805):
+        // guards elsewhere read `raw.dev` and `raw.isBootstrap`, and a claim
+        // minted by an outside authorization server must not set them. `aud` is
+        // kept as verified (it already matched the issuer's configured audience
+        // and this resource) so audience walls such as `frontend` still apply.
+        principal.raw = {
+          mcpOAuth: true,
+          iss: principal.oauth.issuer,
+          sub: typeof claims.sub === 'string' ? claims.sub : undefined,
+          aud: claims.aud,
+        };
       }
       c.set('auth', principal);
       return next();

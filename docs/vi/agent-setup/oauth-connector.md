@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-12T18:31:27.082Z
+version: 2
+lastUpdated: 2026-11-13T09:53:21.003Z
 translatedFrom: en
-sourceHash: 72aee3c7683a7c7f
+sourceHash: 92dec3be7b891650
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T18:31:27.082Z
-codeVerifiedHash: 72aee3c7683a7c7f
+codeVerified: 2026-11-13T09:53:21.003Z
+codeVerifiedHash: 92dec3be7b891650
 codeVerifiedClaims: 16
 ---
 
@@ -117,6 +117,10 @@ Scope **chỉ thu hẹp**. Capability set vẫn đến từ RBAC bundle sống c
 - Khi role của user cho phép một lời gọi nhưng scope của token thì không, LumiBase trả `403 INSUFFICIENT_SCOPE` kèm `WWW-Authenticate: Bearer error="insufficient_scope", scope="…", resource_metadata="…"` để client xin thêm scope. Khi chính role không cho phép, harness từ chối lời gọi như thường lệ.
 
 **Control plane:** backstop `CONTROL_PLANE_FORBIDDEN` không đổi và chạy trước. Một skill control-plane (dangerous, sửa schema, hoặc `delete*`) cần principal admin **và**, với token OAuth, cần scope `mcp:admin`.
+
+**Gợi ý tool:** `tools/list` gắn cho mỗi tool một `title` và `annotations` (`readOnlyHint`, `destructiveHint`), client được host dùng chúng để quyết định khi nào hỏi người dùng trước một lời gọi. Đây chỉ là gợi ý; các bước kiểm tra ở trên mới là thứ quyết định.
+
+**Hình dạng principal:** `raw` của principal OAuth được dựng từng field (`iss`, `sub`, `aud` đã verify) thay vì chép nguyên token, nên claim như `dev` hay `isBootstrap` từ authorization server không có tác dụng.
 
 **Organization tools** (`org:*`, organization key) không mở cho token OAuth: chúng trả `403 ORGANIZATION_FORBIDDEN`. Dùng organization API key cho plane đó.
 

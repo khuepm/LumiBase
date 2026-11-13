@@ -1,13 +1,13 @@
 ---
-version: 18
-lastUpdated: 2026-11-13T06:46:14.265Z
+version: 19
+lastUpdated: 2026-11-13T09:53:20.768Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: ea694655b7572068
+sourceHash: 05a10f3351c9af51
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T06:46:14.265Z
-codeVerifiedHash: ea694655b7572068
+codeVerified: 2026-11-13T09:53:20.768Z
+codeVerifiedHash: 05a10f3351c9af51
 codeVerifiedClaims: 40
 ---
 
@@ -36,7 +36,7 @@ Source: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`a
 - **Methods (JSON-RPC):**
   - `initialize` — negotiates the protocol version, returns `capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }` (the organization plane has no `prompts`).
   - `ping`.
-  - `tools/list` — lists the **currently enabled** tools from `ToolRegistryService`; the inputSchema is derived from the canonical schemas in `@lumibase/contracts` (only a skill with no schema still falls back to `{ type: 'object' }`).
+  - `tools/list` — lists the **currently enabled** tools from `ToolRegistryService`; the inputSchema is derived from the canonical schemas in `@lumibase/contracts` (only a skill with no schema still falls back to `{ type: 'object' }`). Each tool also carries a `title` (human-readable name) and `annotations` (`readOnlyHint`, `destructiveHint`) derived from the registry (`toolAnnotations` in `apps/cms/src/services/mcp-service.ts`): read-only only when the tool is `safe` and every capability is `:read`; destructive when its `riskPolicy` is `dangerous`. These are client hints (#346), never an authorization input.
   - `tools/call` — runs through `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. The result is wrapped as `{ content, structuredContent, isError }`.
   - `prompts/list`, `prompts/get` — the site's `active` [Site Skills](../features/site-skills.md); `name` is the slug and the body comes back as a single user message. Served only to callers that can read skills over REST, i.e. a principal that resolves to a control-plane admin for the site (`grant.allowed && grant.controlPlaneAdmin` in `routes/mcp.ts`): a non-admin member or a site API key gets an empty `prompts/list`. For an admin, each skill's `surfaces`/`requiredCapabilities` still filter further. A prompt that does not exist and one the caller may not see answer identically.
   - `notifications/initialized`, `notifications/cancelled` → return `null` ⇒ HTTP `202 Accepted` with no body.

@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-12T18:31:27.082Z
-contentHash: 72aee3c7683a7c7f
-codeVerified: 2026-11-12T18:31:27.082Z
-codeVerifiedHash: 72aee3c7683a7c7f
+version: 2
+lastUpdated: 2026-11-13T09:53:21.003Z
+contentHash: 92dec3be7b891650
+codeVerified: 2026-11-13T09:53:21.003Z
+codeVerifiedHash: 92dec3be7b891650
 codeVerifiedClaims: 16
 ---
 
@@ -114,6 +114,10 @@ Scopes **only narrow**. The capability set still comes from the user's live RBAC
 - When the user's role allows a call but the token's scopes do not, LumiBase answers `403 INSUFFICIENT_SCOPE` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="…", resource_metadata="…"` so the client can ask for more scopes. When the role itself does not allow it, the harness denies the call as usual.
 
 **Control plane:** the `CONTROL_PLANE_FORBIDDEN` backstop is unchanged and runs first. A control-plane skill (dangerous, schema-mutating, or `delete*`) needs an admin principal **and**, for an OAuth token, the `mcp:admin` scope.
+
+**Tool hints:** `tools/list` gives each tool a `title` and `annotations` (`readOnlyHint`, `destructiveHint`), which hosted clients use to decide when to ask before a call. They are hints only; the checks above decide.
+
+**Principal shape:** an OAuth principal's `raw` is built field by field (`iss`, `sub`, verified `aud`) instead of copying the token, so a claim such as `dev` or `isBootstrap` from the authorization server has no effect.
 
 **Organization tools** (`org:*`, organization keys) are not offered to OAuth tokens: they answer `403 ORGANIZATION_FORBIDDEN`. Use an organization API key for that plane.
 
