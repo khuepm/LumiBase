@@ -373,10 +373,22 @@ export class VetoService {
     try {
       return await this.commitClaimed(approval, itemService, progress);
     } catch (err) {
-      if (!progress.applied) {
+      // `progress.applied` only knows that `patch` RESOLVED. A write can commit
+      // and still reject (connection lost after COMMIT, an ambiguous ack), so
+      // before handing the row back ask the database whether the patch is live.
+      // Only a positive "not applied" releases the claim; an unanswerable check
+      // leaves it `deciding` for the approval-claim sweep.
+      const applied =
+        progress.applied ||
+        (await this.isStagingApplied(approval.id).catch(() => null));
+      if (applied === false) {
         // Nothing reached live content (Req 13.5): hand the row back so the
         // worker's backoff retry and the sweep can try again.
         await this.releaseCommitClaim(approval.id);
+      } else if (applied === null) {
+        console.error('[veto-commit] could not tell whether the patch applied; left claimed', {
+          approvalId: approval.id,
+        });
       } else {
         // The patch is live; only the bookkeeping failed. Returning the row to
         // `pending` would let the next sweep apply the staging a second time,

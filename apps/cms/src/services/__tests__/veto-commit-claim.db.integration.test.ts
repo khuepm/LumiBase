@@ -10,6 +10,7 @@ import {
   sites,
   type Database,
 } from '@lumibase/database';
+import { ItemService } from '../item-service';
 import { VetoService, VetoServiceError } from '../veto-service';
 import { sweepDueVetoCommits } from '../veto-commit-worker';
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
@@ -198,5 +199,45 @@ describe.skipIf(!hasDbIntegrationUrl)('VetoService.commit — claim before apply
       await sweepDueVetoCommits({ db });
       expect(await new VetoService({ db, siteId: SITE }).isStagingApplied(approvalId)).toBe(true);
     });
+  });
+
+  // The write commits but the call rejects before the caller hears success
+  // (connection lost after COMMIT, an ambiguous ack). A process-local "applied"
+  // flag never got set, so only the database can say the patch is live.
+  function patchCommitsThenRejects() {
+    const original = ItemService.prototype.patch;
+    return vi.spyOn(ItemService.prototype, 'patch').mockImplementationOnce(async function (this: ItemService, ...args) {
+      await original.apply(this, args);
+      throw new Error('connection lost after commit');
+    });
+  }
+
+  it('a patch that committed but rejected is recognized from the database and not re-applied', async () => {
+    const { approvalId, revisionId } = await stageDue();
+    const before = await appliedRevisions(revisionId);
+    patchCommitsThenRejects();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await sweepDueVetoCommits({ db });
+    await sweepDueVetoCommits({ db });
+
+    expect(await appliedRevisions(revisionId)).toBe(before + 1);
+    const [row] = await db.select({ status: agentApprovals.status }).from(agentApprovals).where(eq(agentApprovals.id, approvalId));
+    expect(row!.status).toBe('approved');
+  });
+
+  it('when the database cannot answer whether the patch applied, the claim is kept, not released', async () => {
+    const { approvalId, revisionId } = await stageDue();
+    const before = await appliedRevisions(revisionId);
+    patchCommitsThenRejects();
+    vi.spyOn(VetoService.prototype, 'isStagingApplied').mockRejectedValueOnce(new Error('database unavailable'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await sweepDueVetoCommits({ db });
+    await sweepDueVetoCommits({ db });
+
+    expect(await appliedRevisions(revisionId)).toBe(before + 1);
+    const [row] = await db.select({ status: agentApprovals.status }).from(agentApprovals).where(eq(agentApprovals.id, approvalId));
+    expect(row!.status).toBe('deciding');
   });
 });
