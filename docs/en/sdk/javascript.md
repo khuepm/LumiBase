@@ -1,10 +1,10 @@
 ---
-version: 6
-lastUpdated: 2026-11-12T06:32:59.652Z
+version: 7
+lastUpdated: 2026-11-12T10:11:46.996Z
 sourceLang: en
-contentHash: 30519b4e9b54cfb3
-codeVerified: 2026-11-12T06:32:59.652Z
-codeVerifiedHash: 30519b4e9b54cfb3
+contentHash: 88e0270e2e7e332c
+codeVerified: 2026-11-12T10:11:46.996Z
+codeVerifiedHash: 88e0270e2e7e332c
 codeVerifiedClaims: 8
 ---
 
@@ -190,6 +190,19 @@ const res = await client.items('articles').export({
   filter: { status: { _eq: 'published' } },
 })
 const csv = await res.text()
+```
+
+### Import
+
+```typescript
+// Upload a CSV/JSON export as a background job; see docs/en/features/data-import.md
+const { data: job } = await client.imports.create('articles', file, { mode: 'upsert' })
+let current = job
+while (!['succeeded', 'failed', 'cancelled', 'timed_out'].includes(current.status)) {
+  await new Promise((r) => setTimeout(r, 2000))
+  current = (await client.imports.get(job.id)).data
+}
+if (current.failedRows > 0) console.table((await client.imports.errors(job.id)).data.errors)
 ```
 
 ### Revisions and pins

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import { ArrowDown, ArrowUp, Bookmark, ChevronLeft, ChevronRight, ClipboardCheck, Code2, Download, Filter, Lock, Plus, RefreshCw, Save } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bookmark, ChevronLeft, ChevronRight, ClipboardCheck, Code2, Download, Filter, Upload, Lock, Plus, RefreshCw, Save } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FieldResource } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
@@ -12,6 +12,7 @@ import { BookmarkSwitcher } from '@/modules/presets/bookmark-switcher';
 import { SaveBookmarkDialog } from '@/modules/presets/save-bookmark-dialog';
 import { BulkRawEditor } from './bulk-raw-editor';
 import { ExportDialog } from './export-dialog';
+import { ImportDialog } from './import-dialog';
 import { resolveDisplay } from './displays/registry';
 import { FilterBuilder, compileFilter, type FilterCondition } from './filter-builder';
 
@@ -42,6 +43,7 @@ export function ItemsListPage() {
   const [activeBookmarkId, setActiveBookmarkId] = useState<string | null>(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const queryClient = useQueryClient();
 
   useRealtimeSubscription(collection, () => {
@@ -271,6 +273,16 @@ export function ItemsListPage() {
           </button>
           <button
             type="button"
+            onClick={() => setImportOpen(true)}
+            disabled={!canCreate}
+            title={canCreate ? 'Import a CSV or JSON file' : 'You do not have create permission on this collection.'}
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Import
+          </button>
+          <button
+            type="button"
             onClick={() => itemsQuery.refetch()}
             className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs"
           >
@@ -428,6 +440,8 @@ export function ItemsListPage() {
           }}
         />
       )}
+
+      {importOpen && <ImportDialog collection={collection} onClose={() => setImportOpen(false)} />}
 
       {exportOpen && fieldsQuery.data && (
         <ExportDialog

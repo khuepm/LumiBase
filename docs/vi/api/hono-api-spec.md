@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 39
-lastUpdated: 2026-11-12T20:38:40.908Z
+version: 42
+lastUpdated: 2026-11-13T07:04:51.671Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 9a6c11835e29b8ef
+sourceHash: b412b64ec3b5532b
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T20:38:40.908Z
-codeVerifiedHash: 9a6c11835e29b8ef
-codeVerifiedClaims: 498
+codeVerified: 2026-11-13T07:04:51.671Z
+codeVerifiedHash: b412b64ec3b5532b
+codeVerifiedClaims: 514
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -271,6 +271,67 @@ Token hủy đăng ký là một HS256 JWT không lưu trạng thái (`{ siteId,
 
 **Tùy chọn & hành động lưu.** `PATCH /api/v1/me/preferences` gộp nông bản vá đã xác thực vào `users.preferences` (các phần khác như `language` / `keybindings` được giữ nguyên). Gửi `{ "saveAction": "stay" | "return" | "create_new" }` để đặt điều hướng sau khi lưu của trình chỉnh sửa Studio; gửi `{ "saveAction": null }` để quay về mặc định của site (`sites.default_save_action`, đặt qua `PATCH /api/v1/site`). Enum không hợp lệ → 400.
 
+### Chính sách định danh email
+
+`users` là bảng định danh toàn cục (một hàng cho mỗi người trên mọi site), nên
+quy tắc quyết định hai địa chỉ có phải cùng một tài khoản hay không được đặt ở
+hai tầng. Một site chỉ có thể **chặt hơn** instance, không bao giờ lỏng hơn.
+
+| Method | Path | Auth | Mô tả |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/admin/email-identity` | site-admin | `{ instanceMode, siteStrict, effective }` của site đang chọn |
+| `PUT` | `/api/v1/admin/email-identity/instance` | bootstrap admin | Đổi mode của instance — body `{ mode: "exact" \| "root", dryRun? }` |
+| `PUT` | `/api/v1/admin/email-identity/site` | site-admin | Bật/tắt strict theo site — body `{ strict: boolean, dryRun? }` |
+
+- **Mode của instance** (`exact` mặc định, `root`). `exact` giữ mỗi địa chỉ
+  khác nhau là một tài khoản riêng. `root` biến một hộp thư gốc thành một tài
+  khoản trên toàn instance: `+tag` bị bỏ trên mọi domain, và với Gmail phần
+  local còn bỏ dấu chấm và `googlemail.com` quy về `gmail.com`. Bỏ `+tag` trên
+  mọi domain là lựa chọn policy, không bảo đảm alias tới cùng hộp thư
+  (sub-addressing là quy ước của nhà cung cấp). Mode được chọn
+  trong Setup Wizard (`emailIdentityMode` trong body
+  `POST /api/v1/setup/complete`; bỏ trống → `exact`) và về sau chỉ bootstrap
+  admin đổi được — phải là user principal, không bao giờ là API key (ngược lại
+  trả `403 FORBIDDEN`).
+- **Strict theo site** (mặc định `false`). Dưới `exact`, một site strict chỉ
+  cho phép một membership cho mỗi hộp thư gốc, được bảo đảm bằng unique index
+  trên `(site_id, identity_key)` thay vì kiểm-tra-rồi-chèn. Dưới `root`, cờ
+  của site không có tác dụng (`effective: "root"`).
+- **Siết chặt** (`exact → root`, `strict: false → true`) kiểm tra dữ liệu hiện
+  có trước và trả `409 IDENTITY_COLLISION` kèm các tài khoản xung đột — không
+  có gì thay đổi. **Nới lỏng** luôn thành công. `dryRun: true` chạy cùng
+  transaction rồi rollback.
+
+```jsonc
+// PUT /api/v1/admin/email-identity/instance  { "mode": "root" }  →  409
+{ "errors": [{ "code": "IDENTITY_COLLISION",
+               "message": "Existing accounts share a root mailbox; resolve them before tightening the policy.",
+               "collisions": [{ "root": "test@gmail.com",
+                                "accounts": [{ "userId": "u_1", "email": "test@gmail.com" },
+                                             { "userId": "u_2", "email": "t.est+news@gmail.com" }] }] }] }
+
+// …sau khi xử lý các tài khoản trùng  →  200
+{ "data": { "previous": "exact", "current": "root", "changed": true, "dryRun": false } }
+```
+
+Mỗi thay đổi được áp dụng đều ghi một audit event (`email_identity_mode_changed`
+/ `site_email_identity_changed`). Ảnh hưởng tới các endpoint khác:
+
+- `POST /api/v1/auth/register` vẫn trả đúng `202` chung khi địa chỉ — hoặc,
+  dưới `root`, bất kỳ alias nào của nó — đã tồn tại, hoặc khi một site strict
+  đã có thành viên cùng hộp thư gốc. Tài khoản và membership được commit trong
+  một transaction, nên membership bị từ chối không bao giờ để lại tài khoản mồ
+  côi.
+- `POST /api/v1/auth/login`, `/forgot-password` và `/resend-verification`
+  resolve tài khoản theo mode của instance: dưới `root`, alias nào cũng tới
+  được tài khoản. Lockout được theo dõi trên hàng tài khoản đã resolve, nên
+  xoay vòng alias không reset hay né được lockout.
+- `POST /api/v1/users/invite` tra tài khoản không phân biệt hoa/thường (và theo
+  hộp thư gốc dưới `root`) và chỉ trả các trường công khai. Mời một alias của
+  thành viên hiện có trên site strict trả `409 EMAIL_IDENTITY_CONFLICT`.
+- SCIM (`/scim/v2/Users`) trả `409` với `scimType: "uniqueness"` khi địa chỉ
+  resolve về một tài khoản đã có hoặc xung đột trên site strict.
+
 ### Xác thực External JWT
 
 Một site có thể tin tưởng các JWT được cấp bởi IdP bên ngoài (Okta, Entra, Auth0, Logto, Keycloak, Cloudflare Access…). Xuất trình token dưới dạng `Authorization: Bearer <jwt>` kèm theo `X-Lumi-Site`. Chuỗi xác thực xác minh nó đối với **JWKS công khai** của nhà phát hành (giữa nhánh API-key và internal-JWT): khớp `iss` của token với nhà phát hành tin tưởng được đăng ký cho site đó, xác minh chữ ký + `aud`/`exp`/`nbf` với các thuật toán được phép (chỉ bất đối xứng) của nhà phát hành, ánh xạ claim role sang role LumiBase (**mặc định từ chối** — không có ánh xạ nghĩa là 403, không bao giờ tự động cho admin), bắt buộc bất kỳ claim `siteId` nào phải bằng site của request, và tùy chọn JIT-provisioning người dùng. Token có `iss` không tin tưởng sẽ bị bỏ qua (chuyển sang internal auth); một khi nhà phát hành đã khớp, xác minh sẽ hoạt động theo chế độ fail-closed.
@@ -516,6 +577,18 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 
 **Export.** `GET /items/:collection/export?format=csv|json&fields=&locales=&relations=id|slug|embed&filter=&sort=&status=` xuất theo luồng mọi dòng khớp (phân trang keyset, nên không giới hạn kích thước). Endpoint dùng quyền `read` của người gọi và cú pháp `filter`/`sort` của endpoint danh sách, chạy hook `items.export.before` của extension cho từng dòng, và ghi một mục audit `items_exported`. CSV ghi một cột `field.locale` cho mỗi locale của trường dịch được và vô hiệu hoá công thức bảng tính; JSON có dạng `{ collection, format: "lumibase-export@1", exportedAt, fields, locales, relations, items: [{ id, status, sort, created_at, updated_at, data }] }`. Lỗi trả về trước khi bắt đầu stream: `400 VALIDATION` / `400 UNKNOWN_FIELD` / `400 INVALID_FILTER`, `403 FORBIDDEN`, `404 NOT_FOUND`. Xem [Data export](../features/data-export.md).
 
+**Imports.** Job chạy nền đọc lại các định dạng export:
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `POST` | `/api/v1/imports?collection=&format=csv\|json&mode=create\|upsert` | Upload một file (multipart `file` hoặc body thô) → `202 { data: job }` |
+| `GET` | `/api/v1/imports?collection=&status=&limit=` | Các job gần đây (của mình; admin của site thấy tất cả) |
+| `GET` | `/api/v1/imports/:id` | Tiến độ và các bộ đếm của job |
+| `GET` | `/api/v1/imports/:id/errors` | Lỗi theo dòng; `?format=csv` để tải về |
+| `POST` | `/api/v1/imports/:id/cancel` | Dừng một job đang chờ hoặc đang chạy |
+
+File không hợp lệ bị từ chối với `400 VALIDATION` / `413 PAYLOAD_TOO_LARGE` trước khi tạo job; thiếu quyền `create` (hoặc `update` với `upsert`) trả `403`. Xem [Data import](../features/data-import.md#job-import-chạy-nền).
+
 **Phân trang danh sách & Tổng số.** `GET /items/:collection` chấp nhận `limit` (1–200, mặc định 25), `offset`, và `meta`:
 
 - `meta=total_count` (mặc định) — phản hồi là `{ data, meta: { total, limit, offset } }`.
@@ -751,6 +824,7 @@ Công khai (không có phiên; xác thực bằng chữ ký):
 
 | Phương thức | Đường dẫn | Mô tả |
 |--------|------|-------------|
+| `POST` | `/api/v1/deployments/webhook/:provider/:siteId` | Inbound status webhook (`vercel` \| `netlify`) mang tenant trong path (hoạt động trên shared API host mà không cần `X-Lumi-Site`). `404 UNKNOWN_PROVIDER`, `400 TENANT_INVALID` / `TENANT_MISMATCH`, `401 INVALID_SIGNATURE`; còn lại `200 { data: null }`, kể cả khi body không khớp deployment nào |
 | `POST` | `/api/v1/deployments/webhook/:provider` | Inbound status webhook (`vercel` \| `netlify`). Tenant lấy từ `withTenant` (`X-Lumi-Site` hoặc host mapping). `404 UNKNOWN_PROVIDER`, `401 INVALID_SIGNATURE`; còn lại `200 { data: null }`, kể cả khi body không khớp deployment nào |
 
 **Shape của target** (`data` của các route target): `{ id, provider, name, projectId, defaultBranch, productionUrl, status, createdAt, updatedAt }`.

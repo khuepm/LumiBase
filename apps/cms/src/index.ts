@@ -31,6 +31,7 @@ import { configRouter } from './routes/config';
 import { authRouter, meRouter } from './routes/auth';
 import { tfaAuthRouter, tfaMeRouter } from './routes/tfa';
 import { adminSecurityRouter } from './routes/admin-security';
+import { adminEmailIdentityRouter } from './routes/admin-email-identity';
 import { adminAuthIssuersRouter } from './routes/admin-auth-issuers';
 import { adminEncryptionRouter } from './routes/admin-encryption';
 import { editorialRouter } from './routes/editorial';
@@ -51,6 +52,7 @@ import { extensionsRouter } from './routes/extensions';
 import { filesRouter } from './routes/files';
 import { flowsRouter } from './routes/flows';
 import { itemsRouter } from './routes/items';
+import { importsRouter } from './routes/imports';
 import { handleGraphQL } from './graphql';
 import { permissionsRouter } from './routes/permissions';
 import { policiesRouter } from './routes/policies';
@@ -205,9 +207,12 @@ app.route('/scim/v2', scimRouter);
 
 // Inbound deployment status webhook. PUBLIC / pre-auth on purpose: the
 // provider (Vercel/Netlify) authenticates via request signature, not a bearer
-// token. Needs `withTenant` (X-Lumi-Site → siteId) + `withDb` to update the
-// `deployments` row; `withRuntime` already ran globally for the KeyProvider.
-app.use('/api/v1/deployments/webhook/*', withTenant(), withDb());
+// token. `/:provider/:siteId` carries the tenant in the path so webhooks work
+// on the shared API host (`api.lumibase.dev`) where providers cannot send
+// custom headers (`X-Lumi-Site`); `/:provider` remains supported via
+// `withTenant` for per-site host mappings or callers that send `X-Lumi-Site`.
+// Both routes scope their DB handle with `scopedDbFor(c, siteId)` (#569, B130).
+app.use('/api/v1/deployments/webhook/*', withDb());
 app.route('/api/v1/deployments/webhook', deploymentsWebhookRouter);
 
 // Git integration public surface — OAuth callback + signature-verified webhook
@@ -256,6 +261,8 @@ api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/pages', pagesRouter);
 api.route('/items', itemsRouter);
+// Background collection imports (#726).
+api.route('/imports', importsRouter);
 api.route('/releases', releasesRouter);
 api.route('/editorial', editorialRouter);
 // GraphQL surface (Yoga). Mounted inside the authenticated `api` sub-app so
@@ -304,6 +311,8 @@ api.route('/admin', adminRouter);
 // being populated. Sibling to `/admin` rather than nested so future
 // recovery routes (task 10.7) can mount alongside without reshuffling.
 api.route('/admin/security', adminSecurityRouter);
+// Email identity policy (#794): instance mode (bootstrap admin) + per-site strict.
+api.route('/admin/email-identity', adminEmailIdentityRouter);
 // Admin Encryption surface (regulated-content-readiness task 3.4; Req 3.5).
 // Sibling to `/admin/security`, also under `withAuth` with an in-router
 // admin-role gate. Handles key-rotation metadata + key listing.

@@ -1,22 +1,22 @@
 ---
-version: 1
-lastUpdated: 2026-07-28T10:17:03.297Z
+version: 4
+lastUpdated: 2026-11-12T21:04:27.226Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 152cf39aee864f38
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T10:17:03.297Z
-codeVerifiedHash: 152cf39aee864f38
-codeVerifiedClaims: 4
+sourceHash: 5644257d82b75cbc
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-12T21:04:27.226Z
+codeVerifiedHash: 5644257d82b75cbc
+codeVerifiedClaims: 12
 ---
 
 # Data import
 
 Nạp hàng loạt nhiều item — migration, seed, hay backfill một lần — phải đi qua
-**bulk items endpoint**, không phải một request cho mỗi row. Trang này nói về
-endpoint đó, rate limit thường làm sập các lần import lớn, và cách batch được
-khuyến nghị.
+**bulk items endpoint** hoặc, với cả một file, một **job import chạy nền**, không
+bao giờ là một request cho mỗi row. Trang này nói về cả hai, rate limit thường làm
+sập các lần import lớn, và cách batch được khuyến nghị.
 
 ## Bulk endpoint
 
@@ -58,6 +58,91 @@ retry một batch lỗi mà không phải gửi lại toàn bộ, đồng thời
 nằm gọn dưới cửa sổ rate-limit. Chọn batch size cân bằng giữa throughput và
 thời lượng request cho dữ liệu của bạn.
 
+## Job import chạy nền
+
+Với một file — [bản export CSV hoặc JSON](./data-export.md), dữ liệu migration,
+một bảng tính 100k dòng — hãy upload nó thành một **job import** thay vì tự chia
+batch các lệnh gọi `bulk`. Server lưu file, trả `202` ngay, rồi ghi các dòng ở
+chế độ nền theo từng phần, nên kích thước file không bao giờ làm request bị timeout.
+
+```
+POST /api/v1/imports?collection={collection}&format=csv|json&mode=create|upsert
+```
+
+- **Body:** chính là file. Gửi dạng multipart (trường `file`; định dạng lấy từ
+  đuôi tên `.csv` / `.json`) hoặc body thô (`text/csv`,
+  `application/octet-stream`). Body thô `application/json` bị giới hạn bởi mức
+  1 MiB của JSON body, nên hãy gửi file JSON dạng multipart hoặc
+  `application/octet-stream`.
+- **Định dạng:** bố cục của [Data export](./data-export.md) — CSV với các cột
+  `field.locale` cho trường dịch được, hoặc envelope JSON (hoặc một mảng
+  `{ id?, status?, sort?, data }`). Cột không phải là trường của collection bị
+  từ chối với `400` trước khi ghi bất kỳ dòng nào.
+- **Mode:** `create` (mặc định) luôn tạo item mới. `upsert` cập nhật item có
+  `id` khớp và tạo phần còn lại; cần thêm quyền `update`.
+- **Quyền:** được kiểm tra ngay từ đầu (`create`, cộng `update` với `upsert`) và
+  kiểm tra lại ở từng dòng, dưới danh nghĩa user hoặc API key đã upload file.
+  Nếu principal đó mất quyền trong lúc job chạy, job dừng với trạng thái `failed`.
+
+Phản hồi là job:
+
+```json
+{
+  "data": {
+    "id": "Vb3…",
+    "collection": "products",
+    "format": "csv",
+    "mode": "create",
+    "status": "queued",
+    "totalRows": 100000,
+    "processedRows": 0,
+    "createdRows": 0,
+    "updatedRows": 0,
+    "failedRows": 0,
+    "errorsTruncated": 0,
+    "message": null,
+    "cancelRequested": false
+  }
+}
+```
+
+| Endpoint | Mục đích |
+|----------|----------|
+| `GET /api/v1/imports/{id}` | Tiến độ: `status`, `processedRows` trên `totalRows`, các bộ đếm. |
+| `GET /api/v1/imports?collection=&status=&limit=` | Các job gần đây. Bạn thấy job của mình; admin của site thấy tất cả. |
+| `GET /api/v1/imports/{id}/errors` | Lỗi theo dòng `{ row, id?, message }`. Thêm `?format=csv` để tải về. |
+| `POST /api/v1/imports/{id}/cancel` | Dừng job. Job còn đang chờ dừng ngay; job đang chạy dừng sau phần hiện tại. |
+
+`status` đi từ `queued` → `running` → `succeeded`, `failed`, `cancelled` hoặc
+`timed_out`. Một dòng lỗi (validation, quyền, hook) được ghi lại cùng số thứ tự
+dòng (đếm từ 1) và job vẫn chạy tiếp; job chỉ `failed` khi mọi dòng đều lỗi.
+1.000 lỗi đầu tiên được lưu, phần còn lại được đếm trong `errorsTruncated`. Các
+dòng đã ghi trước khi huỷ hoặc timeout vẫn được giữ.
+
+Studio có cùng luồng này ở **Content → collection → Import**, với thanh tiến độ,
+nút **Cancel import** và **Download error report**. Studio cũng nhận sự kiện
+realtime `import.progress` cho người đã upload.
+
+**Cách job chạy.** Request upload khởi động job và xử lý nó trong khoảng
+20 giây. Sau đó một cron mỗi phút (Cron Trigger trên Workers, hoặc scheduler của
+Node trên Docker) chạy tiếp. Mỗi phần là một transaction của database: các dòng và
+bộ đếm tiến độ được commit cùng nhau, nên một worker chết giữa chừng không để lại
+gì, và phần đó được chạy lại từ dòng đã commit cuối cùng, không tạo bản trùng.
+Transaction khoá job, nên worker thứ hai phải chờ thay vì ghi trùng các dòng đó,
+và tiếp quản khi lease của worker đầu hết hạn. Đo trên máy local với Postgres 16,
+mỗi dòng đi qua toàn bộ pipeline item (validation, revision, change feed) với tốc
+độ khoảng 90 dòng mỗi giây cho mỗi job, nên một file 100k dòng mất khoảng 20 phút.
+Giới hạn và kích thước mỗi phần được đặt bằng [các biến `IMPORT_*`](../deployment/environment-variables.md#imports).
+
+**Side effect chạy ít nhất một lần.** Chỉ các thao tác ghi database nằm trong
+transaction của phần. Những gì một dòng kích hoạt bên ngoài database — hook
+`items.create.after` / `items.update.after`, flow, sự kiện realtime, đánh index
+search, đồng bộ Firebase — chạy ngay khi dòng được ghi, trước khi phần được commit.
+Khi một phần được chạy lại sau sự cố hoặc mất lease, các side effect đó chạy lại cho
+các dòng của nó, và có thể đã chạy cho một dòng mà thao tác ghi bị rollback. Hãy làm
+cho hook của extension và đích của flow có tính idempotent (dựa theo `itemId`), hoặc
+coi item là nguồn sự thật và đối soát lại từ nó.
+
 ## Rate limit
 
 API đã xác thực bị giới hạn mặc định ở **300 request mỗi 60 giây** cho mỗi
@@ -76,5 +161,7 @@ nào tôn trọng chúng sẽ tự điều tiết nhịp.
 
 ## Liên quan
 
+- [Data export](./data-export.md)
+- [Environment Variables → Imports](../deployment/environment-variables.md#imports)
 - [Environment Variables → Rate limiting](../deployment/environment-variables.md#rate-limiting)
 - [Data model](../data-model.md)
