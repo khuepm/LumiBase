@@ -25,6 +25,8 @@ import type { Bindings } from './env';
 import { runScheduledRotation } from './modules/audit/scheduled';
 import { runScheduledRefreshTokenPrune } from './services/auth/refresh-token';
 import { runScheduledReviewRunPurge } from './services/review-run-retention';
+import { runScheduledTelemetry } from './modules/activation/telemetry';
+import { resolveBuildMetadata } from './routes/system';
 import { runScheduledPageviewFlush } from './modules/pageviews/scheduled';
 import { resolveSentryOptions } from './observability/sentry';
 import { withWorkerRuntimeDefault } from './worker-runtime-default';
@@ -182,6 +184,16 @@ export default Sentry.withSentry(
       ctx.waitUntil(runScheduledRotation(db));
       ctx.waitUntil(runScheduledRefreshTokenPrune(db));
       ctx.waitUntil(runScheduledReviewRunPurge(db, env.DECISION_REVIEW_RETENTION_DAYS));
+      // Opt-in anonymous usage telemetry — same pass as the Docker hourly cron.
+      // Off unless enabled AND an endpoint is set; then it is a no-op.
+      ctx.waitUntil(
+        runScheduledTelemetry({
+          db,
+          env: env as unknown as Record<string, string | undefined>,
+          runtime: 'cloudflare',
+          version: resolveBuildMetadata(env).version,
+        }).then(() => undefined),
+      );
       ctx.waitUntil(runWorkerSweeps(HOURLY_SWEEPS, sweepDeps));
     }
   },

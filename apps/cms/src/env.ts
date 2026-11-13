@@ -51,6 +51,14 @@ export interface Bindings {
   LUMIBASE_ENV: string;
   /** Semver package/application version for the deployed LumiBase build. */
   LUMIBASE_VERSION?: string;
+  /** Opt in to anonymous usage telemetry (`true`). Default off. See docs `operations/usage-telemetry.md`. */
+  LUMIBASE_TELEMETRY_ENABLED?: string;
+  /** Hard off switch for telemetry (`true`). Wins over `LUMIBASE_TELEMETRY_ENABLED`. */
+  LUMIBASE_TELEMETRY_DISABLED?: string;
+  /** Where telemetry events are POSTed. Unset by default — nothing is sent without it. */
+  LUMIBASE_TELEMETRY_ENDPOINT?: string;
+  /** Honoured as a telemetry off switch when truthy. */
+  DO_NOT_TRACK?: string;
   /** Source-control revision used for this build. */
   LUMIBASE_GIT_SHA?: string;
   /** ISO-8601 timestamp for when this build artifact was produced. */

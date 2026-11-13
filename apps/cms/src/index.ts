@@ -64,6 +64,8 @@ import { releasesRouter } from './routes/releases';
 import { rolesRouter } from './routes/roles';
 import { healthRouter } from './routes/health';
 import { insightsRouter } from './routes/insights';
+import { activationRouter } from './modules/activation/routes';
+import { apiKeySiteId, deliverPathSiteId, withDeliveryMilestone } from './modules/activation/delivery-mark';
 import { mediaRouter } from './routes/media';
 import { transformPresetsRouter } from './routes/transform-presets';
 import { uploadsRouter } from './routes/uploads';
@@ -266,6 +268,9 @@ api.route('/retention', retentionRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/pages', pagesRouter);
+// Activation: an API-key content read marks the site's `delivery_request`
+// milestone (first hit only; see modules/activation/delivery-mark.ts).
+api.use('/items/*', withDeliveryMilestone(apiKeySiteId));
 api.route('/items', itemsRouter);
 // Background collection imports (#726).
 api.route('/imports', importsRouter);
@@ -353,6 +358,7 @@ api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);
 api.route('/utils/cache', cacheUtilsRouter);
 api.route('/dashboards', insightsRouter);
+api.route('/activation', activationRouter);
 api.route('/scim-tokens', scimAdminRouter);
 api.route('/ai', aiRouter);
 // Draft review profiles, runs and feedback (Jev J05, #512). Disjoint leaf paths.
@@ -416,6 +422,9 @@ app.route('/api/v1/email', emailPublicRouter);
 // handlers first makes them win for their disjoint paths (same mechanism as
 // the shares/email mounts above).
 app.use('/api/v1/deliver/*', withDb(), withDeliverRateLimit());
+// Separate mount so the rate-limit wiring line above stays exactly as the
+// security-guards wiring test pins it. Runs after the limiter.
+app.use('/api/v1/deliver/*', withDeliveryMilestone(deliverPathSiteId));
 app.route('/api/v1/deliver', deliverRouter);
 
 // Public pageview beacon — tenancy in the URL, unauthenticated. `withRuntime`

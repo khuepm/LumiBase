@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 44
-lastUpdated: 2026-11-13T15:34:28.539Z
+version: 45
+lastUpdated: 2026-11-13T19:25:16.472Z
 sourceLang: en
 translatedFrom: en
-sourceHash: c05f5a0cfa685cf1
+sourceHash: e29ddd4d6f733744
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T15:34:28.539Z
-codeVerifiedHash: c05f5a0cfa685cf1
-codeVerifiedClaims: 516
+codeVerified: 2026-11-13T19:25:16.472Z
+codeVerifiedHash: e29ddd4d6f733744
+codeVerifiedClaims: 518
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1337,6 +1337,14 @@ Dashboard do người dùng xây dựng gồm các panel tổng hợp trên các
 | `POST` | `/api/v1/dashboards/:id/panels/preview` | Chạy thử `PanelQuery` (xem trước trong trình chỉnh sửa) |
 
 `PanelQuery` (hợp đồng dùng chung `@lumibase/contracts`): `{ collection, aggregate (count|sum|avg|min|max), field?, groupBy?, filter? (quy tắc điều kiện), dateRange?, limit? }`. `field` is required for non-`count` aggregates. Trường nằm ngoài danh sách trắng của collection sẽ trả về `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
+
+### Mốc kích hoạt
+
+| Phương thức | Đường dẫn | Mô tả |
+|--------|------|-------------|
+| `GET` | `/api/v1/activation` | Phễu mốc của site đang hoạt động → `{ data: { siteId, milestones, reached, total } }`. Chỉ admin site (`403 FORBIDDEN`). |
+
+Mỗi phần tử của `milestones` là `{ key, reachedAt, source, secondsSinceSiteCreated }`, với `key` là một trong `site_created`, `item_published`, `delivery_request`, `agent_run`. Mốc chỉ ghi một lần và theo phạm vi site. Xem [Mốc kích hoạt và telemetry sử dụng](../operations/usage-telemetry.md).
 
 ---
 

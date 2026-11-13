@@ -121,7 +121,10 @@ DECLARE
     'lumibase_site_skills', 'lumibase_site_skill_versions',
     -- Background collection imports (#726). Requests read/write their own site;
     -- the resume tick claims jobs across sites on the system connection.
-    'lumibase_import_jobs'
+    'lumibase_import_jobs',
+    -- Activation milestones (site-isolated). Requests read/write their own
+    -- site; the telemetry tick reads across sites on the system connection.
+    'lumibase_activation_milestones'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

@@ -1,11 +1,11 @@
 ---
-version: 45
-lastUpdated: 2026-11-13T15:34:28.539Z
+version: 46
+lastUpdated: 2026-11-13T19:25:16.472Z
 sourceLang: en
-contentHash: c05f5a0cfa685cf1
-codeVerified: 2026-11-13T15:34:28.539Z
-codeVerifiedHash: c05f5a0cfa685cf1
-codeVerifiedClaims: 516
+contentHash: e29ddd4d6f733744
+codeVerified: 2026-11-13T19:25:16.472Z
+codeVerifiedHash: e29ddd4d6f733744
+codeVerifiedClaims: 518
 ---
 
 # Hono API Specification — LumiBase
@@ -1533,6 +1533,14 @@ identifiers.
 (count|sum|avg|min|max), field?, groupBy?, filter? (condition rule), dateRange?,
 limit? }`. `field` is required for non-`count` aggregates. A field outside the
 collection whitelist returns `400 { errors: [{ code: 'INVALID_FIELD' }] }`.
+
+### Activation milestones
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/activation` | The active site's milestone funnel → `{ data: { siteId, milestones, reached, total } }`. Site admins only (`403 FORBIDDEN`). |
+
+Each entry of `milestones` is `{ key, reachedAt, source, secondsSinceSiteCreated }` with `key` one of `site_created`, `item_published`, `delivery_request`, `agent_run`. Milestones are write-once and site-scoped. See [Activation milestones and usage telemetry](../operations/usage-telemetry.md).
 
 ---
 

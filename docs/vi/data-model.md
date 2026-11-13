@@ -1,13 +1,13 @@
 ---
-version: 14
-lastUpdated: 2026-11-13T06:58:01.770Z
+version: 15
+lastUpdated: 2026-11-13T15:31:05.385Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 663fe1dec3a63ad7
+sourceHash: ffe6886c5e7614f4
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T06:58:01.770Z
-codeVerifiedHash: 663fe1dec3a63ad7
+codeVerified: 2026-11-13T15:32:52.775Z
+codeVerifiedHash: ffe6886c5e7614f4
 codeVerifiedClaims: 20
 ---
 
@@ -39,6 +39,7 @@ Các file schema được chia theo domain:
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
 | `imports.ts` | `lumibase_import_jobs` |
+| `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 
 Migration nằm ở `packages/database/migrations/` và `packages/database/drizzle/`.
 
@@ -217,6 +218,10 @@ Index: `(siteId, collectionId, status)`, GIN trên `data`, `(siteId, status, pub
 - Một lần import chạy nền (#726): `collection`, `format` (`csv`/`json`), `mode` (`create`/`upsert`), `status` (`queued`/`running`/`succeeded`/`failed`/`cancelled`/`timed_out`), `principal` jsonb (được resolve lại ở mỗi bước), `created_by`.
 - Tiến độ: `total_rows`, `cursor` (dòng kế tiếp), `created_rows`, `updated_rows`, `failed_rows`, `errors` jsonb (`{ row, id?, message }[]`, có giới hạn) và `errors_truncated`.
 - Điều phối worker: `lease_owner`, `lease_until`, `timeout_ms`, `cancel_requested_at`, `started_at`, `finished_at`. `source` giữ file đã upload cho tới khi job kết thúc, sau đó được xoá. Cô lập theo site bằng RLS.
+
+### `activation_milestones` và `telemetry_state` (`activation.ts`, migration `0029`)
+- `activation_milestones`: mỗi `site_id` và `milestone` (`site_created`/`item_published`/`delivery_request`/`agent_run`) một dòng, kèm `reached_at` và `source` (`event`/`derived`). Ghi một lần, không bao giờ cập nhật. Cô lập theo site bằng RLS.
+- `telemetry_state`: singleton cấp instance (`id = 'singleton'`), không theo phạm vi site. Giữ `install_id` ngẫu nhiên và `sent` jsonb (tên sự kiện → ngày đã gửi). Dòng này chỉ được tạo sau khi người vận hành opt-in telemetry sử dụng.
 
 ### Runtime contract cho schema diff/apply
 
