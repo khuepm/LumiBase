@@ -98,8 +98,10 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   that dies after applying its patch is quarantined `failed` by the claim sweep;
   `POST /agent/approvals/:id/reopen` used to put it back to `pending`, and the
   next sweep applied the same staging again. It now answers `409
-  VETO_ALREADY_APPLIED` when the staging was finalized or the item carries a
-  revision from the approval's run.
+  VETO_ALREADY_APPLIED` when a live revision carries this staging's commit
+  marker (`{ kind: 'veto_staging', revisionId }` in its provenance `sources`,
+  written in the same transaction as the item update). Commits made before the
+  marker existed read as not applied.
 
 ### Security
 - Hardened production image: both base images are pinned by digest (`node:22-slim@sha256:…`, `gcr.io/distroless/nodejs22-debian13:nonroot@sha256:…`; Dependabot bumps tag and digest); the runtime stage is distroless (no shell, no package manager), runs as UID/GID `65532`, keeps application files root-owned, and starts with a read-only root filesystem. The shell entrypoint is replaced by `docker/scripts/entrypoint.mjs` and the `HEALTHCHECK` by `docker/scripts/healthcheck.mjs`, which now probes the worker health port for `LUMIBASE_PROCESS_ROLE=worker` instead of always `1989`. `docker/docker-compose.prod.yml` and `docker/docker-compose.gcp.yml` set `read_only: true`, a `/tmp` tmpfs, `cap_drop: [ALL]`, `no-new-privileges` and `init: true` (#734).
