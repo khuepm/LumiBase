@@ -55,6 +55,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { DEFAULT_SITE_ID } from '../setup/site-constants';
 import { eq, sql } from 'drizzle-orm';
 import { users, type Database } from '@lumibase/database';
+import { emailLookup } from '../email-identity/service';
 
 import type { AppEnv } from '../../env';
 import {
@@ -406,36 +407,25 @@ function readEnvForCounter(c: Context<AppEnv>): CounterStoreEnv {
 }
 
 /**
- * Select `users.lockedUntil` for the given lower-cased email. Returns
- * the `Date` when locked, `null` when the row doesn't exist or
- * `lockedUntil` is null.
- *
- * Uses raw SQL with `lower(email) = $1` so the comparison matches the
- * lower-cased index name `users_email_lower_unique` from design §3.1.
- * The current `users` table doesn't yet expose that index in the
- * Drizzle schema (task 1.1 added the column but not the index — see
- * core.ts), so a `lower()` SQL fragment keeps the lookup correct
- * regardless of how the row was inserted. Once the index lands the
- * planner picks it up automatically without changing this query.
+ * Select `users.lockedUntil` for the account the given lower-cased email
+ * resolves to under the instance email identity mode (#794). Returns the
+ * `Date` when locked, `null` when no account matches or `lockedUntil` is
+ * null. Under `exact` this is the pre-#794 `lower(email) = $1` match.
  */
 async function selectUserLockedUntil(
   db: Database,
   emailLower: string,
 ): Promise<Date | null> {
-  if (emailLower.length === 0) {
-    // Still issue a query so the timing profile matches; the empty
-    // string won't match any row, and the LIMIT 1 keeps it cheap.
-    const rows = await db
-      .select({ lockedUntil: users.lockedUntil })
-      .from(users)
-      .where(sql`lower(${users.email}) = ${emailLower}`)
-      .limit(1);
-    return coerceLockedUntil(rows[0]?.lockedUntil);
-  }
+  // #794: resolve the account under the instance email identity mode, so
+  // under `root` a lock on `foo@x.com` also blocks `foo+tag@x.com` (the
+  // lock lives on the account row, not on the typed address). An empty
+  // string still issues the query so the timing profile matches; it
+  // matches no row, and the LIMIT 1 keeps it cheap.
+  const { where } = await emailLookup(db, emailLower);
   const rows = await db
     .select({ lockedUntil: users.lockedUntil })
     .from(users)
-    .where(sql`lower(${users.email}) = ${emailLower}`)
+    .where(where)
     .limit(1);
   return coerceLockedUntil(rows[0]?.lockedUntil);
 }
