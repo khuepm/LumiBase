@@ -9,7 +9,6 @@ import {
 } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
 import { sites, users } from './core';
-import { items } from './cms';
 
 /**
  * Regulated / sensitive content readiness tables (spec:
@@ -87,7 +86,12 @@ export const contentReviews = pgTable(
     siteId: text('site_id')
       .notNull()
       .references(() => sites.id, { onDelete: 'cascade' }),
-    itemId: text('item_id').references(() => items.id, { onDelete: 'set null' }),
+    /**
+     * Same-site item. The migration (0029) declares the composite FK with
+     * `ON DELETE SET NULL (item_id)`, which keeps `site_id`; Drizzle has no
+     * column-list form, so that FK lives in SQL only.
+     */
+    itemId: text('item_id'),
     revisionId: text('revision_id'),
     requestedBy: text('requested_by').references(() => users.id, { onDelete: 'set null' }),
     /** Assigned reviewer — user id or role token. */

@@ -2633,6 +2633,14 @@ paths:
                 sort: { type: integer }
       responses:
         '201': { description: Created }
+        '409':
+          description: >-
+            `ITEM_ID_EXISTS`: a caller-chosen id (string primary key) is already
+            used in this site, in any collection. Ids are unique per site, so
+            another site may use the same id.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /imports:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'

@@ -1027,7 +1027,7 @@ export class ItemService {
     const cryptoOut: CryptoRecordOpts = {};
     const encryptedData = await this.processCrypto(collectionName, data, 'encrypt', recordId, true, false, undefined, cryptoOut);
     if (primaryKey.id) {
-      await this.assertItemIdAvailable(coll.id, primaryKey.id);
+      await this.assertItemIdAvailable(primaryKey.id);
     }
     const row = await runSiteTransaction(this.deps.db, this.deps.siteId, async (tx) => {
       const [inserted] = await tx
@@ -1069,6 +1069,8 @@ export class ItemService {
         payload: { data: payload.data },
       });
       return inserted;
+    }).catch((err: unknown) => {
+      throw itemIdConflict(err, recordId) ?? err;
     });
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
@@ -1550,7 +1552,7 @@ export class ItemService {
         cryptoOut,
       );
       if (primaryKey.id) {
-        await this.assertItemIdAvailable(coll.id, primaryKey.id);
+        await this.assertItemIdAvailable(primaryKey.id);
       }
       prepared.push({
         recordId,
@@ -1615,6 +1617,8 @@ export class ItemService {
         );
       }
       return inserted;
+    }).catch((err: unknown) => {
+      throw itemIdConflict(err, null) ?? err;
     });
 
     for (const row of rows) {
@@ -1871,17 +1875,16 @@ export class ItemService {
     return byId;
   }
 
-  private async assertItemIdAvailable(collectionId: string, id: string): Promise<void> {
+  /**
+   * Item ids are unique per site (primary key `(site_id, id)`), across all of
+   * the site's collections. Check the whole site so an id used by another
+   * collection is a clean 409, not a key violation. Other sites never collide.
+   */
+  private async assertItemIdAvailable(id: string): Promise<void> {
     const [existing] = await this.deps.db
       .select({ id: items.id })
       .from(items)
-      .where(
-        and(
-          scopeSite(items.siteId, this.deps.siteId),
-          eq(items.collectionId, collectionId),
-          eq(items.id, id),
-        ),
-      )
+      .where(and(scopeSite(items.siteId, this.deps.siteId), eq(items.id, id)))
       .limit(1);
     if (existing) {
       assertPrimaryKeyAvailable(id, true);
@@ -2550,6 +2553,24 @@ export function resolvePrimaryKey(
   }
 
   return { field, type, storageMode, id: undefined };
+}
+
+/**
+ * Maps a unique violation on the items primary key `(site_id, id)` — a race
+ * with another create, or a bulk payload that repeats an id — to the same
+ * `409 ITEM_ID_EXISTS` the pre-insert check returns. Anything else: `null`.
+ */
+export function itemIdConflict(err: unknown, id: string | null): ItemServiceError | null {
+  let code: unknown;
+  let constraint: unknown;
+  for (let e: unknown = err, depth = 0; e && typeof e === 'object' && depth < 4; depth += 1) {
+    const rec = e as Record<string, unknown>;
+    code ??= rec.code;
+    constraint ??= rec.constraint_name ?? rec.constraint;
+    e = rec.cause;
+  }
+  if (code !== '23505' || constraint !== 'lumibase_items_pkey') return null;
+  return new ItemServiceError('ITEM_ID_EXISTS', id ? `Item "${id}" already exists.` : 'An item id in the payload already exists.', 409);
 }
 
 export function assertPrimaryKeyAvailable(id: string, exists: boolean): void {

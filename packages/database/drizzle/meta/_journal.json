@@ -204,6 +204,13 @@
       "when": 1794470400000,
       "tag": "0028_import_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794556800000,
+      "tag": "0029_items_site_scoped_pk",
+      "breakpoints": true
     }
   ]
 }
