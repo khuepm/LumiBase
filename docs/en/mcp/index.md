@@ -1,14 +1,14 @@
 ---
-version: 16
-lastUpdated: 2026-11-12T19:17:49.878Z
+version: 17
+lastUpdated: 2026-11-13T01:32:48.941Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 0faf2279378545e8
+sourceHash: ba73f72dad20d6bd
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T19:17:49.878Z
-codeVerifiedHash: 0faf2279378545e8
-codeVerifiedClaims: 36
+codeVerified: 2026-11-13T01:32:48.941Z
+codeVerifiedHash: ba73f72dad20d6bd
+codeVerifiedClaims: 38
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -33,10 +33,11 @@ Source: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`a
 - **Auth → capability:** Bearer token; the capability set is **resolved from the token's live RBAC bundle** (#472), not from `auth.roles`. ⇒ an MCP client can **never do more** than that same token can through REST — and never less either, which is what reading `auth.roles` got wrong (a role id can never match `items:write`). See [`governed-tool-contract.md`](governed-tool-contract.md) section 4.
 - **Feature gate:** the per-site `contentOs.mcp` flag (default **off**). Off → `404 MCP_DISABLED`. (`feature-flags.ts`).
 - **Methods (JSON-RPC):**
-  - `initialize` — negotiates the protocol version, returns `capabilities: { tools: { listChanged: false } }`.
+  - `initialize` — negotiates the protocol version, returns `capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }` (the organization plane has no `prompts`).
   - `ping`.
   - `tools/list` — lists the **currently enabled** tools from `ToolRegistryService`; the inputSchema is derived from the canonical schemas in `@lumibase/contracts` (only a skill with no schema still falls back to `{ type: 'object' }`).
   - `tools/call` — runs through `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. The result is wrapped as `{ content, structuredContent, isError }`.
+  - `prompts/list`, `prompts/get` — the site's `active` [Site Skills](../features/site-skills.md); `name` is the slug and the body comes back as a single user message. Served only to callers that can read skills over REST, i.e. a principal that resolves to a control-plane admin for the site (`grant.allowed && grant.controlPlaneAdmin` in `routes/mcp.ts`): a non-admin member or a site API key gets an empty `prompts/list`. For an admin, each skill's `surfaces`/`requiredCapabilities` still filter further. A prompt that does not exist and one the caller may not see answer identically.
   - `notifications/initialized`, `notifications/cancelled` → return `null` ⇒ HTTP `202 Accepted` with no body.
 - **Mapping decision → tool result** (an important invariant):
   - `executed` → `isError: false`, data in `structuredContent`.

@@ -1,13 +1,13 @@
 ---
-version: 10
-lastUpdated: 2026-11-11T02:57:07.105Z
+version: 11
+lastUpdated: 2026-11-12T19:09:53.181Z
 sourceLang: en
 translatedFrom: en
-sourceHash: edb7b7484da75d3f
+sourceHash: c7258c140c90de90
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T02:57:07.105Z
-codeVerifiedHash: edb7b7484da75d3f
+codeVerified: 2026-11-12T19:09:53.181Z
+codeVerifiedHash: c7258c140c90de90
 codeVerifiedClaims: 20
 ---
 
@@ -395,6 +395,8 @@ Tắt pilot kiểm tra bản nháp không xoá dòng nào trong các bảng này
 | `agent_freezes` | Kill-switch freeze (scope `site`/`role`); `liftedAt IS NULL` = đang active; đồng thời là audit trail |
 | `agent_roles` | Thư viện role multi-agent với tập capability tối thiểu; harness enforce role ∩ grant |
 | `constitutions` | Tập evaluator cho publish-gate, có version; định danh bằng hash sha256; mỗi site tối đa một bản `active` |
+| `site_skills` | Site Skills (`site-skills.ts`, migration 0026): playbook được chèn vào các agent run khớp. Unique `(siteId, slug)`; `status` `draft`/`active`/`archived`; `riskClass`; các cột phạm vi `surfaces`, `tools`, `collections`, `triggers`, `requiredCapabilities`; `body`, `version`, `hash` hiện tại |
+| `site_skill_versions` | Vết phiên bản bất biến của một site skill: unique `(skillId, version)`, `snapshot` nội dung, `hash` sha256, `source`/`sourceRef`, `changeNote`, tác giả. Cả hai bảng nằm trong danh sách RLS `site_isolation` |
 
 Các cột Content OS thêm vào bảng có sẵn:
 
