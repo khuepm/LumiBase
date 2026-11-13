@@ -6,7 +6,7 @@ import {
   revisions,
   type Database,
 } from '@lumibase/database';
-import { and, asc, eq, gte, isNull, lte, ne } from 'drizzle-orm';
+import { and, asc, eq, isNull, lte, sql } from 'drizzle-orm';
 import type { AgentNotifier } from '../modules/notifications/agent-notifications';
 import { agentVetoesTotal, agentVetoStagingsTotal } from './agent-metrics';
 import { AutonomyService } from './autonomy-service';
@@ -73,6 +73,11 @@ export function decideVetoCommit(
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_VETO_WINDOW_MS = 4 * 60 * 60 * 1000;
+
+/** Provenance entry a veto commit adds to the live revision it writes (B131). */
+export function stagingMarker(stagingRevisionId: string): { kind: 'veto_staging'; revisionId: string } {
+  return { kind: 'veto_staging', revisionId: stagingRevisionId };
+}
 export const VETO_COMMIT_MAX_ATTEMPTS = 5;
 
 export class VetoServiceError extends Error {
@@ -451,7 +456,8 @@ export class VetoService {
       runId: approval.runId,
       model: staging.model,
       constitutionHash: staging.constitutionHash,
-      sources: staging.sources as unknown[] | null,
+      // The marker binds the live revision to this staging (isStagingApplied).
+      sources: [...(Array.isArray(staging.sources) ? staging.sources : []), stagingMarker(staging.id)],
       confidence: staging.confidence,
     });
     await itemService.patch(collectionName, staging.itemId, { data: applied });
@@ -466,33 +472,29 @@ export class VetoService {
   }
 
   /**
-   * Whether a veto staging's patch may already be live (B131).
+   * Whether THIS staging's patch is live (B131).
    *
-   * A commit that dies between `itemService.patch` and finalizing leaves the
-   * row `deciding`; the approval-claim sweep then moves it to `failed`, and
-   * reopening it would let the sweep apply the staging a second time. Two
-   * traces say the patch ran: the staging is no longer staged (finalize got
-   * far enough to discard it), or the item has a live revision written by the
-   * approval's run after the staging was created (`createdByRunId`, stamped
-   * by the commit's provenance). Either one answers yes.
+   * Every commit stamps the live revision it writes with
+   * `{ kind: 'veto_staging', revisionId: <staging id> }` in `sources`, in the
+   * same transaction as the item update (`ItemService.patch`). The marker is
+   * the proof: it exists if and only if this staging's patch committed. Run id,
+   * item and time are not enough on their own, because one run can stage
+   * several patches of the same item.
+   *
+   * Used by the commit to decide whether a failed attempt may be retried, and
+   * by `POST /agent/approvals/:id/reopen` to refuse replaying a live staging.
+   * Commits made before the marker existed carry none and read as not applied.
    */
   async isStagingApplied(approvalId: string): Promise<boolean> {
     const approval = await this.getVetoApproval(approvalId);
-    const staging = await this.getStaging(approval.subjectId);
-    if (!staging) return false;
-    if (!staging.staged) return true;
-    if (!approval.runId) return false;
     const [live] = await this.deps.db
       .select({ id: revisions.id })
       .from(revisions)
       .where(
         and(
           eq(revisions.siteId, this.deps.siteId),
-          eq(revisions.itemId, staging.itemId),
           eq(revisions.staged, false),
-          eq(revisions.createdByRunId, approval.runId),
-          ne(revisions.id, staging.id),
-          gte(revisions.createdAt, staging.createdAt),
+          sql`${revisions.sources} @> ${JSON.stringify([stagingMarker(approval.subjectId)])}::jsonb`,
         ),
       )
       .limit(1);

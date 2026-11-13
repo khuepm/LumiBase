@@ -240,4 +240,30 @@ describe.skipIf(!hasDbIntegrationUrl)('VetoService.commit — claim before apply
     const [row] = await db.select({ status: agentApprovals.status }).from(agentApprovals).where(eq(agentApprovals.id, approvalId));
     expect(row!.status).toBe('deciding');
   });
+
+  // Two stagings from the SAME run on the SAME item (reviewer finding on
+  // 7fa00c4): a live revision written by committing B must never count as
+  // proof that A was applied.
+  it('a sibling staging from the same run being applied is not proof for this one', async () => {
+    const a = await stageDue();
+    const b = await stageDue();
+    const service = new VetoService({ db, siteId: SITE });
+    // Commit B only.
+    await db.update(agentApprovals).set({ autoCommitAt: new Date(Date.now() + 3_600_000) }).where(eq(agentApprovals.id, a.approvalId));
+    await sweepDueVetoCommits({ db });
+    const [rowB] = await db.select({ status: agentApprovals.status }).from(agentApprovals).where(eq(agentApprovals.id, b.approvalId));
+    expect(rowB!.status).toBe('approved');
+
+    expect(await service.isStagingApplied(b.approvalId)).toBe(true);
+    expect(await service.isStagingApplied(a.approvalId)).toBe(false);
+
+    // A fails before its patch: it must go back to pending, not be marked applied.
+    await db.update(agentApprovals).set({ autoCommitAt: new Date(Date.now() - 60_000) }).where(eq(agentApprovals.id, a.approvalId));
+    vi.spyOn(VetoService.prototype as unknown as { collectionNameOf: () => Promise<string> }, 'collectionNameOf')
+      .mockRejectedValueOnce(new Error('transient read failure'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await sweepDueVetoCommits({ db });
+    const [rowA] = await db.select({ status: agentApprovals.status }).from(agentApprovals).where(eq(agentApprovals.id, a.approvalId));
+    expect(rowA!.status).toBe('pending');
+  });
 });
