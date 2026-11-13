@@ -1,14 +1,14 @@
 ---
-version: 3
+version: 4
 sourceLang: en
-lastUpdated: 2026-09-23T12:16:23.556Z
+lastUpdated: 2026-11-12T18:28:17.986Z
 translatedFrom: en
-sourceHash: 028b26a85a1c849b
+sourceHash: afea72ea260ab1d2
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-23T12:16:23.556Z
-codeVerifiedHash: 028b26a85a1c849b
-codeVerifiedClaims: 2
+codeVerified: 2026-11-12T18:28:17.986Z
+codeVerifiedHash: afea72ea260ab1d2
+codeVerifiedClaims: 4
 ---
 
 # Vòng sửa của reconciler
@@ -93,9 +93,7 @@ Freeze theo role và autonomy grant dùng định danh agent đã lưu trên run
 
 ## Runtime được hỗ trợ
 
-Dispatch chạy trên runtime **Node/Docker**, do một cron tick có leader lock chạy mỗi phút. Cái lock là quan trọng: hai process cùng dispatch một goal sẽ tạo hai run cho một drift.
-
-Trên **Cloudflare Workers**, queue `agent-runs` không có consumer export, nên các run bất đồng bộ — gồm cả vòng lặp này — không thực thi ở đó. Đây là giới hạn có sẵn của việc chạy agent bất đồng bộ, không phải của vòng lặp này. Hãy dùng endpoint thủ công bên dưới, hoặc chạy bản Docker, cho tới khi có queue consumer cho Workers.
+Dispatch chạy mỗi phút trên cả hai runtime. Trên **Node/Docker**, một tick `node-cron` có leader lock chạy `runGoalDispatchTick`. Trên **Cloudflare Workers**, Cron Trigger `* * * * *` chạy cùng hàm đó (`apps/cms/src/cloudflare-cron-parity.ts`, backlog B131); các profile không có trigger này, như staging, chạy nó mỗi năm phút. Workers không có leader lock, và cũng không cần: mỗi goal được đẩy tiến dưới dispatch lease riêng của nó, là một UPDATE có điều kiện, nên hai tick chồng nhau không bao giờ tạo hai run cho một drift. Bản thân các run chạy trên queue `agent-runs`, queue này có consumer trên Workers từ backlog B10. Tick trên Workers mới được verify bằng unit test, chưa chạy trên Worker đã deploy.
 
 ## Kích hoạt một chu kỳ
 

@@ -8,6 +8,7 @@ import { and, eq } from 'drizzle-orm';
 import type { CacheProvider, EdgeCacheProvider, QueueProvider } from '@lumibase/runtime';
 import { purgeEdgeByTag } from '@lumibase/runtime';
 import { dispatchRevalidation, parseTargets } from './revalidation';
+import { queueAccepts } from './queue-routing';
 
 export const REVALIDATION_DISPATCH_QUEUE = 'revalidation-dispatch';
 
@@ -125,7 +126,9 @@ export async function dispatchItemRevalidation(deps: {
   collection: string;
 }): Promise<void> {
   try {
-    if (deps.queue) {
+    // No producer binding (Workers before B131 provisioning): dispatch inline
+    // instead of enqueueing a job that throws and drops the revalidation.
+    if (queueAccepts(deps.queue, REVALIDATION_DISPATCH_QUEUE)) {
       await deps.queue.enqueue<RevalidationDispatchJob>(REVALIDATION_DISPATCH_QUEUE, 'dispatch', {
         siteId: deps.siteId,
         collection: deps.collection,

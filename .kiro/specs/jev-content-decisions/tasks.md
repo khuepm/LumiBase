@@ -3,7 +3,11 @@
 Epic: [#507 — Jev: trusted draft review and governed content automation](https://github.com/khuepm/LumiBase/issues/507).
 Ngày lập: 2026-10-06. Baseline PR #504: `73d3ca5e7c455f40a97aaf295fdd9acad094d3f2`.
 
-GitHub Issues là nguồn trạng thái và acceptance chuẩn; checklist dưới đây là breakdown của spec. J01 đã triển khai trên nhánh `codex/508-jev-answer-validation`, đang chờ review/merge; các task còn lại chưa bắt đầu. Trước nhận việc kiểm tra issue/head mới, không suy trạng thái hiện tại từ bản snapshot này.
+GitHub Issues là nguồn trạng thái và acceptance chuẩn; checklist dưới đây là breakdown của spec.
+
+**Trạng thái (2026-11-11):** cả 12 task J01–J12 đã đóng trên GitHub và code đã vào `main` (J01–J03 qua #520, #526, #527, #528, #556; J04–J12 qua #545; consumer Workers cho Flows, B118, qua #551). Epic #507 đóng cùng lúc. Các mục chỉ đóng được bằng dữ liệu thật (benchmark live VI/EN, held-out, pilot ≥100 review, precision/coverage trên nhãn production, drift live, quyết định go/no-go) **chưa có kết quả đo nào** và được theo dõi ở [#548](https://github.com/khuepm/LumiBase/issues/548). Gate của Phase B chưa đạt; automation J11 giữ shadow cho tới khi #548 có số thật.
+
+**Chú giải checkbox:** `[x]` nghĩa là **implementation đã giao** (code đã vào `main`), không phải acceptance đã đạt. Với J06, J08, J09, J11 và J12, phần nghiệm thu cần dữ liệu thật (report live, pilot, precision/coverage trên nhãn production, go/no-go) **vẫn đang chờ #548**.
 
 ## Thứ tự thực hiện
 
@@ -30,48 +34,49 @@ Priority chỉ áp dụng trong chương trình Jev. Chưa có assignee hoặc d
 
 ## A — Nền tảng đáng tin cậy
 
-- [ ] **J01 — [fix(ai): J01 reject malformed Jev answers and invalid probability distributions](https://github.com/khuepm/LumiBase/issues/508)**
+- [x] **J01 — [fix(ai): J01 reject malformed Jev answers and invalid probability distributions](https://github.com/khuepm/LumiBase/issues/508)**
   - Đầu ra: Validate từng answer theo loại câu hỏi bằng runtime schema; thiếu, null, sai kiểu, NaN/Infinity hoặc ngoài miền phải trả DECISION_PARSE_FAILED.
   - Nghiệm thu chính: Regression: answers.unsafe = {} không được trở thành noul=0; score thiếu không thành 0.
-- [ ] **J02 — [feat(ai): J02 bound decision timeouts, retries and total input size](https://github.com/khuepm/LumiBase/issues/509)**
+- [x] **J02 — [feat(ai): J02 bound decision timeouts, retries and total input size](https://github.com/khuepm/LumiBase/issues/509)**
   - Đầu ra: Thêm deadline tổng, timeout mỗi attempt và cancellation qua AbortSignal; map network/abort sang lỗi gateway ổn định.
   - Nghiệm thu chính: Fake-clock tests chứng minh tổng thời gian bị chặn và không có retry sau cancel.
-- [ ] **J03 — [fix(ai): J03 align LLM decision semantics and disable tool calling](https://github.com/khuepm/LumiBase/issues/510)**
+- [x] **J03 — [fix(ai): J03 align LLM decision semantics and disable tool calling](https://github.com/khuepm/LumiBase/issues/510)**
   - Đầu ra: Bổ sung chế độ structured decision trong LLM abstraction: system instruction đúng, không gắn CORE_SKILLS và không cho tool calling; không thay đổi hành vi chat hiện tại.
   - Nghiệm thu chính: Inspect request thực của adapter qua mocked fetch cho OpenAI-compatible, Anthropic, Gemini/Vertex và Workers AI: đúng system prompt, không có tools.
-  - Trạng thái (2026-10-12): phần nền đã merge qua #528. Follow-up trên `feature/510-jev-llm-decision-followups` (phân loại lỗi adapter LLM, không log body upstream, output budget có giới hạn thay cho trần 1024, headroom thinking + `thoughtsTokenCount` cho Gemini/Vertex) — đã implement, đang chờ review, **CHƯA Done/accepted**.
+  - Trạng thái (2026-10-12): phần nền đã merge qua #528. Follow-up trên `feature/510-jev-llm-decision-followups` (phân loại lỗi adapter LLM, không log body upstream, output budget có giới hạn thay cho trần 1024, headroom thinking + `thoughtsTokenCount` cho Gemini/Vertex) — đã merge qua #556.
 
 ## B — MVP Kiểm tra bản nháp
 
-- [ ] **J04 — [feat(ai): J04 govern decision access, tenant budgets and audit events](https://github.com/khuepm/LumiBase/issues/511)**
+- [x] **J04 — [feat(ai): J04 govern decision access, tenant budgets and audit events](https://github.com/khuepm/LumiBase/issues/511)**
   - Đầu ra: Chốt capability sử dụng decisions, phân loại route theo DoD; enforce trên HTTP/SDK và các caller nội bộ tương ứng. Giữ auth, membership, row/field RBAC hiện có.
   - Nghiệm thu chính: Tests deny anonymous/không capability/cross-site trước gọi provider; quota bị vượt không gọi upstream.
-  - Trạng thái (2026-10-12): governance đã merge qua #529 (contract `ai:decide`, mã lỗi, route giữ nguyên). Hardening trên `feature/510-jev-llm-decision-followups` (reserve đúng trần output của `llm` trước quota, fail-closed khi counter trả giá trị không phải số, audit sync dùng uuidv7, tripwire nguồn cho mọi lời gọi provider, `Retry-After` qua CORS, quyền AI decisions trong Studio, test drain-vs-quota và hai site, test Postgres hai site) — đã implement, đang chờ review, **CHƯA Done/accepted**.
-- [ ] **J05 — [feat(ai): J05 add versioned review profiles and item-bound decision runs](https://github.com/khuepm/LumiBase/issues/512)**
+  - Trạng thái (2026-10-12): governance đã merge qua #529 (contract `ai:decide`, mã lỗi, route giữ nguyên). Hardening trên `feature/510-jev-llm-decision-followups` (reserve đúng trần output của `llm` trước quota, fail-closed khi counter trả giá trị không phải số, audit sync dùng uuidv7, tripwire nguồn cho mọi lời gọi provider, `Retry-After` qua CORS, quyền AI decisions trong Studio, test drain-vs-quota và hai site, test Postgres hai site) — đã merge qua #556.
+- [x] **J05 — [feat(ai): J05 add versioned review profiles and item-bound decision runs](https://github.com/khuepm/LumiBase/issues/512)**
   - Đầu ra: Tạo review profile theo site/collection: fields được đọc, taxonomy cho choice, rubric atomic cho tone/brief alignment, noul cho cờ cần review; có other/unknown khi thích hợp.
   - Nghiệm thu chính: Tests cô lập tenant/field RBAC và profile permissions; snapshot chứa field cấm bị từ chối.
-- [ ] **J06 — [test(ai): J06 benchmark Jev on Vietnamese and English editorial data](https://github.com/khuepm/LumiBase/issues/513)**
+- [x] **J06 — [test(ai): J06 benchmark Jev on Vietnamese and English editorial data](https://github.com/khuepm/LumiBase/issues/513)**
   - Đầu ra: Chuẩn bị ít nhất 200 mẫu có nhãn, tối thiểu 100 VI và 100 EN, gồm ambiguous/out-of-taxonomy, prompt injection và nội dung cần review. Dùng dữ liệu synthetic hoặc đã được phép, không gửi dữ liệu người dùng mặc định.
   - Nghiệm thu chính: Command tái lập sinh report có phiên bản và sample counts; dữ liệu held-out không bị leak vào tuning.
-- [ ] **J07 — [feat(sdk): J07 expose typed decisions, draft review and feedback APIs](https://github.com/khuepm/LumiBase/issues/514)**
+- [x] **J07 — [feat(sdk): J07 expose typed decisions, draft review and feedback APIs](https://github.com/khuepm/LumiBase/issues/514)**
   - Đầu ra: Thêm client methods phù hợp convention SDK cho decision/review/profile-read/feedback; dùng shared contracts, không duplicate schema.
   - Nghiệm thu chính: SDK integration/contract tests cho success, forbidden, stale, timeout, quota và disabled.
-- [ ] **J08 — [feat(studio): J08 ship draft review suggestions and editor feedback](https://github.com/khuepm/LumiBase/issues/515)**
+- [x] **J08 — [feat(studio): J08 ship draft review suggestions and editor feedback](https://github.com/khuepm/LumiBase/issues/515)**
   - Đầu ra: Nút Kiểm tra bản nháp cho nội dung saved/unsaved; hiển thị chuyên mục đề xuất và từng tiêu chí, trạng thái chưa đủ thông tin và nguồn provider.
   - Nghiệm thu chính: E2E editor → review → accept/edit → save draft → feedback; publish vẫn cần thao tác/quyền hiện có.
-- [ ] **J09 — [feat(ai): J09 validate draft-review pilot, metrics and rollout controls](https://github.com/khuepm/LumiBase/issues/516)**
+- [x] **J09 — [feat(ai): J09 validate draft-review pilot, metrics and rollout controls](https://github.com/khuepm/LumiBase/issues/516)**
   - Đầu ra: Pilot opt-in theo site với nhóm nội dung xác định; đo baseline thời gian review trước khi bật Jev.
   - Nghiệm thu chính: Một report có baseline, sample counts và kết quả đo thực; không có dữ liệu thật thì giữ issue mở/unverified.
+  - Trạng thái acceptance: **chưa đạt**, chờ report pilot thật ở #548.
 
 ## C — Automation sau pilot
 
-- [ ] **J10 — [feat(flows): J10 add governed AI decision operations and explicit branches](https://github.com/khuepm/LumiBase/issues/517)**
+- [x] **J10 — [feat(flows): J10 add governed AI decision operations and explicit branches](https://github.com/khuepm/LumiBase/issues/517)**
   - Đầu ra: Thêm operation ai:decision dùng profile version và context được phép, qua service governance/quota/audit dùng chung.
   - Nghiệm thu chính: Integration flow mẫu chứng minh từng nhánh thực sự chạy đúng node và không chạy node nhánh khác.
-- [ ] **J11 — [feat(editorial): J11 automate low-risk tagging and review-queue routing](https://github.com/khuepm/LumiBase/issues/518)**
+- [x] **J11 — [feat(editorial): J11 automate low-risk tagging and review-queue routing](https://github.com/khuepm/LumiBase/issues/518)**
   - Đầu ra: Template opt-in cho taxonomy tagging và editorial queue routing; thresholds riêng theo locale/action/provider/model/profile.
   - Nghiệm thu chính: Đo precision/coverage trong vùng auto-action theo ngưỡng chốt ở J06; không đủ mẫu thì giữ shadow.
-- [ ] **J12 — [feat(content-os): J12 detect semantic drift against versioned Content Intents](https://github.com/khuepm/LumiBase/issues/519)**
+- [x] **J12 — [feat(content-os): J12 detect semantic drift against versioned Content Intents](https://github.com/khuepm/LumiBase/issues/519)**
   - Đầu ra: Thêm semantic rule types nhỏ, có version và nguồn context rõ; giữ required_fields/freshness/glossary checks bằng code.
   - Nghiệm thu chính: Fixtures VI/EN có semantic drift thật và false positives; benchmark theo J06.
 
@@ -87,4 +92,4 @@ Priority chỉ áp dụng trong chương trình Jev. Chưa có assignee hoặc d
 - Baseline: PR #504 `73d3ca5e7c455f40a97aaf295fdd9acad094d3f2`.
 - Implemented: strict own-field/type/range/distribution validation, required confidence, malformed-result 502, no numeric clamp/default for decisions.
 - Verification: provider/route regressions and 100-run probability property; actual results recorded on #508 and the linked PR. Live provider keys/runtime deployment remain unverified.
-- J01 checklist stays open pending PR review and integrated acceptance. J02/J03 remain separate tasks.
+- J01 merged via #520 (#508 closed 2026-10-10). J02/J03 were delivered as separate tasks.

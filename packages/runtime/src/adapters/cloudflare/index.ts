@@ -43,6 +43,12 @@ interface CloudflareEnv {
   FLOW_RUNS_QUEUE?: CloudflareQueue;
   /** Producer for event and schedule flow runs (logical `flow-events`, B118). */
   FLOW_EVENTS_QUEUE?: CloudflareQueue;
+  /** Producer for search index/remove jobs (logical `content-indexing`, B131). */
+  CONTENT_INDEXING_QUEUE?: CloudflareQueue;
+  /** Producer for ISR revalidation dispatch jobs (logical `revalidation-dispatch`, B131). */
+  REVALIDATION_QUEUE?: CloudflareQueue;
+  /** Producer for envelope-encryption migration continuations (logical `encryption-envelope-migration`, B131). */
+  ENVELOPE_MIGRATION_QUEUE?: CloudflareQueue;
   MEDIA_BASE_URL?: string;
   /** Zone id for global edge purge (#392). Absent → colo-local purge only. */
   CF_PURGE_ZONE_ID?: string;
@@ -66,6 +72,9 @@ const LOGICAL_QUEUE_BINDINGS = [
   ['AGENT_RUNS_QUEUE', 'agent-runs'],
   ['FLOW_RUNS_QUEUE', 'flow-runs'],
   ['FLOW_EVENTS_QUEUE', 'flow-events'],
+  ['CONTENT_INDEXING_QUEUE', 'content-indexing'],
+  ['REVALIDATION_QUEUE', 'revalidation-dispatch'],
+  ['ENVELOPE_MIGRATION_QUEUE', 'encryption-envelope-migration'],
 ] as const;
 
 function logicalQueues(cfEnv: CloudflareEnv): Record<string, CloudflareQueue> {

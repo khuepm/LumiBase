@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-08-02T19:14:29.861Z
+version: 2
+lastUpdated: 2026-11-12T11:48:21.842Z
 sourceLang: en
-contentHash: ff4339b1b2f269c5
-codeVerified: 2026-08-02T19:14:34.597Z
-codeVerifiedHash: ff4339b1b2f269c5
-codeVerifiedClaims: 12
+contentHash: 815b076ad0385537
+codeVerified: 2026-11-12T11:48:21.842Z
+codeVerifiedHash: 815b076ad0385537
+codeVerifiedClaims: 14
 ---
 
 # Full-text Search
@@ -99,9 +99,15 @@ Hooks run automatically:
 - **Item update** → re-index.
 - **Item delete** → remove from the index.
 
-The `content-indexing` worker (`registerContentIndexingWorker`, wired in
-`serve.ts`) consumes the queue and calls `searchProvider.index(...)` /
-`delete(...)`. When no queue is configured, `ItemService` indexes inline.
+The `content-indexing` worker (`registerContentIndexingWorker`) consumes the
+queue and calls `searchProvider.index(...)` / `delete(...)`. Docker/Node wires
+it in `serve.ts`. Cloudflare Workers runs the same handler from its `queue()`
+export (`apps/cms/src/cloudflare-content-queue.ts`), on the
+`lumibase-content-indexing-<profile>` queue bound as `CONTENT_INDEXING_QUEUE`.
+Before backlog B131 the Worker had no such queue, so on Workers the index never
+saw a content change. When no queue is configured, or the Worker has no
+`content-indexing` binding, `ItemService` indexes inline. On Workers without
+`MEILISEARCH_HOST`, the consumer acks jobs without indexing.
 
 ### Reindex CLI
 
