@@ -225,6 +225,18 @@ async function main() {
         await runScheduledRotation(rotatorDb);
         void runScheduledRefreshTokenPrune(rotatorDb);
         void runScheduledReviewRunPurge(rotatorDb, process.env.DECISION_REVIEW_RETENTION_DAYS);
+        // Opt-in anonymous usage telemetry. Off unless the operator enabled it
+        // AND named an endpoint; when off it touches neither DB nor network.
+        void Promise.all([import('./modules/activation/telemetry'), import('./routes/system')])
+          .then(([{ runScheduledTelemetry }, { resolveBuildMetadata }]) =>
+            runScheduledTelemetry({
+              db: rotatorDb,
+              env: process.env,
+              runtime: 'docker',
+              version: resolveBuildMetadata().version,
+            }),
+          )
+          .catch(() => console.error('[telemetry] tick failed'));
       },
       lockOpts,
     ),
