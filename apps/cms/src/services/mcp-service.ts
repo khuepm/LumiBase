@@ -55,7 +55,30 @@ export interface McpToolSummary {
  * `ToolRegistryService` + `AISecureHarness`; mocked directly in tests so the
  * parity property can compare MCP and Agent API decisions byte-for-byte.
  */
+/** A site playbook projected into MCP `prompts/list` (#712, #345). */
+export interface McpPromptSummary {
+  /** The skill slug. */
+  name: string;
+  title?: string;
+  description?: string;
+}
+
+/** A playbook body returned by MCP `prompts/get`. */
+export interface McpPromptContent extends McpPromptSummary {
+  text: string;
+  version: number;
+  hash: string;
+}
+
 export interface McpHarnessPort {
+  /**
+   * Site playbooks offered as MCP prompts. Optional: a port without them (the
+   * organization plane) does not advertise the `prompts` capability, and
+   * `prompts/*` answers "method not supported" exactly as before.
+   */
+  listPrompts?(capabilities: string[]): Promise<McpPromptSummary[]>;
+  /** `null` when the prompt does not exist or is not offered to this caller. */
+  getPrompt?(name: string, capabilities: string[]): Promise<McpPromptContent | null>;
   listTools(): Promise<McpToolSummary[]>;
   execute(
     skillName: string,
@@ -196,7 +219,10 @@ export class McpService {
           : DEFAULT_PROTOCOL_VERSION;
         return {
           protocolVersion,
-          capabilities: { tools: { listChanged: false } },
+          capabilities: {
+            tools: { listChanged: false },
+            ...(this.port.listPrompts ? { prompts: { listChanged: false } } : {}),
+          },
           serverInfo: MCP_SERVER_INFO,
         };
       }
@@ -242,6 +268,40 @@ export class McpService {
           content: [{ type: 'text', text: JSON.stringify(decision) }],
           structuredContent: decision as unknown as Record<string, unknown>,
           isError: decision.status === 'denied',
+        };
+      }
+      case 'prompts/list': {
+        if (!this.port.listPrompts) {
+          throw new McpProtocolError(METHOD_NOT_FOUND, `Method not supported: ${request.method}`);
+        }
+        const prompts = await this.port.listPrompts(capabilities);
+        return {
+          prompts: prompts.map((prompt) => ({
+            name: prompt.name,
+            ...(prompt.title ? { title: prompt.title } : {}),
+            ...(prompt.description ? { description: prompt.description } : {}),
+          })),
+        };
+      }
+      case 'prompts/get': {
+        if (!this.port.getPrompt) {
+          throw new McpProtocolError(METHOD_NOT_FOUND, `Method not supported: ${request.method}`);
+        }
+        const name = request.params?.name;
+        if (typeof name !== 'string' || name.length === 0) {
+          throw new McpProtocolError(INVALID_PARAMS, 'params.name is required');
+        }
+        const prompt = await this.port.getPrompt(name, capabilities);
+        if (!prompt) {
+          // One answer for "no such prompt" and "not offered to you", so a
+          // caller cannot probe for capability-gated playbooks by name.
+          throw new McpProtocolError(INVALID_PARAMS, `Unknown prompt: ${name}`);
+        }
+        return {
+          ...(prompt.description ? { description: prompt.description } : {}),
+          messages: [{ role: 'user', content: { type: 'text', text: prompt.text } }],
+          // Provenance: which version of the playbook the client was handed.
+          _meta: { 'lumibase/siteSkill': { slug: prompt.name, version: prompt.version, hash: prompt.hash } },
         };
       }
       default:

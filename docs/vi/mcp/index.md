@@ -1,11 +1,11 @@
 ---
-version: 15
-lastUpdated: 2026-11-12T19:36:53.226Z
+version: 18
+lastUpdated: 2026-11-13T06:46:14.265Z
 sourceLang: vi
-contentHash: 04423a7e654b1985
-codeVerified: 2026-11-12T19:36:53.226Z
-codeVerifiedHash: 04423a7e654b1985
-codeVerifiedClaims: 30
+contentHash: ea694655b7572068
+codeVerified: 2026-11-13T06:46:14.265Z
+codeVerifiedHash: ea694655b7572068
+codeVerifiedClaims: 40
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -31,10 +31,11 @@ Nguồn: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`
 - **OAuth 2.1 (#346):** endpoint còn là một OAuth protected resource cho MCP client được host. `401` mang `WWW-Authenticate: Bearer resource_metadata=…`; `/.well-known/oauth-protected-resource[/api/v1/mcp[/sites/<siteId>]]` (RFC 9728) liệt kê các trusted external issuer có `audience` chứa resource URI. Trên endpoint MCP, token external-issuer phải có resource URI trong `aud`; scope (`mcp:read`/`mcp:write`/`mcp:delete`/`mcp:admin`) chỉ thu hẹp capability set, và backstop `CONTROL_PLANE_FORBIDDEN` giữ nguyên. Endpoint theo site `POST /api/v1/mcp/sites/<siteId>` dành cho client không gửi được `X-Lumi-Site`. Xem [`../agent-setup/oauth-connector.md`](../agent-setup/oauth-connector.md).
 - **Feature gate:** cờ per-site `contentOs.mcp` (mặc định **off**). Tắt → `404 MCP_DISABLED`. (`feature-flags.ts`).
 - **Methods (JSON-RPC):**
-  - `initialize` — thương lượng protocol version, trả `capabilities: { tools: { listChanged: false } }`.
+  - `initialize` — thương lượng protocol version, trả `capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }` (plane organization không có `prompts`).
   - `ping`.
   - `tools/list` — liệt kê tool **đang enabled** từ `ToolRegistryService`; inputSchema suy ra từ schema canonical trong `@lumibase/contracts` (chỉ skill chưa có schema mới rơi về `{ type: 'object' }`).
   - `tools/call` — chạy qua `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. Kết quả bọc `{ content, structuredContent, isError }`.
+  - `prompts/list`, `prompts/get` — các [Site Skills](../features/site-skills.md) đang `active` của site; `name` là slug, thân trả về dưới dạng một user message. Chỉ phục vụ cho người gọi đọc được skill qua REST, tức principal được resolve thành control-plane admin của site (`grant.allowed && grant.controlPlaneAdmin` trong `routes/mcp.ts`): member không phải admin hay site API key nhận `prompts/list` rỗng. Với admin, `surfaces`/`requiredCapabilities` của từng skill vẫn lọc thêm. Prompt không tồn tại và prompt không được phép thấy trả lời giống hệt nhau.
   - `notifications/initialized`, `notifications/cancelled` → trả `null` ⇒ HTTP `202 Accepted` không body.
 - **Mapping quyết định → kết quả tool** (bất biến quan trọng):
   - `executed` → `isError: false`, data trong `structuredContent`.
@@ -148,6 +149,7 @@ Versioning **không** nằm ở stdio server. Nó được phơi bày dưới d�
 - **SDK không có MCP client** — MCP không phải mối quan tâm client của SDK REST.
 - **Permission floor:** capability = RBAC bundle của token (một mô hình dùng chung với REST). Mọi mở rộng MCP phải tôn trọng sàn này.
 - **Governed tool contract:** schema, validate, gate write, decision shape và tập tool stdio được governance kiểm soát — tất cả nằm ở [`governed-tool-contract.md`](governed-tool-contract.md).
+- **Độ trung thực của tool schema (#716):** mọi `inputSchema` của cả hai transport phải là JSON Schema hợp lệ (meta-schema + Ajv strict, cả draft-07 lẫn 2020-12), và `tools/list` của hai transport được chốt bằng golden (`name`, `description`, `inputSchema`); đổi có chủ đích thì cập nhật golden bằng `-u` rồi review diff. Mức khớp với server mà suite chứng minh tùy theo loại tool. Tool HTTP và tool stdio được governance kiểm soát được dò từng giá trị (kể cả mọi giá trị enum và phần tử mảng sai) so với contract canonical (`validateAgentToolInput`). 33 mutation stdio không qua governance có gửi body JSON, cùng `diff_schema`, được so với đúng Zod object mà route REST của chúng parse: tập key ở mọi độ sâu, kiểu, enum, key bắt buộc; handler phải gửi mọi key đã quảng bá tới đúng route; và body schema của route phải nhận mọi giá trị dò mà tool chấp nhận. Golden body REST được sinh trong `apps/cms` và được test ở đó chốt khớp với route thật. Không transport nào sinh schema từ định nghĩa field của collection — item tool nhận `data` là record mở — nên ma trận field type × nullable × localized × repeatable (cùng quan hệ m2o/o2m/m2m/m2a và file) được kiểm bằng **giá trị** đi qua `data`. Suite **không** chứng minh: các ràng buộc JSON Schema không diễn đạt được (refine liên field như `webhook_id` khi `kind` là `"webhook"`, giải mã cursor, transform), query param của tool đọc, tài liệu chuyển nguyên vẹn (`apply_access_import`, `restore_backup`), skill đọc HTTP chưa có schema canonical (B204), schema override theo site (B205) và từ vựng `type` của field (B206). Mỗi khoảng hở được chấp nhận đều nằm trong suite kèm lý do và làm test fail khi không còn đúng. Ngoài phần so schema, các request mà tool `apply_schema`, `diff_schema`, `create_cdc_subscription` và `update_cdc_subscription` đã đăng ký thực sự gửi đi được chốt trong một golden rồi phát lại nguyên vẹn vào route REST thật trên PostgreSQL: field `encrypted: true, classification: "pii"` được lưu ở dạng mã hóa và đúng phân loại, chỉ `migrationPlan` cũng qua được chốt chặn thay đổi rủi ro, và `status` tạm dừng rồi tiếp tục một subscription mà `kind` không đổi. Test: [`packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts`](../../../packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts), [`apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts`](../../../apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts), [`apps/cms/src/services/__tests__/mcp-rest-body-golden.test.ts`](../../../apps/cms/src/services/__tests__/mcp-rest-body-golden.test.ts) và [`apps/cms/src/routes/__tests__/mcp-recorded-requests.db.integration.test.ts`](../../../apps/cms/src/routes/__tests__/mcp-recorded-requests.db.integration.test.ts).
 
 ## 4. Trang liên quan
 
@@ -167,3 +169,4 @@ Versioning **không** nằm ở stdio server. Nó được phơi bày dưới d�
 | Standalone server + các tool | `packages/mcp-server/src/` |
 | Feature flag `contentOs.mcp` | `apps/cms/src/services/feature-flags.ts` |
 | Parity test | `apps/cms/src/services/__tests__/mcp-parity.property.test.ts` |
+| Golden `tools/list` + kiểm JSON Schema | `packages/mcp-server/src/__tests__/fidelity/` |

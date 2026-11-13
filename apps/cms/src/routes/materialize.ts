@@ -33,7 +33,7 @@ import {
 
 export const materializeRouter = new Hono<AppEnv>();
 
-const registerSchema = z.object({
+export const registerSchema = z.object({
   collection: z.string().min(1),
   target: z.string().regex(/^[a-z][a-z0-9_]{0,62}$/),
   refreshStrategy: z.enum(["auto", "cron", "manual"]).default("manual"),

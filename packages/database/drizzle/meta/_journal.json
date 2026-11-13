@@ -183,6 +183,13 @@
       "when": 1794241373412,
       "tag": "0025_organization_approvals",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794380400000,
+      "tag": "0026_site_skills",
+      "breakpoints": true
     }
   ]
 }

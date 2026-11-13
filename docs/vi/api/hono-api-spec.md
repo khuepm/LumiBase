@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 39
-lastUpdated: 2026-11-12T20:34:38.373Z
+version: 41
+lastUpdated: 2026-11-13T06:46:26.910Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 84663ff265ebf187
+sourceHash: be726dd102cf7dba
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T20:34:38.373Z
-codeVerifiedHash: 84663ff265ebf187
+codeVerified: 2026-11-13T06:46:26.910Z
+codeVerifiedHash: be726dd102cf7dba
 codeVerifiedClaims: 500
 ---
 
@@ -981,10 +981,11 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `GET` | `/api/v1/agent/questions/:id` | Một câu hỏi; `404` cho id không tồn tại hoặc thuộc tenant khác |
 | `POST` | `/api/v1/agent/questions/:id/answer` | Trả lời một câu hỏi và tiếp tục run `waiting_user` của nó. Body `{ answer }` (1–2000 ký tự, đã trim; phải là một trong `options` khi `allowFreeText` là false). Chỉ user đã đăng nhập mới trả lời được: mọi API key, scope site hay organization và dù mang capability gì, đều nhận `403`. Được phép với người giữ `approvals:decide` (hoặc control-plane admin) và với **user** đã yêu cầu run; hiện tại chỉ quản trị viên site tới được route (control-plane guard), nên quy tắc người yêu cầu có hiệu lực khi backlog B207 đưa route ra khỏi control plane. Việc claim và việc tiếp tục run là một transaction. `200` kèm câu hỏi đã trả lời (run `succeeded`); `400` `VALIDATION` / `ANSWER_INVALID` / `ANSWER_NOT_AN_OPTION`; `403`; `404`; `409` `ALREADY_ANSWERED`, `EXPIRED`, `QUESTION_CLOSED`, `RUN_NOT_WAITING`, `REQUESTER_REVOKED` (người yêu cầu đã mất quyền; run bị fail); `423` `FROZEN` (run bị huỷ) |
 | `GET/POST` | `/api/v1/agent/constitution[...]` | Các phiên bản, bản nháp, `/compile` (NL→đánh giá), `:id/dry-run`, `:id/activate` |
+| `*` | `/api/v1/agent/skills[...]` | Site Skills — playbook được chèn vào các agent run khớp: CRUD theo id hoặc slug, `:id/activate\|archive\|draft`, `:id/versions`, `:id/versions/:version/restore`, `/import`, `/export`, `/match`. Mọi thao tác ghi cần control-plane admin (nếu không thì `403 FORBIDDEN`; không có tác giả được uỷ quyền và `riskClass` chỉ là nhãn). `PATCH` nhận `expectedVersion` và các thao tác status nhận `version` (`409 VERSION_MISMATCH`); `DELETE` từ chối skill đã từng active (`409 SKILL_HAS_BEEN_ACTIVE`); `/import` từ chối thay đổi nội dung của skill active trừ khi `updateActive: true` (`ACTIVE_SKILL_CHANGE`). Xem [features/site-skills.md](../features/site-skills.md) |
 | `GET/POST` | `/api/v1/agent/kill-switch[/lift]` | Dừng ở 4 phạm vi (`run/intent/role/site`); việc đóng đóng băng cần `agents:freeze`. Đóng băng một role hoặc cả site, tạm dừng một intent và huỷ một run cũng huỷ các run đang chờ câu hỏi `askUser` trong phạm vi đó (`stopReason: frozen`) và đóng câu hỏi của chúng |
 | `*` | `/api/v1/agent/intents[...]` | CRUD ý định nội dung, `:id/pause|resume|scan|drifts`, `/compile` |
 | `POST` | `/api/v1/intents/:id/scan` | Một chu kỳ reconcile: `{ scan, reconcile, dispatch }`. `dispatch` đẩy mỗi reconciler goal tiến một bước (draft → promote → verify) và báo `dispatched/completed/skipped/blocked` cùng `queueUnavailable` trên runtime không có queue adapter. Xem [vòng sửa của reconciler](../features/reconciler-repair-loop.md). Khi intent có rule `semantic`, `scan.semantic` báo pass ngữ nghĩa có budget riêng (`status` `ran`/`off`/`unavailable`, các số đếm, `completed`, `cursor`), và `scan.semanticOrphansResolved` đếm các hàng của rule ngữ nghĩa bị gỡ mà scan đã resolve. Cập nhật intent làm một rule ngữ nghĩa đã lưu đổi profile, câu hỏi, context hoặc fields mà không tăng `version` trả về `422 SEMANTIC_RULE_VERSION_REQUIRED`; xem [drift ngữ nghĩa](../features/jev-semantic-drift.md) |
-| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp`. Một `tools/call` tới `askUser` trả về một tool result bình thường với `status: "waiting_user"`, `questionId` và `runId` |
+| `POST` | `/api/v1/mcp` | MCP server (Streamable HTTP, JSON-RPC 2.0) — được bảo vệ bởi cờ `contentOs.mcp`. Ngoài `tools/*`, `prompts/list` và `prompts/get` phơi bày các skill active của site cho control-plane admin (rỗng với mọi caller khác). Một `tools/call` tới `askUser` trả về một tool result bình thường với `status: "waiting_user"`, `questionId` và `runId` |
 | `POST` | `/api/v1/mcp/sites/:siteId` | Cùng MCP server, site lấy từ path (cho OAuth connector được host không gửi được `X-Lumi-Site`) |
 | `GET` | `/.well-known/oauth-protected-resource/api/v1/mcp[/sites/:siteId]` | RFC 9728 Protected Resource Metadata (public; `404` trừ khi MCP bật và có trusted issuer liệt kê resource URI trong `audience`) — xem [OAuth connector](../agent-setup/oauth-connector.md) |
 | `GET/DELETE` | `/api/v1/items/:collection/:id/pins[/:field]` | Ghim Law Zero: liệt kê / giải phóng |

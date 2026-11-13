@@ -41,9 +41,13 @@ export interface OrganizationHarnessContext {
 export class OrganizationHarness implements McpHarnessPort {
   constructor(private readonly context: OrganizationHarnessContext) {}
   async listTools() {
-    return Object.entries(OrganizationToolSchemas).map(([name, schema]) => ({
-      name, description: name.replace('org:', '').replaceAll('_', ' '), inputSchema: z.toJSONSchema(schema, { io: 'input' }) as Record<string, unknown>,
-    }));
+    return Object.entries(OrganizationToolSchemas).map(([name, schema]) => {
+      // Drop `$schema`, as `jsonSchemaFor` does for site tools (#716): a 2020-12
+      // dialect URI makes draft-07 validators (Ajv's default class, which MCP
+      // clients commonly use) refuse to compile the schema at all.
+      const { $schema: _dialect, ...inputSchema } = z.toJSONSchema(schema, { io: 'input' }) as Record<string, unknown>;
+      return { name, description: name.replace('org:', '').replaceAll('_', ' '), inputSchema };
+    });
   }
   async execute(name: string, args: Record<string, unknown>, _capabilities: string[]): Promise<HarnessExecutionResult> {
     const { db, organizationId, requester, env } = this.context;

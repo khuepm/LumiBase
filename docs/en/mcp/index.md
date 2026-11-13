@@ -1,14 +1,14 @@
 ---
-version: 15
-lastUpdated: 2026-11-12T19:36:53.226Z
+version: 18
+lastUpdated: 2026-11-13T06:46:14.265Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 04423a7e654b1985
+sourceHash: ea694655b7572068
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T19:36:53.226Z
-codeVerifiedHash: 04423a7e654b1985
-codeVerifiedClaims: 30
+codeVerified: 2026-11-13T06:46:14.265Z
+codeVerifiedHash: ea694655b7572068
+codeVerifiedClaims: 40
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -34,10 +34,11 @@ Source: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`a
 - **OAuth 2.1 (#346):** the endpoint is also an OAuth protected resource for hosted MCP clients. A `401` carries `WWW-Authenticate: Bearer resource_metadata=…`; `/.well-known/oauth-protected-resource[/api/v1/mcp[/sites/<siteId>]]` (RFC 9728) lists the trusted external issuers whose `audience` contains the resource URI. On the MCP endpoint an external-issuer token must carry the resource URI in `aud`; scopes (`mcp:read`/`mcp:write`/`mcp:delete`/`mcp:admin`) only narrow the capability set, and the `CONTROL_PLANE_FORBIDDEN` backstop is unchanged. The site-addressed endpoint `POST /api/v1/mcp/sites/<siteId>` is for clients that cannot send `X-Lumi-Site`. See [`../agent-setup/oauth-connector.md`](../agent-setup/oauth-connector.md).
 - **Feature gate:** the per-site `contentOs.mcp` flag (default **off**). Off → `404 MCP_DISABLED`. (`feature-flags.ts`).
 - **Methods (JSON-RPC):**
-  - `initialize` — negotiates the protocol version, returns `capabilities: { tools: { listChanged: false } }`.
+  - `initialize` — negotiates the protocol version, returns `capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }` (the organization plane has no `prompts`).
   - `ping`.
   - `tools/list` — lists the **currently enabled** tools from `ToolRegistryService`; the inputSchema is derived from the canonical schemas in `@lumibase/contracts` (only a skill with no schema still falls back to `{ type: 'object' }`).
   - `tools/call` — runs through `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. The result is wrapped as `{ content, structuredContent, isError }`.
+  - `prompts/list`, `prompts/get` — the site's `active` [Site Skills](../features/site-skills.md); `name` is the slug and the body comes back as a single user message. Served only to callers that can read skills over REST, i.e. a principal that resolves to a control-plane admin for the site (`grant.allowed && grant.controlPlaneAdmin` in `routes/mcp.ts`): a non-admin member or a site API key gets an empty `prompts/list`. For an admin, each skill's `surfaces`/`requiredCapabilities` still filter further. A prompt that does not exist and one the caller may not see answer identically.
   - `notifications/initialized`, `notifications/cancelled` → return `null` ⇒ HTTP `202 Accepted` with no body.
 - **Mapping decision → tool result** (an important invariant):
   - `executed` → `isError: false`, data in `structuredContent`.
@@ -151,6 +152,7 @@ Versioning is **not** in the stdio server. It is exposed as **governed skills** 
 - **The SDK has no MCP client** — MCP is not a concern of the REST SDK's clients.
 - **Permission floor:** capability = the token's RBAC bundle (one model shared with REST). Every MCP extension must respect this floor.
 - **Governed tool contract:** schemas, validation, the write gate, the decision shape, and which stdio tools are governed all live in [`governed-tool-contract.md`](governed-tool-contract.md).
+- **Tool-schema fidelity (#716):** every `inputSchema` on both transports must be a valid JSON Schema (meta-schema + Ajv strict, in both draft-07 and 2020-12), and both transports' `tools/list` output is pinned by a golden (`name`, `description`, `inputSchema`); for an intended change, regenerate the golden with `-u` and review the diff. How much agreement with the server the suite proves depends on the kind of tool. HTTP tools and governed stdio tools are probed value by value (including every enum value and invalid array elements) against the canonical contract (`validateAgentToolInput`). The 33 ungoverned stdio mutations that send a JSON body, plus `diff_schema`, are compared with the exact Zod object their REST route parses: key set at every depth, types, enums, required keys; the handler must send every advertised key to the right route; and the route's body schema must accept every probed value the tool accepts. The REST body golden is generated in `apps/cms`, where a test pins it to the live routes. Neither transport generates schemas from collection field definitions — item tools take `data` as an open record — so the field type × nullable × localized × repeatable matrix (plus m2o/o2m/m2m/m2a relations and files) is checked through **values** carried in `data`. The suite does **not** prove: constraints JSON Schema cannot express (cross-field refinements such as `webhook_id` when `kind` is `"webhook"`, cursor decoding, transforms), query parameters of read tools, documents forwarded verbatim (`apply_access_import`, `restore_backup`), HTTP read skills without a canonical schema (B204), per-site schema overrides (B205) and the field `type` vocabulary (B206). Every accepted gap is listed in the suite with its reason and fails the test once it no longer holds. On top of the schema comparison, the requests the registered `apply_schema`, `diff_schema`, `create_cdc_subscription` and `update_cdc_subscription` tools actually send are pinned in a golden and replayed, unmodified, against the real REST routes over PostgreSQL: an `encrypted: true, classification: "pii"` field is stored encrypted and classified, `migrationPlan` alone passes the risky-change guard, and `status` pauses and resumes a subscription whose `kind` does not change. Tests: [`packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts`](../../../packages/mcp-server/src/__tests__/tool-schema-fidelity.test.ts), [`apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts`](../../../apps/cms/src/services/__tests__/mcp-tool-schema-golden.test.ts), [`apps/cms/src/services/__tests__/mcp-rest-body-golden.test.ts`](../../../apps/cms/src/services/__tests__/mcp-rest-body-golden.test.ts) and [`apps/cms/src/routes/__tests__/mcp-recorded-requests.db.integration.test.ts`](../../../apps/cms/src/routes/__tests__/mcp-recorded-requests.db.integration.test.ts).
 
 ## 4. Related pages
 
@@ -170,3 +172,4 @@ Versioning is **not** in the stdio server. It is exposed as **governed skills** 
 | Standalone server + its tools | `packages/mcp-server/src/` |
 | The `contentOs.mcp` feature flag | `apps/cms/src/services/feature-flags.ts` |
 | Parity test | `apps/cms/src/services/__tests__/mcp-parity.property.test.ts` |
+| Golden `tools/list` + JSON Schema checks | `packages/mcp-server/src/__tests__/fidelity/` |
