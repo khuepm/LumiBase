@@ -1,10 +1,10 @@
 ---
-version: 7
-lastUpdated: 2026-11-11T01:21:15.680Z
+version: 8
+lastUpdated: 2026-11-14T02:15:28.613Z
 sourceLang: vi
-contentHash: 61bbd0dc2cc03957
-codeVerified: 2026-11-11T01:21:15.680Z
-codeVerifiedHash: 61bbd0dc2cc03957
+contentHash: 29c2fbe29c8b5d8e
+codeVerified: 2026-11-14T02:15:28.613Z
+codeVerifiedHash: 29c2fbe29c8b5d8e
 codeVerifiedClaims: 4
 ---
 
@@ -115,6 +115,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [security/idor-testing.md](./security/idor-testing.md) — Hướng dẫn kiểm thử xuyên tenant (IDOR).
   - [security/external-jwt-auth.md](./security/external-jwt-auth.md) — Xác thực nhà phát hành JWT bên ngoài.
   - [security/user-management.md](./security/user-management.md) — Quản lý người dùng & auth realms (ADR-010).
+  - [security/passkeys.md](./security/passkeys.md) — Passkey (WebAuthn): đăng nhập staff không mật khẩu và yếu tố thứ hai, cấu hình RP ID / origin.
   - [security/dependency-overrides.md](./security/dependency-overrides.md) — Thắt chặt chuỗi cung ứng / ghi đè dependency.
 - **Compliance & Quyền của người dùng** (`compliance/`)
   - [compliance/README.md](./compliance/README.md) — Tổng quan + ma trận quyền × thị trường (EU/US/VN, Google/Apple) ánh xạ vào LumiBase. **Không phải tư vấn pháp lý.**

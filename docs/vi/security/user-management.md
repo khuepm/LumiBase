@@ -1,13 +1,13 @@
 ---
-version: 11
-lastUpdated: 2026-11-14T01:21:13.458Z
+version: 12
+lastUpdated: 2026-11-14T02:15:28.142Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 69cd294779c8fca3
+sourceHash: cefe43edb3328c1d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T01:21:13.458Z
-codeVerifiedHash: 69cd294779c8fca3
+codeVerified: 2026-11-14T02:15:28.142Z
+codeVerifiedHash: cefe43edb3328c1d
 codeVerifiedClaims: 122
 ---
 
@@ -472,6 +472,12 @@ phụ có phạm vi tenant thì vẫn có: audit event được ghi với `siteI
 request, và tháo 2FA thu hồi refresh token của site hiện tại. Các env knob là
 ở mức deployment: `ENCRYPTION_KEY` (bắt buộc để enroll) và
 `LUMIBASE_TOTP_ISSUER` (nhãn trong app authenticator, mặc định `LumiBase`).
+
+**Passkey.** Passkey (WebAuthn) đứng cạnh TOTP: là yếu tố thứ hai sau mật khẩu
+(`amr: ["pwd","webauthn"]`) hoặc đăng nhập staff không mật khẩu
+(`amr: ["webauthn"]`), cả hai đều đặt `tfaVerified`. Khi người dùng có passkey,
+`/auth/login` trả `methods` trong phản hồi `mfa_required`. Mã khôi phục dùng
+chung với TOTP. Xem [Passkey](./passkeys.md).
 
 ## 5. Onboarding staff (KHÔNG dùng tự phục vụ)
 

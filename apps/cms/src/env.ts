@@ -143,6 +143,20 @@ export interface Bindings {
   LUMIBASE_EXT_SIGNATURE_POLICY?: string;
   /** Comma-separated frontend origins allowed by CORS. */
   CORS_ALLOWED_ORIGINS?: string;
+  /**
+   * Passkeys (#735): WebAuthn RP ID — the registrable domain passkeys are
+   * bound to. Defaults to the host of the Studio origin. Changing it orphans
+   * every passkey registered under the old value.
+   */
+  WEBAUTHN_RP_ID?: string;
+  /** Passkeys: RP display name shown by the browser. Default `LumiBase`. */
+  WEBAUTHN_RP_NAME?: string;
+  /**
+   * Passkeys: comma-separated Studio origins allowed to run ceremonies. When
+   * unset, a request `Origin` that is already trusted (same origin as the API,
+   * `LUMIBASE_PUBLIC_URL`, or `CORS_ALLOWED_ORIGINS`) is used.
+   */
+  WEBAUTHN_ORIGINS?: string;
   /** Data-retention horizon (days) for the `activity` log. 0/unset = disabled. */
   LUMIBASE_ACTIVITY_RETENTION_DAYS?: string;
   /** Data-retention horizon (days) for read/archived `notifications`. 0/unset = disabled. */

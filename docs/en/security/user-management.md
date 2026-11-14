@@ -1,10 +1,10 @@
 ---
-version: 11
-lastUpdated: 2026-11-14T01:21:13.458Z
+version: 12
+lastUpdated: 2026-11-14T02:15:28.142Z
 sourceLang: en
-contentHash: 69cd294779c8fca3
-codeVerified: 2026-11-14T01:21:13.458Z
-codeVerifiedHash: 69cd294779c8fca3
+contentHash: cefe43edb3328c1d
+codeVerified: 2026-11-14T02:15:28.142Z
+codeVerifiedHash: cefe43edb3328c1d
 codeVerifiedClaims: 122
 ---
 
@@ -465,6 +465,12 @@ with the request's `siteId`, and disable revokes refresh tokens for the
 current site. Env knobs are deployment-wide: `ENCRYPTION_KEY` (required to
 enroll) and `LUMIBASE_TOTP_ISSUER` (label in authenticator apps, default
 `LumiBase`).
+
+**Passkeys.** Passkeys (WebAuthn) sit beside TOTP: as the second factor after
+the password (`amr: ["pwd","webauthn"]`) or as a passwordless staff sign-in
+(`amr: ["webauthn"]`), both setting `tfaVerified`. When a user has a passkey,
+`/auth/login` adds `methods` to the `mfa_required` response. Recovery codes are
+shared with TOTP. See [Passkeys](./passkeys.md).
 
 ## 5. Staff onboarding (do NOT use self-service)
 

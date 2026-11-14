@@ -79,6 +79,12 @@ export async function completePasswordLoginSession(
     audience: string;
     tfaVerified?: boolean;
     amr?: string[];
+    /**
+     * Roles already resolved by the caller (e.g. passwordless passkey login,
+     * which applies the same organization-inheritance rule as `/auth/login`).
+     * Defaults to the direct site membership.
+     */
+    tokenRoles?: string[];
   },
 ) {
   const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
@@ -93,7 +99,8 @@ export async function completePasswordLoginSession(
     .where(and(eq(userSites.userId, options.user.id), eq(userSites.siteId, options.siteId)))
     .limit(1);
 
-  const tokenRoles = options.user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'];
+  const tokenRoles = options.tokenRoles
+    ?? (options.user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member']);
   const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null;
   const userAgent = c.req.header('user-agent') ?? null;
 

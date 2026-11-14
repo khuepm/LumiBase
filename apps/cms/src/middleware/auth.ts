@@ -156,6 +156,8 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     path === '/api/v1/auth/logout' ||
     path === '/api/v1/auth/login' ||
     path === '/api/v1/auth/verify-totp' ||
+    path === '/api/v1/auth/passkey/options' ||
+    path === '/api/v1/auth/passkey/verify' ||
     path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/') ||
     // Flow webhook trigger authenticates with a per-flow token inside the

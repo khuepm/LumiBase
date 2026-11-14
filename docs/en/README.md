@@ -1,13 +1,13 @@
 ---
-version: 8
-lastUpdated: 2026-11-11T01:21:15.680Z
+version: 9
+lastUpdated: 2026-11-14T02:15:28.613Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 61bbd0dc2cc03957
+sourceHash: 29c2fbe29c8b5d8e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T01:21:15.680Z
-codeVerifiedHash: 61bbd0dc2cc03957
+codeVerified: 2026-11-14T02:15:28.613Z
+codeVerifiedHash: 29c2fbe29c8b5d8e
 codeVerifiedClaims: 4
 ---
 
@@ -118,6 +118,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - [security/idor-testing.md](./security/idor-testing.md) — Cross-tenant (IDOR) testing guidelines.
   - [security/external-jwt-auth.md](./security/external-jwt-auth.md) — External JWT issuer authentication.
   - [security/user-management.md](./security/user-management.md) — User management & auth realms (ADR-010).
+  - [security/passkeys.md](./security/passkeys.md) — Passkeys (WebAuthn): passwordless staff sign-in and second factor, RP ID / origin config.
   - [security/dependency-overrides.md](./security/dependency-overrides.md) — Supply-chain / dependency-override hardening.
 - **Compliance & User Rights** (`compliance/`)
   - [compliance/README.md](./compliance/README.md) — Overview + rights × market matrix (EU/US/VN, Google/Apple) mapped to LumiBase. **Not legal advice.**

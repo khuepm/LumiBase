@@ -30,6 +30,7 @@ import { adminRouter } from './routes/admin';
 import { configRouter } from './routes/config';
 import { authRouter, meRouter } from './routes/auth';
 import { tfaAuthRouter, tfaMeRouter } from './routes/tfa';
+import { passkeyAuthRouter, passkeyMeRouter } from './routes/passkeys';
 import { adminSecurityRouter } from './routes/admin-security';
 import { adminEmailIdentityRouter } from './routes/admin-email-identity';
 import { adminAuthIssuersRouter } from './routes/admin-auth-issuers';
@@ -245,6 +246,7 @@ api.use('*', withTenant(), withDb(), withTenantExists(), withAiIpRateLimit(), wi
 // anything registered on `authRouter`/`meRouter` afterwards is invisible to
 // the composed app and answers 404.
 authRouter.route('/', tfaAuthRouter);
+authRouter.route('/', passkeyAuthRouter);
 api.route('/orgs', orgsRouter);
 api.route('/auth', authRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
@@ -252,6 +254,7 @@ api.route('/auth', authRouter);
 // Mounted on the authenticated `api` Hono so `withAuth` already enforces
 // that the caller has a valid session before the handler runs.
 meRouter.route('/', tfaMeRouter);
+meRouter.route('/', passkeyMeRouter);
 api.route('/me', meRouter);
 // `/me/consents` — self-service consent management (GDPR Art. 7, PDPD).
 // Separate router from `meRouter`; mounted under the same authenticated `api`

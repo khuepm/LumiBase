@@ -4,6 +4,7 @@ import { Loader2, Shield } from 'lucide-react';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';
 import { SESSIONS_QUERY_KEY, SessionsSection } from './sessions-section';
+import { PasskeysSection } from './passkeys-section';
 
 interface TotpStatus {
   enabled: boolean;
@@ -274,6 +275,8 @@ export function SecuritySettingsPage() {
           </div>
         ) : null}
       </section>
+
+      <PasskeysSection />
 
       <SessionsSection />
     </div>

@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 46
-lastUpdated: 2026-11-14T01:21:13.747Z
+version: 47
+lastUpdated: 2026-11-14T02:17:03.158Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 05cf51dec2d78d94
+sourceHash: 9fef73d6dbc91897
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T01:21:13.747Z
-codeVerifiedHash: 05cf51dec2d78d94
-codeVerifiedClaims: 518
+codeVerified: 2026-11-14T02:17:03.158Z
+codeVerifiedHash: 9fef73d6dbc91897
+codeVerifiedClaims: 534
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -182,6 +182,14 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/me/tfa/confirm` | bearer | Xác nhận enroll bằng một code sống → recovery code dùng-một-lần |
 | `POST` | `/api/v1/me/tfa/recovery-codes` | bearer | Tạo lại recovery code (mật khẩu + TOTP code) |
 | `DELETE` | `/api/v1/me/tfa` | bearer | Tắt TOTP (mật khẩu + một TOTP code hoặc một recovery code); thu hồi session và tăng `tokenVersion` |
+| `POST` | `/api/v1/auth/passkey/options` | public | Options xác thực passkey: có `challengeToken` = yếu tố thứ hai, không có = đăng nhập staff không mật khẩu → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/auth/passkey/verify` | public | Hoàn tất nghi thức passkey → cùng payload session với login (`amr` chứa `webauthn`, `tfaVerified`) |
+| `GET` | `/api/v1/me/passkeys` | bearer | Các passkey của người gọi + `recoveryCodesRemaining`, `totpEnabled`, `available` |
+| `POST` | `/api/v1/me/passkeys/registration-options` | bearer | Bắt đầu đăng ký passkey (step-up mật khẩu) → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/me/passkeys` | bearer | Hoàn tất đăng ký → `{ passkey, recoveryCodes }` (chỉ có code khi là yếu tố đầu tiên) |
+| `PATCH` | `/api/v1/me/passkeys/:id` | bearer | Đổi tên passkey |
+| `DELETE` | `/api/v1/me/passkeys/:id` | bearer | Xóa passkey (mật khẩu); yếu tố thứ hai cuối cùng sẽ thu hồi session và tăng `tokenVersion` |
+| `POST` | `/api/v1/me/passkeys/recovery-codes` | bearer | Tạo lại recovery code (mật khẩu + phiên mở bằng passkey) |
 | `POST` | `/api/v1/me/change-password` | bearer | Xác nhận mật khẩu hiện tại, đặt hash mới, thu hồi refresh token + tăng `tokenVersion` |
 | `GET` | `/api/v1/me/sessions` | bearer | Liệt kê các phiên hoạt động của người gọi (live refresh tokens, đã ẩn thông tin nhạy cảm) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Thu hồi một phiên làm việc của người gọi |
@@ -241,6 +249,13 @@ không còn trong cấu hình. Ở trường hợp sau, `DELETE /me/tfa` chấp 
 **recovery code** thay cho TOTP code, để user tháo được một enrollment mà seed
 của nó không còn giải mã được. Xem
 [Vận hành khoá mã hoá](../operations/encryption-keys.md).
+
+**Passkey (WebAuthn).** Khi user có thêm (hoặc chỉ có) passkey, phản hồi
+`mfa_required` có thêm `methods` (`["totp"]`, `["webauthn"]` hoặc cả hai), và
+challenge có thể hoàn tất bằng `POST /auth/passkey/options` +
+`POST /auth/passkey/verify` thay cho `verify-totp`. Cùng hai endpoint đó khi
+không có `challengeToken` cho đăng nhập staff không mật khẩu. Xem
+[Passkey](../security/passkeys.md).
 
 **Quản lý chấp thuận (Consent management)** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 
