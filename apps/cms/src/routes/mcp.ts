@@ -10,7 +10,7 @@ import { isAdminPrincipal } from '../middleware/control-plane-access-guard';
 import { auditSecurityGuardDenied } from '../middleware/security-audit';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
 import { AccessService } from '../services/access-service';
-import { AISecureHarness, CORE_SKILLS, isControlPlaneSkill } from '../services/ai-harness';
+import { AISecureHarness, CORE_SKILLS, isControlPlaneSkill, skillCatalog } from '../services/ai-harness';
 import { ConfigService } from '../services/config-service';
 import { ExtensionsService } from '../services/extensions-service';
 import { getContentOsFlags } from '../services/feature-flags';
@@ -110,7 +110,7 @@ async function handleMcp(c: Context<AppEnv>) {
 
   const runtime = c.get('runtime');
   const llm = createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>);
-  const registry = new ToolRegistryService(db, siteId, CORE_SKILLS);
+  const registry = new ToolRegistryService(db, siteId, skillCatalog());
   const harness = new AISecureHarness({
     db,
     siteId,
@@ -178,7 +178,13 @@ async function handleMcp(c: Context<AppEnv>) {
         : null;
     },
     listTools: async () => [
-      ...(await registry.listTools()).map((tool) => ({
+      ...(await registry.listTools())
+        // An external-action tool is advertised only to a caller that holds
+        // its capability. Listing is not authorization (the harness decides
+        // every call), but a tool that reaches a third party should not be
+        // discoverable by a token that could never use it.
+        .filter((tool) => !tool.external || (grant.allowed && satisfiesCapability(grant.capabilities, tool.external.capability)))
+        .map((tool) => ({
         name: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema,

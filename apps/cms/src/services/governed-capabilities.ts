@@ -2,6 +2,7 @@ import { systemDbFor } from '../middleware/db';
 import type { Context } from 'hono';
 import type { AppEnv } from '../env';
 import type { MagicContext } from './permission-dsl';
+import type { ApprovalDecider } from './external-action-audit';
 import {
   EffectiveCapabilityService,
   callerClassFromAuth,
@@ -203,4 +204,28 @@ export function approvalRequesterFromAuth(
 ): { kind: 'principal'; ref: AuthenticatedPrincipalRef } | null {
   const ref = principalRefFromAuth(auth, siteId);
   return ref ? { kind: 'principal', ref } : null;
+}
+
+/**
+ * Who is deciding an approval, from trusted auth middleware only.
+ *
+ * `human` is deliberately narrow: a signed-in staff user and nothing else. An
+ * API key is `api_key` whoever holds it; an OAuth access token issued to a
+ * connector, a frontend end-user session and an anonymous principal are not
+ * human deciders either, because each of them is something an agent can hold
+ * or drive. Anything unrecognised resolves to `api_key`, the kind that cannot
+ * decide a human-only approval, so the default is refusal.
+ */
+export function approvalDeciderFromAuth(
+  auth: Parameters<typeof principalRefFromAuth>[0],
+): ApprovalDecider {
+  const human =
+    Boolean(auth?.userId) &&
+    auth?.type !== 'api_key' &&
+    auth?.type !== 'anonymous' &&
+    !auth?.apiKeyId &&
+    !auth?.apiKey &&
+    !auth?.oauth &&
+    callerClassFromAuth(auth) === 'standard';
+  return human ? { kind: 'human', userId: auth!.userId! } : { kind: 'api_key' };
 }
