@@ -1,10 +1,10 @@
 ---
-version: 12
-lastUpdated: 2026-11-14T02:15:28.142Z
+version: 13
+lastUpdated: 2026-11-14T02:32:19.524Z
 sourceLang: en
-contentHash: cefe43edb3328c1d
-codeVerified: 2026-11-14T02:15:28.142Z
-codeVerifiedHash: cefe43edb3328c1d
+contentHash: 5fc1233101995b59
+codeVerified: 2026-11-14T02:32:19.524Z
+codeVerifiedHash: 5fc1233101995b59
 codeVerifiedClaims: 122
 ---
 
@@ -141,8 +141,11 @@ succeeds. Both accept `dryRun: true`, and every applied change is audit-logged.
   exists; the account and its membership commit in one transaction, so a
   refused membership never leaves an orphan account.
 
-Linking several external identities (social / SSO) to one account is a separate
-follow-up (`user_identities`), not part of this policy.
+Several external identities can be linked to one account through the
+`lumibase_user_identities` table (one row per `(issuer, subject)`). Members use
+it for social login — see [Social login](./social-login.md); automatic linking
+there only happens when the provider asserts the email is verified, and email
+matching follows the mode above.
 
 ---
 

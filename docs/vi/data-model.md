@@ -1,13 +1,13 @@
 ---
-version: 16
-lastUpdated: 2026-11-14T02:17:04.923Z
+version: 17
+lastUpdated: 2026-11-14T02:32:18.606Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 81349188234b13ac
+sourceHash: 474060261cdf7c7d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T02:17:04.923Z
-codeVerifiedHash: 81349188234b13ac
+codeVerified: 2026-11-14T02:32:18.606Z
+codeVerifiedHash: 474060261cdf7c7d
 codeVerifiedClaims: 20
 ---
 
@@ -38,6 +38,7 @@ Các file schema được chia theo domain:
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
+| `social-auth.ts` | `lumibase_user_identities`, `lumibase_social_auth_providers` |
 | `imports.ts` | `lumibase_import_jobs` |
 | `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 
@@ -454,6 +455,14 @@ Cả ba đều scope theo `site_id` với RLS `site_isolation`. Xem `docs/vi/fea
 ### `auth_external_issuers`
 - Issuer JWT ngoài được tin cậy, theo từng site. **Chỉ config public — không có secret** (chữ ký được verify dựa trên JWKS của issuer). `id`, `siteId` (FK sites, cascade), `issuer` (khớp claim `iss`), `jwksUri`/`discoveryUrl` (bắt buộc một trong hai), `audience` (jsonb: string|string[]), `algorithms` (jsonb: allowlist thuật toán bất đối xứng), `claimMapping` (jsonb: `{ email, roles, siteId?, externalId? }`), `roleMapping` (jsonb: `{ "<claim role>": { roleId|systemKey } }`), `defaultRoleId`, `jitProvisioning`, `clockSkewSeconds`, `enabled`, `createdAt`, `updatedAt`.
 - Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0000_lumibase_init` (đã hợp nhất). Xem [security/external-jwt-auth.md](./security/external-jwt-auth.md).
+
+### `user_identities` (`social-auth.ts`, migration `0031`)
+- Danh tính đăng nhập ngoài liên kết với một tài khoản: `id`, `userId` (FK users, cascade), `issuer`, `subject`, `emailAtLink`, `createdAt`. Unique `(issuer, subject)`; index trên `user_id`.
+- **Identity-global** giống `users` — không có `site_id`, không chịu RLS; quyền truy cập site vẫn nằm ở `user_sites`. Migration `0031` backfill mọi `users.external_id` với issuer `urn:lumibase:external-id`. Xem [security/social-login.md](./security/social-login.md).
+
+### `social_auth_providers` (`social-auth.ts`, migration `0031`)
+- Cấu hình Google / Apple / GitHub theo site: `id`, `siteId` (FK sites, cascade), `provider`, `enabled`, `clientId`, `clientSecretCiphertext`, `appleTeamId`, `appleKeyId`, `applePrivateKeyCiphertext`, `allowedRedirectUris` (jsonb), `createdAt`, `updatedAt`. Unique `(siteId, provider)`; RLS `site_isolation`.
+- Secret là envelope AES-GCM của KeyProvider, ràng buộc theo site + provider, không bao giờ lưu plaintext và không bao giờ được API trả về.
 
 ### `lumibase_firebase_sync_pipelines`
 | Column | Type | Note |

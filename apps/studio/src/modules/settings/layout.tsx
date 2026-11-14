@@ -65,6 +65,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'activity', label: 'Activity', to: '/settings/activity' },
       { id: 'security', label: 'Security', to: '/settings/security' },
+      { id: 'social-login', label: 'Social login', to: '/settings/social-login' },
       { id: 'encryption', label: 'Encryption', to: '/settings/encryption' },
       { id: 'updates', label: 'Updates', to: '/settings/updates' },
     ],

@@ -1,13 +1,13 @@
 ---
-version: 11
-lastUpdated: 2026-11-14T02:28:43.706Z
+version: 12
+lastUpdated: 2026-11-14T02:32:20.484Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: d8e82272616ced4d
+sourceHash: a14d5b31194a019e
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T02:28:43.706Z
-codeVerifiedHash: d8e82272616ced4d
+codeVerified: 2026-11-14T02:32:20.484Z
+codeVerifiedHash: a14d5b31194a019e
 codeVerifiedClaims: 4
 ---
 
@@ -118,6 +118,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - [security/cwe-top-100-audit.md](./security/cwe-top-100-audit.md) — CWE-mapped security audit.
   - [security/idor-testing.md](./security/idor-testing.md) — Cross-tenant (IDOR) testing guidelines.
   - [security/external-jwt-auth.md](./security/external-jwt-auth.md) — External JWT issuer authentication.
+  - [security/social-login.md](./security/social-login.md) — Social login for members (Google, Apple, GitHub) and account linking.
   - [security/user-management.md](./security/user-management.md) — User management & auth realms (ADR-010).
   - [security/passkeys.md](./security/passkeys.md) — Passkeys (WebAuthn): passwordless staff sign-in and second factor, RP ID / origin config.
   - [security/dependency-overrides.md](./security/dependency-overrides.md) — Supply-chain / dependency-override hardening.

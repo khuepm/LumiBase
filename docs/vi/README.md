@@ -1,10 +1,10 @@
 ---
-version: 10
-lastUpdated: 2026-11-14T02:28:43.706Z
+version: 11
+lastUpdated: 2026-11-14T02:32:20.484Z
 sourceLang: vi
-contentHash: d8e82272616ced4d
-codeVerified: 2026-11-14T02:28:43.706Z
-codeVerifiedHash: d8e82272616ced4d
+contentHash: a14d5b31194a019e
+codeVerified: 2026-11-14T02:32:20.484Z
+codeVerifiedHash: a14d5b31194a019e
 codeVerifiedClaims: 4
 ---
 
@@ -115,6 +115,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [security/cwe-top-100-audit.md](./security/cwe-top-100-audit.md) — Audit bảo mật theo ánh xạ CWE.
   - [security/idor-testing.md](./security/idor-testing.md) — Hướng dẫn kiểm thử xuyên tenant (IDOR).
   - [security/external-jwt-auth.md](./security/external-jwt-auth.md) — Xác thực nhà phát hành JWT bên ngoài.
+  - [security/social-login.md](./security/social-login.md) — Đăng nhập mạng xã hội cho thành viên (Google, Apple, GitHub) và liên kết tài khoản.
   - [security/user-management.md](./security/user-management.md) — Quản lý người dùng & auth realms (ADR-010).
   - [security/passkeys.md](./security/passkeys.md) — Passkey (WebAuthn): đăng nhập staff không mật khẩu và yếu tố thứ hai, cấu hình RP ID / origin.
   - [security/dependency-overrides.md](./security/dependency-overrides.md) — Thắt chặt chuỗi cung ứng / ghi đè dependency.

@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 48
-lastUpdated: 2026-11-14T02:28:40.774Z
+version: 49
+lastUpdated: 2026-11-14T02:32:16.518Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 0b6c457af9170431
+sourceHash: dd93db6182b7820c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T02:28:40.774Z
-codeVerifiedHash: 0b6c457af9170431
-codeVerifiedClaims: 538
+codeVerified: 2026-11-14T02:32:16.518Z
+codeVerifiedHash: dd93db6182b7820c
+codeVerifiedClaims: 558
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -196,6 +196,16 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `DELETE` | `/api/v1/me/sessions` | bearer | Thu hồi tất cả các phiên làm việc của người gọi; `?scope=others` giữ lại phiên hiện tại |
 | `GET` | `/api/v1/me/security-history` | bearer | Các sự kiện bảo mật của chính người gọi (đăng nhập, thiết bị mới, đổi mật khẩu/MFA, thu hồi phiên), đã che bớt; `?cursor=&limit=&scope=site\|account` — xem [Lịch sử bảo mật](../security/security-history.md) |
 | `GET` | `/api/v1/me/security-history/export` | bearer | Tải về cùng lịch sử đó; `?format=json\|csv&scope=` (tối đa 5.000 dòng, 10 lần xuất / 15 phút) |
+| `GET` | `/api/v1/auth/social/providers` | public | Các provider đăng nhập mạng xã hội đang bật cho site |
+| `POST` | `/api/v1/auth/social/:provider/start` | public | Bắt đầu đăng nhập Google / Apple / GitHub (PKCE) → `authorizationUrl` |
+| `GET`/`POST` | `/api/v1/auth/social/callback/:siteId/:provider` | provider | Callback của provider (`POST` = `form_post` của Apple); redirect về URI trong allow-list kèm code dùng một lần |
+| `POST` | `/api/v1/auth/social/exchange` | public | Đổi code dùng một lần bằng `codeVerifier` của client → phiên (`aud: frontend`) |
+| `GET` | `/api/v1/me/identities` | bearer | Các danh tính đăng nhập đã liên kết + `hasPassword` |
+| `POST` | `/api/v1/me/identities/:provider/link` | bearer | Bắt đầu liên kết một provider với tài khoản đang đăng nhập |
+| `POST` | `/api/v1/me/identities/complete` | bearer | Hoàn tất liên kết (code dùng một lần + `codeVerifier`) |
+| `DELETE` | `/api/v1/me/identities/:id` | bearer | Huỷ liên kết một provider (không bao giờ là cách đăng nhập cuối cùng) |
+| `GET` | `/api/v1/admin/social-providers` | site-admin | Cấu hình provider mạng xã hội theo site (secret chỉ ghi) |
+| `PUT`/`DELETE` | `/api/v1/admin/social-providers/:provider` | site-admin | Cấu hình / xoá một provider — xem [Social login](../security/social-login.md) |
 | `POST` | `/api/v1/users/subscriber-access` | site-admin | Cấp quyền `read` cho subscriber trên một collection (Policy DSL) |
 | `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | Liệt kê / thu hồi quyền đọc của subscriber |
 | `GET` | `/api/v1/me/preferences` | bearer | Blob tùy chọn của người dùng hiện tại (toàn cục identity) |
