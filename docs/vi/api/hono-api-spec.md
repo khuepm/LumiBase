@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 46
-lastUpdated: 2026-11-14T01:21:13.747Z
+version: 47
+lastUpdated: 2026-11-14T02:11:13.959Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 05cf51dec2d78d94
+sourceHash: 9bce9ea5a20749d7
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T01:21:13.747Z
-codeVerifiedHash: 05cf51dec2d78d94
-codeVerifiedClaims: 518
+codeVerified: 2026-11-14T02:11:13.959Z
+codeVerifiedHash: 9bce9ea5a20749d7
+codeVerifiedClaims: 522
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -186,6 +186,8 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `GET` | `/api/v1/me/sessions` | bearer | Liệt kê các phiên hoạt động của người gọi (live refresh tokens, đã ẩn thông tin nhạy cảm) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Thu hồi một phiên làm việc của người gọi |
 | `DELETE` | `/api/v1/me/sessions` | bearer | Thu hồi tất cả các phiên làm việc của người gọi; `?scope=others` giữ lại phiên hiện tại |
+| `GET` | `/api/v1/me/security-history` | bearer | Các sự kiện bảo mật của chính người gọi (đăng nhập, thiết bị mới, đổi mật khẩu/MFA, thu hồi phiên), đã che bớt; `?cursor=&limit=&scope=site\|account` — xem [Lịch sử bảo mật](../security/security-history.md) |
+| `GET` | `/api/v1/me/security-history/export` | bearer | Tải về cùng lịch sử đó; `?format=json\|csv&scope=` (tối đa 5.000 dòng, 10 lần xuất / 15 phút) |
 | `POST` | `/api/v1/users/subscriber-access` | site-admin | Cấp quyền `read` cho subscriber trên một collection (Policy DSL) |
 | `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | Liệt kê / thu hồi quyền đọc của subscriber |
 | `GET` | `/api/v1/me/preferences` | bearer | Blob tùy chọn của người dùng hiện tại (toàn cục identity) |

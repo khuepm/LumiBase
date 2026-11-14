@@ -121,6 +121,7 @@
           "security/idor-testing",
           "security/external-jwt-auth",
           "security/user-management",
+          "security/security-history",
           "security/dependency-overrides"
         ]
       },

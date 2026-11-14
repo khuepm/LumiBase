@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Laptop, Loader2, Smartphone } from 'lucide-react';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';
+import { describeUserAgent } from '@lumibase/contracts';
 
 /**
  * Active sessions & devices (#730). Lists the caller's live sign-ins from
@@ -50,43 +51,10 @@ async function errorMessage(res: Response, fallback: string): Promise<string> {
   return body?.errors?.[0]?.message ?? fallback;
 }
 
-/**
- * A short, human label for a User-Agent string ("Chrome on macOS"). Pure
- * heuristics — good enough to recognise your own devices, never used for
- * any security decision.
- */
-export function describeUserAgent(ua: string | null): { label: string; mobile: boolean } {
-  if (!ua) return { label: 'Unknown device', mobile: false };
-  const browser = /Edg\//.test(ua)
-    ? 'Edge'
-    : /OPR\/|Opera/.test(ua)
-      ? 'Opera'
-      : /Firefox\//.test(ua)
-        ? 'Firefox'
-        : /Chrome\/|CriOS\//.test(ua)
-          ? 'Chrome'
-          : /Safari\//.test(ua)
-            ? 'Safari'
-            : /Tauri|LumiBase-Shell/i.test(ua)
-              ? 'LumiBase app'
-              : null;
-  const os = /iPhone|iPad|iPod/.test(ua)
-    ? 'iOS'
-    : /Android/.test(ua)
-      ? 'Android'
-      : /Mac OS X|Macintosh/.test(ua)
-        ? 'macOS'
-        : /Windows/.test(ua)
-          ? 'Windows'
-          : /Linux/.test(ua)
-            ? 'Linux'
-            : null;
-  const mobile = /Mobi|iPhone|Android/.test(ua);
-  if (browser && os) return { label: `${browser} on ${os}`, mobile };
-  if (browser || os) return { label: (browser ?? os)!, mobile };
-  // Non-browser clients (SDK, curl): show the product token, trimmed.
-  return { label: ua.split(/[\s/]/)[0]?.slice(0, 40) || 'Unknown device', mobile };
-}
+// `describeUserAgent` lives in `@lumibase/contracts` so the CMS new-device
+// email (#739) labels a device exactly like this list does. Re-exported for
+// existing importers.
+export { describeUserAgent };
 
 function formatWhen(iso: string): string {
   const d = new Date(iso);
@@ -135,6 +103,7 @@ export function SessionsSection() {
 
   return (
     <section
+      id="active-sessions"
       aria-labelledby="sessions-heading"
       className="rounded-md border border-border bg-background p-4 space-y-3"
     >

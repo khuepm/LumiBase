@@ -112,7 +112,8 @@ describe('rotateRefreshToken', () => {
   it('detects reuse of a revoked token and revokes the family', async () => {
     const { db, calls } = fakeDb({ selectRows: [{ ...live, revokedAt: new Date() }] });
     const out = await rotateRefreshToken(db, { rawToken: 'x', siteId: 's1' }, undefined);
-    expect(out).toEqual({ ok: false, reason: 'reuse' });
+    // The family owner rides along for the audit trail (#739).
+    expect(out).toEqual({ ok: false, reason: 'reuse', userId: 'u1' });
     // One update: the family-wide revoke.
     expect(calls.updates).toHaveLength(1);
     expect(calls.updates[0]).toHaveProperty('revokedAt');
@@ -157,7 +158,8 @@ describe('rotateRefreshToken', () => {
     // a parallel use of one token: revoke the family, report reuse.
     const { db, calls } = fakeDb({ selectRows: [live], updateReturning: [] });
     const out = await rotateRefreshToken(db, { rawToken: 'x', siteId: 's1' }, undefined);
-    expect(out).toEqual({ ok: false, reason: 'reuse' });
+    // The family owner rides along for the audit trail (#739).
+    expect(out).toEqual({ ok: false, reason: 'reuse', userId: 'u1' });
     // No successor minted; the family-wide revoke ran after the failed claim.
     expect(calls.inserts).toHaveLength(0);
     expect(calls.updates.length).toBeGreaterThanOrEqual(1);
