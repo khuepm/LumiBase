@@ -127,10 +127,23 @@ function trailingCommentStart(line) {
  * Comments are prose and are meant to be translated. Whole-line `#`, `//` and
  * `--` comments are dropped for every code language; for HASH_COMMENT_LANGS a
  * trailing `  # …` is cut as well (B111 — translated trailing comments used to
- * read as code drift and needed a blanket `allow code-fences` waiver).
+ * read as code drift and needed a blanket `allow code-fences` waiver). For
+ * C_COMMENT_LANGS, trailing `// …` and `/* … *\/` blocks (JSDoc and JSX
+ * `{/* … *\/}` included) are cut the same way, and lines are compared without
+ * trailing whitespace or blank lines, since a translated JSDoc block may wrap
+ * onto a different number of lines.
  */
 export function stripCodeComments(body, lang = '') {
-  const trailing = HASH_COMMENT_LANGS.has(lang.toLowerCase());
+  const l = lang.toLowerCase();
+  const trailing = HASH_COMMENT_LANGS.has(l);
+  if (C_COMMENT_LANGS.has(l)) {
+    return stripCStyleComments(body)
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .filter((line) => line.trim() !== '')
+      .join('\n')
+      .trim();
+  }
   return body
     .split('\n')
     .filter((l) => !/^\s*(#|\/\/|--)/.test(l))
@@ -141,6 +154,50 @@ export function stripCodeComments(body, lang = '') {
     })
     .join('\n')
     .trim();
+}
+
+/**
+ * Fence languages with C-style comments: `// …` to end of line and `/* … *\/`
+ * blocks. A `#` is never a comment here (private field, colour, fragment).
+ */
+const C_COMMENT_LANGS = new Set([
+  'ts', 'tsx', 'typescript', 'js', 'jsx', 'javascript', 'mjs', 'cjs', 'jsonc',
+]);
+
+/**
+ * Remove `// …` and `/* … *\/` comments from JS/TS/JSONC source. Quote-aware:
+ * a `//` or `/*` inside '…', "…" or `…` is code (`'https://x'`, `'src/**\/*.ts'`).
+ * '…' and "…" cannot span lines in JS, so their state resets at a newline — an
+ * apostrophe in JSX text then cannot swallow the rest of the fence. A regex
+ * literal containing `//` is not recognised (none exists in docs today); the
+ * failure mode is a missed or over-cut comment on that one line.
+ */
+function stripCStyleComments(src) {
+  let out = '';
+  let quote = null;
+  for (let i = 0; i < src.length; i += 1) {
+    const ch = src[i];
+    if (quote) {
+      out += ch;
+      if (ch === '\\') { out += src[i + 1] ?? ''; i += 1; }
+      else if (ch === quote) quote = null;
+      else if (ch === '\n' && quote !== '`') quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; out += ch; continue; }
+    if (ch === '/' && src[i + 1] === '/') {
+      while (i < src.length && src[i] !== '\n') i += 1;
+      out += '\n';
+      continue;
+    }
+    if (ch === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2);
+      i = end === -1 ? src.length : end + 1;
+      continue;
+    }
+    out += ch;
+  }
+  return out;
 }
 
 /** A doc can waive a specific check when the divergence is deliberate. */
