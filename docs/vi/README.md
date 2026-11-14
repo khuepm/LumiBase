@@ -1,10 +1,10 @@
 ---
-version: 9
-lastUpdated: 2026-11-14T02:06:15.095Z
+version: 10
+lastUpdated: 2026-11-14T02:28:43.706Z
 sourceLang: vi
-contentHash: 28a3a0d3eeb239f5
-codeVerified: 2026-11-14T02:06:15.095Z
-codeVerifiedHash: 28a3a0d3eeb239f5
+contentHash: d8e82272616ced4d
+codeVerified: 2026-11-14T02:28:43.706Z
+codeVerifiedHash: d8e82272616ced4d
 codeVerifiedClaims: 4
 ---
 
@@ -116,6 +116,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [security/idor-testing.md](./security/idor-testing.md) — Hướng dẫn kiểm thử xuyên tenant (IDOR).
   - [security/external-jwt-auth.md](./security/external-jwt-auth.md) — Xác thực nhà phát hành JWT bên ngoài.
   - [security/user-management.md](./security/user-management.md) — Quản lý người dùng & auth realms (ADR-010).
+  - [security/passkeys.md](./security/passkeys.md) — Passkey (WebAuthn): đăng nhập staff không mật khẩu và yếu tố thứ hai, cấu hình RP ID / origin.
   - [security/dependency-overrides.md](./security/dependency-overrides.md) — Thắt chặt chuỗi cung ứng / ghi đè dependency.
   - [security/vulnerability-disclosure.md](./security/vulnerability-disclosure.md) — Chính sách công bố lỗ hổng: cách báo cáo, phiên bản được hỗ trợ, SLA theo mức CVSS, GHSA/CVE, embargo, safe harbour, chính sách triage báo cáo do AI tạo.
   - [security/advisories.md](./security/advisories.md) — Security advisory: nơi công bố, cách theo dõi, feed API máy đọc được, bảng chỉ mục.

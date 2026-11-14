@@ -1,13 +1,13 @@
 ---
-version: 10
-lastUpdated: 2026-11-14T02:06:15.095Z
+version: 11
+lastUpdated: 2026-11-14T02:28:43.706Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 28a3a0d3eeb239f5
+sourceHash: d8e82272616ced4d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T02:06:15.095Z
-codeVerifiedHash: 28a3a0d3eeb239f5
+codeVerified: 2026-11-14T02:28:43.706Z
+codeVerifiedHash: d8e82272616ced4d
 codeVerifiedClaims: 4
 ---
 
@@ -119,6 +119,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - [security/idor-testing.md](./security/idor-testing.md) — Cross-tenant (IDOR) testing guidelines.
   - [security/external-jwt-auth.md](./security/external-jwt-auth.md) — External JWT issuer authentication.
   - [security/user-management.md](./security/user-management.md) — User management & auth realms (ADR-010).
+  - [security/passkeys.md](./security/passkeys.md) — Passkeys (WebAuthn): passwordless staff sign-in and second factor, RP ID / origin config.
   - [security/dependency-overrides.md](./security/dependency-overrides.md) — Supply-chain / dependency-override hardening.
   - [security/vulnerability-disclosure.md](./security/vulnerability-disclosure.md) — Vulnerability disclosure policy: reporting, supported versions, SLA by CVSS severity, GHSA/CVE, embargo, safe harbour, AI-generated report triage policy.
   - [security/advisories.md](./security/advisories.md) — Security advisories: where they are published, subscribing, the machine-readable API feed, index table.

@@ -82,7 +82,7 @@ import {
   loadPasswordPolicy,
   passwordPolicyErrorBody,
 } from '../services/auth/password-policy';
-import { isUserTotpEnabled } from '../modules/mfa/totp-service';
+import { loadSecondFactors, methodsOf } from '../modules/mfa/tfa-state';
 import { signMfaChallengeToken } from '../services/auth/mfa-challenge';
 
 /**
@@ -1483,9 +1483,11 @@ authRouter.post('/login', async (c) => {
     );
   }
 
+  // Second factors the user can present: TOTP and/or passkeys (#735).
+  const mfaMethods = audience === TOKEN_AUDIENCE.studio ? methodsOf(await loadSecondFactors(db, user.id)) : [];
+
   if (triggered && policy.anomalyAction === 'require_mfa') {
-    const totpEnabled = await isUserTotpEnabled(db, user.id);
-    if (totpEnabled && audience === TOKEN_AUDIENCE.studio) {
+    if (mfaMethods.length > 0) {
       await recordAnomalyBlock(db, policy, {
         userId: user.id,
         email: accountEmail,
@@ -1506,6 +1508,7 @@ authRouter.post('/login', async (c) => {
           status: 'mfa_required',
           challengeToken: challenge.token,
           expiresIn: challenge.expiresInSeconds,
+          methods: mfaMethods,
         },
       });
     }
@@ -1534,7 +1537,7 @@ authRouter.post('/login', async (c) => {
     );
   }
 
-  if (audience === TOKEN_AUDIENCE.studio && await isUserTotpEnabled(db, user.id)) {
+  if (mfaMethods.length > 0) {
     const challenge = await signMfaChallengeToken(
       { userId: user.id, siteId, loginAudience: audience },
       jwtSecret,
@@ -1544,6 +1547,9 @@ authRouter.post('/login', async (c) => {
         status: 'mfa_required',
         challengeToken: challenge.token,
         expiresIn: challenge.expiresInSeconds,
+        // Which second-factor endpoints will accept this token:
+        // `totp` → POST /auth/verify-totp, `webauthn` → /auth/passkey/*.
+        methods: mfaMethods,
       },
     });
   }

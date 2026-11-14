@@ -1,11 +1,11 @@
 ---
-version: 48
-lastUpdated: 2026-11-14T02:11:13.959Z
+version: 49
+lastUpdated: 2026-11-14T02:28:40.774Z
 sourceLang: en
-contentHash: 9bce9ea5a20749d7
-codeVerified: 2026-11-14T02:11:13.959Z
-codeVerifiedHash: 9bce9ea5a20749d7
-codeVerifiedClaims: 522
+contentHash: 0b6c457af9170431
+codeVerified: 2026-11-14T02:28:40.774Z
+codeVerifiedHash: 0b6c457af9170431
+codeVerifiedClaims: 538
 ---
 
 # Hono API Specification — LumiBase
@@ -203,6 +203,14 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/me/tfa/confirm` | bearer | Confirm enrollment with a live code → single-use recovery codes |
 | `POST` | `/api/v1/me/tfa/recovery-codes` | bearer | Regenerate recovery codes (password + TOTP code) |
 | `DELETE` | `/api/v1/me/tfa` | bearer | Disable TOTP (password + either a TOTP code or a recovery code); revokes sessions and bumps `tokenVersion` |
+| `POST` | `/api/v1/auth/passkey/options` | public | Passkey authentication options: with `challengeToken` = second factor, without = passwordless staff sign-in → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/auth/passkey/verify` | public | Finish a passkey ceremony → same session payload as login (`amr` contains `webauthn`, `tfaVerified`) |
+| `GET` | `/api/v1/me/passkeys` | bearer | The caller's passkeys + `recoveryCodesRemaining`, `totpEnabled`, `available` |
+| `POST` | `/api/v1/me/passkeys/registration-options` | bearer | Begin passkey registration (password step-up) → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/me/passkeys` | bearer | Finish registration → `{ passkey, recoveryCodes }` (codes only for a first factor) |
+| `PATCH` | `/api/v1/me/passkeys/:id` | bearer | Rename a passkey |
+| `DELETE` | `/api/v1/me/passkeys/:id` | bearer | Remove a passkey (password); the last second factor revokes sessions and bumps `tokenVersion` |
+| `POST` | `/api/v1/me/passkeys/recovery-codes` | bearer | Regenerate recovery codes (password + a passkey-opened session) |
 | `POST` | `/api/v1/me/change-password` | bearer | Verify current password, set new hash, revoke refresh tokens + bump `tokenVersion` |
 | `GET` | `/api/v1/me/sessions` | bearer | List the caller's active sessions (live refresh tokens, redacted) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Revoke one of the caller's sessions |
@@ -270,6 +278,13 @@ that particular seed is no longer configured. In the latter case `DELETE
 /me/tfa` accepts a **recovery code** in place of a TOTP code, so the user can
 remove an enrollment whose seed can no longer be decrypted. See
 [Encryption key operations](../operations/encryption-keys.md).
+
+**Passkeys (WebAuthn).** When the user also (or only) has passkeys, the
+`mfa_required` response adds `methods` (`["totp"]`, `["webauthn"]` or both),
+and the challenge can be finished with `POST /auth/passkey/options` +
+`POST /auth/passkey/verify` instead of `verify-totp`. The same two endpoints
+without a `challengeToken` give a passwordless staff sign-in. See
+[Passkeys](../security/passkeys.md).
 
 **Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 

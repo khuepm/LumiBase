@@ -6,6 +6,7 @@ import { getApiBaseUrl } from '@/lib/api-base';
 import { SESSIONS_QUERY_KEY, SessionsSection } from './sessions-section';
 import { ChangePasswordSection } from './change-password-section';
 import { SECURITY_HISTORY_QUERY_KEY, SecurityHistorySection } from './security-history-section';
+import { PasskeysSection } from './passkeys-section';
 
 interface TotpStatus {
   enabled: boolean;
@@ -280,6 +281,7 @@ export function SecuritySettingsPage() {
       </section>
 
       <ChangePasswordSection />
+      <PasskeysSection />
 
       <SessionsSection />
 

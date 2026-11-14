@@ -1,13 +1,13 @@
 ---
-version: 15
-lastUpdated: 2026-11-13T15:31:05.385Z
+version: 16
+lastUpdated: 2026-11-14T02:17:04.923Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ffe6886c5e7614f4
+sourceHash: 81349188234b13ac
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T15:32:52.775Z
-codeVerifiedHash: ffe6886c5e7614f4
+codeVerified: 2026-11-14T02:17:04.923Z
+codeVerifiedHash: 81349188234b13ac
 codeVerifiedClaims: 20
 ---
 
@@ -263,6 +263,10 @@ Quá trình sinh SDK dùng manifest này để phát ra interface collection cơ
 ### `refresh_tokens` (migration `0005`, vật lý `lumibase_refresh_tokens`)
 - `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — không bao giờ lưu plaintext), `familyId` (chuỗi rotation), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
 - Token gia hạn session, có rotation và thu hồi được. Dùng lại một row đã revoke sẽ revoke toàn bộ `familyId` (phát hiện đánh cắp). Được quét dọn bởi cron mỗi giờ sau khi hết hạn. Xem [`security/user-management.md`](./security/user-management.md) §4d.
+
+### `user_passkeys` (migration `0030`, vật lý `lumibase_user_passkeys`)
+- `id` (nanoid), `userId`, `credentialId` (base64url, unique), `publicKey` (khóa công khai COSE), `counter`, `transports`, `aaguid`, `name`, `deviceType`, `backedUp`, `rpId`, `createdAt`, `lastUsedAt`, `updatedAt`.
+- Gắn với định danh như `lumibase_user_totp_credentials`: khóa theo `user_id`, không có `site_id`, không nằm trong RLS — passkey thuộc về một RP ID (tên miền), không thuộc site. Không lưu gì bí mật. Xem [`security/passkeys.md`](./security/passkeys.md).
 
 ### System collections cần seed permissions
 

@@ -1,10 +1,10 @@
 ---
-version: 15
-lastUpdated: 2026-11-13T15:31:05.385Z
+version: 16
+lastUpdated: 2026-11-14T02:17:04.923Z
 sourceLang: en
-contentHash: ffe6886c5e7614f4
-codeVerified: 2026-11-13T15:32:52.775Z
-codeVerifiedHash: ffe6886c5e7614f4
+contentHash: 81349188234b13ac
+codeVerified: 2026-11-14T02:17:04.923Z
+codeVerifiedHash: 81349188234b13ac
 codeVerifiedClaims: 20
 ---
 
@@ -259,6 +259,10 @@ SDK generation uses this manifest to emit base collection interfaces and `Collec
 ### `refresh_tokens` (migration `0005`, physical `lumibase_refresh_tokens`)
 - `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — plaintext never stored), `familyId` (rotation chain), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
 - Rotating, revocable session-renewal tokens. Reuse of a revoked row revokes the whole `familyId` (theft detection). Swept on the hourly cron once expired. See [`security/user-management.md`](./security/user-management.md) §4d.
+
+### `user_passkeys` (migration `0030`, physical `lumibase_user_passkeys`)
+- `id` (nanoid), `userId`, `credentialId` (base64url, unique), `publicKey` (COSE public key), `counter`, `transports`, `aaguid`, `name`, `deviceType`, `backedUp`, `rpId`, `createdAt`, `lastUsedAt`, `updatedAt`.
+- Identity-scoped like `lumibase_user_totp_credentials`: keyed by `user_id`, no `site_id`, not under RLS — a passkey belongs to an RP ID (domain), not to a site. Nothing secret is stored. See [`security/passkeys.md`](./security/passkeys.md).
 
 ### System collections seed permissions
 
