@@ -19,6 +19,7 @@ import { withSiteMembership } from './middleware/site-membership';
 import { withStudioAccess } from './middleware/studio-access';
 import { withControlPlaneAccessGuard } from './middleware/control-plane-access-guard';
 import { withFileUploadPolicy } from './middleware/file-upload-policy';
+import { apiSurface, withEntitlement } from './middleware/entitlement';
 import { withSecurityHeaders } from './middleware/security-headers';
 import { withTenant } from './middleware/tenant';
 import { withTenantExists } from './middleware/tenant-exists';
@@ -111,6 +112,7 @@ import {
   gitPublicRouter,
 } from './modules/git-integration/routes';
 import { formatSafeError } from '@lumibase/contracts/utils';
+import { ENTITLEMENT_DIMENSIONS } from '@lumibase/contracts/platform';
 
 const app = new Hono<AppEnv>();
 
@@ -240,6 +242,12 @@ const api = new Hono<AppEnv>();
 api.use('/mcp', withMcpAuthChallenge());
 api.use('/mcp/*', withMcpAuthChallenge());
 api.use('*', withTenant(), withDb(), withTenantExists(), withAiIpRateLimit(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
+// Platform extension point: per-request entitlement check. A pass-through
+// unless a deployment entry registered a resolver (see platform/registry.ts).
+// Its own mount, after the guard chain: the principal is known, a request the
+// guards reject is never put to the resolver, and the chain line above stays
+// exactly as the security-guards wiring test pins it.
+api.use('*', withEntitlement({ dimension: ENTITLEMENT_DIMENSIONS.apiRequests, surface: apiSurface }));
 // Sub-routers must be attached to their parent BEFORE the parent is mounted
 // on `api`: Hono's `route()` copies the child's routes at call time, so
 // anything registered on `authRouter`/`meRouter` afterwards is invisible to
@@ -422,6 +430,11 @@ app.route('/api/v1/email', emailPublicRouter);
 // handlers first makes them win for their disjoint paths (same mechanism as
 // the shares/email mounts above).
 app.use('/api/v1/deliver/*', withDb(), withDeliverRateLimit());
+// Platform extension point, after the limiter: pass-through unless a resolver
+// is registered. Separate mount for the same reason as the one below.
+app.use('/api/v1/deliver/*', withEntitlement({
+  dimension: ENTITLEMENT_DIMENSIONS.deliveryRequests, surface: 'delivery', siteId: deliverPathSiteId,
+}));
 // Separate mount so the rate-limit wiring line above stays exactly as the
 // security-guards wiring test pins it. Runs after the limiter.
 app.use('/api/v1/deliver/*', withDeliveryMilestone(deliverPathSiteId));
