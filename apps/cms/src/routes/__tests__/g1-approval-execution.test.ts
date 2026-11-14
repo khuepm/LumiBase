@@ -443,3 +443,92 @@ describe('G1 — human approval executes the parked action', () => {
     expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).not.toBe('deciding');
   });
 });
+
+describe('human-only approvals (external-action tools)', () => {
+  /**
+   * The same administrator, presenting an OAuth access token issued to a
+   * connector instead of a session. Their capabilities are identical; what
+   * differs is that an agent can hold this credential.
+   */
+  const connectorPrincipal: AuthPrincipal = {
+    ...adminPrincipal,
+    oauth: { issuer: 'https://idp.example', resource: 'https://cms.example/api/v1/mcp', scopes: ['mcp:admin'] },
+  };
+
+  it('a signed-in administrator releases a human_required approval', async () => {
+    const fake = seedFakeDb({ approvalPolicy: 'human_required' });
+
+    const res = await decide(fake, { decision: 'approved' });
+
+    expect(res.status).toBe(200);
+    expect(deleteCollection).toHaveBeenCalledTimes(1);
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('approved');
+  });
+
+  it('the same administrator through a connector token cannot, and the approval stays pending', async () => {
+    const fake = seedFakeDb({ approvalPolicy: 'human_required' });
+
+    const res = await decide(fake, { decision: 'approved' }, connectorPrincipal);
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { errors: Array<{ message: string }> };
+    expect(body.errors[0]!.message).toContain('HUMAN_APPROVAL_REQUIRED');
+    expect(deleteCollection).not.toHaveBeenCalled();
+    expect(fake.tables[AGENT_APPROVALS]!.rows[0]!['status']).toBe('pending');
+    expect(fake.tables[AI_APPROVALS]!.rows[0]!['status']).toBe('pending');
+  });
+
+  it('an ordinary approval is unaffected by who presents the credential', async () => {
+    const fake = seedFakeDb();
+
+    const res = await decide(fake, { decision: 'approved' }, connectorPrincipal);
+
+    expect(res.status).toBe(200);
+    expect(deleteCollection).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('tool secrets routes', () => {
+  const SECRET = 'route-secret-value-0123456789';
+
+  function request(fake: FakeDb, auth: AuthPrincipal, method: string, path: string, body?: Row) {
+    return buildApp(fake, auth).request(`/agent/tool-secrets${path}`, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+  }
+
+  it('refuses a non-administrator and a non-human administrator', async () => {
+    const connector: AuthPrincipal = {
+      ...adminPrincipal,
+      oauth: { issuer: 'https://idp.example', resource: 'https://cms.example/api/v1/mcp', scopes: ['mcp:admin'] },
+    };
+    const apiKey: AuthPrincipal = { type: 'api_key', apiKeyId: 'key_1', roles: [], raw: {} };
+    for (const auth of [memberPrincipal, connector, apiKey]) {
+      for (const [method, path, body] of [
+        ['GET', '', undefined],
+        ['PUT', '/SOME_TOKEN', { value: SECRET }],
+        ['DELETE', '/SOME_TOKEN', undefined],
+      ] as const) {
+        const res = await request(seedFakeDb(), auth, method, path, body);
+        expect(res.status, `${method} as ${auth.userId ?? auth.apiKeyId}`).toBe(403);
+        expect(await res.text()).not.toContain(SECRET);
+      }
+    }
+  });
+
+  it('never echoes a rejected value back in a validation error', async () => {
+    const res = await request(seedFakeDb(), adminPrincipal, 'PUT', '/SOME_TOKEN', { value: SECRET, extra: SECRET });
+    expect(res.status).toBe(400);
+    expect(await res.text()).not.toContain(SECRET);
+  });
+
+  it('reports a missing KeyProvider instead of storing anything', async () => {
+    const fake = seedFakeDb();
+    const res = await request(fake, adminPrincipal, 'PUT', '/SOME_TOKEN', { value: SECRET });
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as { errors: Array<{ code: string }> }).errors[0]!.code).toBe('KEYS_UNAVAILABLE');
+    expect(JSON.stringify(fake.writes)).not.toContain(SECRET);
+  });
+});
