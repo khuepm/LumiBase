@@ -12,6 +12,9 @@ import {
   runScheduledRefreshTokenPrune,
   listUserSessions,
   revokeSessionById,
+  revokeOtherSessions,
+  isSessionLive,
+  newSessionId,
 } from '../refresh-token';
 
 /**
@@ -32,6 +35,7 @@ function fakeDb(opts: {
     select: () => builder,
     from: () => builder,
     where: () => builder,
+    groupBy: () => builder,
     limit: () => Promise.resolve(opts.selectRows ?? []),
     insert: () => builder,
     values: (v: any) => {
@@ -108,7 +112,8 @@ describe('rotateRefreshToken', () => {
   it('detects reuse of a revoked token and revokes the family', async () => {
     const { db, calls } = fakeDb({ selectRows: [{ ...live, revokedAt: new Date() }] });
     const out = await rotateRefreshToken(db, { rawToken: 'x', siteId: 's1' }, undefined);
-    expect(out).toEqual({ ok: false, reason: 'reuse' });
+    // The family owner rides along for the audit trail (#739).
+    expect(out).toEqual({ ok: false, reason: 'reuse', userId: 'u1' });
     // One update: the family-wide revoke.
     expect(calls.updates).toHaveLength(1);
     expect(calls.updates[0]).toHaveProperty('revokedAt');
@@ -135,6 +140,8 @@ describe('rotateRefreshToken', () => {
       expect(out.userId).toBe('u1');
       expect(out.audience).toBe('studio');
       expect(out.token).toBeTruthy();
+      // The session id survives rotation so the new access JWT keeps its `sid`.
+      expect(out.familyId).toBe('fam1');
     }
     // Successor inserted in the same family...
     expect(calls.inserts).toHaveLength(1);
@@ -151,7 +158,8 @@ describe('rotateRefreshToken', () => {
     // a parallel use of one token: revoke the family, report reuse.
     const { db, calls } = fakeDb({ selectRows: [live], updateReturning: [] });
     const out = await rotateRefreshToken(db, { rawToken: 'x', siteId: 's1' }, undefined);
-    expect(out).toEqual({ ok: false, reason: 'reuse' });
+    // The family owner rides along for the audit trail (#739).
+    expect(out).toEqual({ ok: false, reason: 'reuse', userId: 'u1' });
     // No successor minted; the family-wide revoke ran after the failed claim.
     expect(calls.inserts).toHaveLength(0);
     expect(calls.updates.length).toBeGreaterThanOrEqual(1);
@@ -193,19 +201,65 @@ describe('refreshCookieSettings (cross-domain)', () => {
 describe('listUserSessions / revokeSessionById', () => {
   it('returns sessions newest-first without any token hash', async () => {
     const rows = [
-      { id: 'a', audience: 'studio', createdAt: new Date(1000), expiresAt: new Date(9e12), lastIp: '1.1.1.1', lastUserAgent: 'x' },
-      { id: 'b', audience: 'studio', createdAt: new Date(3000), expiresAt: new Date(9e12), lastIp: null, lastUserAgent: null },
-      { id: 'c', audience: 'studio', createdAt: new Date(2000), expiresAt: new Date(9e12), lastIp: null, lastUserAgent: null },
+      { id: 'a', familyId: 'fa', audience: 'studio', createdAt: new Date(1000), expiresAt: new Date(9e12), lastIp: '1.1.1.1', lastUserAgent: 'x' },
+      { id: 'b', familyId: 'fb', audience: 'studio', createdAt: new Date(3000), expiresAt: new Date(9e12), lastIp: null, lastUserAgent: null },
+      { id: 'c', familyId: 'fc', audience: 'studio', createdAt: new Date(2000), expiresAt: new Date(9e12), lastIp: null, lastUserAgent: null },
     ];
     const { db } = fakeDb({ selectRows: rows });
     const out = await listUserSessions(db, 's1', 'u1');
     expect(out.map((s) => s.id)).toEqual(['b', 'c', 'a']);
+    expect(out.map((s) => s.sessionId)).toEqual(['fb', 'fc', 'fa']);
+    expect(out[0]!.lastSeenAt).toEqual(new Date(3000));
     expect(JSON.stringify(out)).not.toContain('tokenHash');
   });
 
-  it('revokeSessionById is true on a match, false otherwise', async () => {
-    expect(await revokeSessionById(fakeDb({ updateReturning: [{ id: 'a' }] }).db, 's', 'u', 'a')).toBe(true);
-    expect(await revokeSessionById(fakeDb({ updateReturning: [] }).db, 's', 'u', 'a')).toBe(false);
+  it('takes startedAt from the oldest retained row of each session', async () => {
+    let call = 0;
+    const live = [
+      { id: 'b', familyId: 'fb', audience: 'studio', createdAt: new Date(5000), expiresAt: new Date(9e12), lastIp: null, lastUserAgent: null },
+    ];
+    const starts = [{ familyId: 'fb', startedAt: new Date(1000) }];
+    const builder: any = {
+      select: () => builder,
+      from: () => builder,
+      where: () => builder,
+      groupBy: () => builder,
+      then: (resolve: (v: unknown) => void) => resolve(call++ === 0 ? live : starts),
+    };
+    const out = await listUserSessions(builder as Database, 's1', 'u1');
+    expect(out[0]!.startedAt).toEqual(new Date(1000));
+    expect(out[0]!.lastSeenAt).toEqual(new Date(5000));
+  });
+
+  it('returns [] without a second query when nothing is live', async () => {
+    const { db } = fakeDb({ selectRows: [] });
+    expect(await listUserSessions(db, 's1', 'u1')).toEqual([]);
+  });
+
+  it('revokeSessionById returns the revoked session id, or null', async () => {
+    expect(
+      await revokeSessionById(fakeDb({ updateReturning: [{ familyId: 'fa' }] }).db, 's', 'u', 'a'),
+    ).toBe('fa');
+    expect(await revokeSessionById(fakeDb({ updateReturning: [] }).db, 's', 'u', 'a')).toBeNull();
+  });
+
+  it('revokeOtherSessions reports how many tokens it revoked', async () => {
+    const { db, calls } = fakeDb({ updateReturning: [{ id: 'x' }, { id: 'y' }] });
+    expect(await revokeOtherSessions(db, 's', 'u', 'keep')).toBe(2);
+    expect(calls.updates[0]).toHaveProperty('revokedAt');
+  });
+});
+
+describe('isSessionLive / newSessionId', () => {
+  it('is true only while the session holds a live token', async () => {
+    expect(await isSessionLive(fakeDb({ selectRows: [{ id: 'r1' }] }).db, 'fam1')).toBe(true);
+    expect(await isSessionLive(fakeDb({ selectRows: [] }).db, 'fam1')).toBe(false);
+  });
+
+  it('mints distinct UUID session ids', () => {
+    const a = newSessionId();
+    expect(a).toMatch(/^[0-9a-f-]{36}$/);
+    expect(newSessionId()).not.toBe(a);
   });
 });
 

@@ -214,6 +214,12 @@ shell working** (see the "Shell impact" step in
 
 ## Roadmap / not yet implemented
 
+- **Passkeys (WebAuthn) in the webview.** The Studio hides every passkey
+  control inside the shell (C5): the webviews either lack WebAuthn or run it
+  under `tauri://localhost`, which no server RP ID can match. Password, TOTP and
+  recovery codes work; see `docs/en/security/passkeys.md` §6. Native support
+  would need a platform authenticator plugin plus associated-domain setup.
+
 - **iOS/Android store submission** (Fastlane lanes, provisioning) beyond the CI
   build jobs.
 - **Mobile keystore/Keychain** for tokens (currently sandboxed webview storage

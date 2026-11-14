@@ -1,12 +1,12 @@
 ---
 title: LumiBase CLI
-version: 9
-lastUpdated: 2026-11-12T18:43:33.929Z
+version: 10
+lastUpdated: 2026-11-14T02:04:01.690Z
 sourceLang: en
-contentHash: 111bf5c2e41878da
-codeVerified: 2026-11-12T18:43:33.929Z
-codeVerifiedHash: 111bf5c2e41878da
-codeVerifiedClaims: 20
+contentHash: 5c01ccd14e7b9304
+codeVerified: 2026-11-14T02:04:01.690Z
+codeVerifiedHash: 5c01ccd14e7b9304
+codeVerifiedClaims: 22
 ---
 
 # LumiBase CLI
@@ -39,7 +39,7 @@ Node.js 22+ is required for the CLI; the launcher in `packages/cli/bin/lumibase.
 | --- | --- |
 | `lumibase init [name]` | Scaffold a new project |
 | `lumibase types` | Generate TypeScript types from a running CMS |
-| `lumibase doctor` | Report resolved configuration and probe connectivity |
+| `lumibase doctor` | Report resolved configuration and probe connectivity (`--security`: audit the config against the production checklist) |
 | `lumibase skills <list\|pull\|push\|install>` | Sync Site Skills (agent playbooks) with a site |
 
 `lumibase help` and `lumibase version` are also accepted, as are `--help` / `-h` and `--version` / `-v`.
@@ -128,6 +128,18 @@ Prints what was resolved, where each value came from, and whether the CMS answer
 The health probe calls the unauthenticated `/health` endpoint (`apps/cms/src/routes/health.ts`); the schema check exercises the same authenticated request `lumibase types` makes, so a green `doctor` means typegen will work. Tokens are masked: a short prefix is kept so an operator can tell which token was picked up without the value reaching CI logs.
 
 `doctor` exits non-zero if any check fails.
+
+### `lumibase doctor --security`
+
+`--security` replaces the connectivity checks with an offline audit of the project's configuration. It reads `.env`, `.env.local`, `.dev.vars`, `wrangler.toml` `[vars]` and the compose `environment:` entries. Each finding has a severity (`critical`, `warning`, `info`), the rule it applies and a fix hint. Secret values are never printed.
+
+| Flag | Effect |
+| --- | --- |
+| `--production` | Apply the production checklist even when `NODE_ENV` / `LUMIBASE_ENV` is not `production` |
+| `--env-file <a,b>` | Read these dotenv files instead of the defaults |
+| `--json` | Print the report as JSON (`ok`, `mode`, `runtime`, `sources`, `summary`, `findings`) |
+
+The command exits `1` when any finding is critical. A fresh `create-lumibase` scaffold passes with zero critical findings. For the full rule list, see [Secure defaults](../security/secure-defaults.md).
 
 ## `lumibase skills`
 

@@ -150,4 +150,52 @@ describe('withAuth custom JWT tenant binding', () => {
 
     expect(res.status).toBe(200);
   });
+
+  // #730 — per-session revocation. Queue order: api-key probe, user row,
+  // live-session probe (`sid`), membership.
+  it('rejects a token whose session (sid) has been revoked', async () => {
+    const token = await signToken({
+      userId: 'user-1', roles: ['member'], siteId: 'site-a', tokenVersion: 0, sid: 'fam-revoked',
+    });
+    const app = buildApp(
+      makeSelectOnlyDb([
+        [],
+        [{ id: 'user-1', status: 'active', isBootstrap: false, tokenVersion: 0 }],
+        [], // no live refresh row left in the family
+        [{ roleId: 'member' }],
+      ]),
+      'site-a',
+    );
+    const res = await app.request(
+      '/protected',
+      { headers: { Authorization: `Bearer ${token}` } },
+      { JWT_SECRET: 'test-secret' },
+    );
+    expect(res.status).toBe(401);
+    const body = await res.json() as { errors: Array<{ message: string }> };
+    expect(body.errors[0]!.message).toMatch(/revoked/i);
+  });
+
+  it('accepts a token whose session (sid) is still live and exposes sid on raw', async () => {
+    const token = await signToken({
+      userId: 'user-1', roles: ['member'], siteId: 'site-a', tokenVersion: 0, sid: 'fam-live',
+    });
+    const app = buildApp(
+      makeSelectOnlyDb([
+        [],
+        [{ id: 'user-1', status: 'active', isBootstrap: false, tokenVersion: 0 }],
+        [{ id: 'rt-1' }],
+        [{ roleId: 'member' }],
+      ]),
+      'site-a',
+    );
+    const res = await app.request(
+      '/protected',
+      { headers: { Authorization: `Bearer ${token}` } },
+      { JWT_SECRET: 'test-secret' },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: { raw: { sid: string } } };
+    expect(body.data.raw.sid).toBe('fam-live');
+  });
 });

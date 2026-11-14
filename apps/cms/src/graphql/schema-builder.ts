@@ -14,6 +14,7 @@ import { mapFieldType } from './type-mapping';
 import { toGraphQLError } from './errors';
 import type { GraphQLContext } from './context';
 import { ItemServiceError, relationAlias } from '../services/item-service';
+import { FIELD_FORBIDDEN_CODE } from '../services/filter-guard';
 import { createSiteEventSource } from './realtime-source';
 import type { SchemaService, CompiledCollection } from '../services/schema-service';
 
@@ -147,6 +148,11 @@ function addRelationFields(
             });
             return res.data;
           } catch (err) {
+            // The child lookup filters on the FK field. A caller who cannot
+            // read that field would learn the hidden link through this field,
+            // so it resolves to no children — the same answer for every parent,
+            // independent of data (#738), rather than an error per parent.
+            if (err instanceof ItemServiceError && err.code === FIELD_FORBIDDEN_CODE) return [];
             throw toGraphQLError(err);
           }
         },

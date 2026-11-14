@@ -30,9 +30,13 @@ import { adminRouter } from './routes/admin';
 import { configRouter } from './routes/config';
 import { authRouter, meRouter } from './routes/auth';
 import { tfaAuthRouter, tfaMeRouter } from './routes/tfa';
+import { securityHistoryRouter } from './modules/security-history/routes';
+import { passkeyAuthRouter, passkeyMeRouter } from './routes/passkeys';
 import { adminSecurityRouter } from './routes/admin-security';
 import { adminEmailIdentityRouter } from './routes/admin-email-identity';
+import { adminPasswordPolicyRouter } from './routes/admin-password-policy';
 import { adminAuthIssuersRouter } from './routes/admin-auth-issuers';
+import { adminSocialProvidersRouter, socialAuthRouter, socialIdentitiesRouter } from './modules/social-auth/routes';
 import { adminEncryptionRouter } from './routes/admin-encryption';
 import { editorialRouter } from './routes/editorial';
 import { adminErasureRouter } from './routes/admin-erasure';
@@ -245,6 +249,9 @@ api.use('*', withTenant(), withDb(), withTenantExists(), withAiIpRateLimit(), wi
 // anything registered on `authRouter`/`meRouter` afterwards is invisible to
 // the composed app and answers 404.
 authRouter.route('/', tfaAuthRouter);
+authRouter.route('/', passkeyAuthRouter);
+// Social login (#736): public start / provider callback / code exchange.
+authRouter.route('/social', socialAuthRouter);
 api.route('/orgs', orgsRouter);
 api.route('/auth', authRouter);
 // `/me/*` — current-user endpoints kept outside `/auth` to honour the
@@ -252,11 +259,16 @@ api.route('/auth', authRouter);
 // Mounted on the authenticated `api` Hono so `withAuth` already enforces
 // that the caller has a valid session before the handler runs.
 meRouter.route('/', tfaMeRouter);
+meRouter.route('/', passkeyMeRouter);
+// Linked social identities (#736): list / link / unlink.
+meRouter.route('/identities', socialIdentitiesRouter);
 api.route('/me', meRouter);
 // `/me/consents` — self-service consent management (GDPR Art. 7, PDPD).
 // Separate router from `meRouter`; mounted under the same authenticated `api`
 // chain so the caller can only read/write their own consent.
 api.route('/me/consents', consentRouter);
+// `/me/security-history` — the caller's own security timeline + export (#739).
+api.route('/me/security-history', securityHistoryRouter);
 // `/me/data-export` — self-service "download my data" (GDPR Art. 15/20).
 api.route('/me/data-export', dataExportRouter);
 // `/me/restriction` — self-service restriction of processing (GDPR Art. 18).
@@ -324,6 +336,7 @@ api.route('/admin', adminRouter);
 api.route('/admin/security', adminSecurityRouter);
 // Email identity policy (#794): instance mode (bootstrap admin) + per-site strict.
 api.route('/admin/email-identity', adminEmailIdentityRouter);
+api.route('/admin/password-policy', adminPasswordPolicyRouter);
 // Admin Encryption surface (regulated-content-readiness task 3.4; Req 3.5).
 // Sibling to `/admin/security`, also under `withAuth` with an in-router
 // admin-role gate. Handles key-rotation metadata + key listing.
@@ -336,6 +349,8 @@ api.route('/admin/field-access-log', adminFieldAccessRouter);
 api.route('/admin/sar', adminSarRouter);
 // Trusted external JWT issuers (external-jwt-auth §5). Admin-only CRUD.
 api.route('/admin/auth/issuers', adminAuthIssuersRouter);
+// Per-site social login providers (#736), site-admin only.
+api.route('/admin/social-providers', adminSocialProvidersRouter);
 // Audit-log QUERY + EXPORT surface (admin-setup-wizard task 12.3; Req
 // 15.4, 15.6; design §4.9, §4.10, §10.3, §10.4). SIBLING mount alongside
 // `adminSecurityRouter` above, both under `withAuth`. The admin-role gate

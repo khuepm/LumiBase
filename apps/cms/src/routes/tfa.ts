@@ -29,9 +29,11 @@ import {
   signMfaChallengeToken,
   verifyMfaChallengeToken,
 } from '../services/auth/mfa-challenge';
-import { revokeAllRefreshTokens } from '../services/auth/refresh-token';
+import { revokeAllRefreshTokens, revokeOtherSessions } from '../services/auth/refresh-token';
 import { TOKEN_AUDIENCE } from '../services/auth/token-audience';
 import { completePasswordLoginSession } from '../services/auth/login-session';
+import { detectNewDevice, scheduleNewDeviceNotice } from '../modules/security-history/new-device';
+import type { LoginAttemptDraft } from '../modules/anomaly/types';
 
 export const tfaAuthRouter = new Hono<AppEnv>();
 export const tfaMeRouter = new Hono<AppEnv>();
@@ -122,15 +124,31 @@ tfaAuthRouter.post('/verify-totp', async (c) => {
     return c.json({ errors: [{ code: 'ACCOUNT_DISABLED', message: 'This account is not active.' }] }, 403);
   }
 
+  const userAgent = c.req.header('user-agent') ?? null;
+  const attempt: LoginAttemptDraft = {};
+  // New-device check (#739) before the success hook updates the baseline.
+  const newDevice = await detectNewDevice(
+    db,
+    claims.userId,
+    userAgent,
+    c.req.header('accept-language') ?? '',
+    attempt,
+  );
+
   await recordLoginSuccess(db, {
     userId: claims.userId,
     email: user.email.toLowerCase(),
     ip,
-    userAgent: c.req.header('user-agent') ?? null,
-    attempt: {},
+    userAgent,
+    attempt,
     anomalyScore: 0,
     anomalyTriggered: false,
     baselineWarmup: false,
+    method: 'totp',
+  }, {
+    // `login_success` audit entry, so TOTP sign-ins appear in the user's
+    // security history like password sign-ins do (#739).
+    notify: { audit, requestId: c.get('requestId') },
   });
 
   // Studio-only TOTP: only issue session for studio audience challenges.
@@ -138,13 +156,25 @@ tfaAuthRouter.post('/verify-totp', async (c) => {
     return c.json({ errors: [{ code: 'MFA_NOT_SUPPORTED', message: 'Two-factor authentication is not enabled for this login type.' }] }, 403);
   }
 
-  return completePasswordLoginSession(c, {
+  const response = await completePasswordLoginSession(c, {
     user,
     siteId: claims.siteId,
     audience: claims.loginAudience,
     tfaVerified: true,
     amr: ['pwd', 'totp'],
   });
+  if (response.status === 200) {
+    scheduleNewDeviceNotice(c, newDevice, {
+      siteId: claims.siteId,
+      userId: user.id,
+      email: user.email,
+      audience: claims.loginAudience,
+      ip,
+      userAgent,
+      countryCode: null,
+    });
+  }
+  return response;
 });
 
 tfaMeRouter.get('/tfa', async (c) => {
@@ -234,11 +264,20 @@ tfaMeRouter.post('/tfa/confirm', async (c) => {
       parsed.data.secret,
       parsed.data.code,
     );
+    // Enrolment is a security boundary (#730): any session opened before the
+    // second factor existed was authenticated with the password alone, so it
+    // is signed out. The device that just enrolled keeps its session. A
+    // legacy token without `sid` cannot be told apart from the others, so
+    // nothing is revoked for it rather than signing the enroller out mid-flow.
+    const sid = typeof auth.raw?.sid === 'string' ? auth.raw.sid : null;
+    const revokedSessions = sid
+      ? await revokeOtherSessions(c.get('db'), c.get('siteId'), userId, sid)
+      : 0;
     const audit = new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') });
     await audit.write({
       event: 'mfa_enrolled',
       actorEmail: auth.email ?? null,
-      metadata: { userId },
+      metadata: { userId, revokedOtherSessions: revokedSessions },
       requestId: c.get('requestId'),
       ip: extractClientIp(c),
     });

@@ -93,7 +93,12 @@ function buildApp(service?: RecoveryOverride, db: unknown = {}): Hono<AppEnv> {
   app.use('*', async (c, next) => {
     // `withDb()` inside the router needs `db` resolvable; the override
     // short-circuits the real service so this is never actually queried.
-    c.set('db', db as never);
+    // The password-policy lookup (#733) reads one settings row; answer it
+    // with "no row" so the default policy applies.
+    const emptySelect = {
+      select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }) }),
+    };
+    c.set('db', Object.assign(Object.create(null), emptySelect, db as object) as never);
     c.set('requestId', 'req_test');
     if (service) c.set('recoveryServiceOverride', service);
     await next();
@@ -307,6 +312,33 @@ describe('POST /admin/security/reset-password', () => {
     expect((updates[0] as { passwordHash?: string }).passwordHash).toMatch(
       /^pbkdf2\$/,
     );
+  });
+
+  it('rejects a weak password with a per-rule PASSWORD_POLICY error before consuming the token (#733)', async () => {
+    const { service } = makeStubService({ validateUnlockResult: { userId: 'usr_boot' } });
+    let consumed = 0;
+    const validate = service.validateUnlockToken.bind(service);
+    service.validateUnlockToken = async (token) => {
+      consumed += 1;
+      return validate(token);
+    };
+    const app = buildApp(service);
+
+    const res = await postJson(
+      app,
+      '/api/v1/admin/security/reset-password',
+      { unlockToken: 'unlock-token-abc', password: 'short' },
+      freshIpHeaders(),
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as {
+      errors: Array<{ code: string; rules: Array<{ rule: string; ok: boolean }> }>;
+    };
+    expect(body.errors[0]!.code).toBe('PASSWORD_POLICY');
+    const failed = body.errors[0]!.rules.filter((r) => !r.ok).map((r) => r.rule);
+    expect(failed).toEqual(expect.arrayContaining(['min_length', 'uppercase', 'digit', 'special']));
+    expect(consumed).toBe(0);
   });
 
   it('returns 401 when the unlock token is invalid or expired', async () => {

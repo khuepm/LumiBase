@@ -201,7 +201,7 @@ async function main() {
   console.log();
 
   // --- scaffold ---
-  await scaffold(config);
+  const secrets = await scaffold(config);
 
   // --- git ---
   if (initializeGit) {
@@ -214,7 +214,7 @@ async function main() {
   }
 
   // --- done ---
-  printNextSteps(config);
+  printNextSteps(config, secrets);
 }
 
 function onCancel() {

@@ -26,6 +26,12 @@ export interface UploadTypeEntry {
   readonly label: string;
   /** Optional caveat surfaced in the settings UI. */
   readonly note?: string;
+  /**
+   * `false` keeps the type out of the default allowlist: a site admin has to
+   * opt in from Settings → Uploads (or the env allowlist). Absent = enabled by
+   * default.
+   */
+  readonly defaultEnabled?: boolean;
 }
 
 export const UPLOAD_TYPE_CATALOGUE: readonly UploadTypeEntry[] = [
@@ -40,13 +46,25 @@ export const UPLOAD_TYPE_CATALOGUE: readonly UploadTypeEntry[] = [
     label: 'SVG image',
     note: 'SVGs carrying script or active content are rejected and are served as downloads, never rendered inline.',
   },
-  { mime: 'application/pdf', extensions: ['.pdf'], label: 'PDF document' },
+  {
+    mime: 'application/pdf',
+    extensions: ['.pdf'],
+    label: 'PDF document',
+    note: 'PDFs carrying JavaScript or launch actions are rejected; PDFs are served as downloads.',
+  },
   { mime: 'text/csv', extensions: ['.csv'], label: 'CSV file' },
   { mime: 'text/plain', extensions: ['.txt', '.text', '.log', '.md'], label: 'Plain text' },
+  { mime: 'video/mp4', extensions: ['.mp4', '.m4v'], label: 'MP4 video', defaultEnabled: false },
+  { mime: 'video/webm', extensions: ['.webm'], label: 'WebM video', defaultEnabled: false },
 ] as const;
 
-/** Default MIME allowlist — every catalogued type. */
-export const DEFAULT_UPLOAD_MIME_TYPES: readonly string[] = UPLOAD_TYPE_CATALOGUE.map((e) => e.mime);
+/** Every MIME type the server has a content validator for. */
+export const CATALOGUED_UPLOAD_MIME_TYPES: readonly string[] = UPLOAD_TYPE_CATALOGUE.map((e) => e.mime);
+
+/** Default MIME allowlist — every catalogued type not marked opt-in. */
+export const DEFAULT_UPLOAD_MIME_TYPES: readonly string[] = UPLOAD_TYPE_CATALOGUE.filter(
+  (e) => e.defaultEnabled !== false,
+).map((e) => e.mime);
 
 /** MIME → extension map, derived from the catalogue. */
 export const MIME_EXTENSIONS: Readonly<Record<string, readonly string[]>> = Object.fromEntries(
@@ -73,7 +91,7 @@ export type UploadPolicyConfig = z.infer<typeof UploadPolicyConfigSchema>;
 export const UploadPolicyUpdateSchema = z.object({
   maxBytes: z.number().int().positive().max(1024 * 1024 * 1024).optional(),
   allowedMimeTypes: z
-    .array(z.enum(DEFAULT_UPLOAD_MIME_TYPES as [string, ...string[]]))
+    .array(z.enum(CATALOGUED_UPLOAD_MIME_TYPES as [string, ...string[]]))
     .min(1)
     .optional(),
 });
@@ -147,4 +165,71 @@ export function extensionsForMimeTypes(allowlist: readonly string[]): string[] {
 export function acceptAttribute(config: Pick<UploadPolicyConfig, 'allowedMimeTypes'>): string | undefined {
   const tokens = [...config.allowedMimeTypes, ...extensionsForMimeTypes(config.allowedMimeTypes)];
   return tokens.length > 0 ? tokens.join(',') : undefined;
+}
+
+/**
+ * Executable / server-script / active-document extensions. A filename carrying
+ * one of these in ANY position (`shell.php.png`, `invoice.pdf.exe`,
+ * `x.html.jpg`) is refused: a mis-configured web server or the downloader's OS
+ * can key off an inner extension even when the final one looks harmless.
+ */
+export const DANGEROUS_FILENAME_EXTENSIONS: ReadonlySet<string> = new Set([
+  'php', 'php3', 'php4', 'php5', 'php7', 'phtml', 'phar', 'pht', 'phps',
+  'asp', 'aspx', 'ashx', 'asmx', 'jsp', 'jspx', 'cgi', 'pl', 'py', 'rb',
+  'html', 'htm', 'xhtml', 'shtml', 'xht', 'mht', 'mhtml', 'hta', 'svgz',
+  'js', 'mjs', 'cjs', 'jse', 'vbs', 'vbe', 'wsf', 'wsh', 'ps1', 'psm1',
+  'exe', 'dll', 'com', 'scr', 'msi', 'msp', 'bat', 'cmd', 'sh', 'bash',
+  'jar', 'war', 'class', 'apk', 'dmg', 'lnk', 'reg', 'cpl', 'htaccess',
+]);
+
+/** Why a filename was refused (stable machine codes). */
+export type UploadFilenameIssue =
+  | 'empty'
+  | 'too_long'
+  | 'control_char'
+  | 'bidi_control'
+  | 'path_traversal'
+  | 'trailing_dot_or_space'
+  | 'dangerous_extension';
+
+/** C0 controls (incl. NUL), DEL and C1 controls. */
+function hasControlChar(value: string): boolean {
+  for (const ch of value) {
+    const code = ch.charCodeAt(0);
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return true;
+  }
+  return false;
+}
+
+/**
+ * Bidirectional formatting controls — `invoice<U+202E>gnp.exe` renders as
+ * `invoiceexe.png` — plus the invisible LRM / RLM / ALM marks.
+ */
+const BIDI_CONTROL_CODES: ReadonlySet<number> = new Set([
+  0x061c, 0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069,
+]);
+
+export function hasBidiControl(value: string): boolean {
+  for (const ch of value) {
+    if (BIDI_CONTROL_CODES.has(ch.charCodeAt(0))) return true;
+  }
+  return false;
+}
+
+/**
+ * Validate a user-supplied upload filename. Returns `null` when acceptable, or
+ * the first issue found. Pure; usable by both the CMS guard and Studio. The
+ * final-extension ↔ MIME check stays in `extensionMatchesMime`.
+ */
+export function validateUploadFilename(fileName: string): UploadFilenameIssue | null {
+  if (fileName.trim().length === 0) return 'empty';
+  if (fileName.length > 255) return 'too_long';
+  if (hasControlChar(fileName)) return 'control_char';
+  if (hasBidiControl(fileName)) return 'bidi_control';
+  if (fileName.includes('/') || fileName.includes('\\') || fileName.includes('..')) return 'path_traversal';
+  const last = fileName[fileName.length - 1]!;
+  if (last === '.' || last.trim() === '') return 'trailing_dot_or_space';
+  const segments = fileName.toLowerCase().split('.').slice(1);
+  if (segments.some((segment) => DANGEROUS_FILENAME_EXTENSIONS.has(segment.trim()))) return 'dangerous_extension';
+  return null;
 }

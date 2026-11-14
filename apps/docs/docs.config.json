@@ -115,13 +115,23 @@
         "label": "Security",
         "items": [
           "security/anti-abuse",
+          "security/secure-defaults",
           "security/route-guards",
           "security/runtime-security-guards-plan",
           "security/cwe-top-100-audit",
           "security/idor-testing",
           "security/external-jwt-auth",
           "security/user-management",
-          "security/dependency-overrides"
+          "security/dependency-overrides",
+          "security/vulnerability-disclosure",
+          "security/advisories",
+          "security/advisory-template",
+          "security/advisory-runbook",
+          "security/password-policy",
+          "security/security-history",
+          "security/bootstrap-and-token-race-audit",
+          "security/filter-sanitisation-audit",
+          "security/upload-security"
         ]
       },
       {

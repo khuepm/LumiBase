@@ -20,7 +20,12 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { PasswordSchema } from '@lumibase/contracts/schemas';
+import { DEFAULT_PASSWORD_POLICY } from '@lumibase/contracts/schemas';
+import {
+  NewPasswordInputSchema,
+  checkNewPassword,
+  passwordPolicyErrorBody,
+} from '../../services/auth/password-policy';
 import type { RateLimiterProvider } from '@lumibase/runtime';
 import { MemoryRateLimiter, collectKeys } from '@lumibase/runtime';
 import type { AppEnv } from '../../env';
@@ -43,9 +48,9 @@ export const completeBodySchema = z.object({
   setupToken: z.string().min(1).max(256).optional(),
   account: z.object({
     email: z.string().email().max(254),
-    // Shared strength policy (min 12 + complexity) — consistent with register
-    // and recovery (CWE-521).
-    password: PasswordSchema,
+    // Bounded string; the password policy (#733) is enforced in the handler
+    // with the same service as register / reset / change (CWE-521).
+    password: NewPasswordInputSchema,
     firstName: z.string().min(1).max(100),
     lastName: z.string().min(1).max(100),
   }),
@@ -235,6 +240,21 @@ function errorToHttp(error: SetupServiceError): { status: number; body: { errors
         status: 404,
         body: { errors: [{ code: 'NOT_FOUND' }] },
       };
+    case 'SETUP_RACE_LOST':
+      // A concurrent request created the bootstrap admin while this one was
+      // in flight (#732). Only callers that arrived before setup finished
+      // can see this; later ones get the indistinguishable 404 above.
+      return {
+        status: 409,
+        body: {
+          errors: [
+            {
+              code: 'SETUP_ALREADY_COMPLETED',
+              message: 'Setup was completed by a concurrent request.',
+            },
+          ],
+        },
+      };
     case 'SETUP_IN_PROGRESS':
       return {
         status: 409,
@@ -346,6 +366,10 @@ setupRouter.get('/capabilities', async (c) => {
 });
 
 setupRouter.post('/complete', async (c) => {
+  // Arrival time, taken before any wait (rate limiter, connection pool, the
+  // singleton row lock): it is what tells a request that raced the winning
+  // setup (409) from one that arrived after it (404) — #732.
+  const receivedAt = new Date();
   // Rate-brake *before* parsing the body or hashing a password, so a
   // blocked request costs nothing (CWE-770; analog of Strapi #26494).
   const ip = extractClientIp(c.req.raw);
@@ -387,6 +411,17 @@ setupRouter.post('/complete', async (c) => {
     );
   }
 
+  // Password policy (#733). Setup runs before any operator could have stored
+  // a policy, so the default policy applies — through the same service as
+  // every other password path. The admin's own e-mail / name count against
+  // the strength score.
+  const { account } = parsed.data;
+  const policyFailure = await checkNewPassword(c, account.password, {
+    policy: DEFAULT_PASSWORD_POLICY,
+    userInputs: [account.email, account.firstName, account.lastName],
+  });
+  if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
+
   // Honor the test-only injection seam (mirrors recoveryServiceOverride);
   // falls back to a real SetupService bound to the request db.
   const svc = c.get('setupServiceOverride') ?? buildService(c);
@@ -394,6 +429,7 @@ setupRouter.post('/complete', async (c) => {
     requestId: c.get('requestId'),
     ip, // reuse the IP computed for the rate brake
     userAgent: c.req.header('user-agent') ?? undefined,
+    receivedAt,
   };
 
   const outcome = await svc.complete(parsed.data, ctx);

@@ -1,10 +1,10 @@
 ---
-version: 7
-lastUpdated: 2026-11-11T01:21:15.680Z
+version: 11
+lastUpdated: 2026-11-14T02:32:20.484Z
 sourceLang: vi
-contentHash: 61bbd0dc2cc03957
-codeVerified: 2026-11-11T01:21:15.680Z
-codeVerifiedHash: 61bbd0dc2cc03957
+contentHash: a14d5b31194a019e
+codeVerified: 2026-11-14T02:32:20.484Z
+codeVerifiedHash: a14d5b31194a019e
 codeVerifiedClaims: 4
 ---
 
@@ -109,13 +109,20 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [operations/encryption-keys.md](./operations/encryption-keys.md) — `ENCRYPTION_KEY` bảo vệ những gì, rotate re-wrap được gì và không được gì, xử lý khi mất hoặc lộ khoá.
 - **Security** (`security/`)
   - [security/anti-abuse.md](./security/anti-abuse.md) — Cơ chế chống lạm dụng & thực hành tốt nhất: danh mục phòng thủ nhiều lớp + các khoảng trống đã biết.
+  - [security/secure-defaults.md](./security/secure-defaults.md) — Template `create-lumibase` an toàn mặc định (secret được sinh tự động, không có admin mặc định) và danh sách quy tắc của `lumibase doctor --security`.
   - [security/route-guards.md](./security/route-guards.md) — Danh mục guard cho route / control-plane.
   - [security/runtime-security-guards-plan.md](./security/runtime-security-guards-plan.md) — Nền tảng bảo mật runtime: trách nhiệm guard và điểm gắn pipeline.
   - [security/cwe-top-100-audit.md](./security/cwe-top-100-audit.md) — Audit bảo mật theo ánh xạ CWE.
   - [security/idor-testing.md](./security/idor-testing.md) — Hướng dẫn kiểm thử xuyên tenant (IDOR).
   - [security/external-jwt-auth.md](./security/external-jwt-auth.md) — Xác thực nhà phát hành JWT bên ngoài.
+  - [security/social-login.md](./security/social-login.md) — Đăng nhập mạng xã hội cho thành viên (Google, Apple, GitHub) và liên kết tài khoản.
   - [security/user-management.md](./security/user-management.md) — Quản lý người dùng & auth realms (ADR-010).
+  - [security/passkeys.md](./security/passkeys.md) — Passkey (WebAuthn): đăng nhập staff không mật khẩu và yếu tố thứ hai, cấu hình RP ID / origin.
   - [security/dependency-overrides.md](./security/dependency-overrides.md) — Thắt chặt chuỗi cung ứng / ghi đè dependency.
+  - [security/vulnerability-disclosure.md](./security/vulnerability-disclosure.md) — Chính sách công bố lỗ hổng: cách báo cáo, phiên bản được hỗ trợ, SLA theo mức CVSS, GHSA/CVE, embargo, safe harbour, chính sách triage báo cáo do AI tạo.
+  - [security/advisories.md](./security/advisories.md) — Security advisory: nơi công bố, cách theo dõi, feed API máy đọc được, bảng chỉ mục.
+  - [security/advisory-template.md](./security/advisory-template.md) — Mẫu bài advisory/CVE, dòng CHANGELOG và tin trả lời người báo cáo.
+  - [security/advisory-runbook.md](./security/advisory-runbook.md) — Runbook cho maintainer từ báo cáo tới advisory đã công bố, kèm buổi chạy thử advisory đầu tiên.
 - **Compliance & Quyền của người dùng** (`compliance/`)
   - [compliance/README.md](./compliance/README.md) — Tổng quan + ma trận quyền × thị trường (EU/US/VN, Google/Apple) ánh xạ vào LumiBase. **Không phải tư vấn pháp lý.**
   - [compliance/user-rights-catalog.md](./compliance/user-rights-catalog.md) — Danh mục dễ hiểu của từng quyền (quyền được lãng quên, truy cập, di chuyển, đồng ý, huỷ đăng ký, xoá tài khoản…).

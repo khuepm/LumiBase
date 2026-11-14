@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { SignJWT, jwtVerify } from 'jose';
 import type { AppEnv, Bindings } from '../env';
 import { requireSiteAdmin } from '../middleware/site-admin';
+import { validateUploadFilename } from '@lumibase/contracts/schemas';
 
 export const filesRouter = new Hono<AppEnv>();
 filesRouter.use('*', async (c, next) => {
@@ -174,8 +175,18 @@ filesRouter.delete('/:id', async (c) => {
 
 // JWT-signed upload URL generator endpoint
 filesRouter.post('/presigned-url', async (c) => {
-  const body = await c.req.json();
-  const filename = body.filename || 'unknown';
+  const body = (await c.req.json()) as { filename?: unknown };
+  const filename = typeof body.filename === 'string' && body.filename.length > 0 ? body.filename : 'unknown';
+  // Refuse to mint an upload URL for a name the upload guard would reject
+  // (NUL / control bytes, RTL-override spoofing, traversal, `shell.php.png`),
+  // so the key that ends up in storage is never one of those (#740).
+  const filenameIssue = validateUploadFilename(filename);
+  if (filenameIssue) {
+    return c.json(
+      { errors: [{ code: 'UPLOAD_UNSAFE_FILENAME', message: `File name is not allowed (${filenameIssue}).` }] },
+      400,
+    );
+  }
   const siteId = c.get('siteId');
   const jwtSecret = getUploadJwtSecret(c.env);
   if (!jwtSecret) {
@@ -189,7 +200,7 @@ filesRouter.post('/presigned-url', async (c) => {
   const token = await signUploadToken({ key, siteId }, jwtSecret);
 
   const urlObj = new URL(c.req.url);
-  const uploadUrl = `${urlObj.origin}/api/v1/files/upload/${key}?token=${encodeURIComponent(token)}`;
+  const uploadUrl = `${urlObj.origin}/api/v1/files/upload/${encodeURIComponent(key)}?token=${encodeURIComponent(token)}`;
 
   return c.json({
     data: {

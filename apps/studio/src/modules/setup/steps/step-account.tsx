@@ -19,6 +19,7 @@ import {
   type PasswordRuleId,
 } from '../schemas/account';
 import { useSetupStore } from '../setup-store';
+import { DEFAULT_PASSWORD_POLICY, evaluatePasswordPolicy } from '@lumibase/contracts/schemas';
 
 /**
  * "Admin Account" step of the Setup Wizard.
@@ -261,8 +262,26 @@ export function StepAccount({ onSubmitted }: StepAccountProps) {
     return result.score;
   }, [zxcvbnReady, passwordValue, emailValue, firstNameValue, lastNameValue]);
 
+  // The server enforces the shared password policy (#733) on
+  // `POST /setup/complete`, scored by the in-house estimator from
+  // `@lumibase/contracts`. zxcvbn (Req 3.7) stays the meter here; this extra
+  // gate only guarantees the wizard never lets through a password the server
+  // would then reject at the very last step.
+  const sharedStrength = useMemo(
+    () =>
+      evaluatePasswordPolicy(passwordValue, DEFAULT_PASSWORD_POLICY, [
+        emailValue,
+        firstNameValue,
+        lastNameValue,
+      ]).rules.find((r) => r.rule === 'min_strength'),
+    [passwordValue, emailValue, firstNameValue, lastNameValue],
+  );
+  const meetsSharedPolicy = sharedStrength?.ok ?? true;
+
   const meetsZxcvbnGate =
-    passwordScore !== null && passwordScore >= MIN_REQUIRED_ZXCVBN_SCORE;
+    passwordScore !== null &&
+    passwordScore >= MIN_REQUIRED_ZXCVBN_SCORE &&
+    meetsSharedPolicy;
 
   // Submit-button gating. We deliberately disable the button rather
   // than only relying on the schema so the UX matches the requirement
@@ -441,6 +460,14 @@ export function StepAccount({ onSubmitted }: StepAccountProps) {
               label={RULE_LABELS[id]}
             />
           ))}
+          <RuleRow
+            ok={passwordValue.length > 0 && meetsSharedPolicy}
+            label={
+              passwordValue.length > 0 && !meetsSharedPolicy && sharedStrength
+                ? sharedStrength.message
+                : 'Not based on your name, e-mail or a common password'
+            }
+          />
         </ul>
       </Field>
 

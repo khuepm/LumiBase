@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 6
-lastUpdated: 2026-11-07T20:13:02.148Z
+version: 7
+lastUpdated: 2026-11-14T02:15:35.397Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 80808d4cc8186154
+sourceHash: 40ce7652d5196dc5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-07T15:45:38.286Z
-codeVerifiedHash: 0b4d8fa32947d4c3
+codeVerified: 2026-11-14T02:15:35.397Z
+codeVerifiedHash: 40ce7652d5196dc5
 codeVerifiedClaims: 36
 ---
 
@@ -64,10 +64,13 @@ Chuẩn bị nền bảo mật runtime rõ ràng trước khi AI Harness đượ
    picker; `PUT` gated `requireSiteAdmin`, lưu vào row `settings` key
    `upload_policy`, chỉ nhận MIME trong catalogue).
 
-   **Hardening lúc serve (`routes/media.ts`):** file tải về trả kèm
-   `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`, nên
-   object HTML/SVG đã lưu không thể render (và chạy script) dưới origin app khi
-   mở top-level. Kết hợp với CSP toàn cục (`script-src 'self'`, không
+   **Hardening lúc serve (`routes/media.ts`):** `Content-Disposition` là
+   `inline` chỉ cho allow-list các loại raster/video thụ động và `attachment`
+   cho mọi thứ khác (SVG, PDF, HTML, văn bản, không rõ), luôn kèm
+   `X-Content-Type-Options: nosniff` và CSP `sandbox`, còn SVG được làm sạch lại
+   khi trả ra — nên object HTML/SVG đã lưu không thể render (và chạy script)
+   dưới origin app khi mở top-level. Chi tiết đầy đủ, gồm dò magic bytes,
+   corpus polyglot và bộ làm sạch SVG: [upload-security.md](./upload-security.md). Kết hợp với CSP toàn cục (`script-src 'self'`, không
    `unsafe-inline`) như phòng thủ nhiều lớp. Storage adapter map `contentType`
    sang field native R2 `httpMetadata` / S3 `ContentType` để `Content-Type` khi
    serve round-trip đúng (trước đây chỉ ghi vào custom metadata nên trả về undefined).
@@ -107,7 +110,8 @@ Chuẩn bị nền bảo mật runtime rõ ràng trước khi AI Harness đượ
   MIME ngoài allowlist, sai đuôi/nội dung so với khai báo, hoặc SVG có mã động
   đều bị từ chối trước khi ghi storage — trên mọi surface được phủ, gồm cả
   `POST /api/v1/media/:key`.
-- File media tải về được serve dạng attachment kèm `nosniff`, và `Content-Type`
+- Media chỉ được serve inline cho ảnh/video thụ động, còn lại dạng attachment,
+  luôn kèm `nosniff` và CSP sandbox, và `Content-Type`
   round-trip đúng qua cả hai storage adapter.
 - Mọi response có CSP và các security headers nền tảng.
 - Outbound URL guard có test cho localhost, private IP, link-local metadata IP và protocol nguy hiểm.

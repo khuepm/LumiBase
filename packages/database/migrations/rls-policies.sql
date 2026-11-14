@@ -124,7 +124,10 @@ DECLARE
     'lumibase_import_jobs',
     -- Activation milestones (site-isolated). Requests read/write their own
     -- site; the telemetry tick reads across sites on the system connection.
-    'lumibase_activation_milestones'
+    'lumibase_activation_milestones',
+    -- Social login provider config (#736, site-isolated; holds encrypted secrets).
+    -- lumibase_user_identities is identity-global like lumibase_users: no site_id.
+    'lumibase_social_auth_providers'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

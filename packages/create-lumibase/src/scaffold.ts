@@ -1,15 +1,17 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { resolve, relative, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Handlebars from 'handlebars';
 import pc from 'picocolors';
 import { createSpinner } from './utils/spinner.js';
+import { writeLocalSecrets, type LocalSecretsResult } from './secrets.js';
 import type { ProjectConfig } from './index.js';
 
-const TEMPLATES_DIR = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  'templates',
-);
+const HERE = dirname(fileURLToPath(import.meta.url));
+/** `dist/templates` once built (postbuild copies them); `../templates` from `src/` (tests). */
+const TEMPLATES_DIR = existsSync(resolve(HERE, 'templates'))
+  ? resolve(HERE, 'templates')
+  : resolve(HERE, '../templates');
 
 /**
  * The version of this scaffolder, read from its own manifest.
@@ -41,9 +43,10 @@ const RENAME_MAP: Record<string, string> = {
   '_gitignore': '.gitignore',
   '_env.example': '.env.example',
   '_npmrc': '.npmrc',
+  '_dev.vars.example': '.dev.vars.example',
 };
 
-export async function scaffold(config: ProjectConfig): Promise<void> {
+export async function scaffold(config: ProjectConfig): Promise<LocalSecretsResult> {
   const spinner = createSpinner(`Scaffolding ${pc.bold(config.projectName)}`);
 
   try {
@@ -51,7 +54,11 @@ export async function scaffold(config: ProjectConfig): Promise<void> {
     const ctx = buildTemplateContext(config);
 
     copyDir(templateDir, config.targetDir, ctx);
+    // Secure by default (#731): no template carries a secret; each project
+    // gets its own, in a gitignored file, at scaffold time.
+    const secrets = writeLocalSecrets(config.targetDir, config.template);
     spinner.succeed(`Scaffolded ${pc.bold(config.projectName)}`);
+    return secrets;
   } catch (err) {
     spinner.fail('Scaffold failed');
     throw err;

@@ -1,11 +1,11 @@
 ---
-version: 10
-lastUpdated: 2026-11-13T06:05:36.387Z
+version: 13
+lastUpdated: 2026-11-14T02:32:19.524Z
 sourceLang: en
-contentHash: dc71a4b0f99e7e47
-codeVerified: 2026-11-13T06:05:36.387Z
-codeVerifiedHash: dc71a4b0f99e7e47
-codeVerifiedClaims: 120
+contentHash: 5fc1233101995b59
+codeVerified: 2026-11-14T02:32:19.524Z
+codeVerifiedHash: 5fc1233101995b59
+codeVerifiedClaims: 122
 ---
 
 # User Management Best Practices
@@ -141,8 +141,11 @@ succeeds. Both accept `dryRun: true`, and every applied change is audit-logged.
   exists; the account and its membership commit in one transaction, so a
   refused membership never leaves an orphan account.
 
-Linking several external identities (social / SSO) to one account is a separate
-follow-up (`user_identities`), not part of this policy.
+Several external identities can be linked to one account through the
+`lumibase_user_identities` table (one row per `(issuer, subject)`). Members use
+it for social login — see [Social login](./social-login.md); automatic linking
+there only happens when the provider asserts the email is verified, and email
+matching follows the mode above.
 
 ---
 
@@ -223,8 +226,8 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/logout` | public | Revokes the presented refresh token's family and clears the cookie. Idempotent. |
 | `POST /api/v1/me/change-password` | bearer | Body `{currentPassword,newPassword}`. Verifies current password, sets new hash, revokes all refresh tokens. |
 | `GET /api/v1/me/sessions` | bearer | The caller's active sessions (live refresh tokens), redacted. |
-| `DELETE /api/v1/me/sessions/:id` | bearer | Revoke one of the caller's own sessions. |
-| `DELETE /api/v1/me/sessions` | bearer | Revoke ALL of the caller's sessions (logout everywhere). |
+| `DELETE /api/v1/me/sessions/:id` | bearer | Revoke one of the caller's own sessions (`:id` = `sessionId`); effective immediately. |
+| `DELETE /api/v1/me/sessions` | bearer | Revoke ALL of the caller's sessions (logout everywhere); `?scope=others` keeps the current one. |
 | `GET /api/v1/auth/me` | bearer | Current principal incl. `isFrontendUser`. |
 
 ### Guardrails baked in
@@ -371,6 +374,35 @@ For a logged-in user (`bearer`, under `/api/v1/me`):
   `DELETE /me/sessions/:id` revokes one, and `DELETE /me/sessions` revokes
   all (logout everywhere). Expired/revoked rows are swept by the hourly
   prune (§4d).
+- **Sessions & devices (#730).** A *session* is one refresh-token rotation
+  family. Every login and refresh signs the family id into the access JWT
+  as `sid`, so:
+  - each `GET /me/sessions` row carries a stable `sessionId` (survives
+    rotation), `startedAt` (oldest retained token of the session),
+    `lastSeenAt` (last refresh), `lastIp`, `lastUserAgent` and
+    `current: true` for the session making the request;
+  - `DELETE /me/sessions/:id` takes the `sessionId` (the live row `id` still
+    works for older clients) and returns `{ sessionId, revoked, current }`;
+    revoking the current session also clears the refresh cookie;
+  - `DELETE /me/sessions?scope=others` signs out every session except the
+    current one (`{ status: 'other_sessions_revoked', revoked }`). A token
+    without `sid` gets `409 NO_CURRENT_SESSION` instead of being treated as
+    "all";
+  - **revocation is immediate on both runtimes**: `withAuth` rejects an
+    access JWT whose `sid` has no live refresh row left (one indexed lookup
+    per bearer request, on the system handle so a Studio token acting on a
+    sibling site still resolves). Access tokens minted before `sid` existed
+    skip the check until they expire;
+  - **confirming TOTP enrolment** (`POST /me/tfa/confirm`) signs out every
+    *other* session — they were authenticated with the password alone —
+    and keeps the enrolling device. Password change/reset still kills every
+    session, including the current one (`tokenVersion` bump);
+  - audit events: `session_revoked` (`sessionId`, `current`) and
+    `sessions_revoked` (`scope: all | others`, `revoked`); `mfa_enrolled`
+    gains `revokedOtherSessions`.
+
+  Studio shows the list under **Settings → Security → Active sessions**,
+  with "Sign out" per device and "Sign out other sessions".
 
 ## 4f. Two-factor authentication (TOTP)
 
@@ -436,6 +468,12 @@ with the request's `siteId`, and disable revokes refresh tokens for the
 current site. Env knobs are deployment-wide: `ENCRYPTION_KEY` (required to
 enroll) and `LUMIBASE_TOTP_ISSUER` (label in authenticator apps, default
 `LumiBase`).
+
+**Passkeys.** Passkeys (WebAuthn) sit beside TOTP: as the second factor after
+the password (`amr: ["pwd","webauthn"]`) or as a passwordless staff sign-in
+(`amr: ["webauthn"]`), both setting `tfaVerified`. When a user has a passkey,
+`/auth/login` adds `methods` to the `mfa_required` response. Recovery codes are
+shared with TOTP. See [Passkeys](./passkeys.md).
 
 ## 5. Staff onboarding (do NOT use self-service)
 

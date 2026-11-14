@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 45
-lastUpdated: 2026-11-13T19:25:16.472Z
+version: 49
+lastUpdated: 2026-11-14T02:32:16.518Z
 sourceLang: en
 translatedFrom: en
-sourceHash: e29ddd4d6f733744
+sourceHash: dd93db6182b7820c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T19:25:16.472Z
-codeVerifiedHash: e29ddd4d6f733744
-codeVerifiedClaims: 518
+codeVerified: 2026-11-14T02:32:16.518Z
+codeVerifiedHash: dd93db6182b7820c
+codeVerifiedClaims: 558
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -182,10 +182,30 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/me/tfa/confirm` | bearer | Xác nhận enroll bằng một code sống → recovery code dùng-một-lần |
 | `POST` | `/api/v1/me/tfa/recovery-codes` | bearer | Tạo lại recovery code (mật khẩu + TOTP code) |
 | `DELETE` | `/api/v1/me/tfa` | bearer | Tắt TOTP (mật khẩu + một TOTP code hoặc một recovery code); thu hồi session và tăng `tokenVersion` |
+| `POST` | `/api/v1/auth/passkey/options` | public | Options xác thực passkey: có `challengeToken` = yếu tố thứ hai, không có = đăng nhập staff không mật khẩu → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/auth/passkey/verify` | public | Hoàn tất nghi thức passkey → cùng payload session với login (`amr` chứa `webauthn`, `tfaVerified`) |
+| `GET` | `/api/v1/me/passkeys` | bearer | Các passkey của người gọi + `recoveryCodesRemaining`, `totpEnabled`, `available` |
+| `POST` | `/api/v1/me/passkeys/registration-options` | bearer | Bắt đầu đăng ký passkey (step-up mật khẩu) → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/me/passkeys` | bearer | Hoàn tất đăng ký → `{ passkey, recoveryCodes }` (chỉ có code khi là yếu tố đầu tiên) |
+| `PATCH` | `/api/v1/me/passkeys/:id` | bearer | Đổi tên passkey |
+| `DELETE` | `/api/v1/me/passkeys/:id` | bearer | Xóa passkey (mật khẩu); yếu tố thứ hai cuối cùng sẽ thu hồi session và tăng `tokenVersion` |
+| `POST` | `/api/v1/me/passkeys/recovery-codes` | bearer | Tạo lại recovery code (mật khẩu + phiên mở bằng passkey) |
 | `POST` | `/api/v1/me/change-password` | bearer | Xác nhận mật khẩu hiện tại, đặt hash mới, thu hồi refresh token + tăng `tokenVersion` |
 | `GET` | `/api/v1/me/sessions` | bearer | Liệt kê các phiên hoạt động của người gọi (live refresh tokens, đã ẩn thông tin nhạy cảm) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Thu hồi một phiên làm việc của người gọi |
-| `DELETE` | `/api/v1/me/sessions` | bearer | Thu hồi tất cả các phiên làm việc của người gọi |
+| `DELETE` | `/api/v1/me/sessions` | bearer | Thu hồi tất cả các phiên làm việc của người gọi; `?scope=others` giữ lại phiên hiện tại |
+| `GET` | `/api/v1/me/security-history` | bearer | Các sự kiện bảo mật của chính người gọi (đăng nhập, thiết bị mới, đổi mật khẩu/MFA, thu hồi phiên), đã che bớt; `?cursor=&limit=&scope=site\|account` — xem [Lịch sử bảo mật](../security/security-history.md) |
+| `GET` | `/api/v1/me/security-history/export` | bearer | Tải về cùng lịch sử đó; `?format=json\|csv&scope=` (tối đa 5.000 dòng, 10 lần xuất / 15 phút) |
+| `GET` | `/api/v1/auth/social/providers` | public | Các provider đăng nhập mạng xã hội đang bật cho site |
+| `POST` | `/api/v1/auth/social/:provider/start` | public | Bắt đầu đăng nhập Google / Apple / GitHub (PKCE) → `authorizationUrl` |
+| `GET`/`POST` | `/api/v1/auth/social/callback/:siteId/:provider` | provider | Callback của provider (`POST` = `form_post` của Apple); redirect về URI trong allow-list kèm code dùng một lần |
+| `POST` | `/api/v1/auth/social/exchange` | public | Đổi code dùng một lần bằng `codeVerifier` của client → phiên (`aud: frontend`) |
+| `GET` | `/api/v1/me/identities` | bearer | Các danh tính đăng nhập đã liên kết + `hasPassword` |
+| `POST` | `/api/v1/me/identities/:provider/link` | bearer | Bắt đầu liên kết một provider với tài khoản đang đăng nhập |
+| `POST` | `/api/v1/me/identities/complete` | bearer | Hoàn tất liên kết (code dùng một lần + `codeVerifier`) |
+| `DELETE` | `/api/v1/me/identities/:id` | bearer | Huỷ liên kết một provider (không bao giờ là cách đăng nhập cuối cùng) |
+| `GET` | `/api/v1/admin/social-providers` | site-admin | Cấu hình provider mạng xã hội theo site (secret chỉ ghi) |
+| `PUT`/`DELETE` | `/api/v1/admin/social-providers/:provider` | site-admin | Cấu hình / xoá một provider — xem [Social login](../security/social-login.md) |
 | `POST` | `/api/v1/users/subscriber-access` | site-admin | Cấp quyền `read` cho subscriber trên một collection (Policy DSL) |
 | `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | Liệt kê / thu hồi quyền đọc của subscriber |
 | `GET` | `/api/v1/me/preferences` | bearer | Blob tùy chọn của người dùng hiện tại (toàn cục identity) |
@@ -241,6 +261,13 @@ không còn trong cấu hình. Ở trường hợp sau, `DELETE /me/tfa` chấp 
 **recovery code** thay cho TOTP code, để user tháo được một enrollment mà seed
 của nó không còn giải mã được. Xem
 [Vận hành khoá mã hoá](../operations/encryption-keys.md).
+
+**Passkey (WebAuthn).** Khi user có thêm (hoặc chỉ có) passkey, phản hồi
+`mfa_required` có thêm `methods` (`["totp"]`, `["webauthn"]` hoặc cả hai), và
+challenge có thể hoàn tất bằng `POST /auth/passkey/options` +
+`POST /auth/passkey/verify` thay cho `verify-totp`. Cùng hai endpoint đó khi
+không có `challengeToken` cho đăng nhập staff không mật khẩu. Xem
+[Passkey](../security/passkeys.md).
 
 **Quản lý chấp thuận (Consent management)** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 

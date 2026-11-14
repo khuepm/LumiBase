@@ -96,8 +96,7 @@ still reaches the prompt, so pass it explicitly in CI.
 ## After scaffolding (Next.js template)
 
 ```bash
-cd my-blog
-cp .env.example .env       # fill in your secrets
+cd my-blog                 # .env was already written, with generated secrets
 npm install                # if you skipped --install
 npm run cms:up             # CMS + Studio + Postgres + Redis
 npm run cms:bootstrap      # first admin, public read grant, publishable key
@@ -132,8 +131,7 @@ your site id, and a publishable key (`lbk_pub_…`) in `.env`. The generated
 ## After scaffolding (Docker starter)
 
 ```bash
-cd my-blog
-cp .env.example .env       # fill in your secrets
+cd my-blog                 # .env was already written, with a generated JWT_SECRET
 pnpm install               # if you skipped --install
 docker compose up -d       # starts Postgres + Redis
 pnpm run db:generate       # generate the first migration
@@ -151,6 +149,31 @@ curl http://localhost:8787/posts     # {"data":[]}
 The starter listens on `8787` (change it with `PORT` in `.env`). That is
 deliberately **not** `1989` — `1989` is the LumiBase CMS's own port, and the
 starter is your app, not the CMS, so the two can run side by side.
+
+## Secure by default
+
+No template ships a secret or a default admin. The committed example file
+(`.env.example`, or `.dev.vars.example` for Cloudflare) lists every secret with
+an **empty** value, and the scaffolder writes the gitignored local file
+(`.env` / `.dev.vars`, mode `0600`) with fresh random values:
+
+| Template | Generated | Also set |
+| --- | --- | --- |
+| `nextjs` | `JWT_SECRET`, `ENCRYPTION_KEY`, `LUMIBASE_ADMIN_PASSWORD` | compose reads secrets with `${VAR:?…}` (refuses to start without them); exact CORS origin; `LUMIBASE_API_RATE_LIMIT`; `LUMIBASE_DB_RLS` guidance; every port on `127.0.0.1` |
+| `default` | `JWT_SECRET`, `ENCRYPTION_KEY` | CSP + security headers, exact-origin CORS (refuses `*`), per-IP rate limit, Postgres/Redis on `127.0.0.1` |
+| `cloudflare` | `JWT_SECRET`, `ENCRYPTION_KEY` (`.dev.vars`) | no secrets in `wrangler.toml` `[vars]`; CSP + security headers; exact-origin CORS |
+
+An existing `.env` / `.dev.vars` is never overwritten: rotating `ENCRYPTION_KEY`
+under a database that already holds ciphertext would make that data unreadable.
+Values are never printed.
+
+Check a project any time — a fresh scaffold of every template passes with zero
+critical findings:
+
+```bash
+npx lumibase doctor --security               # development rules
+npx lumibase doctor --security --production  # the production checklist
+```
 
 ## Requirements
 

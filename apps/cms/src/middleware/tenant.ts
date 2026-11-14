@@ -4,6 +4,7 @@ import type { AppEnv } from '../env';
 import { getHostMapping } from '../services/domains/host-cache';
 import { isValidSiteId } from '../services/identifier-guard';
 import { mcpSiteIdFromPath } from '../services/mcp-oauth';
+import { socialCallbackSiteId } from '../modules/social-auth/paths';
 
 /**
  * Resolve the active `site_id` for the request and pin it on the context.
@@ -43,6 +44,17 @@ export const withTenant = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     return next();
   }
   // Prefix is only a routing hint. withAuth MUST verify the key before org MCP runs.
+  // Social login provider callback (#736): the browser returns from Google /
+  // Apple / GitHub without our header, so the site is in the path. The
+  // server-side state is bound to the same site and checked again there.
+  const callbackSite = socialCallbackSiteId(path);
+  if (callbackSite !== null) {
+    if (!isValidSiteId(callbackSite) || (headerSite && headerSite !== callbackSite)) {
+      return c.json({ errors: [{ code: 'TENANT_INVALID', message: 'Site id in the callback path is invalid.' }] }, 400);
+    }
+    c.set('siteId', callbackSite);
+    return next();
+  }
   if (!headerSite && isMcpPath(path) && /^Bearer\s+lbo_/.test(c.req.header('authorization') ?? '')) return next();
   if (headerSite) {
     // Req 19.2: shape-check the explicit header before it becomes context.
