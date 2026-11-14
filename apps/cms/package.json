@@ -5,6 +5,14 @@
   "description": "LumiBase CMS API \u2014 Hono.js on Cloudflare Workers.",
   "type": "module",
   "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./app": "./src/index.ts",
+    "./cloudflare": "./src/cloudflare.ts",
+    "./node": "./src/node.ts",
+    "./platform": "./src/platform/index.ts",
+    "./package.json": "./package.json"
+  },
   "bin": {
     "lumibase": "./scripts/cli.ts"
   },
