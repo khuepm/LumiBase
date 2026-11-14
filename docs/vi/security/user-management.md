@@ -1,14 +1,14 @@
 ---
-version: 10
-lastUpdated: 2026-11-13T06:05:36.387Z
+version: 11
+lastUpdated: 2026-11-14T01:21:13.458Z
 sourceLang: en
 translatedFrom: en
-sourceHash: dc71a4b0f99e7e47
+sourceHash: 69cd294779c8fca3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T06:05:36.387Z
-codeVerifiedHash: dc71a4b0f99e7e47
-codeVerifiedClaims: 120
+codeVerified: 2026-11-14T01:21:13.458Z
+codeVerifiedHash: 69cd294779c8fca3
+codeVerifiedClaims: 122
 ---
 
 # User Management Best Practices
@@ -227,8 +227,8 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/logout` | public | Revoke family của refresh token được trình ra và xóa cookie. Idempotent. |
 | `POST /api/v1/me/change-password` | bearer | Body `{currentPassword,newPassword}`. Xác minh mật khẩu hiện tại, đặt hash mới, revoke tất cả refresh token. |
 | `GET /api/v1/me/sessions` | bearer | Các session đang hoạt động của caller (refresh token còn sống), đã redact. |
-| `DELETE /api/v1/me/sessions/:id` | bearer | Revoke một trong các session của chính caller. |
-| `DELETE /api/v1/me/sessions` | bearer | Revoke TẤT CẢ session của caller (logout mọi nơi). |
+| `DELETE /api/v1/me/sessions/:id` | bearer | Revoke một trong các session của chính caller (`:id` = `sessionId`); có hiệu lực ngay. |
+| `DELETE /api/v1/me/sessions` | bearer | Revoke TẤT CẢ session của caller (logout mọi nơi); `?scope=others` giữ lại session hiện tại. |
 | `GET /api/v1/auth/me` | bearer | Principal hiện tại kèm `isFrontendUser`. |
 
 ### Guardrail được nướng sẵn vào
@@ -379,6 +379,34 @@ nó (bất kỳ giá trị non-empty nào).
   vật liệu token), `DELETE /me/sessions/:id` revoke một cái, và
   `DELETE /me/sessions` revoke tất cả (logout mọi nơi). Các hàng đã
   hết-hạn/revoke được dọn bởi tiến trình prune hằng giờ (§4d).
+- **Session & thiết bị (#730).** Một *session* là một rotation family của
+  refresh token. Mỗi lần login và refresh đều ký family id vào access JWT
+  dưới dạng `sid`, nên:
+  - mỗi hàng của `GET /me/sessions` có `sessionId` ổn định (giữ nguyên qua
+    rotation), `startedAt` (token cũ nhất còn lưu của session),
+    `lastSeenAt` (lần refresh gần nhất), `lastIp`, `lastUserAgent` và
+    `current: true` cho session đang gửi request;
+  - `DELETE /me/sessions/:id` nhận `sessionId` (row `id` đang sống vẫn dùng
+    được cho client cũ) và trả về `{ sessionId, revoked, current }`; revoke
+    session hiện tại thì cookie refresh cũng bị xoá;
+  - `DELETE /me/sessions?scope=others` đăng xuất mọi session trừ session
+    hiện tại (`{ status: 'other_sessions_revoked', revoked }`). Token không
+    có `sid` nhận `409 NO_CURRENT_SESSION` thay vì bị coi là "all";
+  - **revoke có hiệu lực ngay trên cả hai runtime**: `withAuth` từ chối
+    access JWT có `sid` không còn hàng refresh nào sống (một lookup có index
+    mỗi request bearer, chạy trên system handle để token Studio thao tác ở
+    site anh em vẫn resolve được). Access token ký trước khi có `sid` bỏ qua
+    kiểm tra này cho tới khi hết hạn;
+  - **xác nhận enroll TOTP** (`POST /me/tfa/confirm`) đăng xuất mọi session
+    *khác* — chúng được xác thực chỉ bằng mật khẩu — và giữ lại thiết bị vừa
+    enroll. Đổi/reset mật khẩu vẫn huỷ mọi session, kể cả session hiện tại
+    (tăng `tokenVersion`);
+  - audit event: `session_revoked` (`sessionId`, `current`) và
+    `sessions_revoked` (`scope: all | others`, `revoked`); `mfa_enrolled`
+    có thêm `revokedOtherSessions`.
+
+  Studio hiển thị danh sách ở **Settings → Security → Active sessions**,
+  với nút "Sign out" cho từng thiết bị và "Sign out other sessions".
 
 ## 4f. Xác thực hai yếu tố (TOTP)
 

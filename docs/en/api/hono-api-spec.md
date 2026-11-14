@@ -1,10 +1,10 @@
 ---
-version: 46
-lastUpdated: 2026-11-13T19:25:16.472Z
+version: 47
+lastUpdated: 2026-11-14T01:21:13.747Z
 sourceLang: en
-contentHash: e29ddd4d6f733744
-codeVerified: 2026-11-13T19:25:16.472Z
-codeVerifiedHash: e29ddd4d6f733744
+contentHash: 05cf51dec2d78d94
+codeVerified: 2026-11-14T01:21:13.747Z
+codeVerifiedHash: 05cf51dec2d78d94
 codeVerifiedClaims: 518
 ---
 
@@ -206,7 +206,7 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/me/change-password` | bearer | Verify current password, set new hash, revoke refresh tokens + bump `tokenVersion` |
 | `GET` | `/api/v1/me/sessions` | bearer | List the caller's active sessions (live refresh tokens, redacted) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Revoke one of the caller's sessions |
-| `DELETE` | `/api/v1/me/sessions` | bearer | Revoke all of the caller's sessions |
+| `DELETE` | `/api/v1/me/sessions` | bearer | Revoke all of the caller's sessions; `?scope=others` keeps the current session |
 | `POST` | `/api/v1/users/subscriber-access` | site-admin | Grant subscribers `read` on a collection (Policy DSL) |
 | `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | List / revoke subscriber read grants |
 | `GET` | `/api/v1/me/preferences` | bearer | Current user's preferences blob (identity-global) |

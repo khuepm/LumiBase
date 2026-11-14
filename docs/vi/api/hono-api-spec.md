@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 45
-lastUpdated: 2026-11-13T19:25:16.472Z
+version: 46
+lastUpdated: 2026-11-14T01:21:13.747Z
 sourceLang: en
 translatedFrom: en
-sourceHash: e29ddd4d6f733744
+sourceHash: 05cf51dec2d78d94
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T19:25:16.472Z
-codeVerifiedHash: e29ddd4d6f733744
+codeVerified: 2026-11-14T01:21:13.747Z
+codeVerifiedHash: 05cf51dec2d78d94
 codeVerifiedClaims: 518
 ---
 
@@ -185,7 +185,7 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/me/change-password` | bearer | Xác nhận mật khẩu hiện tại, đặt hash mới, thu hồi refresh token + tăng `tokenVersion` |
 | `GET` | `/api/v1/me/sessions` | bearer | Liệt kê các phiên hoạt động của người gọi (live refresh tokens, đã ẩn thông tin nhạy cảm) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Thu hồi một phiên làm việc của người gọi |
-| `DELETE` | `/api/v1/me/sessions` | bearer | Thu hồi tất cả các phiên làm việc của người gọi |
+| `DELETE` | `/api/v1/me/sessions` | bearer | Thu hồi tất cả các phiên làm việc của người gọi; `?scope=others` giữ lại phiên hiện tại |
 | `POST` | `/api/v1/users/subscriber-access` | site-admin | Cấp quyền `read` cho subscriber trên một collection (Policy DSL) |
 | `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | Liệt kê / thu hồi quyền đọc của subscriber |
 | `GET` | `/api/v1/me/preferences` | bearer | Blob tùy chọn của người dùng hiện tại (toàn cục identity) |

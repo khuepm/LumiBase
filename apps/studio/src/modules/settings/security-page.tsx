@@ -3,6 +3,7 @@ import { useId, useState } from 'react';
 import { Loader2, Shield } from 'lucide-react';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';
+import { SESSIONS_QUERY_KEY, SessionsSection } from './sessions-section';
 
 interface TotpStatus {
   enabled: boolean;
@@ -88,6 +89,8 @@ export function SecuritySettingsPage() {
       setOtpauthUrl(null);
       setCode('');
       void qc.invalidateQueries({ queryKey: ['me-tfa'] });
+      // Enrolment signs out every other session server-side (#730).
+      void qc.invalidateQueries({ queryKey: SESSIONS_QUERY_KEY });
     },
     onError: (err: Error) => setMessage(err.message),
   });
@@ -126,7 +129,7 @@ export function SecuritySettingsPage() {
           Security
         </h1>
         <p className="text-sm text-muted-foreground">
-          Manage two-factor authentication for your account.
+          Manage two-factor authentication and the devices signed in to your account.
         </p>
       </header>
 
@@ -271,6 +274,8 @@ export function SecuritySettingsPage() {
           </div>
         ) : null}
       </section>
+
+      <SessionsSection />
     </div>
   );
 }

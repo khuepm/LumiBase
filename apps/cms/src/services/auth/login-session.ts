@@ -9,6 +9,7 @@ import {
 } from './token-audience';
 import {
   issueRefreshToken,
+  newSessionId,
   refreshCookieSettings,
 } from './refresh-token';
 import { refreshTtlFor, ttlToSeconds } from './token-audience';
@@ -96,12 +97,16 @@ export async function completePasswordLoginSession(
   const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null;
   const userAgent = c.req.header('user-agent') ?? null;
 
+  const sessionId = newSessionId();
   const jwtPayload: Record<string, unknown> = {
     userId: options.user.id,
     email: options.user.email,
     roles: tokenRoles,
     siteId: options.siteId,
     tokenVersion: options.user.tokenVersion ?? 0,
+    // Session id (= refresh-token family); revoking the session kills this
+    // access token immediately (#730).
+    sid: sessionId,
   };
   if (options.tfaVerified) jwtPayload.tfaVerified = true;
   if (options.amr?.length) jwtPayload.amr = options.amr;
@@ -121,6 +126,7 @@ export async function completePasswordLoginSession(
       audience: options.audience,
       ip,
       userAgent,
+      familyId: sessionId,
     },
     c.env,
   );

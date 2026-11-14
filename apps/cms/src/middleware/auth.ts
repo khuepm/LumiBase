@@ -5,6 +5,7 @@ import type { MiddlewareHandler } from 'hono';
 import { apiKeys, users, userSites } from '@lumibase/database';
 import { and, eq, sql } from 'drizzle-orm';
 import { systemDbFor } from './db';
+import { isSessionLive } from '../services/auth/refresh-token';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { runDetached } from '../lib/detached';
@@ -545,6 +546,21 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       if (tokenVersion !== (user.tokenVersion ?? 0)) {
         return c.json(
           { errors: [{ code: 'UNAUTHENTICATED', message: 'Session expired. Please sign in again.' }] },
+          401,
+        );
+      }
+
+      // Per-session revocation (#730): a login/refresh token carries `sid`,
+      // its refresh-token family. Once that session is revoked ("sign out
+      // this device", "sign out other devices", reuse detection) it has no
+      // live refresh row and its access token dies now, not at `exp`.
+      // System handle: a Studio token may act on a sibling site whose RLS
+      // scope would hide the family row; the random `sid` is the only key.
+      // Tokens minted before `sid` existed skip the check until they expire.
+      const sessionId = typeof payload.sid === 'string' ? payload.sid : null;
+      if (sessionId && !(await isSessionLive(systemDbFor(c), sessionId))) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Session revoked. Please sign in again.' }] },
           401,
         );
       }

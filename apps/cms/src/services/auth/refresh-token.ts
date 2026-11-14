@@ -20,7 +20,7 @@
  */
 
 import { refreshTokens, type Database } from '@lumibase/database';
-import { and, eq, gt, isNull, lt } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lt, min, ne, or } from 'drizzle-orm';
 import { refreshTtlFor, ttlToSeconds } from './token-audience';
 
 /** Entropy of the raw refresh secret. 32 bytes = 256 bits. */
@@ -178,7 +178,15 @@ async function revokeFamily(
 }
 
 export type RefreshOutcome =
-  | { ok: true; userId: string; audience: string; token: string; expiresAt: Date }
+  | {
+      ok: true;
+      userId: string;
+      audience: string;
+      token: string;
+      expiresAt: Date;
+      /** Session (rotation family) id — carried as the access JWT's `sid`. */
+      familyId: string;
+    }
   | { ok: false; reason: 'invalid' | 'expired' | 'reuse' };
 
 /**
@@ -259,6 +267,7 @@ export async function rotateRefreshToken(
       audience: row.audience,
       token: next.token,
       expiresAt: next.expiresAt,
+      familyId: row.familyId,
     } as const;
   });
 }
@@ -316,9 +325,52 @@ export async function revokeAllRefreshTokens(
     );
 }
 
+/**
+ * Mint a new session id. A session is one refresh-token rotation family:
+ * the id is chosen BEFORE the access JWT is signed so the JWT can carry it
+ * as `sid`, then passed to {@link issueRefreshToken} as the `familyId`.
+ */
+export function newSessionId(): string {
+  return crypto.randomUUID();
+}
+
+/**
+ * True while the session (rotation family) still holds a live refresh
+ * token. Rotation swaps the live row inside one transaction, so a healthy
+ * session never reads as dead mid-rotation; revocation (one session,
+ * "sign out other devices", reuse detection, password reset) leaves no live
+ * row, which is what lets the auth middleware reject that session's access
+ * JWT immediately instead of at its `exp` (#730).
+ *
+ * Keyed by the family id alone: it is a random UUID minted server-side and
+ * never accepted from a client except through a signed JWT.
+ */
+export async function isSessionLive(db: Database, familyId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: refreshTokens.id })
+    .from(refreshTokens)
+    .where(
+      and(
+        eq(refreshTokens.familyId, familyId),
+        isNull(refreshTokens.revokedAt),
+        gt(refreshTokens.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
 export interface SessionSummary {
+  /** Live refresh-token row id. Changes on every rotation. */
   id: string;
+  /** Stable session id (rotation family). Matches the access JWT's `sid`. */
+  sessionId: string;
   audience: string;
+  /** Earliest retained token of the session — when the sign-in happened. */
+  startedAt: Date;
+  /** Last rotation (silent refresh) or the sign-in itself. */
+  lastSeenAt: Date;
+  /** @deprecated alias of `lastSeenAt`, kept for existing clients. */
   createdAt: Date;
   expiresAt: Date;
   lastIp: string | null;
@@ -327,7 +379,8 @@ export interface SessionSummary {
 
 /**
  * List a user's active sessions (live refresh tokens) on a site, newest
- * first. Never exposes the token hash — only safe display metadata.
+ * activity first. Never exposes the token hash — only safe display
+ * metadata.
  */
 export async function listUserSessions(
   db: Database,
@@ -337,6 +390,7 @@ export async function listUserSessions(
   const rows = await db
     .select({
       id: refreshTokens.id,
+      familyId: refreshTokens.familyId,
       audience: refreshTokens.audience,
       createdAt: refreshTokens.createdAt,
       expiresAt: refreshTokens.expiresAt,
@@ -352,32 +406,86 @@ export async function listUserSessions(
         gt(refreshTokens.expiresAt, new Date()),
       ),
     );
-  return rows.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  if (rows.length === 0) return [];
+
+  // Sign-in time = oldest row still retained for the family. Rotated rows
+  // keep their own `expiresAt`, so for a session older than the refresh TTL
+  // this is the oldest *retained* rotation rather than the exact sign-in.
+  const families = [...new Set(rows.map((r) => r.familyId))];
+  const starts = await db
+    .select({ familyId: refreshTokens.familyId, startedAt: min(refreshTokens.createdAt) })
+    .from(refreshTokens)
+    .where(and(eq(refreshTokens.siteId, siteId), inArray(refreshTokens.familyId, families)))
+    .groupBy(refreshTokens.familyId);
+  const startedBy = new Map(starts.map((s) => [s.familyId, s.startedAt]));
+
+  return rows
+    .map((r) => ({
+      id: r.id,
+      sessionId: r.familyId,
+      audience: r.audience,
+      startedAt: startedBy.get(r.familyId) ?? r.createdAt,
+      lastSeenAt: r.createdAt,
+      createdAt: r.createdAt,
+      expiresAt: r.expiresAt,
+      lastIp: r.lastIp,
+      lastUserAgent: r.lastUserAgent,
+    }))
+    .sort((a, b) => b.lastSeenAt.getTime() - a.lastSeenAt.getTime());
 }
 
 /**
- * Revoke one of a user's sessions by row id (scoped to site + user so a
- * caller can only revoke their own). Returns true when a live row matched.
+ * Revoke one of a user's sessions (scoped to site + user so a caller can
+ * only revoke their own). `sessionId` may be the stable session id
+ * (`familyId`, preferred — survives rotation) or the live row id returned by
+ * older clients. Returns the revoked session's family id, or null when no
+ * live row matched.
  */
 export async function revokeSessionById(
   db: Database,
   siteId: string,
   userId: string,
   sessionId: string,
-): Promise<boolean> {
+): Promise<string | null> {
   const revoked = await db
     .update(refreshTokens)
     .set({ revokedAt: new Date() })
     .where(
       and(
-        eq(refreshTokens.id, sessionId),
+        or(eq(refreshTokens.id, sessionId), eq(refreshTokens.familyId, sessionId)),
         eq(refreshTokens.siteId, siteId),
         eq(refreshTokens.userId, userId),
         isNull(refreshTokens.revokedAt),
       ),
     )
+    .returning({ familyId: refreshTokens.familyId });
+  return revoked[0]?.familyId ?? null;
+}
+
+/**
+ * Revoke every live session of a user on a site EXCEPT `keepSessionId`
+ * ("sign out other devices", and the follow-up to TOTP enrolment). Returns
+ * how many live tokens were revoked.
+ */
+export async function revokeOtherSessions(
+  db: Database,
+  siteId: string,
+  userId: string,
+  keepSessionId: string,
+): Promise<number> {
+  const revoked = await db
+    .update(refreshTokens)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(refreshTokens.siteId, siteId),
+        eq(refreshTokens.userId, userId),
+        ne(refreshTokens.familyId, keepSessionId),
+        isNull(refreshTokens.revokedAt),
+      ),
+    )
     .returning({ id: refreshTokens.id });
-  return revoked.length > 0;
+  return revoked.length;
 }
 
 /**

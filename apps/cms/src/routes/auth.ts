@@ -26,6 +26,8 @@ import {
   REFRESH_CSRF_HEADER,
   listUserSessions,
   revokeSessionById,
+  revokeOtherSessions,
+  newSessionId,
 } from '../services/auth/refresh-token';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import {
@@ -324,36 +326,110 @@ meRouter.get('/sessions', async (c) => {
   if (!auth.userId) {
     return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
   }
-  const data = await listUserSessions(c.get('db'), c.get('siteId'), auth.userId);
+  const current = currentSessionId(auth);
+  const sessions = await listUserSessions(c.get('db'), c.get('siteId'), auth.userId);
+  const data = sessions.map((s) => ({ ...s, current: current !== null && s.sessionId === current }));
   return c.json({ data });
 });
 
-/** `DELETE /api/v1/me/sessions/:id` — revoke one of the caller's own sessions. */
+/** The `sid` (session id) of the caller's access JWT, if it carries one. */
+function currentSessionId(auth: { raw?: Record<string, unknown> }): string | null {
+  const sid = auth.raw?.sid;
+  return typeof sid === 'string' && sid.length > 0 ? sid : null;
+}
+
+/** Audit a self-service session revocation (one, others, or all). */
+async function auditSessionRevocation(
+  c: Context<AppEnv>,
+  event: 'session_revoked' | 'sessions_revoked',
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  const auth = c.get('auth');
+  await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
+    event,
+    actorEmail: auth.email ?? null,
+    ip: extractClientIp(c),
+    userAgent: c.req.header('user-agent') ?? null,
+    requestId: c.get('requestId') ?? null,
+    metadata: { userId: auth.userId, siteId: c.get('siteId'), ...metadata },
+  });
+}
+
+/**
+ * `DELETE /api/v1/me/sessions/:id` — revoke one of the caller's own
+ * sessions. `:id` is the stable `sessionId` (or, for older clients, the live
+ * row `id`). The revoked device's access token stops working immediately.
+ */
 meRouter.delete('/sessions/:id', async (c) => {
   const auth = c.get('auth');
   if (!auth.userId) {
     return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
   }
-  const removed = await revokeSessionById(
+  const revokedSessionId = await revokeSessionById(
     c.get('db'),
     c.get('siteId'),
     auth.userId,
     c.req.param('id'),
   );
-  if (!removed) {
+  if (!revokedSessionId) {
     return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Session not found.' }] }, 404);
   }
-  return c.json({ data: { id: c.req.param('id'), revoked: true } });
+  const wasCurrent = revokedSessionId === currentSessionId(auth);
+  if (wasCurrent) clearRefreshCookie(c);
+  await auditSessionRevocation(c, 'session_revoked', {
+    sessionId: revokedSessionId,
+    current: wasCurrent,
+  });
+  return c.json({
+    data: { id: c.req.param('id'), sessionId: revokedSessionId, revoked: true, current: wasCurrent },
+  });
 });
 
-/** `DELETE /api/v1/me/sessions` — revoke ALL of the caller's sessions (logout everywhere). */
+/**
+ * `DELETE /api/v1/me/sessions` — revoke the caller's sessions.
+ *
+ *   - default (`?scope=all`): every session, including this one (logout
+ *     everywhere); the refresh cookie is cleared.
+ *   - `?scope=others`: every session EXCEPT the one making the request
+ *     ("sign out other devices"). Needs an access token that carries `sid`
+ *     (any login since #730); otherwise 409 `NO_CURRENT_SESSION`.
+ */
 meRouter.delete('/sessions', async (c) => {
   const auth = c.get('auth');
   if (!auth.userId) {
     return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
   }
+  const scope = c.req.query('scope') ?? 'all';
+  if (scope !== 'all' && scope !== 'others') {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: 'scope must be "all" or "others".' }] },
+      400,
+    );
+  }
+
+  if (scope === 'others') {
+    const current = currentSessionId(auth);
+    if (!current) {
+      return c.json(
+        {
+          errors: [
+            {
+              code: 'NO_CURRENT_SESSION',
+              message: 'This token is not tied to a session. Sign in again, then retry.',
+            },
+          ],
+        },
+        409,
+      );
+    }
+    const revoked = await revokeOtherSessions(c.get('db'), c.get('siteId'), auth.userId, current);
+    await auditSessionRevocation(c, 'sessions_revoked', { scope: 'others', revoked });
+    return c.json({ data: { status: 'other_sessions_revoked', revoked } });
+  }
+
   await revokeAllRefreshTokens(c.get('db'), c.get('siteId'), auth.userId);
   clearRefreshCookie(c);
+  await auditSessionRevocation(c, 'sessions_revoked', { scope: 'all' });
   return c.json({ data: { status: 'all_sessions_revoked' } });
 });
 
@@ -1407,6 +1483,7 @@ authRouter.post('/login', async (c) => {
     baselineWarmup: anomaly.baselineWarmup,
   }, { notify });
 
+  const sessionId = newSessionId();
   const token = await signCustomJwt(
     {
       userId: user.id,
@@ -1416,6 +1493,9 @@ authRouter.post('/login', async (c) => {
       // Session generation at sign time; auth rejects tokens whose value is
       // older than the stored one (revocation on password change/reset).
       tokenVersion: user.tokenVersion ?? 0,
+      // Session id (= refresh-token family). The auth middleware rejects the
+      // access token as soon as this session is revoked (#730).
+      sid: sessionId,
     },
     jwtSecret,
     audience,
@@ -1426,7 +1506,7 @@ authRouter.post('/login', async (c) => {
   // short access token above. Delivered via httpOnly cookie AND the body.
   const refresh = await issueRefreshToken(
     db,
-    { siteId, userId: user.id, audience, ip, userAgent },
+    { siteId, userId: user.id, audience, ip, userAgent, familyId: sessionId },
     c.env,
   );
   setRefreshCookie(c, refresh.token, audience);
@@ -1585,6 +1665,8 @@ authRouter.post('/refresh', async (c) => {
       // Session generation at sign time; auth rejects tokens whose value is
       // older than the stored one (revocation on password change/reset).
       tokenVersion: user.tokenVersion ?? 0,
+      // Same session across rotation — see the login path.
+      sid: outcome.familyId,
     },
     jwtSecret,
     audience,

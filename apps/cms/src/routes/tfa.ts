@@ -29,7 +29,7 @@ import {
   signMfaChallengeToken,
   verifyMfaChallengeToken,
 } from '../services/auth/mfa-challenge';
-import { revokeAllRefreshTokens } from '../services/auth/refresh-token';
+import { revokeAllRefreshTokens, revokeOtherSessions } from '../services/auth/refresh-token';
 import { TOKEN_AUDIENCE } from '../services/auth/token-audience';
 import { completePasswordLoginSession } from '../services/auth/login-session';
 
@@ -234,11 +234,20 @@ tfaMeRouter.post('/tfa/confirm', async (c) => {
       parsed.data.secret,
       parsed.data.code,
     );
+    // Enrolment is a security boundary (#730): any session opened before the
+    // second factor existed was authenticated with the password alone, so it
+    // is signed out. The device that just enrolled keeps its session. A
+    // legacy token without `sid` cannot be told apart from the others, so
+    // nothing is revoked for it rather than signing the enroller out mid-flow.
+    const sid = typeof auth.raw?.sid === 'string' ? auth.raw.sid : null;
+    const revokedSessions = sid
+      ? await revokeOtherSessions(c.get('db'), c.get('siteId'), userId, sid)
+      : 0;
     const audit = new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') });
     await audit.write({
       event: 'mfa_enrolled',
       actorEmail: auth.email ?? null,
-      metadata: { userId },
+      metadata: { userId, revokedOtherSessions: revokedSessions },
       requestId: c.get('requestId'),
       ip: extractClientIp(c),
     });

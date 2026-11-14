@@ -72,7 +72,7 @@ describe.skipIf(!hasDbIntegrationUrl)('Refresh-token flow — DB integration', (
     let sessions = await listUserSessions(db, SITE, USER);
     expect(sessions).toHaveLength(2);
 
-    expect(await revokeSessionById(db, SITE, USER, sessions[0]!.id)).toBe(true);
+    expect(await revokeSessionById(db, SITE, USER, sessions[0]!.id)).toBe(sessions[0]!.sessionId);
     sessions = await listUserSessions(db, SITE, USER);
     expect(sessions).toHaveLength(1);
 
