@@ -126,10 +126,12 @@
           "security/vulnerability-disclosure",
           "security/advisories",
           "security/advisory-template",
-          "security/advisory-runbook"
+          "security/advisory-runbook",
           "security/password-policy",
           "security/security-history",
-          "security/dependency-overrides"
+          "security/bootstrap-and-token-race-audit",
+          "security/filter-sanitisation-audit",
+          "security/upload-security"
         ]
       },
       {

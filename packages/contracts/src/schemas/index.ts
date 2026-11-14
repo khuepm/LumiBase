@@ -146,6 +146,11 @@ export {
 export {
   DEFAULT_UPLOAD_MAX_BYTES,
   DEFAULT_UPLOAD_MIME_TYPES,
+  CATALOGUED_UPLOAD_MIME_TYPES,
+  DANGEROUS_FILENAME_EXTENSIONS,
+  validateUploadFilename,
+  hasBidiControl,
+  type UploadFilenameIssue,
   UPLOAD_TYPE_CATALOGUE,
   MIME_EXTENSIONS,
   UploadPolicyConfigSchema,
