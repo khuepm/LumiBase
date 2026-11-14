@@ -94,12 +94,16 @@ export async function executeOrganizationMutation(
   if (operation === 'invite_org_member') {
     const input = parse(OrgMemberUpsertSchema, args);
     // #794: identity-aware lookup (case-insensitive; alias-aware under `root` mode).
-    const [user] = await db.select({ id: users.id }).from(users)
-      .where(input.userId ? eq(users.id, input.userId) : (await emailLookup(db, input.email ?? '')).where).limit(1);
+    const lookup = input.userId ? eq(users.id, input.userId) : (await emailLookup(db, input.email ?? '')).where;
+    const [user] = await db.select({ id: users.id }).from(users).where(lookup).limit(1);
     let userId = user?.id;
     if (!userId && input.email) {
-      const [created] = await db.insert(users).values({ email: input.email, status: 'invited' }).returning({ id: users.id });
-      userId = created!.id;
+      // #732: two concurrent invites of one new address both miss the lookup;
+      // the unique email indexes pick one insert, and the loser re-reads the
+      // winner's row instead of surfacing a 23505 as a 500.
+      const [created] = await db.insert(users).values({ email: input.email, status: 'invited' })
+        .onConflictDoNothing().returning({ id: users.id });
+      userId = created?.id ?? (await db.select({ id: users.id }).from(users).where(lookup).limit(1))[0]?.id;
     }
     if (!userId) organizationFail('NOT_FOUND', 404);
     const [existing] = await db.select().from(organizationMembers).where(and(eq(organizationMembers.organizationId, orgId), eq(organizationMembers.userId, userId!)));

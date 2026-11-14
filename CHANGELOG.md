@@ -9,6 +9,9 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+### Security
+- Bootstrap and single-use token race audit (#732, epic #674): parallel `POST /api/v1/setup/complete` requests yield exactly one admin, and requests that were in flight when another setup committed now get `409 SETUP_ALREADY_COMPLETED` instead of `404` (later requests still get `404`). `POST /api/v1/auth/verify-email` and `POST /api/v1/auth/reset-password` are single-winner under concurrency (conditional `UPDATE` / compare-and-swap on `token_version`) and get a per-IP brake (20 per 15 minutes). The public auth brakes now count with the runtime's atomic rate limiter, so a parallel burst can no longer slip past them. See [Bootstrap & single-use token audit](docs/en/security/bootstrap-and-token-race-audit.md).
+
 ### Added
 - Active session & device management (#730, epic #674): every login and refresh signs the session id (refresh-token family) into the access JWT as `sid`. `GET /api/v1/me/sessions` rows now carry a stable `sessionId`, `startedAt`, `lastSeenAt` and `current`; `DELETE /api/v1/me/sessions/:id` accepts the `sessionId`; `DELETE /api/v1/me/sessions?scope=others` signs out every other device. A revoked session's access token is rejected on the next request on both runtimes instead of living until it expires. Confirming TOTP enrolment signs out every other session. Revocations are audited as `session_revoked` / `sessions_revoked`. Studio: **Settings → Security → Active sessions** lists devices with per-device sign-out and "Sign out other sessions".
 - Activation milestones: each site records the first time it reaches `site_created`, `item_published`, `delivery_request` and `agent_run`. `GET /api/v1/activation` (site admins) returns the funnel with timestamps. Milestones are write-once, site-scoped and stay in the install's own database (migration `0029`).
