@@ -168,7 +168,8 @@ describe('search — hidden fields (#738)', () => {
         const keywords = ['and', 'or', 'not', 'in', 'to', 'exists', 'is', 'null', 'empty', 'contains', 'starts', 'with'];
         if (keywords.includes(attr)) return;
         const verdict = unreadableSearchAttribute(perm(['title']), filter, undefined);
-        expect(verdict === null).toBe(attr === 'title');
+        // `id` is a safe meta attribute (not a copy of item data): always nameable.
+        expect(verdict === null).toBe(attr === 'title' || attr === 'id');
       }),
       { numRuns: 300 },
     );

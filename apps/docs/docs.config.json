@@ -127,6 +127,8 @@
           "security/advisories",
           "security/advisory-template",
           "security/advisory-runbook"
+          "security/password-policy",
+          "security/dependency-overrides"
         ]
       },
       {

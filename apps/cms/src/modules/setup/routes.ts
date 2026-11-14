@@ -20,7 +20,12 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { PasswordSchema } from '@lumibase/contracts/schemas';
+import { DEFAULT_PASSWORD_POLICY } from '@lumibase/contracts/schemas';
+import {
+  NewPasswordInputSchema,
+  checkNewPassword,
+  passwordPolicyErrorBody,
+} from '../../services/auth/password-policy';
 import type { RateLimiterProvider } from '@lumibase/runtime';
 import { MemoryRateLimiter, collectKeys } from '@lumibase/runtime';
 import type { AppEnv } from '../../env';
@@ -43,9 +48,9 @@ export const completeBodySchema = z.object({
   setupToken: z.string().min(1).max(256).optional(),
   account: z.object({
     email: z.string().email().max(254),
-    // Shared strength policy (min 12 + complexity) — consistent with register
-    // and recovery (CWE-521).
-    password: PasswordSchema,
+    // Bounded string; the password policy (#733) is enforced in the handler
+    // with the same service as register / reset / change (CWE-521).
+    password: NewPasswordInputSchema,
     firstName: z.string().min(1).max(100),
     lastName: z.string().min(1).max(100),
   }),
@@ -405,6 +410,17 @@ setupRouter.post('/complete', async (c) => {
       400,
     );
   }
+
+  // Password policy (#733). Setup runs before any operator could have stored
+  // a policy, so the default policy applies — through the same service as
+  // every other password path. The admin's own e-mail / name count against
+  // the strength score.
+  const { account } = parsed.data;
+  const policyFailure = await checkNewPassword(c, account.password, {
+    policy: DEFAULT_PASSWORD_POLICY,
+    userInputs: [account.email, account.firstName, account.lastName],
+  });
+  if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
 
   // Honor the test-only injection seam (mirrors recoveryServiceOverride);
   // falls back to a real SetupService bound to the request db.

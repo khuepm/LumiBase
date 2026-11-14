@@ -118,7 +118,11 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
-import { PasswordSchema } from '@lumibase/contracts/schemas';
+import {
+  NewPasswordInputSchema,
+  checkNewPassword,
+  passwordPolicyErrorBody,
+} from '../../services/auth/password-policy';
 import { eq, sql } from 'drizzle-orm';
 import { users } from '@lumibase/database';
 
@@ -155,8 +159,9 @@ const forgotPathBodySchema = z.object({
 
 const resetPasswordBodySchema = z.object({
   unlockToken: z.string().min(1).max(256),
-  // Shared strength policy (min 12 + complexity) — single source of truth.
-  password: PasswordSchema,
+  // Bounded string; the instance password policy (#733) is enforced in the
+  // handler so a failure names each rule.
+  password: NewPasswordInputSchema,
 });
 
 // ── service factory ───────────────────────────────────────────────────────
@@ -365,6 +370,11 @@ recoveryRouter.post('/reset-password', async (c) => {
       400,
     );
   }
+
+  // Password policy BEFORE the unlock token is consumed: a rejected password
+  // must not burn the single-use token and force the admin to start over.
+  const policyFailure = await checkNewPassword(c, parsed.data.password);
+  if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
 
   const svc = buildService(c);
   const consumed = await svc.validateUnlockToken(parsed.data.unlockToken);
