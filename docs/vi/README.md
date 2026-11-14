@@ -1,10 +1,10 @@
 ---
-version: 7
-lastUpdated: 2026-11-11T01:21:15.680Z
+version: 8
+lastUpdated: 2026-11-14T01:59:44.876Z
 sourceLang: vi
-contentHash: 61bbd0dc2cc03957
-codeVerified: 2026-11-11T01:21:15.680Z
-codeVerifiedHash: 61bbd0dc2cc03957
+contentHash: 007d57b10cb3801c
+codeVerified: 2026-11-14T01:59:44.876Z
+codeVerifiedHash: 007d57b10cb3801c
 codeVerifiedClaims: 4
 ---
 
@@ -116,6 +116,10 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [security/external-jwt-auth.md](./security/external-jwt-auth.md) — Xác thực nhà phát hành JWT bên ngoài.
   - [security/user-management.md](./security/user-management.md) — Quản lý người dùng & auth realms (ADR-010).
   - [security/dependency-overrides.md](./security/dependency-overrides.md) — Thắt chặt chuỗi cung ứng / ghi đè dependency.
+  - [security/vulnerability-disclosure.md](./security/vulnerability-disclosure.md) — Chính sách công bố lỗ hổng: cách báo cáo, phiên bản được hỗ trợ, SLA theo mức CVSS, GHSA/CVE, embargo, safe harbour, chính sách triage báo cáo do AI tạo.
+  - [security/advisories.md](./security/advisories.md) — Security advisory: nơi công bố, cách theo dõi, feed API máy đọc được, bảng chỉ mục.
+  - [security/advisory-template.md](./security/advisory-template.md) — Mẫu bài advisory/CVE, dòng CHANGELOG và tin trả lời người báo cáo.
+  - [security/advisory-runbook.md](./security/advisory-runbook.md) — Runbook cho maintainer từ báo cáo tới advisory đã công bố, kèm buổi chạy thử advisory đầu tiên.
 - **Compliance & Quyền của người dùng** (`compliance/`)
   - [compliance/README.md](./compliance/README.md) — Tổng quan + ma trận quyền × thị trường (EU/US/VN, Google/Apple) ánh xạ vào LumiBase. **Không phải tư vấn pháp lý.**
   - [compliance/user-rights-catalog.md](./compliance/user-rights-catalog.md) — Danh mục dễ hiểu của từng quyền (quyền được lãng quên, truy cập, di chuyển, đồng ý, huỷ đăng ký, xoá tài khoản…).

@@ -121,7 +121,11 @@
           "security/idor-testing",
           "security/external-jwt-auth",
           "security/user-management",
-          "security/dependency-overrides"
+          "security/dependency-overrides",
+          "security/vulnerability-disclosure",
+          "security/advisories",
+          "security/advisory-template",
+          "security/advisory-runbook"
         ]
       },
       {

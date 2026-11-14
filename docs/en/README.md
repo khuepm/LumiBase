@@ -1,13 +1,13 @@
 ---
-version: 8
-lastUpdated: 2026-11-11T01:21:15.680Z
+version: 9
+lastUpdated: 2026-11-14T01:59:44.876Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 61bbd0dc2cc03957
+sourceHash: 007d57b10cb3801c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T01:21:15.680Z
-codeVerifiedHash: 61bbd0dc2cc03957
+codeVerified: 2026-11-14T01:59:44.876Z
+codeVerifiedHash: 007d57b10cb3801c
 codeVerifiedClaims: 4
 ---
 
@@ -119,6 +119,10 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - [security/external-jwt-auth.md](./security/external-jwt-auth.md) — External JWT issuer authentication.
   - [security/user-management.md](./security/user-management.md) — User management & auth realms (ADR-010).
   - [security/dependency-overrides.md](./security/dependency-overrides.md) — Supply-chain / dependency-override hardening.
+  - [security/vulnerability-disclosure.md](./security/vulnerability-disclosure.md) — Vulnerability disclosure policy: reporting, supported versions, SLA by CVSS severity, GHSA/CVE, embargo, safe harbour, AI-generated report triage policy.
+  - [security/advisories.md](./security/advisories.md) — Security advisories: where they are published, subscribing, the machine-readable API feed, index table.
+  - [security/advisory-template.md](./security/advisory-template.md) — Advisory/CVE post template, CHANGELOG line and reporter replies.
+  - [security/advisory-runbook.md](./security/advisory-runbook.md) — Maintainer runbook from report to published advisory, with the dry run of the first advisory.
 - **Compliance & User Rights** (`compliance/`)
   - [compliance/README.md](./compliance/README.md) — Overview + rights × market matrix (EU/US/VN, Google/Apple) mapped to LumiBase. **Not legal advice.**
   - [compliance/user-rights-catalog.md](./compliance/user-rights-catalog.md) — Plain-language catalog of each right (right to be forgotten, access, portability, consent, unsubscribe, account deletion…).
