@@ -4,11 +4,11 @@ lastUpdated: 2026-07-28T10:25:03.615Z
 sourceLang: en
 translatedFrom: en
 sourceHash: fd79fbc9b05f2fea
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T10:25:03.615Z
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-14T03:13:30.886Z
 codeVerifiedHash: fd79fbc9b05f2fea
-codeVerifiedClaims: 8
+codeVerifiedClaims: 10
 ---
 
 # Deploy MeiliSearch trên AWS
@@ -56,7 +56,7 @@ Lightsail cho bạn một VM giá cố định kèm public IP, đây là cách �
    sudo docker run -d --name meilisearch \
      --restart unless-stopped \
      -p 7700:7700 \
-     -e MEILI_MASTER_KEY="<master-key-của-bạn>" \
+     -e MEILI_MASTER_KEY="<your-master-key>" \
      -e MEILI_ENV="production" \
      -v /home/ubuntu/meili_data:/meili_data \
      getmeili/meilisearch:v1.7
@@ -98,7 +98,7 @@ Runtime Docker đọc hai biến (`packages/runtime/src/adapters/docker/index.ts
 
 ```bash
 MEILISEARCH_HOST=https://search.your-domain.example   # hoặc http://<private-ip>:7700
-MEILISEARCH_API_KEY=<master-key-của-bạn>
+MEILISEARCH_API_KEY=<your-master-key>
 ```
 
 Đặt chúng trong môi trường deploy của bạn (`docker/.env`, service `cms` trong

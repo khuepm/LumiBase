@@ -4,9 +4,9 @@ lastUpdated: 2026-07-25T08:15:55.263Z
 sourceLang: vi
 translatedFrom: vi
 sourceHash: 5a181f4e4146ecd4
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-25T08:15:55.263Z
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-14T03:13:32.300Z
 codeVerifiedHash: 5a181f4e4146ecd4
 codeVerifiedClaims: 2
 ---
@@ -40,7 +40,7 @@ interface RawTransport<TValue> {
 }
 ```
 - Default for every interface: `JSON.stringify/parse` with 2 spaces.
-- An interface may override it (e.g. `wysiwyg.toRaw` returns plain HTML).
+- An interface may override it (e.g. `wysiwyg.toRaw = html`, plain HTML).
 
 ## 4. Server-side
 

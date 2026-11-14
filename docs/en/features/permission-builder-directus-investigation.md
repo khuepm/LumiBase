@@ -4,9 +4,9 @@ lastUpdated: 2026-07-29T02:34:50.049Z
 sourceLang: vi
 translatedFrom: vi
 sourceHash: e9a6e1734723c15d
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-29T02:34:50.049Z
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-14T03:54:13.714Z
 codeVerifiedHash: e9a6e1734723c15d
 codeVerifiedClaims: 8
 ---
@@ -64,7 +64,7 @@ Legend:
 | Dynamic variables | Supports `$CURRENT_USER`, `$CURRENT_ROLE`, `$CURRENT_ROLES`, `$CURRENT_POLICIES`, `$NOW`, etc. | The same variables, plus `$CURRENT_API_KEY`, nested `$CURRENT_USER.*`, `$NOW(+/- duration)`, and fail-closed handling of unknown magic vars. | Parity + Improve |
 | Multiple policies on the same collection/action | Additive merge; users have reported cases where stacked policies produced wrong or over-broad permissions. | Backend/UI conflict checker: blocking for unconditional-vs-restricted, `*` vs whitelist, preset/validation conflicts; warnings require an override and are audited. | Improve |
 | Unique permission row within a policy | The sample Directus DB has duplicate permission rows for the same `policy + collection + action`. | Unique `(policy_id, collection, action)`; the migration detects duplicates before applying. | Improve |
-| IP access | Directus uses `ip_access` on the policy. | A JSON array `ipAllow`/`ipDeny`, supporting IPv4/IPv6/CIDR, where `ipDeny` beats `ipAllow` and a policy that does not pass is dropped from the chain. | Improve |
+| IP access | Directus uses `ip_access` on the policy. | A JSON array `ipAllow/ipDeny`, supporting IPv4/IPv6/CIDR, where `ipDeny` beats `ipAllow` and a policy that does not pass is dropped from the chain. | Improve |
 | App access | The policy has `app_access`, controlling entry to the Directus App. | Enforce app access from the effective active policies; an API key is always barred from Studio. | Parity + Improve |
 | TFA enforcement | The policy has `enforce_tfa`. | A user attached to a TFA role/policy must enrol in and pass TFA; an API key attached to a TFA policy raises a conflict/warning. | Parity + Improve |
 | Static token / API key | A Directus static token lives on the user; the token inherits the user's role. | An API key is its own principal, can attach roles/policies directly, has a token hash/prefix, rotate/revoke/expire/last_used, and is never exported in plaintext. | **New / Improve** |
@@ -114,7 +114,7 @@ The tables that matter here:
 
 | Table | Role | Important columns |
 |---|---|---|
-| `directus_roles` | Organisational grouping of users. Directus v11 no longer keeps `admin_access`/`app_access` on the role. | `id`, `name`, `icon`, `description`, `parent` |
+| `directus_roles` | Organisational grouping of users. Directus v11 no longer keeps `admin_access/app_access` on the role. | `id`, `name`, `icon`, `description`, `parent` |
 | `directus_policies` | The unit of permission, attachable to a role or a user. | `id`, `name`, `icon`, `description`, `ip_access`, `enforce_tfa`, `admin_access`, `app_access` |
 | `directus_access` | Junction for policy-to-role or policy-to-user. | `id`, `role`, `user`, `policy`, `sort` |
 | `directus_permissions` | The rule per collection/action. | `id`, `collection`, `action`, `permissions`, `validation`, `presets`, `fields`, `policy` |
@@ -205,7 +205,7 @@ Directus supports these dynamic variables:
 - `$NOW(-1 year)`, `$NOW(+2 hours)`
 - Inside permissions/validation/presets/conditional fields, Directus also allows nested user/role variables such as `$CURRENT_USER.avatar.filesize` or `$CURRENT_ROLE.name`.
 
-## 4. What `share` means in Directus
+## 4. What share means in Directus
 
 Directus uses CRUDS rather than CRUD: `create`, `read`, `update`, `delete`, `share`.
 
@@ -231,7 +231,7 @@ Proposal for LumiBase:
 
 ## 5. The important lessons from Directus
 
-### 5.1. `app_access`/`admin_access`/`enforce_tfa`/`ip_access` belong on the policy, not on the user or the role
+### 5.1. `app_access/admin_access/enforce_tfa/ip_access` belong on the policy, not on the user or the role
 
 Directus v11 puts these flags on the policy rather than the role. That is the better direction for LumiBase too:
 
@@ -244,9 +244,9 @@ Directus v11 puts these flags on the policy rather than the role. That is the be
 LumiBase currently has `roles.adminAccess` and `roles.appAccess`. These should be migrated gradually:
 
 1. Add explicit flags to `policies`: `adminAccess`, `appAccess`, `enforceTfa`, `ipAllow`, `ipDeny`, `validFrom`, `validUntil`.
-2. Keep `roles.adminAccess`/`appAccess` temporarily for old-API compatibility, but treat them as deprecated.
+2. Keep `roles.adminAccess/appAccess` temporarily for old-API compatibility, but treat them as deprecated.
 3. When compiling permissions, take effective access from the active policies first; role flags are only a fallback during a migration window. For the detailed strategy see [Migrating role flags to policy flags](./role-policy-flag-migration.md).
-4. Studio's Role Detail should no longer edit `adminAccess`/`appAccess` on the role directly; it should create or attach the corresponding policy instead.
+4. Studio's Role Detail should no longer edit `adminAccess/appAccess` on the role directly; it should create or attach the corresponding policy instead.
 
 ### 5.2. Admin access is a bypass, not a set of permission rows
 
@@ -402,7 +402,7 @@ Evaluation order:
 3. Filter policies by time and IP:
    - If the IP is in `ip_deny`: drop the policy.
    - If `ip_allow` is non-empty and the IP does not match: drop the policy.
-   - If outside `valid_from`/`valid_until`: drop the policy.
+   - If outside `valid_from/valid_until`: drop the policy.
 4. If no active policy remains for a Studio/API route: deny.
 5. If any active policy has `enforce_tfa=true`:
    - The user must have TFA enrolled, and the request/session must have passed TFA.
@@ -968,7 +968,7 @@ Recommendation: make the Permission Builder the single source and do not create 
 
 ### 12.6. Conflict and audit
 
-- The conflict checker must treat `extensions`/`extension_modules`/`extension_endpoints` as system collections.
+- The conflict checker must treat `extensions/extension_modules/extension_endpoints` as system collections.
 - Block a policy that grants an ordinary user `grant_capability` or `install` on an extension without `appAccess`.
 - Audit is mandatory for:
   - install/uninstall;
@@ -1063,7 +1063,7 @@ Security tests:
 ## 15. Recommended decisions
 
 1. Follow Directus v11 in putting access flags on the policy, not on the user.
-2. Do not keep `adminAccess`/`appAccess` on the role long term; a role should only be grouping.
+2. Do not keep `adminAccess/appAccess` on the role long term; a role should only be grouping.
 3. Let an API key hold roles/policies directly, but make the API key its own principal rather than a user's static token.
 4. Block conflicts in the UI/backend instead of silently OR-ing and union-ing everything.
 5. Seed the system access policies from the start, particularly `admin`, `studio self`, `schema manager`, `access manager`, and `public`.

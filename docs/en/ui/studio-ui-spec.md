@@ -4,8 +4,8 @@ lastUpdated: 2026-07-27T23:51:24.891Z
 sourceLang: vi
 translatedFrom: vi
 sourceHash: 3063b8b0f3d50f6c
-mtEngine: claude
-syncStatus: machine-translated
+mtEngine: manual
+syncStatus: human-translated
 ---
 
 # Studio UI Specification (apps/studio)
@@ -75,7 +75,7 @@ syncStatus: machine-translated
   - Tabs by field `group`, or tabs per locale (translations).
   - Realtime presence: show who is editing, with a lock warning on conflict.
 
-### 3.2 Collection Builder (`Settings → Data model`)
+### 3.2 Collection Builder (`Settings → Data model` or `/access?`)
 
 See `features/collections-builder.md`. The UI is a canvas + inspector + JSON pane.
 

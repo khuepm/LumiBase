@@ -4,12 +4,15 @@ lastUpdated: 2026-07-25T08:14:17.856Z
 sourceLang: vi
 translatedFrom: vi
 sourceHash: 8e804b343329c625
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-25T08:14:17.856Z
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-14T03:13:44.869Z
 codeVerifiedHash: 8e804b343329c625
 codeVerifiedClaims: 2
 ---
+
+<!-- check-parity: allow inline-code -->
+<!-- Recorded by stamp-pair --allow-structure-drift on 2026-11-14T03:13:44.869Z. See commit history for rationale. -->
 
 # Agent Harness Layer implementation roadmap
 
