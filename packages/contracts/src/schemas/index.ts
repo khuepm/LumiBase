@@ -312,6 +312,29 @@ export {
   type Password,
 } from './password';
 export {
+  estimatePasswordStrength,
+  passwordUserInputTokens,
+  type PasswordStrengthResult,
+  type PasswordStrengthScore,
+  type PasswordWeakness,
+} from './password-strength';
+export {
+  PasswordPolicySchema,
+  DEFAULT_PASSWORD_POLICY,
+  PASSWORD_POLICY_MIN_LENGTH_FLOOR,
+  PASSWORD_POLICY_MIN_LENGTH_CEILING,
+  PASSWORD_STRENGTH_LABELS,
+  evaluatePasswordPolicy,
+  summarizePasswordPolicyFailure,
+  toPublicPasswordPolicy,
+  type PasswordPolicy,
+  type PasswordPolicyInput,
+  type PasswordPolicyEvaluation,
+  type PasswordRuleId,
+  type PasswordRuleResult,
+  type PublicPasswordPolicy,
+} from './password-policy';
+export {
   TotpCodeSchema,
   TotpVerifyLoginSchema,
   TotpSetupSchema,

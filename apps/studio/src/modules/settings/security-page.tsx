@@ -4,6 +4,7 @@ import { Loader2, Shield } from 'lucide-react';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';
 import { SESSIONS_QUERY_KEY, SessionsSection } from './sessions-section';
+import { ChangePasswordSection } from './change-password-section';
 
 interface TotpStatus {
   enabled: boolean;
@@ -129,7 +130,7 @@ export function SecuritySettingsPage() {
           Security
         </h1>
         <p className="text-sm text-muted-foreground">
-          Manage two-factor authentication and the devices signed in to your account.
+          Manage two-factor authentication, your password and the devices signed in to your account.
         </p>
       </header>
 
@@ -274,6 +275,8 @@ export function SecuritySettingsPage() {
           </div>
         ) : null}
       </section>
+
+      <ChangePasswordSection />
 
       <SessionsSection />
     </div>

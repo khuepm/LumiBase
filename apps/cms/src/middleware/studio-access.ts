@@ -20,6 +20,7 @@ const PUBLIC_AUTH_PATHS = new Set([
   '/api/v1/auth/resend-verification',
   '/api/v1/auth/forgot-password',
   '/api/v1/auth/reset-password',
+  '/api/v1/auth/password-policy',
   '/api/v1/auth/refresh',
   '/api/v1/auth/logout',
   '/api/v1/auth/verify-totp',

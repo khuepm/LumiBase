@@ -102,6 +102,8 @@ describe('security guard wiring — withAuth bypass list (middleware/auth.ts)', 
       '/api/v1/auth/verify-email',
       '/api/v1/auth/forgot-password',
       '/api/v1/auth/reset-password',
+      // #733: read-only public rule set (no secret; needed pre-session).
+      '/api/v1/auth/password-policy',
       '/api/v1/auth/refresh',
       '/api/v1/auth/logout',
     ]) {

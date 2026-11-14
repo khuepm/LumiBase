@@ -73,7 +73,13 @@ import { getSecurityNotificationDispatcher, scheduleWorkersDrain } from '../modu
 import type { NotificationDeps } from '../modules/login-guard/hooks';
 import { AuditLogger } from '../modules/audit/logger';
 import { formatSafeError } from '@lumibase/contracts/utils';
-import { UserPreferencesUpdateSchema, PasswordSchema } from '@lumibase/contracts/schemas';
+import { UserPreferencesUpdateSchema, toPublicPasswordPolicy } from '@lumibase/contracts/schemas';
+import {
+  NewPasswordInputSchema,
+  checkNewPassword,
+  loadPasswordPolicy,
+  passwordPolicyErrorBody,
+} from '../services/auth/password-policy';
 import { isUserTotpEnabled } from '../modules/mfa/totp-service';
 import { signMfaChallengeToken } from '../services/auth/mfa-challenge';
 
@@ -170,8 +176,9 @@ meRouter.get('/admin-path', async (c) => {
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
-  // Shared strength policy (min 12 + complexity) — CWE-521.
-  newPassword: PasswordSchema,
+  // Bounded string only; the configurable password policy (#733) is enforced
+  // below so a failure names each rule instead of a generic Zod message.
+  newPassword: NewPasswordInputSchema,
 });
 
 /**
@@ -211,6 +218,11 @@ meRouter.post('/change-password', async (c) => {
       401,
     );
   }
+
+  const policyFailure = await checkNewPassword(c, input.newPassword, {
+    userInputs: [user.email, auth.email],
+  });
+  if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
 
   const passwordHash = await hashPassword(input.newPassword);
   const now = new Date();
@@ -518,9 +530,9 @@ async function signCustomJwt(
 
 const registerSchema = z.object({
   email: z.string().email(),
-  // Enforce the shared strength policy (min 12 + complexity) instead of the
-  // former weak min(6) (CWE-521).
-  password: PasswordSchema,
+  // Bounded here; the configurable password policy (#733) is enforced in the
+  // handler so the 400 names each failed rule (CWE-521).
+  password: NewPasswordInputSchema,
   firstName: z.string().optional(),
   lastName: z.string().optional(),
 });
@@ -540,9 +552,9 @@ const resendVerificationSchema = z.object({
 
 const resetPasswordSchema = z.object({
   token: z.string().min(1),
-  // Shared strength policy so the reset path can't drift below the min(12) +
-  // complexity rules the other password paths enforce (CWE-521).
-  password: PasswordSchema,
+  // Bounded here; the same password policy as every other path (#733) is
+  // enforced in the handler once the token is known to be valid (CWE-521).
+  password: NewPasswordInputSchema,
 });
 
 /**
@@ -607,6 +619,13 @@ authRouter.post('/register', async (c) => {
     );
   }
   const input = parsedInput.data;
+  // Password policy (#733). Evaluated before the account lookup and
+  // independent of it, so the response cannot reveal whether the e-mail
+  // exists (anti-enumeration below still holds).
+  const policyFailure = await checkNewPassword(c, input.password, {
+    userInputs: [input.email, input.firstName, input.lastName],
+  });
+  if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
   const emailLower = normalizeEmail(input.email);
   // #794: resolve the account under the instance email identity mode
   // (`root` mode matches any +tag / Gmail-dot alias of the stored address).
@@ -880,6 +899,22 @@ authRouter.post('/resend-verification', async (c) => {
 });
 
 /**
+ * `GET /api/v1/auth/password-policy` — the public password rule set (#733).
+ *
+ * Unauthenticated on purpose: the reset-password, registration and invite
+ * pages need it before the user has a session, to render the live checklist
+ * and strength meter. It exposes only what a user needs to pick a compliant
+ * password (lengths, required classes, minimum strength, whether a breach
+ * check runs) — nothing secret. Cache briefly so a page load doesn't hit the
+ * settings table every keystroke-driven re-render.
+ */
+authRouter.get('/password-policy', async (c) => {
+  const policy = await loadPasswordPolicy(systemDbFor(c));
+  c.header('cache-control', 'public, max-age=60');
+  return c.json({ data: toPublicPasswordPolicy(policy) });
+});
+
+/**
  * Public "forgot password" endpoint for self-service end-users.
  *
  * Anti-enumeration: always returns the same generic `202` regardless of
@@ -1031,6 +1066,9 @@ authRouter.post('/reset-password', async (c) => {
       400,
     );
   }
+
+  const policyFailure = await checkNewPassword(c, input.password, { userInputs: [user.email] });
+  if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
 
   const passwordHash = await hashPassword(input.password);
   const now = new Date();
