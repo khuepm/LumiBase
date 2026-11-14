@@ -1,10 +1,10 @@
 ---
-version: 7
-lastUpdated: 2026-11-11T01:21:15.680Z
+version: 8
+lastUpdated: 2026-11-14T02:04:31.781Z
 sourceLang: vi
-contentHash: 61bbd0dc2cc03957
-codeVerified: 2026-11-11T01:21:15.680Z
-codeVerifiedHash: 61bbd0dc2cc03957
+contentHash: 64304ed36e839a7d
+codeVerified: 2026-11-14T02:04:31.781Z
+codeVerifiedHash: 64304ed36e839a7d
 codeVerifiedClaims: 4
 ---
 
@@ -109,6 +109,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [operations/encryption-keys.md](./operations/encryption-keys.md) — `ENCRYPTION_KEY` bảo vệ những gì, rotate re-wrap được gì và không được gì, xử lý khi mất hoặc lộ khoá.
 - **Security** (`security/`)
   - [security/anti-abuse.md](./security/anti-abuse.md) — Cơ chế chống lạm dụng & thực hành tốt nhất: danh mục phòng thủ nhiều lớp + các khoảng trống đã biết.
+  - [security/secure-defaults.md](./security/secure-defaults.md) — Template `create-lumibase` an toàn mặc định (secret được sinh tự động, không có admin mặc định) và danh sách quy tắc của `lumibase doctor --security`.
   - [security/route-guards.md](./security/route-guards.md) — Danh mục guard cho route / control-plane.
   - [security/runtime-security-guards-plan.md](./security/runtime-security-guards-plan.md) — Nền tảng bảo mật runtime: trách nhiệm guard và điểm gắn pipeline.
   - [security/cwe-top-100-audit.md](./security/cwe-top-100-audit.md) — Audit bảo mật theo ánh xạ CWE.

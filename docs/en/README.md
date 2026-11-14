@@ -1,13 +1,13 @@
 ---
-version: 8
-lastUpdated: 2026-11-11T01:21:15.680Z
+version: 9
+lastUpdated: 2026-11-14T02:04:31.781Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 61bbd0dc2cc03957
+sourceHash: 64304ed36e839a7d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T01:21:15.680Z
-codeVerifiedHash: 61bbd0dc2cc03957
+codeVerified: 2026-11-14T02:04:31.781Z
+codeVerifiedHash: 64304ed36e839a7d
 codeVerifiedClaims: 4
 ---
 
@@ -112,6 +112,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - [operations/encryption-keys.md](./operations/encryption-keys.md) — What `ENCRYPTION_KEY` protects, what rotation does and does not re-wrap, and how to respond to a lost or leaked key.
 - **Security** (`security/`)
   - [security/anti-abuse.md](./security/anti-abuse.md) — Anti-abuse mechanisms & best practices: defense-in-depth registry (rate-limiting, brute-force, anomaly, control-plane guard, RLS, body/upload limits, SSRF, AI load-guard, audit) + known gaps.
+  - [security/secure-defaults.md](./security/secure-defaults.md) — Secure-by-default `create-lumibase` templates (generated secrets, no default admin) and the `lumibase doctor --security` rule list.
   - [security/route-guards.md](./security/route-guards.md) — Route / control-plane guard catalogue.
   - [security/runtime-security-guards-plan.md](./security/runtime-security-guards-plan.md) — Runtime security foundation: guard responsibilities and pipeline mount points.
   - [security/cwe-top-100-audit.md](./security/cwe-top-100-audit.md) — CWE-mapped security audit.

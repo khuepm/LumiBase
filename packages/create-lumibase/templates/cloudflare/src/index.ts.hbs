@@ -1,15 +1,52 @@
 import { Hono } from 'hono';
 import { logger } from 'hono/logger';
+import { cors } from 'hono/cors';
+import { secureHeaders } from 'hono/secure-headers';
 
 export interface Env {
   DB: D1Database;
+  /** Secret: `.dev.vars` locally, `wrangler secret put JWT_SECRET` in production. */
   JWT_SECRET: string;
-  ADMIN_EMAIL: string;
+  /** Exact, comma-separated origin allowlist (wrangler.toml [vars]). */
+  CORS_ALLOWED_ORIGINS?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
 
 app.use('*', logger());
+app.use(
+  '*',
+  secureHeaders({
+    contentSecurityPolicy: {
+      defaultSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      baseUri: ["'none'"],
+      formAction: ["'none'"],
+    },
+    referrerPolicy: 'no-referrer',
+  }),
+);
+// Exact-origin allowlist; `*` and unknown origins get no CORS headers.
+app.use('*', (c, next) => {
+  const allowed = (c.env.CORS_ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter((o) => o && o !== '*');
+  return cors({
+    origin: (origin) => (allowed.includes(origin) ? origin : null),
+    credentials: true,
+  })(c, next);
+});
+// Fail closed: refuse to serve with a missing or short signing secret.
+app.use('*', async (c, next) => {
+  if ((c.env.JWT_SECRET ?? '').length < 32) {
+    return c.json(
+      { errors: [{ code: 'AUTH_NOT_CONFIGURED', message: 'JWT_SECRET must be 32+ random characters.' }] },
+      500,
+    );
+  }
+  return next();
+});
 
 app.get('/', (c) => c.json({ name: '{{projectName}}', status: 'ok' }));
 

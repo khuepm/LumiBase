@@ -115,6 +115,7 @@
         "label": "Security",
         "items": [
           "security/anti-abuse",
+          "security/secure-defaults",
           "security/route-guards",
           "security/runtime-security-guards-plan",
           "security/cwe-top-100-audit",

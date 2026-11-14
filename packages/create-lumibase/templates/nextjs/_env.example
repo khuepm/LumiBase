@@ -16,10 +16,12 @@ NEXT_PUBLIC_LUMIBASE_PUBLISHABLE_KEY=
 # copy it from `npm run cms:logs`.
 LUMIBASE_SETUP_TOKEN=
 
-# First administrator, created by `npm run cms:bootstrap`.
+# First administrator, created by `npm run cms:bootstrap`. There is no default
+# admin: create-lumibase generated a random password into .env. Bootstrapping
+# without one fails rather than falling back to a known value.
 LUMIBASE_ADMIN_EMAIL=admin@example.com
 # Must be 12+ chars with upper, lower, digit and symbol — the CMS enforces it.
-LUMIBASE_ADMIN_PASSWORD=Change-Me-N0w!
+LUMIBASE_ADMIN_PASSWORD=
 # Studio lives at http://localhost:1989/<this path>. Keep it unguessable.
 LUMIBASE_ADMIN_PATH=admin-a7f3c1
 
@@ -30,3 +32,21 @@ LUMIBASE_ADMIN_TOKEN=
 # Origin allowed to use the publishable key. An empty allowlist means the key
 # works from anywhere, so this is set explicitly.
 LUMIBASE_PUBLIC_ORIGIN=http://localhost:3000
+
+# ─── CMS container (read by docker-compose.yml) ──────────────────────────────
+# Secrets: create-lumibase generated fresh random values into .env. They are
+# never in a template, and docker compose refuses to start without them.
+# Make your own: `openssl rand -base64 48` (JWT) / `openssl rand -base64 32` (AES key).
+JWT_SECRET=
+ENCRYPTION_KEY=
+
+# General API rate limit, requests/minute per principal (0 turns it off — don't).
+LUMIBASE_API_RATE_LIMIT=600
+# Postgres row-level security. "off" here because the dev database user is a
+# superuser; for production run DATABASE_URL as a non-BYPASSRLS role, set
+# DATABASE_SYSTEM_URL to a BYPASSRLS role, and switch this to "enforce".
+LUMIBASE_DB_RLS=off
+
+# Audit this configuration against the production checklist:
+#   npx lumibase doctor --security            (development rules)
+#   npx lumibase doctor --security --production

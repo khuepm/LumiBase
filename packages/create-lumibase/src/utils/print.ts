@@ -1,7 +1,8 @@
 import pc from 'picocolors';
 import type { ProjectConfig } from '../index.js';
+import type { LocalSecretsResult } from '../secrets.js';
 
-export function printNextSteps(config: ProjectConfig) {
+export function printNextSteps(config: ProjectConfig, secrets?: LocalSecretsResult) {
   const { projectName, packageManager, installDeps, template } = config;
   const isCurrentDir = projectName === '.';
   const run = (script: string) =>
@@ -19,7 +20,18 @@ export function printNextSteps(config: ProjectConfig) {
     console.log(`  ${step++}. ${pc.cyan(`cd ${projectName}`)}`);
   }
 
-  console.log(`  ${step++}. ${pc.cyan('cp .env.example .env')}  ${pc.dim('← fill in your secrets')}`);
+  if (secrets?.written) {
+    // Values are never printed: they live only in the gitignored file.
+    console.log(
+      pc.dim(`  Generated ${secrets.generated.join(', ') || 'no secrets'} into ${secrets.written} (gitignored).`),
+    );
+    console.log();
+  } else {
+    const target = secrets?.target ?? '.env';
+    console.log(
+      `  ${step++}. ${pc.cyan(`review ${target}`)}  ${pc.dim('← kept as it was; no secrets were generated')}`,
+    );
+  }
 
   if (!installDeps) {
     console.log(`  ${step++}. ${pc.cyan(`${packageManager} install`)}`);
@@ -39,6 +51,7 @@ export function printNextSteps(config: ProjectConfig) {
     console.log(pc.dim('  Studio   ') + pc.underline('http://localhost:1989/<LUMIBASE_ADMIN_PATH>'));
     console.log();
     console.log(pc.dim(`  Check the public client is safe: ${pc.cyan(run('cms:verify'))}`));
+    console.log(pc.dim(`  Audit the config:                ${pc.cyan('npx lumibase doctor --security')}`));
     console.log();
     console.log(pc.dim('  Docs → https://docs.lumibase.dev'));
     console.log();
@@ -56,6 +69,8 @@ export function printNextSteps(config: ProjectConfig) {
 
   console.log();
   console.log(pc.dim('  API  ') + pc.underline('http://localhost:8787'));
+  console.log();
+  console.log(pc.dim(`  Audit the config any time: ${pc.cyan('npx lumibase doctor --security')}`));
   console.log();
   console.log(pc.dim('  Docs → https://lumibase.dev/docs'));
   console.log();
