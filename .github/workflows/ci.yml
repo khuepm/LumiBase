@@ -93,7 +93,8 @@ jobs:
       # One aggregate step so the local pre-commit hook and CI cannot drift
       # apart: `.husky/pre-commit` runs this same `pnpm check:all`. Adding a
       # guard to the script therefore arms it in both places at once. Covers
-      # version:check, registry:check, settings:check, drift:check, tauri:check,
+      # version:check, registry:check, imports:check, settings:check, drift:check,
+      # tauri:check,
       # scripts:test.
       #
       # Why each one earns its place:
