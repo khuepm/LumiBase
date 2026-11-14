@@ -5,7 +5,7 @@
 # stays for readers and for Dependabot, which bumps tag and digest together
 # (.github/dependabot.yml). Digests are of the multi-arch index, so amd64 and
 # arm64 builds both resolve from them.
-FROM node:22-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS builder
+FROM node:25-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370 AS builder
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
