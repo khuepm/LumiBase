@@ -9,6 +9,9 @@ import { scopeSite, settings, transformPresets } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { type TransformDsl, transformDslSchema, transformKey, verifyTransform } from '@lumibase/contracts';
 import { etagMatches, weakEtag } from '../services/delivery-cache';
+import { normalizeMimeType } from '@lumibase/contracts/schemas';
+import { userContentHeaders } from '../services/upload-security/serve-policy';
+import { sanitizeSvg } from '../services/upload-security/svg-sanitizer';
 
 type ResolvedTransform = { dsl: TransformDsl; fromPreset: boolean };
 
@@ -158,23 +161,23 @@ function storedVersionOf(obj: { metadata?: Record<string, string> }): string | n
   return typeof version === 'string' && version.length > 0 ? version : null;
 }
 
+/** Whether a stored object is an SVG (served only after re-sanitising). */
+function isSvgContentType(contentType: string | undefined): boolean {
+  return normalizeMimeType(contentType) === 'image/svg+xml';
+}
+
 /**
- * Derive a safe `filename` for the Content-Disposition header from a storage
- * key. Strips any directory prefix and removes characters that could break out
- * of the quoted header value (CR/LF, quotes, backslash, control chars).
+ * Re-sanitise SVG bytes on the way out (#740). The upload guard already
+ * rejects SVGs with active content; this second pass also strips external
+ * references and neutralises objects stored before the guard existed. Clean
+ * SVGs come back byte-identical.
  */
-function sanitizeDownloadFilename(key: string): string {
-  const base = key.split('/').pop() ?? 'download';
-  // Replace control chars (incl. CR/LF), double-quotes, and backslash so the
-  // value cannot break out of the quoted Content-Disposition filename. Filtered
-  // by char code rather than a regex with control-char escapes.
-  let cleaned = '';
-  for (const ch of base) {
-    const code = ch.charCodeAt(0);
-    cleaned += code < 0x20 || ch === '"' || ch === '\\' ? '_' : ch;
-  }
-  cleaned = cleaned.trim();
-  return cleaned.length > 0 ? cleaned : 'download';
+function sanitizeSvgBytes(bytes: ArrayBuffer): { body: Uint8Array; changed: boolean } {
+  const source = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+  const result = sanitizeSvg(source);
+  return result.changed
+    ? { body: new TextEncoder().encode(result.output), changed: true }
+    : { body: new Uint8Array(bytes), changed: false };
 }
 
 async function requireMediaPermission(
@@ -326,10 +329,16 @@ mediaRouter.get('/:key{.+}', async (c) => {
           return new Response(null, { status: 304, headers });
         }
 
-        const out = await media.transform(srcBytes, options);
+        // An SVG source is rasterised by the image library: strip scripts and
+        // external references first so the rasteriser never fetches or runs
+        // anything the upload smuggled in.
+        const transformInput = isSvgContentType(obj.contentType ?? obj.metadata?.contentType)
+          ? sanitizeSvgBytes(srcBytes).body
+          : srcBytes;
+        const out = await media.transform(transformInput, options);
         return new Response(out.body as unknown as BodyInit, {
           status: 200,
-          headers: { ...headers, 'Content-Type': out.contentType },
+          headers: { ...headers, ...userContentHeaders(out.contentType, key), 'Content-Type': out.contentType },
         });
       } catch (err) {
         // Fall through to the URL path if the in-process transform is unavailable.
@@ -380,13 +389,23 @@ mediaRouter.get('/:key{.+}', async (c) => {
         return new Response(null, { status: 304, headers });
       }
     }
-    // Serve user-uploaded bytes as a download, never as an inline document.
-    // Combined with the global `X-Content-Type-Options: nosniff` + CSP, this
-    // stops a stored HTML/SVG payload from being rendered (and its script
-    // executed) under this origin when opened top-level. `<img>`/`<video>`
-    // embedding of legitimate media is unaffected by Content-Disposition.
-    headers['Content-Disposition'] = `attachment; filename="${sanitizeDownloadFilename(key)}"`;
-    headers['X-Content-Type-Options'] = 'nosniff';
+    // Content-Disposition policy (#740): `inline` only for the allow-list of
+    // passive raster/video types; SVG, PDF, HTML, text and anything unknown are
+    // downloads. Every response also carries `nosniff` and a sandboxing CSP, so
+    // a stored HTML/SVG payload cannot run script under this origin when
+    // opened top-level. `<img>`/`<video>` embedding is unaffected.
+    Object.assign(headers, userContentHeaders(contentType, key));
+    if (!contentType) headers['Content-Type'] = 'application/octet-stream';
+
+    if (isSvgContentType(contentType)) {
+      // Re-sanitise on the way out; clean SVGs are served byte-identical.
+      const sanitized = sanitizeSvgBytes(await new Response(obj.body as BodyInit).arrayBuffer());
+      if (sanitized.changed) {
+        headers['Content-Length'] = String(sanitized.body.byteLength);
+        headers['X-Lumi-Svg-Sanitized'] = '1';
+      }
+      return new Response(sanitized.body as unknown as BodyInit, { status: 200, headers });
+    }
 
     return new Response(obj.body as BodyInit, { status: 200, headers });
   } catch (err) {

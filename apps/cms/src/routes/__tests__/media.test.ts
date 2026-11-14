@@ -216,6 +216,103 @@ describe('media cache policy (#388)', () => {
   });
 });
 
+/**
+ * #740 — serving policy: inline only for passive raster/video, attachment for
+ * everything else, nosniff + sandbox CSP always, SVG re-sanitised on the way
+ * out (clean SVGs byte-identical).
+ */
+describe('media serving policy (#740)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function objectApp(body: string | Uint8Array, contentType: string | undefined) {
+    const buf = typeof body === 'string' ? Buffer.from(body) : Buffer.from(body);
+    return appFor(
+      mockStorage({
+        get: vi.fn(async () => ({ body: buf, size: buf.byteLength, contentType, metadata: {} })),
+      }),
+    );
+  }
+
+  it('serves a PNG inline with nosniff and the sandbox CSP', async () => {
+    vi.spyOn(PermissionService.prototype, 'canAccess').mockResolvedValue(allowPermission);
+    const res = await objectApp(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), 'image/png').request('/media/logo.png');
+    expect(res.headers.get('Content-Disposition')).toBe('inline; filename="logo.png"');
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(res.headers.get('Content-Security-Policy')).toContain('sandbox');
+  });
+
+  it.each([
+    ['doc.pdf', 'application/pdf'],
+    ['page.html', 'text/html'],
+    ['notes.txt', 'text/plain'],
+  ])('serves %s (%s) as an attachment', async (key, type) => {
+    vi.spyOn(PermissionService.prototype, 'canAccess').mockResolvedValue(allowPermission);
+    const res = await objectApp('x', type).request(`/media/${key}`);
+    expect(res.headers.get('Content-Disposition')).toBe(`attachment; filename="${key}"`);
+    expect(res.headers.get('Content-Security-Policy')).toContain('sandbox');
+  });
+
+  it('serves an object with no recorded type as an octet-stream attachment', async () => {
+    vi.spyOn(PermissionService.prototype, 'canAccess').mockResolvedValue(allowPermission);
+    const res = await objectApp('<html><script>alert(1)</script>', undefined).request('/media/blob');
+    expect(res.headers.get('Content-Type')).toBe('application/octet-stream');
+    expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="blob"');
+  });
+
+  it('serves a clean SVG byte-identical', async () => {
+    vi.spyOn(PermissionService.prototype, 'canAccess').mockResolvedValue(allowPermission);
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2"><rect width="1" height="1"/></svg>';
+    const res = await objectApp(svg, 'image/svg+xml').request('/media/icon.svg');
+    expect(await res.text()).toBe(svg);
+    expect(res.headers.get('X-Lumi-Svg-Sanitized')).toBeNull();
+    expect(res.headers.get('Content-Disposition')).toBe('attachment; filename="icon.svg"');
+  });
+
+  it('neutralises a stored (legacy) malicious SVG on the way out', async () => {
+    vi.spyOn(PermissionService.prototype, 'canAccess').mockResolvedValue(allowPermission);
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(2)</script><image href="https://tracker.example/p.png"/><rect/></svg>';
+    const res = await objectApp(svg, 'image/svg+xml').request('/media/evil.svg');
+    const body = await res.text();
+    // Script + handler removed; the external tracking reference loses its href.
+    expect(body).toBe('<svg xmlns="http://www.w3.org/2000/svg"><image/><rect/></svg>');
+    expect(res.headers.get('Content-Length')).toBe(String(body.length));
+    expect(res.headers.get('X-Lumi-Svg-Sanitized')).toBe('1');
+  });
+
+  it('sanitises an SVG source before handing it to the in-process transform', async () => {
+    vi.spyOn(PermissionService.prototype, 'canAccess').mockResolvedValue(allowPermission);
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><rect/></svg>';
+    const transform = vi.fn(async (_input: ArrayBuffer | Uint8Array, _options: unknown) => ({
+      body: new Uint8Array([1, 2, 3]),
+      contentType: 'image/png',
+    }));
+    const storage = mockStorage({
+      get: vi.fn(async () => ({ body: Buffer.from(svg), size: svg.length, contentType: 'image/svg+xml', metadata: {} })),
+    });
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('siteId', 'site-a');
+      c.set('auth', { userId: 'user-a', email: 'a@example.test', roles: [], raw: {} });
+      c.set('db', {
+        select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
+      } as never);
+      c.set('runtime', { storage, cache: undefined, media: { transform, getUrl: () => 'http://x' } } as never);
+      await next();
+    });
+    app.route('/media', mediaRouter);
+
+    const res = await app.request('/media/icon.svg?width=10');
+    expect(res.status).toBe(200);
+    const input = transform.mock.calls[0]![0];
+    expect(new TextDecoder().decode(input)).toBe('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
+    expect(res.headers.get('Content-Disposition')).toBe('inline; filename="icon.svg"');
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+  });
+});
+
 function appFor(storage: ReturnType<typeof mockStorage>) {
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
