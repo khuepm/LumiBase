@@ -57,7 +57,8 @@ describe.skipIf(!hasDbIntegrationUrl)('Refresh-token flow — DB integration', (
 
     // Re-presenting the FIRST (now revoked) token = reuse → family revoked.
     const reuse = await rotateRefreshToken(db, { rawToken: first.token, siteId: SITE }, undefined);
-    expect(reuse).toEqual({ ok: false, reason: 'reuse' });
+    // Reuse reports the token owner so the audit row can name them (#739).
+    expect(reuse).toEqual({ ok: false, reason: 'reuse', userId: USER });
 
     // After the family is revoked, even the latest token no longer works.
     const after = await rotateRefreshToken(db, { rawToken: (r2 as any).token, siteId: SITE }, undefined);
