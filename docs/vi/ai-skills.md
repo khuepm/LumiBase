@@ -1,13 +1,13 @@
 ---
-version: 3
-lastUpdated: 2026-11-12T18:29:49.335Z
+version: 4
+lastUpdated: 2026-11-14T12:31:26.094Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 423b70175b1454b5
+sourceHash: 363ed1c0ef550112
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T18:29:49.335Z
-codeVerifiedHash: 423b70175b1454b5
+codeVerified: 2026-11-14T12:31:26.094Z
+codeVerifiedHash: 363ed1c0ef550112
 codeVerifiedClaims: 6
 ---
 
@@ -106,6 +106,8 @@ Các kỹ năng chạy qua **điểm cuối được kiểm soát** `POST /api/v
 | `askUser` / `getUserAnswer` | `items:read` | an toàn — `askUser` đỗ run ở `waiting_user` tới khi một người trả lời trong Mission Control (hoặc hết hạn / bị huỷ); `getUserAnswer` chỉ trả câu trả lời cho người đã hỏi, dưới dạng dữ liệu không tin cậy. Không nằm trên thang autonomy: được hỏi ở mọi mức. Không được cung cấp cho Copilot chat, vốn không có run nào để tạm dừng. Xem [agent harness](features/agent-harness-layer.md#54-hỏi-người-dùng-askuser-710) |
 
 **Tên bộ sưu tập dành riêng.** `createCollection` (và mọi thao tác đổi tên qua `updateCollection`) từ chối các tên bắt đầu bằng tiền tố `lumibase_`, vốn thuộc sở hữu của nền tảng (bảng đồng bộ CDC/Firebase, cấu hình nội bộ). Cơ chế bảo vệ nằm trong `SchemaService.ensureName`, áp dụng đồng nhất cho AI harness, các route builder/Studio và bất kỳ caller nào khác; vi phạm sẽ trả về `RESERVED_NAME` (HTTP 422).
+
+**External-action tools.** Tool có tác động rơi ra ngoài CMS được đăng ký kèm bản khai `risk`, `reversibility`, `blastRadius`, `capability` và các tham chiếu bí mật, và được quyết định dựa trên bản khai đó thay cho cách phân loại ở trên. Tool rủi ro cao hoặc không hoàn tác được chờ approval ở mọi mức autonomy, và approval đó chỉ một người dùng đã đăng nhập mới cấp được. Bí mật được lấy từ `KeyProvider` lúc handler chạy và không bao giờ vào prompt, kết quả tool hay một hàng đã lưu. Mặc định không có tool nào được đăng ký. Xem [external-action tools](features/external-action-tools.md).
 
 **MCP server độc lập (`@lumibase/mcp-server`, `lumibase-mcp`).** Một stdio server riêng biệt bao bọc REST API thành ~105 MCP tool bao phủ toàn bộ phạm vi vận hành nội dung: nội dung, RBAC, người dùng/nhóm, intents/flows (bao gồm `get_flow_run`), webhooks, bản dịch, bộ nhớ dịch (bao gồm `update_tm`/`delete_tm`), tìm kiếm, media + `list_transform_presets`, phân giải preset (`get_effective_preset`/`list_preset_bookmarks`), quy trình biên tập (`list_reviews`/`submit_review`/`approve_content`/`reject_content`), phát hành nội dung (CRUD + `publish_release`), triển khai chỉ đọc (`list_deployments`/`get_deployment_logs` — kích hoạt vẫn được kiểm soát), liên kết chia sẻ (`create_share`/`revoke_share`), `get_site`, vận hành, sao lưu/khôi phục, materialize, tiện ích mở rộng, marketplace, và **thống kê** chỉ đọc (`list_dashboards`/`run_panel`/`query_insights`). Đây là đường truyền không kiểm soát — RBAC/tenancy được thực thi ở phía server cho bearer token. Các tool có tính phá hủy yêu cầu `confirm: true`. Xem `docs/en/agent-setup/`.
 
