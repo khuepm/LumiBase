@@ -21,6 +21,7 @@ ${pc.bold("Commands")}
   types           Generate TypeScript types from a live schema
   skills          Sync Site Skills (AI agent playbooks) with a site
   doctor          Check configuration and connectivity
+                  ${pc.dim("(--security: audit the project's config against the production checklist)")}
 
 ${pc.bold("Connection")}
   Resolved with precedence flag > environment > ${pc.cyan("lumibase.config.json")}.
@@ -57,6 +58,12 @@ ${pc.bold("lumibase skills")} ${pc.dim("— Markdown playbooks (skills/*.skill.m
     --activate    Activate on install ${pc.dim("(default: drafts, to review in Studio)")}
     --dry-run     Show what would change without writing
 
+${pc.bold("lumibase doctor --security")} ${pc.dim("— reads .env, .env.local, .dev.vars, wrangler.toml, docker-compose.yml")}
+  --production    Apply the production checklist even if NODE_ENV is not production
+  --env-file <a,b> Read these dotenv files instead of the defaults
+  --json          Print the report as JSON
+  ${pc.dim("Exits 1 when any finding is critical.")}
+
 ${pc.bold("Examples")}
   ${pc.dim("$")} lumibase init my-site
   ${pc.dim("$")} lumibase types --out src/lumibase-types.d.ts
@@ -65,6 +72,7 @@ ${pc.bold("Examples")}
   ${pc.dim("$")} lumibase skills push --check
   ${pc.dim("$")} lumibase skills install @acme/lumibase-skills
   ${pc.dim("$")} lumibase doctor
+  ${pc.dim("$")} lumibase doctor --security --production
 
   Docs: ${pc.cyan("https://docs.lumibase.dev")}
 `;
