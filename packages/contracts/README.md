@@ -27,6 +27,7 @@ If you are calling the CMS HTTP API from an app, prefer [`@lumibase/sdk`](https:
 | `@lumibase/contracts/policy` | Policy DSL types |
 | `@lumibase/contracts/field` | Field DSL types |
 | `@lumibase/contracts/extensions` | Extension manifest / signature helpers |
+| `@lumibase/contracts/platform` | Platform extension point contracts (`EntitlementResolver`, `TenantRef`, `SeamContext`) |
 | `@lumibase/contracts/version` | `BuildMetadata` |
 | `@lumibase/contracts/utils` | Shared logger helper |
 
