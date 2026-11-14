@@ -6,6 +6,7 @@ import type { AppEnv, AuthPrincipal } from '../env';
 import { PermissionService, type PermissionBundle } from '../services/permission-service';
 import { isFrontendAudience } from '../services/auth/token-audience';
 import { getRequestContext, mergeRequestContext } from './request-context';
+import { isSocialAuthPublicPath } from '../modules/social-auth/paths';
 
 const STUDIO_CLIENT_HEADER = 'x-lumi-client';
 const STUDIO_CLIENT_VALUE = 'studio';
@@ -67,7 +68,7 @@ export const withStudioAccess = (): MiddlewareHandler<AppEnv> => async (c, next)
     return next();
   }
 
-  if (PUBLIC_AUTH_PATHS.has(c.req.path)) {
+  if (PUBLIC_AUTH_PATHS.has(c.req.path) || isSocialAuthPublicPath(c.req.path)) {
     return next();
   }
 

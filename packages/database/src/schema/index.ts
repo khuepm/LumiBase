@@ -23,3 +23,4 @@ export * from './pageviews';
 export * from './git-integration';
 export * from './imports';
 export * from './activation';
+export * from './social-auth';

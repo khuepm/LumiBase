@@ -22,6 +22,7 @@ import {
 } from '../services/api-key-publishable';
 import { mergeRequestContext } from './request-context';
 import { mcpResourceContext } from './mcp-oauth';
+import { isSocialAuthPublicPath } from '../modules/social-auth/paths';
 import { scopesFromClaims } from '../services/mcp-oauth';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
@@ -156,6 +157,9 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     path === '/api/v1/auth/logout' ||
     path === '/api/v1/auth/login' ||
     path === '/api/v1/auth/verify-totp' ||
+    // Social login (#736): start / provider callback / one-time code exchange.
+    // Self-authenticating via server-side state + PKCE; see modules/social-auth.
+    isSocialAuthPublicPath(path) ||
     path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/') ||
     // Flow webhook trigger authenticates with a per-flow token inside the

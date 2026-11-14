@@ -1,10 +1,10 @@
 ---
-version: 15
-lastUpdated: 2026-11-13T15:31:05.385Z
+version: 16
+lastUpdated: 2026-11-14T02:18:46.044Z
 sourceLang: en
-contentHash: ffe6886c5e7614f4
-codeVerified: 2026-11-13T15:32:52.775Z
-codeVerifiedHash: ffe6886c5e7614f4
+contentHash: 7ad31ddb0fd211c0
+codeVerified: 2026-11-14T02:18:46.044Z
+codeVerifiedHash: 7ad31ddb0fd211c0
 codeVerifiedClaims: 20
 ---
 
@@ -34,6 +34,7 @@ Schema files are split by domain:
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
+| `social-auth.ts` | `lumibase_user_identities`, `lumibase_social_auth_providers` |
 | `imports.ts` | `lumibase_import_jobs` |
 | `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 
@@ -447,6 +448,14 @@ All three are `site_id`-scoped with `site_isolation` RLS. See `docs/en/features/
 ### `auth_external_issuers`
 - Per-site trusted external JWT issuer. **Public config only — no secrets** (signatures verify against the issuer's JWKS). `id`, `siteId` (FK sites, cascade), `issuer` (matches the `iss` claim), `jwksUri`/`discoveryUrl` (one required), `audience` (jsonb: string|string[]), `algorithms` (jsonb: asymmetric allowlist), `claimMapping` (jsonb: `{ email, roles, siteId?, externalId? }`), `roleMapping` (jsonb: `{ "<claim role>": { roleId|systemKey } }`), `defaultRoleId`, `jitProvisioning`, `clockSkewSeconds`, `enabled`, `createdAt`, `updatedAt`.
 - Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0000_lumibase_init` (consolidated). See [security/external-jwt-auth.md](./security/external-jwt-auth.md).
+
+### `user_identities` (`social-auth.ts`, migration `0031`)
+- External login identities linked to an account: `id`, `userId` (FK users, cascade), `issuer`, `subject`, `emailAtLink`, `createdAt`. Unique `(issuer, subject)`; index on `user_id`.
+- **Identity-global** like `users` — no `site_id`, not under RLS; site access stays in `user_sites`. Migration `0031` backfills every `users.external_id` under issuer `urn:lumibase:external-id`. See [security/social-login.md](./security/social-login.md).
+
+### `social_auth_providers` (`social-auth.ts`, migration `0031`)
+- Per-site Google / Apple / GitHub configuration: `id`, `siteId` (FK sites, cascade), `provider`, `enabled`, `clientId`, `clientSecretCiphertext`, `appleTeamId`, `appleKeyId`, `applePrivateKeyCiphertext`, `allowedRedirectUris` (jsonb), `createdAt`, `updatedAt`. Unique `(siteId, provider)`; RLS `site_isolation`.
+- Secrets are KeyProvider AES-GCM envelopes bound to site + provider, never plaintext and never returned by the API.
 
 ### `lumibase_firebase_sync_pipelines`
 | Column | Type | Note |

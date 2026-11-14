@@ -1,11 +1,11 @@
 ---
-version: 47
-lastUpdated: 2026-11-14T01:21:13.747Z
+version: 48
+lastUpdated: 2026-11-14T02:18:48.298Z
 sourceLang: en
-contentHash: 05cf51dec2d78d94
-codeVerified: 2026-11-14T01:21:13.747Z
-codeVerifiedHash: 05cf51dec2d78d94
-codeVerifiedClaims: 518
+contentHash: 0f2f50a6eabcf1ce
+codeVerified: 2026-11-14T02:18:48.298Z
+codeVerifiedHash: 0f2f50a6eabcf1ce
+codeVerifiedClaims: 538
 ---
 
 # Hono API Specification — LumiBase
@@ -207,6 +207,16 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `GET` | `/api/v1/me/sessions` | bearer | List the caller's active sessions (live refresh tokens, redacted) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Revoke one of the caller's sessions |
 | `DELETE` | `/api/v1/me/sessions` | bearer | Revoke all of the caller's sessions; `?scope=others` keeps the current session |
+| `GET` | `/api/v1/auth/social/providers` | public | Social login providers enabled for the site |
+| `POST` | `/api/v1/auth/social/:provider/start` | public | Begin Google / Apple / GitHub sign-in (PKCE) → `authorizationUrl` |
+| `GET`/`POST` | `/api/v1/auth/social/callback/:siteId/:provider` | provider | Provider callback (`POST` = Apple `form_post`); redirects to the allow-listed URI with a one-time code |
+| `POST` | `/api/v1/auth/social/exchange` | public | Redeem the one-time code with the client `codeVerifier` → session (`aud: frontend`) |
+| `GET` | `/api/v1/me/identities` | bearer | Linked login identities + `hasPassword` |
+| `POST` | `/api/v1/me/identities/:provider/link` | bearer | Begin linking a provider to the signed-in account |
+| `POST` | `/api/v1/me/identities/complete` | bearer | Finish linking (one-time code + `codeVerifier`) |
+| `DELETE` | `/api/v1/me/identities/:id` | bearer | Unlink a provider (never the last login method) |
+| `GET` | `/api/v1/admin/social-providers` | site-admin | Per-site social provider configuration (secrets write-only) |
+| `PUT`/`DELETE` | `/api/v1/admin/social-providers/:provider` | site-admin | Configure / remove a provider — see [Social login](../security/social-login.md) |
 | `POST` | `/api/v1/users/subscriber-access` | site-admin | Grant subscribers `read` on a collection (Policy DSL) |
 | `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | List / revoke subscriber read grants |
 | `GET` | `/api/v1/me/preferences` | bearer | Current user's preferences blob (identity-global) |

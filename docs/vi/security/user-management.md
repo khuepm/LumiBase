@@ -1,13 +1,13 @@
 ---
-version: 11
-lastUpdated: 2026-11-14T01:21:13.458Z
+version: 12
+lastUpdated: 2026-11-14T02:15:44.939Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 69cd294779c8fca3
+sourceHash: 34bf0e59792fd102
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T01:21:13.458Z
-codeVerifiedHash: 69cd294779c8fca3
+codeVerified: 2026-11-14T02:15:44.939Z
+codeVerifiedHash: 34bf0e59792fd102
 codeVerifiedClaims: 122
 ---
 
@@ -144,8 +144,11 @@ công. Cả hai nhận `dryRun: true`, và mọi thay đổi được áp dụng
   tồn tại; tài khoản và membership được commit trong một transaction, nên
   membership bị từ chối không bao giờ để lại tài khoản mồ côi.
 
-Liên kết nhiều định danh ngoài (social / SSO) vào một tài khoản là việc tiếp
-theo tách riêng (`user_identities`), không thuộc policy này.
+Có thể liên kết nhiều định danh ngoài vào một tài khoản qua bảng
+`lumibase_user_identities` (mỗi cặp `(issuer, subject)` một dòng). Thành viên
+dùng bảng này cho đăng nhập mạng xã hội — xem [Social login](./social-login.md);
+việc tự động liên kết ở đó chỉ xảy ra khi provider khẳng định email đã được
+xác minh, và việc so khớp email theo chế độ ở trên.
 
 ---
 

@@ -211,6 +211,13 @@
       "when": 1794556800000,
       "tag": "0029_activation_milestones",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1794729600000,
+      "tag": "0031_social_login_identities",
+      "breakpoints": true
     }
   ]
 }
