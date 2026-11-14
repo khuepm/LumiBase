@@ -10,10 +10,10 @@
  *
  * Stateless trade-off (same as verification, see ADR-010): no per-token
  * revocation and a reset token stays valid until expiry. We keep the TTL
- * short (1h). Single-use is best-effort — the token is consumed once the
- * password changes, but a replay within the window would re-set the same
- * (already-changed) password; acceptable for a 1h link. A future
- * `users.passwordChangedAt` column could harden this if needed.
+ * short (1h). Single use comes from account state: a replay is refused by
+ * {@link isResetTokenStale} (`users.password_changed_at` vs `iat`), and
+ * concurrent requests with one link are single-winner through the
+ * `token_version` compare-and-swap in `single-use-consume.ts` (#732).
  */
 
 import { SignJWT, jwtVerify } from 'jose';

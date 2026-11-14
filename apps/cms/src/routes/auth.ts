@@ -42,10 +42,11 @@ import {
 import { sendVerificationEmail } from '../modules/email/verify-email';
 import { sendPasswordResetEmail } from '../modules/email/password-reset';
 import {
-  checkRegistrationRate,
-  checkIpRateLimit,
+  checkAuthFlowRate,
   DEFAULT_REGISTRATION_RATE_LIMIT,
+  TOKEN_CONSUME_RATE_LIMIT,
 } from '../modules/auth/registration-guard';
+import { consumeEmailVerification, consumePasswordReset } from '../services/auth/single-use-consume';
 import {
   loginGuardMiddleware,
   loadLockoutPolicyFromSettings,
@@ -545,6 +546,15 @@ const resetPasswordSchema = z.object({
   password: PasswordSchema,
 });
 
+/** The `429` every public auth-flow brake answers with. */
+function rateLimitedResponse(c: Context<AppEnv>, retryAfterSeconds: number, message: string) {
+  return c.json(
+    { errors: [{ code: 'RATE_LIMITED', message, retryAfterSeconds }] },
+    429,
+    { 'retry-after': String(retryAfterSeconds) },
+  );
+}
+
 /**
  * Public self-service registration for FRONTEND end-users (the people who
  * sign up on the consumer Next.js site to read content). This is a
@@ -574,7 +584,13 @@ authRouter.post('/register', async (c) => {
 
   // (3) Best-effort per-IP abuse brake. Runs before body parse / hashing
   // so a flood is cheap to reject.
-  const rate = await checkRegistrationRate(c.get('runtime').cache, siteId, ip);
+  const rate = await checkAuthFlowRate(
+    c.get('runtime'),
+    'reg-rate',
+    siteId,
+    ip,
+    DEFAULT_REGISTRATION_RATE_LIMIT,
+  );
   if (!rate.allowed) {
     return c.json(
       {
@@ -727,6 +743,13 @@ authRouter.post('/verify-email', async (c) => {
   const ip = extractClientIp(c);
   const userAgent = c.req.header('user-agent') ?? null;
 
+  // Per-IP brake before any JWT work (#732): the other public auth routes
+  // had one, this one did not.
+  const rate = await checkAuthFlowRate(c.get('runtime'), 'verify-rate', siteId, ip, TOKEN_CONSUME_RATE_LIMIT);
+  if (!rate.allowed) {
+    return rateLimitedResponse(c, rate.retryAfterSeconds, 'Too many requests. Please try again later.');
+  }
+
   const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
   if (!jwtSecret) {
     return c.json(
@@ -774,10 +797,25 @@ authRouter.post('/verify-email', async (c) => {
     );
   }
 
-  await db
-    .update(users)
-    .set({ status: 'active', updatedAt: new Date() })
-    .where(eq(users.id, user.id));
+  // Single winner (#732): the `invited → active` flip is one conditional
+  // UPDATE, so of N concurrent requests with this link exactly one verifies
+  // and audits; the rest see the account already active.
+  const consumed = await consumeEmailVerification(db, user.id);
+  if (consumed === 'already_verified') {
+    return c.json({ data: { status: 'already_verified' } });
+  }
+  if (consumed === 'disabled') {
+    return c.json(
+      { errors: [{ code: 'ACCOUNT_DISABLED', message: 'This account is not active.' }] },
+      403,
+    );
+  }
+  if (consumed === 'not_found') {
+    return c.json(
+      { errors: [{ code: 'INVALID_TOKEN', message: 'Verification link is invalid or has expired.' }] },
+      400,
+    );
+  }
 
   await new AuditLogger({ db, siteId }).write({
     event: 'email_verified',
@@ -807,8 +845,8 @@ authRouter.post('/resend-verification', async (c) => {
   const ip = extractClientIp(c);
   const userAgent = c.req.header('user-agent') ?? null;
 
-  const rate = await checkIpRateLimit(
-    c.get('runtime').cache,
+  const rate = await checkAuthFlowRate(
+    c.get('runtime'),
     'resend-rate',
     siteId,
     ip,
@@ -894,8 +932,8 @@ authRouter.post('/forgot-password', async (c) => {
   const ip = extractClientIp(c);
   const userAgent = c.req.header('user-agent') ?? null;
 
-  const rate = await checkIpRateLimit(
-    c.get('runtime').cache,
+  const rate = await checkAuthFlowRate(
+    c.get('runtime'),
     'forgot-rate',
     siteId,
     ip,
@@ -979,6 +1017,12 @@ authRouter.post('/reset-password', async (c) => {
   const ip = extractClientIp(c);
   const userAgent = c.req.header('user-agent') ?? null;
 
+  // Per-IP brake before body parse, JWT work or PBKDF2 (#732).
+  const rate = await checkAuthFlowRate(c.get('runtime'), 'reset-rate', siteId, ip, TOKEN_CONSUME_RATE_LIMIT);
+  if (!rate.allowed) {
+    return rateLimitedResponse(c, rate.retryAfterSeconds, 'Too many requests. Please try again later.');
+  }
+
   const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
   if (!jwtSecret) {
     return c.json(
@@ -1006,6 +1050,7 @@ authRouter.post('/reset-password', async (c) => {
       status: users.status,
       email: users.email,
       passwordChangedAt: users.passwordChangedAt,
+      tokenVersion: users.tokenVersion,
     })
     .from(users)
     .where(eq(users.id, claims.userId))
@@ -1033,18 +1078,20 @@ authRouter.post('/reset-password', async (c) => {
   }
 
   const passwordHash = await hashPassword(input.password);
-  const now = new Date();
-  await db
-    .update(users)
-    .set({
-      passwordHash,
-      passwordChangedAt: now,
-      // Bump the session generation: every outstanding access JWT (which
-      // embeds the old tokenVersion) dies immediately (CWE-613/620).
-      tokenVersion: sql`${users.tokenVersion} + 1`,
-      updatedAt: now,
-    })
-    .where(eq(users.id, user.id));
+  // Single winner (#732): compare-and-swap on the session generation read
+  // above. A concurrent request with the same link already bumped it, so
+  // this one updates nothing and the link reads as spent.
+  const won = await consumePasswordReset(db, {
+    userId: user.id,
+    expectedTokenVersion: user.tokenVersion,
+    passwordHash,
+  });
+  if (!won) {
+    return c.json(
+      { errors: [{ code: 'INVALID_TOKEN', message: 'Reset link is invalid or has expired.' }] },
+      400,
+    );
+  }
 
   // Revoke all refresh tokens so a stolen session cannot be silently
   // renewed after the owner resets their password.

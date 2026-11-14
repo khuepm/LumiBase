@@ -127,7 +127,21 @@ describe('security guard wiring — public register is safe by construction (rou
   });
 
   it('rate-limits registration before hashing', () => {
-    expect(source).toMatch(/checkRegistrationRate\(/);
+    // #732: the brake goes through the atomic runtime limiter when present.
+    const handler = source.slice(source.indexOf("authRouter.post('/register'"));
+    const brake = handler.search(/checkAuthFlowRate\(\s*c\.get\('runtime'\),\s*'reg-rate'/);
+    expect(brake).toBeGreaterThan(-1);
+    expect(brake).toBeLessThan(handler.indexOf('hashPassword('));
+  });
+
+  it.each([
+    ['/verify-email', 'verify-rate'],
+    ['/reset-password', 'reset-rate'],
+  ])('rate-limits %s before any token work (#732)', (path, scope) => {
+    const handler = source.slice(source.indexOf(`authRouter.post('${path}'`));
+    const brake = handler.search(new RegExp(`checkAuthFlowRate\\(c\\.get\\('runtime'\\), '${scope}'`));
+    expect(brake).toBeGreaterThan(-1);
+    expect(brake).toBeLessThan(handler.indexOf('c.req.json('));
   });
 });
 

@@ -19,7 +19,8 @@
  * "degrade cleanly" posture of the security dispatcher.
  */
 
-import type { CacheProvider } from '@lumibase/runtime';
+import type { CacheProvider, RateLimiterProvider } from '@lumibase/runtime';
+import { consumeRateLimit } from '../../middleware/rate-limit-helper';
 
 export interface RegistrationRateLimit {
   /** Max registration attempts per IP within the window. */
@@ -89,4 +90,63 @@ export function checkRegistrationRate(
   limit: RegistrationRateLimit = DEFAULT_REGISTRATION_RATE_LIMIT,
 ): Promise<RateLimitVerdict> {
   return checkIpRateLimit(cache, 'reg-rate', siteId, ip, limit);
+}
+
+/**
+ * Budget for the public token-consuming endpoints (`/auth/verify-email`,
+ * `/auth/reset-password`) — #732. The tokens are signed JWTs, so guessing one
+ * is not the threat; the brake caps the JWT-verify + PBKDF2 work an anonymous
+ * caller can force, and how fast one leaked link can be replayed.
+ */
+export const TOKEN_CONSUME_RATE_LIMIT: RegistrationRateLimit = {
+  maxPerWindow: 20,
+  windowSeconds: 900,
+};
+
+/** The two runtime handles {@link checkAuthFlowRate} can count with. */
+export interface AuthFlowRateRuntime {
+  readonly cache: CacheProvider;
+  readonly rateLimiter?: RateLimiterProvider;
+}
+
+/**
+ * Per-IP brake for the public auth flows (register, resend-verification,
+ * forgot-password, verify-email, reset-password) — #732.
+ *
+ * Prefers the runtime's atomic {@link RateLimiterProvider} (Redis `INCR`, the
+ * CF counter, or the per-isolate memory limiter): its consume is one atomic
+ * step, so a burst of N parallel requests from one IP is admitted at most
+ * `maxPerWindow` times. {@link checkIpRateLimit} is a `get` then a `set` over
+ * the cache — every request of a parallel burst can read the same count and
+ * slip through, which is exactly the flood a brake exists to stop (Strapi
+ * #26494). The cache path stays as the fallback for a runtime without a
+ * limiter (some tests, older adapters).
+ *
+ * Same posture as before on everything else: a missing IP cannot be keyed and
+ * is allowed, and a limiter outage fails open — the brake must not take the
+ * flow it guards down with it.
+ */
+export async function checkAuthFlowRate(
+  runtime: AuthFlowRateRuntime,
+  scope: string,
+  siteId: string,
+  ip: string | undefined,
+  limit: RegistrationRateLimit,
+): Promise<RateLimitVerdict> {
+  if (!runtime.rateLimiter) {
+    return checkIpRateLimit(runtime.cache, scope, siteId, ip, limit);
+  }
+  const trimmedIp = (ip ?? '').trim();
+  if (trimmedIp.length === 0) {
+    return { allowed: true, retryAfterSeconds: 0 };
+  }
+  const verdict = await consumeRateLimit(
+    runtime.rateLimiter,
+    `rl:${scope}:${siteId}:${trimmedIp}`,
+    limit.maxPerWindow,
+    limit.windowSeconds,
+  );
+  return verdict.status === 'block'
+    ? { allowed: false, retryAfterSeconds: verdict.retryAfterSeconds }
+    : { allowed: true, retryAfterSeconds: 0 };
 }
