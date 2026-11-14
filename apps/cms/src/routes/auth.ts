@@ -71,6 +71,7 @@ import { createTimeSubscore } from '../modules/anomaly/time';
 import { createDeviceSubscore } from '../modules/anomaly/device';
 import type { LoginAttemptDraft } from '../modules/anomaly/types';
 import { getSecurityNotificationDispatcher, scheduleWorkersDrain } from '../modules/notifications/security-dispatcher';
+import { detectNewDevice, scheduleNewDeviceNotice } from '../modules/security-history/new-device';
 import type { NotificationDeps } from '../modules/login-guard/hooks';
 import { AuditLogger } from '../modules/audit/logger';
 import { formatSafeError } from '@lumibase/contracts/utils';
@@ -1557,6 +1558,11 @@ authRouter.post('/login', async (c) => {
   // for audit + notification. Task 9.5 threads the dispatcher in via
   // `options.notify` so the `anomaly_triggered` event reaches the
   // operator's channels when (and only when) `anomalyTriggered` is set.
+  // New-device check (#739) BEFORE the success hook folds this device into
+  // the baseline; it also fills `attempt.deviceFingerprint` when the device
+  // subscore is off so the baseline still learns the device.
+  const newDevice = await detectNewDevice(db, user.id, userAgent, acceptLanguage, attempt);
+
   await recordLoginSuccess(db, {
     userId: user.id,
     email: accountEmail,
@@ -1566,6 +1572,7 @@ authRouter.post('/login', async (c) => {
     anomalyScore: anomaly.score,
     anomalyTriggered: triggered && policy.anomalyAction === 'notify_only',
     baselineWarmup: anomaly.baselineWarmup,
+    method: 'password',
   }, { notify });
 
   const sessionId = newSessionId();
@@ -1595,6 +1602,18 @@ authRouter.post('/login', async (c) => {
     c.env,
   );
   setRefreshCookie(c, refresh.token, audience);
+
+  // New-device email (#739): detached from the response, rate-limited per
+  // user, never changes this response.
+  scheduleNewDeviceNotice(c, newDevice, {
+    siteId,
+    userId: user.id,
+    email: user.email,
+    audience,
+    ip,
+    userAgent,
+    countryCode: attempt.countryCode ?? null,
+  });
 
   // Workers runtime: keep any queued notification (e.g. an
   // anomaly_triggered from the notify_only path) alive past the
@@ -1671,7 +1690,9 @@ authRouter.post('/refresh', async (c) => {
         ip,
         userAgent,
         requestId: c.get('requestId') ?? null,
-        metadata: { siteId },
+        // `userId` (the family owner) puts the event in that user's
+        // security history (#739); no token material is recorded.
+        metadata: { siteId, ...(outcome.userId ? { userId: outcome.userId } : {}) },
       });
     }
     return c.json(

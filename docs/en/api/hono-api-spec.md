@@ -1,11 +1,11 @@
 ---
-version: 47
-lastUpdated: 2026-11-14T01:21:13.747Z
+version: 48
+lastUpdated: 2026-11-14T02:11:13.959Z
 sourceLang: en
-contentHash: 05cf51dec2d78d94
-codeVerified: 2026-11-14T01:21:13.747Z
-codeVerifiedHash: 05cf51dec2d78d94
-codeVerifiedClaims: 518
+contentHash: 9bce9ea5a20749d7
+codeVerified: 2026-11-14T02:11:13.959Z
+codeVerifiedHash: 9bce9ea5a20749d7
+codeVerifiedClaims: 522
 ---
 
 # Hono API Specification — LumiBase
@@ -207,6 +207,8 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `GET` | `/api/v1/me/sessions` | bearer | List the caller's active sessions (live refresh tokens, redacted) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Revoke one of the caller's sessions |
 | `DELETE` | `/api/v1/me/sessions` | bearer | Revoke all of the caller's sessions; `?scope=others` keeps the current session |
+| `GET` | `/api/v1/me/security-history` | bearer | The caller's own security events (sign-ins, new devices, password/MFA changes, revocations), redacted; `?cursor=&limit=&scope=site\|account` — see [Security history](../security/security-history.md) |
+| `GET` | `/api/v1/me/security-history/export` | bearer | Download the same history; `?format=json\|csv&scope=` (max 5,000 rows, 10 exports / 15 min) |
 | `POST` | `/api/v1/users/subscriber-access` | site-admin | Grant subscribers `read` on a collection (Policy DSL) |
 | `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | List / revoke subscriber read grants |
 | `GET` | `/api/v1/me/preferences` | bearer | Current user's preferences blob (identity-global) |

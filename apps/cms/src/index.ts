@@ -30,6 +30,7 @@ import { adminRouter } from './routes/admin';
 import { configRouter } from './routes/config';
 import { authRouter, meRouter } from './routes/auth';
 import { tfaAuthRouter, tfaMeRouter } from './routes/tfa';
+import { securityHistoryRouter } from './modules/security-history/routes';
 import { adminSecurityRouter } from './routes/admin-security';
 import { adminEmailIdentityRouter } from './routes/admin-email-identity';
 import { adminPasswordPolicyRouter } from './routes/admin-password-policy';
@@ -258,6 +259,8 @@ api.route('/me', meRouter);
 // Separate router from `meRouter`; mounted under the same authenticated `api`
 // chain so the caller can only read/write their own consent.
 api.route('/me/consents', consentRouter);
+// `/me/security-history` — the caller's own security timeline + export (#739).
+api.route('/me/security-history', securityHistoryRouter);
 // `/me/data-export` — self-service "download my data" (GDPR Art. 15/20).
 api.route('/me/data-export', dataExportRouter);
 // `/me/restriction` — self-service restriction of processing (GDPR Art. 18).

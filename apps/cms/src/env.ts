@@ -272,6 +272,13 @@ export interface Bindings {
   LUMIBASE_SAAS_FALLBACK?: string;
   /** Reserved suffix offered for free subdomains. Defaults to `lumibase.dev`. */
   LUMIBASE_FREE_DOMAIN_SUFFIX?: string;
+  /**
+   * Absolute URL of Studio → Settings → Security for this deployment (e.g.
+   * `https://cms.example.com/settings/security#active-sessions`). Linked from
+   * the new-device sign-in email sent to staff (#739). Optional: without it
+   * the email names the page instead of linking it. Members get the site URL.
+   */
+  LUMIBASE_SECURITY_SETTINGS_URL?: string;
   // ── Git integration (modules/git-integration) ───────────────────────────
   /** Public origin used to build operator-facing webhook URLs (e.g. https://api.example.com). */
   LUMIBASE_PUBLIC_URL?: string;

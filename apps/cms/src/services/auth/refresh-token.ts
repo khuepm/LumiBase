@@ -187,7 +187,12 @@ export type RefreshOutcome =
       /** Session (rotation family) id — carried as the access JWT's `sid`. */
       familyId: string;
     }
-  | { ok: false; reason: 'invalid' | 'expired' | 'reuse' };
+  | {
+      ok: false;
+      reason: 'invalid' | 'expired' | 'reuse';
+      /** Owner of the reused token's family (reuse only) — for the audit trail. */
+      userId?: string;
+    };
 
 /**
  * Verify + rotate a presented refresh token within a transaction. On
@@ -213,7 +218,7 @@ export async function rotateRefreshToken(
     // response).
     if (row.revokedAt) {
       await revokeFamily(tx, args.siteId, row.familyId);
-      return { ok: false, reason: 'reuse' } as const;
+      return { ok: false, reason: 'reuse', userId: row.userId } as const;
     }
 
     if (row.expiresAt.getTime() <= Date.now()) {
@@ -239,7 +244,7 @@ export async function rotateRefreshToken(
 
     if (claimed.length === 0) {
       await revokeFamily(tx, args.siteId, row.familyId);
-      return { ok: false, reason: 'reuse' } as const;
+      return { ok: false, reason: 'reuse', userId: row.userId } as const;
     }
 
     // Mint the successor in the same family and record the lineage.
