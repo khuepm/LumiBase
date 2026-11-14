@@ -27,6 +27,7 @@ import type { Context } from "hono";
 import type { AppEnv } from "../env";
 import { emailLookup, isEmailIdentityConflict } from "../modules/email-identity/service";
 import { formatSafeError } from '@lumibase/contracts/utils';
+import { containsPattern } from "../services/like-pattern";
 
 export const scimRouter = new Hono<AppEnv>();
 
@@ -326,7 +327,7 @@ scimRouter.get("/Users", async (c) => {
       rows = await selectSiteUsers().where(and(eq(userSites.siteId, siteId), eq(users.externalId, parsed.value)));
     } else {
       rows = await selectSiteUsers().where(
-        and(eq(userSites.siteId, siteId), or(ilike(users.email, `%${parsed.value ?? ""}%`))),
+        and(eq(userSites.siteId, siteId), or(ilike(users.email, containsPattern(parsed.value ?? "")))),
       );
     }
   } else {
