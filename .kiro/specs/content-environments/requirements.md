@@ -28,8 +28,8 @@ Phạm vi feature: tạo/liệt kê/xoá Environment, fork schema + nội dung, 
 - **Environment_Status**: `forking | ready | merging | merged | failed | archived`.
 - **Fork**: Thao tác tạo Environment bằng cách sao chép schema (luôn luôn) và nội dung (tuỳ `contentScope`) từ Origin.
 - **Content_Scope**: `none | collections[] | all` — phần nội dung được sao chép khi Fork.
-- **Lineage**: Ánh xạ một dòng trong Environment tới dòng tương ứng ở Origin, kèm **Base_Hash** và **Base_Revision** ghi tại thời điểm Fork. Lưu ở bảng `environment_lineage`.
-- **Base**: Trạng thái của một item ở Origin tại thời điểm Fork — tổ tiên chung cho merge ba chiều.
+- **Lineage**: Ánh xạ một dòng trong Environment tới dòng tương ứng ở Origin, kèm **Base_Hash** (SHA-256) và **Base_Snapshot** ghi tại thời điểm Fork và cập nhật sau mỗi promote thành công. Lưu ở bảng `environment_lineage`. Với item, hai phía dùng cùng `id` (khác `site_id`).
+- **Base**: Trạng thái của một item ở Origin tại thời điểm Fork (hoặc lần promote gần nhất), lưu dưới dạng Base_Snapshot trong Lineage — tổ tiên chung cho merge ba chiều. Field mã hoá được lưu dưới dạng hash của plaintext, không lưu giá trị.
 - **Schema_Promote**: Đưa khác biệt schema của Environment về Origin qua config diff/apply.
 - **Content_Promote**: Đưa nội dung item từ Environment về Origin, một chiều, từ chối khi Origin đã lệch khỏi Base.
 - **Merge**: Hợp nhất ba chiều theo field (Base, Origin hiện tại, Environment) có giải quyết xung đột.
@@ -61,8 +61,8 @@ Phạm vi feature: tạo/liệt kê/xoá Environment, fork schema + nội dung, 
 1. THE CMS SHALL expose `POST /api/v1/environments` nhận `{ key, name, contentScope }` và trả `{ data: Environment }` với `status: 'forking'`; Fork chạy nền qua `QueueProvider`.
 2. THE Fork SHALL luôn sao chép toàn bộ schema (collections, fields, relations), settings không nhạy cảm, roles và permissions của Origin sang Environment.
 3. WHERE `contentScope` là `all` hoặc `collections[]`, THE Fork SHALL sao chép items (không gồm item đã soft-delete) của các collection trong phạm vi, kèm các dòng junction/quan hệ cần thiết để relation trong phạm vi không gãy.
-4. THE Fork SHALL sinh `id` mới (nanoid) cho mọi dòng sao chép và ghi một dòng Lineage cho mỗi collection, field, relation và item đã sao chép.
-5. THE Fork SHALL viết lại mọi tham chiếu item trong `items.data` (m2o, o2m, m2m, m2a, junction) từ id Origin sang id Environment theo Lineage; tham chiếu tới item ngoài `contentScope` SHALL được giữ dưới dạng id Origin và đánh dấu là **external reference** chỉ đọc.
+4. THE Fork SHALL **giữ nguyên `id` của item** (cùng `id`, khác `site_id`) và sinh `id` mới (nanoid) cho collection, field, relation, file và folder; SHALL ghi một dòng Lineage cho mỗi collection, field, relation, file, folder và item đã sao chép. Yêu cầu này phụ thuộc khoá `(site_id, id)` của PR #811.
+5. THE Fork SHALL giữ nguyên tham chiếu item→item trong `items.data` (m2o, o2m, m2m, m2a, junction) vì id item không đổi, và SHALL viết lại tham chiếu tới file/folder từ id Origin sang id Environment theo Lineage; tham chiếu tới item ngoài `contentScope` SHALL được đánh dấu là **external reference** chỉ đọc.
 6. THE Fork SHALL chia lô có giới hạn và resumable: thất bại giữa chừng đặt `status='failed'` kèm `statusReason`, và chạy lại không nhân bản dòng đã sao chép.
 7. WHEN Fork hoàn tất, THE system SHALL đặt `status='ready'` và ghi audit `environment_forked` với `{ environmentId, contentScope, itemCount }`.
 8. THE Fork SHALL KHÔNG sao chép: API keys, secrets/credential của webhook/deployment/extension, session, audit log, revisions, agent memory, trust ledger.
@@ -108,7 +108,7 @@ Phạm vi feature: tạo/liệt kê/xoá Environment, fork schema + nội dung, 
 
 #### Acceptance Criteria
 
-1. THE `GET /api/v1/items/:collection/:id` SHALL trả `ETag` dẫn xuất từ phiên bản hiện tại của item.
+1. THE `GET /api/v1/items/:collection/:id` SHALL trả `ETag` strong bằng giá trị cột `version` của item; `version` SHALL tăng trong mọi thao tác ghi làm đổi `data` hoặc `status` của item.
 2. WHEN `PATCH`/`PUT` item mang header `If-Match`, THE ItemService SHALL chỉ ghi nếu phiên bản hiện tại khớp; nếu không SHALL trả 412 `{ errors: [{ code: 'PRECONDITION_FAILED' }] }` và không ghi gì.
 3. WHEN không có `If-Match`, THE ItemService SHALL giữ hành vi hiện tại (tương thích ngược).
 4. THE kiểm tra SHALL nguyên tử với thao tác ghi (conditional UPDATE), không phải đọc-rồi-ghi.
@@ -135,10 +135,10 @@ Phạm vi feature: tạo/liệt kê/xoá Environment, fork schema + nội dung, 
 
 1. THE CMS SHALL expose `POST /api/v1/environments/:key/promote/content` với `{ dryRun, items?: [{ collection, itemId }] }`; bỏ `items` nghĩa là mọi item đã đổi.
 2. THE system SHALL xác định một item là **đã đổi trong Environment** khi hash hiện tại khác Base_Hash, là **mới** khi không có Lineage, là **đã xoá** khi đã soft-delete trong Environment.
-3. WHEN Origin của một item vẫn khớp Base_Hash, THE Content_Promote SHALL ghi data của Environment vào Origin qua `ItemService` (viết lại tham chiếu từ id Environment về id Origin theo Lineage).
+3. WHEN Origin của một item vẫn khớp Base_Hash, THE Content_Promote SHALL ghi data của Environment vào item cùng `id` ở Origin qua `ItemService` (chỉ viết lại tham chiếu file/folder từ id Environment về id Origin theo Lineage).
 4. WHEN Origin của một item đã lệch khỏi Base_Hash, THE Content_Promote SHALL bỏ qua item đó với outcome `conflict` và KHÔNG ghi đè.
 5. WHEN schema Environment và Origin còn khác nhau ở collection của một item, THE Content_Promote SHALL từ chối item đó với `SCHEMA_NOT_PROMOTED`.
-6. THE item mới SHALL được tạo ở Origin với id mới và Lineage được cập nhật; item mới tham chiếu item mới khác SHALL được tạo theo thứ tự phụ thuộc.
+6. THE item mới SHALL được tạo ở Origin với **cùng `id`** như ở Environment và Lineage được cập nhật; item mới tham chiếu item mới khác SHALL được tạo theo thứ tự phụ thuộc.
 7. THE Content_Promote SHALL tôn trọng permission, validation, editorial gate và `pinnedFields` của Origin như một thao tác ghi thông thường của người gọi.
 8. THE kết quả SHALL trả outcome từng item: `promoted | created | deleted | conflict | skipped | failed` kèm lý do; sau khi promote thành công, Base_Hash của item SHALL được cập nhật về trạng thái mới của Origin.
 
@@ -154,7 +154,7 @@ Phạm vi feature: tạo/liệt kê/xoá Environment, fork schema + nội dung, 
 4. WHEN cả hai bên đổi một field về giá trị khác nhau, THE Merge SHALL coi là Conflict và yêu cầu `resolutions[{ collection, itemId, field, locale?, take: 'origin' | 'environment' | 'custom', value? }]`.
 5. WHEN một bên xoá item mà bên kia sửa, THE Merge SHALL coi là Conflict cấp item (`take: 'keep' | 'delete'`).
 6. THE apply SHALL từ chối (422 `UNRESOLVED_CONFLICTS`) khi còn Conflict chưa có resolution, và không ghi gì.
-7. THE Merge SHALL lấy Base từ Base_Revision của Lineage; WHERE Base không dựng lại được, item đó SHALL được xử lý như Conflict toàn bộ field đã khác nhau.
+7. THE Merge SHALL lấy Base từ Base_Snapshot của Lineage; WHERE Base không có, item đó SHALL được xử lý như Conflict toàn bộ field đã khác nhau. Field mã hoá SHALL được so sánh bằng hash, và Conflict trên field mã hoá SHALL chỉ nhận resolution `origin` hoặc `environment`.
 8. THE field có trong `pinnedFields` của Origin SHALL chỉ bị ghi đè khi người gọi là human có quyền ghi field đó.
 
 ### Requirement 10: Tính nguyên tử, khoá và phục hồi

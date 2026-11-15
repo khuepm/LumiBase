@@ -95,8 +95,8 @@ environment_lineage {
   envRowId, originRowId // originRowId null cho dòng tạo mới trong env sau khi promote
   baseHash              // hash của Origin tại lúc fork / lần promote gần nhất
   baseRevisionId        // revision mới nhất (staged=false) của item Origin tại lúc fork (nullable)
-  baseSnapshot          // jsonb (nullable). Proposed §14.4: luôn ghi cho item, là nguồn Base duy nhất
-  // kind='item': envRowId = originRowId khi giữ id (Proposed §14.9, xem §2.1)
+  baseSnapshot          // jsonb. Decided §14.4: luôn ghi cho item, là nguồn Base duy nhất
+  // kind='item': envRowId = originRowId vì giữ id (Decided §14.9, xem §2.1)
   external              // true = tham chiếu chỉ đọc tới item ngoài contentScope
   // unique (environmentId, kind, envRowId);
   // unique (environmentId, kind, originRowId) WHERE originRowId IS NOT NULL — khoá resume của §3.1
@@ -128,7 +128,7 @@ Bản trước của mục này viết "`lumibase_items.id` là primary key toà
 **Hệ quả cho id remapping.**
 
 - Trên `main`: Fork **bắt buộc** cấp id mới cho mọi item (hai site không giữ được cùng id). Kéo theo: lượt 2 viết lại mọi tham chiếu item→item (§3.2), so sánh phải viết lại env id → origin id trước khi hash (§8.1), promote phải viết lại ngược (§8.2). Tệ hơn, collection dùng **primary key do người dùng chọn** (`resolvePrimaryKey`, `item-service.ts:2520`; `primaryKey.id ?? nanoid()` tại `:1025`) sẽ bị đổi id trong Environment — id ở đó là dữ liệu có nghĩa (slug, mã sản phẩm), đổi nó làm Environment khác hành vi với Origin.
-- Sau #811: lý do "id toàn cục" biến mất. **Đề xuất (Proposed — needs owner decision, xem §14.9): Fork giữ nguyên id item** (identity mapping). Item ở Environment là `(envSiteId, id)`, ở Origin là `(originSiteId, id)`.
+- Sau #811: lý do "id toàn cục" biến mất. **Decided (owner, 2026-11-16), xem §14.9: Fork giữ nguyên id item** (identity mapping). Item ở Environment là `(envSiteId, id)`, ở Origin là `(originSiteId, id)`.
   - Không còn viết lại tham chiếu **item→item** (m2o, o2m, m2m/m2a qua junction — junction cũng là item). Lượt 2 ở §3.2 chỉ còn cho tham chiếu tới bảng vẫn có PK toàn cục (xem dòng dưới).
   - Item tạo mới trong Environment được promote về Origin với **cùng id**; va chạm chỉ xảy ra với id do người dùng chọn mà Origin đã tạo sau Fork → outcome `failed` với `ITEM_ID_EXISTS` (409 từ #811), không phải 500.
   - **Vẫn cần remap** cho mọi bảng còn PK nanoid toàn cục: `collections`, `fields`, `relations` (`cms.ts:23` dùng chung `id()`), `lumibase_files`/`folders` (`platform.ts:44`). Do đó: cột `items.collection_id` luôn map sang collection của Environment; giá trị trong `items.data` trỏ tới **file/folder** vẫn phải viết lại theo lineage `file`/`folder`. Lineage schema vẫn là thứ nhận ra rename (§7) — phần đó không đổi.
@@ -170,11 +170,11 @@ Hai lượt, vì tham chiếu có thể vòng:
 
 `baseHash` tính trên data **Origin** trước khi viết lại, để so sánh về sau luôn ở không gian id của Origin (xem §8.1).
 
-> Theo §2.1: khi khoá đích `(site_id, id)` được dùng và owner duyệt identity mapping, lượt 2 chỉ còn viết lại tham chiếu tới file/folder; tham chiếu item→item giữ nguyên. Field mã hoá luôn được decrypt/encrypt lại qua `processCrypto` (AAD chứa `siteId`), không copy thô.
+> Theo §2.1: khi khoá đích `(site_id, id)` được dùng (identity mapping đã duyệt, §14.9), lượt 2 chỉ còn viết lại tham chiếu tới file/folder; tham chiếu item→item giữ nguyên. Field mã hoá luôn được decrypt/encrypt lại qua `processCrypto` (AAD chứa `siteId`), không copy thô.
 
 ### 3.3 Base cho merge ba chiều
 
-> **G0 — giả định đã kiểm chứng: đúng một phần** (chi tiết + `file:line` ở `tasks.md` → Implementation status, giả định 2). Phương án thay thế: §14.4 (Proposed).
+> **G0 — giả định đã kiểm chứng: đúng một phần** (chi tiết + `file:line` ở `tasks.md` → Implementation status, giả định 2). Phương án thay thế đã duyệt: §14.4 (Decided).
 
 Bản trước: "Base = `revisions.delta.after` tại `baseRevisionId`; item chưa có revision thì ghi `baseSnapshot`". Code hiện tại cho thấy điều đó **không đủ an toàn** làm Base:
 
@@ -251,7 +251,7 @@ Hệ quả cho thiết kế:
 
 ## 6. Write_Precondition
 
-> **G0 — giả định "ghi item là last-write-wins" đã kiểm chứng: đúng** (`tasks.md` → giả định 1). Nguồn ETag: §14.7 (Proposed).
+> **G0 — giả định "ghi item là last-write-wins" đã kiểm chứng: đúng** (`tasks.md` → giả định 1). Nguồn ETag đã duyệt: cột `version`, §14.7 (Decided).
 
 Hành vi hiện tại của `ItemService.patch` (`item-service.ts:1090`):
 
@@ -370,34 +370,34 @@ Không đăng ký skill nào ở v1. Nếu sau này thêm, `promote_schema` mang
 - Thứ tự giao: Write_Precondition (§6) → Fork + cô lập (§3–5) → Schema_Promote (§7) → Content_Promote (§8) → Merge + UI (§9–10). Mỗi bước tự có giá trị và dừng được.
 - Setup Impact: dự kiến `n/a` cho seed/wizard (ba bảng rỗng khi init), **có** settings key mới (`environments.maxPerSite`, `environments.enabled`) với default an toàn.
 
-## 14. Open questions
+## 14. Open questions (đã chốt)
 
-Mỗi mục có **khuyến nghị** dựa trên code đã đọc ở G0. Mọi khuyến nghị dưới đây là **Proposed — needs owner decision**: chưa có quyết định nào được chốt thay owner. Owner duyệt bằng cách đổi nhãn thành `Decided (owner, ngày)` hoặc ghi phương án khác ngay tại mục.
+Cả chín mục dưới đây đã được owner duyệt theo đúng khuyến nghị của G0 và mang nhãn `Decided (owner, 2026-11-16)`. Tên mục giữ là "Open questions" để các tham chiếu `§14.x` trong spec không đổi; không mục nào còn mở. Con số thời gian ở §14.1 là mục tiêu cần đo ở gate GB, chưa phải số đã đo. §14.9 có điều kiện: chỉ có hiệu lực sau khi PR #811 merge (hiện còn mở).
 
 1. **Chi phí fork site lớn — giới hạn item và ngân sách thời gian.** v1 copy hàng thật, chặn bằng `contentScope` và giới hạn số item. Copy-on-write hoặc Neon branch là hướng sau, nhưng Neon branch không dùng được cho Docker.
    - *Dữ kiện:* code đã có hai mẫu batch resumable để bám theo — lô mặc định 100, tối đa 500 dòng mỗi lô theo cursor (`envelope-migration-worker.ts:52`, `rewrap-worker.ts:42`), insert item theo chunk 100 (`BULK_INSERT_CHUNK`, `item-service.ts:76`); giới hạn bulk API mặc định 500 (`bulkMaxItems`, `item-service.ts:78-82`). Queue consumer trên Workers đang cấu hình `max_batch_size` 1–10 (`apps/cms/wrangler.toml:127-172`). Fork phải decrypt/encrypt lại field mã hoá (§2.1), nên chi phí mỗi item cao hơn một `INSERT … SELECT`.
-   - **Khuyến nghị — Proposed, needs owner decision:** `environments.maxItemsPerFork` mặc định **50 000** (cấu hình được theo site, vượt → từ chối khi tạo với `ENVIRONMENT_TOO_LARGE` 409, đếm trước khi `provisionSite`); lô **100** item mỗi bước; mỗi lần chạy job xử lý tối đa **10 lô hoặc ~20 giây wall-clock** rồi ghi `forkCursor` và tự enqueue lần kế (cùng mẫu `maxBatches` của `envelope-migration-worker.ts:164-177`), để mỗi invocation trên Workers ngắn và resumable; **ngân sách tổng** cho gate GB: fork 50 000 item hoàn tất trong **≤ 15 phút** trên Docker tham chiếu và trên Workers (đo ở staging, ghi kết quả vào PR Phase B; nếu Workers không đạt, hạ default chứ không nới ngân sách). `environments.maxPerSite` mặc định **3** (như Req 5.4).
+   - **Quyết định — Decided (owner, 2026-11-16):** `environments.maxItemsPerFork` mặc định **50 000** (cấu hình được theo site, vượt → từ chối khi tạo với `ENVIRONMENT_TOO_LARGE` 409, đếm trước khi `provisionSite`); lô **100** item mỗi bước; mỗi lần chạy job xử lý tối đa **10 lô hoặc ~20 giây wall-clock** rồi ghi `forkCursor` và tự enqueue lần kế (cùng mẫu `maxBatches` của `envelope-migration-worker.ts:164-177`), để mỗi invocation trên Workers ngắn và resumable; **ngân sách tổng** cho gate GB: fork 50 000 item hoàn tất trong **≤ 15 phút** trên Docker tham chiếu và trên Workers (đo ở staging, ghi kết quả vào PR Phase B; nếu Workers không đạt, hạ default chứ không nới ngân sách). `environments.maxPerSite` mặc định **3** (như Req 5.4).
    - *Trade-off:* 50k đủ cho phần lớn site biên tập và giữ dung lượng nhân đôi (data + snapshot Base, §14.4) trong giới hạn; site lớn hơn phải fork theo `collections[]`. Con số thời gian là mục tiêu cần đo, không phải số đã đo.
 2. **Rebase Environment theo Origin** (kéo thay đổi production vào nhánh đang sống). Cùng thuật toán ba chiều nhưng ngược hướng; hoãn tới khi Merge ổn định.
-   - **Khuyến nghị — Proposed, needs owner decision:** hoãn sau v1.
+   - **Quyết định — Decided (owner, 2026-11-16):** hoãn sau v1.
 3. **Merge theo phần tử mảng** (blocks, m2m). v1 coi mảng là nguyên khối → conflict nhiều hơn cần thiết với nội dung dạng block.
-   - **Khuyến nghị — Proposed, needs owner decision:** hoãn sau v1.
+   - **Quyết định — Decided (owner, 2026-11-16):** hoãn sau v1.
 4. **Base an toàn với retention.** Bản trước lo `baseRevisionId` bị retention dọn.
    - *Dữ kiện (G0):* hiện **không** có job dọn revision (`review-run-retention.ts:44` chỉ xoá `reviewRuns`); revision chỉ mất theo FK cascade khi item bị hard-delete (`cms.ts:261-263`) — tức là chính item cũng mất. Rủi ro thật nằm ở chỗ khác (§3.3): revision chỉ có `data`; field mã hoá là ciphertext mà DEK envelope bị thay sau mỗi ghi (`item-service.ts:2097-2099`, `:1230`); có đường ghi `data` không tạo revision (`dependents-service.ts:272-277`, `envelope-migration-worker.ts:122-125`, `:141-144`, `rewrap-worker.ts:114-117`); revision `staged` lẫn trong cùng bảng (`veto-service.ts:163-177`). Một chính sách retention revision tương lai sẽ chỉ làm tệ thêm.
-   - **Khuyến nghị — Proposed, needs owner decision:** bỏ `baseRevisionId` khỏi vai trò nguồn Base (giữ làm con trỏ provenance, nullable). **Luôn** lưu `baseSnapshot` cho mọi item fork (và cập nhật sau mỗi promote/merge thành công) = `data` Origin đã đọc trong cùng lô fork, với field mã hoá thay bằng hash per-field của plaintext (`{ "$enc": "<sha256>" }`) thay vì giá trị. Merge ba chiều so field mã hoá bằng hash: một bên đổi → lấy bên đó; hai bên đổi → conflict, resolution chỉ cho `origin`/`environment` (không `custom` hiển thị giá trị). `baseHash` đổi từ FNV-1a 32-bit của `hashData` (`content-version-service.ts:30-39`) sang SHA-256 (đã dùng qua `crypto.subtle` ở `delivery-cache.ts:94-103`) vì quyết định "không ghi đè" dựa hoàn toàn vào nó.
+   - **Quyết định — Decided (owner, 2026-11-16):** bỏ `baseRevisionId` khỏi vai trò nguồn Base (giữ làm con trỏ provenance, nullable). **Luôn** lưu `baseSnapshot` cho mọi item fork (và cập nhật sau mỗi promote/merge thành công) = `data` Origin đã đọc trong cùng lô fork, với field mã hoá thay bằng hash per-field của plaintext (`{ "$enc": "<sha256>" }`) thay vì giá trị. Merge ba chiều so field mã hoá bằng hash: một bên đổi → lấy bên đó; hai bên đổi → conflict, resolution chỉ cho `origin`/`environment` (không `custom` hiển thị giá trị). `baseHash` đổi từ FNV-1a 32-bit của `hashData` (`content-version-service.ts:30-39`) sang SHA-256 (đã dùng qua `crypto.subtle` ở `delivery-cache.ts:94-103`) vì quyết định "không ghi đè" dựa hoàn toàn vào nó.
    - *Trade-off:* nhân đôi dung lượng `data` cho phạm vi fork (bị chặn bởi §14.1, xoá theo cascade khi xoá Environment) đổi lấy Base không phụ thuộc retention, mã hoá hay đường ghi bỏ revision; không lưu thêm plaintext của field mã hoá. Phương án rẻ hơn (giữ `baseRevisionId` + ghim revision khỏi retention) không giải quyết ba rủi ro còn lại nên không khuyến nghị. Nếu duyệt: sửa lời Req 9.7 và Glossary (Lineage/Base_Revision) từ "Base lấy từ Base_Revision" sang "Base lấy từ snapshot lưu ở Lineage".
 5. **External reference** tới item ngoài `contentScope`: chỉ đọc là đủ, hay cần "kéo thêm" item vào Environment sau fork?
-   - **Khuyến nghị — Proposed, needs owner decision:** v1 chỉ đọc; "kéo thêm" hoãn sau v1.
+   - **Quyết định — Decided (owner, 2026-11-16):** v1 chỉ đọc; "kéo thêm" hoãn sau v1.
 6. **Quota theo organization** thay vì theo site, khi organizations (ADR-013) có billing.
-   - **Khuyến nghị — Proposed, needs owner decision:** hoãn sau v1; v1 chỉ có `environments.maxPerSite`.
+   - **Quyết định — Decided (owner, 2026-11-16):** hoãn sau v1; v1 chỉ có `environments.maxPerSite`.
 7. **Nguồn ETag.**
    - *Dữ kiện (G0):* chưa có phiên bản nào trên `items` ngoài `updated_at` (`cms.ts:224`, `timestamp('updated_at')`). Giá trị được đặt từ đồng hồ ứng dụng `new Date()` (độ phân giải mili-giây; `item-service.ts:1235`), không phải `now()` của DB, nên hai ghi cùng mili-giây hoặc lệch đồng hồ giữa các worker cho cùng `updated_at`. Các đường đổi `updated_at` mà không đổi `data`: `releasePin` (`:2384-2386`), `cryptoShred` (`:1462-1463`), editorial transition (`editorial-service.ts:184-186`), scheduler (`scheduler-worker.ts:99-100`, `:147-152`, `:255-256`). Đường đổi `data` nhưng **không** đổi `updated_at`: `envelope-migration-worker.ts:122-125`, `:141-144`, `rewrap-worker.ts:114-117` (chỉ đổi ciphertext, plaintext giữ nguyên). Thành phần "id revision mới nhất" của bản trước cần thêm một query mỗi GET và không phản ánh các đường ghi không tạo revision.
-   - **Khuyến nghị — Proposed, needs owner decision:** thêm cột `version integer NOT NULL DEFAULT 0` trên `lumibase_items` (`ADD COLUMN … DEFAULT` hằng số không rewrite bảng trên PG ≥ 11), tăng `version = version + 1` trong **mọi** câu UPDATE đổi `data`/`status` (`patch` `:1224`, `dependents-service.ts:273`, `editorial-service.ts:185`, `scheduler-worker.ts:99`, `:148`, `:255`, `releasePin`/`cryptoShred`). ETag strong = `"<version>"` (item id đã nằm trong URL). Precondition = `AND version = $expected` trong cùng UPDATE. Worker envelope/rewrap không tăng `version` (nội dung logic không đổi).
+   - **Quyết định — Decided (owner, 2026-11-16):** thêm cột `version integer NOT NULL DEFAULT 0` trên `lumibase_items` (`ADD COLUMN … DEFAULT` hằng số không rewrite bảng trên PG ≥ 11), tăng `version = version + 1` trong **mọi** câu UPDATE đổi `data`/`status` (`patch` `:1224`, `dependents-service.ts:273`, `editorial-service.ts:185`, `scheduler-worker.ts:99`, `:148`, `:255`, `releasePin`/`cryptoShred`). ETag strong = `"<version>"` (item id đã nằm trong URL). Precondition = `AND version = $expected` trong cùng UPDATE. Worker envelope/rewrap không tăng `version` (nội dung logic không đổi).
    - *Trade-off:* một migration trên bảng nóng (viết tay, số cấp lúc merge, cao hơn `0032` của #811) và phải chạm ~7 call site, đổi lại so sánh chính xác, không phụ thuộc đồng hồ. Phương án không migration (`updated_at` + `clock_timestamp()` phía DB) vẫn có thể trùng và buộc sửa cùng số call site, nên không khuyến nghị.
 8. **Phạm vi v1: dừng ở Phase D (promote một chiều) hay đi hết Phase E (merge ba chiều + UI + hoàn tác).**
    - *Dữ kiện (G0):* Phase D an toàn tự thân — item lệch Base bị bỏ qua, không ghi đè (§8.1). Phase E phụ thuộc Base chính xác (§14.4), metadata đa ngôn ngữ theo field, và hoàn tác — mà `revertRevision` hiện là merge, không phải khôi phục, và không xử lý đúng field mã hoá (§10.3, `item-service.ts:1320-1322`, `:1660-1676`).
-   - **Khuyến nghị — Proposed, needs owner decision:** v1 = Phase A–D. Phase E (task 8–10) là v1.1. Chuyển task 10.1 (màn Merge_Plan chỉ đọc) sang Phase D để người dùng xem dry-run của Content_Promote trong Studio.
+   - **Quyết định — Decided (owner, 2026-11-16):** v1 = Phase A–D. Phase E (task 8–10) là v1.1. Chuyển task 10.1 (màn Merge_Plan chỉ đọc) sang Phase D để người dùng xem dry-run của Content_Promote trong Studio.
    - *Trade-off:* v1 không tự hợp nhất item hai bên cùng sửa — người dùng phải sửa tay ở Origin rồi promote lại, hoặc fork mới. Đổi lại v1 không phải giao hoàn tác (vốn cần sửa `revertRevision` trước) và gate GE không chặn release.
 9. **Giữ id item khi fork (sau #811).** Xem §2.1.
-   - **Khuyến nghị — Proposed, needs owner decision:** giữ id (identity mapping) cho item, remap cho schema/file/folder; Phase B chỉ bắt đầu sau khi #811 merge. Kéo theo sửa lời Req 2.4 ("sinh id mới cho mọi dòng sao chép" → "trừ item"), Req 2.5 (chỉ viết lại tham chiếu file/folder), Req 8.3 và 8.6 (item mới được tạo ở Origin với cùng id), và bỏ task 7.2 phần viết lại item→item.
+   - **Quyết định — Decided (owner, 2026-11-16):** giữ id (identity mapping) cho item, remap cho schema/file/folder; Phase B chỉ bắt đầu sau khi #811 merge. Kéo theo sửa lời Req 2.4 ("sinh id mới cho mọi dòng sao chép" → "trừ item"), Req 2.5 (chỉ viết lại tham chiếu file/folder), Req 8.3 và 8.6 (item mới được tạo ở Origin với cùng id), và bỏ task 7.2 phần viết lại item→item.
    - *Trade-off:* bớt hẳn một lớp viết lại tham chiếu hai chiều (nguồn lỗi chính của §3.2/§8.2) và giữ đúng primary key do người dùng chọn; đổi lại mọi query khớp item chỉ theo `id` thành lỗi rò rỉ chéo site — được canh bằng test §2.2 mục 3.

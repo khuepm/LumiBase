@@ -9,8 +9,8 @@ Kế hoạch triển khai **Content Environments** theo 6 phase. Mỗi phase t�
 ### Phase A — Write_Precondition (độc lập)
 
 - [ ] 1. ETag + If-Match cho item
-  - [ ] 1.1 Áp nguồn ETag owner đã chốt ở G0 (design §14.7; khuyến nghị: cột `version` + migration viết tay); luồng `ItemService.patch` và coalesced writes đã đọc ở G0 — coalescing chỉ hoãn invalidation, không ảnh hưởng precondition (giả định 1 bên dưới) (Req 6.1, 6.4; design §6)
-  - [ ] 1.2 `ItemService.patch`/`replace` nhận `expected?: { etag }`; conditional UPDATE trong cùng câu lệnh; 0 dòng → `PRECONDITION_FAILED` (Req 6.2, 6.4; design §6). Nếu chọn cột `version`: tăng nó ở mọi UPDATE đổi `data`/`status` liệt kê ở design §14.7
+  - [ ] 1.1 Thêm cột `version integer NOT NULL DEFAULT 0` trên `lumibase_items` bằng migration viết tay (đã chốt, design §14.7); luồng `ItemService.patch` và coalesced writes đã đọc ở G0 — coalescing chỉ hoãn invalidation, không ảnh hưởng precondition (giả định 1 bên dưới) (Req 6.1, 6.4; design §6)
+  - [ ] 1.2 `ItemService.patch`/`replace` nhận `expected?: { etag }`; conditional UPDATE trong cùng câu lệnh; 0 dòng → `PRECONDITION_FAILED` (Req 6.2, 6.4; design §6). Tăng `version` ở mọi UPDATE đổi `data`/`status` liệt kê ở design §14.7
   - [ ] 1.3 Route `items.ts`: trả `ETag` ở GET detail, đọc `If-Match` ở PATCH/PUT, map 412 (Req 6.1-6.3; design §6)
   - [ ] 1.4 Test: không header → hành vi cũ; header khớp → ghi; header lệch → 412 không ghi; hai ghi đồng thời chỉ một thắng (Req 6.2-6.4)
   - [ ] 1.5 SDK + Studio: gửi `If-Match` khi lưu item, hiển thị thông báo "item đã được người khác sửa" khi 412 (Req 6.2)
@@ -32,7 +32,7 @@ Kế hoạch triển khai **Content Environments** theo 6 phase. Mỗi phase t�
 - [ ] 4. Fork worker
   - [ ] 4.1 Worker `environment-fork` trên `QueueProvider`, theo pha, ghi `forkCursor`, resumable (Req 2.6; design §3.1)
   - [ ] 4.2 Copy schema + roles/permissions + settings không nhạy cảm, ghi lineage `collection|field|relation` (Req 2.2, 2.4; design §3.1)
-  - [ ] 4.3 Copy items lượt 1 theo `contentScope` (giữ id item nếu owner duyệt design §14.9; field mã hoá decrypt/encrypt lại qua `processCrypto`), ghi lineage `baseHash` + Base theo phương án §14.4 đã chốt (Req 2.3, 2.4; design §2.1, §3.2, §3.3)
+  - [ ] 4.3 Copy items lượt 1 theo `contentScope` (giữ id item — đã chốt, design §14.9; field mã hoá decrypt/encrypt lại qua `processCrypto`), ghi lineage `baseHash` + `baseSnapshot` cho mọi item (đã chốt, §14.4) (Req 2.3, 2.4; design §2.1, §3.2, §3.3)
   - [ ] 4.4 Lượt 2 viết lại tham chiếu theo `relations` (chỉ file/folder nếu giữ id item — design §2.1); đánh dấu `external` (Req 2.5; design §3.2)
   - [ ] 4.5 Files: copy metadata, dùng chung `filenameDisk`; quyết định object chỉ có ở `/media` (tiền tố theo site) — copy byte hay giới hạn v1; đường xoá dòng file hiện không xoá object nên không cần sửa (Req 3.1-3.3; design §3.4)
   - [ ] 4.6 Danh sách loại trừ: API keys, secrets, sessions, audit, revisions, agent memory, trust ledger, setting `revalidation.targets`, pipeline Firebase Sync, materialized collections (Req 2.8; design §3.5)
@@ -54,18 +54,19 @@ Kế hoạch triển khai **Content Environments** theo 6 phase. Mỗi phase t�
   - [ ] 6.4 Cập nhật lineage sau apply; audit `environment_schema_promoted` (Req 7.6, 12.1)
   - [ ] 6.5 Test: thêm field, rename field, đổi kiểu có migrationPlan chạy trên item tạo sau fork, conflict hai bên cùng sửa một field (Req 7.2-7.5)
 
-### Phase D — Content_Promote một chiều
+### Phase D — Content_Promote một chiều (điểm dừng của v1)
 
 - [ ] 7. Phân loại + áp dụng
   - [ ] 7.1 Hàm thuần `classify(base, origin, env)` theo bảng design §8.1; so sánh ở không gian id Origin (Req 8.2; design §8.1)
-  - [ ] 7.2 Viết lại tham chiếu env → origin; phát hiện `DEPENDENCY_NOT_PROMOTED` (Req 8.3, 8.6; design §8.2)
+  - [ ] 7.2 Viết lại tham chiếu file/folder env → origin (item→item giữ nguyên vì cùng id — §14.9); phát hiện `DEPENDENCY_NOT_PROMOTED` (Req 8.3, 8.6; design §8.2)
   - [ ] 7.3 Sắp thứ tự create → update → delete; xử lý vòng tham chiếu (Req 8.6; design §8.2)
   - [ ] 7.4 Schema gate `SCHEMA_NOT_PROMOTED` (Req 8.5; design §8.2)
   - [ ] 7.5 Pre-flight toàn bộ rồi ghi qua `ItemService(origin).patch` với Write_Precondition; cập nhật `baseHash`/`baseRevisionId` (Req 6.5, 8.3, 8.4, 8.7, 8.8, 10.2; design §8.2, §10.2)
   - [ ] 7.6 Khoá `merging` + `merge_runs` + resume idempotent (Req 10.1, 10.3; design §10.1, §10.2)
   - [ ] 7.7 Integration test: promote sạch, conflict bị bỏ qua không ghi đè, item mới tham chiếu item mới, editorial gate chặn, chạy lại sau lỗi (Req 8.3-8.8, 10.3)
+  - [ ] 7.8 (chuyển từ 10.1, §14.8) Studio: màn Merge_Plan chỉ đọc cho dry-run của Content_Promote — nhóm theo action, đếm, cờ `truncated` (Req 8.1, 8.8; design §9)
 
-### Phase E — Merge ba chiều, UI, hoàn tác
+### Phase E — Merge ba chiều, UI, hoàn tác (v1.1 — ngoài phạm vi v1, đã chốt §14.8)
 
 - [ ] 8. Thuật toán
   - [ ] 8.1 Hàm thuần `threeWay(base, origin, env, fieldDefs)` theo field và theo locale; mảng nguyên khối (Req 9.2-9.4; design §9)
@@ -79,7 +80,6 @@ Kế hoạch triển khai **Content Environments** theo 6 phase. Mỗi phase t�
   - [ ] 9.2 Provenance `revisions.sources` mang environment id + merge run id (Req 12.3; design §10.3)
 
 - [ ] 10. Studio Merge UI
-  - [ ] 10.1 Màn Merge_Plan: nhóm theo action, đếm, cờ `truncated` (Req 9.1; design §9)
   - [ ] 10.2 Khung giải quyết conflict ba cột Base / Origin / Environment, tái dùng `RevisionsDiff` (Req 9.4; design §9)
   - [ ] 10.3 Lịch sử merge run + nút hoàn tác; cảnh báo rõ Schema_Promote không hoàn tác được (Req 10.5; design §10.3)
 
@@ -110,11 +110,11 @@ Một phase chỉ được mở PR khi đạt đủ exit criteria của nó, và
 - [x] Năm giả định ở "Implementation status" đã được kiểm chứng bằng cách đọc code; kết quả ghi lại ngay tại mục đó (đúng / sai + file:line). *(2026-11-15, đối chiếu `origin/main` và nhánh của #811)*
 - [x] Giả định nào sai thì `design.md` đã được sửa tương ứng: §3.3 (Base), §3.4 (files), §3.5 + §4 (không có dispatcher chung), §6 (precondition + coalescing), §10.3 (`revertRevision`).
 - [x] Design drift về khoá item đã xử lý: design §2.1–§2.2 mô tả khoá hiện tại và `(site_id, id)` của #811, remap còn cần ở đâu, lineage, và chiến lược test theo khoá đích.
-- [ ] Open question §14.4 (Base an toàn với retention) và §14.7 (nguồn ETag) đã chốt phương án — hai câu này quyết định data model nên không được để ngỏ sang Phase B. *Khuyến nghị đã viết, trạng thái `Proposed — needs owner decision`.*
-- [ ] Open question §14.1 đã chốt con số: giới hạn item mỗi lần fork, ngân sách thời gian fork, và `environments.maxPerSite` mặc định. *Khuyến nghị: 50 000 item, lô 100, ≤ 10 lô hoặc ~20 s mỗi lần chạy job, ≤ 15 phút tổng, `maxPerSite` = 3 — Proposed.*
-- [ ] Open question §14.9 (giữ id item sau #811) đã chốt; nếu giữ id thì lời Req 2.4, 2.5, 8.3, 8.6 được sửa theo. *Proposed.*
-- [ ] Các open question còn lại (§14.2, §14.3, §14.5, §14.6) được ghi rõ là "hoãn sau v1", có người đồng ý. *Khuyến nghị: hoãn cả bốn — Proposed.*
-- [ ] Phạm vi v1 được xác nhận: dừng ở Phase D (promote một chiều) hay đi hết Phase E. *Khuyến nghị (§14.8): v1 = Phase A–D, task 10.1 chuyển sang D — Proposed.*
+- [x] §14.4 và §14.7 đã chốt: Base luôn là `baseSnapshot` trong Lineage (field mã hoá lưu hash, `baseHash` dùng SHA-256); ETag là cột `version` mới trên `lumibase_items`. *Decided (owner, 2026-11-16).*
+- [x] §14.1 đã chốt: 50 000 item mỗi fork, lô 100, ≤ 10 lô hoặc ~20 s mỗi lần chạy job, mục tiêu ≤ 15 phút tổng (cần đo ở GB), `environments.maxPerSite` = 3. *Decided (owner, 2026-11-16).*
+- [x] §14.9 đã chốt: Fork giữ id item, remap schema/file/folder; lời Req 2.4, 2.5, 8.3, 8.6 đã sửa theo. Có hiệu lực khi #811 merge (dòng cuối của G0). *Decided (owner, 2026-11-16).*
+- [x] §14.2, §14.3, §14.5, §14.6 hoãn sau v1. *Decided (owner, 2026-11-16).*
+- [x] Phạm vi v1 = Phase A–D; Phase E (task 8–10) là v1.1; task 10.1 đã chuyển sang Phase D thành 7.8. *Decided (owner, 2026-11-16).*
 - [ ] PR #811 (`0032_items_site_scoped_pk`) đã merge trước khi mở Phase B; số migration của feature này cấp cao hơn `0032`.
 
 ### Điều kiện chung cho mọi PR của feature này
@@ -213,4 +213,4 @@ Một phase chỉ được mở PR khi đạt đủ exit criteria của nó, và
 
 ### Design drift do PR #811
 
-Trên `main`, `lumibase_items` có `PRIMARY KEY (id)` toàn instance (`packages/database/src/schema/cms.ts:23`, `:187`). #811 đổi sang `PRIMARY KEY (site_id, id)` (`packages/database/drizzle/0032_items_site_scoped_pk.sql`) với FK composite cùng site từ `revisions`, `release_items`, `content_reviews`. Lý do "id toàn cục nên phải remap" chỉ còn đúng cho schema/file/folder; với item, khuyến nghị giữ id (design §2.1, §14.9 — Proposed). Ghi chú cho #811 (không thuộc PR này): comment trong `schema/cms.ts` của nhánh đó vẫn ghi "migration 0029" trong khi file là `0032`.
+Trên `main`, `lumibase_items` có `PRIMARY KEY (id)` toàn instance (`packages/database/src/schema/cms.ts:23`, `:187`). #811 đổi sang `PRIMARY KEY (site_id, id)` (`packages/database/drizzle/0032_items_site_scoped_pk.sql`) với FK composite cùng site từ `revisions`, `release_items`, `content_reviews`. Lý do "id toàn cục nên phải remap" chỉ còn đúng cho schema/file/folder; với item, Fork giữ id (design §2.1, §14.9 — Decided 2026-11-16). Ghi chú cho #811 (không thuộc PR này): comment trong `schema/cms.ts` của nhánh đó vẫn ghi "migration 0029" trong khi file là `0032`.
