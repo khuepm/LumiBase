@@ -12,7 +12,9 @@
  *      starts the server, so it needs only what the migration step needs.
  *   4. Run the migration preflight and migrations with exponential backoff
  *      (`SKIP_MIGRATIONS`, `RUN_MIGRATION_PREFLIGHT`, `MIGRATION_MODE` keep
- *      their old meaning).
+ *      their old meaning). Both go through `dist/migrate.cjs`, whose `apply`
+ *      holds a Postgres advisory lock for the whole run, so replicas started
+ *      together serialise and the later ones find nothing to apply.
  *   5. Load the server in this process, so it is PID 1's own code that
  *      receives SIGTERM — there is no shell in between to swallow it.
  *   6. Once the server answers, print the setup wizard URL while setup is

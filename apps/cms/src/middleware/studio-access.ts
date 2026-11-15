@@ -33,6 +33,10 @@ const STUDIO_ACCESS_PATH_PREFIXES = [
   '/api/v1/collections',
   '/api/v1/domains',
   '/api/v1/extensions',
+  // Admin switch for the live OpenAPI document (#745). Prefix-matched on
+  // `/openapi/…` only — `/api/v1/openapi.json` is NOT under it, so the
+  // document itself stays reachable by the realms the site allows.
+  '/api/v1/openapi',
   '/api/v1/pages',
   '/api/v1/permissions',
   '/api/v1/policies',

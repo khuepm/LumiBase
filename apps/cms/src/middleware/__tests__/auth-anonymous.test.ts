@@ -79,6 +79,8 @@ describe('withAuth anonymous realm', () => {
     '/api/v1/policies',
     '/api/v1/api-keys',
     '/api/v1/settings',
+    // The OpenAPI admin switch is not the document (#745).
+    '/api/v1/openapi/config',
   ])('refuses a read on the management path %s', async (path) => {
     const res = await buildApp('role_public').request(path, {}, {});
     expect(res.status).toBe(401);
@@ -90,6 +92,8 @@ describe('withAuth anonymous realm', () => {
     '/api/v1/search',
     '/api/v1/media/xyz',
     '/api/v1/files/abc',
+    // Live OpenAPI document (#745) — its own config gate decides past this point.
+    '/api/v1/openapi.json',
   ])('allows a read on the content path %s', async (path) => {
     const res = await buildApp('role_public').request(path, {}, {});
     expect(res.status).toBe(200);

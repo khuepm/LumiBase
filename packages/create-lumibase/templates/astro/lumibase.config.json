@@ -1,0 +1,8 @@
+{
+  "url": "http://localhost:1989",
+  "siteId": "__default__",
+  "typegen": {
+    "out": "src/lumibase-types.d.ts",
+    "include": ["posts"]
+  }
+}

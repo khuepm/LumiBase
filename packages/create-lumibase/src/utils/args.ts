@@ -6,12 +6,13 @@ export interface ParsedArgs {
   'no-install'?: boolean;
   git?: boolean;
   'no-git'?: boolean;
+  help?: boolean;
   [key: string]: unknown;
 }
 
 /**
  * Minimal arg parser — avoids pulling in minimist/yargs for a tiny CLI.
- * Supports: positional args, --flag, --flag=value, --no-flag
+ * Supports: positional args, --flag, --flag=value, --no-flag, -h
  */
 export function parseArgs(argv: string[]): ParsedArgs {
   const result: ParsedArgs = { _: [] };
@@ -19,6 +20,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg) continue;
+
+    // `-h` is the only short flag. Without this it would be taken for a
+    // project name and scaffold a directory called `-h`.
+    // `--help` never takes a value: `--help my-site` must not eat the name.
+    if (arg === '-h' || arg === '--help') {
+      result.help = true;
+      continue;
+    }
 
     if (arg.startsWith('--')) {
       const raw = arg.slice(2);

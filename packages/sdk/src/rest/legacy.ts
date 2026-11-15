@@ -74,6 +74,10 @@ import {
   ExtensionResource,
   DeploymentTargetResource,
   DeploymentResource,
+  DeploymentEnvironmentResource,
+  DeploymentApprovalResource,
+  DeploymentRequestOutcome,
+  DeploymentAccessResource,
 } from "../types";
 
 /**
@@ -948,11 +952,51 @@ export function legacyRest() {
           }),
         delete: (id: string) =>
           client.rawRequest<null>(`/api/v1/deployments/targets/${id}`, { method: "DELETE" }),
+        /**
+         * Resolves with the deployment (201), or — when the target belongs to
+         * an approval-gated environment (#743) — with a `pending_approval`
+         * outcome (202).
+         */
         deploy: (id: string, input: { branch?: string; reason?: string } = {}) =>
-          client.rawRequest<DeploymentResource>(`/api/v1/deployments/targets/${id}/deploy`, {
-            method: "POST",
-            body: JSON.stringify(input),
+          client.rawRequest<DeploymentResource | Extract<DeploymentRequestOutcome, { status: "pending_approval" }>>(
+            `/api/v1/deployments/targets/${id}/deploy`,
+            {
+              method: "POST",
+              body: JSON.stringify(input),
+            },
+          ),
+      },
+      // Environments, promotion and deploy approvals (#743).
+      access: () => client.rawRequest<DeploymentAccessResource>("/api/v1/deployments/access"),
+      environments: {
+        list: () =>
+          client.rawRequest<DeploymentEnvironmentResource[]>("/api/v1/deployments/environments"),
+        update: (environments: DeploymentEnvironmentResource[]) =>
+          client.rawRequest<DeploymentEnvironmentResource[]>("/api/v1/deployments/environments", {
+            method: "PUT",
+            body: JSON.stringify({ environments }),
           }),
+        deploy: (key: string, input: { branch?: string; reason?: string } = {}) =>
+          client.rawRequest<DeploymentRequestOutcome>(
+            `/api/v1/deployments/environments/${encodeURIComponent(key)}/deploy`,
+            { method: "POST", body: JSON.stringify(input) },
+          ),
+        promote: (key: string, input: { deploymentId?: string; reason?: string } = {}) =>
+          client.rawRequest<DeploymentRequestOutcome>(
+            `/api/v1/deployments/environments/${encodeURIComponent(key)}/promote`,
+            { method: "POST", body: JSON.stringify(input) },
+          ),
+      },
+      approvals: {
+        list: (status: string = "pending") =>
+          client.rawRequest<DeploymentApprovalResource[]>(
+            `/api/v1/deployments/approvals?status=${encodeURIComponent(status)}`,
+          ),
+        decide: (id: string, input: { decision: "approved" | "rejected"; reason?: string }) =>
+          client.rawRequest<DeploymentApprovalResource>(
+            `/api/v1/deployments/approvals/${encodeURIComponent(id)}/decide`,
+            { method: "POST", body: JSON.stringify(input) },
+          ),
       },
       list: (params?: { targetId?: string; status?: string }) => {
         const qs = new URLSearchParams();

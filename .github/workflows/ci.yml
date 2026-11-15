@@ -323,6 +323,12 @@ jobs:
       - name: Organization backfill and RLS regression gate
         run: pnpm --filter @lumibase/database exec vitest --run src/__tests__/organizations-migration.integration.test.ts
 
+      # Two real migrator processes on a fresh database (and an N-1 → N
+      # upgrade with the read-only `wait` gate): the advisory lock must make
+      # them apply once and both exit 0. Each case creates its own database.
+      - name: Concurrent migration runners (advisory lock, wait gate)
+        run: pnpm --filter @lumibase/database exec vitest --run src/__tests__/migrate-concurrency.integration.test.ts
+
       # Fail loudly if the filter stops matching. A rename that made this
       # select zero files would otherwise reproduce exactly the silence this
       # job exists to end.
@@ -576,7 +582,7 @@ jobs:
   scaffold-smoke:
     name: Scaffolded starters install and typecheck
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     # #450: the Cloudflare template declared `@cloudflare/workers-types@^4.0.0`
     # while the `wrangler@^4` beside it had moved its peer to `^5.<date>`, so
     # every `npm install` of a freshly scaffolded Cloudflare project died with
@@ -665,6 +671,49 @@ jobs:
         if: steps.scope.outputs.changed == 'true'
         run: pnpm --filter create-lumibase build
 
+      # Every template is installed and typechecked with both package managers;
+      # the site templates (astro, sveltekit) are also BUILT, and the smoke
+      # checks the build left the directory Pages uploads (#744). `--workdir`
+      # keeps the scaffolded projects so the deploy step below can reuse the
+      # Astro build instead of producing a second one.
       - name: Smoke-test all templates with npm and pnpm
         if: steps.scope.outputs.changed == 'true'
-        run: pnpm --filter create-lumibase smoke
+        run: pnpm --filter create-lumibase smoke -- --workdir "$RUNNER_TEMP/scaffold-smoke"
+
+      # Example deploy of the scaffolded Astro starter's static export to
+      # Cloudflare Pages (#744). Guarded the same way as pages-deploy.yml: it
+      # runs only on pushes to main with CLOUDFLARE_API_TOKEN and
+      # CLOUDFLARE_ACCOUNT_ID configured, and otherwise skips with a notice —
+      # so forks and pull requests never need (or see) the secrets. A skipped
+      # deploy keeps the job green, which is why the notice says so.
+      - name: Can the starter deploy to Cloudflare Pages?
+        if: steps.scope.outputs.changed == 'true'
+        id: starter-pages
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+          HAS_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ] && [ "$HAS_TOKEN" = "true" ] && [ "$HAS_ACCOUNT" = "true" ]; then
+            echo "can_deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "can_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping the Astro starter Pages deploy: it runs only on pushes to main with CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID configured. The starter was still built."
+          fi
+
+      - name: Deploy the Astro starter to Cloudflare Pages
+        if: steps.scope.outputs.changed == 'true' && steps.starter-pages.outputs.can_deploy == 'true'
+        working-directory: ${{ runner.temp }}/scaffold-smoke/smoke-astro-npm
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PAGES_PROJECT: ${{ vars.STARTER_PAGES_PROJECT || 'lumibase-astro-starter' }}
+        run: |
+          set -euo pipefail
+          # The starter's own `deploy` script (wrangler pages deploy dist) and
+          # its own pinned wrangler, so this exercises what a user runs.
+          if ! npx wrangler pages project list | grep -qw "$PAGES_PROJECT"; then
+            npx wrangler pages project create "$PAGES_PROJECT" --production-branch main
+          fi
+          npm run deploy -- --project-name "$PAGES_PROJECT" --branch main --commit-dirty=true

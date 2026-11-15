@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Download } from 'lucide-react';
 import { generateTypes, type TypegenManifest } from '@lumibase/sdk';
 import { getApiClient, getActiveSite } from '@/lib/api';
+import { OpenApiSettingsCard } from './openapi-settings-card';
 
 /**
  * Settings → Developer → Types page.
@@ -45,6 +46,8 @@ export function DeveloperTypesPage() {
           Generate TypeScript types for the current site schema.
         </p>
       </header>
+
+      <OpenApiSettingsCard />
 
       <section className="space-y-2">
         <h2 className="text-sm font-medium">CLI</h2>

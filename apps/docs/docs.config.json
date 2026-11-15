@@ -38,7 +38,7 @@
       {
         "type": "category",
         "label": "Tutorials",
-        "items": ["tutorials", "tutorials/nextjs-quickstart"]
+        "items": ["tutorials", "tutorials/nextjs-quickstart", "tutorials/astro-starter", "tutorials/sveltekit-starter"]
       },
       {
         "type": "category",
@@ -76,7 +76,7 @@
       {
         "type": "category",
         "label": "API Reference",
-        "items": ["api/hono-api-spec"]
+        "items": ["api/hono-api-spec", "api/live-openapi"]
       },
       {
         "type": "category",
@@ -86,6 +86,8 @@
           "deployment/cloudflare",
           "deployment/docker",
           "deployment/one-click",
+          "deployment/static-export-cloudflare-pages",
+          "deployment/kubernetes-helm",
           "deployment/google-cloud-vm",
           "deployment/environment-variables",
           "deployment/local-development"

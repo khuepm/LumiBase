@@ -1,0 +1,10 @@
+# Cloudflare Pages response headers for the static build.
+# https://developers.cloudflare.com/pages/configuration/headers/
+#
+# No X-Frame-Options / frame-ancestors here on purpose: Studio previews and
+# future visual editing embed the site in an iframe. If you add one, allow
+# your Studio origin, e.g.
+#   Content-Security-Policy: frame-ancestors 'self' https://cms.example.com
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

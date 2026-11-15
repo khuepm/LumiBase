@@ -1,0 +1,55 @@
+LumiBase {{ .Chart.AppVersion }} is installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+{{- $fullname := include "lumibase.fullname" . }}
+{{- $publicUrl := include "lumibase.publicUrl" . }}
+
+1. Wait for the CMS to become ready ({{ if eq .Values.migrations.mode "initContainer" }}migrations run first, in the web pods' init containers, one runner at a time under a database lock{{ else if eq .Values.migrations.mode "job" }}migrations run first, in the release's migration Job; web pods wait for it{{ else if eq .Values.migrations.mode "entrypoint" }}migrations run first, inside the server container, one runner at a time under a database lock{{ else }}migrations.mode=none: run them yourself before the first start{{ end }}):
+
+   kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ $fullname }}
+{{- if eq .Values.migrations.mode "job" }}
+   kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=migrate --all-containers --prefix
+{{- end }}
+{{- if and .Values.worker.enabled (ne .Values.migrations.mode "none") }}
+   kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "lumibase.worker.fullname" . }}
+   (the worker's `migrations-ready` init container holds it until every bundled migration is applied)
+{{- end }}
+
+2. Open LumiBase:
+{{- if .Values.ingress.enabled }}
+   {{ $publicUrl }}/setup
+{{- else }}
+   kubectl -n {{ .Release.Namespace }} port-forward service/{{ $fullname }} 1989:{{ .Values.service.port }}
+   then http://localhost:1989/setup
+{{- if $publicUrl }}
+   (CORS and the public URL are set to {{ $publicUrl }}; browse that origin once it routes here.)
+{{- end }}
+{{- end }}
+{{- if .Values.setup.requireToken }}
+
+3. Setup is gated by a one-time token. The first web pod prints it once:
+
+   kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=cms --tail=-1 --prefix | grep SETUP_TOKEN=
+
+   Lost it before finishing setup? docs/en/deployment/kubernetes-helm.md#setup-token
+{{- end }}
+
+Check it from inside the cluster:   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+{{- if not .Values.secrets.existingSecret }}
+
+IMPORTANT: JWT_SECRET and ENCRYPTION_KEY {{ if or .Values.secrets.jwtSecret .Values.secrets.encryptionKey }}are stored{{ else }}were generated and are stored{{ end }} in Secret "{{ include "lumibase.secretName" . }}".
+Back up ENCRYPTION_KEY now; encrypted fields and 2FA seeds cannot be read without it:
+
+   kubectl -n {{ .Release.Namespace }} get secret {{ include "lumibase.secretName" . }} -o jsonpath='{.data.ENCRYPTION_KEY}' | base64 -d
+{{- if .Values.secrets.keepOnUninstall }}
+The Secret is kept on `helm uninstall` (helm.sh/resource-policy: keep).
+{{- end }}
+{{- end }}
+{{- if or .Values.postgresql.enabled .Values.redis.enabled }}
+
+NOTE: the bundled {{ if .Values.postgresql.enabled }}PostgreSQL{{ end }}{{ if and .Values.postgresql.enabled .Values.redis.enabled }} and {{ end }}{{ if .Values.redis.enabled }}Redis{{ end }} are single-instance and have no backups. Use managed services for production.
+{{- end }}
+{{- if not (include "lumibase.storageEnabled" .) }}
+NOTE: no object storage configured (s3.endpoint); media uploads will not work.
+{{- end }}
+{{- if or (gt (int .Values.cms.replicaCount) 1) .Values.autoscaling.enabled }}
+NOTE: more than one web replica. Realtime WebSocket events are delivered in-process, so a client only receives events published by the pod it is connected to.
+{{- end }}
