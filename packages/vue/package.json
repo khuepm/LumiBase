@@ -1,0 +1,81 @@
+{
+  "name": "@lumibase/vue",
+  "version": "2.0.0",
+  "description": "Vue 3 composables and a Nuxt module for LumiBase — a thin, typed layer over @lumibase/sdk.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khuepm/lumibase.git",
+    "directory": "packages/vue"
+  },
+  "homepage": "https://docs.lumibase.dev",
+  "bugs": {
+    "url": "https://github.com/khuepm/lumibase/issues"
+  },
+  "keywords": [
+    "lumibase",
+    "cms",
+    "headless-cms",
+    "vue",
+    "nuxt",
+    "composables",
+    "realtime"
+  ],
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./nuxt": "./src/nuxt.ts",
+    "./nuxt-plugin": "./src/nuxt-plugin.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./nuxt": {
+        "types": "./dist/nuxt.d.ts",
+        "import": "./dist/nuxt.js"
+      },
+      "./nuxt-plugin": {
+        "types": "./dist/nuxt-plugin.d.ts",
+        "import": "./dist/nuxt-plugin.js"
+      }
+    }
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .turbo dist"
+  },
+  "dependencies": {
+    "@lumibase/sdk": "workspace:*"
+  },
+  "peerDependencies": {
+    "vue": "^3.3.0"
+  },
+  "peerDependenciesMeta": {
+    "nuxt": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "jsdom": "^31.0.0",
+    "tsup": "^9.0.0",
+    "typescript": "^5.6.2",
+    "vitest": "^5.1.0",
+    "vue": "^3.5.45"
+  },
+  "files": [
+    "dist"
+  ]
+}

@@ -1,5 +1,23 @@
 export type DefaultSchema = Record<string, Record<string, unknown>>;
 
+/**
+ * Turn the output of `lumibase types` into a schema the client accepts.
+ *
+ * Typegen emits one `interface` per collection and a `LumibaseCollections`
+ * interface mapping names to them. Interfaces carry no implicit index
+ * signature, so `createLumiClient<LumibaseSchema>()` fails the
+ * `DefaultSchema` constraint. Mapping over the keys yields structurally
+ * identical anonymous object types, which do satisfy it:
+ *
+ * ```ts
+ * import type { LumibaseSchema } from './lumibase-types';
+ * const lumi = createLumiClient<SchemaOf<LumibaseSchema>>({ … });
+ * ```
+ */
+export type SchemaOf<T> = {
+  [Collection in keyof T & string]: { [Field in keyof T[Collection]]: T[Collection][Field] };
+};
+
 export type ID = string;
 export type Locale = string;
 export type Brand<TBrand extends string, TValue> = TValue & {

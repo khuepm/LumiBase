@@ -1,0 +1,76 @@
+{
+  "name": "@lumibase/svelte",
+  "version": "2.0.0",
+  "description": "Svelte stores, actions and SvelteKit server helpers for LumiBase — a thin, typed layer over @lumibase/sdk.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khuepm/lumibase.git",
+    "directory": "packages/svelte"
+  },
+  "homepage": "https://docs.lumibase.dev",
+  "bugs": {
+    "url": "https://github.com/khuepm/lumibase/issues"
+  },
+  "keywords": [
+    "lumibase",
+    "cms",
+    "headless-cms",
+    "svelte",
+    "sveltekit",
+    "stores",
+    "realtime"
+  ],
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./kit": "./src/kit.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "svelte": "./dist/index.js",
+        "import": "./dist/index.js"
+      },
+      "./kit": {
+        "types": "./dist/kit.d.ts",
+        "import": "./dist/kit.js"
+      }
+    }
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .turbo dist"
+  },
+  "dependencies": {
+    "@lumibase/sdk": "workspace:*"
+  },
+  "peerDependencies": {
+    "svelte": "^4.0.0 || ^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@sveltejs/kit": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.0",
+    "svelte": "^5.57.3",
+    "tsup": "^9.0.0",
+    "typescript": "^5.6.2",
+    "vitest": "^5.1.0"
+  },
+  "files": [
+    "dist"
+  ]
+}

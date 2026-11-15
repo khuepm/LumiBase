@@ -27,6 +27,12 @@ An endpoint extension that sends email through LumiBase's built-in EmailService.
 - Calls the core `POST /api/v1/email/send` with a `templateKey` — never talks SMTP itself.
 - Declares minimal capabilities (`http:fetch`, `env:read`).
 
+### 5. Framework adapters: [Vue/Nuxt](./vue-adapter), [Svelte/SvelteKit](./svelte-adapter), [Astro](./astro-adapter)
+Smoke examples for `@lumibase/vue`, `@lumibase/svelte` and `@lumibase/astro`.
+- Typed from `lumibase types` output (`SchemaOf<LumibaseSchema>`): composables, stores, SvelteKit `handle`, Astro integration and content loader.
+- Unlike the other examples, these three are pnpm workspace members. CI type-checks them against the adapters' source with `pnpm -r typecheck`.
+- Guide: [docs/en/sdk/frameworks.md](../docs/en/sdk/frameworks.md).
+
 ---
 
 ## Getting Started
