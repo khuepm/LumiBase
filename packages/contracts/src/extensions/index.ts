@@ -11,3 +11,21 @@ export {
   type VerifyResult,
   type KeyResolver,
 } from './signature';
+
+export {
+  EXTENSION_DEV_DEFAULT_PORT,
+  EXTENSION_DEV_PROTOCOL,
+  EXTENSION_DEV_MIN_TOKEN_LENGTH,
+  EXTENSION_DEV_SERVER_TYPES,
+  EXTENSION_DEV_UI_TYPES,
+  isLoopbackHostname,
+  isLoopbackUrl,
+  extensionDevBundlePath,
+  parseExtensionDevReloadEvent,
+  isExtensionDevServerType,
+  type ExtensionDevServerType,
+  type ExtensionDevUiType,
+  type ExtensionDevReloadEvent,
+  type ExtensionDevHelloEvent,
+  type ExtensionDevErrorEvent,
+} from './dev-reload';

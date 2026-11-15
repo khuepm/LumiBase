@@ -10,6 +10,12 @@ const queryClient = new QueryClient({
   },
 });
 
+// Extension hot reload (#754): dev server only — the branch is removed from
+// production builds, and the client itself refuses outside `import.meta.env.DEV`.
+if (import.meta.env.DEV) {
+  void import('./lib/extension-dev-client').then((m) => m.startExtensionDevClient());
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
