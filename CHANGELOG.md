@@ -9,10 +9,32 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [2.1.0] - 2026-11-16
+
+### Version
+- `v2.1.0`
+
+### Date
+- `2026-11-16`
+
+### Highlights
+- Three epics complete. **Security hardening parity (#674):** active session and device management, passkeys (WebAuthn) for staff, social login (Google, Apple, GitHub) for members, a configurable password policy with an optional breach check, a self-service security history, filter and upload sanitisation, secure-by-default `create-lumibase` templates and `lumibase doctor --security`, a coordinated disclosure programme, and a hardened distroless image.
+- **Deployment & hosting convenience (#675):** one-click Render deploy, an official Helm chart, role-based deploy permissions with environment promotion, Astro and SvelteKit starters, and a live per-site OpenAPI 3.1 document.
+- **Content modeling parity (#676):** `geopoint` fields with a map input and map layout, timezone-aware datetimes, dynamic zones (`blocks`), hierarchical collections with folder-mode permissions, tabs/groups form layout with conditional visibility, and field option parity.
+- Ops diagnostics plane: a read-only `/api/v1/ops/*` surface and MCP tools, gated by `LUMIBASE_OPS_TOKEN`, that report pending migrations, schema drift, RLS coherence and captured 5xx errors.
+- Background jobs reach parity on Cloudflare Workers (B131): search indexing, revalidation, scheduled publish, veto commits, reconciler goals, deployment polling, Change Feed webhooks and envelope migration.
+- Agents and MCP: OAuth 2.1 for hosted MCP connectors, Site Skills, the `askUser` clarification tool and governed external-action tools; background CSV/JSON import, collection export and typed JSON filters.
+
 ### Security
 - Filter sanitisation (#738, epic #674): a filter, sort or search `filter`/`sort` that names a field the caller cannot read is refused with `403 FIELD_FORBIDDEN` before any query runs, so hidden fields can no longer be probed through `_eq`/`_starts_with`/`_null`, `_or` nesting, JSON paths, sort order or counts (REST, GraphQL, export, MCP). `%`, `_` and `\` in `_contains`/`_starts_with`/`_ends_with` values are matched literally (item filters, permission rules, SCIM). o2m expansion no longer groups by a hidden foreign key and m2m expansion requires `read` on the junction. Search drops hits whose `_title` comes from a hidden field and reports only visible `totalHits` to restricted callers. Filters nest at most 16 levels. Audit: [Filter sanitisation audit](docs/en/security/filter-sanitisation-audit.md).
 - Bootstrap and single-use token race audit (#732, epic #674): parallel `POST /api/v1/setup/complete` requests yield exactly one admin, and requests that were in flight when another setup committed now get `409 SETUP_ALREADY_COMPLETED` instead of `404` (later requests still get `404`). `POST /api/v1/auth/verify-email` and `POST /api/v1/auth/reset-password` are single-winner under concurrency (conditional `UPDATE` / compare-and-swap on `token_version`) and get a per-IP brake (20 per 15 minutes). The public auth brakes now count with the runtime's atomic rate limiter, so a parallel burst can no longer slip past them. See [Bootstrap & single-use token audit](docs/en/security/bootstrap-and-token-race-audit.md).
 - Upload hardening (#740, epic #674): raw-byte uploads are classified by magic bytes and must match the declared type (HTML/JS/SVG/PHP or executables disguised as images, PDFs or text are refused). A polyglot scan rejects ZIP/JAR archives appended to images or PDFs (GIFAR), markup or PHP inside images and video, PDF headers hidden in images, data after PNG `IEND` (`UPLOAD_EMBEDDED_PAYLOAD`), and PDFs with JavaScript, launch or rich-media actions, including inside compressed object streams (`UPLOAD_ACTIVE_PDF`). A Workers-safe SVG sanitiser backs the existing `UPLOAD_UNSAFE_SVG` check and strips external references when SVGs are served; clean SVGs are served byte-identical. Filenames with control characters, NUL, bidi overrides, traversal or a dangerous extension in any position (`shell.php.png`) get `400 UPLOAD_UNSAFE_FILENAME`, including at `POST /files/presigned-url`. `GET /media/:key` serves only PNG/JPEG/GIF/WebP/AVIF/MP4/WebM `inline` and everything else as an attachment, always with `nosniff` and a `sandbox` CSP. MP4 and WebM join the upload catalogue, off by default. See [Upload security](docs/en/security/upload-security.md).
+
+- External-issuer JWTs can no longer set LumiBase's own principal markers. `withAuth` previously copied the verified payload onto `auth.raw` as-is, so a trusted issuer's `dev`, `isBootstrap` or `tfaVerified` claim reached the dev-admin bypass, bootstrap provenance and Studio 2FA guards. Those markers (and `anonymous`, `apiKey`, `mcpOAuth`) are now dropped; issuer claims such as `amr`/`acr` are kept.
+- Hardened production image: both base images are pinned by digest (`node:22-slim@sha256:…`, `gcr.io/distroless/nodejs22-debian13:nonroot@sha256:…`; Dependabot bumps tag and digest); the runtime stage is distroless (no shell, no package manager), runs as UID/GID `65532`, keeps application files root-owned, and starts with a read-only root filesystem. The shell entrypoint is replaced by `docker/scripts/entrypoint.mjs` and the `HEALTHCHECK` by `docker/scripts/healthcheck.mjs`, which now probes the worker health port for `LUMIBASE_PROCESS_ROLE=worker` instead of always `1989`. `docker/docker-compose.prod.yml` and `docker/docker-compose.gcp.yml` set `read_only: true`, a `/tmp` tmpfs, `cap_drop: [ALL]`, `no-new-privileges` and `init: true` (#734).
+- Release supply chain: `release.yml` builds the image and fails on any CRITICAL Trivy finding in the image or in `pnpm-lock.yaml` in a job that the GitHub Release — and through it every publish job (Docker image, Worker, Pages, npm) — depends on, so a failed gate stops the release as a whole rather than leaving one without its image; it then signs the pushed digest with keyless cosign (GitHub OIDC, no stored key), attests an SPDX SBOM, verifies both in the smoke job, and attaches image and dependency SBOMs to the GitHub Release. `docker.yml` builds once, locally, runs the same Trivy gate and a read-only, capability-free container health check on every PR and on `main`, and pushes that same image from `main` only after both pass. Trivy, Syft and cosign are installed by `scripts/install-image-tools.sh`, pinned by version and SHA-256 (#734).
 
 ### Added
 - Field value options (#751): `allowClear: false` on `select-radio` / `select-dropdown` fields stops a set value from being cleared (Studio hides the clear control, the API rejects `null`/`""`); `minLength` / `maxLength` on `string` / `text` fields are enforced by the API, counted in Unicode code points; `options.slug` sets a slug charset policy (`ascii` with Vietnamese transliteration, `unicode`, or `custom` with a ReDoS-safe, linear-time pattern). Options are validated on schema write (`422 INVALID_FIELD_OPTIONS`) and enforced on every item write. Fields without these keys behave as before. See [Field value options](docs/en/features/field-value-options.md).
@@ -67,6 +89,21 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - SDK: `client.imports.create / list / get / errors / errorsCsv / cancel`.
 - Database: migration `0028_import_jobs` adds `lumibase_import_jobs` (site-isolated under RLS).
 
+### Changed
+- A string filter value on a numeric/boolean/date field that is not a valid number/boolean/date now returns `400 INVALID_FILTER`; previously it was compared as text and silently matched nothing or the wrong rows.
+
+- `GET /api/v1/agent/approvals` no longer lists `askUser` questions, and
+  `POST /api/v1/agent/approvals/:id/decide` / `/reopen` refuse a question id with
+  `409 NOT_AN_APPROVAL`.
+- The `agent-runs` queue worker now passes a Web Push notifier to the harness, so
+  approvals and questions parked by a queued run notify subscribed operators (realtime
+  in-app delivery still needs a request context). It forwards only `approval` and
+  `question`: queued runs still send no run succeeded/failed pushes. On Workers the send
+  is kept alive with the queue consumer's `waitUntil` (the `queue()` dispatcher now
+  forwards its `ExecutionContext`); on Docker the worker awaits it; a failed send never
+  fails the run.
+- Security: external-issuer JWTs on the MCP endpoint must carry the MCP resource URI in `aud` (token pass-through from other audiences is refused), and a token whose only audience is an MCP resource is refused on every other path. API keys and LumiBase session JWTs are unaffected. Set `LUMIBASE_PUBLIC_URL` behind a TLS-terminating proxy so the resource URI matches.
+
 ### Fixed
 - SDK: `rawRequest` no longer forces `content-type: application/json` on a `FormData` body, which broke multipart uploads.
 - Typed JSON timestamp filters (#729) accept the end-of-day time `24:00` (also `24:00:00`, `24:00:00.000`), which PostgreSQL casts to midnight of the next day. The guard rejected it while the cast accepts it; `24:01`, `24:00:01` and `24:00:00.5` stay rejected, as they are in PostgreSQL.
@@ -96,22 +133,6 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - MCP: OAuth 2.1 protected-resource support for hosted connectors (Claude, ChatGPT, IDE remote MCP) — #346. RFC 9728 metadata at `/.well-known/oauth-protected-resource[/api/v1/mcp[/sites/<siteId>]]` advertising the site's trusted external issuers as authorization servers; `WWW-Authenticate: Bearer resource_metadata=…` on MCP 401s; site-addressed endpoint `POST /api/v1/mcp/sites/<siteId>`; scopes `mcp:read`/`mcp:write`/`mcp:delete`/`mcp:admin` that only narrow the RBAC capability set, with `403 INSUFFICIENT_SCOPE` step-up challenges. No Dynamic Client Registration in LumiBase (use the IdP's, or register the client manually). Guide: `docs/en/agent-setup/oauth-connector.md`.
 - MCP `tools/list`: each tool now carries `title` and `annotations` (`readOnlyHint`, `destructiveHint`) derived from the registry — client hints only (#346, consolidated from #805).
 
-### Changed
-- A string filter value on a numeric/boolean/date field that is not a valid number/boolean/date now returns `400 INVALID_FILTER`; previously it was compared as text and silently matched nothing or the wrong rows.
-
-- `GET /api/v1/agent/approvals` no longer lists `askUser` questions, and
-  `POST /api/v1/agent/approvals/:id/decide` / `/reopen` refuse a question id with
-  `409 NOT_AN_APPROVAL`.
-- The `agent-runs` queue worker now passes a Web Push notifier to the harness, so
-  approvals and questions parked by a queued run notify subscribed operators (realtime
-  in-app delivery still needs a request context). It forwards only `approval` and
-  `question`: queued runs still send no run succeeded/failed pushes. On Workers the send
-  is kept alive with the queue consumer's `waitUntil` (the `queue()` dispatcher now
-  forwards its `ExecutionContext`); on Docker the worker awaits it; a failed send never
-  fails the run.
-- Security: external-issuer JWTs on the MCP endpoint must carry the MCP resource URI in `aud` (token pass-through from other audiences is refused), and a token whose only audience is an MCP resource is refused on every other path. API keys and LumiBase session JWTs are unaffected. Set `LUMIBASE_PUBLIC_URL` behind a TLS-terminating proxy so the resource URI matches.
-
-### Fixed
 - `@lumibase/mcp-server` tools no longer drop or misdescribe keys that the server accepts. Collection and field tools accept `null` where REST clears a column, such as `note`, `sortField` or `length`. `upsert_field` no longer sends Zod defaults with every update; those defaults reset `required`, `hidden`, `encrypted`, `width` and other columns. New stdio fields therefore use database defaults, as REST does, so `searchable` defaults to `true`. `upsert_field` also forwards `classification`, `validation`, `rawEnabled` and `migrationPlan` instead of dropping them. As on REST, any `migrationPlan` object, even `{}`, now passes the risky-change guard like `confirmRiskyChange: true`, and the plan itself is not executed (B213). Translation keys, CDC targets and intent `rules` and `schedule` advertise the constraints that the governed contract enforces (#716).
 - `apply_schema` and `diff_schema` take their `fields[]` entries from the `upsert_field` schema. They previously stripped 12 keys that REST accepts, so `encrypted: true, classification: "pii"` created a plaintext, unclassified field. Both tools now also advertise the collection metadata and the `relations[]` list that the schema endpoint applies. `fields` and `relations`, when given, are complete lists, and entries missing from them are deleted. `create_collection` and `update_collection` add `system`, `itemDuplicationFields`, `translations` and `meta`. `primaryKeyField` carries the REST name pattern (#716).
 - `POST /collections/diff` (and so `diff_schema`) reports a field `classification` change, rated `medium` like `encrypted`. A preview that downgraded `pii` to `none` previously listed the field as unchanged. The requests the stdio `apply_schema`, `diff_schema`, `create_cdc_subscription` and `update_cdc_subscription` tools send are now pinned in a golden and replayed against the real routes over PostgreSQL (#716).
@@ -158,12 +179,21 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
   written in the same transaction as the item update). Commits made before the
   marker existed read as not applied.
 
-### Security
-- External-issuer JWTs can no longer set LumiBase's own principal markers. `withAuth` previously copied the verified payload onto `auth.raw` as-is, so a trusted issuer's `dev`, `isBootstrap` or `tfaVerified` claim reached the dev-admin bypass, bootstrap provenance and Studio 2FA guards. Those markers (and `anonymous`, `apiKey`, `mcpOAuth`) are now dropped; issuer claims such as `amr`/`acr` are kept.
-- Hardened production image: both base images are pinned by digest (`node:22-slim@sha256:…`, `gcr.io/distroless/nodejs22-debian13:nonroot@sha256:…`; Dependabot bumps tag and digest); the runtime stage is distroless (no shell, no package manager), runs as UID/GID `65532`, keeps application files root-owned, and starts with a read-only root filesystem. The shell entrypoint is replaced by `docker/scripts/entrypoint.mjs` and the `HEALTHCHECK` by `docker/scripts/healthcheck.mjs`, which now probes the worker health port for `LUMIBASE_PROCESS_ROLE=worker` instead of always `1989`. `docker/docker-compose.prod.yml` and `docker/docker-compose.gcp.yml` set `read_only: true`, a `/tmp` tmpfs, `cap_drop: [ALL]`, `no-new-privileges` and `init: true` (#734).
-- Release supply chain: `release.yml` builds the image and fails on any CRITICAL Trivy finding in the image or in `pnpm-lock.yaml` in a job that the GitHub Release — and through it every publish job (Docker image, Worker, Pages, npm) — depends on, so a failed gate stops the release as a whole rather than leaving one without its image; it then signs the pushed digest with keyless cosign (GitHub OIDC, no stored key), attests an SPDX SBOM, verifies both in the smoke job, and attaches image and dependency SBOMs to the GitHub Release. `docker.yml` builds once, locally, runs the same Trivy gate and a read-only, capability-free container health check on every PR and on `main`, and pushes that same image from `main` only after both pass. Trivy, Syft and cosign are installed by `scripts/install-image-tools.sh`, pinned by version and SHA-256 (#734).
+### Migrations
+- `0026_site_skills`: two new tables for Site Skills and their version trail; no backfill.
+- `0027_email_identity_policy`: email identity mode (instance) and per-site strict mode; existing instances are backfilled to `exact` (no behaviour change).
+- `0028_import_jobs`: `lumibase_import_jobs`; no backfill.
+- `0029_activation_milestones`: activation milestones and the telemetry state singleton; no backfill.
+- `0030_agent_tool_secrets`: per-site secrets for external-action tools; no backfill.
+- `0031_ops_errors`: `lumibase_ops_errors` for captured 5xx errors; no backfill.
+- `0032_user_passkeys`: WebAuthn passkeys; no backfill.
+- `0033_social_login_identities`: social login providers and the `user_identities` link table, with a one-time backfill of existing `users.external_id`.
+- `0034_item_tree`: optional `parent_id` and materialised `path` on items for hierarchical collections; existing rows stay roots.
+- All are additive and re-runnable. `packages/database/migrations/rls-policies.sql` changed in this release: re-apply it after migrating.
 
 ### Upgrade notes
+- Back up PostgreSQL, then apply migrations `0026`–`0034` before starting the new CMS, and re-apply `packages/database/migrations/rls-policies.sql` (`pnpm db:migrate` does not apply it). Neither the release nor the deploy workflows run migrations.
+- Optional: set `LUMIBASE_OPS_TOKEN` (at least 32 characters) to enable the ops diagnostics plane; unset, its routes answer 404.
 - MCP OAuth (#346): an external-issuer token sent to `/api/v1/mcp` must now carry the MCP resource URI in `aud`. A token minted for another API is refused (401), even from a trusted issuer. To keep using an issuer on MCP, add the resource URI (`https://<host>/api/v1/mcp` or `…/api/v1/mcp/sites/<siteId>`) to its `audience` and have the IdP issue tokens for it. Behind a TLS-terminating proxy, set `LUMIBASE_PUBLIC_URL` so the URI LumiBase computes matches the token's `aud`. API keys and LumiBase session tokens on MCP are unaffected.
 - External issuers (#809): a `tfaVerified` claim from an IdP no longer satisfies the Studio 2FA gate (nor do `dev` / `isBootstrap` claims have any effect). Assert MFA with the OIDC `amr` (`mfa`, `otp`, `totp`, `webauthn`) or `acr` claims, or with `mfa`.
 - One-click templates (#741): an explicitly set `CORS_ALLOWED_ORIGINS` that names a host is never changed; one with no host at all (`https://`) is ignored with a log line. A Docker deployment that sets none and runs where `RENDER_EXTERNAL_URL`, `RAILWAY_PUBLIC_DOMAIN` or `FLY_APP_NAME` is present now starts with that origin instead of failing production validation.
