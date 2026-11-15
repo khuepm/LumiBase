@@ -7,6 +7,13 @@ export interface LumiBaseConfig {
   tokenKind?: 'site' | 'organization';
   readOnly?: boolean;
   token: string;
+  /**
+   * Static operator secret for the read-only ops diagnostics plane
+   * (`/api/v1/ops/*`). Independent of `token`: with only this set the server
+   * runs in ops-only mode (diagnostics tools, no content tools).
+   */
+  opsToken?: string;
+  opsOnly?: boolean;
 }
 
 export interface ApiError {
@@ -75,6 +82,7 @@ export class LumiBaseClient {
   readonly tokenKind: 'site' | 'organization';
   readonly siteId?: string;
   readonly readOnly: boolean;
+  private readonly opsToken?: string;
   private readonly scope = new AsyncLocalStorage<{ siteId?: string }>();
 
   get currentSiteId(): string | undefined {
@@ -85,12 +93,45 @@ export class LumiBaseClient {
     this.tokenKind = config.tokenKind ?? (classifyTokenPrefix(config.token) === 'organization' ? 'organization' : 'site');
     this.siteId = config.siteId;
     this.readOnly = config.readOnly ?? false;
+    this.opsToken = config.opsToken;
     this.origin = config.url.replace(/\/$/, '');
     this.baseUrl = this.origin + '/api/v1';
     this.headers = {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.token}`,
     };
+  }
+
+  get hasOpsToken(): boolean {
+    return Boolean(this.opsToken);
+  }
+
+  /**
+   * GET an ops diagnostics route with the operator token. Never sends the site
+   * API key or a site header: the ops plane is not a tenant surface.
+   */
+  async opsGet<T>(path: string): Promise<T> {
+    if (!this.opsToken) throw new Error('LUMIBASE_OPS_TOKEN is not set for this MCP server.');
+    const res = await fetch(`${this.baseUrl}/ops${path}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${this.opsToken}` },
+    });
+    const json = (await res.json().catch(() => null)) as { data?: T; errors?: ApiError[] } | null;
+    if (!res.ok) {
+      const errors = json?.errors ?? [{ code: 'UNKNOWN', message: `HTTP ${res.status}` }];
+      if (res.status === 404 && errors[0]?.code === 'NOT_FOUND' && errors[0]?.message === 'Route not found.') {
+        throw new LumiBaseApiError(404, [
+          {
+            code: 'OPS_PLANE_UNAVAILABLE',
+            message:
+              'The ops plane answered 404: LUMIBASE_OPS_TOKEN is unset/shorter than 32 chars on the server, ' +
+              'the token does not match, or the deployed CMS predates the ops plane.',
+          },
+        ]);
+      }
+      throw new LumiBaseApiError(res.status, errors);
+    }
+    return json?.data as T;
   }
 
   /** Each concurrent tool invocation owns its site scope; the client is never mutated. */
@@ -247,14 +288,29 @@ export function configFromEnv(): LumiBaseConfig {
   const url = process.env['LUMIBASE_URL'];
   const siteId = process.env['LUMIBASE_SITE_ID'];
   const token = process.env['LUMIBASE_TOKEN'];
+  const opsToken = process.env['LUMIBASE_OPS_TOKEN'] || undefined;
+
+  // Ops-only mode: diagnose a deployment without any tenant credential.
+  if (url && opsToken && !token) {
+    console.error('[lumibase-mcp] ops-only mode (LUMIBASE_OPS_TOKEN set, LUMIBASE_TOKEN unset)');
+    return { url, token: '', opsToken, opsOnly: true, readOnly: true };
+  }
 
   const tokenKind = token && classifyTokenPrefix(token) === 'organization' ? 'organization' : 'site';
   if (!url || !token || (tokenKind === 'site' && !siteId)) {
     throw new Error(
-      'Missing required env vars: LUMIBASE_URL, LUMIBASE_SITE_ID, LUMIBASE_TOKEN',
+      'Missing required env vars: LUMIBASE_URL, LUMIBASE_SITE_ID, LUMIBASE_TOKEN ' +
+        '(or LUMIBASE_URL + LUMIBASE_OPS_TOKEN for ops-only diagnostics)',
     );
   }
 
   if (tokenKind === 'organization' && siteId) console.error(`[lumibase-mcp] pinned to site ${siteId}`);
-  return { url, ...(siteId ? { siteId } : {}), token, tokenKind, readOnly: process.env['LUMIBASE_READ_ONLY'] === 'true' };
+  return {
+    url,
+    ...(siteId ? { siteId } : {}),
+    token,
+    tokenKind,
+    readOnly: process.env['LUMIBASE_READ_ONLY'] === 'true',
+    ...(opsToken ? { opsToken } : {}),
+  };
 }

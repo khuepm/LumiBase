@@ -1,4 +1,4 @@
-import type { EntitlementResolver, SeamContext } from '@lumibase/contracts/platform';
+import type { EntitlementResolver, ExternalActionToolSource, SeamContext } from '@lumibase/contracts/platform';
 import type { RuntimeContext } from '@lumibase/runtime';
 
 /** Seam context as the CMS passes it: the runtime handle is a `RuntimeContext`. */
@@ -10,6 +10,11 @@ export type CmsSeamContext = SeamContext<RuntimeContext>;
  */
 export interface PlatformSeams {
   entitlements: EntitlementResolver<RuntimeContext>;
+  /**
+   * External-action tools supplied from outside the CMS. Read once, inside
+   * `registerPlatformSeams()`, and loaded into the process-wide registry.
+   */
+  externalActions: ExternalActionToolSource;
 }
 
 export type PlatformSeamName = keyof PlatformSeams;

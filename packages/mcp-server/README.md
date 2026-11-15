@@ -20,6 +20,7 @@ Point the server at your CMS with environment variables:
 | `LUMIBASE_SITE_ID` | Except unpinned `lbo_` | `site_abc123` |
 | `LUMIBASE_TOKEN` | Yes | Bearer token with the roles you want the agent to inherit |
 | `LUMIBASE_READ_ONLY` | No | `true` hides mutation tools; default `false` |
+| `LUMIBASE_OPS_TOKEN` | No | Server's `LUMIBASE_OPS_TOKEN`. Adds read-only `ops_diagnostics`, `ops_list_errors`, `ops_get_error`, `ops_probe_site`. With `LUMIBASE_URL` and no `LUMIBASE_TOKEN`, the server runs ops-only. See `docs/en/features/ops-diagnostics.md`. |
 
 Example MCP client config:
 

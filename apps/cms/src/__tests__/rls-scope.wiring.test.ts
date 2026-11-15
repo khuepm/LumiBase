@@ -120,6 +120,24 @@ const DB_CONSTRUCTION_ALLOWLIST: Record<string, { class: DbClass; tokens: Token[
     tokens: ['getConnection()', 'getSystemConnection()'],
     reason: '`SELECT 1` connectivity probe of both connections; reads no tenant data.',
   },
+  'apps/cms/src/modules/ops/diagnostics.ts': {
+    class: 'probe',
+    tokens: ['drizzle(', 'getConnection()', 'getSystemConnection()'],
+    reason:
+      'Ops diagnostics (operator token): role/policy/migration/schema metadata on both connections, and the ' +
+      'site probe, which replays GET /site on the app connection (site-scoped via createSiteScopedSql when ' +
+      'enforce) and returns only found/not-found. No tenant row data leaves.',
+  },
+  'apps/cms/src/modules/ops/routes.ts': {
+    class: 'system',
+    tokens: ['drizzle(', 'getSystemConnection()'],
+    reason: 'Reads lumibase_ops_errors (platform table, RLS forced with no policy) on the system connection.',
+  },
+  'apps/cms/src/modules/ops/capture.ts': {
+    class: 'system',
+    tokens: ['getSystemConnection()'],
+    reason: 'Writes the 5xx capture row to lumibase_ops_errors on the system connection (RLS forced, no policy).',
+  },
 };
 
 describe('T2 — every db construction in apps/cms/src is classified', () => {
@@ -208,6 +226,11 @@ const ROUTER_DB_CLASS: Record<string, { class: RouterClass; file?: string; note?
   '/metrics': { class: 'no-db' },
   '/test-auth': { class: 'no-db' },
   '/health': { class: 'probe', file: 'routes/health.ts' },
+  '/api/v1/ops': {
+    class: 'probe',
+    file: 'modules/ops/diagnostics.ts',
+    note: 'operator token gate; ops_errors on the system connection, diagnostics/probe on both (no row data)',
+  },
   '/api/v1/setup': { class: 'system', file: 'modules/setup/routes.ts' },
   '/api/v1/admin/security': { class: 'system', file: 'modules/recovery/routes.ts' },
   '/scim/v2': { class: 'system' },

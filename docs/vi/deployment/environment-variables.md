@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 20
-lastUpdated: 2026-11-13T15:31:04.103Z
+version: 21
+lastUpdated: 2026-11-15T11:40:34.620Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a5f4809eb95a93bc
+sourceHash: ff7b6be473cf3a15
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T15:32:52.559Z
-codeVerifiedHash: a5f4809eb95a93bc
-codeVerifiedClaims: 96
+codeVerified: 2026-11-15T11:40:34.620Z
+codeVerifiedHash: ff7b6be473cf3a15
+codeVerifiedClaims: 98
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -126,6 +126,7 @@ closed với `500` chứ không phải một lỗi có mã.
 | `DATABASE_POOL_MAX` | ✗ | Số kết nối pool DB tối đa (mặc định: `10`) |
 | `DATABASE_SSL` | ✗ | `true` để bắt buộc SSL cho kết nối DB |
 | `LUMIBASE_DB_RLS` | ✗ | Scope RLS trên request path: `off` (mặc định) hoặc `enforce`. Giá trị khác thì fail closed (lỗi khởi động trên Docker, `503 RLS_MISCONFIGURED` trên Workers). Xem [Scope RLS trên request path](../features/rls-request-scope.md) |
+| `LUMIBASE_OPS_TOKEN` | ✗ | Secret bearer tĩnh (≥ 32 ký tự) cho mặt phẳng chẩn đoán vận hành chỉ-đọc `/api/v1/ops/*` và tra cứu lỗi đã ghi lại. Không đặt hoặc ngắn hơn: mặt phẳng trả 404 ở mọi nơi. Xem [Chẩn đoán vận hành](../features/ops-diagnostics.md) |
 | `DATABASE_SYSTEM_URL` | Khi `LUMIBASE_DB_RLS=enforce` (Docker) | Chuỗi kết nối của system role (`BYPASSRLS`) cho worker, cron và route hệ thống. Không đặt: các đường đó dùng `DATABASE_URL`. Cũng đọc được từ `DATABASE_SYSTEM_URL_FILE` |
 
 Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#binding-cloudflare)).
