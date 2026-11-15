@@ -22,7 +22,7 @@ Nguồn: `.kiro/research/competitor-features-2026-07.md` (D01–D08). Doc ngư�
 ## Tasks
 
 - [x] D03 #703 — `PUT /files/:id/content`, versions + restore, purge cache file +
-  collection tham chiếu, `GET /files/:id/content` (pin `?v=`), migration `0035_dam_assets`.
+  collection tham chiếu, `GET /files/:id/content` (pin `?v=`), migration `0038_dam_assets`.
 - [x] D06 #706 — `content_hash`, `GET /files/duplicates`, `GET /files/:id/usage`,
   safe delete (`deletePolicy` `confirm`/`block`), prompt trùng lặp trong Studio.
 - [x] D05 #705 — EXIF/IPTC/XMP vào `metadata.embedded` + `searchText`, tìm kiếm

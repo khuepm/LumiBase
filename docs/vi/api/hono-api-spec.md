@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 51
-lastUpdated: 2026-11-15T19:51:29.655Z
+version: 53
+lastUpdated: 2026-11-15T23:03:24.320Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 59ee257c4177c2da
+sourceHash: 03db69c605bb350f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T19:51:29.655Z
-codeVerifiedHash: 59ee257c4177c2da
-codeVerifiedClaims: 594
+codeVerified: 2026-11-15T23:03:24.320Z
+codeVerifiedHash: 03db69c605bb350f
+codeVerifiedClaims: 606
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -587,12 +587,14 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `GET` | `/api/v1/items/:collection` | Liệt kê các mục (có phân trang, bộ lọc) |
 | `POST` | `/api/v1/items/:collection` | Tạo mục (hoặc mảng cho hàng loạt) |
 | `GET` | `/api/v1/items/:collection/export` | Xuất collection dạng CSV hoặc JSON theo luồng ([Data export](../features/data-export.md)) |
-| `GET` | `/api/v1/items/:collection/:id` | Lấy một mục duy nhất |
-| `PATCH` | `/api/v1/items/:collection/:id` | Cập nhật một phần |
-| `PUT` | `/api/v1/items/:collection/:id` | Thay thế hoàn toàn |
+| `GET` | `/api/v1/items/:collection/:id` | Lấy một mục duy nhất; trả `ETag` |
+| `PATCH` | `/api/v1/items/:collection/:id` | Cập nhật một phần; tôn trọng `If-Match` |
+| `PUT` | `/api/v1/items/:collection/:id` | Thay thế hoàn toàn; tôn trọng `If-Match` |
 | `DELETE` | `/api/v1/items/:collection/:id` | Xóa mục — **409 nếu bị chặn bởi phụ thuộc** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | Liệt kê các bản ghi tham chiếu tới mục này |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Xử lý hàng loạt các phụ thuộc của quan hệ |
+| `POST` | `/api/v1/items/:collection/:id/reorder` | Sắp xếp thủ công trên collection có `meta.manualSort`: `{ after: id \| null }` hoặc `{ before: id }` ([Editorial UX](../features/editorial-ux.md#sắp-xếp-thủ-công)) |
+| `POST` | `/api/v1/items/:collection/:id/duplicate` | Lưu thành bản sao: một bản sao `draft` với trường duy nhất được thêm hậu tố (`relations` trong body; xem bên dưới) |
 | `POST` | `/api/v1/items/:collection/:id/move` | Di chuyển một item cùng cây con của nó trong collection dạng cây; liệt kê với `?tree=children\|subtree\|ancestors` ([Collection phân cấp](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | Liệt kê các bản sửa đổi (revisions) |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Khôi phục lại một bản sửa đổi |
@@ -603,6 +605,19 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `DELETE` | `/api/v1/items/:collection/:id/versions/:key` | Xóa một bản nháp |
 | `GET` | `/api/v1/items/:collection/:id/versions/:key/compare` | Diff các trường với main → `{ main, version, changes }` |
 | `POST` | `/api/v1/items/:collection/:id/versions/:key/promote` | Áp dụng bản nháp vào main (ghi một revision); `meta.mainDiverged` |
+
+**Sửa đồng thời (`ETag` / `If-Match`).** Mỗi item có bộ đếm `version`, tăng lên
+sau mỗi lần ghi làm đổi nội dung item. `GET /items/:collection/:id` trả nó dưới
+dạng `ETag` mạnh (`"3"`), và cũng có trong body response dưới tên `version`. Gửi
+lại nó qua `If-Match: "3"` khi `PATCH` hoặc `PUT` để lần ghi có điều kiện: nếu
+người khác đã sửa item trước, lần ghi thất bại với **412 `PRECONDITION_FAILED`**
+và không có gì được ghi. Phép kiểm tra nằm trong cùng câu `UPDATE`, nên hai bên
+ghi cầm cùng một tag không thể cùng thành công. Không có `If-Match` thì lần ghi
+ghi đè vô điều kiện, như trước. `*` chấp nhận mọi version; tag yếu (`W/"3"`)
+không bao giờ khớp. Response `PATCH`/`PUT` thành công mang `ETag` mới. Client
+khác origin gửi được `If-Match` và đọc được `ETag` (cả hai đã có trong danh sách
+allow/expose của CORS). SDK nhận tag qua
+`items(name).patch(id, input, { ifMatch: row.version })`.
 
 **Các bản ghi phụ thuộc (Dependent records).** Vì các tham chiếu item nằm trong JSONB (không phải cột FK vật lý), `onDelete` của một quan hệ được thực thi ở lớp ứng dụng. Khi `DELETE`, nếu một quan hệ khai báo `restrict` vẫn còn bản ghi trỏ tới item, lệnh xóa sẽ bị chặn với **409 `DEPENDENT_RECORDS_EXIST`** và một mảng `dependents`. (`set null`/`cascade` **không** tự động áp dụng khi xóa mềm — điều đó sẽ làm hỏng khả năng phục hồi của xóa mềm; trình biên tập phải xóa chúng một cách tường minh.) `GET …/dependents` trả về `{ data: { blocking, dependents: [{ relation, collection, field, onDelete, count, sample }] } }`. `POST …/resolve-dependents` nhận `{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` và chạy trong một transaction (lệnh delete ủy quyền cho đường dẫn xóa item thông thường). Lỗi: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null trên trường bắt buộc), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
 
@@ -626,6 +641,44 @@ File không hợp lệ bị từ chối với `400 VALIDATION` / `413 PAYLOAD_TO
 - `meta=none` — bỏ qua câu lệnh aggregate `count(*)` để truy vấn rẻ hơn; phản hồi là `{ data, meta: { limit, offset } }` (không có `total`). Dùng cho dạng cuộn vô tận (infinite-scroll) / bảng tin không bao giờ hiển thị tổng số trang.
 
 Mặc định không đổi, nên các client hiện tại tiếp tục nhận `meta.total`. `@lumibase/sdk` `readItems` chấp nhận tùy chọn `meta` tương tự.
+
+**Trạng thái xuất bản, nhóm (cohort) và bản sao (epic #668).**
+
+- **Dấu thời gian xuất bản (#687).** Mỗi item mang `firstPublishedAt` (gán
+  ở lần xuất bản đầu tiên, không bao giờ đổi), `publishedAt` (lần xuất bản gần
+  nhất, giữ nguyên khi gỡ xuất bản) và `hasUnpublishedChanges`. Một lần ghi là
+  *xuất bản* khi item chuyển sang `published`, hoặc khi body gửi rõ
+  `status: "published"` (xuất bản lại). Sửa dữ liệu của item đã từng được xuất
+  bản sẽ đặt `hasUnpublishedChanges: true`; lần xuất bản kế tiếp xoá cờ này.
+  Lưu mà không đổi gì thì không đổi gì. `GET /items/:collection?modifiedSincePublish=true`
+  chỉ liệt kê item đã bị sửa. GraphQL trả các giá trị này qua `_firstPublishedAt`,
+  `_publishedAt` và `_hasUnpublishedChanges`.
+- **Cohort (#688).** `GET /items/:collection` và `GET /items/:collection/:id`
+  nhận `publicationState=live|preview|all`: `live` = `published` và nằm trong
+  khung xuất bản, `preview` = `draft` + `published`, `all` = không lọc theo
+  cohort. Phần mở rộng quan hệ lồng nhau (`fields=rel.*`, `deep`) theo cùng
+  cohort. Người gọi ẩn danh và người dùng realm frontend luôn nhận `live`, bất
+  kể yêu cầu gì. Không truyền tham số thì hành vi không đổi (chỉ RBAC quyết
+  định). Giá trị lạ trả `400 VALIDATION`. Trường danh sách và `_by_id` của
+  GraphQL nhận cùng đối số `publicationState`; quan hệ lồng nhau đi theo nó.
+- **Nhân bản (#689).** `POST /items/:collection/:id/duplicate` với body tuỳ
+  chọn `{ relations?: "reference"|"deep"|"none", translations?: boolean,
+  locale?: string, overrides?: object }` tạo một bản sao `draft` qua đường tạo
+  item thông thường (cần `read` trên bản gốc và `create` trên collection).
+  Trường chuỗi duy nhất (và `slug`) được thêm hậu tố `-copy`, `-copy-2`, …;
+  giá trị duy nhất khác bị bỏ. `reference` (mặc định) sao chép liên kết m2m,
+  `deep` sao chép thêm một tầng item con o2m, `none` chỉ sao chép item.
+  `translations: false` chỉ giữ `locale` (mặc định: locale mặc định của site)
+  của các trường `translatable-text`. Phản hồi `201 { data, meta: { sourceId,
+  related } }`; một mục audit `item_duplicated` ghi lại bản gốc.
+- **Bỏ qua revision (#693).** `PATCH`/`PUT ?saveRevision=false` ghi item mà
+  không tạo dòng revision (autosave, ghi bằng máy). Lần ghi do agent thực hiện
+  luôn ghi revision (provenance). Collection có thể giới hạn lịch sử bằng
+  `meta.revisionRetention: { maxRevisions?, maxAgeDays? }`; một lượt quét mỗi
+  giờ xoá revision cũ nhưng luôn giữ revision mới nhất của mỗi item, revision
+  đang staged, revision được release ghim và revision của agent.
+
+Xem [Editorial UX](../features/editorial-ux.md).
 
 **Header tùy chọn:**
 - `X-Lumi-Draft: true` — lấy phiên bản nháp
@@ -656,6 +709,7 @@ Một **Release** gom các bản sửa đổi mục cụ thể trên nhiều col
 | `GET` | `/api/v1/releases` | Liệt kê các release (`?status=&page=&limit=`) |
 | `GET` | `/api/v1/releases/:id` | Chi tiết release + các mục của nó |
 | `PATCH` | `/api/v1/releases/:id` | Cập nhật meta, `addItems`/`removeItems`, đặt `publishAt` |
+| `GET` | `/api/v1/releases/:id/validate` | Tóm tắt kiểm tra hợp lệ trước khi xuất bản (#692) |
 | `POST` | `/api/v1/releases/:id/publish` | Xuất bản ngay (thủ công) |
 | `DELETE` | `/api/v1/releases/:id` | Xóa release (xóa nối tiếp các mục) |
 
@@ -677,6 +731,18 @@ Một **Release** gom các bản sửa đổi mục cụ thể trên nhiều col
 **Response Xuất bản** (`{ data: { release, status, outcomes } }`): `status` là `published` | `partially_failed` | `failed`; mỗi outcome là `{ collection, itemId, outcome: 'published'|'skipped'|'failed', reason? }`. Xuất bản một phần / thất bại vẫn trả về **HTTP 200** kèm kết quả.
 
 **Mã lỗi:** `EMPTY_RELEASE` (422), `ALREADY_PUBLISHED` (409), `RELEASE_IMMUTABLE` (409, chỉnh sửa các mục của release đã xuất bản), `ITEM_NOT_FOUND` (404), `REVISION_STAGED` (409, ghim bản sửa đổi chưa commit), `VALIDATION_FAILED` (422, bao gồm `publishAt` trong quá khứ). Các yếu tố chặn xuất bản từng mục xuất hiện dưới dạng lý do outcome `EDITORIAL_GATE_REQUIRED` / `ITEM_DELETED`.
+
+**Tóm tắt kiểm tra hợp lệ (#692).** `GET /releases/:id/validate` kiểm tra đầy đủ
+(gồm cả trường bắt buộc và điều kiện form-layout) mọi item mà release sẽ xuất
+bản — dùng snapshot của revision được ghim nếu có. Phản hồi:
+`{ data: { valid, checked, items: [{ collection, itemId, issues: [{ field, code, message }] }] } }`;
+`items` chỉ liệt kê item có vấn đề, và `field` là đường dẫn dạng dấu chấm tới
+trường lỗi. Khi xuất bản, cùng phép kiểm tra này chạy trước: item không hợp lệ
+không bao giờ được xuất bản và nhận lý do outcome `VALIDATION_FAILED` kèm
+`issues`. Ở chế độ `all_or_nothing` điều đó làm cả release thất bại; ở
+`best_effort` các item hợp lệ vẫn được xuất bản. Trang **Releases** của Studio
+hiển thị bản tóm tắt với liên kết mở trình soạn item ngay tại trường lỗi
+(`#field=<name>`).
 
 Các release lên lịch được xuất bản qua nhịp `content-scheduler` dùng chung (`sweepDueReleases`) — idempotent và nhận biết `maintenanceWindow`.
 

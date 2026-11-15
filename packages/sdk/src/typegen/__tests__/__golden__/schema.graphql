@@ -11,6 +11,9 @@ type Authors {
   userCreated: String
   userUpdated: String
   _data: JSON
+  _firstPublishedAt: DateTime
+  _publishedAt: DateTime
+  _hasUnpublishedChanges: Boolean
   name: String
   email: String
   posts(limit: Int, offset: Int): [BlogPosts!]!
@@ -25,6 +28,9 @@ type BlogPosts {
   userCreated: String
   userUpdated: String
   _data: JSON
+  _firstPublishedAt: DateTime
+  _publishedAt: DateTime
+  _hasUnpublishedChanges: Boolean
   title: String
   body: String
   views: Int
@@ -54,17 +60,26 @@ type Tags {
   userCreated: String
   userUpdated: String
   _data: JSON
+  _firstPublishedAt: DateTime
+  _publishedAt: DateTime
+  _hasUnpublishedChanges: Boolean
   label: String
 }
 
 type Query {
   _collections: [String!]!
-  authors(filter: JSON, sort: [String!], limit: Int, offset: Int, status: String): [Authors!]!
-  authors_by_id(id: ID!): Authors
-  blog_posts(filter: JSON, sort: [String!], limit: Int, offset: Int, status: String): [BlogPosts!]!
-  blog_posts_by_id(id: ID!): BlogPosts
-  tags(filter: JSON, sort: [String!], limit: Int, offset: Int, status: String): [Tags!]!
-  tags_by_id(id: ID!): Tags
+  authors(filter: JSON, sort: [String!], limit: Int, offset: Int, status: String, publicationState: PublicationState, modifiedSincePublish: Boolean): [Authors!]!
+  authors_by_id(id: ID!, publicationState: PublicationState): Authors
+  blog_posts(filter: JSON, sort: [String!], limit: Int, offset: Int, status: String, publicationState: PublicationState, modifiedSincePublish: Boolean): [BlogPosts!]!
+  blog_posts_by_id(id: ID!, publicationState: PublicationState): BlogPosts
+  tags(filter: JSON, sort: [String!], limit: Int, offset: Int, status: String, publicationState: PublicationState, modifiedSincePublish: Boolean): [Tags!]!
+  tags_by_id(id: ID!, publicationState: PublicationState): Tags
+}
+
+enum PublicationState {
+  live
+  preview
+  all
 }
 
 type Mutation {

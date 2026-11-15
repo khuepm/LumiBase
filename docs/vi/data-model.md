@@ -1,13 +1,13 @@
 ---
-version: 19
-lastUpdated: 2026-11-15T19:51:31.438Z
+version: 23
+lastUpdated: 2026-11-15T23:03:21.965Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 610209b00cfd2bde
+sourceHash: 19cd66ceaaad3f01
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T19:51:31.438Z
-codeVerifiedHash: 610209b00cfd2bde
+codeVerified: 2026-11-15T23:03:21.965Z
+codeVerifiedHash: 19cd66ceaaad3f01
 codeVerifiedClaims: 22
 ---
 
@@ -120,6 +120,8 @@ Chiến lược primary key:
 - `nanoid`: định danh chuỗi logic mặc định do LumiBase sinh.
 - `uuid`: chuỗi UUID do service sinh.
 - `string`: định danh chuỗi do caller cung cấp.
+
+Với mọi chiến lược, id của item là duy nhất **trong mỗi site**, trên tất cả collection của site đó: `items` có primary key `(siteId, id)` (migration `0035`). Hai site có thể dùng cùng một id; trong một site, id bị dùng lại, kể cả ở collection khác, bị từ chối với `409 ITEM_ID_EXISTS`.
 - `integer` / `bigInteger`: chiến lược dựa trên sequence, dành riêng cho storage materialized/physical; collection JSONB chặn các tổ hợp này.
 
 Storage mode được khai báo tường minh có chủ đích:
@@ -165,29 +167,35 @@ Compiled schema phơi ra các system field được sinh tự động, bên cạ
 ### `items`
 | Column | Type |
 |---|---|
-| `id` | text PK |
+| `id` | text | duy nhất trong mỗi site |
 | `siteId`, `collectionId` | text FK |
 | `status` | text | `draft`/`published`/`archived` |
 | `data` | jsonb | giá trị đánh key theo field.name |
+| `version` | integer, default 0 | Bộ đếm optimistic concurrency: tăng sau mỗi lần ghi làm đổi nội dung item (data, status, pin, xoá mềm kể cả cascade trong cây, crypto-shred, di chuyển item trong cây); rebase path của con cháu, đánh số lại sort của anh em và worker xoay khoá chỉ mã hoá lại thì không tăng. Được trả làm `ETag` của item; `If-Match` so sánh với nó. |
 | `sort` | integer |
 | `userCreated`, `userUpdated` | text FK users |
 | `publishAt`, `unpublishAt` | timestamp nullable | Khung thời gian scheduling (Req 7); worker reconcile đổi status, delivery filter theo khung này. |
 | `editorialState` | text nullable | Trạng thái human review (Req 9): `draft`/`in_review`/`approved`/`published`/`rejected`. Khác với veto-window của AI. |
+| `firstPublishedAt` | timestamp nullable | Lần xuất bản đầu tiên (#687, migration 0037). Gán một lần, xuất bản lại không làm đổi. |
+| `publishedAt` | timestamp nullable | Lần xuất bản gần nhất (#687). Giữ nguyên khi item bị gỡ xuất bản. |
+| `hasUnpublishedChanges` | boolean, default false | Dữ liệu đã bị sửa kể từ lần xuất bản gần nhất (#687); lần xuất bản kế tiếp xoá cờ. Index một phần `items_unpublished_changes_idx (siteId, collectionId) WHERE has_unpublished_changes AND deleted_at IS NULL`. |
 | `dekWrapped` | text nullable | Chế độ envelope (Req 4.5): DEK theo từng record, được bọc bởi KEK. Non-null ⇒ các field encrypted của record này dùng DEK riêng; null ⇒ chế độ shared-key. Việc đọc là tự-mô-tả từ cột này. |
 | `createdAt`, `updatedAt` | timestamp |
 | `deletedAt` | timestamp nullable |
 
-Index: `(siteId, collectionId, status)`, GIN trên `data`, `(siteId, status, publishAt)`, `(siteId, status, unpublishAt)`.
+Primary key `(siteId, id)`. Index: `(siteId, collectionId, status)`, GIN trên `data`, `(siteId, status, publishAt)`, `(siteId, status, unpublishAt)`.
 
 ### `revisions`
 - `id`, `siteId`, `itemId`, `collectionId`, `delta jsonb`, `parentId`, `userId`, `createdAt`.
+- `(siteId, itemId) → items (siteId, id)` (cascade): một revision luôn thuộc về một item của chính site đó.
+- `PATCH ?saveRevision=false` không ghi revision (#693); `meta.revisionRetention: { maxRevisions?, maxAgeDays? }` của collection cho phép lượt quét `revision-retention` mỗi giờ xoá dòng cũ (không bao giờ xoá revision mới nhất của một item, revision đang staged, revision được release ghim hay revision của agent).
 
 ### `releases` (Content Releases)
 - Một bundle publish xuyên collection. `id`, `siteId`, `name`, `description`, `status` (`draft`|`scheduled`|`published`|`failed`|`partially_failed`), `atomicityMode` (`all_or_nothing`|`best_effort`), `publishAt`, `publishedAt`, `maintenanceWindow jsonb`, `statusReason`, `createdBy → users.id (set null)`, `createdAt`, `updatedAt`.
 - Index: `releases_site_status_idx (siteId, status)`, `releases_publish_due_idx (siteId, status, publishAt)` (đối xứng với `items.publishDueIdx` cho vòng quét của scheduler).
 
 ### `release_items` (Content Releases)
-- Bảng junction release ↔ item, có thể ghim vào một revision cụ thể. `id`, `siteId`, `releaseId → releases.id (cascade)`, `collection`, `itemId → items.id (cascade)`, `targetStatus` (mặc định `published`), `revisionId → revisions.id (set null)`, `outcome` (`published`|`skipped`|`failed`), `outcomeReason`, `createdAt`.
+- Bảng junction release ↔ item, có thể ghim vào một revision cụ thể. `id`, `siteId`, `releaseId → releases.id (cascade)`, `collection`, `(siteId, itemId) → items (siteId, id)` (cascade), `targetStatus` (mặc định `published`), `revisionId → revisions.id (set null)`, `outcome` (`published`|`skipped`|`failed`), `outcomeReason`, `createdAt`.
 - Unique `(releaseId, collection, itemId)` (key cho upsert); index `(siteId, releaseId)`.
 
 ### `activity`
@@ -281,7 +289,7 @@ Khi seed local/staging/prod, phải seed permission cho system collection một 
 
 ### `files`
 - `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `contentHash`, `version`, `scanStatus`, `createdAt`, `updatedAt`.
-- `contentHash` — SHA-256 đầy đủ (hex) của binary hiện tại, dùng để phát hiện trùng lặp; index `(siteId, contentHash)`. `version` — tăng sau mỗi lần thay tại chỗ (cùng id và `filenameDisk`). `scanStatus` — `skipped` (mặc định) / `pending` / `clean` / `infected` / `error`; chỉ `skipped` và `clean` được phân phối. `metadata.embedded` chứa EXIF/IPTC/XMP đã trích và `metadata.searchText` là bản tóm tắt để tìm kiếm. Migration `0035_dam_assets`.
+- `contentHash` — SHA-256 đầy đủ (hex) của binary hiện tại, dùng để phát hiện trùng lặp; index `(siteId, contentHash)`. `version` — tăng sau mỗi lần thay tại chỗ (cùng id và `filenameDisk`). `scanStatus` — `skipped` (mặc định) / `pending` / `clean` / `infected` / `error`; chỉ `skipped` và `clean` được phân phối. `metadata.embedded` chứa EXIF/IPTC/XMP đã trích và `metadata.searchText` là bản tóm tắt để tìm kiếm. Migration `0038_dam_assets`.
 
 ### `file_versions`
 - `id`, `siteId`, `fileId` (FK cascade), `version`, `filenameDisk` (archive key `sites/<site>/file-versions/<id>/v<n>`), `filenameDownload`, `mime`, `filesize`, `width`, `height`, `contentHash`, `metadata jsonb`, `replacedBy`, `createdAt`, `expiresAt`.
@@ -533,7 +541,7 @@ Audit mọi lần đọc đã giải mã của field `pii`/`phi` (Req 6). Không
 Index: `(siteId, timestamp)`, `(actor, timestamp)`.
 
 ### `content_reviews`
-Record ký duyệt biên tập của con người (Req 9). `itemId` dùng `onDelete: set null` để lịch sử review vẫn tồn tại sau khi xoá dữ liệu (Req 11.3).
+Record ký duyệt biên tập của con người (Req 9). `(siteId, itemId) → items (siteId, id)` với `ON DELETE SET NULL (item_id)`: xoá item sẽ xoá `itemId` và giữ `siteId`, để lịch sử review vẫn tồn tại sau khi xoá dữ liệu (Req 11.3). Dạng có danh sách cột cần PostgreSQL 15+.
 | Column | Type | Note |
 |---|---|---|
 | `id` | text PK | nanoid |

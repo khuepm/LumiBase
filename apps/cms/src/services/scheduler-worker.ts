@@ -1,11 +1,13 @@
 import { and, asc, eq, gt, isNotNull, isNull, lte, ne, or } from 'drizzle-orm';
 import { collections, items, settings, scopeSite, type Database } from '@lumibase/database';
 import type { QueueProvider } from '@lumibase/runtime';
+import { nextItemVersion } from './item-etag';
 import { dispatchRevalidation, parseTargets } from './revalidation';
 import { AuditLogger } from '../modules/audit/logger';
 import { itemServiceForSystem } from './item-service-factory';
 import { sweepDueReleases } from './release-service';
 import { runDueScheduledFlows } from './flow-scheduler';
+import { publishStampsSql } from './publication-state';
 
 /**
  * Content scheduler (regulated-content-readiness task 7; Req 7.3, 7.4, 7.6, 7.7).
@@ -97,8 +99,9 @@ export async function sweepDuePublish(deps: SchedulerDeps, now = new Date()): Pr
   for (const row of due) {
     await deps.db
       .update(items)
-      .set({ status: 'published', editorialState: 'published', updatedAt: new Date() })
-      .where(and(eq(items.id, row.id), ne(items.status, 'published')));
+      .set({ status: 'published', editorialState: 'published', updatedAt: new Date(), version: nextItemVersion(), ...publishStampsSql() })
+      // Item ids are unique per site only: match the site too.
+      .where(and(eq(items.siteId, row.siteId), eq(items.id, row.id), ne(items.status, 'published')));
   }
 
   // Revalidate affected collections once.
@@ -150,8 +153,9 @@ export async function sweepDueUnpublish(deps: SchedulerDeps, now = new Date()): 
         status: target,
         editorialState: target === 'draft' ? 'draft' : null,
         updatedAt: new Date(),
+        version: nextItemVersion(),
       })
-      .where(and(eq(items.id, row.id), eq(items.status, 'published')));
+      .where(and(eq(items.siteId, row.siteId), eq(items.id, row.id), eq(items.status, 'published')));
     if (!collIdsBySite.has(row.siteId)) collIdsBySite.set(row.siteId, new Set());
     collIdsBySite.get(row.siteId)!.add(row.collectionId);
   }
@@ -253,8 +257,8 @@ export async function sweepRetention(deps: SchedulerDeps, now = new Date()): Pro
         if (policy.action === 'archive') {
           const r = await deps.db
             .update(items)
-            .set({ status: 'archived', updatedAt: new Date() })
-            .where(and(eq(items.id, it.id), ne(items.status, 'archived')))
+            .set({ status: 'archived', updatedAt: new Date(), version: nextItemVersion() })
+            .where(and(eq(items.siteId, row.siteId), eq(items.id, it.id), ne(items.status, 'archived')))
             .returning({ id: items.id });
           if (r.length > 0) count += 1;
         } else if (policy.action === 'crypto_shred') {

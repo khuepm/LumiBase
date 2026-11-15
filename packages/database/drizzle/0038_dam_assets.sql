@@ -2,10 +2,10 @@
 -- duplicate detection by content hash (#706) and the malware-scan state the
 -- delivery route gates on (#707). Additive, no backfill, re-runnable.
 --
--- Numbered after the newest migration on main (0034). An open branch also
--- claims 0035 (`0035_items_version`); whichever merges second renumbers. The
--- journal `when` here is later than that one's, so drizzle's "created_at >
--- last applied" check accepts both regardless of merge order.
+-- Numbered 0038 per the agreed merge order for the parallel epics (0035
+-- items_site_scoped_pk, 0036 items_version, 0037 item_publication_state).
+-- Touches only lumibase_files + the new lumibase_file_versions, so it is
+-- independent of those migrations' items changes.
 --
 -- Existing rows: `content_hash` stays NULL (never matches a duplicate check
 -- until the file is replaced), `version` = 1, `scan_status` = 'skipped'
