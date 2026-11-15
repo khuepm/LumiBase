@@ -1,11 +1,11 @@
 ---
-version: 49
-lastUpdated: 2026-11-15T08:42:04.559Z
+version: 52
+lastUpdated: 2026-11-15T18:05:21.014Z
 sourceLang: en
-contentHash: 9ab197909be2ce34
-codeVerified: 2026-11-15T08:42:04.559Z
-codeVerifiedHash: 9ab197909be2ce34
-codeVerifiedClaims: 536
+contentHash: cde504e1f12c06a3
+codeVerified: 2026-11-15T18:05:21.014Z
+codeVerifiedHash: cde504e1f12c06a3
+codeVerifiedClaims: 576
 ---
 
 # Hono API Specification — LumiBase
@@ -203,10 +203,30 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/me/tfa/confirm` | bearer | Confirm enrollment with a live code → single-use recovery codes |
 | `POST` | `/api/v1/me/tfa/recovery-codes` | bearer | Regenerate recovery codes (password + TOTP code) |
 | `DELETE` | `/api/v1/me/tfa` | bearer | Disable TOTP (password + either a TOTP code or a recovery code); revokes sessions and bumps `tokenVersion` |
+| `POST` | `/api/v1/auth/passkey/options` | public | Passkey authentication options: with `challengeToken` = second factor, without = passwordless staff sign-in → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/auth/passkey/verify` | public | Finish a passkey ceremony → same session payload as login (`amr` contains `webauthn`, `tfaVerified`) |
+| `GET` | `/api/v1/me/passkeys` | bearer | The caller's passkeys + `recoveryCodesRemaining`, `totpEnabled`, `available` |
+| `POST` | `/api/v1/me/passkeys/registration-options` | bearer | Begin passkey registration (password step-up) → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/me/passkeys` | bearer | Finish registration → `{ passkey, recoveryCodes }` (codes only for a first factor) |
+| `PATCH` | `/api/v1/me/passkeys/:id` | bearer | Rename a passkey |
+| `DELETE` | `/api/v1/me/passkeys/:id` | bearer | Remove a passkey (password); the last second factor revokes sessions and bumps `tokenVersion` |
+| `POST` | `/api/v1/me/passkeys/recovery-codes` | bearer | Regenerate recovery codes (password + a passkey-opened session) |
 | `POST` | `/api/v1/me/change-password` | bearer | Verify current password, set new hash, revoke refresh tokens + bump `tokenVersion` |
 | `GET` | `/api/v1/me/sessions` | bearer | List the caller's active sessions (live refresh tokens, redacted) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Revoke one of the caller's sessions |
-| `DELETE` | `/api/v1/me/sessions` | bearer | Revoke all of the caller's sessions |
+| `DELETE` | `/api/v1/me/sessions` | bearer | Revoke all of the caller's sessions; `?scope=others` keeps the current session |
+| `GET` | `/api/v1/me/security-history` | bearer | The caller's own security events (sign-ins, new devices, password/MFA changes, revocations), redacted; `?cursor=&limit=&scope=site\|account` — see [Security history](../security/security-history.md) |
+| `GET` | `/api/v1/me/security-history/export` | bearer | Download the same history; `?format=json\|csv&scope=` (max 5,000 rows, 10 exports / 15 min) |
+| `GET` | `/api/v1/auth/social/providers` | public | Social login providers enabled for the site |
+| `POST` | `/api/v1/auth/social/:provider/start` | public | Begin Google / Apple / GitHub sign-in (PKCE) → `authorizationUrl` |
+| `GET`/`POST` | `/api/v1/auth/social/callback/:siteId/:provider` | provider | Provider callback (`POST` = Apple `form_post`); redirects to the allow-listed URI with a one-time code |
+| `POST` | `/api/v1/auth/social/exchange` | public | Redeem the one-time code with the client `codeVerifier` → session (`aud: frontend`) |
+| `GET` | `/api/v1/me/identities` | bearer | Linked login identities + `hasPassword` |
+| `POST` | `/api/v1/me/identities/:provider/link` | bearer | Begin linking a provider to the signed-in account |
+| `POST` | `/api/v1/me/identities/complete` | bearer | Finish linking (one-time code + `codeVerifier`) |
+| `DELETE` | `/api/v1/me/identities/:id` | bearer | Unlink a provider (never the last login method) |
+| `GET` | `/api/v1/admin/social-providers` | site-admin | Per-site social provider configuration (secrets write-only) |
+| `PUT`/`DELETE` | `/api/v1/admin/social-providers/:provider` | site-admin | Configure / remove a provider — see [Social login](../security/social-login.md) |
 | `POST` | `/api/v1/users/subscriber-access` | site-admin | Grant subscribers `read` on a collection (Policy DSL) |
 | `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | List / revoke subscriber read grants |
 | `GET` | `/api/v1/me/preferences` | bearer | Current user's preferences blob (identity-global) |
@@ -268,6 +288,13 @@ that particular seed is no longer configured. In the latter case `DELETE
 /me/tfa` accepts a **recovery code** in place of a TOTP code, so the user can
 remove an enrollment whose seed can no longer be decrypted. See
 [Encryption key operations](../operations/encryption-keys.md).
+
+**Passkeys (WebAuthn).** When the user also (or only) has passkeys, the
+`mfa_required` response adds `methods` (`["totp"]`, `["webauthn"]` or both),
+and the challenge can be finished with `POST /auth/passkey/options` +
+`POST /auth/passkey/verify` instead of `verify-totp`. The same two endpoints
+without a `challengeToken` give a passwordless staff sign-in. See
+[Passkeys](../security/passkeys.md).
 
 **Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 

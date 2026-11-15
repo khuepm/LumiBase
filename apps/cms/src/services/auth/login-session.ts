@@ -9,6 +9,7 @@ import {
 } from './token-audience';
 import {
   issueRefreshToken,
+  newSessionId,
   refreshCookieSettings,
 } from './refresh-token';
 import { refreshTtlFor, ttlToSeconds } from './token-audience';
@@ -78,6 +79,12 @@ export async function completePasswordLoginSession(
     audience: string;
     tfaVerified?: boolean;
     amr?: string[];
+    /**
+     * Roles already resolved by the caller (e.g. passwordless passkey login,
+     * which applies the same organization-inheritance rule as `/auth/login`).
+     * Defaults to the direct site membership.
+     */
+    tokenRoles?: string[];
   },
 ) {
   const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
@@ -92,16 +99,21 @@ export async function completePasswordLoginSession(
     .where(and(eq(userSites.userId, options.user.id), eq(userSites.siteId, options.siteId)))
     .limit(1);
 
-  const tokenRoles = options.user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member'];
+  const tokenRoles = options.tokenRoles
+    ?? (options.user.isBootstrap ? ['admin'] : [membership?.roleId ?? 'member']);
   const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null;
   const userAgent = c.req.header('user-agent') ?? null;
 
+  const sessionId = newSessionId();
   const jwtPayload: Record<string, unknown> = {
     userId: options.user.id,
     email: options.user.email,
     roles: tokenRoles,
     siteId: options.siteId,
     tokenVersion: options.user.tokenVersion ?? 0,
+    // Session id (= refresh-token family); revoking the session kills this
+    // access token immediately (#730).
+    sid: sessionId,
   };
   if (options.tfaVerified) jwtPayload.tfaVerified = true;
   if (options.amr?.length) jwtPayload.amr = options.amr;
@@ -121,6 +133,7 @@ export async function completePasswordLoginSession(
       audience: options.audience,
       ip,
       userAgent,
+      familyId: sessionId,
     },
     c.env,
   );

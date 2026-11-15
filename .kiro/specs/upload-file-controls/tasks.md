@@ -36,6 +36,33 @@ Mỗi task ref `(Rx; design §…)`. Nguồn chân lý chi tiết: xem bảng �
   (design § "Quyết định thiết kế")
 - [x] 3.2 Test unit (marker detection) + middleware (PNG polyglot + PHP shell)
 
+## Phase 4 — MIME sniffing, SVG sanitiser, polyglot corpus (#740, epic #674 S11) — **xong**
+
+- [x] 4.1 `services/upload-security/content-sniff.ts`: `sniffContentKind` +
+  `compareDeclaredMime` — loại khai báo phải khớp loại dò được; text không được
+  là HTML/SVG/PHP; loại ngoài catalogue (env) không được là exe/HTML/SVG/PHP ngụy
+  trang. Thêm Mach-O, `#!`.
+- [x] 4.2 `detectPolyglot`: EOCD ZIP/JAR ở đuôi (GIFAR), marker markup trong
+  ảnh/video, `%PDF-` trong 1 KiB đầu, dữ liệu sau PNG `IEND`, PDF có
+  `/JavaScript`/`/JS`/`/Launch`/`/RichMedia`/URI `javascript:` (cả tên escape
+  `#xx` và object stream Flate, giải nén có giới hạn) → `UPLOAD_EMBEDDED_PAYLOAD`
+  / `UPLOAD_ACTIVE_PDF`.
+- [x] 4.3 `svg-sanitizer.ts`: tokenizer allow-list, Workers-safe; upload reject
+  khi có nội dung active (`UPLOAD_UNSAFE_SVG`), serve gỡ tham chiếu external;
+  SVG sạch giữ nguyên từng byte. Transform in-process làm sạch nguồn SVG trước.
+- [x] 4.4 `validateUploadFilename` (contracts): NUL/control, bidi override,
+  traversal, chấm/khoảng trắng cuối, đuôi nguy hiểm ở mọi vị trí →
+  `UPLOAD_UNSAFE_FILENAME` (guard + `POST /files/presigned-url`).
+- [x] 4.5 `serve-policy.ts`: `inline` chỉ cho PNG/JPEG/GIF/WebP/AVIF/MP4/WebM,
+  còn lại `attachment`; luôn `nosniff` + CSP `sandbox`; `filename*` RFC 5987.
+  `withSecurityHeaders` giữ CSP riêng của route và thêm baseline (append).
+- [x] 4.6 Catalogue thêm `video/mp4`, `video/webm` với `defaultEnabled: false`.
+- [x] 4.7 Corpus sinh trong test (không blob nhị phân):
+  `services/upload-security/__tests__/corpus.ts`; test qua guard thật trên cả hai
+  surface bytes thô (`middleware/__tests__/file-upload-polyglot-corpus.test.ts`)
+  chứng minh corpus bị chặn và file hợp lệ tới handler nguyên byte.
+  Docs: `docs/{en,vi}/security/upload-security.md`.
+
 ## Nâng cấp tương lai (chưa làm)
 
 - [ ] F1. **Re-encode ảnh để sanitize (chống polyglot không-FP).** Tải object →
