@@ -1,0 +1,39 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`GraphQL blocks union > builds one union per blocks field over the allowed block object types (snapshot) 1`] = `
+""""A "columns" block."""
+type ColumnsBlock {
+  id: ID!
+  type: String!
+  _data: JSON
+  gap: Int
+
+  """Dynamic zone "items" (ordered blocks)."""
+  items: [ColumnsItemsBlocks!]!
+}
+
+"""Blocks allowed in columns.items: hero, cta."""
+union ColumnsItemsBlocks = HeroBlock | CtaBlock
+
+"""A "cta" block."""
+type CtaBlock {
+  id: ID!
+  type: String!
+  _data: JSON
+  label: String
+  url: String
+}
+
+"""A "hero" block."""
+type HeroBlock {
+  id: ID!
+  type: String!
+  _data: JSON
+  title: String
+  subtitle: String
+  height: Int
+}
+
+"""Blocks allowed in pages.sections: hero, cta, columns."""
+union PagesSectionsBlocks = HeroBlock | CtaBlock | ColumnsBlock"
+`;

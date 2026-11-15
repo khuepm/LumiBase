@@ -19,6 +19,17 @@ export interface ZonedDateTime {
   offset: string;
 }
 
+/**
+ * One block of a `blocks` field (dynamic zone, #748). `type` is the block
+ * template's collection name and discriminates the union; generated types
+ * narrow it to a literal per template.
+ */
+export interface LumibaseBlock<TType extends string = string, TData = Record<string, unknown>> {
+  id: string;
+  type: TType;
+  data: TData;
+}
+
 export type AgentRiskLevel = "safe" | "review_required" | "dangerous" | "blocked";
 
 export interface AgentGoalResource {

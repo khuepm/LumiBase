@@ -29,6 +29,8 @@ export interface TypegenField {
   enum?: string[];
   /** Timezone-aware datetime (#747): value is `{ instant, tz, offset }`. */
   timezone?: boolean;
+  /** Dynamic zones (#748): block template names a `blocks` field accepts. */
+  allowedBlocks?: string[];
 }
 
 export interface TypegenRelation {

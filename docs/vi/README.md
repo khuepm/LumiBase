@@ -1,10 +1,10 @@
 ---
-version: 8
-lastUpdated: 2026-11-14T12:32:17.357Z
+version: 9
+lastUpdated: 2026-11-15T11:58:58.346Z
 sourceLang: vi
-contentHash: 2cf22c43b8b748ec
-codeVerified: 2026-11-14T12:32:17.357Z
-codeVerifiedHash: 2cf22c43b8b748ec
+contentHash: 74ed660e34a6115b
+codeVerified: 2026-11-15T11:58:58.346Z
+codeVerifiedHash: 74ed660e34a6115b
 codeVerifiedClaims: 4
 ---
 
@@ -47,6 +47,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
 - **Tính năng cốt lõi** (`features/`)
   - [collections-builder.md](./features/collections-builder.md) — No-code Collection Builder.
   - [field-types-and-config.md](./features/field-types-and-config.md) — Hệ thống field types & interface/display config.
+  - [dynamic-zones.md](./features/dynamic-zones.md) — Dynamic zones: field `blocks` (danh sách block có kiểu, có thứ tự, schema theo từng block).
   - [permissions-rbac.md](./features/permissions-rbac.md) — Roles, Policies, Permissions tới field (JSON rule engine).
   - [access-manifest-v1.md](./features/access-manifest-v1.md) — JSON schema contract `lumibase.access@v1` cho access import/export.
   - [system-collections-access.md](./features/system-collections-access.md) — Gom nhóm system/sensitive collection cho seed và Permission Builder.

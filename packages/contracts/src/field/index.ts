@@ -21,7 +21,9 @@ export type FieldType =
   | 'csv'
   | 'hash'
   | 'geometry'
-  | 'alias';
+  | 'alias'
+  /** Dynamic zone (#748): ordered `{ id, type, data }` blocks; see `options.allowedBlocks`. */
+  | 'blocks';
 
 export type FieldWidth = 'half' | 'full' | 'fill';
 

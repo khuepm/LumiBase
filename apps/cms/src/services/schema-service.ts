@@ -21,6 +21,7 @@ import {
   type FormLayout,
 } from '@lumibase/contracts/form-layout';
 import { invalidateDeliverTag } from './content-invalidation';
+import { blocksFieldConfigProblems } from './blocks';
 import { AuditLogger } from '../modules/audit/logger';
 import { OutboxWriter, type OutboxActor } from '../modules/cdc/change-feed';
 import { CDC_DISPATCH_QUEUE } from '../modules/cdc/change-feed/dispatcher';
@@ -325,6 +326,21 @@ export function assertFieldOptionsValid(field: {
 export function assertZonedDateTimeOptions(type: string, options: unknown): void {
   const message = validateZonedDateTimeOptions(type, options);
   if (message) throw new SchemaServiceError('INVALID_FIELD_OPTIONS', message, 422);
+}
+
+/**
+ * Validate a `blocks` (dynamic zone, #748) field definition. Throws
+ * INVALID_FIELD_CONFIG (HTTP 422) listing every problem; no-op for other types.
+ */
+export function assertBlocksFieldConfig(input: {
+  type?: string;
+  options?: Record<string, unknown> | null;
+  encrypted?: boolean | null;
+}): void {
+  const problems = blocksFieldConfigProblems(input);
+  if (problems.length > 0) {
+    throw new SchemaServiceError('INVALID_FIELD_CONFIG', `Invalid blocks field: ${problems.join(' ')}`, 422);
+  }
 }
 
 const ensureName = (name: string, kind: 'collection' | 'field') => {
@@ -657,6 +673,7 @@ export class SchemaService {
       length: input.length,
     });
     assertZonedDateTimeOptions(input.type, input.options);
+    assertBlocksFieldConfig(input);
     const collection = await this.getCollection(collectionName);
     if (!collection) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
@@ -711,6 +728,11 @@ export class SchemaService {
       });
     }
     assertZonedDateTimeOptions(input.type ?? existing.type, input.options ?? existing.options);
+    assertBlocksFieldConfig({
+      type: input.type ?? existing.type,
+      options: input.options ?? (existing.options as Record<string, unknown> | null),
+      encrypted: nextEncrypted,
+    });
     const populatedRows = await this.countFieldDataRows(collection.id, fieldName);
     assertFieldMutationAllowed(
       existing,
@@ -784,6 +806,11 @@ export class SchemaService {
       });
     }
     assertZonedDateTimeOptions(input.type ?? existing.type, input.options ?? existing.options);
+    assertBlocksFieldConfig({
+      type: input.type ?? existing.type,
+      options: input.options ?? (existing.options as Record<string, unknown> | null),
+      encrypted: input.encrypted ?? existing.encrypted,
+    });
     const populatedRows = await this.countFieldDataRows(collection.id, fieldName);
     assertFieldMutationAllowed(existing, input, populatedRows, {
       migrationPlan: input.migrationPlan,

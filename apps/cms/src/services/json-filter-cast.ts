@@ -50,7 +50,7 @@ export function castKindForFieldType(type: string | null | undefined): CastKind 
   if (NUMERIC_TYPES.has(t)) return 'numeric';
   if (BOOLEAN_TYPES.has(t)) return 'boolean';
   if (TIMESTAMP_TYPES.has(t)) return 'timestamp';
-  if (t === 'json' || t === 'alias') return null;
+  if (t === 'json' || t === 'alias' || t === 'blocks') return null;
   return 'text';
 }
 

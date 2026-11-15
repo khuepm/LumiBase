@@ -77,6 +77,9 @@ export function mapFieldType(field: CompiledField): GraphQLOutputType {
     case 'o2m':
     case 'm2m':
     case 'm2a':
+    // Dynamic zones (#748): the schema builder swaps in a per-field union of
+    // block object types; JSON is only the fallback when no template resolves.
+    case 'blocks':
       return JSONScalar;
     default:
       return GraphQLString;
