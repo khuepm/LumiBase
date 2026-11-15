@@ -1,0 +1,145 @@
+{{- $role := ternary "web" .Values.cms.role .Values.worker.enabled -}}
+{{- $component := dict "ctx" . "component" "cms" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lumibase.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lumibase.componentLabels" $component | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.cms.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  {{- with .Values.cms.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "lumibase.selectorLabels" $component | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "lumibase.selectorLabels" $component | nindent 8 }}
+        {{- with .Values.cms.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include "lumibase.secretChecksum" . }}
+        {{- with .Values.cms.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "lumibase.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.cms.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.cms.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.cms.terminationGracePeriodSeconds }}
+      {{- if eq .Values.migrations.mode "initContainer" }}
+      initContainers:
+        # Waits for the database and reports the schema version with the
+        # image's own entrypoint (retry with backoff; MIGRATION_MODE=preflight
+        # exits after the check and needs only DATABASE_URL).
+        - name: migrate-preflight
+          image: {{ include "lumibase.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            {{- include "lumibase.databaseEnv" . | trim | nindent 12 }}
+            - name: MIGRATION_MODE
+              value: preflight
+          securityContext:
+            {{- toYaml .Values.cms.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.migrations.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+        # Applies pending migrations. Concurrent pods are safe: each run is one
+        # transaction, and a pod that loses the race fails and is retried.
+        - name: migrate
+          image: {{ include "lumibase.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/nodejs/bin/node", "/app/dist/migrate.cjs", "apply"]
+          env:
+            {{- include "lumibase.databaseEnv" . | trim | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.cms.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.migrations.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      {{- end }}
+      containers:
+        - name: cms
+          image: {{ include "lumibase.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 1989
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "lumibase.fullname" . }}
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            {{- include "lumibase.cmsSecretEnv" . | trim | nindent 12 }}
+            - name: LUMIBASE_PROCESS_ROLE
+              value: {{ $role | quote }}
+            {{- if ne .Values.migrations.mode "entrypoint" }}
+            - name: SKIP_MIGRATIONS
+              value: "true"
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.cms.securityContext | nindent 12 }}
+          {{- with .Values.cms.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.cms.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: {{ include "lumibase.readinessPath" . }}
+              port: http
+            {{- toYaml .Values.cms.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.cms.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        {{- include "lumibase.tmpVolume" . | nindent 8 }}
+      {{- with .Values.cms.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.cms.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.cms.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.cms.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

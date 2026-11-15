@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-11-11T03:00:33.353Z
+version: 5
+lastUpdated: 2026-11-15T08:51:17.806Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 1bcc93cac3b51c59
+sourceHash: 4ceb3ca031f5fcc3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-11T03:00:33.353Z
-codeVerifiedHash: 1bcc93cac3b51c59
+codeVerified: 2026-11-15T08:51:17.806Z
+codeVerifiedHash: 4ceb3ca031f5fcc3
 codeVerifiedClaims: 10
 ---
 
@@ -23,6 +23,10 @@ LumiBase hỗ trợ hai chế độ triển khai từ cùng một codebase CMS:
 Để có CMS và Studio chạy trên Render, Railway hoặc Fly.io cùng PostgreSQL, Redis
 và secret được sinh sẵn, xem [Deploy một cú nhấp](./one-click.md); trang đó cũng
 giải thích vì sao Cloudflare chưa có nút deploy.
+
+Để chạy cùng image đó trên Kubernetes, xem [Kubernetes (Helm chart)](./kubernetes-helm.md):
+chart chính thức với PostgreSQL và Redis kèm sẵn hoặc bên ngoài, Meilisearch tuỳ
+chọn, ingress, autoscaling và secret sinh sẵn được giữ nguyên qua các lần upgrade.
 
 Trang web tài liệu công khai là một ứng dụng Vite tĩnh được triển khai riêng biệt trên **Cloudflare Pages**.
 Trang web Marketplace công khai cũng được triển khai trên **Cloudflare Pages** và đọc danh mục marketplace của CMS tại thời điểm build/revalidation runtime.

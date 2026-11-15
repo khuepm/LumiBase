@@ -572,6 +572,61 @@ jobs:
           fi
           echo "Runs as $USER_ID with a read-only root filesystem; HEALTHCHECK healthy."
 
+  # Helm chart (#742) as an OCI artifact: oci://ghcr.io/khuepm/charts/lumibase.
+  # Runs only after the image it deploys by default was pushed AND passed its
+  # smoke test, and nothing depends on this job, so a chart problem can never
+  # hold back or fail the image, the GitHub Release, the deploys or npm.
+  # Refuses to push a chart whose Chart.yaml version/appVersion disagree with
+  # the tag (`pnpm version:sync` keeps them aligned), so the published chart
+  # always defaults to the image of the same release.
+  publish-helm-chart:
+    name: Publish Helm chart (OCI)
+    runs-on: ubuntu-latest
+    needs: [publish-docker-image, smoke-docker-image]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      # Keyless cosign signature of the chart artifact, as for the image.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Helm and cosign
+        run: scripts/install-image-tools.sh helm cosign
+
+      - name: Check chart version matches the tag
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          chart_version="$(awk '/^version:/ { print $2; exit }' deploy/helm/lumibase/Chart.yaml)"
+          app_version="$(awk -F'"' '/^appVersion:/ { print $2; exit }' deploy/helm/lumibase/Chart.yaml)"
+          if [ "$chart_version" != "$version" ] || [ "$app_version" != "$version" ]; then
+            echo "::error::Chart.yaml version=$chart_version appVersion=$app_version, expected $version (run pnpm version:sync)"
+            exit 1
+          fi
+
+      - name: Lint and package
+        run: |
+          set -euo pipefail
+          # Lint with a public URL: the chart refuses to render without one in production.
+          helm lint deploy/helm/lumibase --strict --set publicUrl=https://cms.example.com
+          helm package deploy/helm/lumibase --destination dist-chart
+
+      - name: Push to GHCR and sign
+        env:
+          HELM_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          echo "$HELM_REGISTRY_PASSWORD" | helm registry login "${{ env.REGISTRY }}" -u "${{ github.actor }}" --password-stdin
+          helm push "dist-chart/lumibase-${version}.tgz" "oci://${{ env.REGISTRY }}/khuepm/charts" 2>&1 | tee push.log
+          digest="$(awk '/^Digest:/ { print $2; exit }' push.log)"
+          [ -n "$digest" ] || { echo "::error::helm push printed no digest"; exit 1; }
+          echo "$HELM_REGISTRY_PASSWORD" | cosign login "${{ env.REGISTRY }}" -u "${{ github.actor }}" --password-stdin
+          cosign sign --yes "${{ env.REGISTRY }}/khuepm/charts/lumibase@${digest}"
+          echo "Published oci://${{ env.REGISTRY }}/khuepm/charts/lumibase:${version} (${digest})"
+
   publish-npm-packages:
     name: Publish npm packages
     runs-on: ubuntu-latest
