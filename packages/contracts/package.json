@@ -31,6 +31,7 @@
     "./field": "./src/field/index.ts",
     "./schemas": "./src/schemas/index.ts",
     "./extensions": "./src/extensions/index.ts",
+    "./platform": "./src/platform/index.ts",
     "./version": "./src/version.ts",
     "./utils": "./src/utils/logger.ts"
   },
@@ -64,6 +65,11 @@
         "types": "./dist/extensions/index.d.ts",
         "import": "./dist/extensions/index.js",
         "require": "./dist/extensions/index.cjs"
+      },
+      "./platform": {
+        "types": "./dist/platform/index.d.ts",
+        "import": "./dist/platform/index.js",
+        "require": "./dist/platform/index.cjs"
       },
       "./version": {
         "types": "./dist/version.d.ts",

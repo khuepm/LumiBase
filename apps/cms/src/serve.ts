@@ -24,6 +24,7 @@ import { mountStudio } from './serve-studio';
 import { runSetupTokenStartup } from './modules/setup/startup';
 import { assertDbRlsStartup } from './config/db-rls-startup';
 import type { Bindings } from './env';
+import { nodeAutostartEnabled } from './node-autostart';
 
 type ProcessRole = 'web' | 'worker' | 'all';
 
@@ -748,7 +749,18 @@ async function main() {
   });
 }
 
-main().catch((err) => {
-  console.error('[lumibase-cms] Failed to start:', formatSafeError(err));
-  process.exit(1);
-});
+/**
+ * Start function for a deployment entry that wraps this one. Reach it through
+ * `startNodeServer` in `./node`, which is what turns the autostart below off.
+ */
+export { main as startNodeServer };
+
+// Running this file (`node dist/serve.cjs`, `tsx src/serve.ts`) starts the
+// server, as it always has. A wrapping entry loads it through `./node`, which
+// disables the autostart first and then calls `startNodeServer()` itself.
+if (nodeAutostartEnabled()) {
+  main().catch((err) => {
+    console.error('[lumibase-cms] Failed to start:', formatSafeError(err));
+    process.exit(1);
+  });
+}

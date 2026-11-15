@@ -48,7 +48,7 @@
       {
         "type": "category",
         "label": "Architecture",
-        "items": ["architecture/overview"]
+        "items": ["architecture/overview", "architecture/platform-extension-points"]
       },
       {
         "type": "category",
