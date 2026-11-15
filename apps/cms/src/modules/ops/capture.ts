@@ -139,7 +139,7 @@ export function captureOpsError(
     runDetached(
       c,
       code.then((errorCode) => writeOpsError(sql, { ...rec, errorCode })).catch((err: unknown) => {
-        // Table missing (migration 0029 not applied) or DB down: the console line
+        // Table missing (migration 0031 not applied) or DB down: the console line
         // from onError/logger is still there; never fail the request over this.
         console.warn('[ops] error capture write failed', {
           requestId: rec.requestId,

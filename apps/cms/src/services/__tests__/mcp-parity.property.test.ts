@@ -7,6 +7,9 @@ import {
   type McpToolDecision,
 } from '../mcp-service';
 import type { HarnessExecutionResult } from '../ai-harness';
+import { governanceFor } from '../external-action-tools';
+import { resolveAutonomy } from '../autonomy-service';
+import { satisfiesCapability } from '../effective-capability-service';
 
 /**
  * Feature: content-os, Property 14: MCP parity.
@@ -171,6 +174,99 @@ describe('Feature: content-os, Property 14: MCP parity', () => {
         expect(seen).toEqual(caps);
       }),
       { numRuns: 100 },
+    );
+  });
+});
+
+/**
+ * External-action tools (tools whose effect lands outside the CMS) are a new
+ * KIND of decision: it is taken from the tool's declared risk, reversibility
+ * and the autonomy level, and it produces result shapes the content skills do
+ * not (a human-only approval, an `AUTONOMY_SHADOW` refusal).
+ *
+ * The decision below is assembled from the harness's own rule functions
+ * (`governanceFor`, `resolveAutonomy`, `satisfiesCapability`), so it is the
+ * same pure function the harness applies. The property is the one above, for
+ * this kind: what `tools/call` reports is exactly that decision. The same
+ * comparison against the real harness and real rows lives in
+ * `external-action-tools.db.integration.test.ts`.
+ */
+describe('MCP parity: external-action tools', () => {
+  const riskArb = fc.constantFrom<'low' | 'medium' | 'high'>('low', 'medium', 'high');
+  const reversibilityArb = fc.constantFrom<'read_only' | 'reversible' | 'irreversible'>(
+    'read_only',
+    'reversible',
+    'irreversible',
+  );
+  const grantArb = fc.option(fc.integer({ min: 0, max: 4 }), { nil: null });
+  const intentCapArb = fc.option(fc.integer({ min: 0, max: 4 }), { nil: null });
+  const externalCapsArb = fc.array(fc.constantFrom('echo:send', 'items:read', 'admin', '*'), {
+    minLength: 0,
+    maxLength: 3,
+  });
+
+  function externalDecision(
+    declaration: { risk: 'low' | 'medium' | 'high'; reversibility: 'read_only' | 'reversible' | 'irreversible' },
+    grantLevel: number | null,
+    intentCap: number | null,
+  ) {
+    return (skill: string, _args: Record<string, unknown>, caps: string[]): HarnessExecutionResult => {
+      if (!satisfiesCapability(caps, 'echo:send')) return { status: 'denied', message: 'Insufficient capabilities' };
+      const governance = governanceFor(declaration);
+      if (!governance.effectful) return { status: 'executed', data: { echoed: skill }, runId: `run_${skill}` };
+      const level = resolveAutonomy({
+        grantLevel,
+        dangerous: true,
+        intentCap,
+        irreversible: declaration.reversibility === 'irreversible',
+      });
+      if (level === 0) {
+        return { status: 'denied', code: 'AUTONOMY_SHADOW', message: 'autonomy_shadow', runId: `run_${skill}` };
+      }
+      const autonomous =
+        !governance.alwaysRequiresApproval &&
+        governance.minAutonomousLevel !== null &&
+        level >= governance.minAutonomousLevel;
+      return autonomous
+        ? { status: 'executed', data: { echoed: skill }, runId: `run_${skill}` }
+        : { status: 'pending_approval', approvalId: `legacy_${skill}`, agentApprovalId: `apr_${skill}`, runId: `run_${skill}` };
+    };
+  }
+
+  it('tools/call reports the declared-risk decision unchanged', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        nameArb, argsArb, riskArb, reversibilityArb, grantArb, intentCapArb, externalCapsArb,
+        async (name, args, risk, reversibility, grantLevel, intentCap, caps) => {
+          const port = decisionPort(externalDecision({ risk, reversibility }, grantLevel, intentCap));
+          const direct = toToolDecision(await port.execute(name, args, caps));
+          const viaMcp = await callViaMcp(new McpService(port), name, args, caps);
+
+          expect(viaMcp.decision).toEqual(direct);
+          expect(viaMcp.isError).toBe(direct.status === 'denied');
+          if (direct.status === 'pending_approval') {
+            // The approval a human will decide is the agent-space one.
+            expect(viaMcp.decision.approvalSpace).toBe('agent');
+            expect(viaMcp.decision.approvalId).toBe(`apr_${name}`);
+          }
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  it('a high-risk or irreversible tool is never reported executed, whatever the grant', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        nameArb, riskArb, reversibilityArb, grantArb, intentCapArb, externalCapsArb,
+        async (name, risk, reversibility, grantLevel, intentCap, caps) => {
+          fc.pre(reversibility !== 'read_only' && (risk === 'high' || reversibility === 'irreversible'));
+          const port = decisionPort(externalDecision({ risk, reversibility }, grantLevel, intentCap));
+          const viaMcp = await callViaMcp(new McpService(port), name, {}, caps);
+          expect(viaMcp.decision.status).not.toBe('executed');
+        },
+      ),
+      { numRuns: 200 },
     );
   });
 });

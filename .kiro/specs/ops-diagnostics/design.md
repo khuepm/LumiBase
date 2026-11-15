@@ -106,7 +106,7 @@ are read-only, so the governed/HITL harness does not apply.
 
 ### Setup impact
 
-New optional secret `LUMIBASE_OPS_TOKEN`; new migration `0029_ops_errors`;
+New optional secret `LUMIBASE_OPS_TOKEN`; new migration `0031_ops_errors`;
 `rls-policies.sql` gains the no-policy entry. The setup wizard is not involved.
 The registry row says *n/a for the wizard; secret documented in deploy docs*.
 

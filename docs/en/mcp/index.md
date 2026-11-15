@@ -1,14 +1,14 @@
 ---
-version: 17
-lastUpdated: 2026-11-13T01:32:48.941Z
+version: 19
+lastUpdated: 2026-11-13T09:53:20.768Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: ba73f72dad20d6bd
+sourceHash: 05a10f3351c9af51
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T01:32:48.941Z
-codeVerifiedHash: ba73f72dad20d6bd
-codeVerifiedClaims: 38
+codeVerified: 2026-11-13T09:53:20.768Z
+codeVerifiedHash: 05a10f3351c9af51
+codeVerifiedClaims: 40
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -31,11 +31,12 @@ Source: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`a
 - **Transport:** Streamable HTTP — JSON-RPC 2.0, one request/one response. `GET /api/v1/mcp` returns `405 METHOD_NOT_ALLOWED` (there is no server-initiated stream/SSE); clients fall back to plain request/response per the MCP spec.
 - **Protocol versions:** `2025-06-18` (default) and `2025-03-26`. `serverInfo = { name: 'lumibase-mcp', version: '1.0.0' }`.
 - **Auth → capability:** Bearer token; the capability set is **resolved from the token's live RBAC bundle** (#472), not from `auth.roles`. ⇒ an MCP client can **never do more** than that same token can through REST — and never less either, which is what reading `auth.roles` got wrong (a role id can never match `items:write`). See [`governed-tool-contract.md`](governed-tool-contract.md) section 4.
+- **OAuth 2.1 (#346):** the endpoint is also an OAuth protected resource for hosted MCP clients. A `401` carries `WWW-Authenticate: Bearer resource_metadata=…`; `/.well-known/oauth-protected-resource[/api/v1/mcp[/sites/<siteId>]]` (RFC 9728) lists the trusted external issuers whose `audience` contains the resource URI. On the MCP endpoint an external-issuer token must carry the resource URI in `aud`; scopes (`mcp:read`/`mcp:write`/`mcp:delete`/`mcp:admin`) only narrow the capability set, and the `CONTROL_PLANE_FORBIDDEN` backstop is unchanged. The site-addressed endpoint `POST /api/v1/mcp/sites/<siteId>` is for clients that cannot send `X-Lumi-Site`. See [`../agent-setup/oauth-connector.md`](../agent-setup/oauth-connector.md).
 - **Feature gate:** the per-site `contentOs.mcp` flag (default **off**). Off → `404 MCP_DISABLED`. (`feature-flags.ts`).
 - **Methods (JSON-RPC):**
   - `initialize` — negotiates the protocol version, returns `capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }` (the organization plane has no `prompts`).
   - `ping`.
-  - `tools/list` — lists the **currently enabled** tools from `ToolRegistryService`; the inputSchema is derived from the canonical schemas in `@lumibase/contracts` (only a skill with no schema still falls back to `{ type: 'object' }`).
+  - `tools/list` — lists the **currently enabled** tools from `ToolRegistryService`; the inputSchema is derived from the canonical schemas in `@lumibase/contracts` (only a skill with no schema still falls back to `{ type: 'object' }`). Each tool also carries a `title` (human-readable name) and `annotations` (`readOnlyHint`, `destructiveHint`) derived from the registry (`toolAnnotations` in `apps/cms/src/services/mcp-service.ts`): read-only only when the tool is `safe` and every capability is `:read`; destructive when its `riskPolicy` is `dangerous`. These are client hints (#346), never an authorization input.
   - `tools/call` — runs through `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. The result is wrapped as `{ content, structuredContent, isError }`.
   - `prompts/list`, `prompts/get` — the site's `active` [Site Skills](../features/site-skills.md); `name` is the slug and the body comes back as a single user message. Served only to callers that can read skills over REST, i.e. a principal that resolves to a control-plane admin for the site (`grant.allowed && grant.controlPlaneAdmin` in `routes/mcp.ts`): a non-admin member or a site API key gets an empty `prompts/list`. For an admin, each skill's `surfaces`/`requiredCapabilities` still filter further. A prompt that does not exist and one the caller may not see answer identically.
   - `notifications/initialized`, `notifications/cancelled` → return `null` ⇒ HTTP `202 Accepted` with no body.

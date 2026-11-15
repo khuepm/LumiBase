@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:11:28.854Z
+version: 3
+lastUpdated: 2026-11-12T18:31:27.268Z
 sourceLang: en
-contentHash: 9730149bdbd5cb5c
-codeVerified: 2026-10-13T19:22:01.019Z
-codeVerifiedHash: 9730149bdbd5cb5c
+contentHash: 8a58ca3d5d214c3e
+codeVerified: 2026-11-12T18:31:27.268Z
+codeVerifiedHash: 8a58ca3d5d214c3e
 codeVerifiedClaims: 10
 ---
 
@@ -43,6 +43,8 @@ Select your agent to view step-by-step instructions for wiring up LumiBase conte
 | [Cursor](./cursor.md) | Terminal · IDE · Standalone · Cloud | [View guide →](./cursor.md) |
 | [GitHub Copilot](./github-copilot.md) | Terminal · Cloud · Extension | [View guide →](./github-copilot.md) |
 | [Windsurf](./windsurf.md) | IDE · Standalone | [View guide →](./windsurf.md) |
+
+**Hosted MCP clients** (Claude / ChatGPT connectors, IDE remote MCP) authenticate with OAuth 2.1 instead of a pasted token — see [Remote MCP connector (OAuth 2.1)](./oauth-connector.md).
 
 ---
 

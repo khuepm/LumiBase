@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-13T15:46:34.785Z
-contentHash: d69e70aa06baefd9
-codeVerified: 2026-11-13T19:16:05.746Z
-codeVerifiedHash: d69e70aa06baefd9
+version: 2
+lastUpdated: 2026-11-15T11:40:22.859Z
+contentHash: aee788fe9c33d0e2
+codeVerified: 2026-11-15T11:40:22.859Z
+codeVerifiedHash: aee788fe9c33d0e2
 codeVerifiedClaims: 26
 ---
 
@@ -33,7 +33,7 @@ On Docker, set it in the CMS environment. If the token is unset or shorter than 
 
 The token is separate from `METRICS_TOKEN` because it reaches further (error messages, table and column names, per-site probes). It is not a user, has no site and cannot call tenant routes under `/api/v1/*`.
 
-Then apply migration `0029_ops_errors` and re-apply `packages/database/migrations/rls-policies.sql` (`pnpm db:migrate` does not apply that file).
+Then apply migration `0031_ops_errors` and re-apply `packages/database/migrations/rls-policies.sql` (`pnpm db:migrate` does not apply that file).
 
 ## Routes
 

@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 20
-lastUpdated: 2026-11-13T15:46:51.283Z
+version: 21
+lastUpdated: 2026-11-15T11:40:34.620Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 979f188ba94cf954
+sourceHash: ff7b6be473cf3a15
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T19:16:14.761Z
-codeVerifiedHash: 979f188ba94cf954
-codeVerifiedClaims: 92
+codeVerified: 2026-11-15T11:40:34.620Z
+codeVerifiedHash: ff7b6be473cf3a15
+codeVerifiedClaims: 98
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -307,6 +307,17 @@ Mọi operation GraphQL đều được validate trước khi chạy, đối chi
 | `PROMETHEUS_ENABLED` | Chỉ Docker | `true` để phơi bày endpoint `/metrics` |
 | `LOG_LEVEL` | ✗ | Mức log: `debug`, `info`, `warn`, `error` (mặc định: `info`) |
 | `LOG_FORMAT` | ✗ | `json` (mặc định) hoặc `pretty` (local dev) |
+
+### Telemetry sử dụng
+
+Telemetry sử dụng ẩn danh tắt theo mặc định và không có endpoint dựng sẵn. Xem [Mốc kích hoạt và telemetry sử dụng](../operations/usage-telemetry.md) để biết chính xác những gì được gửi.
+
+| Biến | Bắt buộc | Mặc định | Mô tả |
+|------|----------|----------|-------|
+| `LUMIBASE_TELEMETRY_ENABLED` | ✗ | (không đặt) | Đặt `true` để opt-in. Không gửi gì trừ khi `LUMIBASE_TELEMETRY_ENDPOINT` cũng được đặt. |
+| `LUMIBASE_TELEMETRY_ENDPOINT` | ✗ | (không đặt) | URL nhận các sự kiện. Chỉ `https:`, hoặc `http:` tới `localhost`. |
+| `LUMIBASE_TELEMETRY_DISABLED` | ✗ | (không đặt) | Đặt `true` để tắt telemetry. Thắng `LUMIBASE_TELEMETRY_ENABLED`. |
+| `DO_NOT_TRACK` | ✗ | (không đặt) | `1` tắt telemetry, giống `LUMIBASE_TELEMETRY_DISABLED`. |
 
 ---
 <!-- check-parity: allow inline-code -->

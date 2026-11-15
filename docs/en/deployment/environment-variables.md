@@ -1,11 +1,11 @@
 ---
-version: 20
-lastUpdated: 2026-11-13T15:46:51.283Z
+version: 21
+lastUpdated: 2026-11-15T11:40:34.620Z
 sourceLang: en
-contentHash: 979f188ba94cf954
-codeVerified: 2026-11-13T19:16:14.761Z
-codeVerifiedHash: 979f188ba94cf954
-codeVerifiedClaims: 92
+contentHash: ff7b6be473cf3a15
+codeVerified: 2026-11-15T11:40:34.620Z
+codeVerifiedHash: ff7b6be473cf3a15
+codeVerifiedClaims: 98
 ---
 
 # Environment Variables Reference
@@ -291,6 +291,17 @@ Every GraphQL operation is validated before it runs against a depth limit and a 
 | `PROMETHEUS_ENABLED` | Docker only | `true` to expose `/metrics` endpoint |
 | `LOG_LEVEL` | ✗ | Log level: `debug`, `info`, `warn`, `error` (default: `info`) |
 | `LOG_FORMAT` | ✗ | `json` (default) or `pretty` (local dev) |
+
+### Usage telemetry
+
+Anonymous usage telemetry is off by default and has no built-in endpoint. See [Activation milestones and usage telemetry](../operations/usage-telemetry.md) for exactly what is sent.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LUMIBASE_TELEMETRY_ENABLED` | ✗ | (unset) | Set `true` to opt in. Nothing is sent unless `LUMIBASE_TELEMETRY_ENDPOINT` is also set. |
+| `LUMIBASE_TELEMETRY_ENDPOINT` | ✗ | (unset) | URL that receives the events. `https:` only, or `http:` to `localhost`. |
+| `LUMIBASE_TELEMETRY_DISABLED` | ✗ | (unset) | Set `true` to turn telemetry off. Wins over `LUMIBASE_TELEMETRY_ENABLED`. |
+| `DO_NOT_TRACK` | ✗ | (unset) | `1` turns telemetry off, same as `LUMIBASE_TELEMETRY_DISABLED`. |
 
 ---
 

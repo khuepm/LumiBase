@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-13T15:46:34.785Z
+version: 2
+lastUpdated: 2026-11-15T11:40:22.859Z
 translatedFrom: en
-sourceHash: d69e70aa06baefd9
+sourceHash: aee788fe9c33d0e2
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T19:16:05.746Z
-codeVerifiedHash: d69e70aa06baefd9
+codeVerified: 2026-11-15T11:40:22.859Z
+codeVerifiedHash: aee788fe9c33d0e2
 codeVerifiedClaims: 26
 ---
 
@@ -36,7 +36,7 @@ Trên Docker, đặt nó trong biến môi trường của CMS. Nếu token chư
 
 Token này tách riêng khỏi `METRICS_TOKEN` vì nó truy cập sâu hơn (thông báo lỗi, tên bảng và cột, probe theo từng site). Nó không phải một người dùng, không gắn với site nào và không gọi được các route tenant dưới `/api/v1/*`.
 
-Sau đó áp dụng migration `0029_ops_errors` và áp dụng lại `packages/database/migrations/rls-policies.sql` (`pnpm db:migrate` không áp dụng file đó).
+Sau đó áp dụng migration `0031_ops_errors` và áp dụng lại `packages/database/migrations/rls-policies.sql` (`pnpm db:migrate` không áp dụng file đó).
 
 ## Các route
 

@@ -86,7 +86,7 @@ opsRouter.get('/errors', async (c) => {
         errors: [
           {
             code: 'OPS_ERRORS_UNAVAILABLE',
-            message: 'lumibase_ops_errors could not be read (migration 0029 not applied?). See error.',
+            message: 'lumibase_ops_errors could not be read (migration 0031 not applied?). See error.',
             error: sanitizeError(err),
           },
         ],

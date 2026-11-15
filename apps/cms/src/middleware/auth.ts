@@ -10,6 +10,7 @@ import type { AppEnv, AuthPrincipal } from '../env';
 import { runDetached } from '../lib/detached';
 import { AuditLogger } from '../modules/audit/logger';
 import { tryExternalJwt } from '../modules/external-auth/adapter';
+import { externalPrincipalRaw } from '../modules/external-auth/principal-raw';
 import { formatSafeError } from '@lumibase/contracts/utils';
 import { TOKEN_AUDIENCE, audienceValues } from '../services/auth/token-audience';
 import { resolvePublicRoleIdCached } from '../services/auth/public-role';
@@ -19,6 +20,8 @@ import {
   readAllowedOrigins,
 } from '../services/api-key-publishable';
 import { mergeRequestContext } from './request-context';
+import { mcpResourceContext } from './mcp-oauth';
+import { scopesFromClaims } from '../services/mcp-oauth';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -437,8 +440,36 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
         externalId: ext.externalId,
         email: ext.email,
         roles: ext.roleIds,
-        raw: ext.payload as Record<string, unknown>,
+        // Never the payload verbatim: LumiBase-reserved markers (`dev`,
+        // `isBootstrap`, `tfaVerified`, …) are dropped so an external issuer
+        // cannot assert them. See `external-auth/principal-raw.ts`.
+        raw: externalPrincipalRaw(ext.payload),
       };
+      // On the MCP resource the verifier has already required `aud` to contain
+      // the resource URI, so this is an OAuth access token for MCP (#346): carry
+      // its scopes so the route can narrow the RBAC capability set.
+      const mcp = mcpResourceContext(c);
+      if (mcp) {
+        const claims = ext.payload as Record<string, unknown>;
+        const clientId = typeof claims.azp === 'string' ? claims.azp : typeof claims.client_id === 'string' ? claims.client_id : undefined;
+        principal.oauth = {
+          issuer: String(ext.payload.iss ?? ''),
+          resource: mcp.resource,
+          scopes: scopesFromClaims(claims),
+          ...(clientId ? { clientId } : {}),
+        };
+        // Built field by field, never spread from the token (ported from #805):
+        // guards elsewhere read `raw.dev` and `raw.isBootstrap`, and a claim
+        // minted by an outside authorization server must not set them. `aud` is
+        // kept as verified (it already matched the issuer's configured audience
+        // and this resource) so audience walls such as `frontend` still apply.
+        principal.raw = {
+          mcpOAuth: true,
+          iss: principal.oauth.issuer,
+          sub: typeof claims.sub === 'string' ? claims.sub : undefined,
+          aud: claims.aud,
+        };
+      }
       c.set('auth', principal);
       return next();
     }
