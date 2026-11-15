@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-15T21:34:05.631Z",
+  "generatedAt": "2026-11-15T23:36:47.012Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 202,
+    "upToDate": 206,
     "planned": 0
   },
   "actions": [
@@ -362,6 +362,18 @@
     },
     {
       "rel": "architecture/decisions/adr-013-organization-plane.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "architecture/decisions/adr-014-preview-bridge-threat-model.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
@@ -1273,6 +1285,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/digital-asset-management.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/directus-data-model-parity-tasks.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1310,6 +1334,18 @@
     },
     {
       "rel": "features/dynamic-zones.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/editorial-ux.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
@@ -1832,6 +1868,18 @@
       "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/visual-editing.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
       "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0

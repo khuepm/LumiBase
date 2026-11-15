@@ -42,6 +42,7 @@ const ItemDetailPage = lazy(() => import('./modules/content/item-detail').then((
 const IntentPage = lazy(() => import('./modules/intents/intent-page').then((m) => ({ default: m.IntentPage })));
 const ItemsListPage = lazy(() => import('./modules/content/items-list').then((m) => ({ default: m.ItemsListPage })));
 const ReviewQueuePage = lazy(() => import('./modules/editorial/review-queue').then((m) => ({ default: m.ReviewQueuePage })));
+const ReleasesPage = lazy(() => import('./modules/editorial/releases-page').then((m) => ({ default: m.ReleasesPage })));
 const CollectionsListPage = lazy(() => import('./modules/data-model/list').then((m) => ({ default: m.CollectionsListPage })));
 const McpSetupPage = lazy(() => import('./modules/data-model/mcp-setup').then((m) => ({ default: m.McpSetupPage })));
 const CollectionDetailPage = lazy(() => import('./modules/data-model/detail').then((m) => ({ default: m.CollectionDetailPage })));
@@ -57,6 +58,7 @@ const EmailSettingsPage = lazy(() => import('./modules/settings/email-page').the
 const NotificationsSettingsPage = lazy(() => import('./modules/settings/notifications-page').then((m) => ({ default: m.NotificationsSettingsPage })));
 const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then((m) => ({ default: m.SiteSettingsPage })));
 const DomainsSettingsPage = lazy(() => import('./modules/settings/domains-page').then((m) => ({ default: m.DomainsSettingsPage })));
+const PreviewSettingsPage = lazy(() => import('./modules/settings/preview-page').then((m) => ({ default: m.PreviewSettingsPage })));
 const SocialLoginSettingsPage = lazy(() => import('./modules/settings/social-login-page').then((m) => ({ default: m.SocialLoginSettingsPage })));
 const KeyboardSettingsPage = lazy(() => import('./modules/settings/keyboard-page').then((m) => ({ default: m.KeyboardSettingsPage })));
 const DateTimeSettingsPage = lazy(() => import('./modules/settings/date-time-page').then((m) => ({ default: m.DateTimeSettingsPage })));
@@ -510,6 +512,19 @@ const contentReviewsRoute = createRoute({
   component: withSuspense(ReviewQueuePage),
 });
 
+// Content releases with the pre-publish validation summary (#692).
+const releasesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/releases',
+  component: withSuspense(ReleasesPage),
+});
+
+const adminPathReleasesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/releases',
+  component: withSuspense(ReleasesPage),
+});
+
 const contentItemRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/content/$collection/$id',
@@ -701,6 +716,12 @@ const domainsSettingsRoute = createRoute({
   component: withSuspense(DomainsSettingsPage),
 });
 
+const previewSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'preview',
+  component: withSuspense(PreviewSettingsPage),
+});
+
 const socialLoginSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'social-login',
@@ -874,6 +895,12 @@ const adminPathDomainsSettingsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'domains',
   component: withSuspense(DomainsSettingsPage),
+});
+
+const adminPathPreviewSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'preview',
+  component: withSuspense(PreviewSettingsPage),
 });
 
 const adminPathSocialLoginSettingsRoute = createRoute({
@@ -1392,6 +1419,7 @@ const routeTree = rootRoute.addChildren([
     indexRoute,
     contentCollectionRoute,
     contentReviewsRoute,
+    releasesRoute,
     contentItemRoute,
     intentRoute,
     dataModelRoute,
@@ -1406,6 +1434,7 @@ const routeTree = rootRoute.addChildren([
       siteSettingsRoute,
       organizationSettingsRoute,
       domainsSettingsRoute,
+      previewSettingsRoute,
       socialLoginSettingsRoute,
       keyboardSettingsRoute,
       dateTimeSettingsRoute,
@@ -1474,6 +1503,7 @@ const routeTree = rootRoute.addChildren([
     adminPathIndexRoute,
     adminPathContentCollectionRoute,
     adminPathContentReviewsRoute,
+    adminPathReleasesRoute,
     adminPathContentItemRoute,
     adminPathIntentRoute,
     adminPathDataModelRoute,
@@ -1488,6 +1518,7 @@ const routeTree = rootRoute.addChildren([
       adminPathSiteSettingsRoute,
       adminPathOrganizationSettingsRoute,
       adminPathDomainsSettingsRoute,
+      adminPathPreviewSettingsRoute,
       adminPathSocialLoginSettingsRoute,
       adminPathKeyboardSettingsRoute,
       adminPathDateTimeSettingsRoute,

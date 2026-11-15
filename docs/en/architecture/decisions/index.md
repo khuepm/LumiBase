@@ -1,8 +1,8 @@
 ---
-version: 3
-lastUpdated: 2026-11-09T10:47:36.155Z
+version: 4
+lastUpdated: 2026-11-15T19:48:31.851Z
 sourceLang: en
-contentHash: aa2693756b301230
+contentHash: e613099bcc5af049
 ---
 
 # Architecture Decision Records (ADR)
@@ -26,6 +26,7 @@ LumiBase follows the [ADR pattern](https://adr.github.io/) to document significa
 | [ADR-011](./adr-011-user-management-realms.md) | User Management Realms (single store, role-scoped realms, token audiences) | Accepted |
 | [ADR-012](./adr-012-remove-cdc-cache-invalidator.md) | Remove CDC CacheInvalidator (superseded by tag purge at API write path) | Accepted |
 | [ADR-013](./adr-013-organization-plane.md) | Organization plane (tenant hierarchy and scope-typed credentials) | Proposed |
+| [ADR-014](./adr-014-preview-bridge-threat-model.md) | Live preview bridge — preview tokens, framing and postMessage threat model | Accepted |
 
 ## Template
 

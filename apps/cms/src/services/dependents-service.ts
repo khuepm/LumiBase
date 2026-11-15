@@ -16,6 +16,7 @@
 
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { collections, fields, items, relations, scopeSite, type Database } from '@lumibase/database';
+import { nextItemVersion } from './item-etag';
 import type { ItemService } from './item-service';
 import { itemServiceForSystem } from './item-service-factory';
 import type { PermissionAction, PermissionService } from './permission-service';
@@ -274,6 +275,7 @@ export class DependentsService {
           .set({
             data: sql`jsonb_set(${items.data}, ${sql.raw(`'{${escapeIdent(rel.manyField)}}'`)}, ${value === null ? sql`'null'::jsonb` : sql`to_jsonb(${value}::text)`}, true)`,
             updatedAt: new Date(),
+            version: nextItemVersion(),
           })
           .where(whereRef)
           .returning({ id: items.id });

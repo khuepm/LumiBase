@@ -205,6 +205,8 @@ export interface Bindings {
    * behaviour. Use in hardened deployments where the throttle is load-bearing.
    */
   LUMIBASE_RATE_LIMIT_FAIL_CLOSED?: string;
+  /** `frame-src` ceiling for Studio HTML (live preview pane, #667). Default: `https: http://localhost:* http://127.0.0.1:*`. */
+  LUMIBASE_STUDIO_FRAME_SRC?: string;
   /** Max static cost accepted per GraphQL operation (default 1000). */
   LUMIBASE_GQL_MAX_COST?: string;
   /** List multiplier for GraphQL list fields lacking a literal pagination arg (default 20). */

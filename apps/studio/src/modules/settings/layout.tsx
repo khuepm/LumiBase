@@ -23,6 +23,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'site', label: 'Site', to: '/settings/site' },
       { id: 'domains', label: 'Domains', to: '/settings/domains' },
+      { id: 'preview', label: 'Preview', to: '/settings/preview' },
       { id: 'uploads', label: 'Uploads', to: '/settings/uploads' },
       { id: 'ai-decisions', label: 'AI decisions', to: '/settings/ai-decisions' },
       { id: 'keyboard', label: 'Keyboard shortcuts', to: '/settings/keyboard' },

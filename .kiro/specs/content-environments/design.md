@@ -117,11 +117,11 @@ merge_runs {
 
 ### 2.1 Khoá của item: hiện tại và sau PR #811
 
-Bản trước của mục này viết "`lumibase_items.id` là primary key toàn cục nên Fork phải cấp id mới cho item". Điều đó đúng trên `main` nhưng **không còn đúng** khi PR #811 (branch `feature/friendly-dijkstra-dupuli`, migration `0032_items_site_scoped_pk`) merge, và #811 dự kiến merge **trước** khi feature này được code. Thiết kế nhắm vào khoá cuối cùng.
+Bản trước của mục này viết "`lumibase_items.id` là primary key toàn cục nên Fork phải cấp id mới cho item". Điều đó đúng trên `main` nhưng **không còn đúng** khi PR #811 (branch `feature/friendly-dijkstra-dupuli`, migration `0035_items_site_scoped_pk`) merge, và #811 dự kiến merge **trước** khi feature này được code. Thiết kế nhắm vào khoá cuối cùng.
 
 | | `main` hiện tại | Sau #811 (khoá đích) |
 |---|---|---|
-| Khoá `lumibase_items` | `PRIMARY KEY (id)` toàn instance: `id: id()` với `id = () => text('id')...primaryKey()` (`packages/database/src/schema/cms.ts:23`, `:187`) | `PRIMARY KEY (site_id, id)` (`0032_items_site_scoped_pk.sql`; `cms.ts:194`, `:235` trên nhánh #811) |
+| Khoá `lumibase_items` | `PRIMARY KEY (id)` toàn instance: `id: id()` với `id = () => text('id')...primaryKey()` (`packages/database/src/schema/cms.ts:23`, `:187`) | `PRIMARY KEY (site_id, id)` (`0035_items_site_scoped_pk.sql`; `cms.ts:194`, `:235` trên nhánh #811) |
 | FK trỏ vào item | một cột `item_id → items.id`: `revisions` (`cms.ts:261-263`), `release_items` (`cms.ts:616-618`), `content_reviews` (`regulated.ts:90`) | FK composite cùng site `(site_id, item_id) → items(site_id, id)`: `lumibase_revisions_item_fk` (cascade), `lumibase_release_items_item_fk` (cascade), `lumibase_content_reviews_item_fk` (`SET NULL (item_id)`) |
 | Kiểm id trùng khi tạo | trong `(site, collection)` (`apps/cms/src/services/item-service.ts:1874-1889`); trùng với site khác → lỗi unique của PK toàn cục (500) | trong cả site, mọi collection; race/lặp id → `409 ITEM_ID_EXISTS` qua `itemIdConflict` (`item-service.ts:1883`, `:2563` trên nhánh #811) |
 

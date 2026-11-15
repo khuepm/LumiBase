@@ -194,6 +194,7 @@ async function main() {
   let questionSweepTask: ScheduledTask | undefined;
   let schedulerTask: ScheduledTask | undefined;
   let retentionTask: ScheduledTask | undefined;
+  let revisionRetentionTask: ScheduledTask | undefined;
   let deploymentPollTask: ScheduledTask | undefined;
   let flowScheduleTask: ScheduledTask | undefined;
   let goalDispatchTask: ScheduledTask | undefined;
@@ -583,6 +584,21 @@ async function main() {
       lockOpts,
     ),
   );
+  // Revision retention (#693): prunes revisions per `meta.revisionRetention`.
+  const { sweepRevisionRetention } = await import('./services/revision-retention');
+  revisionRetentionTask = cron.schedule(
+    '23 * * * *',
+    leaderLockedCallback(
+      'revision-retention',
+      3_300_000,
+      async () => {
+        await sweepRevisionRetention({ db: rotatorDb }).catch((err) => {
+          console.error('[revision-retention] failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
 
   // ── Reconciler goal dispatch (#455) ─────────────────────────────────────
   //
@@ -760,6 +776,7 @@ async function main() {
     questionSweepTask?.stop();
     schedulerTask?.stop();
     retentionTask?.stop();
+    revisionRetentionTask?.stop();
     deploymentPollTask?.stop();
     flowScheduleTask?.stop();
     goalDispatchTask?.stop();

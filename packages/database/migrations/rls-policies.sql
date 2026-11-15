@@ -86,7 +86,7 @@ DECLARE
   tables text[] := ARRAY[
     'lumibase_collections', 'lumibase_fields', 'lumibase_relations',
     'lumibase_items', 'lumibase_revisions', 'lumibase_activity',
-    'lumibase_files', 'lumibase_folders', 'lumibase_presets', 'lumibase_translations',
+    'lumibase_files', 'lumibase_file_versions', 'lumibase_folders', 'lumibase_presets', 'lumibase_translations',
     'lumibase_settings', 'lumibase_webhooks', 'lumibase_extensions',
     'lumibase_email_layouts', 'lumibase_email_templates', 'lumibase_push_subscriptions',
     'lumibase_roles', 'lumibase_policies', 'lumibase_user_policies',
@@ -133,7 +133,10 @@ DECLARE
     'lumibase_social_auth_providers',
     -- Secrets of external-action agent tools (site-isolated). A tool running
     -- for one site can only ever decrypt that site's rows.
-    'lumibase_agent_tool_secrets'
+    'lumibase_agent_tool_secrets',
+    -- Preview tokens (#679, site-isolated). Minted and read per site; the
+    -- delivery read learns the site from the URL, never from the token.
+    'lumibase_preview_secrets'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP
