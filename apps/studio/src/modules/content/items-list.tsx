@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp, Bookmark, ChevronLeft, ChevronRight, ClipboardCheck, Code2, Download, Filter, ListTree, Upload, Lock, Plus, RefreshCw, Save, Table2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -18,6 +18,7 @@ import { FilterBuilder, compileFilter, type FilterCondition } from './filter-bui
 import { MapLayout, geopointFields } from './geo/map-layout';
 import { ListLayoutToggle, type ListLayout } from './geo/list-layout-toggle';
 import { CollectionTreeView } from './tree-view';
+import { reorderTargetFor, type ReorderTarget } from './manual-order';
 
 const PAGE_SIZE = 25;
 
@@ -72,6 +73,11 @@ export function ItemsListPage() {
   const treeEnabled =
     (collectionQuery.data?.meta as { tree?: { enabled?: unknown } } | undefined)?.tree?.enabled === true;
   const [viewMode, setViewMode] = useState<'tree' | 'table'>('tree');
+  // Manual ordering (#690): `meta.manualSort` collections list by `sort` and
+  // rows can be dragged while that order is shown.
+  const manualSort =
+    (collectionQuery.data?.meta as { manualSort?: unknown } | undefined)?.manualSort === true;
+  const [dragId, setDragId] = useState<string | null>(null);
   const showTree = treeEnabled && viewMode === 'tree';
 
   const filterPayload = useMemo(() => compileFilter(filters), [filters]);
@@ -180,6 +186,23 @@ export function ItemsListPage() {
 
   const total = itemsQuery.data?.meta?.total ?? 0;
   const rows = itemsQuery.data?.data ?? [];
+  const manualMode = manualSort && canUpdate && sort.field === 'sort' && sort.dir === 'asc';
+  useEffect(() => {
+    // Open a manual-sort collection in its editor-defined order.
+    if (manualSort && sort.field === 'updated_at') setSort({ field: 'sort', dir: 'asc' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualSort]);
+  const reorderMutation = useMutation({
+    mutationFn: async ({ id, target }: { id: string; target: ReorderTarget }) =>
+      client.items(collection as never).reorder(id, target),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['items', collection] }),
+  });
+  const dropOn = (targetId: string) => {
+    if (!dragId || dragId === targetId) return;
+    const target = reorderTargetFor(rows.map((r) => r.id), dragId, targetId);
+    setDragId(null);
+    if (target) reorderMutation.mutate({ id: dragId, target });
+  };
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const toggleSort = (field: string) => {
@@ -434,7 +457,15 @@ export function ItemsListPage() {
                   <tr><td colSpan={visibleFields.length + 4} className="px-4 py-6 text-center text-muted-foreground">No items match.</td></tr>
                 )}
                 {rows.map((row) => (
-                  <tr key={row.id} className="border-t hover:bg-muted/20">
+                  <tr
+                    key={row.id}
+                    className={cn('border-t hover:bg-muted/20', manualMode && 'cursor-grab', dragId === row.id && 'opacity-50')}
+                    draggable={manualMode}
+                    onDragStart={manualMode ? () => setDragId(row.id) : undefined}
+                    onDragOver={manualMode ? (e) => e.preventDefault() : undefined}
+                    onDrop={manualMode ? () => dropOn(row.id) : undefined}
+                    data-testid={manualMode ? 'sortable-row' : undefined}
+                  >
                     <td className="px-3 py-2">
                       <input
                         type="checkbox"

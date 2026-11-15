@@ -375,6 +375,15 @@ export function legacyRest() {
             body: JSON.stringify(options),
           }),
         /**
+         * Manual ordering (#690) on a `meta.manualSort` collection: place `id`
+         * right after `after` (null = first) or right before `before`.
+         */
+        reorder: (id: string, target: { after: string | null } | { before: string }) =>
+          client.rawRequest<Row>(`${base}/${encodeURIComponent(id)}/reorder`, {
+            method: "POST",
+            body: JSON.stringify(target),
+          }),
+        /**
          * Patch without recording a revision (#693) — for autosave and
          * machine writes. Agent-authored writes keep their revision anyway.
          */

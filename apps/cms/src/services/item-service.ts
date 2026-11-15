@@ -11,6 +11,7 @@ import {
 } from '@lumibase/database';
 import { refreshPhysicalTable, type MaterializeConfig } from './materialize-service';
 import { dispatchItemEvent } from './flow-dispatch';
+import { isManualSort, manualSortOrder, nextManualSort } from './item-reorder';
 import {
   publicationStamps,
   publicationStateClause,
@@ -1073,7 +1074,13 @@ export class ItemService {
       .select()
       .from(items)
       .where(where)
-      .orderBy(...(treeScope && !params.sort?.length ? treeScope.order : buildSort(params.sort, coll.fieldTypes)))
+      .orderBy(
+        ...(treeScope && !params.sort?.length
+          ? treeScope.order
+          : !params.sort?.length && isManualSort(coll.meta)
+            ? manualSortOrder()
+            : buildSort(params.sort, coll.fieldTypes)),
+      )
       .limit(limit)
       .offset(offset);
 
@@ -1197,7 +1204,10 @@ export class ItemService {
         409,
       );
     }
-    const sort = payload.sort ?? 0;
+    // Manual-sort collections (#690) append new items at the end.
+    const sort = payload.sort ?? (isManualSort(coll.meta) && !tree
+      ? await nextManualSort(this.deps.db, this.deps.siteId, coll.id)
+      : 0);
     const createSnapshot = buildPermissionSnapshot({
       data: withPresets,
       status,

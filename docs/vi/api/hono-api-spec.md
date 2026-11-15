@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 51
-lastUpdated: 2026-11-15T19:44:51.079Z
+version: 52
+lastUpdated: 2026-11-15T19:51:54.566Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a9ae2ea121d40a47
+sourceHash: 89585785e1bc8cdc
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T19:44:51.079Z
-codeVerifiedHash: a9ae2ea121d40a47
-codeVerifiedClaims: 590
+codeVerified: 2026-11-15T19:51:54.566Z
+codeVerifiedHash: 89585785e1bc8cdc
+codeVerifiedClaims: 592
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -593,6 +593,7 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `DELETE` | `/api/v1/items/:collection/:id` | Xóa mục — **409 nếu bị chặn bởi phụ thuộc** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | Liệt kê các bản ghi tham chiếu tới mục này |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Xử lý hàng loạt các phụ thuộc của quan hệ |
+| `POST` | `/api/v1/items/:collection/:id/reorder` | Sắp xếp thủ công trên collection có `meta.manualSort`: `{ after: id \| null }` hoặc `{ before: id }` ([Editorial UX](../features/editorial-ux.md#sắp-xếp-thủ-công)) |
 | `POST` | `/api/v1/items/:collection/:id/duplicate` | Lưu thành bản sao: một bản sao `draft` với trường duy nhất được thêm hậu tố (`relations` trong body; xem bên dưới) |
 | `POST` | `/api/v1/items/:collection/:id/move` | Di chuyển một item cùng cây con của nó trong collection dạng cây; liệt kê với `?tree=children\|subtree\|ancestors` ([Collection phân cấp](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | Liệt kê các bản sửa đổi (revisions) |

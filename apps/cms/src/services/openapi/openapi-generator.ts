@@ -359,6 +359,26 @@ function addCollectionPaths(
   const segment = encodeURIComponent(name);
   paths[`/items/${segment}`] = listPath;
   paths[`/items/${segment}/{id}`] = detailPath;
+  if (access.update) {
+    paths[`/items/${segment}/{id}/reorder`] = {
+      parameters: [idParam],
+      post: {
+        operationId: `reorder_${opId}`,
+        tags: ['items'],
+        summary: `Move one ${name} in the manual order (collections with \`meta.manualSort\`)`,
+        requestBody: {
+          required: true,
+          content: jsonContent({
+            oneOf: [
+              { type: 'object', properties: { after: { type: ['string', 'null'] } }, required: ['after'] },
+              { type: 'object', properties: { before: { type: 'string' } }, required: ['before'] },
+            ],
+          }),
+        },
+        responses: { ...single('The moved item.'), ...errorResponses(['400', '401', '403', '404', '409']) },
+      },
+    };
+  }
   if (access.create) {
     paths[`/items/${segment}/{id}/duplicate`] = {
       parameters: [idParam],

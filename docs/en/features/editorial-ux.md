@@ -1,11 +1,11 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-15T19:44:49.720Z
-contentHash: 08f82c2049c0e3dc
-codeVerified: 2026-11-15T19:44:49.720Z
-codeVerifiedHash: 08f82c2049c0e3dc
-codeVerifiedClaims: 12
+version: 2
+lastUpdated: 2026-11-15T19:51:53.181Z
+contentHash: fb94c46b64a515d9
+codeVerified: 2026-11-15T19:51:53.181Z
+codeVerifiedHash: fb94c46b64a515d9
+codeVerifiedClaims: 16
 ---
 
 # Editorial UX
@@ -127,6 +127,37 @@ deletes an item's newest revision, a staged revision (a veto window is still
 open), a revision a release pins, or an agent-authored revision. Each collection
 that loses rows writes one `revision_retention_applied` audit entry.
 
+## Manual ordering
+
+Set `meta.manualSort: true` on a collection to let editors order its items by
+hand. The items are then listed by their `sort` value (ascending, ties by
+creation time) whenever a request names no other sort, new items are appended
+at the end, and the delivery API uses the same order when a section sets no
+`orderBy`.
+
+Move an item with `POST /items/:collection/:id/reorder` and one of:
+
+```json
+{ "after": "item_a" }
+{ "after": null }
+{ "before": "item_c" }
+```
+
+`after: null` moves the item to the top. The anchor is an item id, not a
+position, so it works on any page of a filtered list. `sort` values are spaced
+1024 apart, so a move usually writes only the moved item, at the midpoint
+between its new neighbours. When there is no room left (for example every
+existing item still has the default `0`), the collection is renumbered once in
+its current order, then the move is applied. The move goes through the normal
+update path — it needs `update` on the item and write access to `sort` — and
+records no revision. A collection without `manualSort` answers
+`400 MANUAL_SORT_DISABLED`; placing an item next to itself is
+`400 INVALID_REORDER`.
+
+In Studio a manual-sort collection opens sorted by `sort`, and its rows can be
+dragged: dropping below the target places the item after it, dropping above
+places it before. The SDK has `client.items('menu').reorder(id, { after })`.
+
 ## Release validation summary
 
 Before a release publishes, every item it would publish is validated in full —
@@ -161,6 +192,7 @@ not focused automatically — open the tab.
 | `GET` | `/api/v1/items/:collection/:id?publicationState=` | `404` when the item is outside the cohort. |
 | `PATCH`/`PUT` | `/api/v1/items/:collection/:id?saveRevision=false` | Write without a revision. |
 | `POST` | `/api/v1/items/:collection/:id/duplicate` | Draft copy. |
+| `POST` | `/api/v1/items/:collection/:id/reorder` | Manual ordering. |
 | `GET` | `/api/v1/releases/:id/validate` | Release validation summary. |
 
 See also [Content releases](./content-releases.md) and the

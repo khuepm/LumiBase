@@ -1,11 +1,11 @@
 ---
-version: 52
-lastUpdated: 2026-11-15T19:44:51.079Z
+version: 53
+lastUpdated: 2026-11-15T19:51:54.566Z
 sourceLang: en
-contentHash: a9ae2ea121d40a47
-codeVerified: 2026-11-15T19:44:51.079Z
-codeVerifiedHash: a9ae2ea121d40a47
-codeVerifiedClaims: 590
+contentHash: 89585785e1bc8cdc
+codeVerified: 2026-11-15T19:51:54.566Z
+codeVerifiedHash: 89585785e1bc8cdc
+codeVerifiedClaims: 592
 ---
 
 # Hono API Specification — LumiBase
@@ -673,6 +673,7 @@ active `siteId`.
 | `DELETE` | `/api/v1/items/:collection/:id` | Delete item — **409 if blocked by dependents** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | List records that reference this item |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Batch-resolve a relation's dependents |
+| `POST` | `/api/v1/items/:collection/:id/reorder` | Manual ordering on a `meta.manualSort` collection: `{ after: id \| null }` or `{ before: id }` ([Editorial UX](../features/editorial-ux.md#manual-ordering)) |
 | `POST` | `/api/v1/items/:collection/:id/duplicate` | Save-as-copy: a `draft` copy with unique fields suffixed (`relations` in the body; see below) |
 | `POST` | `/api/v1/items/:collection/:id/move` | Move an item and its subtree in a tree collection; list with `?tree=children\|subtree\|ancestors` ([Hierarchical collections](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | List revisions |

@@ -16,6 +16,7 @@ import { ItemDuplicateService, nextCopyValue } from '../item-duplicate';
 import { SchemaService } from '../schema-service';
 import { auditLog } from '@lumibase/database';
 import { ReleaseService } from '../release-service';
+import { ItemReorderService, midpoint } from '../item-reorder';
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
@@ -410,6 +411,67 @@ describe.skipIf(!hasDbIntegrationUrl)('#668 editorial UX — DB integration', ()
       expect(result.status).toBe('partially_failed');
       expect((await row(db, ok)).status).toBe('published');
       expect((await row(db, bad)).status).toBe('draft');
+    });
+  });
+
+  describe('C06 manual ordering (#690)', () => {
+    async function manual(): Promise<{ svc: ItemService; reorder: ItemReorderService; ids: string[] }> {
+      await seed(db, { manualSort: true });
+      const msvc = new ItemService({ db, siteId: SITE });
+      const ids: string[] = [];
+      for (const t of ['a', 'b', 'c', 'd']) ids.push(((await msvc.create(POSTS, { data: { title: t } })) as { id: string }).id);
+      return { svc: msvc, reorder: new ItemReorderService({ db, siteId: SITE, items: msvc }), ids };
+    }
+    const order = async (s: ItemService) =>
+      (await s.list(POSTS, {})).data.map((d) => ((d as { data: { title: string } }).data.title)).join('');
+
+    it('midpoint finds a gap or reports none', () => {
+      expect(midpoint(0, 1024)).toBe(512);
+      expect(midpoint(5, 6)).toBeNull();
+      expect(midpoint(null, null)).toBe(0);
+      expect(midpoint(2048, null)).toBe(3072);
+    });
+
+    it('appends new items and lists by manual order by default', async () => {
+      const { svc: s } = await manual();
+      expect(await order(s)).toBe('abcd');
+    });
+
+    it('moves one item with a single write and keeps others untouched', async () => {
+      const { svc: s, reorder, ids } = await manual();
+      const before = await db.select({ id: items.id, sort: items.sort }).from(items).where(eq(items.siteId, SITE));
+      await reorder.reorder(POSTS, postsId, ids[3]!, { after: ids[0]! });
+      expect(await order(s)).toBe('adbc');
+      const after = await db.select({ id: items.id, sort: items.sort }).from(items).where(eq(items.siteId, SITE));
+      const changed = after.filter((r) => before.find((b) => b.id === r.id)?.sort !== r.sort);
+      expect(changed.map((r) => r.id)).toEqual([ids[3]]);
+
+      await reorder.reorder(POSTS, postsId, ids[2]!, { after: null });
+      expect(await order(s)).toBe('cadb');
+      await reorder.reorder(POSTS, postsId, ids[0]!, { before: ids[1]! });
+      expect(await order(s)).toBe('cdab');
+    });
+
+    it('renumbers once when the gap is exhausted (legacy rows all at sort 0)', async () => {
+      const { svc: s, reorder, ids } = await manual();
+      await db.update(items).set({ sort: 0 }).where(eq(items.siteId, SITE));
+      // Ties fall back to creation order: a b c d.
+      expect(await order(s)).toBe('abcd');
+      await reorder.reorder(POSTS, postsId, ids[0]!, { after: ids[2]! });
+      expect(await order(s)).toBe('bcad');
+    });
+
+    it('refuses to place an item next to itself and records no revision', async () => {
+      const { reorder, ids } = await manual();
+      await expect(reorder.reorder(POSTS, postsId, ids[0]!, { after: ids[0]! })).rejects.toMatchObject({ code: 'INVALID_REORDER' });
+      const noRev = new ItemReorderService({
+        db,
+        siteId: SITE,
+        items: new ItemService({ db, siteId: SITE, saveRevision: false }),
+      });
+      const revsBefore = await revisionCount(db, ids[1]!);
+      await noRev.reorder(POSTS, postsId, ids[1]!, { after: null });
+      expect(await revisionCount(db, ids[1]!)).toBe(revsBefore);
     });
   });
 });

@@ -19,6 +19,7 @@ import {
 import { AuditLogger } from '../modules/audit/logger';
 import { isPublicationState, PUBLICATION_STATES, type PublicationState } from '../services/publication-state';
 import { ItemDuplicateService } from '../services/item-duplicate';
+import { ItemReorderService, isManualSort } from '../services/item-reorder';
 import { SchemaService } from '../services/schema-service';
 
 /**
@@ -403,6 +404,41 @@ itemsRouter.post('/:collection/:id/duplicate', async (c) => {
       schema: new SchemaService({ db: c.get('db'), siteId, cache: c.get('runtime').cache }),
     }).duplicate(c.req.param('collection'), c.req.param('id'), parsed.data);
     return c.json({ data: result.item, meta: { sourceId: result.sourceId, related: result.related } }, 201);
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+/**
+ * POST /items/:collection/:id/reorder — manual ordering (#690) on a
+ * `meta.manualSort` collection. Body `{ after: id | null }` (null = first) or
+ * `{ before: id }`. One write in the common case; no revision is recorded.
+ */
+const reorderSchema = z.union([
+  z.object({ after: z.string().min(1).nullable() }).strict(),
+  z.object({ before: z.string().min(1) }).strict(),
+]);
+
+itemsRouter.post('/:collection/:id/reorder', async (c) => {
+  const parsed = reorderSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'Body must be { after: id | null } or { before: id }.' }] }, 400);
+  }
+  try {
+    const collection = c.req.param('collection');
+    const schema = new SchemaService({ db: c.get('db'), siteId: c.get('siteId'), cache: c.get('runtime').cache });
+    const compiled = await schema.getCompiled(collection);
+    if (!compiled) return c.json({ errors: [{ code: 'NOT_FOUND', message: `Collection "${collection}" not found.` }] }, 404);
+    if (!isManualSort(compiled.meta)) {
+      return c.json({ errors: [{ code: 'MANUAL_SORT_DISABLED', message: `Collection "${collection}" does not use manual ordering.` }] }, 400);
+    }
+    const data = await new ItemReorderService({
+      db: c.get('db'),
+      siteId: c.get('siteId'),
+      items: itemServiceForRequest(c, { saveRevision: false }),
+    }).reorder(collection, compiled.id, c.req.param('id'), parsed.data);
+    return c.json({ data });
   } catch (err) {
     const { status, body } = toError(err);
     return c.json(body, status as 400);

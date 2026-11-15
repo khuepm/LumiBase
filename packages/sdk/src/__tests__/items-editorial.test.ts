@@ -42,4 +42,11 @@ describe("items editorial options", () => {
     expect(calls[0]!.method).toBe("PATCH");
     expect(calls[0]!.url.searchParams.get("saveRevision")).toBe("false");
   });
+
+  it("posts reorder targets to /reorder", async () => {
+    const { client, calls } = setup();
+    await client.items("posts").reorder("p1", { before: "p0" });
+    expect(calls[0]!.url.pathname).toBe("/api/v1/items/posts/p1/reorder");
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ before: "p0" });
+  });
 });

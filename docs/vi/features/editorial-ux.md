@@ -1,14 +1,14 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-15T19:44:49.720Z
+version: 2
+lastUpdated: 2026-11-15T19:51:53.181Z
 translatedFrom: en
-sourceHash: 08f82c2049c0e3dc
+sourceHash: fb94c46b64a515d9
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T19:44:49.720Z
-codeVerifiedHash: 08f82c2049c0e3dc
-codeVerifiedClaims: 12
+codeVerified: 2026-11-15T19:51:53.181Z
+codeVerifiedHash: fb94c46b64a515d9
+codeVerifiedClaims: 16
 ---
 
 # Editorial UX
@@ -129,6 +129,36 @@ xoá revision mới nhất của một item, revision đang staged (veto window 
 revision được release ghim, hay revision do agent tạo. Mỗi collection bị xoá dòng
 ghi một mục audit `revision_retention_applied`.
 
+## Sắp xếp thủ công
+
+Đặt `meta.manualSort: true` trên một collection để người biên tập tự sắp xếp
+item. Khi đó item được liệt kê theo giá trị `sort` (tăng dần, hoà thì theo thời
+điểm tạo) mỗi khi request không chỉ định cách sắp xếp khác, item mới được thêm
+vào cuối, và delivery API dùng cùng thứ tự khi một section không đặt `orderBy`.
+
+Di chuyển một item bằng `POST /items/:collection/:id/reorder` với một trong các
+dạng:
+
+```json
+{ "after": "item_a" }
+{ "after": null }
+{ "before": "item_c" }
+```
+
+`after: null` đưa item lên đầu. Mốc là id của item chứ không phải vị trí, nên
+dùng được trên mọi trang của một danh sách đã lọc. Giá trị `sort` cách nhau
+1024, nên một lần di chuyển thường chỉ ghi đúng item được di chuyển, ở điểm giữa
+hai item kề mới. Khi không còn khoảng trống (ví dụ mọi item cũ vẫn ở giá trị mặc
+định `0`), collection được đánh số lại một lần theo thứ tự hiện tại, rồi mới áp
+dụng lần di chuyển. Lần di chuyển đi qua đường cập nhật thông thường — cần quyền
+`update` trên item và quyền ghi `sort` — và không ghi revision. Collection không
+bật `manualSort` trả `400 MANUAL_SORT_DISABLED`; đặt một item cạnh chính nó trả
+`400 INVALID_REORDER`.
+
+Trong Studio, collection sắp xếp thủ công mở ra theo `sort`, và các dòng có thể
+kéo thả: thả phía dưới đích sẽ đặt item sau nó, thả phía trên sẽ đặt trước nó.
+SDK có `client.items('menu').reorder(id, { after })`.
+
 ## Tóm tắt kiểm tra hợp lệ của release
 
 Trước khi một release xuất bản, mọi item mà nó sẽ xuất bản được kiểm tra đầy đủ
@@ -163,6 +193,7 @@ tự động — hãy mở tab đó.
 | `GET` | `/api/v1/items/:collection/:id?publicationState=` | `404` khi item nằm ngoài cohort. |
 | `PATCH`/`PUT` | `/api/v1/items/:collection/:id?saveRevision=false` | Ghi không tạo revision. |
 | `POST` | `/api/v1/items/:collection/:id/duplicate` | Bản sao dạng draft. |
+| `POST` | `/api/v1/items/:collection/:id/reorder` | Sắp xếp thủ công. |
 | `GET` | `/api/v1/releases/:id/validate` | Tóm tắt kiểm tra hợp lệ của release. |
 
 Xem thêm [Content releases](./content-releases.md) và
