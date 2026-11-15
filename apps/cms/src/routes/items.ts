@@ -25,6 +25,10 @@ import {
   type ExportRecord,
 } from '../services/export-service';
 import { AuditLogger } from '../modules/audit/logger';
+import { isPublicationState, PUBLICATION_STATES, type PublicationState } from '../services/publication-state';
+import { ItemDuplicateService } from '../services/item-duplicate';
+import { ItemReorderService, isManualSort } from '../services/item-reorder';
+import { SchemaService } from '../services/schema-service';
 
 /**
  * /items/:collection — generic CRUD over the items store.
@@ -52,6 +56,10 @@ const listQuerySchema = z.object({
   tree: z.enum(['children', 'subtree', 'ancestors']).optional(),
   parent: z.string().optional(),
   node: z.string().min(1).optional(),
+  // Cohort (#688) — read by `requestItemOptions`; declared so it validates here too.
+  publicationState: z.enum(PUBLICATION_STATES).optional(),
+  // "Modified since publish" (#687).
+  modifiedSincePublish: z.enum(['true', 'false']).optional(),
 });
 
 /** Map the tree query params to the service shape; `parent` absent/`null`/empty = roots. */
@@ -93,7 +101,47 @@ const bulkSchema = z.object({
   items: z.array(z.record(z.string(), z.unknown())),
 });
 
-const buildService = (c: Context<AppEnv>) => itemServiceForRequest(c);
+/**
+ * Per-request read/write options carried on the query string, so every
+ * handler picks them up through `buildService` without changing its body:
+ *
+ * - `publicationState=live|preview|all` (#688) on reads — the cohort applies to
+ *   the list, the single-item read and nested relation expansion. Anonymous
+ *   callers are clamped to `live` by `itemServiceForRequest`.
+ * - `saveRevision=false` (#693) on PATCH/PUT — skip the revision row for
+ *   autosave / machine writes.
+ */
+export function requestItemOptions(
+  c: Context<AppEnv>,
+): { publicationState?: PublicationState; saveRevision?: boolean } {
+  const out: { publicationState?: PublicationState; saveRevision?: boolean } = {};
+  const method = c.req.method.toUpperCase();
+  if (method === 'GET' || method === 'HEAD') {
+    const state = c.req.query('publicationState');
+    if (state !== undefined) {
+      if (!isPublicationState(state)) {
+        throw new ItemServiceError(
+          'VALIDATION',
+          'publicationState must be one of: live, preview, all.',
+          400,
+        );
+      }
+      out.publicationState = state;
+    }
+  }
+  if (method === 'PATCH' || method === 'PUT') {
+    const save = c.req.query('saveRevision');
+    if (save !== undefined) {
+      if (save !== 'true' && save !== 'false') {
+        throw new ItemServiceError('VALIDATION', 'saveRevision must be true or false.', 400);
+      }
+      out.saveRevision = save === 'true';
+    }
+  }
+  return out;
+}
+
+const buildService = (c: Context<AppEnv>) => itemServiceForRequest(c, requestItemOptions(c));
 
 const toError = (err: unknown) => {
   if (err instanceof ItemServiceError || err instanceof ContentVersionError) {
@@ -139,6 +187,7 @@ itemsRouter.get('/:collection', async (c) => {
       status: parsed.data.status,
       withTotal: parsed.data.meta !== 'none',
       tree,
+      modifiedSincePublish: parsed.data.modifiedSincePublish === 'true',
     });
     return c.json(result);
   } catch (err) {
@@ -351,6 +400,74 @@ itemsRouter.patch('/:collection/:id', async (c) => {
  * (#749). Requires `update` on the item and `read` on the new parent; cycles
  * and depth overflows are 409.
  */
+/**
+ * POST /items/:collection/:id/duplicate — save-as-copy (#689). The copy is a
+ * draft written through `create` (permissions, validation, hooks, revision);
+ * unique fields get a `-copy` suffix; `relations` picks how links are copied.
+ */
+const duplicateSchema = z.object({
+  relations: z.enum(['none', 'reference', 'deep']).optional(),
+  translations: z.boolean().optional(),
+  locale: z.string().min(1).optional(),
+  overrides: z.record(z.string(), z.unknown()).optional(),
+});
+
+itemsRouter.post('/:collection/:id/duplicate', async (c) => {
+  const parsed = duplicateSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
+  }
+  try {
+    const siteId = c.get('siteId');
+    const result = await new ItemDuplicateService({
+      db: c.get('db'),
+      siteId,
+      userId: c.get('auth')?.userId ?? null,
+      items: buildService(c),
+      schema: new SchemaService({ db: c.get('db'), siteId, cache: c.get('runtime').cache }),
+    }).duplicate(c.req.param('collection'), c.req.param('id'), parsed.data);
+    return c.json({ data: result.item, meta: { sourceId: result.sourceId, related: result.related } }, 201);
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+/**
+ * POST /items/:collection/:id/reorder — manual ordering (#690) on a
+ * `meta.manualSort` collection. Body `{ after: id | null }` (null = first) or
+ * `{ before: id }`. One write in the common case; no revision is recorded.
+ */
+const reorderSchema = z.union([
+  z.object({ after: z.string().min(1).nullable() }).strict(),
+  z.object({ before: z.string().min(1) }).strict(),
+]);
+
+itemsRouter.post('/:collection/:id/reorder', async (c) => {
+  const parsed = reorderSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'Body must be { after: id | null } or { before: id }.' }] }, 400);
+  }
+  try {
+    const collection = c.req.param('collection');
+    const schema = new SchemaService({ db: c.get('db'), siteId: c.get('siteId'), cache: c.get('runtime').cache });
+    const compiled = await schema.getCompiled(collection);
+    if (!compiled) return c.json({ errors: [{ code: 'NOT_FOUND', message: `Collection "${collection}" not found.` }] }, 404);
+    if (!isManualSort(compiled.meta)) {
+      return c.json({ errors: [{ code: 'MANUAL_SORT_DISABLED', message: `Collection "${collection}" does not use manual ordering.` }] }, 400);
+    }
+    const data = await new ItemReorderService({
+      db: c.get('db'),
+      siteId: c.get('siteId'),
+      items: itemServiceForRequest(c, { saveRevision: false }),
+    }).reorder(collection, compiled.id, c.req.param('id'), parsed.data);
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
 itemsRouter.post('/:collection/:id/move', async (c) => {
   const parsed = moveSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {

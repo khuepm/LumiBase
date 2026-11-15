@@ -260,7 +260,12 @@ async function hydrateSection(
         publishWindowClause(),
       ),
     )
-    .orderBy(...buildSort(section.source.orderBy))
+    // Manual-sort collections (#690) default to their editor-defined order.
+    .orderBy(
+      ...(!section.source.orderBy && (collection.meta as Record<string, unknown> | null)?.manualSort === true
+        ? [asc(schema.items.sort), asc(schema.items.createdAt), asc(schema.items.id)]
+        : buildSort(section.source.orderBy)),
+    )
     .limit(clampLimit(section.source.limit));
 
   const seoOption = section.source.seo

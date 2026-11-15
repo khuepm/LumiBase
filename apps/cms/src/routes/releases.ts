@@ -122,6 +122,21 @@ releasesRouter.patch('/:id', async (c) => {
   }
 });
 
+/**
+ * GET /releases/:id/validate — pre-publish validation summary (#692). Every
+ * item the release would publish, validated in full; `items` lists only the
+ * ones with issues, each issue naming its field so Studio can jump to it.
+ */
+releasesRouter.get('/:id/validate', async (c) => {
+  try {
+    const data = await buildService(c).validate(c.req.param('id'));
+    return c.json({ data });
+  } catch (err) {
+    const e = toError(err);
+    return c.json(e.body, e.status as 400);
+  }
+});
+
 releasesRouter.post('/:id/publish', async (c) => {
   const id = c.req.param('id');
   try {
