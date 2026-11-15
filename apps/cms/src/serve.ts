@@ -173,6 +173,7 @@ async function main() {
   let flowScheduleTask: ScheduledTask | undefined;
   let goalDispatchTask: ScheduledTask | undefined;
   let importTask: ScheduledTask | undefined;
+  let localeJobTask: ScheduledTask | undefined;
   let loadGuardTimer: ReturnType<typeof setInterval> | undefined;
 
   if (runWorkers) {
@@ -606,6 +607,25 @@ async function main() {
     ),
   );
 
+  // ── Locale generator (#714) ─────────────────────────────────────────────
+  // Same shape as imports: the creating request drives the first chunk; this
+  // tick resumes jobs whose lease expired.
+  const { runLocaleJobTick } = await import('./services/locale-generation-service');
+  const { localeJobDeps } = await import('./routes/locale-generation');
+  localeJobTask = cron.schedule(
+    '* * * * *',
+    leaderLockedCallback(
+      'locale-generation-resume',
+      55_000,
+      async () => {
+        await runLocaleJobTick(localeJobDeps(rotatorDb, process.env as unknown as Bindings), { budgetMs: 50_000 }).catch((err) => {
+          console.error('[locale-generation] tick failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
+
   const { runGoalDispatchTick } = await import('./services/goal-dispatch-service');
   const goalDispatchDeps = { db: rotatorDb, queue: runtime.queue };
   goalDispatchTask = cron.schedule(
@@ -719,6 +739,7 @@ async function main() {
     flowScheduleTask?.stop();
     goalDispatchTask?.stop();
     importTask?.stop();
+    localeJobTask?.stop();
     if (runHttp) {
       pressureLimiter.stop();
     }

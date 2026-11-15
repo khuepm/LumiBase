@@ -32,7 +32,7 @@ interface ListedTool {
  * the MCP client sees typed parameters; the authoritative validation happens
  * in the harness against the declared schema.
  */
-export function zodShapeFromJsonSchema(schema: Record<string, unknown> | undefined): z.ZodRawShape {
+export function zodShapeFromJsonSchema(schema: Record<string, unknown> | undefined): Record<string, z.ZodType> {
   const properties =
     schema && typeof schema['properties'] === 'object' && schema['properties'] !== null
       ? (schema['properties'] as Record<string, Record<string, unknown>>)

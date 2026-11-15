@@ -60,6 +60,7 @@ const KeyboardSettingsPage = lazy(() => import('./modules/settings/keyboard-page
 const DateTimeSettingsPage = lazy(() => import('./modules/settings/date-time-page').then((m) => ({ default: m.DateTimeSettingsPage })));
 const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
 const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
+const LocaleGeneratorPage = lazy(() => import('./modules/translations/locale-generator-page').then((m) => ({ default: m.LocaleGeneratorPage })));
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
 const EncryptionSettingsPage = lazy(() => import('./modules/settings/encryption-page').then((m) => ({ default: m.EncryptionSettingsPage })));
 const SecuritySettingsPage = lazy(() => import('./modules/settings/security-page').then((m) => ({ default: m.SecuritySettingsPage })));
@@ -711,6 +712,13 @@ const translationMemoryRoute = createRoute({
   component: withSuspense(TranslationMemoryPage),
 });
 
+// One-shot translation generator for a new locale (#714).
+const localeGeneratorRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'locale-generator',
+  component: withSuspense(LocaleGeneratorPage),
+});
+
 const activityRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'activity',
@@ -877,6 +885,12 @@ const adminPathTranslationMemoryRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'translation-memory',
   component: withSuspense(TranslationMemoryPage),
+});
+
+const adminPathLocaleGeneratorRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'locale-generator',
+  component: withSuspense(LocaleGeneratorPage),
 });
 
 const adminPathActivityRoute = createRoute({
@@ -1383,6 +1397,7 @@ const routeTree = rootRoute.addChildren([
       notificationsSettingsRoute,
       materializeSettingsRoute,
       translationMemoryRoute,
+      localeGeneratorRoute,
       activityRoute,
       encryptionSettingsRoute,
       securitySettingsRoute,
@@ -1463,6 +1478,7 @@ const routeTree = rootRoute.addChildren([
       adminPathNotificationsSettingsRoute,
       adminPathMaterializeSettingsRoute,
       adminPathTranslationMemoryRoute,
+      adminPathLocaleGeneratorRoute,
       adminPathActivityRoute,
       adminPathEncryptionSettingsRoute,
       adminPathSecuritySettingsRoute,

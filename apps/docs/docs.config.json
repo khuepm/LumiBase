@@ -66,6 +66,7 @@
           "features/reconciler-repair-loop",
           "features/site-skills",
           "features/agent-receipts",
+          "features/locale-generator",
           "features/external-action-tools",
           "features/draft-review",
           "features/jev-benchmark",

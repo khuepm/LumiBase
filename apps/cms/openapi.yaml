@@ -4912,6 +4912,129 @@ paths:
         '200': { description: Decision recorded }
         '409': { description: Already processed, or NOT_AN_APPROVAL for an askUser question id }
 
+  /locale-generation/jobs:
+    get:
+      summary: List locale generation jobs (#714)
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Start a one-shot translation generator job for a new locale (#714)
+      description: >-
+        Adds the locale to the locales setting and queues a job that translates
+        missing translatable-text values and ui strings (translation memory,
+        glossary, MT) into a review queue. Nothing is written to content until
+        a reviewer approves. Control plane (site administrators).
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [locale]
+              properties:
+                locale: { type: string }
+                sourceLocale: { type: string, default: en }
+                collections: { type: array, items: { type: string }, maxItems: 50 }
+                includeUi: { type: boolean, default: true }
+                provider: { type: string }
+      responses:
+        '202': { description: Job queued and started }
+        '400': { description: VALIDATION, NO_TRANSLATABLE_FIELDS or PROVIDER_UNAVAILABLE }
+        '409': { description: JOB_ACTIVE }
+
+  /locale-generation/jobs/{id}:
+    get:
+      summary: Read a locale generation job with its review state (#714)
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: Unknown or other-tenant job }
+
+  /locale-generation/jobs/{id}/cancel:
+    post:
+      summary: Cancel a queued or running locale generation job (#714)
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Cancel requested }
+        '404': { description: Not found }
+        '409': { description: NOT_ACTIVE }
+
+  /locale-generation/jobs/{id}/resume:
+    post:
+      summary: Re-queue a failed or cancelled locale generation job at its cursor (#714)
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '202': { description: Re-queued }
+        '404': { description: Not found }
+        '409': { description: NOT_RESUMABLE }
+
+  /locale-generation/suggestions:
+    get:
+      summary: Translation review queue (#714)
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: locale, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, approved, rejected, stale] } }
+        - { name: jobId, in: query, schema: { type: string } }
+        - { name: collection, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        '200': { description: '{ data, meta: { total, limit, offset } }' }
+
+  /locale-generation/suggestions/{id}/decide:
+    post:
+      summary: Approve (optionally edited) or reject one translation suggestion (#714)
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approve, reject] }
+                text: { type: string, maxLength: 20000 }
+      responses:
+        '200': { description: '{ id, status: approved | rejected | stale, reason? }' }
+        '404': { description: Not found }
+        '409': { description: ALREADY_DECIDED }
+        '422': { description: The content write was refused; the suggestion stays pending }
+
+  /locale-generation/suggestions/decide-bulk:
+    post:
+      summary: Decide up to 200 translation suggestions (#714)
+      parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision, locale]
+              properties:
+                decision: { type: string, enum: [approve, reject] }
+                locale: { type: string }
+                ids: { type: array, items: { type: string }, maxItems: 200 }
+                jobId: { type: string }
+                collection: { type: string }
+                limit: { type: integer, minimum: 1, maximum: 200 }
+      responses:
+        '200': { description: '{ approved, rejected, stale, failed, processed, failures }' }
+
   /agent/receipts:
     get:
       summary: Agent receipts — runs, approvals, overrides, cost, drift (#713)

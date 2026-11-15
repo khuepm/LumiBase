@@ -1,13 +1,13 @@
 ---
-version: 12
-lastUpdated: 2026-11-15T19:40:35.176Z
+version: 13
+lastUpdated: 2026-11-15T19:56:19.632Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 005ee4e565d4246f
+sourceHash: a13d2df6c1876273
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T19:40:35.176Z
-codeVerifiedHash: 005ee4e565d4246f
+codeVerified: 2026-11-15T19:56:19.632Z
+codeVerifiedHash: a13d2df6c1876273
 codeVerifiedClaims: 4
 ---
 
@@ -74,6 +74,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
   - [agent-harness-layer.md](./features/agent-harness-layer.md) — Agent goals, runs, tools, memory, approvals, artifacts, evaluations, and app generation governance.
   - [site-skills.md](./features/site-skills.md) — Site Skills: versioned playbooks injected into agent runs, skills-as-code CLI, MCP prompts.
   - [agent-receipts.md](./features/agent-receipts.md) — Agent receipts: runs, approvals, overrides, cost, drift and autonomy over a window; alert thresholds and CSV export.
+  - [locale-generator.md](./features/locale-generator.md) — Locale generator: add a locale in one step; machine translations wait in a review queue.
   - [external-action-tools.md](./features/external-action-tools.md) — Governed agent tools whose effect lands outside the CMS: declared risk, human-only approval, per-site secrets.
   - [runtime-abstraction.md](./features/runtime-abstraction.md) — The `@lumibase/runtime` layer that allows running on Cloudflare and Docker.
   - [flows-automation.md](./features/flows-automation.md) — The Flows / Operations engine (workflow automation).

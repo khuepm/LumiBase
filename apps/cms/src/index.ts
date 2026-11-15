@@ -89,6 +89,7 @@ import { shareAdminRouter, sharePublicRouter } from './routes/shares';
 import { teamsRouter } from './routes/teams';
 import { translationsRouter } from './routes/translations';
 import { tmRouter } from './routes/translation-memory';
+import { localeGenerationRouter } from './routes/locale-generation';
 import { typegenRouter } from './routes/typegen';
 import { openApiRouter } from './routes/openapi';
 import { usersRouter } from './routes/users';
@@ -391,6 +392,8 @@ api.route('/admin/social-providers', adminSocialProvidersRouter);
 // relies on.
 api.route('/admin/security', auditRouter);
 api.route('/tm', tmRouter);
+// One-shot translation generator for a new locale (#714) — control plane.
+api.route('/locale-generation', localeGenerationRouter);
 api.route('/flows', flowsRouter);
 api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);

@@ -1,10 +1,10 @@
 ---
-version: 19
-lastUpdated: 2026-11-15T18:28:59.126Z
+version: 20
+lastUpdated: 2026-11-15T19:56:38.305Z
 sourceLang: en
-contentHash: a569ee25f43387da
-codeVerified: 2026-11-15T18:28:59.126Z
-codeVerifiedHash: a569ee25f43387da
+contentHash: 1de25264a392c410
+codeVerified: 2026-11-15T19:56:38.305Z
+codeVerifiedHash: 1de25264a392c410
 codeVerifiedClaims: 20
 ---
 
@@ -36,6 +36,7 @@ Schema files are split by domain:
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
 | `social-auth.ts` | `lumibase_user_identities`, `lumibase_social_auth_providers` |
 | `imports.ts` | `lumibase_import_jobs` |
+| `locale-generation.ts` | `lumibase_locale_generation_jobs`, `lumibase_translation_suggestions` |
 | `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
