@@ -136,3 +136,7 @@ export function entitlementDenialBody(denial: EntitlementDenial): EntitlementDen
     ],
   };
 }
+
+// ─── External-action tools ────────────────────────────────────────────────────
+
+export * from './external-actions';

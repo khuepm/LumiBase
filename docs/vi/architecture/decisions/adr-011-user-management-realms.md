@@ -4,8 +4,11 @@ lastUpdated: 2026-07-08T20:23:24.860Z
 sourceLang: en
 translatedFrom: en
 sourceHash: ad07e9950138a1c0
-mtEngine: claude
-syncStatus: machine-translated
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-14T03:13:31.844Z
+codeVerifiedHash: ad07e9950138a1c0
+codeVerifiedClaims: 20
 ---
 
 # ADR-011: User Management Realms (kho định danh duy nhất, realm phân tách theo role, token audiences)
@@ -75,7 +78,7 @@ một `JWT_SECRET`. Chúng ta ghim một claim `aud` tại thời điểm ký:
 
 - `studio` — bootstrap admin hoặc bất kỳ role nào có `appAccess`.
 - `frontend` — tất cả những đối tượng còn lại (subscriber / role không có
-  `appAccess`).
+  appAccess).
 
 `withStudioAccess` **từ chối thẳng các token có audience `frontend`**, trước
 mọi bước đánh giá policy. Đây là defense-in-depth chồng lên bước kiểm tra

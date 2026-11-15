@@ -6,8 +6,8 @@ translatedFrom: vi
 sourceHash: ffe9ae1d87df7293
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-08-02T19:22:34.688Z
-codeVerifiedHash: ea702bc10561b02e
+codeVerified: 2026-11-14T03:13:31.351Z
+codeVerifiedHash: ffe9ae1d87df7293
 codeVerifiedClaims: 2
 ---
 
@@ -185,7 +185,7 @@ export default defineHook({
       // 4. If there aren't enough words, throw the ValidationError available in the context
       if (wordCount < minWords) {
         throw new ctx.errors.ValidationError(
-          `Post too short! The current content has only ${wordCount} words, the minimum required is ${minWords} words.`
+          `Bài viết quá ngắn! Nội dung hiện tại chỉ có ${wordCount} từ, yêu cầu tối thiểu ${minWords} từ.`
         );
       }
     }

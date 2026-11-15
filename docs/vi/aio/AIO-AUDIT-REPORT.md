@@ -4,8 +4,8 @@ lastUpdated: 2026-07-29T05:26:14.674Z
 sourceLang: en
 translatedFrom: en
 sourceHash: 0434e76bd6629620
-mtEngine: claude
-syncStatus: machine-translated
+mtEngine: manual
+syncStatus: human-translated
 ---
 
 # Báo cáo audit AIO: LumiBase
@@ -410,7 +410,7 @@ Metadata của repo GitHub hiện `license: None` dù MIT được nhắc tới 
 > **Mục này đã lỗi thời theo cách nó được viết.** File `LICENSE` giờ đã có ở gốc
 > repo và là **Apache-2.0**, không phải MIT — việc đổi license được ghi trong
 > `CHANGELOG.md` ở mục `[0.23.0]`. Nội dung site đã được cập nhật cho khớp. Hãy
-> đọc phần "Cách sửa" bên dưới theo nghĩa "commit `LICENSE` để GitHub hiện đúng
+> đọc phần "Cách sửa" bên dưới theo nghĩa "commit LICENSE để GitHub hiện đúng
 > license"; chỗ nhắc MIT là trạng thái *trước* khi đổi license mà báo cáo này ghi
 > lại, không phải mục tiêu cần đạt.
 
