@@ -9,8 +9,8 @@ Kế hoạch triển khai **Content Environments** theo 6 phase. Mỗi phase t�
 ### Phase A — Write_Precondition (độc lập)
 
 - [ ] 1. ETag + If-Match cho item
-  - [ ] 1.1 Đọc luồng `ItemService.patch` (`item-service.ts:1090`) và coalesced writes (`:2259`); chốt nguồn ETag (`updatedAt` hay cột `version` mới — design §14.7) (Req 6.1, 6.4; design §6)
-  - [ ] 1.2 `ItemService.patch`/`replace` nhận `expected?: { etag }`; conditional UPDATE trong cùng câu lệnh; 0 dòng → `PRECONDITION_FAILED` (Req 6.2, 6.4; design §6)
+  - [ ] 1.1 Áp nguồn ETag owner đã chốt ở G0 (design §14.7; khuyến nghị: cột `version` + migration viết tay); luồng `ItemService.patch` và coalesced writes đã đọc ở G0 — coalescing chỉ hoãn invalidation, không ảnh hưởng precondition (giả định 1 bên dưới) (Req 6.1, 6.4; design §6)
+  - [ ] 1.2 `ItemService.patch`/`replace` nhận `expected?: { etag }`; conditional UPDATE trong cùng câu lệnh; 0 dòng → `PRECONDITION_FAILED` (Req 6.2, 6.4; design §6). Nếu chọn cột `version`: tăng nó ở mọi UPDATE đổi `data`/`status` liệt kê ở design §14.7
   - [ ] 1.3 Route `items.ts`: trả `ETag` ở GET detail, đọc `If-Match` ở PATCH/PUT, map 412 (Req 6.1-6.3; design §6)
   - [ ] 1.4 Test: không header → hành vi cũ; header khớp → ghi; header lệch → 412 không ghi; hai ghi đồng thời chỉ một thắng (Req 6.2-6.4)
   - [ ] 1.5 SDK + Studio: gửi `If-Match` khi lưu item, hiển thị thông báo "item đã được người khác sửa" khi 412 (Req 6.2)
@@ -32,15 +32,15 @@ Kế hoạch triển khai **Content Environments** theo 6 phase. Mỗi phase t�
 - [ ] 4. Fork worker
   - [ ] 4.1 Worker `environment-fork` trên `QueueProvider`, theo pha, ghi `forkCursor`, resumable (Req 2.6; design §3.1)
   - [ ] 4.2 Copy schema + roles/permissions + settings không nhạy cảm, ghi lineage `collection|field|relation` (Req 2.2, 2.4; design §3.1)
-  - [ ] 4.3 Copy items lượt 1 theo `contentScope`, ghi lineage `baseHash` + `baseRevisionId`/`baseSnapshot` (Req 2.3, 2.4; design §3.2, §3.3)
-  - [ ] 4.4 Lượt 2 viết lại tham chiếu theo `relations`; đánh dấu `external` (Req 2.5; design §3.2)
-  - [ ] 4.5 Files: copy metadata, dùng chung storage key; sửa đường xoá file để kiểm tham chiếu còn lại (Req 3.1-3.3; design §3.4)
-  - [ ] 4.6 Danh sách loại trừ: API keys, secrets, sessions, audit, revisions, agent memory, trust ledger (Req 2.8; design §3.5)
+  - [ ] 4.3 Copy items lượt 1 theo `contentScope` (giữ id item nếu owner duyệt design §14.9; field mã hoá decrypt/encrypt lại qua `processCrypto`), ghi lineage `baseHash` + Base theo phương án §14.4 đã chốt (Req 2.3, 2.4; design §2.1, §3.2, §3.3)
+  - [ ] 4.4 Lượt 2 viết lại tham chiếu theo `relations` (chỉ file/folder nếu giữ id item — design §2.1); đánh dấu `external` (Req 2.5; design §3.2)
+  - [ ] 4.5 Files: copy metadata, dùng chung `filenameDisk`; quyết định object chỉ có ở `/media` (tiền tố theo site) — copy byte hay giới hạn v1; đường xoá dòng file hiện không xoá object nên không cần sửa (Req 3.1-3.3; design §3.4)
+  - [ ] 4.6 Danh sách loại trừ: API keys, secrets, sessions, audit, revisions, agent memory, trust ledger, setting `revalidation.targets`, pipeline Firebase Sync, materialized collections (Req 2.8; design §3.5)
   - [ ] 4.7 Integration test trên Postgres thật: fork `all` và `collections[]`, relation m2o/m2m/m2a còn đúng, chạy lại sau lỗi không nhân bản, Origin không đổi một byte (Req 2.3-2.7)
 
 - [ ] 5. Cô lập Side_System
   - [ ] 5.1 Copy webhooks/flows/CDC/deployments ở trạng thái disabled, không secret; intents `paused` (Req 4.1, 4.2; design §4)
-  - [ ] 5.2 `isEnvironment(siteId)` cache theo request; chặn tại dispatcher của webhook/flow/notification (Req 4.1-4.3; design §4)
+  - [ ] 5.2 `isEnvironment(siteId)` cache theo request; chặn tại **từng** điểm phát ra ngoài — `dispatchItemEvent`, `CdcDispatcher`, `dispatchFirebaseSync`, `runRevalidationDispatch`, email/push — vì không có dispatcher chung (Req 4.1-4.3; design §4)
   - [ ] 5.3 Delivery: `X-Robots-Tag: noindex` cho site con; xác nhận cache key + search index tách theo `siteId` (Req 4.4; design §4)
   - [ ] 5.4 Test: ghi item trong Environment không bắn webhook, không chạy flow, không tạo agent run của Origin (Req 4.1-4.3)
   - [ ] 5.5 Studio: danh sách Environment, tạo/xoá, chuyển site, nhãn Environment cố định (Req 4.5, 5.1; design §11)
@@ -70,7 +70,7 @@ Kế hoạch triển khai **Content Environments** theo 6 phase. Mỗi phase t�
 - [ ] 8. Thuật toán
   - [ ] 8.1 Hàm thuần `threeWay(base, origin, env, fieldDefs)` theo field và theo locale; mảng nguyên khối (Req 9.2-9.4; design §9)
   - [ ] 8.2 Property test: không bên nào đổi → base; một bên đổi → bên đó; đối xứng; áp resolution `origin`/`environment` cho kết quả đúng (Req 9.3, 9.4)
-  - [ ] 8.3 Dựng Base từ `baseRevisionId`/`baseSnapshot`; fallback conflict toàn phần (Req 9.7; design §3.3)
+  - [ ] 8.3 Đọc Base theo phương án §14.4 đã chốt (khuyến nghị: luôn `baseSnapshot`, không dựng từ revision); fallback conflict toàn phần (Req 9.7; design §3.3)
   - [ ] 8.4 Conflict cấp item (xoá vs sửa) (Req 9.5)
   - [ ] 8.5 `merge({ dryRun, resolutions })`; 422 `UNRESOLVED_CONFLICTS`; tôn trọng `pinnedFields` (Req 9.1, 9.6, 9.8; design §9)
 
@@ -107,12 +107,15 @@ Một phase chỉ được mở PR khi đạt đủ exit criteria của nó, và
 
 ### G0 — Duyệt spec (trước khi viết dòng code đầu tiên)
 
-- [ ] Năm giả định ở "Implementation status" đã được kiểm chứng bằng cách đọc code; kết quả ghi lại ngay tại mục đó (đúng / sai + file:line).
-- [ ] Giả định nào sai thì `design.md` đã được sửa tương ứng (đặc biệt §3.3 nếu `revisions.delta.after` không đủ dựng Base, và §6 nếu ghi item đã có kiểm tra phiên bản).
-- [ ] Open question §14.4 (Base khi revision bị retention dọn) và §14.7 (nguồn ETag) đã chốt phương án — hai câu này quyết định data model nên không được để ngỏ sang Phase B.
-- [ ] Open question §14.1 đã chốt con số: giới hạn item mỗi lần fork, ngân sách thời gian fork, và `environments.maxPerSite` mặc định.
-- [ ] Các open question còn lại (§14.2, §14.3, §14.5, §14.6) được ghi rõ là "hoãn sau v1", có người đồng ý.
-- [ ] Phạm vi v1 được xác nhận: dừng ở Phase D (promote một chiều) hay đi hết Phase E.
+- [x] Năm giả định ở "Implementation status" đã được kiểm chứng bằng cách đọc code; kết quả ghi lại ngay tại mục đó (đúng / sai + file:line). *(2026-11-15, đối chiếu `origin/main` và nhánh của #811)*
+- [x] Giả định nào sai thì `design.md` đã được sửa tương ứng: §3.3 (Base), §3.4 (files), §3.5 + §4 (không có dispatcher chung), §6 (precondition + coalescing), §10.3 (`revertRevision`).
+- [x] Design drift về khoá item đã xử lý: design §2.1–§2.2 mô tả khoá hiện tại và `(site_id, id)` của #811, remap còn cần ở đâu, lineage, và chiến lược test theo khoá đích.
+- [ ] Open question §14.4 (Base an toàn với retention) và §14.7 (nguồn ETag) đã chốt phương án — hai câu này quyết định data model nên không được để ngỏ sang Phase B. *Khuyến nghị đã viết, trạng thái `Proposed — needs owner decision`.*
+- [ ] Open question §14.1 đã chốt con số: giới hạn item mỗi lần fork, ngân sách thời gian fork, và `environments.maxPerSite` mặc định. *Khuyến nghị: 50 000 item, lô 100, ≤ 10 lô hoặc ~20 s mỗi lần chạy job, ≤ 15 phút tổng, `maxPerSite` = 3 — Proposed.*
+- [ ] Open question §14.9 (giữ id item sau #811) đã chốt; nếu giữ id thì lời Req 2.4, 2.5, 8.3, 8.6 được sửa theo. *Proposed.*
+- [ ] Các open question còn lại (§14.2, §14.3, §14.5, §14.6) được ghi rõ là "hoãn sau v1", có người đồng ý. *Khuyến nghị: hoãn cả bốn — Proposed.*
+- [ ] Phạm vi v1 được xác nhận: dừng ở Phase D (promote một chiều) hay đi hết Phase E. *Khuyến nghị (§14.8): v1 = Phase A–D, task 10.1 chuyển sang D — Proposed.*
+- [ ] PR #811 (`0032_items_site_scoped_pk`) đã merge trước khi mở Phase B; số migration của feature này cấp cao hơn `0032`.
 
 ### Điều kiện chung cho mọi PR của feature này
 
@@ -127,13 +130,15 @@ Một phase chỉ được mở PR khi đạt đủ exit criteria của nó, và
 - [ ] Request không có `If-Match` cho kết quả như trước (test hồi quy trên route items hiện có).
 - [ ] Test đồng thời: hai PATCH cùng ETag → đúng một cái 200, một cái 412, dữ liệu là của cái thắng.
 - [ ] Kiểm tra nằm trong cùng câu UPDATE (reviewer đọc SQL sinh ra), không phải SELECT rồi UPDATE.
-- [ ] Coalesced writes không làm precondition báo sai (có test).
+- [ ] Coalesced writes không làm precondition báo sai (có test). G0 đã thấy coalescing chỉ hoãn invalidation (`item-service.ts:2246-2280`), nên đây là test hồi quy, không phải rủi ro đã biết.
 - [ ] DoD §2d: bản shell desktop/mobile lưu item bình thường, xử lý được 412.
 
 ### GB — Environment, Fork, cô lập
 
 - [ ] Fork `all` trên site mẫu: số dòng mỗi bảng ở Environment khớp Origin trong phạm vi; mọi relation m2o/o2m/m2m/m2a resolve đúng trong Environment.
 - [ ] Origin không đổi sau fork: so hash toàn bộ `items.data` và `updated_at` trước/sau.
+- [ ] Canary chéo site theo design §2.2 mục 3 (sửa/xoá/publish theo lịch/retention trên item Environment cùng id → item Origin không đổi) pass trên schema có migration `0032`.
+- [ ] Field mã hoá (shared và envelope) đọc được trong Environment sau fork.
 - [ ] Giết worker giữa chừng rồi chạy lại → không dòng trùng, kết thúc `ready`.
 - [ ] Ghi item trong Environment → 0 webhook gửi, 0 flow run, 0 agent run, 0 email/push (đếm ở dispatcher).
 - [ ] Xoá file trong Environment không xoá object storage mà Origin còn dùng; xoá cả Environment xong Origin vẫn tải được mọi file.
@@ -191,10 +196,21 @@ Một phase chỉ được mở PR khi đạt đủ exit criteria của nó, và
 
 **Chưa bắt đầu.** Spec viết 2026-11-13. Chưa có code, migration hay docs nào cho feature này.
 
-Giả định trong spec chưa được kiểm chứng bằng code, cần xác nhận ở task đầu của mỗi phase:
+### Kiểm chứng giả định (G0, 2026-11-15)
 
-- Item write hiện là last-write-wins (không thấy `If-Match`/`expectedRevision` khi grep; chưa đọc hết `ItemService.patch`) — task 1.1.
-- `revisions.delta.after` đủ để dựng lại trạng thái đầy đủ của item tại một revision — task 8.3.
-- Cache key và search index đã tách hoàn toàn theo `siteId` — task 5.3.
-- Webhook/flow/notification có một điểm dispatch chung để đặt chốt chặn — task 5.2.
-- Bảng files có cột storage key dùng chung được giữa hai dòng — task 4.5.
+Đối chiếu trên `origin/main`; chỗ nào nhánh của PR #811 (`feature/friendly-dijkstra-dupuli`) khác thì ghi rõ. Đường dẫn tương đối từ `apps/cms/src/` trừ khi ghi khác.
+
+1. **Item write là last-write-wins, không có precondition dùng được cho optimistic concurrency — ĐÚNG.**
+   `ItemService.patch` (`services/item-service.ts:1090`) đọc dòng bằng `SELECT` riêng (`:1110-1122`), gộp `{ ...currentData, ...patch.data }` trong bộ nhớ (`:1146-1148`), rồi `UPDATE … SET data = <bản gộp>` với `WHERE` chỉ gồm `site_id`, `collection_id`, `id`, `deleted_at IS NULL` và permission clause (`:1237-1245`) — không có điều kiện phiên bản. Route PATCH/PUT (`routes/items.ts:285-311`) không đọc header nào; grep `If-Match`/`expectedRevision` trong `apps/cms/src` chỉ thấy `If-None-Match` của delivery/media (`routes/media.ts:325`, `services/delivery-cache.ts:106`). Hệ quả nặng hơn giả định: hai PATCH đồng thời sửa **field khác nhau** vẫn mất một bên. `replace` chỉ gọi `patch` (`:1320-1322`). Coalesced writes chỉ hoãn materialized refresh + cache invalidation (`:2246-2280`), không hoãn UPDATE → không cản precondition. Không có cột phiên bản; `updated_at` lấy từ `new Date()` của app (`:1235`). #811 không đổi phần này. Design §6, §14.7 đã sửa.
+2. **`revisions.delta.after` đủ dựng lại trạng thái đầy đủ của item tại một revision — ĐÚNG MỘT PHẦN, không dùng được làm merge base.**
+   Đúng: `after` là toàn bộ `data` sau ghi, không phải diff (`:1054` create, `:1252` patch, `:1596` bulk create), và `revertRevision` dùng nó làm snapshot (`:1674-1675`). Sai ở năm điểm: (a) chỉ có `data`, không `status`/`sort`/publish window; (b) field mã hoá là ciphertext (`after: encryptedFinal`, `:1252`), envelope sinh DEK mới mỗi lần ghi (`:2097-2099`) và chỉ `items.dek_wrapped` hiện tại được giữ (`:1230`) → revision cũ không giải được; (c) có đường ghi `data` không tạo revision: `services/dependents-service.ts:272-277`, `services/envelope-migration-worker.ts:122-125`, `:141-144`, `services/rewrap-worker.ts:114-117`; (d) revision `staged` nằm chung bảng (`services/veto-service.ts:163-177`), phải lọc `staged = false`; (e) không có job dọn revision (`services/review-run-retention.ts:44` chỉ xoá `reviewRuns`), revision chỉ mất theo cascade khi item bị hard-delete (`packages/database/src/schema/cms.ts:261-263`; #811 giữ cascade qua FK composite `lumibase_revisions_item_fk`). Thêm: `revertRevision` không khôi phục đúng vì `replace` là merge, và đưa ciphertext vào `patch` như plaintext. Design §3.3, §10.3, §14.4 đã sửa.
+3. **Cache key và search index đã tách hoàn toàn theo `siteId` — ĐÚNG.**
+   Search index `${siteId}__${collection}` (`packages/runtime/src/interfaces/search.ts:52-54`), mọi call site đi qua nó (`services/item-service.ts:1920`, `:1946`, `services/content-indexing-worker.ts:72`, `:86`, `routes/search.ts:134`, `:195`); tag cache `items:${siteId}:${collection}` và `deliver:${siteId}` (`services/content-invalidation.ts:20-26`); compiled schema theo site (`services/schema-service.ts:1142`, `:1162`); delivery `deliver:${siteId}:…` (`services/delivery-cache.ts:132-134`). Grep mọi `cache.get/set/delete` có template key không chứa site chỉ thấy `git:oauth:${state}` và `site-domain:${sub}` (không phải dữ liệu nội dung). Lưu ý: bảng vật lý của materialized collection đặt tên theo id dòng (`services/materialize-service.ts:128`) — không copy dòng đó (design §3.5). `X-Robots-Tag` chưa tồn tại, task 5.3 phải thêm.
+4. **Webhook/flow/notification có một điểm dispatch chung — SAI.**
+   `ItemService.patch` gọi riêng từng kênh (`:1285-1298`): flows qua `dispatchItemEvent` (`services/flow-dispatch.ts:87-111`), webhooks qua outbox CDC `writeCdcEvent` (`:764`) → `CdcDispatcher` (`modules/cdc/change-feed/dispatcher.ts:158`, sender `:481`, khởi tạo ở `serve.ts:350`, `cloudflare-cron-parity.ts:90`, `modules/cdc/change-feed/routes.ts:215`), Firebase Sync (`:2036-2053`), ISR revalidation từ setting `revalidation.targets` (`:2281-2294`, `services/content-invalidation.ts:98-110`), extension hooks (`:707`). Notification là kênh riêng (`modules/notifications/dispatcher.ts:329`, `services/notification-service.ts:40`). Mọi kênh đọc cấu hình theo `siteId`, nên lớp chặn chính là không copy/disable cấu hình; `isEnvironment` là lớp thứ hai ở năm điểm. Design §3.5, §4 đã sửa.
+5. **Bảng files có cột storage key dùng chung được giữa hai dòng — ĐÚNG MỘT PHẦN.**
+   `lumibase_files.filename_disk` (`packages/database/src/schema/platform.ts:50`) là `text NOT NULL`, không unique, không FK → hai dòng ở hai site trỏ cùng object được; object upload qua presigned `/files` nằm ở key không tiền tố site (`routes/files.ts:188`, `:238`). Nhưng: thư viện `/media` dùng tiền tố `sites/${siteId}/media/` (`routes/media.ts:89-95`, GET `:350`, DELETE `:500`) nên object chỉ có ở `/media` không chia sẻ được; và `DELETE /files/:id` không xoá object (`routes/files.ts:161-174`) — không có "đường xoá file" nào cần sửa như design cũ viết. Design §3.4 đã sửa.
+
+### Design drift do PR #811
+
+Trên `main`, `lumibase_items` có `PRIMARY KEY (id)` toàn instance (`packages/database/src/schema/cms.ts:23`, `:187`). #811 đổi sang `PRIMARY KEY (site_id, id)` (`packages/database/drizzle/0032_items_site_scoped_pk.sql`) với FK composite cùng site từ `revisions`, `release_items`, `content_reviews`. Lý do "id toàn cục nên phải remap" chỉ còn đúng cho schema/file/folder; với item, khuyến nghị giữ id (design §2.1, §14.9 — Proposed). Ghi chú cho #811 (không thuộc PR này): comment trong `schema/cms.ts` của nhánh đó vẫn ghi "migration 0029" trong khi file là `0032`.
