@@ -674,6 +674,10 @@ const ANONYMOUS_ALLOWED_PREFIXES = [
   '/api/v1/search',
   '/api/v1/media',
   '/api/v1/files',
+  // Live OpenAPI document (#745). Still 404s unless the site enabled it AND
+  // listed the `public` realm; the anonymous caller then sees only what the
+  // `public` role may read.
+  '/api/v1/openapi.json',
 ];
 
 /** Only side-effect-free methods are ever eligible for the anonymous realm. */

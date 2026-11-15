@@ -1,13 +1,13 @@
 ---
-version: 9
-lastUpdated: 2026-11-14T02:04:46.826Z
+version: 10
+lastUpdated: 2026-11-15T18:05:23.927Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b4c26362c16ed75d
+sourceHash: 7f3f8abe9f146aab
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T02:04:46.826Z
-codeVerifiedHash: b4c26362c16ed75d
+codeVerified: 2026-11-15T18:05:23.927Z
+codeVerifiedHash: 7f3f8abe9f146aab
 codeVerifiedClaims: 8
 ---
 
@@ -81,9 +81,11 @@ npx create-lumibase@next my-blog
 │
 ├─ 2. Interactive prompts (skipped when flags are passed)
 │     ? Project name          my-blog
-│     ? Deployment target      › Next.js website  + CMS, Studio and seed content (recommended)
-│                                Docker           Node.js + PostgreSQL
-│                                Cloudflare Workers  Edge + D1
+│     ? Template               › Next.js website  + CMS, Studio and seed content (recommended)
+│                                Astro static site  build-time content, static export to Cloudflare Pages
+│                                SvelteKit site     server loads + draft preview on Cloudflare Pages
+│                                Docker starter     Hono + Node.js + PostgreSQL (no CMS)
+│                                Cloudflare Workers starter  Hono + Edge + D1 (no CMS)
 │     ? Package manager        › pnpm / npm / yarn / bun  (auto-detected)
 │     ? Install dependencies   › Yes
 │     ? Initialize git         › Yes
@@ -110,6 +112,8 @@ npx create-lumibase@next my-blog
 | Template | Flag | Stack | Phù hợp nhất cho |
 | --- | --- | --- | --- |
 | **Next.js website + CMS** (chọn sẵn) | `--template nextjs` | Next.js 15 + React 19, client `lumibase`, và image CMS (đã kèm Studio) + PostgreSQL + Redis qua `docker-compose.yml` | Xuất bản một site thật: editor có Studio, trình duyệt chỉ có key chỉ-đọc |
+| **Astro static site** | `--template astro` | Astro 7 xuất tĩnh, nội dung đọc lúc build qua client `lumibase`, `wrangler pages deploy dist` | Một site tĩnh nhanh trên Cloudflare Pages, build lại bằng deploy hook — xem [Astro starter](./tutorials/astro-starter.md) |
+| **SvelteKit site** | `--template sveltekit` | SvelteKit 3 + `@sveltejs/adapter-cloudflare`, load phía server, draft preview bằng cookie có chữ ký | Một site trên Pages hiển thị nội dung vừa xuất bản mà không cần build lại — xem [SvelteKit starter](./tutorials/sveltekit-starter.md) |
 | **Docker starter** | `--template default` | Hono + `@hono/node-server`, Drizzle ORM, PostgreSQL, Redis, `docker-compose.yml` | Tự xây API của bạn theo quy ước LumiBase |
 | **Cloudflare Workers starter** | `--template cloudflare` | Hono, Drizzle ORM, D1, `wrangler.toml` | Vẫn starter đó, nhưng triển khai ở edge |
 
@@ -184,7 +188,7 @@ npx create-lumibase@next my-blog \
 
 | Cờ (Flag) | Mô tả |
 | --- | --- |
-| `--template <nextjs\|default\|cloudflare>` | Template dự án. Tên không hợp lệ bị từ chối ngay từ đầu, kèm giá trị bạn đã truyền. |
+| `--template <nextjs\|astro\|sveltekit\|default\|cloudflare>` | Template dự án. Tên không hợp lệ bị từ chối ngay từ đầu, kèm giá trị bạn đã truyền. |
 | `--pm <pnpm\|npm\|yarn\|bun>` | Package manager dùng để cài đặt. Tự động phát hiện từ `npm_config_user_agent` khi bỏ trống. |
 | `--install` / `--no-install` | Bắt buộc bật hoặc bỏ qua bước cài đặt dependency. |
 | `--git` / `--no-git` | Bắt buộc bật hoặc bỏ qua `git init` + commit đầu tiên. |

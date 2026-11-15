@@ -58,6 +58,28 @@ export function printNextSteps(config: ProjectConfig, secrets?: LocalSecretsResu
     return;
   }
 
+  if (template === 'astro' || template === 'sveltekit') {
+    const isAstro = template === 'astro';
+    console.log(`  ${step++}. ${pc.dim('In .env: LUMIBASE_URL, LUMIBASE_SITE_ID and a publishable key (lbk_pub_…)')}`);
+    console.log(`  ${step++}. ${pc.cyan(run('dev'))}`);
+    console.log(
+      `  ${step++}. ${pc.cyan(run('build'))}  ${pc.dim(
+        isAstro ? '← static HTML in dist/' : '← Cloudflare Pages output in .svelte-kit/cloudflare',
+      )}`,
+    );
+    console.log(`  ${step++}. ${pc.cyan(run('deploy'))}  ${pc.dim('← wrangler pages deploy')}`);
+
+    console.log();
+    console.log(pc.dim('  Website  ') + pc.underline(isAstro ? 'http://localhost:4321' : 'http://localhost:5173'));
+    console.log();
+    console.log(
+      pc.dim(`  No CMS yet? Scaffold ${pc.cyan('--template nextjs')} for a local CMS + Studio, or see one-click deploys.`),
+    );
+    console.log(pc.dim(`  Docs → https://docs.lumibase.dev/en/docs/tutorials/${template}-starter`));
+    console.log();
+    return;
+  }
+
   if (template === 'default') {
     console.log(`  ${step++}. ${pc.cyan('docker compose up -d')}  ${pc.dim('← starts Postgres + Redis')}`);
     console.log(`  ${step++}. ${pc.cyan(run('db:migrate'))}`);

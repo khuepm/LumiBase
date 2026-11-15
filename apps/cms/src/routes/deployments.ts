@@ -2,8 +2,11 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import {
+  DeployApprovalDecisionSchema,
+  DeploymentEnvironmentsUpdateSchema,
   DeploymentTargetCreateSchema,
   DeploymentTargetUpdateSchema,
+  DeployPromoteSchema,
   DeployTriggerSchema,
 } from '@lumibase/contracts';
 import type { AppEnv } from '../env';
@@ -12,6 +15,19 @@ import { requireSiteAdmin } from '../middleware/site-admin';
 import { withTenant } from '../middleware/tenant';
 import { DeploymentError, DeploymentService } from '../services/deployment/deployment-service';
 import { getProvider } from '../services/deployment/providers';
+import { DeployApprovalStore } from '../services/deployment/deploy-approvals';
+import {
+  resolveDeployCaller,
+  resolveRequesterDeployCapabilities,
+} from '../services/deployment/deploy-access';
+import {
+  canApproveEnvironment,
+  canTriggerEnvironment,
+  DeploymentEnvironmentStore,
+  hasDeployAccess,
+} from '../services/deployment/environments';
+import { DeploymentReleaseService, type DeployCaller } from '../services/deployment/release-service';
+import { AuditLogger } from '../modules/audit/logger';
 import { ConfigService } from '../services/config-service';
 import { isValidSiteId } from '../services/identifier-guard';
 
@@ -19,10 +35,15 @@ import { isValidSiteId } from '../services/identifier-guard';
  * Deployment integrations API (spec: deployment-integrations, design §7).
  *
  * Targets CRUD + manual trigger + deployment list/detail/logs/refresh +
- * inbound provider webhook. Tenant-management surface, so the whole router is
- * behind `requireSiteAdmin` (matching webhooks/extensions); the inbound
- * webhook is mounted separately because it authenticates via provider
- * signature, not a bearer token.
+ * inbound provider webhook; environments, promotion and deploy approvals
+ * (#743). The inbound webhook is mounted separately because it authenticates
+ * via provider signature, not a bearer token.
+ *
+ * Access (#743): configuration (target CRUD, environment map, build logs)
+ * stays site-admin only. Everything else needs a `deploy:*` capability — a
+ * site admin holds them all — and the trigger/promote/decide endpoints check
+ * the specific `deploy:trigger:<scope>` / `deploy:approve:<scope>` grant. A
+ * caller with no deploy grant at all gets 403 on every route, as before.
  */
 
 function service(c: Context<AppEnv>, siteId = c.get('siteId')): DeploymentService {
@@ -53,6 +74,55 @@ async function webhookSecret(
   return typeof value?.secret === 'string' ? value.secret : '';
 }
 
+const callers = new WeakMap<Context<AppEnv>, Promise<DeployCaller>>();
+
+/** The request's deploy caller, resolved once per request. */
+function callerOf(c: Context<AppEnv>): Promise<DeployCaller> {
+  let caller = callers.get(c);
+  if (!caller) {
+    caller = resolveDeployCaller(c);
+    callers.set(c, caller);
+  }
+  return caller;
+}
+
+function releaseService(c: Context<AppEnv>): DeploymentReleaseService {
+  const siteId = c.get('siteId');
+  const db = scopedDbFor(c, siteId);
+  return new DeploymentReleaseService({
+    deployments: service(c),
+    environments: new DeploymentEnvironmentStore({ db, siteId }),
+    approvals: new DeployApprovalStore({ db, siteId }),
+    audit: (event, metadata, actorEmail) => {
+      // Fire-and-forget; AuditLogger.write never throws and masks secrets.
+      void new AuditLogger({ db, siteId }).write({
+        event,
+        actorEmail: actorEmail ?? null,
+        requestId: c.get('requestId') ?? null,
+        metadata,
+      });
+    },
+  });
+}
+
+const ERROR_STATUS: Record<string, 400 | 403 | 404 | 409 | 500 | 502> = {
+  NOT_FOUND: 404,
+  ENVIRONMENT_NOT_FOUND: 404,
+  TRIGGER_FAILED: 502,
+  FORBIDDEN: 403,
+  HUMAN_APPROVER_REQUIRED: 403,
+  SELF_APPROVAL_FORBIDDEN: 403,
+  PRINCIPAL_UNRESOLVED: 403,
+  NO_TARGETS: 409,
+  NO_PROMOTION_TARGET: 409,
+  SOURCE_NOT_READY: 409,
+  APPROVAL_ALREADY_DECIDED: 409,
+  APPROVAL_EXPIRED: 409,
+  REQUESTER_REVOKED: 409,
+  PLAN_STALE: 409,
+  ENVIRONMENTS_INVALID: 500,
+};
+
 function fail(c: Context<AppEnv>, err: unknown) {
   if (err instanceof DeploymentError) {
     if (err.code === 'RATE_LIMITED') {
@@ -63,7 +133,7 @@ function fail(c: Context<AppEnv>, err: unknown) {
         429,
       );
     }
-    const httpStatus = err.code === 'NOT_FOUND' ? 404 : err.code === 'TRIGGER_FAILED' ? 502 : 400;
+    const httpStatus = ERROR_STATUS[err.code] ?? 400;
     return c.json({ errors: [{ code: err.code, message: err.message }] }, httpStatus);
   }
   const message = err instanceof Error ? err.message : 'Unexpected error.';
@@ -73,7 +143,21 @@ function fail(c: Context<AppEnv>, err: unknown) {
 // ── Authenticated admin router ───────────────────────────────────────────────
 
 export const deploymentsRouter = new Hono<AppEnv>();
-deploymentsRouter.use('*', requireSiteAdmin());
+deploymentsRouter.use('*', async (c, next) => {
+  if (!c.get('siteId')) {
+    return c.json(
+      { errors: [{ code: 'TENANT_REQUIRED', message: 'X-Lumi-Site header is required.' }] },
+      400,
+    );
+  }
+  if (!hasDeployAccess((await callerOf(c)).capabilities)) {
+    return c.json(
+      { errors: [{ code: 'FORBIDDEN', message: 'Admin access or a deploy grant for the requested site is required.' }] },
+      403,
+    );
+  }
+  return next();
+});
 
 // Targets ----------------------------------------------------------------------
 
@@ -82,7 +166,7 @@ deploymentsRouter.get('/targets', async (c) => {
   return c.json({ data });
 });
 
-deploymentsRouter.post('/targets', async (c) => {
+deploymentsRouter.post('/targets', requireSiteAdmin(), async (c) => {
   const parsed = DeploymentTargetCreateSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) {
     return c.json({ errors: [{ code: 'VALIDATION', message: parsed.error.message }] }, 400);
@@ -95,7 +179,7 @@ deploymentsRouter.post('/targets', async (c) => {
   }
 });
 
-deploymentsRouter.patch('/targets/:id', async (c) => {
+deploymentsRouter.patch('/targets/:id', requireSiteAdmin(), async (c) => {
   const parsed = DeploymentTargetUpdateSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) {
     return c.json({ errors: [{ code: 'VALIDATION', message: parsed.error.message }] }, 400);
@@ -109,7 +193,7 @@ deploymentsRouter.patch('/targets/:id', async (c) => {
   }
 });
 
-deploymentsRouter.delete('/targets/:id', async (c) => {
+deploymentsRouter.delete('/targets/:id', requireSiteAdmin(), async (c) => {
   const ok = await service(c).deleteTarget(c.req.param('id'), c.get('auth')?.email);
   if (!ok) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
   return c.json({ data: null });
@@ -123,13 +207,121 @@ deploymentsRouter.post('/targets/:id/deploy', async (c) => {
     return c.json({ errors: [{ code: 'VALIDATION', message: parsed.error.message }] }, 400);
   }
   try {
-    const row = await service(c).trigger(c.req.param('id'), {
+    // Governed by the environments the target belongs to (#743): a target in
+    // an approval-gated environment parks a pending approval (202) instead.
+    const outcome = await releaseService(c).requestTargetDeploy(await callerOf(c), c.req.param('id'), {
       branch: parsed.data.branch,
       reason: parsed.data.reason,
-      source: 'manual',
-      triggeredBy: c.get('auth')?.userId,
     });
-    return c.json({ data: row }, 201);
+    if (outcome.status === 'pending_approval') return c.json({ data: outcome }, 202);
+    return c.json({ data: outcome.deployment }, 201);
+  } catch (err) {
+    return fail(c, err);
+  }
+});
+
+// Access summary (#743) --------------------------------------------------------
+
+/** What the caller may do, per environment — drives the Studio buttons. */
+deploymentsRouter.get('/access', async (c) => {
+  try {
+    const caller = await callerOf(c);
+    const environments = await releaseService(c).listEnvironments();
+    return c.json({
+      data: {
+        admin: caller.capabilities.includes('admin'),
+        capabilities: caller.capabilities,
+        humanDecider: caller.decider.kind === 'human',
+        environments: environments.map((env) => ({
+          key: env.key,
+          canTrigger: canTriggerEnvironment(caller.capabilities, env),
+          canApprove: canApproveEnvironment(caller.capabilities, env.key),
+        })),
+      },
+    });
+  } catch (err) {
+    return fail(c, err);
+  }
+});
+
+// Environments (#743) ----------------------------------------------------------
+
+deploymentsRouter.get('/environments', async (c) => {
+  try {
+    return c.json({ data: await releaseService(c).listEnvironments() });
+  } catch (err) {
+    return fail(c, err);
+  }
+});
+
+deploymentsRouter.put('/environments', requireSiteAdmin(), async (c) => {
+  const parsed = DeploymentEnvironmentsUpdateSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: parsed.error.message }] }, 400);
+  }
+  try {
+    const data = await releaseService(c).updateEnvironments(
+      parsed.data.environments,
+      c.get('auth')?.email ?? undefined,
+    );
+    return c.json({ data });
+  } catch (err) {
+    return fail(c, err);
+  }
+});
+
+deploymentsRouter.post('/environments/:key/deploy', async (c) => {
+  const parsed = DeployTriggerSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: parsed.error.message }] }, 400);
+  }
+  try {
+    const outcome = await releaseService(c).requestEnvironmentDeploy(await callerOf(c), c.req.param('key'), parsed.data);
+    return c.json({ data: outcome }, outcome.status === 'pending_approval' ? 202 : 201);
+  } catch (err) {
+    return fail(c, err);
+  }
+});
+
+deploymentsRouter.post('/environments/:key/promote', async (c) => {
+  const parsed = DeployPromoteSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: parsed.error.message }] }, 400);
+  }
+  try {
+    const outcome = await releaseService(c).requestPromotion(await callerOf(c), c.req.param('key'), parsed.data);
+    return c.json({ data: outcome }, outcome.status === 'pending_approval' ? 202 : 201);
+  } catch (err) {
+    return fail(c, err);
+  }
+});
+
+// Approvals (#743) -------------------------------------------------------------
+
+deploymentsRouter.get('/approvals', async (c) => {
+  const status = c.req.query('status') ?? 'pending';
+  try {
+    const data = await releaseService(c).listApprovals(await callerOf(c), status === 'all' ? undefined : status);
+    return c.json({ data });
+  } catch (err) {
+    return fail(c, err);
+  }
+});
+
+deploymentsRouter.post('/approvals/:id/decide', async (c) => {
+  const parsed = DeployApprovalDecisionSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: parsed.error.message }] }, 400);
+  }
+  try {
+    const data = await releaseService(c).decide(
+      await callerOf(c),
+      c.req.param('id'),
+      parsed.data.decision,
+      parsed.data.reason,
+      (requester) => resolveRequesterDeployCapabilities(c, requester),
+    );
+    return c.json({ data });
   } catch (err) {
     return fail(c, err);
   }
@@ -172,7 +364,7 @@ deploymentsRouter.get('/:id', async (c) => {
   return c.json({ data: row });
 });
 
-deploymentsRouter.get('/:id/logs', async (c) => {
+deploymentsRouter.get('/:id/logs', requireSiteAdmin(), async (c) => {
   try {
     const log = await service(c).fetchLogs(c.req.param('id'));
     return c.json({ data: { log } });

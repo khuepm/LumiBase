@@ -46,6 +46,8 @@ export function generateAdminPassword(): string {
 export const LOCAL_ENV_FILE: Record<Template, { example: string; target: string }> = {
   default: { example: '.env.example', target: '.env' },
   nextjs: { example: '.env.example', target: '.env' },
+  astro: { example: '.env.example', target: '.env' },
+  sveltekit: { example: '.env.example', target: '.env' },
   cloudflare: { example: '.dev.vars.example', target: '.dev.vars' },
 };
 

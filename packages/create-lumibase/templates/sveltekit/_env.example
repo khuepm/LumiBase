@@ -1,0 +1,42 @@
+# Copy to `.env` for `npm run dev` (and to `.dev.vars` for `npm run preview`,
+# which runs the built site under wrangler). Both files are git-ignored; this
+# one is committed, so every secret below stays EMPTY here.
+#
+# On Cloudflare Pages, set the same names under Settings -> Variables and
+# Secrets — the secrets as *secrets* (`npx wrangler pages secret put NAME`).
+# They are read at request time through `$env/dynamic/private`, only in
+# server code (`$lib/server`, `+page.server.ts`, hooks); none of them has a
+# PUBLIC_ prefix, so SvelteKit will not let them into the browser bundle.
+
+# ─── Content ─────────────────────────────────────────────────────────────────
+
+# Base URL of your LumiBase CMS. Leave empty and the site shows a
+# "connect your CMS" page instead of erroring.
+LUMIBASE_URL=
+LUMIBASE_SITE_ID=__default__
+# A PUBLISHABLE key (`lbk_pub_…`): read-only, with a grant restricted to
+# published rows. A secret key is refused here on purpose.
+LUMIBASE_PUBLISHABLE_KEY=
+
+# ─── Draft preview (optional) ────────────────────────────────────────────────
+# Preview is OFF unless both values are set. Then
+#   /api/preview?secret=<LUMIBASE_PREVIEW_SECRET>&redirect=/posts/<slug>
+# gives that browser a signed one-hour cookie, and its requests read drafts.
+
+# Random string, at least 32 characters (e.g. `openssl rand -base64 32`).
+# Shorter values leave preview disabled. Rotating it ends every preview session.
+LUMIBASE_PREVIEW_SECRET=
+# Server-only secret token (`lbk_…`, NOT `lbk_pub_…`) whose read grant includes
+# drafts. Used only for requests carrying a valid preview cookie.
+LUMIBASE_PREVIEW_TOKEN=
+
+# ─── Tooling only ────────────────────────────────────────────────────────────
+
+# Read by `npm run types` (`lumibase types`) to fetch the schema manifest.
+# Needs schema read access, so it is a secret. Not used by the site.
+LUMIBASE_TOKEN=
+
+# `npm run deploy` (wrangler pages deploy) reads these from the environment.
+# In CI, set them as repository secrets instead of in this file.
+# CLOUDFLARE_API_TOKEN=
+# CLOUDFLARE_ACCOUNT_ID=

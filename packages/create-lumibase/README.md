@@ -10,6 +10,7 @@ starter you own and extend.
 > | You want… | Use | What you get |
 > |-----------|-----|--------------|
 > | A website with a CMS behind it | `create-lumibase` → `--template nextjs` (**preselected**) | A Next.js site plus the CMS image (Studio included) + PostgreSQL + Redis in Docker, a `posts` collection, seeded content, and a browser-safe publishable key. |
+> | A site on Cloudflare Pages for a CMS you already run | `create-lumibase` → `--template astro` or `--template sveltekit` | Astro: a static export built from CMS content at build time. SvelteKit: server-side loads with signed-cookie draft preview. Both read through the `lumibase` client with a publishable key and deploy with `wrangler pages deploy`. |
 > | A starter app you own, no CMS | `create-lumibase` → `--template default` or `--template cloudflare` | A minimal Hono + Drizzle project with a demo `posts` resource. **No** Collections API, Studio admin, Email, Flows, or AI harness. |
 > | The platform on its own | The CMS image `ghcr.io/khuepm/lumibase-cms`, or a clone of the [monorepo](https://github.com/khuepm/lumibase) | The complete platform with no app scaffold: Collections API, Studio admin, permissions, Flows, AI agents, multi-tenancy. See [Deployment overview](https://docs.lumibase.dev/en/docs/deployment/overview), or [One-click deploys](https://docs.lumibase.dev/en/docs/deployment/one-click) for Render, Railway and Fly.io. |
 > | To talk to a CMS that already exists | [`lumibase`](https://www.npmjs.com/package/lumibase) or [`@lumibase/sdk`](https://www.npmjs.com/package/@lumibase/sdk) | A typed REST/realtime client plus a CLI for type generation. Install it as a **runtime** dependency (`npm install lumibase`), not with `-D` — your app imports from it at request time. |
@@ -40,6 +41,14 @@ Which stack you get depends on the template:
   LumiBase CMS with Studio inside it. Scripts bootstrap the first admin, mint a
   publishable key, seed sample posts, and then *verify* that the browser-facing
   client cannot read drafts or write anything.
+- **`astro`** — an Astro 7 site with `output: 'static'`: content is read through
+  the `lumibase` client **at build time**, `astro build` writes plain HTML to
+  `dist/`, and `npm run deploy` uploads it to Cloudflare Pages. Rebuild on
+  publish with a Pages deploy hook called from a LumiBase Flow.
+- **`sveltekit`** — a SvelteKit 3 site on `@sveltejs/adapter-cloudflare`:
+  content is read in server-side loads at request time, and editors get draft
+  preview through a signed, HttpOnly cookie. Optional static export via
+  `adapter-static`.
 - **`default`** / **`cloudflare`** — a small Hono server with a `posts` resource
   wired the way LumiBase wires things: `nanoid()` identifiers, a `site_id` column
   on every domain table, the `{ data }` / `{ errors }` response envelope, and Zod
@@ -51,7 +60,7 @@ Which stack you get depends on the template:
 Running `npm create lumibase@next` with no arguments walks you through:
 
 1. **Project name** — validated against npm package-name rules.
-2. **Deployment target** — `Next.js website` (+ CMS, Studio and seed content — preselected), `Docker` (Node.js + PostgreSQL), or `Cloudflare Workers` (Edge + D1).
+2. **Template** — `Next.js website` (+ CMS, Studio and seed content — preselected), `Astro static site`, `SvelteKit site`, `Docker starter` (Node.js + PostgreSQL), or `Cloudflare Workers starter` (Edge + D1).
 3. **Package manager** — `pnpm` / `npm` / `yarn` / `bun` (the one you invoked is auto-detected).
 4. **Install dependencies** — yes/no.
 5. **Initialize git** — yes/no.
@@ -64,6 +73,8 @@ installs dependencies, and prints the exact next steps for your chosen stack.
 | Template | Flag | Stack |
 | --- | --- | --- |
 | **Next.js website + CMS** (preselected) | `--template nextjs` | Next.js 15 + React 19 + the `lumibase` client, and the CMS image (Studio included) + PostgreSQL + Redis via `docker-compose.yml` |
+| **Astro static site** | `--template astro` | Astro 7 static output + the `lumibase` client at build time, `wrangler pages deploy dist` |
+| **SvelteKit site** | `--template sveltekit` | SvelteKit 3 + `@sveltejs/adapter-cloudflare`, server-side loads, draft preview |
 | **Docker starter** | `--template default` | Hono + `@hono/node-server`, Drizzle ORM, PostgreSQL, Redis, `docker-compose.yml` |
 | **Cloudflare Workers starter** | `--template cloudflare` | Hono, Drizzle ORM, D1, `wrangler.toml` |
 
@@ -84,7 +95,8 @@ npx create-lumibase@next my-blog \
 
 | Flag | Description |
 | --- | --- |
-| `--template <nextjs\|default\|cloudflare>` | Choose the project template. An unknown name is rejected up front. |
+| `--template <nextjs\|astro\|sveltekit\|default\|cloudflare>` | Choose the project template. An unknown name is rejected up front. |
+| `-h` / `--help` | Print usage, flags and the template list. |
 | `--pm <pnpm\|npm\|yarn\|bun>` | Package manager to install with. |
 | `--install` / `--no-install` | Force-enable or skip dependency install. |
 | `--git` / `--no-git` | Force-enable or skip `git init`. |
@@ -127,6 +139,25 @@ one post unpublished on purpose so the check has something real to catch.
 Already run a LumiBase instance? Skip `cms:up`/`cms:bootstrap` and put its URL,
 your site id, and a publishable key (`lbk_pub_…`) in `.env`. The generated
 `README.md` lists what the CMS administrator has to provide.
+
+## After scaffolding (Astro and SvelteKit)
+
+```bash
+cd my-site
+cp .env.example .env       # LUMIBASE_URL, LUMIBASE_SITE_ID, a publishable key (lbk_pub_…)
+npm install                # if you skipped --install
+npm run dev                # Astro: http://localhost:4321 · SvelteKit: http://localhost:5173
+npm run build              # Astro: dist/ · SvelteKit: .svelte-kit/cloudflare
+npm run deploy             # wrangler pages deploy (needs CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID)
+```
+
+Both starters connect to a CMS you already run (or one started from the
+`nextjs` template). Every secret in `.env.example` ships empty, and none of
+them is ever exposed to the browser. Visual editing is not released yet; each
+starter has a marked, empty hook point for it. Guides:
+[Astro starter](https://docs.lumibase.dev/en/docs/tutorials/astro-starter),
+[SvelteKit starter](https://docs.lumibase.dev/en/docs/tutorials/sveltekit-starter),
+[Static export to Cloudflare Pages](https://docs.lumibase.dev/en/docs/deployment/static-export-cloudflare-pages).
 
 ## After scaffolding (Docker starter)
 
@@ -180,6 +211,7 @@ npx lumibase doctor --security --production  # the production checklist
 - Node.js `>= 22` (required by the CLI's `execa` 10 dependency)
 - For the Next.js and Docker templates: Docker + Docker Compose
 - For the Cloudflare template: a Cloudflare account + `wrangler`
+- For the Astro template: Node.js `>= 22.23.4` (Astro 7); for SvelteKit: `>= 22.17`. Deploying either needs a Cloudflare account (`wrangler` is a dev dependency of the generated project)
 
 ## Related packages
 

@@ -42,6 +42,17 @@ const EXTRA_VERSION_FILES = [
     // third-party crate whose version must not be touched.
     pattern: /^(name = "lumibase-shell"\nversion = ")([^"]*)(")/m,
   },
+  // The Helm chart (#742) is versioned with the release: its appVersion is the
+  // image tag it deploys by default, and the release workflow refuses to push
+  // a chart whose version does not match the tag.
+  {
+    path: 'deploy/helm/lumibase/Chart.yaml',
+    pattern: /^(version:[ \t]*)([^\s#]+)()/m,
+  },
+  {
+    path: 'deploy/helm/lumibase/Chart.yaml',
+    pattern: /^(appVersion:[ \t]*")([^"]*)(")/m,
+  },
 ];
 
 async function readJson(filePath) {

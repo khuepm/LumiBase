@@ -1,10 +1,10 @@
 ---
 title: Tutorials
-version: 1
-lastUpdated: 2026-08-02T19:07:54.568Z
+version: 2
+lastUpdated: 2026-11-15T08:38:15.064Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ec70515719fa4318
+sourceHash: 5968e4800387720d
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -24,6 +24,18 @@ giả định kiến thức LumiBase trước đó và liệt kê điều kiện
   <td>Một trang Next.js fetch collection <code>posts</code> và render ra</td>
   <td><img alt="0.9.0" src="https://img.shields.io/badge/%E2%89%A5%200.9.0-F5A623"></td>
   <td>Cơ bản</td>
+</tr>
+<tr>
+  <td><a href="./astro-starter.md">Astro starter — site tĩnh trên Cloudflare Pages</a></td>
+  <td>Một blog tĩnh được build từ collection <code>posts</code> lúc build, deploy bằng <code>wrangler pages deploy</code></td>
+  <td><img alt="2.0.0" src="https://img.shields.io/badge/%E2%89%A5%202.0.0-F5A623"></td>
+  <td>Cơ bản</td>
+</tr>
+<tr>
+  <td><a href="./sveltekit-starter.md">SvelteKit starter — load phía server và draft preview</a></td>
+  <td>Một site Cloudflare Pages đọc nội dung theo từng request, có draft preview bằng cookie có chữ ký</td>
+  <td><img alt="2.0.0" src="https://img.shields.io/badge/%E2%89%A5%202.0.0-F5A623"></td>
+  <td>Trung cấp</td>
 </tr>
 </tbody>
 </table>

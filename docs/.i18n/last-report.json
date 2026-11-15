@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-15T16:45:24.598Z",
+  "generatedAt": "2026-11-15T18:03:32.320Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 169,
+    "upToDate": 175,
     "planned": 0
   },
   "actions": [
@@ -194,6 +194,18 @@
     },
     {
       "rel": "api/hono-api-spec.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "api/live-openapi.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
@@ -841,6 +853,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "deployment/kubernetes-helm.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "deployment/local-development.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -926,6 +950,18 @@
     },
     {
       "rel": "deployment/shared-domain-environments.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "deployment/static-export-cloudflare-pages.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
@@ -1130,6 +1166,18 @@
     },
     {
       "rel": "features/data-import.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/deployment-environments.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
@@ -1993,6 +2041,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "tutorials/astro-starter.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "tutorials/index.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -2006,6 +2066,18 @@
     },
     {
       "rel": "tutorials/nextjs-quickstart.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "tutorials/sveltekit-starter.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",

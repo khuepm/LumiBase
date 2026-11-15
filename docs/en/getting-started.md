@@ -1,10 +1,10 @@
 ---
-version: 10
-lastUpdated: 2026-11-14T02:04:46.826Z
+version: 11
+lastUpdated: 2026-11-15T18:05:23.927Z
 sourceLang: en
-contentHash: b4c26362c16ed75d
-codeVerified: 2026-11-14T02:04:46.826Z
-codeVerifiedHash: b4c26362c16ed75d
+contentHash: 7f3f8abe9f146aab
+codeVerified: 2026-11-15T18:05:23.927Z
+codeVerifiedHash: 7f3f8abe9f146aab
 codeVerifiedClaims: 8
 ---
 
@@ -78,9 +78,11 @@ npx create-lumibase@next my-blog
 │
 ├─ 2. Interactive prompts (skipped when flags are passed)
 │     ? Project name          my-blog
-│     ? Deployment target      › Next.js website  + CMS, Studio and seed content (recommended)
-│                                Docker           Node.js + PostgreSQL
-│                                Cloudflare Workers  Edge + D1
+│     ? Template               › Next.js website  + CMS, Studio and seed content (recommended)
+│                                Astro static site  build-time content, static export to Cloudflare Pages
+│                                SvelteKit site     server loads + draft preview on Cloudflare Pages
+│                                Docker starter     Hono + Node.js + PostgreSQL (no CMS)
+│                                Cloudflare Workers starter  Hono + Edge + D1 (no CMS)
 │     ? Package manager        › pnpm / npm / yarn / bun  (auto-detected)
 │     ? Install dependencies   › Yes
 │     ? Initialize git         › Yes
@@ -107,6 +109,8 @@ npx create-lumibase@next my-blog
 | Template | Flag | Stack | Best for |
 | --- | --- | --- | --- |
 | **Next.js website + CMS** (preselected) | `--template nextjs` | Next.js 15 + React 19, the `lumibase` client, and the CMS image (Studio included) + PostgreSQL + Redis via `docker-compose.yml` | Publishing a real site: editors get Studio, the browser gets a read-only key |
+| **Astro static site** | `--template astro` | Astro 7 static output, content read at build time through the `lumibase` client, `wrangler pages deploy dist` | A fast static site on Cloudflare Pages, rebuilt by a deploy hook — see [Astro starter](./tutorials/astro-starter.md) |
+| **SvelteKit site** | `--template sveltekit` | SvelteKit 3 + `@sveltejs/adapter-cloudflare`, server-side loads, signed-cookie draft preview | A Pages site that shows publishes without a rebuild — see [SvelteKit starter](./tutorials/sveltekit-starter.md) |
 | **Docker starter** | `--template default` | Hono + `@hono/node-server`, Drizzle ORM, PostgreSQL, Redis, `docker-compose.yml` | Building your own API with LumiBase conventions |
 | **Cloudflare Workers starter** | `--template cloudflare` | Hono, Drizzle ORM, D1, `wrangler.toml` | The same starter, deployed at the edge |
 
@@ -182,7 +186,7 @@ npx create-lumibase@next my-blog \
 
 | Flag | Description |
 | --- | --- |
-| `--template <nextjs\|default\|cloudflare>` | Project template. An unknown name is rejected up front, naming the value you passed. |
+| `--template <nextjs\|astro\|sveltekit\|default\|cloudflare>` | Project template. An unknown name is rejected up front, naming the value you passed. |
 | `--pm <pnpm\|npm\|yarn\|bun>` | Package manager used for install. Auto-detected from `npm_config_user_agent` when omitted. |
 | `--install` / `--no-install` | Force-enable or skip dependency install. |
 | `--git` / `--no-git` | Force-enable or skip `git init` + first commit. |

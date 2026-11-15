@@ -10,11 +10,10 @@ import { detectPackageManager } from './utils/detect-pm.js';
 import { installDependencies } from './install.js';
 import { initGit } from './git.js';
 import { printNextSteps } from './utils/print.js';
+import { helpText } from './utils/help.js';
+import { TEMPLATES, TEMPLATE_INFO, isTemplate, type Template } from './templates.js';
 
-export type Template = 'default' | 'cloudflare' | 'nextjs';
-
-/** Every template name `--template` accepts. Keep in step with `templates/`. */
-export const TEMPLATES = ['nextjs', 'default', 'cloudflare'] as const satisfies readonly Template[];
+export { TEMPLATES, type Template } from './templates.js';
 export type PackageManager = 'pnpm' | 'npm' | 'yarn' | 'bun';
 
 export interface ProjectConfig {
@@ -28,6 +27,11 @@ export interface ProjectConfig {
 
 async function main() {
   const argv = parseArgs(process.argv.slice(2));
+
+  if (argv.help === true) {
+    process.stdout.write(helpText());
+    process.exit(0);
+  }
 
   console.log();
   console.log(
@@ -83,7 +87,7 @@ async function main() {
   // A bad `--template` used to reach `scaffold()` unchecked and die on a
   // missing directory — an ENOENT naming an internal path, several steps away
   // from the typo that caused it. Catch it here while the name is still in hand.
-  if (argv.template !== undefined && !TEMPLATES.includes(argv.template as Template)) {
+  if (argv.template !== undefined && !isTemplate(argv.template)) {
     console.error(
       pc.red(`✖ Unknown template: ${String(argv.template)}`) +
         pc.dim(`  (expected one of: ${TEMPLATES.join(', ')})`),
@@ -98,21 +102,11 @@ async function main() {
         {
           type: 'select',
           name: 'template',
-          message: 'Deployment target:',
-          choices: [
-            {
-              title: `${pc.bold('Next.js website')}  ${pc.dim('+ CMS, Studio and seed content (recommended)')}`,
-              value: 'nextjs',
-            },
-            {
-              title: `${pc.bold('Docker')}  ${pc.dim('Node.js + PostgreSQL')}`,
-              value: 'default',
-            },
-            {
-              title: `${pc.bold('Cloudflare Workers')}  ${pc.dim('Edge + D1')}`,
-              value: 'cloudflare',
-            },
-          ],
+          message: 'Template:',
+          choices: TEMPLATES.map((value) => ({
+            title: `${pc.bold(TEMPLATE_INFO[value].title)}  ${pc.dim(TEMPLATE_INFO[value].hint)}`,
+            value,
+          })),
           initial: 0,
         },
         { onCancel },

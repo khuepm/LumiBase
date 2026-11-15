@@ -8,10 +8,14 @@ import { writeLocalSecrets, type LocalSecretsResult } from './secrets.js';
 import type { ProjectConfig } from './index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-/** `dist/templates` once built (postbuild copies them); `../templates` from `src/` (tests). */
-const TEMPLATES_DIR = existsSync(resolve(HERE, 'templates'))
-  ? resolve(HERE, 'templates')
-  : resolve(HERE, '../templates');
+
+/**
+ * `dist/templates` in the published package (postbuild copies them there);
+ * `../templates` when running from `src/` (tests), where no copy exists.
+ */
+const TEMPLATES_DIR =
+  [resolve(HERE, 'templates'), resolve(HERE, '../templates')].find((dir) => existsSync(dir)) ??
+  resolve(HERE, 'templates');
 
 /**
  * The version of this scaffolder, read from its own manifest.
@@ -72,6 +76,8 @@ function buildTemplateContext(config: ProjectConfig): Record<string, unknown> {
     isCloudflare: config.template === 'cloudflare',
     isDefault: config.template === 'default',
     isNextjs: config.template === 'nextjs',
+    isAstro: config.template === 'astro',
+    isSveltekit: config.template === 'sveltekit',
     lumibaseVersion: readScaffolderVersion(),
     year: new Date().getFullYear(),
   };

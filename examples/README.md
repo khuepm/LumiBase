@@ -27,6 +27,12 @@ An endpoint extension that sends email through LumiBase's built-in EmailService.
 - Calls the core `POST /api/v1/email/send` with a `templateKey` — never talks SMTP itself.
 - Declares minimal capabilities (`http:fetch`, `env:read`).
 
+### Framework starters (Astro, SvelteKit)
+Astro and SvelteKit starters for Cloudflare Pages are not copied here: they are `create-lumibase` templates, so the scaffolder and CI test the exact files you get.
+- `npm create lumibase my-site -- --template astro` — static export (`astro build` → `dist/`), content fetched at build time through the SDK.
+- `npm create lumibase my-site -- --template sveltekit` — `adapter-cloudflare`, server-side loads, signed-cookie draft preview.
+- Sources: [`packages/create-lumibase/templates/astro`](../packages/create-lumibase/templates/astro) and [`packages/create-lumibase/templates/sveltekit`](../packages/create-lumibase/templates/sveltekit).
+
 ---
 
 ## Getting Started

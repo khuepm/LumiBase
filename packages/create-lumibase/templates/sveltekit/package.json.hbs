@@ -1,0 +1,36 @@
+{
+  "name": "{{projectName}}",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#lib": "./src/lib/index.ts",
+    "#lib/*": "./src/lib/*"
+  },
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite build && wrangler pages dev",
+    "prepare": "svelte-kit sync || echo ''",
+    "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "types": "node --env-file-if-exists=.env node_modules/lumibase/bin/lumibase.js types",
+    "types:check": "node --env-file-if-exists=.env node_modules/lumibase/bin/lumibase.js types --check",
+    "deploy": "wrangler pages deploy"
+  },
+  "dependencies": {
+    "lumibase": "{{lumibaseVersion}}"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-cloudflare": "^8.0.2",
+    "@sveltejs/kit": "^3.2.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "svelte": "^5.57.3",
+    "svelte-check": "^4.7.8",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.8",
+    "wrangler": "^4.162.0"
+  },
+  "engines": {
+    "node": ">=22.17"
+  }
+}

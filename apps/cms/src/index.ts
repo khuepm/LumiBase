@@ -90,6 +90,7 @@ import { teamsRouter } from './routes/teams';
 import { translationsRouter } from './routes/translations';
 import { tmRouter } from './routes/translation-memory';
 import { typegenRouter } from './routes/typegen';
+import { openApiRouter } from './routes/openapi';
 import { usersRouter } from './routes/users';
 import { utilsRouter, cacheUtilsRouter } from './routes/utils';
 import { pagesRouter } from './routes/pages';
@@ -312,6 +313,9 @@ api.route('/editorial', editorialRouter);
 // (operations) and GET (GraphiQL / introspection in non-prod).
 api.all('/graphql', (c) => handleGraphQL(c));
 api.route('/typegen', typegenRouter);
+// Live OpenAPI document + its admin switch (#745). Config-gated: 404 until a
+// site admin enables it for the caller's realm.
+api.route('/', openApiRouter);
 api.route('/roles', rolesRouter);
 api.route('/policies', policiesRouter);
 api.route('/permissions', permissionsRouter);

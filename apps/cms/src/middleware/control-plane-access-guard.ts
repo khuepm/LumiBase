@@ -23,6 +23,9 @@ const CONTROL_PLANE_PATHS = [
   // this guard; only the authenticated management surface is gated here.
   '/api/v1/integrations/git',
   '/api/v1/materialize',
+  // Live OpenAPI switch (#745). `/api/v1/openapi.json` is not under this
+  // prefix, so the document itself is governed by its own config gate.
+  '/api/v1/openapi',
   '/api/v1/permissions',
   '/api/v1/policies',
   '/api/v1/roles',
