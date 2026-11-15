@@ -26,6 +26,7 @@ import { buildSearchDocument } from './search-document';
 import { PermissionService, type CompiledPermission, type PermissionAction } from './permission-service';
 import { applyFieldMask, evaluate, type MagicContext } from './permission-dsl';
 import type { PolicyRule } from '@lumibase/contracts';
+import { isZonedDateTimeField, normalizeZonedDateTime, ZonedDateTimeError } from '@lumibase/contracts/field';
 import { CryptoService, DecryptionError, SingleKeyProvider, type CryptoContext } from './crypto-service';
 import {
   newEnvelopeRecordCipher,
@@ -69,6 +70,7 @@ import {
   castExpression,
   castKindForFieldType,
   castValue,
+  ZONED_DATETIME_FILTER_TYPE,
   inferCastKindFromValue,
   type CastKind,
 } from './json-filter-cast';
@@ -378,6 +380,51 @@ function fieldExpression(name: string, mode: 'text' | 'json' = 'text'): SQL {
 export type FieldTypeMap = ReadonlyMap<string, string>;
 
 /**
+ * Build the Cast_Rule type map. A timezone-aware datetime (#747) is mapped to
+ * {@link ZONED_DATETIME_FILTER_TYPE} so filters and sort read its instant.
+ */
+export function buildFieldTypeMap(fields: ReadonlyArray<{ name: string; type: string; options?: unknown }>): FieldTypeMap {
+  return new Map(
+    fields.map((f) => [f.name, isZonedDateTimeField(f) ? ZONED_DATETIME_FILTER_TYPE : f.type]),
+  );
+}
+
+function isZonedKey(key: string, types?: FieldTypeMap): boolean {
+  return !key.includes('.') && types?.get(key) === ZONED_DATETIME_FILTER_TYPE;
+}
+
+/**
+ * Expression for a field in filters / sort. A timezone-aware datetime stores
+ * `{ instant, tz, offset }`; comparisons use `instant`. A value still in the
+ * legacy bare-string shape (written before the option was enabled) is used
+ * as-is: `#>> '{f,instant}'` is NULL on a JSON string, so `coalesce` falls back
+ * to `->> 'f'`, and a non-ISO object text is turned into NULL by the guard.
+ */
+function filterExpression(key: string, types?: FieldTypeMap, mode: 'text' | 'json' = 'text'): SQL {
+  if (mode === 'text' && isZonedKey(key, types)) {
+    return sql`coalesce(${items.data}#>>${bindArrayLiteral([key, 'instant'])}, ${items.data}->>${key})`;
+  }
+  return fieldExpression(key, mode);
+}
+
+/**
+ * A filter value on a timezone-aware field may itself be zoned
+ * (`{ local, tz }` / `{ instant, tz }`); compare on its instant.
+ */
+function zonedFilterValue(raw: unknown, key: string, op: string): unknown {
+  if (Array.isArray(raw)) return raw.map((v) => zonedFilterValue(v, key, op));
+  if (!raw || typeof raw !== 'object') return raw;
+  try {
+    return normalizeZonedDateTime(raw).instant;
+  } catch (err) {
+    if (err instanceof ZonedDateTimeError) {
+      throw new ItemServiceError('INVALID_FILTER', `Operator "${op}" on "${key}": ${err.message}`);
+    }
+    throw err;
+  }
+}
+
+/**
  * Pick the cast for a comparison on `key` (json-field-search Req 4, #729).
  * Structural columns are natively typed → no cast. A top-level schema field
  * uses its declared type; nested paths, `json` fields and unknown keys fall
@@ -408,11 +455,12 @@ function castOrThrow(raw: unknown, kind: CastKind, key: string, op: string): SQL
  * Typed comparison clause. Returns `undefined` for a text comparison so the
  * caller keeps the original (byte-identical) SQL for backward compatibility.
  */
-function typedComparison(key: string, op: string, raw: unknown, types?: FieldTypeMap): SQL | undefined {
+function typedComparison(key: string, op: string, input: unknown, types?: FieldTypeMap): SQL | undefined {
   if (!CASTABLE_OPS.has(op)) return undefined;
+  const raw = isZonedKey(key, types) ? zonedFilterValue(input, key, op) : input;
   const kind = resolveCastKind(key, raw, types);
   if (kind === 'text') return undefined;
-  const expr = castExpression(fieldExpression(key), kind);
+  const expr = castExpression(filterExpression(key, types), kind);
   if (op === '_in' || op === '_nin') {
     if (!Array.isArray(raw) || raw.length === 0) {
       throw new ItemServiceError('INVALID_FILTER', `Operator "${op}" expects a non-empty array.`);
@@ -442,7 +490,8 @@ function typedComparison(key: string, op: string, raw: unknown, types?: FieldTyp
   }
 }
 
-function buildFilter(filter?: ItemFilter, types?: FieldTypeMap): SQL | undefined {
+/** @internal Exported for unit tests. */
+export function buildFilter(filter?: ItemFilter, types?: FieldTypeMap): SQL | undefined {
   if (!filter) return undefined;
   const clauses: SQL[] = [];
 
@@ -463,7 +512,7 @@ function buildFilter(filter?: ItemFilter, types?: FieldTypeMap): SQL | undefined
   for (const [key, value] of Object.entries(filter)) {
     if (key === '_and' || key === '_or') continue;
     if (!value || typeof value !== 'object') continue;
-    const expr = fieldExpression(key);
+    const expr = filterExpression(key, types);
     for (const [op, raw] of Object.entries(value as Record<string, unknown>)) {
       if (clauses.length >= MAX_FILTER_CLAUSES) {
         throw new ItemServiceError('INVALID_FILTER', 'Filter has too many clauses.');
@@ -539,7 +588,8 @@ function buildFilter(filter?: ItemFilter, types?: FieldTypeMap): SQL | undefined
   return sql.join(clauses, sql` and `);
 }
 
-function buildSort(sort?: string[], types?: FieldTypeMap): SQL[] {
+/** @internal Exported for unit tests. */
+export function buildSort(sort?: string[], types?: FieldTypeMap): SQL[] {
   if (!sort?.length) return [desc(items.updatedAt)];
   return sort.map((token) => {
     const dir = token.startsWith('-') ? desc : asc;
@@ -548,7 +598,8 @@ function buildSort(sort?: string[], types?: FieldTypeMap): SQL[] {
     // field has a declared type; a sort token carries no value to infer from.
     const kind =
       STRUCTURAL_FIELDS.has(name) || name.includes('.') ? null : castKindForFieldType(types?.get(name));
-    const expr = kind && kind !== 'text' ? castExpression(fieldExpression(name), kind) : fieldExpression(name);
+    const base = filterExpression(name, types);
+    const expr = kind && kind !== 'text' ? castExpression(base, kind) : base;
     return dir(expr as never);
   });
 }
@@ -849,7 +900,7 @@ export class ItemService {
       primaryKeyType: compiled.primaryKeyType,
       storageMode: compiled.storageMode,
       meta: compiled.meta,
-      fieldTypes: new Map(compiled.fields.map((f) => [f.name, f.type])) as FieldTypeMap,
+      fieldTypes: buildFieldTypeMap(compiled.fields),
     };
   }
 

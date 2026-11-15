@@ -175,4 +175,23 @@ describe("generateTypes", () => {
     expect(output).toContain("import type { Brand } from 'lumibase';");
     expect(output).not.toContain("@lumibase/sdk");
   });
+
+  it("types a timezone-aware datetime as { instant, tz, offset } (#747)", () => {
+    const output = generateTypes({
+      version: 2,
+      site: "site_1",
+      collections: [
+        {
+          name: "events",
+          primaryKey: "id",
+          fields: [
+            { name: "starts_at", type: "datetime", required: true, nullable: false, timezone: true },
+            { name: "legacy_at", type: "datetime", required: false, nullable: true },
+          ],
+        },
+      ],
+    });
+    expect(output).toContain("starts_at: { instant: string; tz: string; offset: string };");
+    expect(output).toContain("legacy_at?: string | null;");
+  });
 });

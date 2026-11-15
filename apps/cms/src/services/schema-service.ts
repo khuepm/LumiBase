@@ -12,6 +12,7 @@ import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 import type { CacheProvider, EdgeCacheProvider, QueueProvider } from '@lumibase/runtime';
 import { createSwrCache, type SwrCache } from '@lumibase/runtime';
 import type { CdcOperation, CdcResource, FieldClassification } from '@lumibase/contracts';
+import { validateZonedDateTimeOptions } from '@lumibase/contracts/field';
 import { invalidateDeliverTag } from './content-invalidation';
 import { AuditLogger } from '../modules/audit/logger';
 import { OutboxWriter, type OutboxActor } from '../modules/cdc/change-feed';
@@ -287,6 +288,15 @@ export function assertClassificationEncryptable(
   }
 }
 
+/**
+ * Reject malformed timezone-aware datetime options (#747): `timezone` on a
+ * non-datetime type, an unknown `defaultTimezone`, a bad `disambiguation`.
+ */
+export function assertZonedDateTimeOptions(type: string, options: unknown): void {
+  const message = validateZonedDateTimeOptions(type, options);
+  if (message) throw new SchemaServiceError('INVALID_FIELD_OPTIONS', message, 400);
+}
+
 const ensureName = (name: string, kind: 'collection' | 'field') => {
   if (!NAME_PATTERN.test(name)) {
     throw new SchemaServiceError(
@@ -560,6 +570,7 @@ export class SchemaService {
   async createField(collectionName: string, input: FieldInput) {
     ensureName(input.name, 'field');
     assertClassificationEncryptable(input.classification, input.encrypted);
+    assertZonedDateTimeOptions(input.type, input.options);
     const collection = await this.getCollection(collectionName);
     if (!collection) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
@@ -604,6 +615,7 @@ export class SchemaService {
     const nextClassification = input.classification ?? existingClassification;
     const nextEncrypted = input.encrypted ?? existing.encrypted;
     assertClassificationEncryptable(nextClassification, nextEncrypted);
+    assertZonedDateTimeOptions(input.type ?? existing.type, input.options ?? existing.options);
     const populatedRows = await this.countFieldDataRows(collection.id, fieldName);
     assertFieldMutationAllowed(
       existing,
@@ -667,6 +679,7 @@ export class SchemaService {
     if (!existing) {
       throw new SchemaServiceError('NOT_FOUND', `Field "${fieldName}" not found.`, 404);
     }
+    assertZonedDateTimeOptions(input.type ?? existing.type, input.options ?? existing.options);
     const populatedRows = await this.countFieldDataRows(collection.id, fieldName);
     assertFieldMutationAllowed(existing, input, populatedRows, {
       migrationPlan: input.migrationPlan,

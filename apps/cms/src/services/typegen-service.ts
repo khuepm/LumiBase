@@ -1,6 +1,7 @@
 import { collections as collectionsTable, fields, relations, scopeSite } from '@lumibase/database';
 import { asc, eq } from 'drizzle-orm';
 import type { Database } from '@lumibase/database';
+import { isZonedDateTimeField } from '@lumibase/contracts/field';
 import { compileSystemFields, type PrimaryKeyType, type RelationType } from './schema-service';
 
 export interface TypegenManifest {
@@ -32,6 +33,8 @@ export interface TypegenField {
   kind?: 'm2o' | 'o2m' | 'm2m' | 'm2a';
   target?: string;
   enum?: string[];
+  /** Timezone-aware datetime (#747): value is `{ instant, tz, offset }`. */
+  timezone?: boolean;
 }
 
 export interface TypegenRelation {
@@ -90,6 +93,7 @@ export class TypegenService {
           encrypted: f.encrypted,
           primaryKey: f.name === coll.primaryKeyField,
         };
+        if (isZonedDateTimeField(f)) field.timezone = true;
 
         // Detect relation fields
         const rel = relationRows.find(

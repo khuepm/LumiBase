@@ -124,7 +124,11 @@ function mapFieldTypeToTs(field: TypegenField, coll: TypegenCollection, branded:
   return nullable(field, field.encrypted ? `${tsType} | '***'` : tsType);
 }
 
+/** Inline shape of a timezone-aware datetime (#747); mirrors `ZonedDateTime`. */
+const ZONED_DATETIME_TS = '{ instant: string; tz: string; offset: string }';
+
 function mapScalarFieldType(field: TypegenField, branded: boolean): string {
+  if (field.timezone) return ZONED_DATETIME_TS;
   const typeMap: Record<string, string> = {
     string: 'string',
     text: 'string',

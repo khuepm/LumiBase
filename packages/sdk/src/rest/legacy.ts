@@ -85,7 +85,8 @@ import {
 export interface UserPreferencesPayload {
   language?: string;
   theme?: "auto" | "light" | "dark";
-  timezone?: string;
+  /** Display time zone (IANA); `null` clears it → browser zone (#747). */
+  timezone?: string | null;
   keybindings?: Record<string, string>;
   [key: string]: unknown;
 }
