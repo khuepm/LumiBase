@@ -113,7 +113,7 @@ export function parseExtensionMcpManifest(manifest: unknown): ExtensionMcpManife
  * `null` when the result would not be a valid tool name (too long).
  */
 export function extensionToolName(extensionKey: string, toolName: string): string | null {
-  const key = extensionKey.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const key = extensionKey.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).join('_');
   if (!key) return null;
   const name = `ext_${key}__${toolName}`;
   return /^[a-z][a-zA-Z0-9_]{2,63}$/.test(name) ? name : null;

@@ -405,7 +405,7 @@ export class AgentReceiptsService {
     const costByTool = costRows
       .map((row) => ({ tool: row.tool, tokens: num(row.tokens), usd: num(row.usd) }))
       .filter((row) => row.tokens > 0 || row.usd > 0)
-      .sort((a, b) => b.usd - a.usd || b.tokens - a.tokens);
+      .sort((a, b) => b.usd - a.usd || b.tokens - a.tokens || a.tool.localeCompare(b.tool));
 
     // Incidents
     const bySource: Record<string, number> = {};
@@ -447,12 +447,12 @@ export class AgentReceiptsService {
       runs: {
         total: Object.values(runsByStatus).reduce((a, b) => a + b, 0),
         byStatus: runsByStatus,
-        byAgent: [...byAgent.values()].sort((a, b) => b.total - a.total),
+        byAgent: [...byAgent.values()].sort((a, b) => b.total - a.total || a.agent.localeCompare(b.agent)),
         failureRate: round(ratio(failed, succeeded + failed), 4),
       },
       toolCalls: {
         total: [...byTool.values()].reduce((a, b) => a + b.total, 0),
-        byTool: [...byTool.values()].sort((a, b) => b.total - a.total),
+        byTool: [...byTool.values()].sort((a, b) => b.total - a.total || a.tool.localeCompare(b.tool)),
       },
       approvals: {
         total: approvalsTotal,
@@ -482,7 +482,7 @@ export class AgentReceiptsService {
         opened: num(driftOpened[0]?.count),
         resolved: num(driftResolved[0]?.count),
         openNow: num(driftOpenNow[0]?.count),
-        byRule: driftByRule.map((row) => ({ ruleType: row.ruleType, count: num(row.count) })).sort((a, b) => b.count - a.count),
+        byRule: driftByRule.map((row) => ({ ruleType: row.ruleType, count: num(row.count) })).sort((a, b) => b.count - a.count || a.ruleType.localeCompare(b.ruleType)),
       },
       incidents: { total: incidentsTotal, bySource, bySeverity },
       autonomy: {
