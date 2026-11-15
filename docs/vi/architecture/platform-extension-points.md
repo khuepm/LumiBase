@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-11-14T12:26:57.226Z
+version: 3
+lastUpdated: 2026-11-15T14:59:15.675Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b9b358bafbe19e63
+sourceHash: b65445cc77793e33
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T12:26:57.226Z
-codeVerifiedHash: b9b358bafbe19e63
-codeVerifiedClaims: 30
+codeVerified: 2026-11-15T14:59:15.675Z
+codeVerifiedHash: b65445cc77793e33
+codeVerifiedClaims: 42
 ---
 
 # Điểm mở rộng nền tảng
@@ -30,7 +30,8 @@ Ba tính chất đúng với mọi seam:
   log và tiếp tục như thể cài đặt mặc định đã trả lời.
 
 Trang này trình bày registry, các entry point ghép được, phép tra cứu
-site → organization có cache, và entitlement resolver.
+site → organization có cache, entitlement resolver, usage emitter, và nguồn
+external-action tool.
 
 ## Vị trí các thành phần
 
@@ -41,6 +42,9 @@ site → organization có cache, và entitlement resolver.
 | Cài đặt mặc định | `apps/cms/src/platform/defaults.ts` |
 | Helper theo request | `apps/cms/src/platform/request.ts` |
 | Middleware entitlement | `apps/cms/src/middleware/entitlement.ts` |
+| Hợp đồng usage | `packages/contracts/src/platform/usage.ts` |
+| Usage scope và `recordUsage()` | `apps/cms/src/platform/usage.ts` |
+| Middleware usage | `apps/cms/src/middleware/usage.ts` |
 | Tra cứu site → organization | `apps/cms/src/services/domains/site-organization-cache.ts` |
 
 Gói contracts không có phụ thuộc lúc chạy, nên runtime trong `SeamContext` là một
@@ -265,15 +269,155 @@ Hướng dẫn:
   phép tra cứu đã lỗi. Hãy quyết định cài đặt của bạn làm gì trong trường hợp đó.
 - `ctx.requestId` là `null` khi ở ngoài request (cron, queue consumer).
 
+## Usage emitter
+
+Usage emitter báo cáo một request hay một job nền đã tiêu thụ những gì, đã gán sẵn
+cho một site và organization của nó. Nó dành cho operator muốn báo cáo usage theo
+từng organization mà không phải cào log hay metric vốn không mang tenant.
+
+Nó tách biệt với telemetry ẩn danh tuỳ chọn mô tả ở
+[Activation milestones and usage telemetry](../operations/usage-telemetry.md):
+payload khác, công tắc khác, không dùng chung nơi lưu trữ.
+
+```ts
+interface UsageEvent {
+  id: string;            // uuidv7, the idempotency key
+  kind: string;          // see USAGE_KINDS
+  tenant: TenantRef;     // site and organization at the moment of the event
+  quantity: number;      // signed for deltas (storage.bytes, seat.change)
+  unit: 'count' | 'bytes' | 'tokens' | 'ms';
+  occurredAt: string;    // ISO 8601, UTC
+  attributes?: Readonly<Record<string, string | number | boolean>>;
+}
+
+interface UsageEmitter<TRuntime = unknown> {
+  emit(event: UsageEvent): void;                  // synchronous, must not throw
+  flush(ctx: SeamContext<TRuntime>): Promise<void>; // never awaited by the response
+}
+```
+
+### Mặc định
+
+`emit` và `flush` không làm gì. Trên thực tế chúng không bao giờ được gọi tới: mọi
+điểm gọi đều kiểm tra việc đăng ký trước, nên khi không có gì được đăng ký thì không
+sự kiện nào được dựng, không tenant nào được tra cứu và không gì được ghi.
+
+### CMS phát những gì
+
+| Kind | Ở đâu | Số lượng |
+|---|---|---|
+| `api.request` | `withUsage()`, mọi request trên API có xác thực | 1 |
+| `delivery.request` | `withUsage()`, mọi request trên `/api/v1/deliver/*` | 1 |
+| `storage.bytes` | `POST /api/v1/files` (+`filesize`), `DELETE /api/v1/files/:id` (−`filesize`), upload media (+số byte đã ghi) | byte có dấu |
+| `seat.change` | tạo organization (+1 owner), mời thành viên (+1, chỉ thành viên mới), xoá thành viên (−1) | ±1 |
+| `agent.run` | `AgentRunService.closeRun` / `failRun` | 1 |
+| `ai.tokens` | mọi lời gọi model qua `createLLMProvider()` có báo usage, một sự kiện cho mỗi chiều | token |
+| `email.sent` | `EmailService.send` khi transport nhận thư | số người nhận |
+
+`attributes` chỉ chứa giá trị phân loại: surface, method, nhóm status, loại
+principal (`user`, `api_key`, `anonymous`), thời lượng, id model, transport. Không
+bao giờ có path, body, địa chỉ hay id người dùng.
+
+Request không nêu site lẫn organization (health check, trang đăng nhập) không sinh
+sự kiện, và preflight CORS không được đếm.
+
+### Nằm ngoài đường request
+
+`withUsage()` được gắn toàn cục ngay sau `withRuntime()`. Khi có emitter được đăng
+ký, nó mở một *usage scope* bao quanh request. Điểm gọi ghi vào scope đó bằng
+`recordUsage()`, hàm này chỉ thêm vào một danh sách; scope đi theo async context
+(`AsyncLocalStorage`, có trên Workers nhờ `nodejs_compat`), nên một service như
+email transport ghi vào đúng request nó đang phục vụ mà không cần được truyền gì.
+
+Khi response đã được quyết định, phần drain của scope — gán tenant qua phép tra cứu
+site → organization có cache, `emit` từng sự kiện, rồi một lần `flush` — được giao
+cho `executionCtx.waitUntil` trên Workers và để tự chạy trên Node. Response không
+bao giờ chờ nó.
+
+Job nền mở scope riêng bằng `runWithUsageScope()`. Queue consumer của agent run làm
+điều này trên cả hai runtime, nên một run chạy qua queue báo được token model và
+trạng thái kết thúc của nó; drain được await ở cuối job.
+
+Đo bằng `pnpm -F @lumibase/cms bench:usage-seam` (trong process, 20.000 request mỗi
+biến thể, chạy xen kẽ): khi không đăng ký gì, thời gian trung vị của request nằm
+trong mức nhiễu so với app không có middleware; khi đăng ký một emitter có buffer,
+trung vị tăng khoảng 17 µs mỗi request.
+
+### Xử lý lỗi
+
+`emit` ném lỗi thì mất sự kiện đó và được ghi log; `flush` bị reject thì được ghi
+log. Cả hai đều không ảnh hưởng tới response. Mất một sự kiện được ưu tiên hơn làm
+hỏng một request.
+
+### Viết một emitter
+
+```ts
+import type { UsageEmitter, UsageEvent } from '@lumibase/contracts/platform';
+import type { RuntimeContext } from '@lumibase/runtime';
+
+export function createQueueEmitter(): UsageEmitter<RuntimeContext> {
+  let buffer: UsageEvent[] = [];
+  return {
+    emit(event) {
+      buffer.push(event);
+    },
+    async flush(ctx) {
+      if (buffer.length === 0) return;
+      const batch = buffer;
+      buffer = [];
+      await ctx.runtime.queue.enqueue('usage-events', 'batch', { events: batch });
+    },
+  };
+}
+```
+
+Hướng dẫn:
+
+- Buffer trong `emit`; làm I/O trong `flush`. Một đối tượng emitter phục vụ mọi
+  request của isolate hoặc process, nên buffer ở cấp module là dùng chung — hãy
+  tráo nó ra trước khi await, như ví dụ trên.
+- Khử trùng theo `event.id`. Queue giao ít nhất một lần, và cùng một sự kiện có thể
+  tới hai lần.
+- `tenant.organizationId` là chủ sở hữu tại thời điểm xảy ra sự kiện. Một site sau
+  đó được chuyển sang organization khác thì usage trước đó vẫn ở lại organization cũ.
+- Queue của Cloudflare cần binding producer riêng. Hãy khai báo nó trong
+  `wrangler.toml` của bản triển khai của bạn, không phải bản có sẵn.
+
+## External-action tools
+
+Seam `externalActions` cho phép entry của một deployment trao cho CMS các agent
+tool gọi tới hệ thống bên ngoài CMS, từ một gói mà repository này không import.
+
+```ts
+registerPlatformSeams({ externalActions: { tools: () => myTools() } });
+```
+
+Nó khác các seam còn lại ở hai điểm, đều có chủ ý:
+
+- **Được đọc lúc đăng ký, không phải theo từng request.** `tools()` chạy một lần
+  bên trong `registerPlatformSeams()`, và mọi định nghĩa được kiểm và đăng ký vào
+  registry tool dùng chung của process ngay tại đó.
+- **Lỗi không bị nuốt.** Một định nghĩa sai dạng hoặc trùng tên làm
+  `registerPlatformSeams()` ném lỗi và không tool nào được đăng ký. Chạy với một
+  tool lặng lẽ biến mất, hoặc với nửa bộ tool, sẽ đổi những gì agent được làm mà
+  không ai hay.
+
+Mặc định: không có tool nào. Định dạng bản khai, quy tắc quyết định và policy
+trước khi thực thi (tuỳ chọn) được mô tả ở
+[External-action tools](../features/external-action-tools.md).
+
 ## Multi-tenancy
 
 - **Cô lập theo tenant:** mục cache site → organization (khoá theo id của site),
-  tenant và snapshot đã ghi nhớ (giữ trên context của từng request).
+  tenant và snapshot đã ghi nhớ (giữ trên context của từng request), usage scope
+  (một cho mỗi request hoặc job, gán theo từng site).
 - **Dùng chung toàn deployment:** registry. Một lần đăng ký áp dụng cho mọi site
-  trong process hoặc isolate.
+  trong process hoặc isolate. Cùng một đối tượng emitter nhận sự kiện của
+  mọi site; mỗi sự kiện mang tenant của riêng nó.
 
 Cách kiểm chứng: `apps/cms/src/services/domains/__tests__/site-organization-cache.test.ts`
 và `apps/cms/src/middleware/__tests__/entitlement.test.ts` chạy hai site cạnh nhau
 và khẳng định không site nào thấy chủ sở hữu hay quyết định của site kia.
 `apps/cms/src/routes/__tests__/site-organization-cache.db.integration.test.ts`
-kiểm tra việc vô hiệu hoá trên PostgreSQL.
+kiểm tra việc vô hiệu hoá trên PostgreSQL. `apps/cms/src/platform/__tests__/usage.test.ts`
+kiểm tra việc gán sự kiện request và sự kiện service cho đúng site của chúng.

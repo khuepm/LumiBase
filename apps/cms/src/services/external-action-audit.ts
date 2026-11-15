@@ -1,4 +1,5 @@
 import { activity, type Database } from '@lumibase/database';
+import type { ExternalActionPolicyVerdict } from './external-action-policy';
 import type { ExternalActionMetadata } from './external-action-tools';
 
 /**
@@ -57,6 +58,12 @@ export interface ExternalActionAuditEntry {
   inputHash?: string | null;
   /** Hash of the constitution pinned to the run, when one is active. */
   constitutionHash?: string | null;
+  /**
+   * Pre-execution policy verdict for this step, when the tool declares a
+   * policy. Evaluator ids and statuses only, never their messages: a judge's
+   * reason can quote the arguments.
+   */
+  policy?: ExternalActionPolicyVerdict | null;
 }
 
 export const EXTERNAL_ACTION_AUDIT_PREFIX = 'agent.external_action.';
@@ -108,6 +115,18 @@ export async function recordExternalActionAudit(
       deciderKind: entry.decider?.kind ?? null,
       inputHash: entry.inputHash ?? null,
       constitutionHash: entry.constitutionHash ?? null,
+      // Only when a policy was evaluated, so a tool without one writes the
+      // same row it always did.
+      ...(entry.policy && entry.policy.outcome !== 'not_evaluated'
+        ? {
+            policy: {
+              outcome: entry.policy.outcome,
+              code: entry.policy.code ?? null,
+              constitutionHash: entry.policy.constitutionHash,
+              evaluators: entry.policy.evaluators.map(({ id, status, blocking }) => ({ id, status, blocking })),
+            },
+          }
+        : {}),
     },
   });
 }

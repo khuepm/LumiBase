@@ -13,7 +13,7 @@ type CacheServiceStatus = 'healthy' | 'degraded' | 'unhealthy';
 type OverallStatus = 'healthy' | 'degraded';
 type ServiceName = keyof HealthResponse['services'];
 
-interface HealthResponse {
+export interface HealthResponse {
   status: OverallStatus;
   services: {
     database: ServiceStatus;
@@ -84,7 +84,7 @@ async function probeCache(runtime: RuntimeContext): Promise<CacheServiceStatus> 
   return 'healthy';
 }
 
-async function collectHealth(c: Context<AppEnv>): Promise<HealthResponse> {
+export async function collectHealth(c: Context<AppEnv>): Promise<HealthResponse> {
   const runtime = c.get('runtime');
 
   const [database, cache, search, storage, queue] = await Promise.all([

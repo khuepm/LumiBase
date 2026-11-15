@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { SignJWT, jwtVerify } from 'jose';
 import type { AppEnv, Bindings } from '../env';
 import { requireSiteAdmin } from '../middleware/site-admin';
+import { USAGE_KINDS } from '@lumibase/contracts/platform';
+import { recordUsage } from '../platform/usage';
 
 export const filesRouter = new Hono<AppEnv>();
 filesRouter.use('*', async (c, next) => {
@@ -139,6 +141,7 @@ filesRouter.post('/', async (c) => {
     })
     .returning();
 
+  if (row) recordUsage({ kind: USAGE_KINDS.storageBytes, quantity: input.filesize, unit: 'bytes', attributes: { source: 'files', op: 'add' } });
   return c.json({ data: row });
 });
 
@@ -169,6 +172,9 @@ filesRouter.delete('/:id', async (c) => {
     .returning();
 
   if (!row) return c.json({ errors: [{ code: 'NOT_FOUND' }] }, 404);
+  if (typeof row.filesize === 'number') {
+    recordUsage({ kind: USAGE_KINDS.storageBytes, quantity: -row.filesize, unit: 'bytes', attributes: { source: 'files', op: 'remove' } });
+  }
   return c.json({ data: null });
 });
 
