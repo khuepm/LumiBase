@@ -3,7 +3,7 @@
 // covers the decisions it makes about the environment.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -141,6 +141,38 @@ test('healthPort follows the process role like serve.ts', () => {
   assert.equal(healthPort({ LUMIBASE_PROCESS_ROLE: 'worker' }), 1988);
   assert.equal(healthPort({ LUMIBASE_PROCESS_ROLE: 'WORKER', PORT: '8080' }), 8081);
   assert.equal(healthPort({ LUMIBASE_PROCESS_ROLE: 'worker', LUMIBASE_WORKER_HEALTH_PORT: '9000' }), 9000);
+});
+
+// The image HEALTHCHECK probes liveness (/health/live), never /health: with a
+// database down, /health takes ~3 s (its dependency probe timeouts) and the
+// container stayed "starting" in the v2.1.0 release smoke test.
+test('healthcheck.mjs probes /health/live and ignores a slow /health', async () => {
+  const { createServer } = await import('node:http');
+  const hits = [];
+  const server = createServer((req, res) => {
+    hits.push(req.url);
+    if (req.url === '/health/live') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end('{"status":"ok"}');
+    } else {
+      setTimeout(() => res.writeHead(200).end('{"status":"degraded"}'), 5000).unref();
+    }
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  try {
+    const probe = () =>
+      new Promise((resolve) => {
+        const child = spawn(process.execPath, [fileURLToPath(new URL('../../docker/scripts/healthcheck.mjs', import.meta.url))], {
+          env: { ...process.env, PORT: String(port), LUMIBASE_PROCESS_ROLE: 'web' },
+        });
+        child.on('exit', (code) => resolve(code));
+      });
+    assert.equal(await probe(), 0);
+    assert.deepEqual(hits, ['/health/live']);
+  } finally {
+    server.closeAllConnections?.();
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 // End to end through entrypoint.mjs, with stand-ins for the two bundles: the
