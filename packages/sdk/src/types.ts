@@ -614,6 +614,13 @@ export interface ItemRow<
   status: string;
   data: TData;
   sort: number;
+  /**
+   * Optimistic-concurrency counter, also sent as the `ETag` of the detail
+   * response. Pass it back as `ifMatch` on `patch`/`replace` to make the write
+   * fail with 412 if someone else changed the item first. Absent on servers
+   * older than this field.
+   */
+  version?: number;
   /** Content scheduling window (Publish_Window); null when not scheduled. */
   publishAt?: string | null;
   unpublishAt?: string | null;
