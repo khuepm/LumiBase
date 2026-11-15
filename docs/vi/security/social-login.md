@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 3
-lastUpdated: 2026-11-15T08:14:27.095Z
+version: 4
+lastUpdated: 2026-11-15T11:43:42.593Z
 translatedFrom: en
-sourceHash: 3e2d6fbb1ec041b1
+sourceHash: 0600eb1200a4adb6
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T08:14:27.095Z
-codeVerifiedHash: 3e2d6fbb1ec041b1
+codeVerified: 2026-11-15T11:43:42.593Z
+codeVerifiedHash: 0600eb1200a4adb6
 codeVerifiedClaims: 44
 ---
 
@@ -53,7 +53,12 @@ frontend                     LumiBase CMS                        provider
   code dùng một lần. Một code bị lấy từ URL, hoặc một luồng do kẻ tấn công
   khởi tạo rồi đẩy sang trình duyệt của người khác, đều không thể đổi được.
 - **State và nonce** là ngẫu nhiên, lưu phía server, dùng một lần và hết hạn
-  sau 10 phút; code kết quả dùng một lần hết hạn sau 2 phút.
+  sau 10 phút; code kết quả dùng một lần hết hạn sau 2 phút. Tính chất dùng
+  một lần được bảo đảm bằng một lần claim atomic trên bộ đếm của runtime
+  (Redis `INCR`, bộ đếm trong tiến trình, hoặc Durable Object theo site trên
+  Workers): chỉ lần đổi đầu tiên thắng. Nếu không claim atomic được — thiếu
+  binding Durable Object, hoặc cache gặp sự cố — lần đổi đó fail closed và
+  người dùng phải bắt đầu đăng nhập lại.
 - **Không có token trong URL.** Lần redirect về site của bạn chỉ mang `code`
   dùng một lần, `state` của bạn và `intent` (hoặc `error`).
 - **Google / Apple:** ID token được kiểm bằng `jose` với JWKS của provider —

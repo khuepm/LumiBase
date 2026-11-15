@@ -101,6 +101,60 @@ describe('flow state is single-use and site-bound', () => {
     expect((await consumeResult(cache, 'site_a', code))?.profile.subject).toBe('g-1');
     expect(await consumeResult(cache, 'site_a', code)).toBeNull();
   });
+
+  const resultRecord = () => ({
+    siteId: 'site_a',
+    provider: 'google' as const,
+    intent: 'login' as const,
+    userId: null,
+    clientCodeChallenge: 'c'.repeat(43),
+    profile: profile(),
+  });
+
+  /**
+   * A cache whose `get` keeps returning a record after `delete` (Workers KV
+   * eventual consistency across isolates) and whose `increment` can be made
+   * to throw (no Durable Object binding / cache outage).
+   */
+  function staleReadCache(opts: { incrementThrows?: boolean } = {}) {
+    const inner = new MemoryCacheProvider();
+    const snapshot = new Map<string, unknown>();
+    return {
+      inner,
+      cache: {
+        get: async <T,>(key: string) => ((await inner.get<T>(key)) ?? (snapshot.get(key) as T | undefined) ?? null),
+        set: async (key: string, value: string, o?: { ttl?: number }) => {
+          snapshot.set(key, JSON.parse(value));
+          return inner.set(key, value, o);
+        },
+        delete: (key: string) => inner.delete(key),
+        increment: async (key: string, by?: number, o?: { ttl?: number }) => {
+          if (opts.incrementThrows) throw new Error('atomic counter backend unavailable');
+          return inner.increment(key, by, o);
+        },
+      } as unknown as MemoryCacheProvider,
+    };
+  }
+
+  it('fails closed when the atomic claim cannot be made (increment throws)', async () => {
+    const { cache } = staleReadCache({ incrementThrows: true });
+    const state = await saveAuthState(cache, record);
+    const code = await saveResult(cache, resultRecord());
+    expect(await consumeAuthState(cache, 'site_a', state)).toBeNull();
+    expect(await consumeResult(cache, 'site_a', code)).toBeNull();
+  });
+
+  it('lets exactly one of many simultaneous redemptions win, even when reads are stale', async () => {
+    const { cache } = staleReadCache();
+    const state = await saveAuthState(cache, record);
+    const code = await saveResult(cache, resultRecord());
+    const states = await Promise.all(Array.from({ length: 12 }, () => consumeAuthState(cache, 'site_a', state)));
+    const results = await Promise.all(Array.from({ length: 12 }, () => consumeResult(cache, 'site_a', code)));
+    expect(states.filter(Boolean)).toHaveLength(1);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    // A late replay after the record is gone still loses.
+    expect(await consumeResult(cache, 'site_a', code)).toBeNull();
+  });
 });
 
 describe('paths', () => {

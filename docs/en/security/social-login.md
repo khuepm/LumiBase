@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 3
-lastUpdated: 2026-11-15T08:14:27.095Z
-contentHash: 3e2d6fbb1ec041b1
-codeVerified: 2026-11-15T08:14:27.095Z
-codeVerifiedHash: 3e2d6fbb1ec041b1
+version: 4
+lastUpdated: 2026-11-15T11:43:42.593Z
+contentHash: 0600eb1200a4adb6
+codeVerified: 2026-11-15T11:43:42.593Z
+codeVerifiedHash: 0600eb1200a4adb6
 codeVerifiedClaims: 44
 ---
 
@@ -50,7 +50,12 @@ frontend                     LumiBase CMS                        provider
   the one-time code. A code lifted from a URL, or a flow an attacker started
   and pushed onto someone else's browser, cannot be redeemed.
 - **State and nonce** are random, server-side, single use, and expire after
-  10 minutes; the one-time result code expires after 2 minutes.
+  10 minutes; the one-time result code expires after 2 minutes. Single use is
+  enforced by an atomic claim on the runtime counter (Redis `INCR`, the
+  in-process counter, or the per-site Durable Object on Workers): only the
+  first redemption wins. If no atomic claim can be made — no Durable Object
+  binding, or a cache outage — the redemption fails closed and the user
+  starts the sign-in again.
 - **No tokens in URLs.** The redirect back to your site carries only the
   one-time `code`, your `state`, and `intent` (or `error`).
 - **Google / Apple:** the ID token is verified with `jose` against the

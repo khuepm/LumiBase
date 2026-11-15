@@ -12,10 +12,10 @@
  *      redirect. Holds the verified provider profile until the frontend
  *      redeems it with the matching client `code_verifier`. 2 minutes.
  *
- * Single use: `consume*` deletes the record and also claims a "used" marker
- * via the cache's atomic `increment`, so two concurrent redemptions of one
- * value cannot both succeed where the backend's increment is atomic (Redis,
- * memory); on KV it narrows the window to the read itself.
+ * Single use: `consume*` claims a "used" marker via the cache's atomic
+ * `increment` (Redis INCR, the in-process counter, or the per-site Durable
+ * Object on Workers) and only the first claimant gets the record. When no
+ * atomic claim is possible the redemption fails closed (returns null).
  */
 
 import type { CacheProvider } from '@lumibase/runtime';
@@ -59,15 +59,25 @@ const stateKey = (siteId: string, state: string) => `social-auth:${siteId}:state
 const resultKey = (siteId: string, code: string) => `social-auth:${siteId}:result:${code}`;
 const usedKey = (key: string) => `${key}:used`;
 
-async function consume<T>(cache: CacheProvider, key: string, ttl: number): Promise<T | null> {
+/**
+ * Single-winner redemption. The atomic `increment` claim is the gate, not the
+ * read or the delete: on Workers KV a `get` can still see a record another
+ * isolate has just deleted, so only the first claimant (counter === 1) may
+ * return it. If the claim cannot be made (no atomic counter backend, cache
+ * outage), the redemption FAILS CLOSED — the user restarts the sign-in rather
+ * than a state/code being accepted twice (same rule as passkey ceremonies).
+ */
+export async function consume<T>(cache: CacheProvider, key: string, ttl: number): Promise<T | null> {
   const record = await cache.get<T>(key);
   if (!record) return null;
-  await cache.delete(key);
+  let claims: number;
   try {
-    if ((await cache.increment(usedKey(key), 1, { ttl })) !== 1) return null;
+    claims = await cache.increment(usedKey(key), 1, { ttl });
   } catch {
-    // The record itself is already gone; a missing counter must not block.
+    return null;
   }
+  if (claims !== 1) return null;
+  await cache.delete(key);
   return record;
 }
 
