@@ -32,6 +32,7 @@ export const FIELD_TYPES = [
   'hash',
   'geometry',
   'alias',
+  'blocks',
 ] as const satisfies readonly FieldType[];
 
 // Adding a member to `FieldType` without covering it here fails `pnpm typecheck`.
@@ -58,6 +59,11 @@ const SCALAR: Record<(typeof FIELD_TYPES)[number], unknown> = {
   geometry: { type: 'Point', coordinates: [105.85, 21.03] },
   // Alias fields hold no column; an o2m alias is written as the related ids.
   alias: ['comment_1', 'comment_2'],
+  // Dynamic zone (#748): ordered `{ id, type, data }` blocks.
+  blocks: [
+    { id: 'V1StGXR8_Z5jdHi6B-myT', type: 'hero', data: { title: 'Hi' } },
+    { id: 'Uakgb_J5m9g-0JDMbcJqL', type: 'cta', data: { label: 'Go', url: null } },
+  ],
 };
 
 /** Relation and file kinds — the interfaces that store references, not scalars. */

@@ -1,5 +1,6 @@
 import type { FieldResource } from '@lumibase/sdk';
 import { AioInterface } from './aio';
+import { BlocksInterface } from './blocks';
 import { CodeInterface } from './code';
 import { CollectionItemDropdownInterface } from './collection-item-dropdown';
 import { ColorInterface } from './color';
@@ -95,6 +96,8 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
   'translatable-text': TranslatableText,
   seo: SeoInterface,
   aio: AioInterface,
+  // Dynamic zones (#748) — also resolves by the `blocks` storage type.
+  blocks: BlocksInterface,
 
   // Aliases by underlying type so collections without an explicit interface
   // still get a sensible editor.

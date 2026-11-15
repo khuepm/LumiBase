@@ -27,6 +27,8 @@ export interface TypegenField {
   kind?: 'm2o' | 'o2m' | 'm2m' | 'm2a';
   target?: string;
   enum?: string[];
+  /** Dynamic zones (#748): block template names a `blocks` field accepts. */
+  allowedBlocks?: string[];
 }
 
 export interface TypegenRelation {

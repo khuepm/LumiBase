@@ -2,6 +2,7 @@ import { collections as collectionsTable, fields, relations, scopeSite } from '@
 import { asc, eq } from 'drizzle-orm';
 import type { Database } from '@lumibase/database';
 import { compileSystemFields, type PrimaryKeyType, type RelationType } from './schema-service';
+import { isBlocksField, readBlocksOptions } from './blocks';
 
 export interface TypegenManifest {
   version: number;
@@ -32,6 +33,8 @@ export interface TypegenField {
   kind?: 'm2o' | 'o2m' | 'm2m' | 'm2a';
   target?: string;
   enum?: string[];
+  /** Dynamic zones (#748): block template names a `blocks` field accepts. */
+  allowedBlocks?: string[];
 }
 
 export interface TypegenRelation {
@@ -113,6 +116,10 @@ export class TypegenService {
           if (choiceRule && 'options' in choiceRule && Array.isArray(choiceRule.options)) {
             field.enum = choiceRule.options as string[];
           }
+        }
+
+        if (isBlocksField(f)) {
+          field.allowedBlocks = readBlocksOptions(f.options as Record<string, unknown> | null).allowedBlocks;
         }
 
         return field;

@@ -14,6 +14,7 @@ import { dispatchItemEvent } from './flow-dispatch';
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
 import { validateItem } from './validation';
+import { hasBlocksFields, resolveBlockTemplates } from './blocks';
 import {
   searchIndexName,
   type CacheProvider,
@@ -1306,7 +1307,12 @@ export class ItemService {
   ): Promise<Record<string, unknown>> {
     const compiled = await this.schemaService.getCompiled(collectionName);
     if (!compiled) return data;
-    const result = validateItem(compiled.fields, data, { partial });
+    // Dynamic zones (#748): resolve the block templates reachable from this
+    // collection so each block validates against its own template schema.
+    const blockTemplates = hasBlocksFields(compiled.fields)
+      ? await resolveBlockTemplates(compiled.fields, (name) => this.schemaService.getCompiled(name))
+      : undefined;
+    const result = validateItem(compiled.fields, data, { partial, blockTemplates });
     if (!result.ok) {
       throw new ItemServiceError(
         'VALIDATION',
