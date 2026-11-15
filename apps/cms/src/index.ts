@@ -86,6 +86,8 @@ import { domainsRouter } from './routes/domains';
 import { siteRouter } from './routes/site';
 import { systemRouter } from './routes/system';
 import { shareAdminRouter, sharePublicRouter } from './routes/shares';
+import { previewAdminRouter } from './routes/preview';
+import { previewDeliveryRouter } from './routes/preview-delivery';
 import { teamsRouter } from './routes/teams';
 import { translationsRouter } from './routes/translations';
 import { tmRouter } from './routes/translation-memory';
@@ -339,6 +341,8 @@ api.route('/settings', settingsRouter);
 api.route('/site', siteRouter);
 api.route('/domains', domainsRouter);
 api.route('/shares', shareAdminRouter);
+// Preview tokens (epic #667, V01): mint / list / revoke / rotate + settings.
+api.route('/preview', previewAdminRouter);
 api.route('/users', usersRouter);
 api.route('/teams', teamsRouter);
 api.route('/files', filesRouter);
@@ -468,6 +472,10 @@ app.use('/api/v1/deliver/*', withEntitlement({
 // Separate mount so the rate-limit wiring line above stays exactly as the
 // security-guards wiring test pins it. Runs after the limiter.
 app.use('/api/v1/deliver/*', withDeliveryMilestone(deliverPathSiteId));
+// Preview reads (epic #667): same public mount + limiter as delivery, site in
+// the path, token in the `x-lumibase-preview` header. Registered before
+// `deliverRouter` so its `/preview/*` leaf paths win.
+app.route('/api/v1/deliver/preview', previewDeliveryRouter);
 app.route('/api/v1/deliver', deliverRouter);
 
 // Public pageview beacon — tenancy in the URL, unauthenticated. `withRuntime`
