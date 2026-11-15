@@ -5,6 +5,7 @@ import type { MiddlewareHandler } from 'hono';
 import { apiKeys, users, userSites } from '@lumibase/database';
 import { and, eq, sql } from 'drizzle-orm';
 import { systemDbFor } from './db';
+import { isSessionLive } from '../services/auth/refresh-token';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { runDetached } from '../lib/detached';
@@ -21,6 +22,7 @@ import {
 } from '../services/api-key-publishable';
 import { mergeRequestContext } from './request-context';
 import { mcpResourceContext } from './mcp-oauth';
+import { isSocialAuthPublicPath } from '../modules/social-auth/paths';
 import { scopesFromClaims } from '../services/mcp-oauth';
 
 const JWKS_CACHE = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
@@ -151,10 +153,16 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     path === '/api/v1/auth/resend-verification' ||
     path === '/api/v1/auth/forgot-password' ||
     path === '/api/v1/auth/reset-password' ||
+    path === '/api/v1/auth/password-policy' ||
     path === '/api/v1/auth/refresh' ||
     path === '/api/v1/auth/logout' ||
     path === '/api/v1/auth/login' ||
     path === '/api/v1/auth/verify-totp' ||
+    path === '/api/v1/auth/passkey/options' ||
+    path === '/api/v1/auth/passkey/verify' ||
+    // Social login (#736): start / provider callback / one-time code exchange.
+    // Self-authenticating via server-side state + PKCE; see modules/social-auth.
+    isSocialAuthPublicPath(path) ||
     path === '/api/v1/realtime' ||
     path.startsWith('/api/v1/files/upload/') ||
     // Flow webhook trigger authenticates with a per-flow token inside the
@@ -545,6 +553,21 @@ export const withAuth = (): MiddlewareHandler<AppEnv> => async (c, next) => {
       if (tokenVersion !== (user.tokenVersion ?? 0)) {
         return c.json(
           { errors: [{ code: 'UNAUTHENTICATED', message: 'Session expired. Please sign in again.' }] },
+          401,
+        );
+      }
+
+      // Per-session revocation (#730): a login/refresh token carries `sid`,
+      // its refresh-token family. Once that session is revoked ("sign out
+      // this device", "sign out other devices", reuse detection) it has no
+      // live refresh row and its access token dies now, not at `exp`.
+      // System handle: a Studio token may act on a sibling site whose RLS
+      // scope would hide the family row; the random `sid` is the only key.
+      // Tokens minted before `sid` existed skip the check until they expire.
+      const sessionId = typeof payload.sid === 'string' ? payload.sid : null;
+      if (sessionId && !(await isSessionLive(systemDbFor(c), sessionId))) {
+        return c.json(
+          { errors: [{ code: 'UNAUTHENTICATED', message: 'Session revoked. Please sign in again.' }] },
           401,
         );
       }

@@ -1,10 +1,10 @@
 ---
-version: 17
-lastUpdated: 2026-11-15T18:24:40.216Z
+version: 19
+lastUpdated: 2026-11-15T18:30:37.383Z
 sourceLang: en
-contentHash: 2e2a77d52a0e23ad
-codeVerified: 2026-11-15T18:24:40.216Z
-codeVerifiedHash: 2e2a77d52a0e23ad
+contentHash: ac06b7d41ad4cb78
+codeVerified: 2026-11-15T18:30:37.383Z
+codeVerifiedHash: ac06b7d41ad4cb78
 codeVerifiedClaims: 20
 ---
 
@@ -34,6 +34,7 @@ Schema files are split by domain:
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
+| `social-auth.ts` | `lumibase_user_identities`, `lumibase_social_auth_providers` |
 | `imports.ts` | `lumibase_import_jobs` |
 | `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 
@@ -261,6 +262,10 @@ SDK generation uses this manifest to emit base collection interfaces and `Collec
 - `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — plaintext never stored), `familyId` (rotation chain), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
 - Rotating, revocable session-renewal tokens. Reuse of a revoked row revokes the whole `familyId` (theft detection). Swept on the hourly cron once expired. See [`security/user-management.md`](./security/user-management.md) §4d.
 
+### `user_passkeys` (migration `0031`, physical `lumibase_user_passkeys`)
+- `id` (nanoid), `userId`, `credentialId` (base64url, unique), `publicKey` (COSE public key), `counter`, `transports`, `aaguid`, `name`, `deviceType`, `backedUp`, `rpId`, `createdAt`, `lastUsedAt`, `updatedAt`.
+- Identity-scoped like `lumibase_user_totp_credentials`: keyed by `user_id`, no `site_id`, not under RLS — a passkey belongs to an RP ID (domain), not to a site. Nothing secret is stored. See [`security/passkeys.md`](./security/passkeys.md).
+
 ### System collections seed permissions
 
 When seeding local/staging/prod, seed system collection permissions explicitly. Sensitive collections such as `system_state`, `audit_log`, `login_attempts`, `login_baselines`, `admin_backup_codes`, `scim_tokens`, and future API key tables are admin/security-only. See [System Collections & Sensitive Access](./features/system-collections-access.md).
@@ -449,6 +454,14 @@ All three are `site_id`-scoped with `site_isolation` RLS. See `docs/en/features/
 ### `auth_external_issuers`
 - Per-site trusted external JWT issuer. **Public config only — no secrets** (signatures verify against the issuer's JWKS). `id`, `siteId` (FK sites, cascade), `issuer` (matches the `iss` claim), `jwksUri`/`discoveryUrl` (one required), `audience` (jsonb: string|string[]), `algorithms` (jsonb: asymmetric allowlist), `claimMapping` (jsonb: `{ email, roles, siteId?, externalId? }`), `roleMapping` (jsonb: `{ "<claim role>": { roleId|systemKey } }`), `defaultRoleId`, `jitProvisioning`, `clockSkewSeconds`, `enabled`, `createdAt`, `updatedAt`.
 - Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0000_lumibase_init` (consolidated). See [security/external-jwt-auth.md](./security/external-jwt-auth.md).
+
+### `user_identities` (`social-auth.ts`, migration `0032`)
+- External login identities linked to an account: `id`, `userId` (FK users, cascade), `issuer`, `subject`, `emailAtLink`, `createdAt`. Unique `(issuer, subject)`; index on `user_id`.
+- **Identity-global** like `users` — no `site_id`, not under RLS; site access stays in `user_sites`. Migration `0032` backfills every `users.external_id` under issuer `urn:lumibase:external-id`. See [security/social-login.md](./security/social-login.md).
+
+### `social_auth_providers` (`social-auth.ts`, migration `0032`)
+- Per-site Google / Apple / GitHub configuration: `id`, `siteId` (FK sites, cascade), `provider`, `enabled`, `clientId`, `clientSecretCiphertext`, `appleTeamId`, `appleKeyId`, `applePrivateKeyCiphertext`, `allowedRedirectUris` (jsonb), `createdAt`, `updatedAt`. Unique `(siteId, provider)`; RLS `site_isolation`.
+- Secrets are KeyProvider AES-GCM envelopes bound to site + provider, never plaintext and never returned by the API.
 
 ### `lumibase_firebase_sync_pipelines`
 | Column | Type | Note |

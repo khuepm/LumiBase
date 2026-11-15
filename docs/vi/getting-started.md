@@ -1,13 +1,13 @@
 ---
-version: 9
-lastUpdated: 2026-11-15T08:38:14.781Z
+version: 10
+lastUpdated: 2026-11-15T18:05:23.927Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6bfa7e04ff98e94b
+sourceHash: 7f3f8abe9f146aab
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T08:38:14.781Z
-codeVerifiedHash: 6bfa7e04ff98e94b
+codeVerified: 2026-11-15T18:05:23.927Z
+codeVerifiedHash: 7f3f8abe9f146aab
 codeVerifiedClaims: 8
 ---
 
@@ -206,8 +206,7 @@ dưới dùng `npm run`; `pnpm cms:up`, `yarn cms:up` và `bun run cms:up` là t
 ### Template Next.js
 
 ```bash
-cd my-blog
-cp .env.example .env       # fill in secrets
+cd my-blog                 # .env already holds generated secrets (see security/secure-defaults)
 npm install                # only if you used --no-install
 npm run cms:up             # CMS + Studio + Postgres + Redis
 npm run cms:bootstrap      # first admin, public read grant, publishable key
@@ -273,8 +272,7 @@ Studio hiện "No editable fields". `README.md` được sinh ra nói kỹ từn
 ### Docker starter
 
 ```bash
-cd my-blog
-cp .env.example .env       # fill in secrets
+cd my-blog                 # .env already holds generated secrets (see security/secure-defaults)
 pnpm install               # only if you used --no-install
 docker compose up -d       # Postgres + Redis
 pnpm run db:generate       # generate the first migration from schema.ts

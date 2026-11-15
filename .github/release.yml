@@ -15,6 +15,9 @@ changelog:
     authors:
       - dependabot
   categories:
+    - title: Security
+      labels:
+        - security
     - title: Breaking changes
       labels:
         - breaking-change

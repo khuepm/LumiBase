@@ -148,7 +148,38 @@ export interface SetupCompleteContext {
   readonly requestId?: string;
   readonly ip?: string;
   readonly userAgent?: string;
+  /**
+   * When the HTTP request reached the handler, before any queueing for a
+   * connection or the singleton row lock (#732). Lets a caller that raced the
+   * winning setup be told `SETUP_RACE_LOST` (409) instead of the post-setup
+   * `ALREADY_INITIALIZED` (indistinguishable 404). Omit it and every
+   * initialized outcome is `ALREADY_INITIALIZED`, as before.
+   */
+  readonly receivedAt?: Date;
 }
+
+/**
+ * Classify a caller that found the singleton already `initialized` once it
+ * held the row lock (#732).
+ *
+ * A request that arrived *before* the winner flipped the state was in flight
+ * during setup — it lost the race, and `409` tells it so (Strapi #26494
+ * acceptance: "parallel first-admin registration yields exactly one admin;
+ * others 409"). A request that arrived after setup finished gets the
+ * indistinguishable `ALREADY_INITIALIZED` (404) the wizard spec requires, so the
+ * endpoint stays invisible on an initialized instance. Without both
+ * timestamps there is nothing to compare, and the answer is the safe 404.
+ */
+export function classifyInitializedLock(
+  receivedAt: Date | undefined,
+  initializedAt: Date | null | undefined,
+): 'ALREADY_INITIALIZED' | 'SETUP_RACE_LOST' {
+  if (!receivedAt || !initializedAt) return 'ALREADY_INITIALIZED';
+  return receivedAt.getTime() < initializedAt.getTime() ? 'SETUP_RACE_LOST' : 'ALREADY_INITIALIZED';
+}
+
+/** The partial unique index guaranteeing one bootstrap admin per instance. */
+const BOOTSTRAP_UNIQUE_CONSTRAINT = 'users_is_bootstrap_unique';
 
 export interface PublicUser {
   readonly id: string;
@@ -189,6 +220,12 @@ export interface SetupCompleteResult {
 
 export type SetupServiceError =
   | { readonly code: 'ALREADY_INITIALIZED' }
+  /**
+   * The caller was in flight while a concurrent request completed setup: it
+   * waited on the singleton lock and found the instance initialized, or its
+   * bootstrap-admin insert hit `users_is_bootstrap_unique` (#732).
+   */
+  | { readonly code: 'SETUP_RACE_LOST' }
   | { readonly code: 'SETUP_IN_PROGRESS' }
   | { readonly code: 'SETUP_TOKEN_REQUIRED' }
   | { readonly code: 'SETUP_TOKEN_INVALID' }
@@ -490,6 +527,7 @@ export class SetupService {
             state: systemState.state,
             setupTokenHash: systemState.setupTokenHash,
             adminPath: systemState.adminPath,
+            initializedAt: systemState.initializedAt,
           })
           .from(systemState)
           .where(eq(systemState.id, 'singleton'))
@@ -511,7 +549,11 @@ export class SetupService {
         //       a previously-killed process could have left it stuck
         //       and the operator deserves a clear signal.
         if (locked.state === 'initialized') {
-          throw new SetupAbort({ code: 'ALREADY_INITIALIZED' });
+          // Losers of a parallel first-admin race block on the lock above
+          // and land here once the winner commits (#732): 409, not 404.
+          throw new SetupAbort({
+            code: classifyInitializedLock(ctx.receivedAt, locked.initializedAt),
+          });
         }
         if (locked.state === 'initializing') {
           throw new SetupAbort({ code: 'SETUP_IN_PROGRESS' });
@@ -917,6 +959,11 @@ export class SetupService {
       // users.is_bootstrap → translate to a user-facing code.
       const pgCode = pgErrorCode(err);
       if (pgCode === '23505') {
+        // A second bootstrap admin is refused by the partial unique index
+        // whatever the state machine thought (#732): the caller lost a race.
+        if (pgConstraintName(err) === BOOTSTRAP_UNIQUE_CONSTRAINT) {
+          return { ok: false, error: { code: 'SETUP_RACE_LOST' } };
+        }
         return { ok: false, error: { code: 'PATH_TAKEN' } };
       }
       // statement_timeout while waiting on the row lock → treat as
@@ -1287,9 +1334,22 @@ function defaultGeoipProbe(): boolean {
 }
 
 function pgErrorCode(err: unknown): string | undefined {
-  if (typeof err === 'object' && err !== null) {
-    const candidate = (err as { code?: unknown }).code;
-    if (typeof candidate === 'string') return candidate;
+  return pgErrorField(err, 'code');
+}
+
+function pgConstraintName(err: unknown): string | undefined {
+  return pgErrorField(err, 'constraint_name');
+}
+
+/**
+ * Read a Postgres error field, following `cause` (drizzle wraps the driver
+ * error in a `DrizzleQueryError`, so the SQLSTATE can sit one level down).
+ */
+function pgErrorField(err: unknown, field: 'code' | 'constraint_name'): string | undefined {
+  for (let e: unknown = err, depth = 0; typeof e === 'object' && e !== null && depth < 4; depth += 1) {
+    const value = (e as Record<string, unknown>)[field];
+    if (typeof value === 'string') return value;
+    e = (e as { cause?: unknown }).cause;
   }
   return undefined;
 }

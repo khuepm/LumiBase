@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   check,
   index,
@@ -313,6 +314,54 @@ export const userTotpRecoveryCodes = pgTable(
     userUnused: index('user_totp_recovery_codes_user_unused_idx')
       .on(t.userId)
       .where(sql`${t.usedAt} IS NULL`),
+  }),
+);
+
+/**
+ * WebAuthn passkeys (#735) — staff sign-in and second factor.
+ *
+ * Belongs to the **identity**, like {@link userTotpCredentials}: keyed by
+ * `user_id`, no `site_id`. A passkey is scoped by the browser to an RP ID (the
+ * deployment's domain), not to a LumiBase site, and the identity store is
+ * global (`lumibase_users`), so one enrollment protects the user's login on
+ * every site they belong to. `rp_id` pins the domain the credential was minted
+ * for, so a deployment that changes its RP ID cannot mis-match old keys.
+ *
+ * Nothing secret is stored: `public_key` is the COSE public key. Recovery
+ * codes are shared with TOTP ({@link userTotpRecoveryCodes}).
+ */
+export const userPasskeys = pgTable(
+  'lumibase_user_passkeys',
+  {
+    id: id(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Credential ID, base64url. Globally unique (authenticator-generated). */
+    credentialId: text('credential_id').notNull(),
+    /** COSE-encoded public key, base64url. */
+    publicKey: text('public_key').notNull(),
+    /** Signature counter (uint32); a non-increasing value is a cloned-key signal. */
+    counter: bigint('counter', { mode: 'number' }).default(0).notNull(),
+    /** Authenticator transports reported at registration (`internal`, `hybrid`, `usb`…). */
+    transports: jsonb('transports').$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+    /** Authenticator model AAGUID (all-zero for most platform passkeys with `attestation: none`). */
+    aaguid: text('aaguid'),
+    /** User-chosen label. */
+    name: text('name').notNull(),
+    /** `singleDevice` | `multiDevice` (synced passkey). */
+    deviceType: text('device_type'),
+    /** Backup-state flag: the credential is synced to a cloud keychain. */
+    backedUp: boolean('backed_up').default(false).notNull(),
+    /** RP ID the credential was registered against. */
+    rpId: text('rp_id').notNull(),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    credentialUnique: uniqueIndex('user_passkeys_credential_id_unique').on(t.credentialId),
+    byUser: index('user_passkeys_user_idx').on(t.userId),
   }),
 );
 
