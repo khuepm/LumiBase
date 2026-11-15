@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { ChevronLeft, Lock, Save } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { FieldResource, ItemRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { usePermissions } from '@/lib/use-permissions';
-import { FieldsTab } from './item-detail';
+import { FieldsTab, requiredError } from './item-detail';
+import { checkRequired, useFormLayout, validationErrorsFrom } from './form-layout-state';
 import { DraftReviewPanel } from './draft-review-panel';
 import { useReviewRollout, useReviewSession } from './use-review-pilot';
 import { useSiteLocales } from './use-site-locales';
@@ -24,6 +25,9 @@ export function ItemCreate({ collection, intentField }: { collection: string; in
   const queryClient = useQueryClient();
   const perms = usePermissions();
   const canCreate = perms.can(collection, 'create');
+  // Tree collections (#749): "Add child" links here with `?parent=<id>`.
+  const search = useSearch({ strict: false }) as { parent?: unknown };
+  const parentId = typeof search.parent === 'string' && search.parent ? search.parent : undefined;
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   // Draft-review pilot (Jev J09): panel only in assisted mode; the session
   // from opening the form to the created draft is timed in both modes.
@@ -50,10 +54,20 @@ export function ItemCreate({ collection, intentField }: { collection: string; in
     fields,
     ready: fieldsQuery.isSuccess && !perms.isLoading && canCreate,
   });
+  const layout = useFormLayout(collection);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const createMutation = useMutation({
-    mutationFn: async () =>
-      (await client.items(collection as never).create({ data: draft, status: 'draft' })).data as ItemRow,
+    mutationFn: async () => {
+      // Same required rule as the server's create validation (#750).
+      const missing = checkRequired(fieldsQuery.data ?? [], draft, layout);
+      if (Object.keys(missing).length > 0) throw requiredError(missing);
+      // `?parent=` from the tree view's "Add child" (#749).
+      return (await client.items(collection as never).create({ data: draft, status: 'draft', ...(parentId ? { parentId } : {}) })).data as ItemRow;
+    },
+    onError: (err: Error) => {
+      setFieldErrors(validationErrorsFrom(err, (fieldsQuery.data ?? []).map((f) => f.name)));
+    },
     onSuccess: (item) => {
       void queryClient.invalidateQueries({ queryKey: ['items', collection] });
       reviewSession.finish(item.id);
@@ -128,6 +142,8 @@ export function ItemCreate({ collection, intentField }: { collection: string; in
               perms={perms}
               pinnedFields={[]}
               writeAction="create"
+              layout={layout}
+              errors={fieldErrors}
             />
           </FieldRevealContext.Provider>
         </section>

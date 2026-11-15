@@ -1,13 +1,13 @@
 ---
-version: 13
-lastUpdated: 2026-11-15T08:14:24.875Z
+version: 11
+lastUpdated: 2026-11-15T18:28:55.747Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 84392956a192ec8f
+sourceHash: e489057a46ac6248
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T08:14:24.875Z
-codeVerifiedHash: 84392956a192ec8f
+codeVerified: 2026-11-15T18:28:55.747Z
+codeVerifiedHash: e489057a46ac6248
 codeVerifiedClaims: 4
 ---
 
@@ -50,6 +50,7 @@ Technical documentation for LumiBase — an Edge-native **Content Operating Syst
 - **Core features** (`features/`)
   - [collections-builder.md](./features/collections-builder.md) — No-code Collection Builder.
   - [field-types-and-config.md](./features/field-types-and-config.md) — The field-types system & interface/display config.
+  - [dynamic-zones.md](./features/dynamic-zones.md) — Dynamic zones: the `blocks` field (ordered, typed blocks with per-block schemas).
   - [permissions-rbac.md](./features/permissions-rbac.md) — Roles, Policies, Permissions down to the field (a JSON rule engine).
   - [access-manifest-v1.md](./features/access-manifest-v1.md) — JSON schema contract `lumibase.access@v1` for access import/export.
   - [system-collections-access.md](./features/system-collections-access.md) — System/sensitive collection grouping for seeding and Permission Builder.

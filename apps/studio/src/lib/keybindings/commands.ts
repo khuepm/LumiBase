@@ -37,6 +37,7 @@ export const NAV_COMMANDS: readonly NavCommand[] = [
 
   // Settings sub-screens
   { id: 'set.keyboard', title: 'Settings · Keyboard shortcuts', group: 'Settings', to: '/settings/keyboard', keywords: ['keybindings', 'hotkeys'] },
+  { id: 'set.date-time', title: 'Settings · Date & time', group: 'Settings', to: '/settings/date-time', keywords: ['timezone', 'time zone'] },
   { id: 'set.site', title: 'Settings · Site', group: 'Settings', to: '/settings/site', keywords: ['branding', 'config'] },
   { id: 'set.translations', title: 'Settings · Translations', group: 'Settings', to: '/settings/translations', keywords: ['i18n', 'localization'] },
   { id: 'set.webhooks', title: 'Settings · Webhooks', group: 'Settings', to: '/settings/webhooks' },

@@ -26,6 +26,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'uploads', label: 'Uploads', to: '/settings/uploads' },
       { id: 'ai-decisions', label: 'AI decisions', to: '/settings/ai-decisions' },
       { id: 'keyboard', label: 'Keyboard shortcuts', to: '/settings/keyboard' },
+      { id: 'date-time', label: 'Date & time', to: '/settings/date-time' },
     ],
   },
   {

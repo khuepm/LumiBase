@@ -59,6 +59,7 @@ const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then(
 const DomainsSettingsPage = lazy(() => import('./modules/settings/domains-page').then((m) => ({ default: m.DomainsSettingsPage })));
 const SocialLoginSettingsPage = lazy(() => import('./modules/settings/social-login-page').then((m) => ({ default: m.SocialLoginSettingsPage })));
 const KeyboardSettingsPage = lazy(() => import('./modules/settings/keyboard-page').then((m) => ({ default: m.KeyboardSettingsPage })));
+const DateTimeSettingsPage = lazy(() => import('./modules/settings/date-time-page').then((m) => ({ default: m.DateTimeSettingsPage })));
 const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
 const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
@@ -710,6 +711,12 @@ const keyboardSettingsRoute = createRoute({
   component: withSuspense(KeyboardSettingsPage),
 });
 
+const dateTimeSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'date-time',
+  component: withSuspense(DateTimeSettingsPage),
+});
+
 const materializeSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'materialize',
@@ -870,6 +877,12 @@ const adminPathKeyboardSettingsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'keyboard',
   component: withSuspense(KeyboardSettingsPage),
+});
+
+const adminPathDateTimeSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'date-time',
+  component: withSuspense(DateTimeSettingsPage),
 });
 
 const adminPathMaterializeSettingsRoute = createRoute({
@@ -1367,6 +1380,7 @@ const routeTree = rootRoute.addChildren([
       domainsSettingsRoute,
       socialLoginSettingsRoute,
       keyboardSettingsRoute,
+      dateTimeSettingsRoute,
       webhooksRoute,
       gitIntegrationsRoute,
       changeFeedRoute,
@@ -1445,6 +1459,7 @@ const routeTree = rootRoute.addChildren([
       adminPathDomainsSettingsRoute,
       adminPathSocialLoginSettingsRoute,
       adminPathKeyboardSettingsRoute,
+      adminPathDateTimeSettingsRoute,
       adminPathWebhooksRoute,
       adminPathGitIntegrationsRoute,
       adminPathChangeFeedRoute,

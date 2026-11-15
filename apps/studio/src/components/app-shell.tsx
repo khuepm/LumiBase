@@ -34,6 +34,7 @@ import { getAdminBase } from '@/lib/admin-base';
 import { getEnvironmentBadge } from '@/lib/environment-badge';
 import { useGlobalShortcuts } from '@/lib/keybindings/use-keybindings';
 import { useKeybindingsStore } from '@/lib/keybindings/store';
+import { useDisplayTimezoneStore } from '@/lib/display-timezone';
 import { withAdminBase } from '@/lib/keybindings/commands';
 import { mePreferencesQueryOptions, permissionsQueryOptions } from '@/lib/me-queries';
 
@@ -146,6 +147,8 @@ export function AppShell({ children }: AppShellProps) {
     const order = prefsQuery.data.navigationOrder;
     if (Array.isArray(order)) setModuleOrder(order.filter((id): id is string => typeof id === 'string'));
     setExpandedNav(prefsQuery.data.navigationExpanded === true);
+    const tz = prefsQuery.data.timezone;
+    useDisplayTimezoneStore.getState().setPreference(typeof tz === 'string' ? tz : null);
   }, [prefsQuery.data, setOverrides, setLoaded]);
 
   function saveNavigation(patch: { navigationOrder?: string[]; navigationExpanded?: boolean }) {

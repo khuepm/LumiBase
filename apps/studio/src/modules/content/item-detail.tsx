@@ -16,6 +16,9 @@ import { useCoEditors } from '@/hooks/use-presence';
 import { resolveInterface } from './interfaces/registry';
 import { useExtensionUpdates } from '@/lib/extension-loader';
 import { GroupContainer, type GroupVariant } from './interfaces/group';
+import { placedFields, resolveFormVisibility, type FormLayout } from '@lumibase/contracts/form-layout';
+import { LayoutNodes } from './form-layout-renderer';
+import { checkRequired, useFormLayout, validationErrorsFrom } from './form-layout-state';
 import { RawToggle } from './interfaces/raw-toggle';
 import { ProvenanceBadge } from './provenance-badge';
 import { RevisionsPanel } from './revisions-panel';
@@ -199,6 +202,9 @@ function ItemEditor({
   }, [itemQuery.data, draft]);
 
   const fields = fieldsQuery.data ?? [];
+  // Form layout (#750): tabs / groups / dividers + conditional visibility.
+  const layout = useFormLayout(collection);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   // Fields the user can read at all — anything else is invisible (server
   // strips it from the payload, but we'd render an empty input otherwise).
   const editable: FieldResource[] = useMemo(
@@ -262,6 +268,10 @@ function ItemEditor({
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!draft) return null;
+      // Same required rule as the server (PATCH = partial), so the form can
+      // flag the field — and its tab — without a round trip.
+      const missing = checkRequired(fields, draft, layout, true);
+      if (Object.keys(missing).length > 0) throw requiredError(missing);
       const res = await client.items(collection as never).patch(id, {
         data: draft,
         publishAt: localInputToIso(publishAt),
@@ -284,7 +294,11 @@ function ItemEditor({
       }
       return res.data as ItemRow;
     },
+    onError: (err: Error) => {
+      setFieldErrors(validationErrorsFrom(err, fields.map((f) => f.name)));
+    },
     onSuccess: () => {
+      setFieldErrors({});
       queryClient.invalidateQueries({ queryKey: ['item', collection, id] });
       queryClient.invalidateQueries({ queryKey: ['items', collection] });
       queryClient.invalidateQueries({ queryKey: ['revisions', collection, id] });
@@ -419,21 +433,19 @@ function ItemEditor({
             {canShare ? <Share2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
             Share
           </button>
-          <button
-            type="button"
-            onClick={() => deleteMutation.mutate()}
-            disabled={deleteMutation.isPending || !canDelete}
-            title={canDelete ? undefined : 'You do not have delete permission on this collection.'}
-            className={cn(
-              'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50',
-              canDelete
-                ? 'border-destructive/40 text-destructive hover:bg-destructive/10'
-                : 'cursor-not-allowed border-muted-foreground/20 text-muted-foreground',
-            )}
-          >
-            {canDelete ? <Trash2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-            Delete
-          </button>
+          {/* Folder mode (#749): a policy without `delete` hides the action
+              entirely rather than showing a dead button. */}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+              className="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete
+            </button>
+          )}
           <div className="relative inline-flex">
             <button
               type="button"
@@ -662,6 +674,8 @@ function ItemEditor({
               perms={perms}
               pinnedFields={pinsQuery.data ?? []}
               onReleasePin={canUpdate ? (field) => releasePinMutation.mutate(field) : undefined}
+              layout={layout}
+              errors={fieldErrors}
             />
           )}
           {tab === 'translation' && draft && targetLocale && (
@@ -789,6 +803,14 @@ function ItemEditor({
 }
 
 /** ISO timestamp → `datetime-local` input value (local time), or '' when unset. */
+/** Synthesized `VALIDATION` error for a client-side required failure. */
+export function requiredError(missing: Record<string, string>) {
+  const message = Object.entries(missing)
+    .map(([field, msg]) => `${field}: ${msg}`)
+    .join('; ');
+  return Object.assign(new Error(message), { body: { errors: [{ code: 'VALIDATION', message }] } });
+}
+
 function isoToLocalInput(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
@@ -858,6 +880,8 @@ export function FieldsTab({
   pinnedFields,
   onReleasePin,
   writeAction = 'update',
+  layout = null,
+  errors = {},
 }: {
   fields: FieldResource[];
   value: Record<string, unknown>;
@@ -870,6 +894,10 @@ export function FieldsTab({
   onReleasePin?: (field: string) => void;
   /** Field permission that makes a cell writable; `create` on the new-item form. */
   writeAction?: Extract<PermissionAction, 'create' | 'update'>;
+  /** Collection form layout (#750); null renders the classic flat form. */
+  layout?: FormLayout | null;
+  /** Field key → validation message (inline + tab error badges). */
+  errors?: Readonly<Record<string, string>>;
 }) {
   // resolveInterface reads the extension registry during render.
   useExtensionUpdates();
@@ -882,6 +910,9 @@ export function FieldsTab({
   const groupFieldNames = new Set(
     fields.filter((f) => f.interface?.startsWith('group-')).map((f) => f.name),
   );
+  // Fields the form layout places render inside its tabs/groups, never also
+  // in the default section or a legacy group container.
+  const placed = new Set(placedFields(layout));
   const bySort = (a: FieldResource, b: FieldResource) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
   const widthClass = (w?: FieldResource['width']) =>
     w === 'half' ? 'sm:col-span-1' : 'col-span-1 sm:col-span-2';
@@ -890,7 +921,7 @@ export function FieldsTab({
     // Group container — render its children in a nested grid.
     if (f.interface?.startsWith('group-')) {
       const variant = f.interface.replace('group-', '') as GroupVariant;
-      const children = fields.filter((c) => c.group === f.name).sort(bySort);
+      const children = fields.filter((c) => c.group === f.name && !placed.has(c.name)).sort(bySort);
       return (
         <div key={f.id} className="col-span-1 sm:col-span-2" data-field-anchor={f.name}>
           <GroupContainer variant={variant} field={f}>
@@ -908,8 +939,17 @@ export function FieldsTab({
       if (!writable) return;
       onChange({ ...value, [f.name]: next });
     };
+    const error = errors[f.name];
+    const errorId = `field-error-${f.name}`;
     return (
-      <div key={f.id} className={widthClass(f.width)} data-field-anchor={f.name}>
+      <div
+        key={f.id}
+        className={widthClass(f.width)}
+        data-field={f.name}
+        data-field-anchor={f.name}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+      >
         <label className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
           <span>{f.name}</span>
           {f.required && <span className="text-destructive">*</span>}
@@ -944,6 +984,11 @@ export function FieldsTab({
             <Interface field={f} value={cellValue} onChange={setCell} />
           </RawToggle>
         </div>
+        {error && (
+          <p id={errorId} className="mt-1 text-xs text-destructive">
+            {error}
+          </p>
+        )}
       </div>
     );
   };
@@ -953,5 +998,29 @@ export function FieldsTab({
     .filter((f) => !f.group || !groupFieldNames.has(f.group))
     .sort(bySort);
 
-  return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{topLevel.map(renderField)}</div>;
+  if (!layout) {
+    return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{topLevel.map(renderField)}</div>;
+  }
+
+  // Layout mode: unplaced fields keep the classic flat rendering in a default
+  // section, then the layout's tabs / groups / dividers follow.
+  const byName = new Map(fields.map((f) => [f.name, f]));
+  const visibility = resolveFormVisibility(layout, value ?? {});
+  const unplaced = topLevel.filter((f) => !placed.has(f.name));
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {unplaced.map(renderField)}
+      <LayoutNodes
+        nodes={layout.nodes}
+        ctx={{
+          visibility,
+          errors,
+          renderField: (key) => {
+            const f = byName.get(key);
+            return f ? renderField(f) : null;
+          },
+        }}
+      />
+    </div>
+  );
 }

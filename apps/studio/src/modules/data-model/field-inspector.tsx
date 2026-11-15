@@ -16,6 +16,7 @@ import {
   ArrowRight,
   ArrowLeft,
   LayoutGrid,
+  LayoutList,
   Paperclip,
   FolderOpen,
   Search,
@@ -56,6 +57,8 @@ import {
 import { DISPLAY_CATALOGUE } from '@/modules/content/displays/registry';
 import { MustacheTemplateEditor } from '@/modules/content/mustache-template-editor';
 import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
+import { FieldOptionControls, fieldOptionIssues } from './field-option-controls';
+import { ZONED_DATETIME_FIELD_TYPES } from '@lumibase/contracts/field';
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
 
@@ -96,6 +99,7 @@ const IFACE_ICONS: Record<string, LucideIcon> = {
   'aio': Sparkles,
   'json-raw': Braces,
   'repeater': Repeat,
+  'blocks': LayoutList,
   'presentation-divider': SeparatorHorizontal,
   'presentation-notice': Info,
   'presentation-header': Heading,
@@ -191,7 +195,15 @@ export function FieldInspector({
     translationsJson.ok &&
     defaultValueJson.ok;
   const canEditStorage = !form.locked;
-  const canSubmit = valid && jsonValid && !isSubmitting;
+  // #751 — same option validation the server runs on schema write.
+  const optionIssues = useMemo(
+    () =>
+      optionsJson.ok
+        ? fieldOptionIssues({ type: form.type, interface: form.interface, options: optionsJson.value, length: form.length })
+        : [],
+    [optionsJson, form.type, form.interface, form.length],
+  );
+  const canSubmit = valid && jsonValid && optionIssues.length === 0 && !isSubmitting;
 
   // Shared by the Save button and the Cmd/Ctrl+S "save and stay" shortcut.
   const submit = () =>
@@ -333,6 +345,7 @@ export function FieldInspector({
               canEditStorage={canEditStorage}
               optionsDraft={optionsDraft}
               optionsJsonOk={optionsJson.ok}
+              optionsValue={optionsJson.ok ? optionsJson.value : null}
               onInterfaceChange={handleInterfaceChange}
               onOptionsDraftChange={setOptionsDraft}
             />
@@ -475,6 +488,8 @@ interface InterfaceTabProps {
   canEditStorage: boolean;
   optionsDraft: string;
   optionsJsonOk: boolean;
+  /** Parsed options (null while the JSON draft is invalid). */
+  optionsValue?: Record<string, unknown> | null;
   onInterfaceChange: (id: string) => void;
   onOptionsDraftChange: (v: string) => void;
 }
@@ -484,6 +499,7 @@ function InterfaceTab({
   canEditStorage,
   optionsDraft,
   optionsJsonOk,
+  optionsValue,
   onInterfaceChange,
   onOptionsDraftChange,
 }: InterfaceTabProps) {
@@ -545,6 +561,24 @@ function InterfaceTab({
         </div>
       )}
 
+      {optionsValue && (
+        <FieldOptionControls
+          type={form.type}
+          iface={form.interface}
+          length={form.length}
+          options={optionsValue}
+          onChange={(next) => onOptionsDraftChange(stringifyJson(next))}
+        />
+      )}
+
+      {ZONED_DATETIME_FIELD_TYPES.includes(form.type) && (
+        <TimezoneOptionToggle
+          optionsDraft={optionsDraft}
+          disabled={!optionsJsonOk}
+          onOptionsDraftChange={onOptionsDraftChange}
+        />
+      )}
+
       <JsonTextarea
         label="Interface options"
         hint="JSON options passed to the interface component."
@@ -554,6 +588,46 @@ function InterfaceTab({
         rows={8}
       />
     </div>
+  );
+}
+
+/**
+ * Shortcut for `options.timezone` on datetime / timestamp fields (#747): the
+ * value is then stored as `{ instant, tz, offset }`. Edits the same JSON draft
+ * as the "Interface options" box below, so the two never disagree.
+ */
+function TimezoneOptionToggle({
+  optionsDraft,
+  disabled,
+  onOptionsDraftChange,
+}: {
+  optionsDraft: string;
+  disabled: boolean;
+  onOptionsDraftChange: (v: string) => void;
+}) {
+  const parsed = parseJsonObject(optionsDraft);
+  const enabled = parsed.ok && parsed.value.timezone === true;
+  return (
+    <label className="flex items-start gap-2 rounded-md border p-3 text-xs">
+      <input
+        type="checkbox"
+        checked={enabled}
+        disabled={disabled}
+        onChange={(e) => {
+          const next = { ...(parsed.ok ? parsed.value : {}) };
+          if (e.target.checked) next.timezone = true;
+          else delete next.timezone;
+          onOptionsDraftChange(stringifyJson(next));
+        }}
+      />
+      <span>
+        <strong className="text-foreground">Timezone-aware</strong>
+        <span className="block text-muted-foreground">
+          Store the instant plus the IANA time zone it was entered in. Filters and sort use the instant. Existing
+          values keep their shape until they are next saved.
+        </span>
+      </span>
+    </label>
   );
 }
 

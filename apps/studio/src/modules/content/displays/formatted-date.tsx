@@ -1,3 +1,5 @@
+import { isZonedDateTimeValue } from '@lumibase/contracts/field';
+import { formatInZone, originalZoneHint, useDisplayTimeZone } from '@/lib/display-timezone';
 import { readDisplayOptions, type DisplayComponent } from './types';
 
 interface DateDisplayOptions {
@@ -13,8 +15,38 @@ const RELATIVE_THRESHOLDS: { ms: number; unit: Intl.RelativeTimeFormatUnit; div:
   { ms: 365 * 86_400_000, unit: 'month', div: 30 * 86_400_000 },
 ];
 
-/** `formatted-date` — relative ("3h ago"), short ("May 3, 2026"), or ISO. */
-export const FormattedDateDisplay: DisplayComponent<string> = ({ value, field }) => {
+/**
+ * `formatted-date` — relative ("3h ago"), short ("May 3, 2026"), or ISO.
+ * A timezone-aware value (`{ instant, tz, offset }`, #747) is shown in the
+ * user's display zone with the original zone as a hint.
+ */
+export const FormattedDateDisplay: DisplayComponent<unknown> = (props) => <FormattedDate {...props} />;
+
+function FormattedDate({ value, field }: Parameters<DisplayComponent<unknown>>[0]) {
+  const displayTz = useDisplayTimeZone();
+  if (isZonedDateTimeValue(value)) {
+    const opts = readDisplayOptions<DateDisplayOptions>(field);
+    const date = new Date(value.instant);
+    if (Number.isNaN(date.getTime())) return <span className="text-destructive">invalid</span>;
+    const fmt = opts.format ?? 'relative';
+    const hint = originalZoneHint(value, displayTz);
+    const main =
+      fmt === 'iso'
+        ? date.toISOString()
+        : fmt === 'short'
+          ? formatInZone(date, displayTz, { year: 'numeric', month: 'short', day: 'numeric' })
+          : relative(date);
+    return (
+      <span title={`${formatInZone(date, displayTz, { dateStyle: 'full', timeStyle: 'long' })}${hint ? ` — originally ${hint}` : ''}`}>
+        {main}
+        {hint && <span className="ms-1 text-xs text-muted-foreground">({hint})</span>}
+      </span>
+    );
+  }
+  return <PlainDate value={typeof value === 'string' ? value : null} field={field} />;
+}
+
+function PlainDate({ value, field }: { value: string | null; field: Parameters<DisplayComponent<unknown>>[0]['field'] }) {
   const opts = readDisplayOptions<DateDisplayOptions>(field);
   if (!value) return <span className="text-muted-foreground">—</span>;
   const date = new Date(value);
@@ -24,7 +56,7 @@ export const FormattedDateDisplay: DisplayComponent<string> = ({ value, field })
   if (fmt === 'short')
     return <>{date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</>;
   return <>{relative(date)}</>;
-};
+}
 
 function relative(date: Date): string {
   const diff = Date.now() - date.getTime();
