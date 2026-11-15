@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-07-25T08:17:41.116Z
+version: 2
+lastUpdated: 2026-11-14T03:13:32.604Z
 sourceLang: vi
-contentHash: c61cc42cd8d3e734
-codeVerified: 2026-07-25T08:17:41.116Z
-codeVerifiedHash: c61cc42cd8d3e734
+contentHash: 4ec2a8e5dd0e8d00
+codeVerified: 2026-11-14T03:13:32.604Z
+codeVerifiedHash: 4ec2a8e5dd0e8d00
 codeVerifiedClaims: 8
 ---
 
@@ -36,7 +36,7 @@ Materialized collection giúp denormalize những collection hot-path:
 | `target` | Target table name (machine-readable) |
 | `refreshStrategy` | `auto` (sau mỗi write) / `cron` / `manual` |
 | `refreshCron` | Cron expression khi `refreshStrategy='cron'` |
-| `projection` | `{ fields: ['*'] | ['id', 'title', 'slug'], orderBy?: 'createdAt desc' }` |
+| `projection` | `{ fields: ['*'] \| ['id', 'title', 'slug'], orderBy?: 'createdAt desc' }` |
 | `filter` | Subset filter (chỉ materialize subset items) |
 | `lastRefreshedAt` | Timestamp lần refresh thành công gần nhất |
 | `rowCount` | Số rows materialized |
@@ -79,7 +79,7 @@ Khi feature đầy đủ, route `/items/:collection` sẽ tự động detect v�
 - Materialization có `status='idle'` và `lastRefreshedAt` trong threshold acceptable.
 - Query không vượt quá projection (chỉ select field đã materialize).
 
-Nếu không match → fallback về items JSONB.
+Nếu không match → fallback về `items` JSONB.
 
 ## Multi-tenancy
 

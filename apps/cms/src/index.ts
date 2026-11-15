@@ -19,6 +19,7 @@ import { withSiteMembership } from './middleware/site-membership';
 import { withStudioAccess } from './middleware/studio-access';
 import { withControlPlaneAccessGuard } from './middleware/control-plane-access-guard';
 import { withFileUploadPolicy } from './middleware/file-upload-policy';
+import { apiSurface, withEntitlement } from './middleware/entitlement';
 import { withSecurityHeaders } from './middleware/security-headers';
 import { withTenant } from './middleware/tenant';
 import { withTenantExists } from './middleware/tenant-exists';
@@ -64,6 +65,8 @@ import { releasesRouter } from './routes/releases';
 import { rolesRouter } from './routes/roles';
 import { healthRouter } from './routes/health';
 import { insightsRouter } from './routes/insights';
+import { activationRouter } from './modules/activation/routes';
+import { apiKeySiteId, deliverPathSiteId, withDeliveryMilestone } from './modules/activation/delivery-mark';
 import { mediaRouter } from './routes/media';
 import { transformPresetsRouter } from './routes/transform-presets';
 import { uploadsRouter } from './routes/uploads';
@@ -94,6 +97,8 @@ import { agentRouter } from './routes/agent';
 import { intentsRouter } from './routes/intents';
 import { siteSkillsRouter } from './routes/site-skills';
 import { mcpRouter } from './routes/mcp';
+import { protectedResourceRouter } from './routes/oauth-protected-resource';
+import { withMcpAuthChallenge } from './middleware/mcp-oauth';
 import { emailRouter } from './modules/email/routes';
 import { setupRouter } from './modules/setup/routes';
 import { recoveryRouter } from './modules/recovery/routes';
@@ -107,6 +112,9 @@ import {
   gitPublicRouter,
 } from './modules/git-integration/routes';
 import { formatSafeError } from '@lumibase/contracts/utils';
+import { captureOpsError } from './modules/ops/capture';
+import { opsRouter } from './modules/ops/routes';
+import { ENTITLEMENT_DIMENSIONS } from '@lumibase/contracts/platform';
 
 const app = new Hono<AppEnv>();
 
@@ -169,6 +177,10 @@ app.route('/api/v1/utils', utilsRouter);
 app.route('/api/v1/system', systemRouter);
 // Prometheus metrics endpoint (public, no auth).
 app.route('/metrics', metricsRouter);
+// Read-only ops diagnostics plane (`.kiro/specs/ops-diagnostics`). Gated by the
+// static `LUMIBASE_OPS_TOKEN` inside the router (unset → 404); not a tenant
+// route, so it is mounted outside `api` (no withTenant/withAuth).
+app.route('/api/v1/ops', opsRouter);
 // Comprehensive health check — tests DB, cache, search, storage, queue connectivity.
 app.route('/health', healthRouter);
 // Serves interactive auth testing page
@@ -231,7 +243,17 @@ const api = new Hono<AppEnv>();
 // counters) and before `withAuth` (a blocked /api/v1/ai/* request costs no JWT
 // or API-key work, no quota reservation, no provider call and no audit write).
 // It is a no-op outside /api/v1/ai.
+// RFC 9728 discovery challenge on MCP 401s (#346). Registered BEFORE the
+// authenticated chain so it wraps the 401s `withAuth` itself returns.
+api.use('/mcp', withMcpAuthChallenge());
+api.use('/mcp/*', withMcpAuthChallenge());
 api.use('*', withTenant(), withDb(), withTenantExists(), withAiIpRateLimit(), withAuth(), withSiteMembership(), withRateLimit(), requireSetupComplete(), withStudioAccess(), withControlPlaneAccessGuard(), withFileUploadPolicy(), withRls());
+// Platform extension point: per-request entitlement check. A pass-through
+// unless a deployment entry registered a resolver (see platform/registry.ts).
+// Its own mount, after the guard chain: the principal is known, a request the
+// guards reject is never put to the resolver, and the chain line above stays
+// exactly as the security-guards wiring test pins it.
+api.use('*', withEntitlement({ dimension: ENTITLEMENT_DIMENSIONS.apiRequests, surface: apiSurface }));
 // Sub-routers must be attached to their parent BEFORE the parent is mounted
 // on `api`: Hono's `route()` copies the child's routes at call time, so
 // anything registered on `authRouter`/`meRouter` afterwards is invisible to
@@ -260,6 +282,9 @@ api.route('/retention', retentionRouter);
 api.route('/collections', collectionsRouter);
 api.route('/relations', relationsRouter);
 api.route('/pages', pagesRouter);
+// Activation: an API-key content read marks the site's `delivery_request`
+// milestone (first hit only; see modules/activation/delivery-mark.ts).
+api.use('/items/*', withDeliveryMilestone(apiKeySiteId));
 api.route('/items', itemsRouter);
 // Background collection imports (#726).
 api.route('/imports', importsRouter);
@@ -347,6 +372,7 @@ api.route('/marketplace', marketplaceRouter);
 api.route('/materialize', materializeRouter);
 api.route('/utils/cache', cacheUtilsRouter);
 api.route('/dashboards', insightsRouter);
+api.route('/activation', activationRouter);
 api.route('/scim-tokens', scimAdminRouter);
 api.route('/ai', aiRouter);
 // Draft review profiles, runs and feedback (Jev J05, #512). Disjoint leaf paths.
@@ -410,6 +436,14 @@ app.route('/api/v1/email', emailPublicRouter);
 // handlers first makes them win for their disjoint paths (same mechanism as
 // the shares/email mounts above).
 app.use('/api/v1/deliver/*', withDb(), withDeliverRateLimit());
+// Platform extension point, after the limiter: pass-through unless a resolver
+// is registered. Separate mount for the same reason as the one below.
+app.use('/api/v1/deliver/*', withEntitlement({
+  dimension: ENTITLEMENT_DIMENSIONS.deliveryRequests, surface: 'delivery', siteId: deliverPathSiteId,
+}));
+// Separate mount so the rate-limit wiring line above stays exactly as the
+// security-guards wiring test pins it. Runs after the limiter.
+app.use('/api/v1/deliver/*', withDeliveryMilestone(deliverPathSiteId));
 app.route('/api/v1/deliver', deliverRouter);
 
 // Public pageview beacon — tenancy in the URL, unauthenticated. `withRuntime`
@@ -420,6 +454,12 @@ app.route('/api/v1/deliver', deliverRouter);
 app.use('/api/v1/pageviews/:site_id/hit', withDb(), withRateLimit());
 app.route('/api/v1/pageviews', pageviewsPublicRouter);
 
+// RFC 9728 Protected Resource Metadata for the MCP endpoint (#346). Public
+// (discovery precedes the token) but tenant-resolved: the issuer list is per site.
+app.use('/.well-known/oauth-protected-resource', withTenant(), withDb(), withTenantExists());
+app.use('/.well-known/oauth-protected-resource/*', withTenant(), withDb(), withTenantExists());
+app.route('/.well-known/oauth-protected-resource', protectedResourceRouter);
+
 app.route('/api/v1', api);
 
 app.notFound((c) =>
@@ -428,6 +468,7 @@ app.notFound((c) =>
 app.onError((err, c) => {
   const requestId = c.get('requestId');
   console.error('[lumibase-cms] unhandled error', { requestId, err: formatSafeError(err) });
+  captureOpsError(c, { err, status: 500, errorCode: 'INTERNAL' });
   return c.json(
     { errors: [{ code: 'INTERNAL', message: 'Internal Server Error', requestId }] },
     500,

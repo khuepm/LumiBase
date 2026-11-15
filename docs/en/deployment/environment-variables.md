@@ -1,11 +1,11 @@
 ---
-version: 19
-lastUpdated: 2026-11-12T20:20:04.460Z
+version: 21
+lastUpdated: 2026-11-15T11:40:34.620Z
 sourceLang: en
-contentHash: 3d5fe859a4227088
-codeVerified: 2026-11-12T20:20:04.460Z
-codeVerifiedHash: 3d5fe859a4227088
-codeVerifiedClaims: 90
+contentHash: ff7b6be473cf3a15
+codeVerified: 2026-11-15T11:40:34.620Z
+codeVerifiedHash: ff7b6be473cf3a15
+codeVerifiedClaims: 98
 ---
 
 # Environment Variables Reference
@@ -121,6 +121,7 @@ rather than a typed error.
 | `DATABASE_POOL_MAX` | ✗ | Maximum DB pool connections (default: `10`) |
 | `DATABASE_SSL` | ✗ | `true` to require SSL for DB connection |
 | `LUMIBASE_DB_RLS` | ✗ | Request-path RLS scope: `off` (default) or `enforce`. Any other value fails closed (startup error on Docker, `503 RLS_MISCONFIGURED` on Workers). See [Request-path RLS scope](../features/rls-request-scope.md) |
+| `LUMIBASE_OPS_TOKEN` | ✗ | Static bearer secret (≥ 32 chars) for the read-only ops diagnostics plane `/api/v1/ops/*` and error capture lookup. Unset or shorter: the plane answers 404 everywhere. See [Ops diagnostics](../features/ops-diagnostics.md) |
 | `DATABASE_SYSTEM_URL` | With `LUMIBASE_DB_RLS=enforce` (Docker) | Connection string of the system role (`BYPASSRLS`) used by workers, cron and system routes. Unset: those paths use `DATABASE_URL`. Also read from `DATABASE_SYSTEM_URL_FILE` |
 
 For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](#cloudflare-bindings)).
@@ -290,6 +291,17 @@ Every GraphQL operation is validated before it runs against a depth limit and a 
 | `PROMETHEUS_ENABLED` | Docker only | `true` to expose `/metrics` endpoint |
 | `LOG_LEVEL` | ✗ | Log level: `debug`, `info`, `warn`, `error` (default: `info`) |
 | `LOG_FORMAT` | ✗ | `json` (default) or `pretty` (local dev) |
+
+### Usage telemetry
+
+Anonymous usage telemetry is off by default and has no built-in endpoint. See [Activation milestones and usage telemetry](../operations/usage-telemetry.md) for exactly what is sent.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LUMIBASE_TELEMETRY_ENABLED` | ✗ | (unset) | Set `true` to opt in. Nothing is sent unless `LUMIBASE_TELEMETRY_ENDPOINT` is also set. |
+| `LUMIBASE_TELEMETRY_ENDPOINT` | ✗ | (unset) | URL that receives the events. `https:` only, or `http:` to `localhost`. |
+| `LUMIBASE_TELEMETRY_DISABLED` | ✗ | (unset) | Set `true` to turn telemetry off. Wins over `LUMIBASE_TELEMETRY_ENABLED`. |
+| `DO_NOT_TRACK` | ✗ | (unset) | `1` turns telemetry off, same as `LUMIBASE_TELEMETRY_DISABLED`. |
 
 ---
 

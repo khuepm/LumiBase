@@ -1,15 +1,15 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 19
-lastUpdated: 2026-11-12T20:20:04.460Z
+version: 21
+lastUpdated: 2026-11-15T11:40:34.620Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3d5fe859a4227088
+sourceHash: ff7b6be473cf3a15
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T20:20:04.460Z
-codeVerifiedHash: 3d5fe859a4227088
-codeVerifiedClaims: 90
+codeVerified: 2026-11-15T11:40:34.620Z
+codeVerifiedHash: ff7b6be473cf3a15
+codeVerifiedClaims: 98
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -126,6 +126,7 @@ closed với `500` chứ không phải một lỗi có mã.
 | `DATABASE_POOL_MAX` | ✗ | Số kết nối pool DB tối đa (mặc định: `10`) |
 | `DATABASE_SSL` | ✗ | `true` để bắt buộc SSL cho kết nối DB |
 | `LUMIBASE_DB_RLS` | ✗ | Scope RLS trên request path: `off` (mặc định) hoặc `enforce`. Giá trị khác thì fail closed (lỗi khởi động trên Docker, `503 RLS_MISCONFIGURED` trên Workers). Xem [Scope RLS trên request path](../features/rls-request-scope.md) |
+| `LUMIBASE_OPS_TOKEN` | ✗ | Secret bearer tĩnh (≥ 32 ký tự) cho mặt phẳng chẩn đoán vận hành chỉ-đọc `/api/v1/ops/*` và tra cứu lỗi đã ghi lại. Không đặt hoặc ngắn hơn: mặt phẳng trả 404 ở mọi nơi. Xem [Chẩn đoán vận hành](../features/ops-diagnostics.md) |
 | `DATABASE_SYSTEM_URL` | Khi `LUMIBASE_DB_RLS=enforce` (Docker) | Chuỗi kết nối của system role (`BYPASSRLS`) cho worker, cron và route hệ thống. Không đặt: các đường đó dùng `DATABASE_URL`. Cũng đọc được từ `DATABASE_SYSTEM_URL_FILE` |
 
 Với Cloudflare Workers, dùng binding `HYPERDRIVE` (xem [Binding Cloudflare](#binding-cloudflare)).
@@ -306,6 +307,17 @@ Mọi operation GraphQL đều được validate trước khi chạy, đối chi
 | `PROMETHEUS_ENABLED` | Chỉ Docker | `true` để phơi bày endpoint `/metrics` |
 | `LOG_LEVEL` | ✗ | Mức log: `debug`, `info`, `warn`, `error` (mặc định: `info`) |
 | `LOG_FORMAT` | ✗ | `json` (mặc định) hoặc `pretty` (local dev) |
+
+### Telemetry sử dụng
+
+Telemetry sử dụng ẩn danh tắt theo mặc định và không có endpoint dựng sẵn. Xem [Mốc kích hoạt và telemetry sử dụng](../operations/usage-telemetry.md) để biết chính xác những gì được gửi.
+
+| Biến | Bắt buộc | Mặc định | Mô tả |
+|------|----------|----------|-------|
+| `LUMIBASE_TELEMETRY_ENABLED` | ✗ | (không đặt) | Đặt `true` để opt-in. Không gửi gì trừ khi `LUMIBASE_TELEMETRY_ENDPOINT` cũng được đặt. |
+| `LUMIBASE_TELEMETRY_ENDPOINT` | ✗ | (không đặt) | URL nhận các sự kiện. Chỉ `https:`, hoặc `http:` tới `localhost`. |
+| `LUMIBASE_TELEMETRY_DISABLED` | ✗ | (không đặt) | Đặt `true` để tắt telemetry. Thắng `LUMIBASE_TELEMETRY_ENABLED`. |
+| `DO_NOT_TRACK` | ✗ | (không đặt) | `1` tắt telemetry, giống `LUMIBASE_TELEMETRY_DISABLED`. |
 
 ---
 <!-- check-parity: allow inline-code -->

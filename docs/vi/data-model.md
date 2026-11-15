@@ -1,13 +1,13 @@
 ---
-version: 15
-lastUpdated: 2026-11-13T15:32:28.452Z
+version: 18
+lastUpdated: 2026-11-15T15:15:24.064Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 416cf148cfd53ed3
+sourceHash: 6c2615eef1932968
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T15:32:28.452Z
-codeVerifiedHash: 416cf148cfd53ed3
+codeVerified: 2026-11-15T15:15:24.064Z
+codeVerifiedHash: 6c2615eef1932968
 codeVerifiedClaims: 20
 ---
 
@@ -39,6 +39,7 @@ Các file schema được chia theo domain:
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
 | `imports.ts` | `lumibase_import_jobs` |
+| `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 
 Migration nằm ở `packages/database/migrations/` và `packages/database/drizzle/`.
 
@@ -119,7 +120,7 @@ Chiến lược primary key:
 - `uuid`: chuỗi UUID do service sinh.
 - `string`: định danh chuỗi do caller cung cấp.
 
-Với mọi chiến lược, id của item là duy nhất **trong mỗi site**, trên tất cả collection của site đó: `items` có primary key `(siteId, id)` (migration `0029`). Hai site có thể dùng cùng một id; trong một site, id bị dùng lại, kể cả ở collection khác, bị từ chối với `409 ITEM_ID_EXISTS`.
+Với mọi chiến lược, id của item là duy nhất **trong mỗi site**, trên tất cả collection của site đó: `items` có primary key `(siteId, id)` (migration `0032`). Hai site có thể dùng cùng một id; trong một site, id bị dùng lại, kể cả ở collection khác, bị từ chối với `409 ITEM_ID_EXISTS`.
 - `integer` / `bigInteger`: chiến lược dựa trên sequence, dành riêng cho storage materialized/physical; collection JSONB chặn các tổ hợp này.
 
 Storage mode được khai báo tường minh có chủ đích:
@@ -220,6 +221,10 @@ Primary key `(siteId, id)`. Index: `(siteId, collectionId, status)`, GIN trên `
 - Một lần import chạy nền (#726): `collection`, `format` (`csv`/`json`), `mode` (`create`/`upsert`), `status` (`queued`/`running`/`succeeded`/`failed`/`cancelled`/`timed_out`), `principal` jsonb (được resolve lại ở mỗi bước), `created_by`.
 - Tiến độ: `total_rows`, `cursor` (dòng kế tiếp), `created_rows`, `updated_rows`, `failed_rows`, `errors` jsonb (`{ row, id?, message }[]`, có giới hạn) và `errors_truncated`.
 - Điều phối worker: `lease_owner`, `lease_until`, `timeout_ms`, `cancel_requested_at`, `started_at`, `finished_at`. `source` giữ file đã upload cho tới khi job kết thúc, sau đó được xoá. Cô lập theo site bằng RLS.
+
+### `activation_milestones` và `telemetry_state` (`activation.ts`, migration `0029`)
+- `activation_milestones`: mỗi `site_id` và `milestone` (`site_created`/`item_published`/`delivery_request`/`agent_run`) một dòng, kèm `reached_at` và `source` (`event`/`derived`). Ghi một lần, không bao giờ cập nhật. Cô lập theo site bằng RLS.
+- `telemetry_state`: singleton cấp instance (`id = 'singleton'`), không theo phạm vi site. Giữ `install_id` ngẫu nhiên và `sent` jsonb (tên sự kiện → ngày đã gửi). Dòng này chỉ được tạo sau khi người vận hành opt-in telemetry sử dụng.
 
 ### Runtime contract cho schema diff/apply
 
@@ -412,6 +417,7 @@ Tắt pilot kiểm tra bản nháp không xoá dòng nào trong các bảng này
 | `constitutions` | Tập evaluator cho publish-gate, có version; định danh bằng hash sha256; mỗi site tối đa một bản `active` |
 | `site_skills` | Site Skills (`site-skills.ts`, migration 0026): playbook được chèn vào các agent run khớp. Unique `(siteId, slug)`; `status` `draft`/`active`/`archived`; `riskClass`; các cột phạm vi `surfaces`, `tools`, `collections`, `triggers`, `requiredCapabilities`; `body`, `version`, `hash` hiện tại |
 | `site_skill_versions` | Vết phiên bản bất biến của một site skill: unique `(skillId, version)`, `snapshot` nội dung, `hash` sha256, `source`/`sourceRef`, `changeNote`, tác giả. Cả hai bảng nằm trong danh sách RLS `site_isolation` |
+| `agent_tool_secrets` | Bí mật của external-action tool (`ai.ts`, migration 0030). Unique `(siteId, name)`; `ciphertext` là envelope của `KeyProvider` gắn với site và tên, `keyId` là phiên bản khoá, `updatedBy` là quản trị viên. Không API nào trả về. Nằm trong tập RLS `site_isolation`. Xem [external-action tools](features/external-action-tools.md) |
 
 Các cột Content OS thêm vào bảng có sẵn:
 

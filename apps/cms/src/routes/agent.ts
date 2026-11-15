@@ -19,7 +19,7 @@ import { AgentEvaluationService } from '../services/agent-evaluation-service';
 import { AgentMemoryService } from '../services/agent-memory-service';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
 import { safeRequestId, maskSecrets, AgentRunService, type RetryRunRefusalCode } from '../services/agent-run-service';
-import { CORE_SKILLS } from '../services/ai-harness';
+import { skillCatalog } from '../services/ai-harness';
 import {
   AgentQuestionService,
   QUESTION_KIND,
@@ -27,9 +27,11 @@ import {
 } from '../services/agent-question-service';
 import { parseApprovalRequester } from '../services/approval-requester';
 import {
+  approvalDeciderFromAuth,
   principalRefFromAuth,
   resolveRequestCapabilities,
 } from '../services/governed-capabilities';
+import { ToolSecretError, ToolSecretService, TOOL_SECRET_MAX_LENGTH, TOOL_SECRET_MIN_LENGTH } from '../services/tool-secret-service';
 import { ToolRegistryService } from '../services/tool-registry-service';
 
 export const agentRouter = new Hono<AppEnv>();
@@ -695,11 +697,107 @@ agentRouter.post('/runs/:id/retry', async (c) => {
 });
 
 agentRouter.get('/tools', async (c) => {
-  const service = new ToolRegistryService(c.get('db'), c.get('siteId'), CORE_SKILLS);
+  // Includes registered external-action tools, with their declared risk
+  // metadata under `external`.
+  const service = new ToolRegistryService(c.get('db'), c.get('siteId'), skillCatalog());
   const tools = await service.listTools();
   return c.json({
     data: tools.map(({ handler: _handler, ...tool }) => tool),
   });
+});
+
+/**
+ * Secrets of external-action tools.
+ *
+ * Write-only by construction: a value can be stored, replaced and deleted, and
+ * no route returns it. Managing them is reserved to a signed-in site
+ * administrator. An API key is refused even with administrative rights, since
+ * it is exactly the credential an agent would hold, and an agent must not be
+ * able to plant or swap the secret a tool will use.
+ */
+async function toolSecretAdmin(c: Context<AppEnv>): Promise<boolean> {
+  if (approvalDeciderFromAuth(c.get('auth')).kind !== 'human') return false;
+  return (await resolveRequestCapabilities(c)).controlPlaneAdmin === true;
+}
+
+const TOOL_SECRET_FORBIDDEN = {
+  errors: [{
+    code: 'FORBIDDEN',
+    message: 'Tool secrets are managed by a signed-in site administrator. API keys cannot manage them.',
+  }],
+};
+
+const TOOL_SECRET_STATUS: Record<ToolSecretError['code'], 400 | 404 | 503> = {
+  INVALID_NAME: 400,
+  INVALID_VALUE: 400,
+  KEYS_UNAVAILABLE: 503,
+  SECRET_MISSING: 404,
+  SECRET_UNREADABLE: 503,
+};
+
+function toolSecretService(c: Context<AppEnv>): ToolSecretService {
+  return new ToolSecretService({ db: c.get('db'), siteId: c.get('siteId'), keys: c.get('runtime')?.keys });
+}
+
+/** Names and timestamps of the site's tool secrets. Never values. */
+agentRouter.get('/tool-secrets', async (c) => {
+  if (!(await toolSecretAdmin(c))) return c.json(TOOL_SECRET_FORBIDDEN, 403);
+  return c.json({ data: await toolSecretService(c).list() });
+});
+
+agentRouter.put('/tool-secrets/:name', async (c) => {
+  if (!(await toolSecretAdmin(c))) return c.json(TOOL_SECRET_FORBIDDEN, 403);
+  const body = z
+    .object({ value: z.string().min(TOOL_SECRET_MIN_LENGTH).max(TOOL_SECRET_MAX_LENGTH) })
+    .strict()
+    .safeParse(await c.req.json().catch(() => null));
+  if (!body.success) {
+    // Not `validationError(c, …)`: a zod issue can quote the received input,
+    // and the input here is a secret.
+    return c.json(
+      {
+        errors: [{
+          code: 'VALIDATION',
+          message: `Body must be { "value": string } with ${TOOL_SECRET_MIN_LENGTH}-${TOOL_SECRET_MAX_LENGTH} characters.`,
+        }],
+      },
+      400,
+    );
+  }
+  const name = c.req.param('name');
+  const userId = c.get('auth').userId ?? null;
+  try {
+    const data = await toolSecretService(c).set(name, body.data.value, userId);
+    await c.get('db').insert(activity).values({
+      siteId: c.get('siteId'),
+      action: 'agent.tool_secret.set',
+      userId,
+      payload: { name: data.name, keyId: data.keyId },
+    });
+    return c.json({ data });
+  } catch (err) {
+    if (err instanceof ToolSecretError) {
+      return c.json({ errors: [{ code: err.code, message: err.message }] }, TOOL_SECRET_STATUS[err.code]);
+    }
+    throw err;
+  }
+});
+
+agentRouter.delete('/tool-secrets/:name', async (c) => {
+  if (!(await toolSecretAdmin(c))) return c.json(TOOL_SECRET_FORBIDDEN, 403);
+  const name = c.req.param('name');
+  const removed = await toolSecretService(c).delete(name);
+  if (!removed) {
+    return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Secret not found' }] }, 404);
+  }
+  const userId = c.get('auth').userId ?? null;
+  await c.get('db').insert(activity).values({
+    siteId: c.get('siteId'),
+    action: 'agent.tool_secret.deleted',
+    userId,
+    payload: { name },
+  });
+  return c.json({ data: { name, deleted: true } });
 });
 
 agentRouter.get('/approvals', async (c) => {
@@ -882,6 +980,9 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
         legacyApprovalId,
         auth.userId ?? auth.externalId ?? 'agent-reviewer',
         deciderCapabilities,
+        // The caller of this route is a reviewing agent, whatever credential
+        // it presents.
+        { kind: 'agent' },
       );
       return { executed: result.status === 'executed', message: result.message };
     },
@@ -1007,6 +1108,7 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
       existing.legacyApprovalId,
       auth.userId ?? auth.externalId ?? 'unknown',
       (await resolveRequestCapabilities(c)).capabilities,
+      approvalDeciderFromAuth(auth),
     );
 
     if (result.status !== 'executed') {
@@ -1053,6 +1155,7 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
     const rejected = await buildAuthorizedHarness(c).rejectApproval(
       existing.legacyApprovalId,
       auth.userId ?? auth.externalId ?? 'unknown',
+      approvalDeciderFromAuth(auth),
     );
     if (!rejected) {
       return c.json({ errors: [{ code: 'CONFLICT', message: 'Approval already processed' }] }, 409);
