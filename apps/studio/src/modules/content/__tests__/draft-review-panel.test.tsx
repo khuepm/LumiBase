@@ -574,6 +574,8 @@ describe('cancel', () => {
     renderPanel();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Review draft' }));
+    // The request leaves only after the idempotency key is hashed (async).
+    await waitFor(() => expect(signal).toBeDefined());
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel review' }));
 
     expect(signal?.aborted).toBe(true);

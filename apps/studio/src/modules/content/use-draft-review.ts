@@ -221,6 +221,8 @@ export function useDraftReview({
         mode: reviewed.snapshot ? 'snapshot' : 'item',
         content: base,
       });
+      // Cancelled while the key was being hashed: never send the request.
+      if (controller.signal.aborted) return;
       const result = await reviewDraft(
           {
             profile: profile.key,
