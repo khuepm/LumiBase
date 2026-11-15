@@ -1,3 +1,4 @@
+import { HUMAN_REQUIRED_APPROVAL_POLICY } from './external-action-tools';
 import { activity, agentApprovals, agentGoals, agentRuns, agentToolCalls, settings } from '@lumibase/database';
 import type { Database } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
@@ -142,6 +143,11 @@ export class ReviewerService {
     if (approval.kind === 'veto') {
       // The veto window exists precisely to give HUMANS the last word.
       throw new ReviewerError('HUMAN_ONLY', 'Veto-window approvals require a human.', 403);
+    }
+    if (approval.approvalPolicy === HUMAN_REQUIRED_APPROVAL_POLICY) {
+      // External-action tools: the approval is a person's to give. Refused
+      // here, before anything is recorded, and again inside `executeApproved`.
+      throw new ReviewerError('HUMAN_ONLY', 'This approval can only be decided by a signed-in user.', 403);
     }
     if (approval.kind === 'question') {
       // `askUser` (#710) exists to reach a person; an agent answering another

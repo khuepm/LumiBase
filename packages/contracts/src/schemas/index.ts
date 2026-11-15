@@ -334,3 +334,21 @@ export {
 } from './pageviews-settings';
 export * from './organizations';
 export * from './organization-tools';
+
+export {
+  ACTIVATION_MILESTONES,
+  ACTIVATION_SOURCES,
+  ActivationMilestoneSchema,
+  ActivationMilestoneStateSchema,
+  ActivationFunnelSchema,
+  TELEMETRY_SCHEMA_VERSION,
+  TELEMETRY_EVENTS,
+  TELEMETRY_EVENT_MILESTONE,
+  TelemetryEventSchema,
+  type ActivationMilestone,
+  type ActivationSource,
+  type ActivationMilestoneState,
+  type ActivationFunnel,
+  type TelemetryEventName,
+  type TelemetryEvent,
+} from './telemetry';

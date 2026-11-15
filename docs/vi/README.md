@@ -1,10 +1,10 @@
 ---
-version: 7
-lastUpdated: 2026-11-11T01:21:15.680Z
+version: 8
+lastUpdated: 2026-11-14T12:32:17.357Z
 sourceLang: vi
-contentHash: 61bbd0dc2cc03957
-codeVerified: 2026-11-11T01:21:15.680Z
-codeVerifiedHash: 61bbd0dc2cc03957
+contentHash: 2cf22c43b8b748ec
+codeVerified: 2026-11-14T12:32:17.357Z
+codeVerifiedHash: 2cf22c43b8b748ec
 codeVerifiedClaims: 4
 ---
 
@@ -69,6 +69,7 @@ Tài liệu kỹ thuật cho LumiBase — **Content Operating System (Content OS
   - [ai-copilot.md](./features/ai-copilot.md) — AI Chat + Human-in-the-Loop approvals (Studio Copilot).
   - [agent-harness-layer.md](./features/agent-harness-layer.md) — Agent goals, runs, tools, memory, approvals, artifacts, evaluations, và quản trị sinh ứng dụng.
   - [site-skills.md](./features/site-skills.md) — Site Skills: playbook có phiên bản được chèn vào agent run, CLI skills-as-code, MCP prompts.
+  - [external-action-tools.md](./features/external-action-tools.md) — Tool của agent có tác động ngoài CMS, được quản trị: rủi ro khai báo, approval chỉ dành cho người, bí mật theo site.
   - [runtime-abstraction.md](./features/runtime-abstraction.md) — Lớp `@lumibase/runtime` cho phép chạy trên Cloudflare và Docker.
   - [flows-automation.md](./features/flows-automation.md) — Flows / Operations engine (workflow automation).
   - [marketplace.md](./features/marketplace.md) — Marketplace extensions có ký số (signed bundles).

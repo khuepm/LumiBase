@@ -258,3 +258,35 @@ describe('normalizeRoles', () => {
     expect(normalizeRoles(undefined)).toEqual([]);
   });
 });
+
+describe('verifyExternalJwt — request audience wall (#346)', () => {
+  it('rejects before role mapping or provisioning when checkAudience refuses', async () => {
+    const { issuer, publicKey, privateKey } = await makeIssuer();
+    const token = await sign(privateKey, {});
+    let provisioned = false;
+    let seen: string[] = [];
+    const out = await verifyExternalJwt(
+      token,
+      deps(issuer, publicKey, {
+        provisionUser: async () => {
+          provisioned = true;
+          return { userId: 'usr_jit' };
+        },
+        checkAudience: (aud) => {
+          seen = aud;
+          return { ok: false, code: 'AUDIENCE_NOT_MCP_RESOURCE', reason: 'nope' };
+        },
+      }),
+    );
+    expect(out).toMatchObject({ kind: 'rejected', status: 401, code: 'AUDIENCE_NOT_MCP_RESOURCE' });
+    expect(seen).toEqual([AUD]);
+    expect(provisioned).toBe(false);
+  });
+
+  it('authenticates when checkAudience accepts', async () => {
+    const { issuer, publicKey, privateKey } = await makeIssuer();
+    const token = await sign(privateKey, {});
+    const out = await verifyExternalJwt(token, deps(issuer, publicKey, { checkAudience: () => ({ ok: true }) }));
+    expect(out.kind).toBe('authenticated');
+  });
+});

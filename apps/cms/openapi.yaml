@@ -2726,6 +2726,14 @@ paths:
         '200': { description: '{ data: ImportJob }' }
         '404': { description: Not found }
         '409': { description: Job already finished }
+  /activation:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    get:
+      summary: Activation milestones of the active site (site admins)
+      responses:
+        '200': { description: '{ data: { siteId, milestones: [{ key, reachedAt, source, secondsSinceSiteCreated }], reached, total } }' }
+        '403': { description: Admin access required }
   /items/{collection}/export:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'

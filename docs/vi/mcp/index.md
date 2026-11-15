@@ -1,11 +1,11 @@
 ---
-version: 17
-lastUpdated: 2026-11-13T01:32:48.941Z
+version: 19
+lastUpdated: 2026-11-13T09:53:20.768Z
 sourceLang: vi
-contentHash: ba73f72dad20d6bd
-codeVerified: 2026-11-13T01:32:48.941Z
-codeVerifiedHash: ba73f72dad20d6bd
-codeVerifiedClaims: 38
+contentHash: 05a10f3351c9af51
+codeVerified: 2026-11-13T09:53:20.768Z
+codeVerifiedHash: 05a10f3351c9af51
+codeVerifiedClaims: 40
 ---
 
 # Model Context Protocol (MCP) — LumiBase
@@ -28,11 +28,12 @@ Nguồn: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`
 - **Transport:** Streamable HTTP — JSON-RPC 2.0 một request/một response. `GET /api/v1/mcp` trả `405 METHOD_NOT_ALLOWED` (không có server-initiated stream/SSE); client fallback plain request/response theo spec MCP.
 - **Protocol versions:** `2025-06-18` (default) và `2025-03-26`. `serverInfo = { name: 'lumibase-mcp', version: '1.0.0' }`.
 - **Auth → capability:** Bearer token; capability set được **resolve từ RBAC bundle sống** của token (#472), không phải từ `auth.roles`. ⇒ một MCP client **không bao giờ làm được nhiều hơn** cùng token đó qua REST — và cũng không ít hơn, điều mà cách đọc `auth.roles` cũ làm sai (role id không bao giờ khớp `items:write`). Xem [`governed-tool-contract.md`](governed-tool-contract.md) mục 4.
+- **OAuth 2.1 (#346):** endpoint còn là một OAuth protected resource cho MCP client được host. `401` mang `WWW-Authenticate: Bearer resource_metadata=…`; `/.well-known/oauth-protected-resource[/api/v1/mcp[/sites/<siteId>]]` (RFC 9728) liệt kê các trusted external issuer có `audience` chứa resource URI. Trên endpoint MCP, token external-issuer phải có resource URI trong `aud`; scope (`mcp:read`/`mcp:write`/`mcp:delete`/`mcp:admin`) chỉ thu hẹp capability set, và backstop `CONTROL_PLANE_FORBIDDEN` giữ nguyên. Endpoint theo site `POST /api/v1/mcp/sites/<siteId>` dành cho client không gửi được `X-Lumi-Site`. Xem [`../agent-setup/oauth-connector.md`](../agent-setup/oauth-connector.md).
 - **Feature gate:** cờ per-site `contentOs.mcp` (mặc định **off**). Tắt → `404 MCP_DISABLED`. (`feature-flags.ts`).
 - **Methods (JSON-RPC):**
   - `initialize` — thương lượng protocol version, trả `capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }` (plane organization không có `prompts`).
   - `ping`.
-  - `tools/list` — liệt kê tool **đang enabled** từ `ToolRegistryService`; inputSchema suy ra từ schema canonical trong `@lumibase/contracts` (chỉ skill chưa có schema mới rơi về `{ type: 'object' }`).
+  - `tools/list` — liệt kê tool **đang enabled** từ `ToolRegistryService`; inputSchema suy ra từ schema canonical trong `@lumibase/contracts` (chỉ skill chưa có schema mới rơi về `{ type: 'object' }`). Mỗi tool còn có `title` (tên dễ đọc) và `annotations` (`readOnlyHint`, `destructiveHint`) suy từ registry (`toolAnnotations` trong `apps/cms/src/services/mcp-service.ts`): read-only chỉ khi tool `safe` và mọi capability đều là `:read`; destructive khi `riskPolicy` là `dangerous`. Đây chỉ là gợi ý cho client (#346), không phải đầu vào phân quyền.
   - `tools/call` — chạy qua `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. Kết quả bọc `{ content, structuredContent, isError }`.
   - `prompts/list`, `prompts/get` — các [Site Skills](../features/site-skills.md) đang `active` của site; `name` là slug, thân trả về dưới dạng một user message. Chỉ phục vụ cho người gọi đọc được skill qua REST, tức principal được resolve thành control-plane admin của site (`grant.allowed && grant.controlPlaneAdmin` trong `routes/mcp.ts`): member không phải admin hay site API key nhận `prompts/list` rỗng. Với admin, `surfaces`/`requiredCapabilities` của từng skill vẫn lọc thêm. Prompt không tồn tại và prompt không được phép thấy trả lời giống hệt nhau.
   - `notifications/initialized`, `notifications/cancelled` → trả `null` ⇒ HTTP `202 Accepted` không body.

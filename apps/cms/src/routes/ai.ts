@@ -9,7 +9,7 @@ import { AISecureHarness } from '../services/ai-harness';
 import { AccessService } from '../services/access-service';
 import { ConfigService } from '../services/config-service';
 import { ExtensionsService } from '../services/extensions-service';
-import { approvalRequesterFromAuth, principalRefFromAuth, resolveRequestCapabilities } from '../services/governed-capabilities';
+import { approvalDeciderFromAuth, approvalRequesterFromAuth, principalRefFromAuth, resolveRequestCapabilities } from '../services/governed-capabilities';
 import { IntentService } from '../services/intent-service';
 import { SchemaService } from '../services/schema-service';
 import { itemServiceForRequest, buildRequestPermissionContext } from '../services/item-service-factory';
@@ -734,6 +734,7 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
       approvalId,
       userId,
       userCapabilities,
+      approvalDeciderFromAuth(auth),
     );
 
     if (result.status === 'denied') {
@@ -754,7 +755,7 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
   }
 
   // decision === 'rejected'
-  const rejected = await harness.rejectApproval(approvalId, userId);
+  const rejected = await harness.rejectApproval(approvalId, userId, approvalDeciderFromAuth(auth));
   if (!rejected) {
     return c.json(
       {

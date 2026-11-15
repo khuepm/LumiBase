@@ -51,6 +51,14 @@ export interface Bindings {
   LUMIBASE_ENV: string;
   /** Semver package/application version for the deployed LumiBase build. */
   LUMIBASE_VERSION?: string;
+  /** Opt in to anonymous usage telemetry (`true`). Default off. See docs `operations/usage-telemetry.md`. */
+  LUMIBASE_TELEMETRY_ENABLED?: string;
+  /** Hard off switch for telemetry (`true`). Wins over `LUMIBASE_TELEMETRY_ENABLED`. */
+  LUMIBASE_TELEMETRY_DISABLED?: string;
+  /** Where telemetry events are POSTed. Unset by default — nothing is sent without it. */
+  LUMIBASE_TELEMETRY_ENDPOINT?: string;
+  /** Honoured as a telemetry off switch when truthy. */
+  DO_NOT_TRACK?: string;
   /** Source-control revision used for this build. */
   LUMIBASE_GIT_SHA?: string;
   /** ISO-8601 timestamp for when this build artifact was produced. */
@@ -305,6 +313,18 @@ export interface AuthPrincipal {
   roles?: string[];
   /** Flag to identify if this principal is a frontend end-user (authenticated via Custom JWT) */
   isFrontendUser?: boolean;
+  /**
+   * Present when the principal is an OAuth access token presented to the MCP
+   * resource (#346): an external-issuer JWT whose `aud` includes the MCP
+   * resource URI. `scopes` narrow — never widen — the RBAC capability set.
+   */
+  oauth?: {
+    issuer: string;
+    resource: string;
+    scopes: string[];
+    /** OAuth client that obtained the token (`azp` / `client_id`), for audit. */
+    clientId?: string;
+  };
   raw: Record<string, unknown>;
 }
 
@@ -350,6 +370,20 @@ export interface Variables {
   userAgent?: string;
   /** Runtime context providing cache, storage, database, search, queue, and media adapters. */
   runtime: RuntimeContext;
+  /**
+   * Memoised tenant of this request, with its owning organization. Set lazily
+   * by `tenantRefFor(c)` in `platform/request.ts` — read it through that
+   * helper, never directly: it is unset until something asks.
+   */
+  tenantRef?: {
+    siteId: string;
+    ref: Promise<import('@lumibase/contracts/platform').TenantRef>;
+  };
+  /**
+   * Memoised entitlement snapshot of this request. Set lazily by
+   * `entitlementsFor(c)` in `platform/request.ts`; unset until something asks.
+   */
+  entitlements?: Promise<import('@lumibase/contracts/platform').EntitlementSnapshot>;
   /**
    * Internal response-type marker for observability/log enrichment.
    * Currently used by `adminPathGuard` (admin-setup-wizard Req 5.2) to

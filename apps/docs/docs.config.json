@@ -48,7 +48,7 @@
       {
         "type": "category",
         "label": "Architecture",
-        "items": ["architecture/overview"]
+        "items": ["architecture/overview", "architecture/platform-extension-points"]
       },
       {
         "type": "category",
@@ -64,6 +64,7 @@
           "features/websockets-realtime",
           "features/reconciler-repair-loop",
           "features/site-skills",
+          "features/external-action-tools",
           "features/draft-review",
           "features/jev-benchmark",
           "features/jev-draft-review-pilot",
@@ -93,7 +94,7 @@
       {
         "type": "category",
         "label": "Operations",
-        "items": ["operations/upgrades", "operations/encryption-keys"]
+        "items": ["operations/upgrades", "operations/encryption-keys", "operations/usage-telemetry"]
       },
       {
         "type": "category",
