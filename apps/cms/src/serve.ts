@@ -290,6 +290,7 @@ async function main() {
     // identically whether a run is executed sync or off the queue.
     keys: runtime.keys,
     env: process.env as Record<string, string | undefined>,
+    runtime,
   });
 
   // ── Content indexing (search) ────────────────────────────────────────────
