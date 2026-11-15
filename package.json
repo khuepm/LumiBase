@@ -64,6 +64,9 @@
     "db:migrate:dry-run": "pnpm --filter @lumibase/database migrate:dry-run",
     "db:migrate:version": "pnpm --filter @lumibase/database migrate:version"
   },
+  "scarfSettings": {
+    "enabled": false
+  },
   "devDependencies": {
     "glob": "^14.0.4",
     "husky": "^9.1.7",

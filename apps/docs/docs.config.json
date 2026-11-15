@@ -76,7 +76,7 @@
       {
         "type": "category",
         "label": "API Reference",
-        "items": ["api/hono-api-spec"]
+        "items": ["api/hono-api-spec", "api/live-openapi"]
       },
       {
         "type": "category",

@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 47
-lastUpdated: 2026-11-15T08:38:10.697Z
+version: 48
+lastUpdated: 2026-11-15T08:42:04.559Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f161aa937b42dbe6
+sourceHash: 9ab197909be2ce34
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T08:38:10.697Z
-codeVerifiedHash: f161aa937b42dbe6
-codeVerifiedClaims: 532
+codeVerified: 2026-11-15T08:42:04.559Z
+codeVerifiedHash: 9ab197909be2ce34
+codeVerifiedClaims: 536
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1427,6 +1427,11 @@ Các biến có thể điều chỉnh (env): `LUMIBASE_DELIVER_SMAXAGE` (giây, 
 | `POST` | `/api/v1/utils/render-template` | Render một display template phía server |
 | `POST` | `/api/v1/utils/jsonata/test` | Đánh giá biểu thức JSONata |
 | `GET` | `/api/v1/metrics` | Prometheus metrics (chỉ ở chế độ Docker) |
+| `GET` | `/api/v1/openapi.json` | Tài liệu OpenAPI 3.1 trực tiếp theo site và quyền của người gọi — `404` cho tới khi được bật |
+| `GET` | `/api/v1/openapi/config` | Đọc công tắc OpenAPI trực tiếp (site admin) |
+| `PUT` | `/api/v1/openapi/config` | `{ enabled, realms }` — bật và chọn realm (site admin, có audit) |
+
+Tài liệu OpenAPI trực tiếp được mô tả trong [Tài liệu OpenAPI trực tiếp](live-openapi.md).
 
 **Phản hồi sức khỏe (Health response):**
 ```json
