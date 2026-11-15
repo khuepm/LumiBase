@@ -40,6 +40,16 @@ describe("integration", () => {
     expect(src).toContain('from "@lumibase/sdk"');
   });
 
+  it("escapes config values so they cannot break out of the generated literal", () => {
+    const url = "https://cms.example.com/</script><script>alert(1)</script>\u2028x";
+    const src = virtualModuleSource({ ...opts, url, siteId: "site_1" });
+    expect(src).not.toContain("</script>");
+    expect(src).not.toContain("\u2028");
+    // The literal still evaluates to the exact configured value.
+    const literal = /url: ("(?:[^"\\]|\\.)*")/.exec(src)?.[1];
+    expect(literal && JSON.parse(literal)).toBe(url);
+  });
+
   it("serves the virtual module to SSR and refuses client bundles", () => {
     const plugin = lumibaseVitePlugin(opts);
     const id = plugin.resolveId(VIRTUAL_MODULE_ID)!;

@@ -86,6 +86,22 @@ function validate(options: LumibaseIntegrationOptions): Required<Omit<LumibaseIn
   return { url: options.url, siteId: options.siteId, tokenEnv };
 }
 
+const UNSAFE_IN_CODE: Record<string, string> = {
+  "<": "\\u003C",
+  ">": "\\u003E",
+  "\u2028": "\\u2028",
+  "\u2029": "\\u2029",
+};
+
+/**
+ * A JS string literal for a config value spliced into generated code.
+ * `JSON.stringify` alone leaves `<`/`>` (`</script>`) and the U+2028/U+2029 line
+ * terminators as-is; escape them so no value can end the literal's context.
+ */
+function codeLiteral(value: string): string {
+  return JSON.stringify(value).replace(/[<>\u2028\u2029]/g, (ch) => UNSAFE_IN_CODE[ch] ?? ch);
+}
+
 /** Source of `virtual:lumibase`. Contains the env var *name*, never a token. */
 export function virtualModuleSource(options: LumibaseIntegrationOptions): string {
   const { url, siteId, tokenEnv } = validate(options);
@@ -96,8 +112,8 @@ export function virtualModuleSource(options: LumibaseIntegrationOptions): string
     // would be replaced by Vite at build time, baking the build machine's token
     // into `dist/server` of an SSR build.
     `import { getSecret } from "astro:env/server";`,
-    `export const config = { url: ${JSON.stringify(url)}, siteId: ${JSON.stringify(siteId)} };`,
-    `export function createClient(token = getSecret(${JSON.stringify(tokenEnv)}) ?? "") {`,
+    `export const config = { url: ${codeLiteral(url)}, siteId: ${codeLiteral(siteId)} };`,
+    `export function createClient(token = getSecret(${codeLiteral(tokenEnv)}) ?? "") {`,
     `  return createLumiClient({ ...config, token });`,
     `}`,
     `export const lumi = createClient();`,
