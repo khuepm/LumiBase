@@ -40,7 +40,7 @@ export async function processCloudflareAgentQueue(
       const job = messageSchema.parse(message.body);
       await processAgentRunJob({
         db, cache: runtime.cache, search: runtime.search, queue: runtime.queue,
-        keys: runtime.keys, env: workerEnv,
+        keys: runtime.keys, env: workerEnv, runtime,
         ...(ctx ? { waitUntil: (promise: Promise<unknown>) => ctx.waitUntil(promise) } : {}),
       }, job.data);
       // CAS in processAgentRunJob also makes duplicate/cancelled deliveries no-ops.

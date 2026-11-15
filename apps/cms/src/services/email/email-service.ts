@@ -19,6 +19,8 @@
  */
 
 import type { AppEnv } from '../../env';
+import { USAGE_KINDS } from '@lumibase/contracts/platform';
+import { recordUsage } from '../../platform/usage';
 import type { DeliveryResult } from '../../modules/notifications/types';
 import {
   MailchannelsTransport,
@@ -70,7 +72,18 @@ export class EmailService {
       html: email.html,
       text: email.text,
     };
-    return this.transport.send(message);
+    const result = await this.transport.send(message);
+    if (result.ok) {
+      // Usage emitter seam: recipients accepted by the transport. A no-op
+      // unless an emitter is registered; attributed to the current site.
+      recordUsage({
+        kind: USAGE_KINDS.emailSent,
+        quantity: email.to.length + (email.cc?.length ?? 0),
+        unit: 'count',
+        attributes: { transport: this.transport.kind },
+      });
+    }
+    return result;
   }
 
   /**

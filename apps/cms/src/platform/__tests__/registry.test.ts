@@ -66,7 +66,7 @@ describe('platform seam registry — registration', () => {
 
   it('ignores keys that are not seams', () => {
     registerPlatformSeams({ entitlements: stub, notASeam: stub } as never);
-    expect(Object.keys(platform())).toEqual(['entitlements']);
+    expect(Object.keys(platform())).toEqual(['entitlements', 'usage']);
   });
 
   it('throws on a second registration', () => {

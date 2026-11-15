@@ -32,6 +32,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.eval.json",
     "typegen": "tsx scripts/typegen.ts",
     "bench:jev": "tsx scripts/jev-benchmark.ts",
+    "bench:usage-seam": "tsx scripts/bench-usage-seam.ts",
     "pilot:report": "tsx scripts/jev-pilot-report.ts",
     "lint": "echo \"(lint not configured)\" && exit 0",
     "test": "vitest --run",

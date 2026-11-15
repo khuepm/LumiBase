@@ -30,12 +30,12 @@ export function registerPlatformSeams(seams: Partial<PlatformSeams>): void {
   if (resolved) {
     throw new Error('registerPlatformSeams() must run before the first request is served.');
   }
-  const accepted: Partial<PlatformSeams> = {};
+  const accepted: Partial<Record<PlatformSeamName, PlatformSeams[PlatformSeamName]>> = {};
   for (const name of Object.keys(DEFAULT_PLATFORM_SEAMS) as PlatformSeamName[]) {
     const implementation = seams[name];
     if (implementation !== undefined) accepted[name] = implementation;
   }
-  overrides = accepted;
+  overrides = accepted as Partial<PlatformSeams>;
 }
 
 /** The complete seam set: registered implementations over built-in defaults. */

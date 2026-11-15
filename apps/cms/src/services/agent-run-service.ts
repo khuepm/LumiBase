@@ -19,6 +19,8 @@ import {
   agentToolLatency,
   observeAgentCost,
 } from './agent-metrics';
+import { USAGE_KINDS } from '@lumibase/contracts/platform';
+import { recordUsage } from '../platform/usage';
 
 /**
  * How long a `running` run may go without finishing before it is treated as
@@ -448,6 +450,17 @@ export class AgentRunService {
    * a revoked requester, which closes the question itself — passes
    * `{ fromWaitingUser: true }`.
    */
+  /** Usage emitter seam: one `agent.run` per terminal transition. No-op unless registered. */
+  private recordRunUsage(status: 'succeeded' | 'failed', agentName: string | null | undefined): void {
+    recordUsage({
+      kind: USAGE_KINDS.agentRun,
+      quantity: 1,
+      unit: 'count',
+      siteId: this.siteId,
+      attributes: { status, agent: metricAgent(agentName ?? 'unknown') },
+    });
+  }
+
   async closeRun(runId: string, metrics: Record<string, unknown> = {}): Promise<void> {
     const [run] = await this.db
       .select()
@@ -463,6 +476,7 @@ export class AgentRunService {
       status: 'succeeded',
       stop_reason: metricReason(String(metrics['stopReason'] ?? 'completed')),
     });
+    this.recordRunUsage('succeeded', run?.agentName);
     this.notify?.({
       kind: 'run',
       severity: 'info',
@@ -501,6 +515,7 @@ export class AgentRunService {
       status: 'failed',
       stop_reason: metricReason(stopReason),
     });
+    this.recordRunUsage('failed', run?.agentName);
     if (run) {
       await this.enqueueDeadLetterIfRepeatedFailure(run, error, stopReason);
     }

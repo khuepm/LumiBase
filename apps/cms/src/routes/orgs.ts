@@ -8,6 +8,8 @@ import { organizations, organizationMembers, sites, users, apiKeys } from '@lumi
 import { OrganizationCreateSchema, OrganizationUpdateSchema, OrgSiteCreateSchema,
   OrgSiteTransferSchema, OrgMemberUpsertSchema, OrgMemberUpdateSchema, OrgKeyCreateSchema } from '@lumibase/contracts';
 import type { AppEnv } from '../env';
+import { USAGE_KINDS } from '@lumibase/contracts/platform';
+import { recordUsage } from '../platform/usage';
 import { withOrganizationAccessGuard as guard } from '../middleware/organization-access-guard';
 import { systemDbFor } from '../middleware/db';
 import { isFrontendAudience, audienceValues, TOKEN_AUDIENCE } from '../services/auth/token-audience';
@@ -100,6 +102,7 @@ orgsRouter.post('/', async (c) => {
     await tx.insert(organizationMembers).values({ organizationId: created!.id, userId: auth.userId!, role: 'owner' });
     return created!;
   });
+  recordUsage({ kind: USAGE_KINDS.seatChange, quantity: 1, unit: 'count', siteId: null, organizationId: org.id });
   return c.json({ data: { ...org, role: 'owner' } }, 201);
 });
 orgsRouter.get('/:orgId', guard('org:read'), async (c) => {
@@ -203,6 +206,7 @@ orgsRouter.delete('/:orgId/members/:userId', guard('org:members:manage'), humanO
     }
     await tx.delete(organizationMembers).where(where);
   });
+  recordUsage({ kind: USAGE_KINDS.seatChange, quantity: -1, unit: 'count', siteId: null, organizationId: orgId });
   return c.json({ data: { success: true } });
 });
 orgsRouter.get('/:orgId/keys', guard('org:read'), async (c) => c.json({ data: (await c.get('db').select().from(apiKeys)

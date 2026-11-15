@@ -136,3 +136,7 @@ export function entitlementDenialBody(denial: EntitlementDenial): EntitlementDen
     ],
   };
 }
+
+// ─── Usage ────────────────────────────────────────────────────────────────────
+
+export * from './usage';
