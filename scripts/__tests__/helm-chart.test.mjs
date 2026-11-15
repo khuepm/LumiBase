@@ -257,7 +257,12 @@ test('external PostgreSQL and Redis: no bundled StatefulSets, URLs from Secrets'
   const cm = find(docs, 'ConfigMap');
   // External databases keep the production TLS requirement unless opted out.
   assert.equal(cm.data.DATABASE_SSL_MODE, undefined);
-  assert.ok(!JSON.stringify(cm).includes('redis.example.com'));
+  // The external Redis URL (it carries a password) lives only in the Secret:
+  // no ConfigMap key holds it, and no ConfigMap value is a Redis URL.
+  assert.equal(cm.data.REDIS_URL, undefined);
+  for (const value of Object.values(cm.data ?? {})) {
+    assert.doesNotMatch(String(value), /^rediss?:\/\//);
+  }
 });
 
 test('render refuses configurations the server would refuse', { skip }, () => {
