@@ -258,11 +258,11 @@ export const items = pgTable(
     deliverIdx: index('items_deliver_idx')
       .on(t.siteId, t.collectionId, t.status, t.publishAt, t.unpublishAt)
       .where(sql`${t.deletedAt} is null`),
-    /** Tree children + sibling order (#749, migration 0032). */
+    /** Tree children + sibling order (#749, migration 0032_item_tree). */
     treeParentIdx: index('items_tree_parent_idx')
       .on(t.siteId, t.collectionId, t.parentId, t.sort)
       .where(sql`${t.deletedAt} is null`),
-    /** Tree subtree prefix scans (#749, migration 0032). */
+    /** Tree subtree prefix scans (#749, migration 0032_item_tree). */
     treePathIdx: index('items_tree_path_idx')
       .on(t.siteId, t.collectionId, t.path.op('text_pattern_ops'))
       .where(sql`${t.path} is not null`),

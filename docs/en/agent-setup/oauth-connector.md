@@ -1,11 +1,11 @@
 ---
 sourceLang: en
-version: 2
-lastUpdated: 2026-11-13T09:53:21.003Z
-contentHash: 92dec3be7b891650
-codeVerified: 2026-11-13T09:53:21.003Z
-codeVerifiedHash: 92dec3be7b891650
-codeVerifiedClaims: 16
+version: 3
+lastUpdated: 2026-11-15T13:39:30.226Z
+contentHash: 4ebe49716b67d489
+codeVerified: 2026-11-15T13:39:30.226Z
+codeVerifiedHash: 4ebe49716b67d489
+codeVerifiedClaims: 18
 ---
 
 # Remote MCP connector (OAuth 2.1) — LumiBase
@@ -108,6 +108,7 @@ Scopes **only narrow**. The capability set still comes from the user's live RBAC
 | `mcp:admin` | control-plane skills, and `ai:decide` | `deleteCollection`, `createRole` |
 
 - An exact capability string used as a scope (e.g. `items:read`) also works, for IdPs that model fine-grained scopes.
+- What a client *asks* for is not under LumiBase's control: an MCP SDK client requests the `scope` from the challenge, else every scope in `scopes_supported`. Restrict what a connector actually gets on the IdP side (which scopes the API resource grants to that client, or user consent). LumiBase then enforces whatever the token carries.
 - Scopes are read from the `scope` claim (space-delimited) or `scp` (string or array).
 - A token with no recognised scope keeps discovery (`initialize`, `tools/list`, `ping`) but gets no capabilities.
 - An admin grant stays a full admin grant only when all four scopes are present; otherwise it is expanded to the explicit capabilities of the core skills and filtered.
@@ -133,6 +134,12 @@ Following the token-audience rule of [ADR-011](../architecture/decisions/adr-011
 API keys and LumiBase's own session JWTs are first-party credentials and are not affected.
 
 ---
+
+## Interop test
+
+[`apps/cms/src/__tests__/mcp-oauth-hosted-client.e2e.test.ts`](../../../apps/cms/src/__tests__/mcp-oauth-hosted-client.e2e.test.ts) runs this whole flow in CI with nothing mocked. The IdP is `oidc-provider` (an OpenID Certified implementation) with open DCR, required PKCE S256, RFC 8707 resource indicators and ES256 JWT access tokens. The client is the official MCP TypeScript SDK (`StreamableHTTPClientTransport` with an `OAuthClientProvider`). The server is the full LumiBase app over HTTP on PostgreSQL, and the test reaches it through the site-addressed URL.
+
+It covers the 401 challenge and metadata discovery, DCR, PKCE + `resource`, `tools/list` with annotations, `tools/call`, scope narrowing with the 403 step-up challenge, audience rejection both ways, and refresh. It does not cover a specific hosted product's UI (claude.ai, ChatGPT), whose client registration and consent screens are configured on their side.
 
 ## Troubleshooting
 

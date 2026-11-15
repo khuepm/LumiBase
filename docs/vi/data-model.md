@@ -6,7 +6,7 @@ translatedFrom: en
 sourceHash: 26c9ba05b78320c7
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T12:11:20.517Z
+codeVerified: 2026-11-15T17:11:55.175Z
 codeVerifiedHash: 26c9ba05b78320c7
 codeVerifiedClaims: 20
 ---
