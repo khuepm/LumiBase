@@ -1,9 +1,10 @@
-import { File, Upload, X } from 'lucide-react';
+import { File, Library, Upload, X } from 'lucide-react';
 import { useRef, useState, type DragEvent } from 'react';
 import { cn } from '@/lib/cn';
 import { getApiClient } from '@/lib/api';
 import { readOptions, type InterfaceComponent } from './types';
 import { formatSafeError } from '@lumibase/contracts/utils';
+import { acceptToMimeTypes, useMediaPicker } from '@/modules/files/media-picker';
 
 interface FileOptions {
   accept?: string;
@@ -27,6 +28,18 @@ export const FileInterface: InterfaceComponent<string> = ({
 
   const client = getApiClient();
   const [uploading, setUploading] = useState(false);
+  const openPicker = useMediaPicker();
+
+  // Same picker as the media library and extensions (#708). The field keeps
+  // storing the storage key, so existing values and references are unchanged.
+  const chooseFromLibrary = async () => {
+    if (!openPicker) return;
+    const picked = await openPicker({
+      initiallySelected: value ? [value] : [],
+      allowedMimeTypes: acceptToMimeTypes(opts.accept),
+    });
+    if (picked?.[0]) onChange(picked[0].filenameDisk);
+  };
 
   const handle = async (file: File) => {
     if (opts.maxSize && file.size > opts.maxSize) {
@@ -89,33 +102,40 @@ export const FileInterface: InterfaceComponent<string> = ({
   }
 
   return (
-    <div
-      onDragOver={(e) => {
-        e.preventDefault();
-        setOver(true);
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={onDrop}
-      className={cn(
-        'flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed bg-background px-3 py-6 text-sm text-muted-foreground transition',
-        over && 'border-primary bg-primary/5',
-        disabled && 'pointer-events-none opacity-50',
+    <div className="space-y-1">
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setOver(true);
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={onDrop}
+        className={cn(
+          'flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed bg-background px-3 py-6 text-sm text-muted-foreground transition',
+          over && 'border-primary bg-primary/5',
+          disabled && 'pointer-events-none opacity-50',
+        )}
+        onClick={() => inputRef.current?.click()}
+        role="button"
+      >
+        <Upload className="h-4 w-4" />
+        <span>{uploading ? 'Uploading...' : 'Drop a file or click to browse'}</span>
+        <span className="text-[10px]">
+          uploads to Cloudflare R2 / S3 storage
+        </span>
+        <input
+          ref={inputRef}
+          type="file"
+          accept={opts.accept}
+          hidden
+          onChange={(e) => e.target.files?.[0] && handle(e.target.files[0])}
+        />
+      </div>
+      {openPicker && !disabled && (
+        <button type="button" onClick={() => void chooseFromLibrary()} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+          <Library className="h-3.5 w-3.5" /> Choose from library
+        </button>
       )}
-      onClick={() => inputRef.current?.click()}
-      role="button"
-    >
-      <Upload className="h-4 w-4" />
-      <span>{uploading ? 'Uploading...' : 'Drop a file or click to browse'}</span>
-      <span className="text-[10px]">
-        uploads to Cloudflare R2 / S3 storage
-      </span>
-      <input
-        ref={inputRef}
-        type="file"
-        accept={opts.accept}
-        hidden
-        onChange={(e) => e.target.files?.[0] && handle(e.target.files[0])}
-      />
     </div>
   );
 };
