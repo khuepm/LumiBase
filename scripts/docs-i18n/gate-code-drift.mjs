@@ -175,7 +175,7 @@ Anything else needs the sentence rewritten in docs/en AND docs/vi, then:
   const summary = process.env.GITHUB_STEP_SUMMARY;
   if (summary) {
     const rows = introduced.map(
-      (e) => `| \`${e.file}:${e.line}\` | ${e.kind} | \`${e.claim}\` | ${e.cause.replace(/\|/g, '\\|')} | ${e.fixable ? `\`${e.fixTo}\`` : 'human'} |`,
+      (e) => `| \`${e.file}:${e.line}\` | ${e.kind} | \`${e.claim}\` | ${e.cause.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')} | ${e.fixable ? `\`${e.fixTo}\`` : 'human'} |`,
     );
     fs.appendFileSync(
       summary,

@@ -228,6 +228,15 @@ export interface BuildStudioIntentUrlOptions {
   adminPath?: string | null;
 }
 
+/** Strips leading and trailing `/` in linear time (no backtracking regex). */
+function trimSlashes(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value.charCodeAt(start) === 47) start += 1;
+  while (end > start && value.charCodeAt(end - 1) === 47) end -= 1;
+  return value.slice(start, end);
+}
+
 /**
  * Absolute intent URL for links that leave the app (email, chat, push).
  * Any path on `studioUrl` is discarded; the admin path is validated.
@@ -242,7 +251,7 @@ export function buildStudioIntentUrl(input: StudioIntentInput, options: BuildStu
   if (base.protocol !== 'https:' && base.protocol !== 'http:') {
     throw new TypeError('studioUrl must be an absolute http(s) URL.');
   }
-  const adminPath = options.adminPath ? `/${options.adminPath.replace(/^\/+|\/+$/g, '')}` : '';
+  const adminPath = options.adminPath ? `/${trimSlashes(options.adminPath)}` : '';
   if (adminPath && !ADMIN_PATH.test(adminPath)) throw new TypeError('Invalid adminPath.');
   return `${base.origin}${adminPath}${buildStudioIntentPath(input)}`;
 }

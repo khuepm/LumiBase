@@ -122,7 +122,7 @@ export function pairRouteRenames(removed, added) {
 
 const minus = (a, b) => [...a].filter((x) => !b.has(x)).sort();
 const wordIn = (text, word) =>
-  new RegExp(`(?<![A-Za-z0-9_$])${word.replace(/[$]/g, '\\$')}(?![A-Za-z0-9_$])`).test(text);
+  new RegExp(`(?<![A-Za-z0-9_$])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_$])`).test(text);
 
 // ---------------------------------------------------------------------------
 // Change set between two revisions

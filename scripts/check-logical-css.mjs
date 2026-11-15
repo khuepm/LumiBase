@@ -82,7 +82,7 @@ const NO_SUFFIX = new Set(['text-left', 'text-right', 'float-left', 'float-right
 
 const SPACING_VALUE = String.raw`(?:\d+(?:\.\d+)?(?:\/\d+)?|px|auto|full|\[[^\]\s]+\]|\([^)\s]+\))`;
 const WORD_VALUE = String.raw`(?:[a-z0-9]+(?:-[a-z0-9]+)*(?:\/\d+)?|\[[^\]\s]+\]|\([^)\s]+\))`;
-const sortByLength = (keys) => [...keys].sort((a, b) => b.length - a.length).map((k) => k.replace(/-/g, '\\-'));
+const sortByLength = (keys) => [...keys].sort((a, b) => b.length - a.length).map((k) => k.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&'));
 
 // Before the token: start, whitespace, a quote/backtick, `{`, `(`, `,`.
 // Variants (`hover:`, `md:`, `file:`, `[&>svg]:`) are captured so `rtl:`/`ltr:` can be skipped.

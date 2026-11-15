@@ -305,7 +305,7 @@ export function renderReport({ base, head, results }) {
 }
 
 function escapeCell(s) {
-  return String(s).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  return String(s).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ');
 }
 
 // ---------------------------------------------------------------------------
