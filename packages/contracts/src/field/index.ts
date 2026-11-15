@@ -54,3 +54,6 @@ export interface FieldDefinition<TOptions = unknown> {
   group?: string;
   sortOrder?: number;
 }
+
+// Slug charset policy (#751).
+export * from './slug';

@@ -56,6 +56,7 @@ import {
 import { DISPLAY_CATALOGUE } from '@/modules/content/displays/registry';
 import { MustacheTemplateEditor } from '@/modules/content/mustache-template-editor';
 import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
+import { FieldOptionControls, fieldOptionIssues } from './field-option-controls';
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
 
@@ -191,7 +192,15 @@ export function FieldInspector({
     translationsJson.ok &&
     defaultValueJson.ok;
   const canEditStorage = !form.locked;
-  const canSubmit = valid && jsonValid && !isSubmitting;
+  // #751 — same option validation the server runs on schema write.
+  const optionIssues = useMemo(
+    () =>
+      optionsJson.ok
+        ? fieldOptionIssues({ type: form.type, interface: form.interface, options: optionsJson.value, length: form.length })
+        : [],
+    [optionsJson, form.type, form.interface, form.length],
+  );
+  const canSubmit = valid && jsonValid && optionIssues.length === 0 && !isSubmitting;
 
   // Shared by the Save button and the Cmd/Ctrl+S "save and stay" shortcut.
   const submit = () =>
@@ -333,6 +342,7 @@ export function FieldInspector({
               canEditStorage={canEditStorage}
               optionsDraft={optionsDraft}
               optionsJsonOk={optionsJson.ok}
+              optionsValue={optionsJson.ok ? optionsJson.value : null}
               onInterfaceChange={handleInterfaceChange}
               onOptionsDraftChange={setOptionsDraft}
             />
@@ -475,6 +485,8 @@ interface InterfaceTabProps {
   canEditStorage: boolean;
   optionsDraft: string;
   optionsJsonOk: boolean;
+  /** Parsed options (null while the JSON draft is invalid). */
+  optionsValue?: Record<string, unknown> | null;
   onInterfaceChange: (id: string) => void;
   onOptionsDraftChange: (v: string) => void;
 }
@@ -484,6 +496,7 @@ function InterfaceTab({
   canEditStorage,
   optionsDraft,
   optionsJsonOk,
+  optionsValue,
   onInterfaceChange,
   onOptionsDraftChange,
 }: InterfaceTabProps) {
@@ -543,6 +556,16 @@ function InterfaceTab({
           <strong className="text-foreground">{currentItem.label}:</strong>{' '}
           {currentItem.description}
         </div>
+      )}
+
+      {optionsValue && (
+        <FieldOptionControls
+          type={form.type}
+          iface={form.interface}
+          length={form.length}
+          options={optionsValue}
+          onChange={(next) => onOptionsDraftChange(stringifyJson(next))}
+        />
       )}
 
       <JsonTextarea

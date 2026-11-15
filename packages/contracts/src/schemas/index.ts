@@ -352,3 +352,6 @@ export {
   type TelemetryEventName,
   type TelemetryEvent,
 } from './telemetry';
+
+// Field option parity — allowClear / minLength / maxLength / slug (#751).
+export * from './field-options';

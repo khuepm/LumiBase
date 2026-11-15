@@ -12,6 +12,7 @@ import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 import type { CacheProvider, EdgeCacheProvider, QueueProvider } from '@lumibase/runtime';
 import { createSwrCache, type SwrCache } from '@lumibase/runtime';
 import type { CdcOperation, CdcResource, FieldClassification } from '@lumibase/contracts';
+import { validateFieldOptions } from '@lumibase/contracts/schemas';
 import { invalidateDeliverTag } from './content-invalidation';
 import { AuditLogger } from '../modules/audit/logger';
 import { OutboxWriter, type OutboxActor } from '../modules/cdc/change-feed';
@@ -282,6 +283,29 @@ export function assertClassificationEncryptable(
     throw new SchemaServiceError(
       'CLASSIFICATION_REQUIRES_ENCRYPTION',
       `Fields classified "${classification}" must be encrypted.`,
+      422,
+    );
+  }
+}
+
+/**
+ * #751 — validate `options.allowClear` / `minLength` / `maxLength` / `slug`
+ * against the field's type and interface. Every schema write path (REST
+ * field routes, schema apply, config-as-code, MCP) goes through
+ * create/update/renameField, so this is the single schema-side chokepoint.
+ */
+export function assertFieldOptionsValid(field: {
+  name: string;
+  type: string;
+  interface: string;
+  options: unknown;
+  length?: number | null;
+}): void {
+  const issues = validateFieldOptions(field);
+  if (issues.length > 0) {
+    throw new SchemaServiceError(
+      'INVALID_FIELD_OPTIONS',
+      `Field "${field.name}": ${issues.map((i) => `${i.path}: ${i.message}`).join(' ')}`,
       422,
     );
   }
@@ -560,6 +584,13 @@ export class SchemaService {
   async createField(collectionName: string, input: FieldInput) {
     ensureName(input.name, 'field');
     assertClassificationEncryptable(input.classification, input.encrypted);
+    assertFieldOptionsValid({
+      name: input.name,
+      type: input.type,
+      interface: input.interface,
+      options: input.options,
+      length: input.length,
+    });
     const collection = await this.getCollection(collectionName);
     if (!collection) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
@@ -604,6 +635,15 @@ export class SchemaService {
     const nextClassification = input.classification ?? existingClassification;
     const nextEncrypted = input.encrypted ?? existing.encrypted;
     assertClassificationEncryptable(nextClassification, nextEncrypted);
+    if (input.options !== undefined) {
+      assertFieldOptionsValid({
+        name: fieldName,
+        type: input.type ?? existing.type,
+        interface: input.interface ?? existing.interface,
+        options: input.options,
+        length: input.length !== undefined ? input.length : existing.length,
+      });
+    }
     const populatedRows = await this.countFieldDataRows(collection.id, fieldName);
     assertFieldMutationAllowed(
       existing,
@@ -666,6 +706,15 @@ export class SchemaService {
       .limit(1);
     if (!existing) {
       throw new SchemaServiceError('NOT_FOUND', `Field "${fieldName}" not found.`, 404);
+    }
+    if (input.options !== undefined) {
+      assertFieldOptionsValid({
+        name: input.name,
+        type: input.type ?? existing.type,
+        interface: input.interface ?? existing.interface,
+        options: input.options,
+        length: input.length !== undefined ? input.length : existing.length,
+      });
     }
     const populatedRows = await this.countFieldDataRows(collection.id, fieldName);
     assertFieldMutationAllowed(existing, input, populatedRows, {

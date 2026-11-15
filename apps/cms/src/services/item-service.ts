@@ -1148,7 +1148,7 @@ export class ItemService {
       : currentData;
 
     if (patch.data) {
-      await this.runValidation(collectionName, patch.data, true);
+      await this.runValidation(collectionName, patch.data, true, currentData);
     }
 
     // Before hook — extensions can mutate patch data before update.
@@ -1162,7 +1162,7 @@ export class ItemService {
     }) ?? { collection: collectionName };
     const hookPatch = hookCtx.patch as Record<string, unknown> | undefined;
     if (hookPatch) {
-      await this.runValidation(collectionName, hookPatch, true);
+      await this.runValidation(collectionName, hookPatch, true, currentData);
     }
     const finalData = hookPatch ? { ...merged, ...hookPatch } : merged;
     const finalStatus = patch.status ?? rawRow.status;
@@ -1303,10 +1303,12 @@ export class ItemService {
     collectionName: string,
     data: Record<string, unknown>,
     partial: boolean,
+    /** Stored data before an update — lets `allowClear: false` reject clearing (#751). */
+    current?: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const compiled = await this.schemaService.getCompiled(collectionName);
     if (!compiled) return data;
-    const result = validateItem(compiled.fields, data, { partial });
+    const result = validateItem(compiled.fields, data, { partial, current });
     if (!result.ok) {
       throw new ItemServiceError(
         'VALIDATION',
