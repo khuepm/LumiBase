@@ -32,6 +32,7 @@
     "dompurify": "^3.4.17",
     "i18next": "^26.7.2",
     "lucide-react": "^1.69.0",
+    "maplibre-gl": "6.15.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-hook-form": "^7.91.0",

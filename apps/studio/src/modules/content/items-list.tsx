@@ -15,6 +15,8 @@ import { ExportDialog } from './export-dialog';
 import { ImportDialog } from './import-dialog';
 import { resolveDisplay } from './displays/registry';
 import { FilterBuilder, compileFilter, type FilterCondition } from './filter-builder';
+import { MapLayout, geopointFields } from './geo/map-layout';
+import { ListLayoutToggle, type ListLayout } from './geo/list-layout-toggle';
 
 const PAGE_SIZE = 25;
 
@@ -44,6 +46,7 @@ export function ItemsListPage() {
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [layout, setLayout] = useState<ListLayout>('table');
   const queryClient = useQueryClient();
 
   useRealtimeSubscription(collection, () => {
@@ -154,6 +157,10 @@ export function ItemsListPage() {
     [fields, perms, collection],
   );
 
+  // "Map" layout is offered only when the collection has a geopoint field (#746).
+  const hasGeo = geopointFields(filterableFields).length > 0;
+  const showMap = hasGeo && layout === 'map';
+
   const total = itemsQuery.data?.meta?.total ?? 0;
   const rows = itemsQuery.data?.data ?? [];
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -197,6 +204,7 @@ export function ItemsListPage() {
               New item
             </Link>
           )}
+          {hasGeo && <ListLayoutToggle value={layout} onChange={setLayout} />}
           {/* Live Mode Toggle */}
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground mr-2 cursor-pointer">
             <input
@@ -319,7 +327,11 @@ export function ItemsListPage() {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-lg border">
+      {showMap && (
+        <MapLayout collection={collection} fields={filterableFields} filter={filterPayload} enabled={!perms.isLoading && canRead} />
+      )}
+
+      <div className={cn('overflow-hidden rounded-lg border', showMap && 'hidden')}>
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
             <tr>
@@ -401,7 +413,7 @@ export function ItemsListPage() {
         </table>
       </div>
 
-      <footer className="flex items-center justify-between text-xs text-muted-foreground">
+      <footer className={cn('flex items-center justify-between text-xs text-muted-foreground', showMap && 'hidden')}>
         <span>
           {rows.length > 0
             ? `Showing ${page * PAGE_SIZE + 1}-${page * PAGE_SIZE + rows.length} of ${total}`
