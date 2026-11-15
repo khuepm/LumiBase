@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -149,5 +149,42 @@ describe('lumibase-ext dev — edit → Studio latency', () => {
 
     expect(await editAndMeasure('recovered')).toBeLessThan(ASSERT_MS);
     watcher.close();
+  });
+
+  it('keeps reloading a file after an atomic (write-then-rename) save', async () => {
+    // vim, JetBrains "safe write", formatters and `sed -i` replace the file
+    // instead of writing it in place. Edits made after that must still reload.
+    const label = join(dir, 'src', 'label.ts');
+    // The temp file lives OUTSIDE the watched tree, as editors that save via
+    // the OS temp dir do: on Linux, Node's recursive fs.watch stopped seeing
+    // every later change after such a rename.
+    const tmp = join(mkdtempSync(join(tmpdir(), 'lumibase-ext-save-')), 'label.ts');
+    writeFileSync(tmp, `export const label = ${JSON.stringify('atomic-save')};\n`);
+    const started = performance.now();
+    renameSync(tmp, label);
+    await expect.poll(() => rendered.some((r) => r.text.includes('atomic-save')), { timeout: BUDGET_MS }).toBe(true);
+    expect(performance.now() - started).toBeLessThan(BUDGET_MS);
+
+    // Edit ONLY the replaced file: other files kept reporting, which hid the bug.
+    for (const next of ['after-atomic-1', 'after-atomic-2']) {
+      const t0 = performance.now();
+      writeFileSync(label, `export const label = ${JSON.stringify(next)};\n`);
+      await expect.poll(() => rendered.some((r) => r.text.includes(next)), { timeout: BUDGET_MS }).toBe(true);
+      expect(performance.now() - t0).toBeLessThan(ASSERT_MS);
+    }
+  });
+
+  it('picks up a file in a directory created after the watch started', async () => {
+    mkdirSync(join(dir, 'src', 'parts'));
+    writeFileSync(join(dir, 'src', 'parts', 'suffix.ts'), "export const suffix = '';\n");
+    writeFileSync(join(dir, 'src', 'label.ts'), "import { suffix } from './parts/suffix';\nexport const label = 'nested' + suffix;\n");
+    await expect.poll(() => rendered.some((r) => r.text.includes('nested')), { timeout: BUDGET_MS }).toBe(true);
+
+    const started = performance.now();
+    writeFileSync(join(dir, 'src', 'parts', 'suffix.ts'), "export const suffix = '-deep-edit';\n");
+    await expect
+      .poll(() => rendered.some((r) => r.text.includes('nested-deep-edit')), { timeout: BUDGET_MS * 3 })
+      .toBe(true);
+    expect(performance.now() - started).toBeLessThan(BUDGET_MS);
   });
 });

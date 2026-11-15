@@ -1,4 +1,5 @@
-import { watch, type FSWatcher } from 'node:fs';
+import { readdirSync, watch, type FSWatcher } from 'node:fs';
+import { join, relative } from 'node:path';
 import type { ExtensionDevReloadEvent } from '@lumibase/contracts/extensions';
 import type { ExtensionBuilder } from './builder';
 import type { DevHub } from './hub';
@@ -29,7 +30,7 @@ export interface PipelineOptions {
 export interface DevPipeline {
   /** Rebuild now and publish on success. Resolves with the event, or null on failure. */
   build(): Promise<ExtensionDevReloadEvent | null>;
-  /** Start watching `dir` recursively. */
+  /** Start watching `dir` and every subdirectory (new ones included). */
   watch(dir: string): void;
   close(): Promise<void>;
 }
@@ -42,7 +43,13 @@ export function createDevPipeline(options: PipelineOptions): DevPipeline {
   let running: Promise<ExtensionDevReloadEvent | null> | null = null;
   let pending = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let watcher: FSWatcher | null = null;
+  // One NON-recursive watcher per directory. Node's recursive fs.watch on
+  // Linux tracks files individually and silently stops reporting a file that
+  // was replaced by a rename (atomic saves: vim, JetBrains safe write,
+  // formatters, `sed -i`). A directory watch sees in-place writes and renames
+  // of its children alike, so replaced files keep reloading.
+  const watchers = new Map<string, FSWatcher>();
+  let root: string | null = null;
 
   async function buildOnce(): Promise<ExtensionDevReloadEvent | null> {
     const result = await options.builder.rebuild();
@@ -79,21 +86,73 @@ export function createDevPipeline(options: PipelineOptions): DevPipeline {
     return running;
   }
 
+  function schedule(): void {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      void build();
+    }, debounceMs);
+  }
+
+  /** Directories under `root` that should be watched (ignored trees skipped). */
+  function listDirs(dir: string, out: string[]): string[] {
+    out.push(dir);
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return out; // removed meanwhile
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const child = join(dir, entry.name);
+      if (root && IGNORED.test(relative(root, child))) continue;
+      listDirs(child, out);
+    }
+    return out;
+  }
+
+  /** Watch every current directory; drop watchers of removed ones. */
+  function syncWatchers(): void {
+    if (!root) return;
+    const wanted = new Set(listDirs(root, []));
+    for (const [dir, w] of watchers) {
+      if (!wanted.has(dir)) {
+        w.close();
+        watchers.delete(dir);
+      }
+    }
+    for (const dir of wanted) {
+      if (watchers.has(dir)) continue;
+      try {
+        const w = watch(dir, (event, filename) => {
+          if (filename && root && IGNORED.test(relative(root, join(dir, String(filename))))) return;
+          // A rename can add or remove a subdirectory: re-sync before building.
+          if (event === 'rename') syncWatchers();
+          schedule();
+        });
+        w.on('error', () => {
+          w.close();
+          watchers.delete(dir);
+        });
+        watchers.set(dir, w);
+      } catch {
+        // Directory vanished between listing and watching.
+      }
+    }
+  }
+
   return {
     build,
     watch(dir) {
-      watcher = watch(dir, { recursive: true }, (_event, filename) => {
-        if (filename && IGNORED.test(String(filename))) return;
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-          timer = null;
-          void build();
-        }, debounceMs);
-      });
+      root = dir;
+      syncWatchers();
     },
     async close() {
       if (timer) clearTimeout(timer);
-      watcher?.close();
+      root = null;
+      for (const w of watchers.values()) w.close();
+      watchers.clear();
       await running;
       await options.builder.dispose();
     },
