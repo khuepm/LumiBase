@@ -7,6 +7,7 @@ import { AuditLogger } from '../modules/audit/logger';
 import { itemServiceForSystem } from './item-service-factory';
 import { sweepDueReleases } from './release-service';
 import { runDueScheduledFlows } from './flow-scheduler';
+import { publishStampsSql } from './publication-state';
 
 /**
  * Content scheduler (regulated-content-readiness task 7; Req 7.3, 7.4, 7.6, 7.7).
@@ -98,7 +99,7 @@ export async function sweepDuePublish(deps: SchedulerDeps, now = new Date()): Pr
   for (const row of due) {
     await deps.db
       .update(items)
-      .set({ status: 'published', editorialState: 'published', updatedAt: new Date(), version: nextItemVersion() })
+      .set({ status: 'published', editorialState: 'published', updatedAt: new Date(), version: nextItemVersion(), ...publishStampsSql() })
       // Item ids are unique per site only: match the site too.
       .where(and(eq(items.siteId, row.siteId), eq(items.id, row.id), ne(items.status, 'published')));
   }
