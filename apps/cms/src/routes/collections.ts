@@ -1,6 +1,7 @@
 import { patchSchema } from '../utils/patch-schema';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
+import { validatePreviewUrlTemplate } from '@lumibase/contracts';
 import type { AppEnv } from '../env';
 import { SchemaService, SchemaServiceError } from '../services/schema-service';
 import { requireSchemaPermission } from './schema-permissions';
@@ -50,7 +51,22 @@ export const collectionInputSchema = z.object({
   translations: z.record(z.string(), z.unknown()).optional(),
   accountability: z.enum(['all', 'activity', 'none']).optional(),
   versioning: z.boolean().optional(),
-  meta: z.record(z.string(), z.unknown()).optional(),
+  meta: z
+    .record(z.string(), z.unknown())
+    .superRefine((meta, ctx) => {
+      // `meta.previewUrl` (epic #667): absolute http(s) URL template with only
+      // the known placeholders — a `javascript:` template must never reach the
+      // Studio preview pane or a "Preview" link.
+      const template = meta.previewUrl;
+      if (template === undefined || template === null) return;
+      if (typeof template !== 'string') {
+        ctx.addIssue({ code: 'custom', path: ['previewUrl'], message: 'previewUrl must be a string.' });
+        return;
+      }
+      const issue = validatePreviewUrlTemplate(template);
+      if (issue) ctx.addIssue({ code: 'custom', path: ['previewUrl'], message: issue.message });
+    })
+    .optional(),
 });
 
 export const collectionPatchSchema = patchSchema(collectionInputSchema.omit({ name: true }));

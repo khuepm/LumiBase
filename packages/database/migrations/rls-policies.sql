@@ -130,7 +130,10 @@ DECLARE
     'lumibase_social_auth_providers',
     -- Secrets of external-action agent tools (site-isolated). A tool running
     -- for one site can only ever decrypt that site's rows.
-    'lumibase_agent_tool_secrets'
+    'lumibase_agent_tool_secrets',
+    -- Preview tokens (#679, site-isolated). Minted and read per site; the
+    -- delivery read learns the site from the URL, never from the token.
+    'lumibase_preview_secrets'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

@@ -58,6 +58,7 @@ const EmailSettingsPage = lazy(() => import('./modules/settings/email-page').the
 const NotificationsSettingsPage = lazy(() => import('./modules/settings/notifications-page').then((m) => ({ default: m.NotificationsSettingsPage })));
 const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then((m) => ({ default: m.SiteSettingsPage })));
 const DomainsSettingsPage = lazy(() => import('./modules/settings/domains-page').then((m) => ({ default: m.DomainsSettingsPage })));
+const PreviewSettingsPage = lazy(() => import('./modules/settings/preview-page').then((m) => ({ default: m.PreviewSettingsPage })));
 const SocialLoginSettingsPage = lazy(() => import('./modules/settings/social-login-page').then((m) => ({ default: m.SocialLoginSettingsPage })));
 const KeyboardSettingsPage = lazy(() => import('./modules/settings/keyboard-page').then((m) => ({ default: m.KeyboardSettingsPage })));
 const DateTimeSettingsPage = lazy(() => import('./modules/settings/date-time-page').then((m) => ({ default: m.DateTimeSettingsPage })));
@@ -713,6 +714,12 @@ const domainsSettingsRoute = createRoute({
   component: withSuspense(DomainsSettingsPage),
 });
 
+const previewSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'preview',
+  component: withSuspense(PreviewSettingsPage),
+});
+
 const socialLoginSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'social-login',
@@ -879,6 +886,12 @@ const adminPathDomainsSettingsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'domains',
   component: withSuspense(DomainsSettingsPage),
+});
+
+const adminPathPreviewSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'preview',
+  component: withSuspense(PreviewSettingsPage),
 });
 
 const adminPathSocialLoginSettingsRoute = createRoute({
@@ -1393,6 +1406,7 @@ const routeTree = rootRoute.addChildren([
       siteSettingsRoute,
       organizationSettingsRoute,
       domainsSettingsRoute,
+      previewSettingsRoute,
       socialLoginSettingsRoute,
       keyboardSettingsRoute,
       dateTimeSettingsRoute,
@@ -1473,6 +1487,7 @@ const routeTree = rootRoute.addChildren([
       adminPathSiteSettingsRoute,
       adminPathOrganizationSettingsRoute,
       adminPathDomainsSettingsRoute,
+      adminPathPreviewSettingsRoute,
       adminPathSocialLoginSettingsRoute,
       adminPathKeyboardSettingsRoute,
       adminPathDateTimeSettingsRoute,

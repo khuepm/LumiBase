@@ -67,6 +67,7 @@
           "features/websockets-realtime",
           "features/reconciler-repair-loop",
           "features/site-skills",
+          "features/visual-editing",
           "features/external-action-tools",
           "features/draft-review",
           "features/studio-rtl-layout",

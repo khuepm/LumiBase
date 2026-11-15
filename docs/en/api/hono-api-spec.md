@@ -1,11 +1,11 @@
 ---
-version: 54
-lastUpdated: 2026-11-15T23:03:24.320Z
+version: 55
+lastUpdated: 2026-11-15T23:23:35.860Z
 sourceLang: en
-contentHash: 03db69c605bb350f
-codeVerified: 2026-11-15T23:03:24.320Z
-codeVerifiedHash: 03db69c605bb350f
-codeVerifiedClaims: 606
+contentHash: 26e8aeaa1894b496
+codeVerified: 2026-11-15T23:23:35.860Z
+codeVerifiedHash: 26e8aeaa1894b496
+codeVerifiedClaims: 622
 ---
 
 # Hono API Specification — LumiBase
@@ -866,6 +866,41 @@ the item editor at the field (`#field=<name>`).
 
 Scheduled releases publish via the shared `content-scheduler` tick
 (`sweepDueReleases`) — idempotent and `maintenanceWindow`-aware.
+
+---
+
+## 3c. Live preview (epic #667)
+
+Preview tokens let a frontend read draft content for a short time. Security
+model: [ADR-014](../architecture/decisions/adr-014-preview-bridge-threat-model.md);
+guide: [Live preview & visual editing](../features/visual-editing.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/preview/token` | Mint a token (user principals only; 30/min/user → `429`) |
+| `GET` | `/api/v1/preview/tokens` | Live tokens (site admin: all; others: own) |
+| `POST` | `/api/v1/preview/tokens/:id/revoke` | Revoke one (site admin: any; others: own) |
+| `POST` | `/api/v1/preview/tokens/revoke-all` | Rotate — revoke every live token of the site (site admin) |
+| `GET` | `/api/v1/preview/settings` | `{ allowedOrigins, ttlSeconds }` |
+| `PUT` | `/api/v1/preview/settings` | Update them (site admin; exact origins only) |
+| `GET` | `/api/v1/deliver/preview/:site_id` | Public: what the token targets (+ the item / release members) |
+| `GET` | `/api/v1/deliver/preview/:site_id/items/:collection` | Public: live items + the token's overlay (`?limit=&offset=`, max 100) |
+| `GET` | `/api/v1/deliver/preview/:site_id/items/:collection/:id` | Public: one item through the overlay |
+
+**Mint body** — an item (+ optional `versionKey`) or a release:
+```json
+{ "collection": "posts", "itemId": "itm_1", "versionKey": "redesign", "locale": "vi", "ttlSeconds": 900 }
+```
+`201 { data: { id, token, expiresAt, url, … } }` — `token` is shown once;
+`url` is built from the collection's `meta.previewUrl` (or `null`).
+
+**Public reads** take the token in the `x-lumibase-preview` header or
+`?__preview=`. Every failure (malformed, other site, expired, revoked, creator
+lost access) is `401 { errors: [{ code: "PREVIEW_UNAUTHORIZED" }] }` with an
+identical body. Responses: `Cache-Control: private, no-store`,
+`X-Robots-Tag: noindex, nofollow`, `Referrer-Policy: no-referrer`. Audit events:
+`preview.token_minted`, `preview.read`, `preview.token_rejected`,
+`preview.token_revoked`, `preview.tokens_rotated`, `preview.settings_updated`.
 
 ---
 

@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { Check, ChevronDown, ChevronLeft, Copy, Lock, Pin, Save, Share2, Star, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, Copy, Eye, Lock, Pin, Save, Share2, Star, Trash2, X } from 'lucide-react';
 import type { SaveAction } from '@lumibase/contracts/schemas';
 import { useSaveAction, saveActionLabel } from './use-save-action';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FieldResource, ItemRow, PermissionAction, RevisionRow } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -43,6 +43,7 @@ import { DuplicateItemButton, PublicationInfo } from './item-publication';
 import { useFocusFieldFromHash } from './focus-field';
 import { DraftReviewPanel } from './draft-review-panel';
 import { useReviewRollout, useReviewSession } from './use-review-pilot';
+import { PreviewPane, PreviewSplit } from './preview-pane';
 
 type Tab = 'fields' | 'translation' | 'revisions' | 'versions' | 'raw';
 
@@ -110,6 +111,29 @@ function ItemEditor({
   const [publishAt, setPublishAt] = useState<string | null>(null);
   const [unpublishAt, setUnpublishAt] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  // Live preview pane (epic #667): shown beside the form when the collection
+  // has a `meta.previewUrl` template.
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const collectionQuery = useQuery({
+    queryKey: ['collection', collection],
+    queryFn: async () => (await client.schema.getCollection(collection)).data,
+  });
+  const previewTemplate =
+    typeof collectionQuery.data?.meta?.previewUrl === 'string' ? collectionQuery.data.meta.previewUrl : null;
+  const focusField = useCallback((field: string) => {
+    setTab('fields');
+    // After the tab renders: focus the field's first control and bring it into view.
+    window.setTimeout(() => {
+      const container = Array.from(document.querySelectorAll<HTMLElement>('[data-field]')).find(
+        (el) => el.dataset.field === field,
+      );
+      if (!container) return;
+      container.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      container
+        .querySelector<HTMLElement>('input, textarea, select, [contenteditable="true"], button')
+        ?.focus({ preventScroll: true });
+    }, 0);
+  }, []);
   const [dependentGroups, setDependentGroups] = useState<DependentGroup[] | null>(null);
   const [shareRoleId, setShareRoleId] = useState('');
   const [sharePassword, setSharePassword] = useState('');
@@ -449,6 +473,20 @@ function ItemEditor({
             {canShare ? <Share2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
             Share
           </button>
+          {previewTemplate && (
+            <button
+              type="button"
+              onClick={() => setPreviewOpen((v) => !v)}
+              aria-pressed={previewOpen}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted',
+                previewOpen ? 'border-primary text-primary' : 'border-border text-foreground',
+              )}
+            >
+              <Eye className="h-3.5 w-3.5" />
+              Preview
+            </button>
+          )}
           {/* Folder mode (#749): a policy without `delete` hides the action
               entirely rather than showing a dead button. */}
           {canDelete && (
@@ -700,6 +738,8 @@ function ItemEditor({
         </div>
       )}
 
+      {(() => {
+        const editorBody = (
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_22rem]">
         <FieldRevealContext.Provider value={fieldFocus.reveal}>
         <section className="rounded-lg border bg-background p-4">
@@ -837,6 +877,26 @@ function ItemEditor({
           </div>
         </aside>
       </div>
+        );
+        if (!previewOpen || !previewTemplate) return editorBody;
+        return (
+          <PreviewSplit
+            editor={editorBody}
+            preview={
+              <PreviewPane
+                collection={collection}
+                itemId={id}
+                template={previewTemplate}
+                draft={draft}
+                savedMarker={String(itemQuery.data.updatedAt)}
+                locale={targetLocale}
+                onFocusField={focusField}
+                onClose={() => setPreviewOpen(false)}
+              />
+            }
+          />
+        );
+      })()}
     </div>
   );
 }
