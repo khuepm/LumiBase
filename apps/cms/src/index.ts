@@ -20,6 +20,7 @@ import { withStudioAccess } from './middleware/studio-access';
 import { withControlPlaneAccessGuard } from './middleware/control-plane-access-guard';
 import { withFileUploadPolicy } from './middleware/file-upload-policy';
 import { apiSurface, withEntitlement } from './middleware/entitlement';
+import { withUsage } from './middleware/usage';
 import { withSecurityHeaders } from './middleware/security-headers';
 import { withTenant } from './middleware/tenant';
 import { withTenantExists } from './middleware/tenant-exists';
@@ -126,6 +127,10 @@ app.use('*', withTracing());
 app.use('*', withSecurityHeaders());
 app.use('*', withMetrics());
 app.use('*', withRuntime());
+// Usage emitter seam: a pass-through unless a deployment registered an emitter.
+// Wraps everything below, so delivery and the authenticated chain are both
+// reported from this one point, after the response.
+app.use('*', withUsage());
 app.use(
   '*',
   cors({
