@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 2
-lastUpdated: 2026-11-15T19:51:53.181Z
+version: 3
+lastUpdated: 2026-11-15T22:14:22.190Z
 translatedFrom: en
-sourceHash: fb94c46b64a515d9
+sourceHash: c924e0830d3f4ac1
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T19:51:53.181Z
-codeVerifiedHash: fb94c46b64a515d9
+codeVerified: 2026-11-15T22:14:22.190Z
+codeVerifiedHash: c924e0830d3f4ac1
 codeVerifiedClaims: 16
 ---
 
@@ -35,7 +35,7 @@ hẹn giờ của scheduler cũng được tính. Lưu dữ liệu mà không đ
 không đặt cũng không xoá cờ, và sửa một bản nháp chưa từng được xuất bản thì
 không bao giờ đặt cờ.
 
-Item đã ở trạng thái `published` trước migration `0035_item_publication_state`
+Item đã ở trạng thái `published` trước migration `0037_item_publication_state`
 được backfill bằng thời điểm xuất bản đã hẹn, hoặc lần cập nhật cuối nếu không
 có thời điểm hẹn.
 

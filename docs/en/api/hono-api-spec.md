@@ -1,10 +1,10 @@
 ---
 version: 53
-lastUpdated: 2026-11-15T19:51:54.566Z
+lastUpdated: 2026-11-15T22:14:26.404Z
 sourceLang: en
-contentHash: 89585785e1bc8cdc
-codeVerified: 2026-11-15T19:51:54.566Z
-codeVerifiedHash: 89585785e1bc8cdc
+contentHash: 16425acb71035763
+codeVerified: 2026-11-15T22:14:26.404Z
+codeVerifiedHash: 16425acb71035763
 codeVerifiedClaims: 592
 ---
 
@@ -667,9 +667,9 @@ active `siteId`.
 | `GET` | `/api/v1/items/:collection` | List items (paginated, filterable) |
 | `POST` | `/api/v1/items/:collection` | Create item (or array for bulk) |
 | `GET` | `/api/v1/items/:collection/export` | Stream the collection as CSV or JSON ([Data export](../features/data-export.md)) |
-| `GET` | `/api/v1/items/:collection/:id` | Get single item |
-| `PATCH` | `/api/v1/items/:collection/:id` | Partial update |
-| `PUT` | `/api/v1/items/:collection/:id` | Full replace |
+| `GET` | `/api/v1/items/:collection/:id` | Get single item; sends `ETag` |
+| `PATCH` | `/api/v1/items/:collection/:id` | Partial update; honours `If-Match` |
+| `PUT` | `/api/v1/items/:collection/:id` | Full replace; honours `If-Match` |
 | `DELETE` | `/api/v1/items/:collection/:id` | Delete item — **409 if blocked by dependents** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | List records that reference this item |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Batch-resolve a relation's dependents |
@@ -685,6 +685,19 @@ active `siteId`.
 | `DELETE` | `/api/v1/items/:collection/:id/versions/:key` | Delete a version |
 | `GET` | `/api/v1/items/:collection/:id/versions/:key/compare` | Field diff vs main → `{ main, version, changes }` |
 | `POST` | `/api/v1/items/:collection/:id/versions/:key/promote` | Apply version to main (writes a revision); `meta.mainDiverged` |
+
+**Concurrent edits (`ETag` / `If-Match`).** Every item has a `version` counter
+that each write changing its content increments. `GET /items/:collection/:id`
+returns it as a strong `ETag` (`"3"`), and it is also present as `version` in
+the response body. Send it back as `If-Match: "3"` on `PATCH` or `PUT` to make
+the write conditional: if someone else changed the item first, the write fails
+with **412 `PRECONDITION_FAILED`** and nothing is written. The check is part of
+the same `UPDATE`, so two writers holding the same tag cannot both succeed.
+Without `If-Match` the write overwrites unconditionally, as before. `*` accepts
+any version; a weak tag (`W/"3"`) never matches. Successful `PATCH`/`PUT`
+responses carry the new `ETag`. Cross-origin clients can send `If-Match` and
+read `ETag` (both are in the CORS allow/expose lists). The SDK takes the tag as
+`items(name).patch(id, input, { ifMatch: row.version })`.
 
 **Dependent records.** Because item references live in JSONB (not physical FK
 columns), a relation's `onDelete` is enforced in the application layer. On

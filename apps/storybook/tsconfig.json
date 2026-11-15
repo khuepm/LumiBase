@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client", "node"],
+    // Studio components are imported from source through Studio's own `@/`
+    // alias (mirrored in .storybook/main.ts and vitest.config.ts).
+    "paths": {
+      "@/*": ["../studio/src/*"],
+      "@lumibase/contracts": ["../../packages/contracts/src/index.ts"],
+      "@lumibase/contracts/*": ["../../packages/contracts/src/*"],
+      "@lumibase/extensions": ["../../packages/extensions/src/index.ts"]
+    },
+    "noEmit": true
+  },
+  "include": [".storybook/**/*.ts", ".storybook/**/*.tsx", "src/**/*.ts", "src/**/*.tsx", "__tests__/**/*.ts", "vitest.config.ts"],
+  "exclude": ["node_modules", "storybook-static", "visual-output"]
+}

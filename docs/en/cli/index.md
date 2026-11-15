@@ -1,11 +1,11 @@
 ---
 title: LumiBase CLI
-version: 10
-lastUpdated: 2026-11-14T02:04:01.690Z
+version: 11
+lastUpdated: 2026-11-15T18:38:14.206Z
 sourceLang: en
-contentHash: 5c01ccd14e7b9304
-codeVerified: 2026-11-14T02:04:01.690Z
-codeVerifiedHash: 5c01ccd14e7b9304
+contentHash: 7295cb0b24592431
+codeVerified: 2026-11-15T18:38:14.206Z
+codeVerifiedHash: 7295cb0b24592431
 codeVerifiedClaims: 22
 ---
 
@@ -170,6 +170,7 @@ lumibase skills install @acme/lumibase-skills
 ## Related
 
 - [SDK — typegen](../sdk/typegen.md) — the programmatic API behind `lumibase types`
+- [Typegen configs and targets](./typegen-config.md) — `lumibase.typegen.config.ts`: several configs, Zod / GraphQL SDL / OpenAPI outputs, `--watch`
 - [Getting started](../getting-started.md#which-one-do-you-actually-want) — starter vs platform vs consumer client, and where `lumibase` fits
 - [Local development](../deployment/local-development.md) — running the CMS and Studio this CLI points at
 - [npm publishing](../release/npm-publishing.md) — how the package is released

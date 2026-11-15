@@ -1,7 +1,15 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
-import { ItemServiceError, parseDeepQueryParams, parseFilterQueryParams, bulkMaxItems } from '../services/item-service';
+import {
+  ItemServiceError,
+  parseDeepQueryParams,
+  parseFilterQueryParams,
+  bulkMaxItems,
+  type ItemDetailMeta,
+  type ItemWriteOptions,
+} from '../services/item-service';
+import { expectedVersionsFrom, formatItemEtag, parseIfMatch } from '../services/item-etag';
 import type { TreeQuery } from '../services/tree-service';
 import { itemServiceForRequest, permissionServiceForRequest } from '../services/item-service-factory';
 import { ContentVersionError, ContentVersionService } from '../services/content-version-service';
@@ -349,7 +357,9 @@ itemsRouter.get('/:collection/:id', async (c) => {
   const fields = c.req.query('fields')?.split(',');
   const deep = parseDeepQueryParams(searchParams);
   try {
-    const data = await buildService(c).detail(c.req.param('collection'), c.req.param('id'), fields, deep);
+    const meta: ItemDetailMeta = {};
+    const data = await buildService(c).detail(c.req.param('collection'), c.req.param('id'), fields, deep, meta);
+    setItemEtag(c, meta.version);
     return c.json({ data });
   } catch (err) {
     const { status, body } = toError(err);
@@ -357,13 +367,26 @@ itemsRouter.get('/:collection/:id', async (c) => {
   }
 });
 
+/**
+ * Write precondition from `If-Match` (content-environments Req 6). Absent →
+ * no precondition; `*` → any version; otherwise the listed strong tags.
+ */
+const writeOptionsFrom = (c: Context<AppEnv>): ItemWriteOptions => ({
+  expectedVersions: expectedVersionsFrom(parseIfMatch(c.req.header('if-match'))),
+});
+
+const setItemEtag = (c: Context<AppEnv>, version: unknown) => {
+  if (typeof version === 'number') c.header('ETag', formatItemEtag(version));
+};
+
 itemsRouter.patch('/:collection/:id', async (c) => {
   const parsed = patchSchema.safeParse(await c.req.json());
   if (!parsed.success) {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
   try {
-    const data = await buildService(c).patch(c.req.param('collection'), c.req.param('id'), parsed.data);
+    const data = await buildService(c).patch(c.req.param('collection'), c.req.param('id'), parsed.data, writeOptionsFrom(c));
+    setItemEtag(c, (data as { version?: unknown }).version);
     return c.json({ data });
   } catch (err) {
     const { status, body } = toError(err);
@@ -465,7 +488,8 @@ itemsRouter.put('/:collection/:id', async (c) => {
     return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
   }
   try {
-    const data = await buildService(c).replace(c.req.param('collection'), c.req.param('id'), parsed.data);
+    const data = await buildService(c).replace(c.req.param('collection'), c.req.param('id'), parsed.data, writeOptionsFrom(c));
+    setItemEtag(c, (data as { version?: unknown }).version);
     return c.json({ data });
   } catch (err) {
     const { status, body } = toError(err);

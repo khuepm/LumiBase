@@ -80,12 +80,12 @@ export function ReleasesPage() {
                 type="button"
                 onClick={() => setSelected(r.id)}
                 className={cn(
-                  'flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm hover:bg-muted',
+                  'flex w-full items-center justify-between rounded-md border px-3 py-2 text-start text-sm hover:bg-muted',
                   selected === r.id && 'bg-accent',
                 )}
               >
                 <span className="truncate">{r.name}</span>
-                <span className="ml-2 text-xs text-muted-foreground">{r.status}</span>
+                <span className="ms-2 text-xs text-muted-foreground">{r.status}</span>
               </button>
             </li>
           ))}
@@ -176,7 +176,7 @@ export function ReleaseDetail({ id }: { id: string }) {
       )}
 
       <table className="w-full text-sm">
-        <thead className="text-left text-xs text-muted-foreground">
+        <thead className="text-start text-xs text-muted-foreground">
           <tr>
             <th className="py-1">Collection</th>
             <th>Item</th>
@@ -230,7 +230,7 @@ export function ValidationSummary({ validation }: { validation: ReleaseValidatio
             <p className="font-mono text-xs text-muted-foreground">
               {item.collection} / {item.itemId}
             </p>
-            <ul className="ml-4 list-disc">
+            <ul className="ms-4 list-disc">
               {item.issues.map((issue, i) => (
                 <li key={`${issue.field}:${i}`}>
                   <Link

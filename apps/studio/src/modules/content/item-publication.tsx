@@ -117,7 +117,7 @@ export function DuplicateItemButton({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-20 mt-1 w-60 rounded-md border border-border bg-background py-1 text-xs shadow-md"
+          className="absolute end-0 top-full z-20 mt-1 w-60 rounded-md border border-border bg-background py-1 text-xs shadow-md"
           onMouseLeave={() => setOpen(false)}
         >
           {MODES.map((m) => (
@@ -126,7 +126,7 @@ export function DuplicateItemButton({
               type="button"
               role="menuitem"
               onClick={() => duplicate.mutate(m.value)}
-              className="block w-full px-3 py-1.5 text-left hover:bg-muted"
+              className="block w-full px-3 py-1.5 text-start hover:bg-muted"
             >
               <span className="block font-medium">{m.label}</span>
               <span className="block text-muted-foreground">{m.hint}</span>
@@ -135,7 +135,7 @@ export function DuplicateItemButton({
         </div>
       )}
       {duplicate.error && (
-        <p role="alert" className="absolute right-0 top-full mt-1 w-60 text-xs text-destructive">
+        <p role="alert" className="absolute end-0 top-full mt-1 w-60 text-xs text-destructive">
           {errorMessage(duplicate.error)}
         </p>
       )}

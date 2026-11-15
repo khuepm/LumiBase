@@ -27,6 +27,13 @@ import {
   type NotificationChannel,
   type PolicyPresetId,
 } from '../schemas/policy';
+import {
+  getEmailIdentityModeDraft,
+  getPolicyDraft,
+  setEmailIdentityModeDraft,
+  setPolicyDraft,
+  type EmailIdentityMode,
+} from '../setup-drafts';
 import { useSetupStore } from '../setup-store';
 
 /**
@@ -92,66 +99,19 @@ import { useSetupStore } from '../setup-store';
  * §5.5.
  */
 
-// ────────────────────────────────────────────────────────────────────────
-// In-memory policy draft
-//
-// Mirrors the pattern from `step-account.tsx` and `step-path.tsx`: the
-// persisted Zustand store deliberately holds only validity flags + the
-// post-completion `adminPath`, so we cache the chosen policy values
-// here in module memory until `useCompleteSetup` (task 6.5 consumer)
-// flushes them to `POST /api/v1/setup/complete`. Living only in heap
-// means a refresh resets the wizard cleanly without ever touching
-// `sessionStorage`.
-//
-// We hold the FULL `LockoutPolicyFormValues` shape (Phase C visible
-// fields + Phase D defaults from the chosen preset) so the recovery
-// step can submit a complete policy without having to know which
-// fields are exposed yet.
-// ────────────────────────────────────────────────────────────────────────
-
-let policyDraft: LockoutPolicyFormValues | null = null;
-
-/** Read the in-memory policy draft, or `null` if not yet captured. */
-export function getPolicyDraft(): LockoutPolicyFormValues | null {
-  return policyDraft;
-}
-
-/** Drop the draft. Call after `POST /setup/complete` succeeds. */
-export function clearPolicyDraft(): void {
-  policyDraft = null;
-}
-
-export function setPolicyDraft(value: LockoutPolicyFormValues): void {
-  policyDraft = value;
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// Email identity mode draft (#794)
-//
-// Instance-wide account-key policy sent as `emailIdentityMode` in the
-// `POST /setup/complete` body. Same module-memory pattern as the policy
-// draft. `exact` is the default and the pre-#794 behaviour.
-// ────────────────────────────────────────────────────────────────────────
-
-export const EMAIL_IDENTITY_MODES = ['exact', 'root'] as const;
-export type EmailIdentityMode = (typeof EMAIL_IDENTITY_MODES)[number];
-export const DEFAULT_EMAIL_IDENTITY_MODE: EmailIdentityMode = 'exact';
-
-let emailIdentityModeDraft: EmailIdentityMode = DEFAULT_EMAIL_IDENTITY_MODE;
-
-/** The chosen instance email identity mode (`exact` until the operator picks). */
-export function getEmailIdentityModeDraft(): EmailIdentityMode {
-  return emailIdentityModeDraft;
-}
-
-export function setEmailIdentityModeDraft(value: EmailIdentityMode): void {
-  emailIdentityModeDraft = value;
-}
-
-/** Reset to the default. Call after `POST /setup/complete` succeeds. */
-export function clearEmailIdentityModeDraft(): void {
-  emailIdentityModeDraft = DEFAULT_EMAIL_IDENTITY_MODE;
-}
+// In-memory policy + email identity mode drafts: live in `../setup-drafts`
+// (#757) so the boot path does not import this step. Re-exported here.
+export {
+  clearEmailIdentityModeDraft,
+  clearPolicyDraft,
+  DEFAULT_EMAIL_IDENTITY_MODE,
+  EMAIL_IDENTITY_MODES,
+  getEmailIdentityModeDraft,
+  getPolicyDraft,
+  setEmailIdentityModeDraft,
+  setPolicyDraft,
+  type EmailIdentityMode,
+} from '../setup-drafts';
 
 // ────────────────────────────────────────────────────────────────────────
 // Form values type
@@ -310,6 +270,7 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
   // the saved values. On a fresh mount with no draft we default to
   // 'standard' (Req 6.2).
   const initialPreset: PolicyPresetId = useMemo(() => {
+    const policyDraft = getPolicyDraft();
     if (policyDraft === null) return 'standard';
     return inferActivePreset(policyDraft) ?? 'standard';
   }, []);
@@ -321,7 +282,7 @@ export function StepSecurity({ onSubmitted }: StepSecurityProps) {
     mode: 'onBlur',
     reValidateMode: 'onChange',
     shouldUnregister: false,
-    defaultValues: buildDefaultValues(initialPreset, policyDraft),
+    defaultValues: buildDefaultValues(initialPreset, getPolicyDraft()),
   });
 
   const {

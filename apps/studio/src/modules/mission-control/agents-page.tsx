@@ -165,12 +165,12 @@ function RoleRow({ role }: { role: AgentRoleRow }) {
           <span
             className={cn(
               'absolute top-0.5 h-4 w-4 rounded-full bg-background transition-all',
-              role.enabled ? 'left-[18px]' : 'left-0.5',
+              role.enabled ? 'start-[18px]' : 'start-0.5',
             )}
           />
         </button>
       </td>
-      <td className="py-2 text-right">
+      <td className="py-2 text-end">
         {confirmingDelete ? (
           <span className="inline-flex gap-1">
             <button
@@ -200,7 +200,7 @@ function RoleRow({ role }: { role: AgentRoleRow }) {
           </button>
         )}
         {(toggleMutation.isError || deleteMutation.isError) && (
-          <p className="mt-1 text-right text-[10px] text-destructive">
+          <p className="mt-1 text-end text-[10px] text-destructive">
             {((toggleMutation.error ?? deleteMutation.error) as Error)?.message ?? 'Action failed.'}
           </p>
         )}
@@ -250,7 +250,7 @@ function AgentsBody() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+              <tr className="border-b text-start text-xs uppercase text-muted-foreground">
                 <th className="py-2">Role</th>
                 <th>Model</th>
                 <th>Capabilities</th>

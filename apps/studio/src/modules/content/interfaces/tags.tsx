@@ -18,6 +18,7 @@ export const TagsInterface: InterfaceComponent<string[]> = ({
   const opts = readOptions<TagsOptions>(field);
   const [draft, setDraft] = useState('');
   const tags = Array.isArray(value) ? value : [];
+  const label = typeof field.label === 'string' && field.label ? field.label : field.name;
 
   const commit = (raw: string) => {
     const next = raw.trim();
@@ -63,6 +64,7 @@ export const TagsInterface: InterfaceComponent<string[]> = ({
       ))}
       <input
         type="text"
+        aria-label={`Add to ${label}`}
         value={draft}
         disabled={disabled}
         placeholder={opts.placeholder ?? 'Add tag…'}

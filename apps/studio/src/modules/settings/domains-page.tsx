@@ -334,7 +334,7 @@ function SetupDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (
 function DnsRecords({ records }: { records: DomainResource['verification']['records'] }) {
   return (
     <div className="overflow-x-auto rounded-md border">
-      <table className="w-full text-left text-xs">
+      <table className="w-full text-start text-xs">
         <thead className="bg-muted/40 text-muted-foreground">
           <tr>
             <th className="px-2 py-1.5 font-medium">Type</th>

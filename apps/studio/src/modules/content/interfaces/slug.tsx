@@ -29,7 +29,7 @@ export const SlugInterface: InterfaceComponent<string> = ({
   const problem = opts.slug && current !== '' ? checkSlug(current, opts.slug) : null;
   return (
     <div>
-      <div className="flex items-center gap-1 rounded-md border bg-background pl-2 focus-within:ring-1 focus-within:ring-primary">
+      <div className="flex items-center gap-1 rounded-md border bg-background ps-2 focus-within:ring-1 focus-within:ring-primary">
         <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
         <input
           type="text"

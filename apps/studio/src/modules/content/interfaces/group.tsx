@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { readOptions } from './types';
+import { useRevealContainer } from '../field-focus';
 import type { FieldResource } from '@lumibase/sdk';
 
 export type GroupVariant = 'raw' | 'detail' | 'accordion';
@@ -29,6 +30,11 @@ export function GroupContainer({
   const opts = readOptions<GroupOptions>(field);
   const title = opts.title || field.label || field.name;
   const [open, setOpen] = useState(opts.start !== 'closed');
+  // An intent link focusing a field inside this group opens it (issue #759).
+  const reveal = useRevealContainer(field.name);
+  useEffect(() => {
+    if (reveal) setOpen(true);
+  }, [reveal]);
 
   if (variant === 'raw') {
     return <div className="space-y-4">{children}</div>;
@@ -40,7 +46,7 @@ export function GroupContainer({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium"
+          className="flex w-full items-center gap-2 px-3 py-2 text-start text-sm font-medium"
         >
           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           {title}

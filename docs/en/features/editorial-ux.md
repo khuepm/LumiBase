@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 2
-lastUpdated: 2026-11-15T19:51:53.181Z
-contentHash: fb94c46b64a515d9
-codeVerified: 2026-11-15T19:51:53.181Z
-codeVerifiedHash: fb94c46b64a515d9
+version: 3
+lastUpdated: 2026-11-15T22:14:22.190Z
+contentHash: c924e0830d3f4ac1
+codeVerified: 2026-11-15T22:14:22.190Z
+codeVerifiedHash: c924e0830d3f4ac1
 codeVerifiedClaims: 16
 ---
 
@@ -32,7 +32,7 @@ scheduler's timed publish counts too. Saving data without changing it (a no-op
 save) neither sets nor clears the flag, and editing a draft that was never
 published never sets it.
 
-Items that were already `published` before migration `0035_item_publication_state`
+Items that were already `published` before migration `0037_item_publication_state`
 are backfilled with their scheduled publish time, or their last update when
 they had none.
 

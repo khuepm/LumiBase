@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Globe, Loader2, ShieldAlert, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { getApiClient } from '@/lib/api';
+import { PERMISSIONS_QUERY_KEY } from '@/lib/me-queries';
 import { cn } from '@/lib/cn';
 
 /**
@@ -50,7 +51,7 @@ export function PublicAccessPage() {
     queryClient.invalidateQueries({ queryKey: QUERY_KEY });
     // A grant changes the caller's own effective bundle too when they are not
     // an admin; drop the cached `/permissions/me` so gated UI re-resolves.
-    queryClient.invalidateQueries({ queryKey: ['permissions-me'] });
+    queryClient.invalidateQueries({ queryKey: PERMISSIONS_QUERY_KEY });
   };
 
   /** Surface the server's refusal text — it explains *why* a grant is refused. */
@@ -241,8 +242,8 @@ function RealmSection({
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-muted-foreground">
-                <th className="py-2 pr-4 font-medium">Collection</th>
+              <tr className="border-b text-start text-muted-foreground">
+                <th className="py-2 pe-4 font-medium">Collection</th>
                 {realm.allowedActions.map((action) => (
                   <th key={action} className="px-3 py-2 font-medium">
                     {ACTION_LABEL[action]}
@@ -254,10 +255,10 @@ function RealmSection({
             <tbody>
               {collections.map((collection) => (
                 <tr key={collection.name} className="border-b last:border-0">
-                  <td className="py-2 pr-4">
+                  <td className="py-2 pe-4">
                     <span className="font-medium">{collection.label ?? collection.name}</span>
                     {collection.label && (
-                      <span className="ml-1.5 text-xs text-muted-foreground">
+                      <span className="ms-1.5 text-xs text-muted-foreground">
                         {collection.name}
                       </span>
                     )}

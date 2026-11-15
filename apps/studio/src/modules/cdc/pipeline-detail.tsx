@@ -165,7 +165,7 @@ function ErrorPanel({ pipeline }: { pipeline: PipelineSummary }) {
       </dl>
       <div>
         <p className="font-medium text-foreground">Remediation steps</p>
-        <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
+        <ul className="mt-1 list-disc space-y-1 ps-5 text-muted-foreground">
           {steps.map((step, i) => (
             <li key={i}>{step}</li>
           ))}
@@ -289,7 +289,7 @@ function DeleteConfirmationDialog({
         <p className="mt-2 text-sm text-muted-foreground">
           This will permanently remove the following resources:
         </p>
-        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
+        <ul className="mt-3 list-disc space-y-1 ps-5 text-sm">
           {resources.map((resource, i) => (
             <li key={i}>{resource}</li>
           ))}

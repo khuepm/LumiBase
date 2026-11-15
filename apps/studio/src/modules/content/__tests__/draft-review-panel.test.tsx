@@ -53,7 +53,7 @@ const client = {
 };
 
 vi.mock('@/lib/api', () => ({ getApiClient: () => client, hasActiveToken: () => true }));
-vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined }));
+vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined, useExtensionUpdates: () => 0 }));
 vi.mock('@/hooks/use-presence', () => ({ useCoEditors: () => ({ coEditors: [], connected: false }) }));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
@@ -80,6 +80,8 @@ const ITEM = {
   status: 'draft',
   data: { title: 'Hello', body: 'World', category: '' },
   sort: 0,
+  // The editor sends the version its draft was loaded from as `If-Match`.
+  version: 7,
   editorialState: null,
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
@@ -305,7 +307,7 @@ describe('draft review in the item editor', () => {
       data: { title: 'Hello', body: 'World', category: 'sport' },
       publishAt: null,
       unpublishAt: null,
-    });
+    }, { ifMatch: 7 });
 
     // Publish stays its own action: no status change, no editorial transition.
     expect(patch).not.toHaveBeenCalledWith('item_1', expect.objectContaining({ status: 'published' }));
@@ -574,6 +576,8 @@ describe('cancel', () => {
     renderPanel();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Review draft' }));
+    // The request leaves only after the idempotency key is hashed (async).
+    await waitFor(() => expect(signal).toBeDefined());
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel review' }));
 
     expect(signal?.aborted).toBe(true);
@@ -697,7 +701,7 @@ describe('draft-review pilot rollout (J09)', () => {
         data: { title: 'Hello again', body: 'World', category: '' },
         publishAt: null,
         unpublishAt: null,
-      });
+      }, { ifMatch: 7 });
       expect(screen.queryByTestId('draft-review-panel')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Review draft' })).toBeNull();
       expect(calls(/^\/api\/v1\/ai\/review-profiles/)).toHaveLength(0);

@@ -165,6 +165,16 @@ function isReady(response: HealthResponse): boolean {
 
 healthRouter.get('/', async (c) => c.json(shapeHealth(c, await collectHealth(c)), 200));
 
+/**
+ * Liveness: the process is up and answering HTTP. Probes no dependency, so it
+ * answers in milliseconds even while PostgreSQL, Redis or S3 are unreachable.
+ * `/` waits up to 3 s on the database and queue probes when they are down,
+ * which is longer than a liveness/HEALTHCHECK timeout: an orchestrator would
+ * restart (or mark unhealthy) a healthy process because a dependency is out.
+ * Dependency state belongs to readiness (`/ready`), not to liveness.
+ */
+healthRouter.get('/live', (c) => c.json({ status: 'ok' as const }, 200));
+
 healthRouter.get('/ready', async (c) => {
   const response = await collectHealth(c);
   return c.json(shapeHealth(c, response), isReady(response) ? 200 : 503);

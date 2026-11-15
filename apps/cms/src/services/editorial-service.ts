@@ -12,6 +12,7 @@
  */
 
 import { and, desc, eq } from 'drizzle-orm';
+import { nextItemVersion } from './item-etag';
 import {
   collections,
   contentReviews,
@@ -188,6 +189,7 @@ export class EditorialService {
         editorialState: next,
         status: statusForEditorialState(next),
         updatedAt: new Date(),
+        version: nextItemVersion(),
         // Reaching `published` through the workflow is a publish (#687).
         ...(statusForEditorialState(next) === 'published' ? publishStampsSql() : {}),
       })

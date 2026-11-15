@@ -23,7 +23,8 @@ export const ToggleInterface: InterfaceComponent<boolean> = ({
       <span
         className={cn(
           'inline-block h-3.5 w-3.5 transform rounded-full bg-background transition',
-          checked ? 'translate-x-[18px]' : 'translate-x-1',
+          // The knob slides along the inline axis: mirrored for RTL (#761).
+          checked ? 'translate-x-[18px] rtl:-translate-x-[18px]' : 'translate-x-1 rtl:-translate-x-1',
         )}
       />
     </button>
