@@ -41,7 +41,7 @@ export const RatingInterface: InterfaceComponent<number> = ({
         );
       })}
       {current > 0 && (
-        <span className="ml-2 text-xs text-muted-foreground">{current}/{max}</span>
+        <span className="ms-2 text-xs text-muted-foreground">{current}/{max}</span>
       )}
     </div>
   );

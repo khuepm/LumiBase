@@ -160,6 +160,31 @@ async function main() {
     console.warn('[lumibase-cms] JWT_SECRET unset — realtime WebSocket server disabled');
   }
 
+  // ── Extension hot reload (#754) — LOCAL DEVELOPMENT ONLY ──────────────────
+  // Opt-in via LUMIBASE_EXTENSION_DEV=1 + NODE_ENV=development; refused in
+  // production (and validateProductionConfig fails the start if the flag is
+  // set there). Subscribes to the loopback `lumibase-ext dev` hub and swaps
+  // rebuilt hook/endpoint bundles in without a restart. Node-only: the client
+  // is imported dynamically here and nowhere else, so Workers never ships it.
+  let extensionDevClient: { stop(): void } | undefined;
+  {
+    const { resolveExtensionDevConfig } = await import('./extensions/dev-reload/config');
+    const devConfig = resolveExtensionDevConfig(process.env as Record<string, string | undefined>);
+    if (devConfig.enabled) {
+      const [{ startExtensionDevClient }, { devExtensionRegistry }] = await Promise.all([
+        import('./extensions/dev-reload/client'),
+        import('./extensions/dev-reload/registry'),
+      ]);
+      extensionDevClient = startExtensionDevClient({
+        config: devConfig,
+        registry: devExtensionRegistry,
+        env: process.env as Record<string, string | undefined>,
+      });
+    } else if (devConfig.reason !== 'not-requested') {
+      console.error(`[extension-dev] hot reload REFUSED: ${devConfig.message}`);
+    }
+  }
+
   // Cron tasks stopped on SIGTERM (optional when role=web).
   let rotationTask: ScheduledTask | undefined;
   let pageviewFlushTask: ScheduledTask | undefined;
@@ -719,6 +744,7 @@ async function main() {
     flowScheduleTask?.stop();
     goalDispatchTask?.stop();
     importTask?.stop();
+    extensionDevClient?.stop();
     if (runHttp) {
       pressureLimiter.stop();
     }

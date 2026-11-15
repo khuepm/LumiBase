@@ -37,7 +37,7 @@ export const InputHashInterface: InterfaceComponent<string> = ({
               setEditing(true);
               onChange(null);
             }}
-            className="ml-auto inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs hover:bg-muted"
+            className="ms-auto inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs hover:bg-muted"
           >
             <X className="h-3 w-3" /> Reset
           </button>

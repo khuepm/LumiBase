@@ -199,7 +199,7 @@ export function SecurityHistorySection() {
                 <p className="text-sm font-medium">
                   {describeHistoryItem(item)}
                   {ATTENTION.has(item.kind) ? (
-                    <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                    <span className="ms-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
                       Review
                     </span>
                   ) : null}

@@ -115,7 +115,7 @@ Một phase chỉ được mở PR khi đạt đủ exit criteria của nó, và
 - [x] §14.9 đã chốt: Fork giữ id item, remap schema/file/folder; lời Req 2.4, 2.5, 8.3, 8.6 đã sửa theo. Có hiệu lực khi #811 merge (dòng cuối của G0). *Decided (owner, 2026-11-16).*
 - [x] §14.2, §14.3, §14.5, §14.6 hoãn sau v1. *Decided (owner, 2026-11-16).*
 - [x] Phạm vi v1 = Phase A–D; Phase E (task 8–10) là v1.1; task 10.1 đã chuyển sang Phase D thành 7.8. *Decided (owner, 2026-11-16).*
-- [ ] PR #811 (`0032_items_site_scoped_pk`) đã merge trước khi mở Phase B; số migration của feature này cấp cao hơn `0032`.
+- [ ] PR #811 (`0035_items_site_scoped_pk`) đã merge trước khi mở Phase B; số migration của feature này cấp cao hơn `0035`.
 
 ### Điều kiện chung cho mọi PR của feature này
 
@@ -213,4 +213,4 @@ Một phase chỉ được mở PR khi đạt đủ exit criteria của nó, và
 
 ### Design drift do PR #811
 
-Trên `main`, `lumibase_items` có `PRIMARY KEY (id)` toàn instance (`packages/database/src/schema/cms.ts:23`, `:187`). #811 đổi sang `PRIMARY KEY (site_id, id)` (`packages/database/drizzle/0032_items_site_scoped_pk.sql`) với FK composite cùng site từ `revisions`, `release_items`, `content_reviews`. Lý do "id toàn cục nên phải remap" chỉ còn đúng cho schema/file/folder; với item, Fork giữ id (design §2.1, §14.9 — Decided 2026-11-16). Ghi chú cho #811 (không thuộc PR này): comment trong `schema/cms.ts` của nhánh đó vẫn ghi "migration 0029" trong khi file là `0032`.
+Trên `main`, `lumibase_items` có `PRIMARY KEY (id)` toàn instance (`packages/database/src/schema/cms.ts:23`, `:187`). #811 đổi sang `PRIMARY KEY (site_id, id)` (`packages/database/drizzle/0035_items_site_scoped_pk.sql`) với FK composite cùng site từ `revisions`, `release_items`, `content_reviews`. Lý do "id toàn cục nên phải remap" chỉ còn đúng cho schema/file/folder; với item, Fork giữ id (design §2.1, §14.9 — Decided 2026-11-16). Ghi chú cho #811 (không thuộc PR này): comment trong `schema/cms.ts` của nhánh đó vẫn ghi "migration 0029" trong khi file là `0032`.

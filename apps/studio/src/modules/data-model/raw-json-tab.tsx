@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, GitCompareArrows, Save } from 'lucide-react';
 import { useState } from 'react';
@@ -105,7 +105,7 @@ export function RawJsonTab({ collectionName }: RawJsonTabProps) {
 
   return (
     <div className="space-y-3">
-      <div className="overflow-hidden rounded-md border">
+      <div className="overflow-hidden rounded-md border" dir="ltr">
         <Editor
           height="420px"
           defaultLanguage="json"

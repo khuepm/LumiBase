@@ -112,7 +112,7 @@ function TreeNode({
 
   return (
     <div>
-      <div className="flex items-center gap-1 py-0.5" style={{ paddingLeft: depth * 16 }}>
+      <div className="flex items-center gap-1 py-0.5" style={{ paddingInlineStart: depth * 16 }}>
         {hasChildren ? (
           <button
             type="button"
@@ -129,7 +129,7 @@ function TreeNode({
           type="button"
           disabled={disabled}
           onClick={() => onToggle(node.id)}
-          className="flex items-center gap-2 text-left disabled:opacity-50"
+          className="flex items-center gap-2 text-start disabled:opacity-50"
         >
           <span
             className={cn(

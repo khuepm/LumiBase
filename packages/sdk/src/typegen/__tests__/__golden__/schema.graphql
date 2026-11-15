@@ -1,0 +1,93 @@
+scalar JSON
+
+scalar DateTime
+
+type Authors {
+  id: ID!
+  status: String
+  sort: Int
+  createdAt: DateTime
+  updatedAt: DateTime
+  userCreated: String
+  userUpdated: String
+  _data: JSON
+  name: String
+  email: String
+  posts(limit: Int, offset: Int): [BlogPosts!]!
+}
+
+type BlogPosts {
+  id: ID!
+  status: String
+  sort: Int
+  createdAt: DateTime
+  updatedAt: DateTime
+  userCreated: String
+  userUpdated: String
+  _data: JSON
+  title: String
+  body: String
+  views: Int
+  rating: Float
+  price: Float
+  big_count: String
+  featured: Boolean
+  published_on: DateTime
+  published_at: DateTime
+  kind: String
+  metadata: JSON
+  location: JSON
+  cover: String
+  gallery: JSON
+  headline: JSON
+  author_id: String
+  tags: String
+  author: Authors
+}
+
+type Tags {
+  id: ID!
+  status: String
+  sort: Int
+  createdAt: DateTime
+  updatedAt: DateTime
+  userCreated: String
+  userUpdated: String
+  _data: JSON
+  label: String
+}
+
+type Query {
+  _collections: [String!]!
+  authors(filter: JSON, sort: [String!], limit: Int, offset: Int, status: String): [Authors!]!
+  authors_by_id(id: ID!): Authors
+  blog_posts(filter: JSON, sort: [String!], limit: Int, offset: Int, status: String): [BlogPosts!]!
+  blog_posts_by_id(id: ID!): BlogPosts
+  tags(filter: JSON, sort: [String!], limit: Int, offset: Int, status: String): [Tags!]!
+  tags_by_id(id: ID!): Tags
+}
+
+type Mutation {
+  create_authors(data: JSON!, status: String, sort: Int): Authors!
+  update_authors(id: ID!, data: JSON, status: String, sort: Int): Authors!
+  delete_authors(id: ID!): Boolean!
+  create_blog_posts(data: JSON!, status: String, sort: Int): BlogPosts!
+  update_blog_posts(id: ID!, data: JSON, status: String, sort: Int): BlogPosts!
+  delete_blog_posts(id: ID!): Boolean!
+  create_tags(data: JSON!, status: String, sort: Int): Tags!
+  update_tags(id: ID!, data: JSON, status: String, sort: Int): Tags!
+  delete_tags(id: ID!): Boolean!
+}
+
+type Subscription {
+  authors_events: ItemEvent!
+  blog_posts_events: ItemEvent!
+  tags_events: ItemEvent!
+}
+
+type ItemEvent {
+  collection: String!
+  action: String!
+  itemId: ID!
+  item: JSON
+}

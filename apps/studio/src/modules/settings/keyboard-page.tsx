@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Keyboard, RotateCcw } from 'lucide-react';
 import { getApiClient } from '@/lib/api';
+import { ME_PREFERENCES_QUERY_KEY } from '@/lib/me-queries';
 import { cn } from '@/lib/cn';
 import { useKeybindingsStore } from '@/lib/keybindings/store';
 import {
@@ -45,7 +46,7 @@ export function KeyboardSettingsPage() {
     mutationFn: (keybindings: Record<string, string>) =>
       client.me.updatePreferences({ keybindings }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['me', 'preferences'] });
+      qc.invalidateQueries({ queryKey: ME_PREFERENCES_QUERY_KEY });
     },
   });
 

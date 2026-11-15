@@ -1,0 +1,7 @@
+/*
+ * Re-use the Studio stylesheet verbatim (Tailwind v4 + the shadcn tokens for
+ * light and `.dark`), then point Tailwind at the story sources so utility
+ * classes that only appear inside stories are generated too.
+ */
+@import '../../studio/src/index.css';
+@source '../src';

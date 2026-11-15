@@ -224,6 +224,8 @@ describe('generateOpenApiDocument — properties', () => {
                     oneCollection: s.collectionNames[f.relateTo!]!,
                     oneField: null,
                     junctionCollection: null,
+                    relationType: 'm2o' as const,
+                    alias: f.name,
                   })),
               },
             ),

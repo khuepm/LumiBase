@@ -104,7 +104,7 @@ export function DisplayTab({ collectionName }: DisplayTabProps) {
         </header>
         <div className="overflow-hidden rounded-lg border">
           <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+            <thead className="bg-muted/40 text-start text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">Field</th>
                 <th className="px-3 py-2">Interface</th>

@@ -1,0 +1,17 @@
+{
+  "name": "example-astro-adapter",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Smoke example for @lumibase/astro (integration, content loader, client realtime). Type-checked in CI via `pnpm -r typecheck`.",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lumibase/astro": "workspace:*",
+    "@lumibase/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2"
+  }
+}

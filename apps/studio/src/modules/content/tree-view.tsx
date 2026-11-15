@@ -67,10 +67,10 @@ function TreeLevel({
   const rows = query.data ?? [];
 
   if (query.isLoading) {
-    return <p className="px-4 py-2 text-xs text-muted-foreground" style={{ paddingLeft: 16 + depth * 20 }}>Loading…</p>;
+    return <p className="px-4 py-2 text-xs text-muted-foreground" style={{ paddingInlineStart: 16 + depth * 20 }}>Loading…</p>;
   }
   if (query.error) {
-    return <p className="px-4 py-2 text-xs text-destructive" style={{ paddingLeft: 16 + depth * 20 }}>Failed to load.</p>;
+    return <p className="px-4 py-2 text-xs text-destructive" style={{ paddingInlineStart: 16 + depth * 20 }}>Failed to load.</p>;
   }
   if (rows.length === 0) {
     return depth === 0 ? (
@@ -137,7 +137,7 @@ function TreeNode({
     <li role="treeitem" aria-expanded={open} aria-level={depth + 1} data-testid={`tree-node-${row.id}`}>
       <div
         className="group flex items-center gap-1 border-t px-2 py-1.5 text-sm first:border-t-0 hover:bg-muted/20"
-        style={{ paddingLeft: 8 + depth * 20 }}
+        style={{ paddingInlineStart: 8 + depth * 20 }}
       >
         <button
           type="button"
@@ -207,7 +207,7 @@ function TreeNode({
         )}
       </div>
       {move.error && (
-        <p className="px-4 pb-1 text-xs text-destructive" style={{ paddingLeft: 36 + depth * 20 }} role="alert">
+        <p className="px-4 pb-1 text-xs text-destructive" style={{ paddingInlineStart: 36 + depth * 20 }} role="alert">
           {moveErrorMessage(move.error)}
         </p>
       )}

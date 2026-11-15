@@ -254,7 +254,7 @@ export function ChangeFeedPage() {
                 <button
                   type="button"
                   onClick={() => setExpanded(expanded === sub.id ? null : sub.id)}
-                  className="ml-2 rounded-md border px-2 py-1 text-xs"
+                  className="ms-2 rounded-md border px-2 py-1 text-xs"
                 >
                   {expanded === sub.id ? 'Hide deliveries' : 'Deliveries'}
                 </button>

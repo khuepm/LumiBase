@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { Code2, Eye } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -66,7 +66,7 @@ export function RawToggle({ children, value, onChange, disabled }: RawToggleProp
       </div>
       {raw ? (
         <div className="space-y-1">
-          <div className="overflow-hidden rounded-md border">
+          <div className="overflow-hidden rounded-md border" dir="ltr">
             <Editor
               height="20vh"
               defaultLanguage="json"

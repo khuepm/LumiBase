@@ -175,7 +175,7 @@ function GoalNodeRow({
 
   return (
     <li>
-      <div style={{ marginLeft: depth * 24 }}>
+      <div style={{ marginInlineStart: depth * 24 }}>
         <div className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-3 py-2">
           <FillIcon
             icon={OriginIcon}
@@ -206,7 +206,7 @@ function GoalNodeRow({
               last run: {run.status} · {run.model}
             </span>
           )}
-          <span className="ml-auto inline-flex items-center gap-2">
+          <span className="ms-auto inline-flex items-center gap-2">
             {/* Planner actions (Req 18) */}
             <button
               type="button"

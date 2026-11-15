@@ -21,6 +21,7 @@ import { toWebSocketBase } from './ws-url';
 
 export * from './audience';
 export { toWebSocketBase } from './ws-url';
+export * from './retain';
 
 export interface RealtimeEvent {
   type: 'event';

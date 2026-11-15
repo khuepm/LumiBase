@@ -190,6 +190,10 @@ function SiteSettingsForm({ site, onSave, saving, saved, errorCode }: FormProps)
               <option value="ja">Japanese (ja)</option>
               <option value="fr">French (fr)</option>
               <option value="en-US">English, US (en-US)</option>
+              {/* Right-to-left: the Studio mirrors its layout (#761). */}
+              <option value="ar">Arabic (ar) — RTL</option>
+              <option value="he">Hebrew (he) — RTL</option>
+              <option value="fa">Persian / Farsi (fa) — RTL</option>
             </select>
           </Field>
         </div>

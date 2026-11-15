@@ -2,6 +2,7 @@ import { Bold, Italic, Link as LinkIcon, List, ListOrdered, Underline as Underli
 import { useEffect, useRef } from 'react';
 import { cn } from '@/lib/cn';
 import { sanitizeHtml } from '@/lib/sanitize-html';
+import { contentDirProps } from '@/lib/text-direction';
 import type { InterfaceComponent } from './types';
 
 /**
@@ -15,6 +16,7 @@ export const WysiwygInterface: InterfaceComponent<string> = ({
   value,
   disabled,
   onChange,
+  locale,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -55,6 +57,7 @@ export const WysiwygInterface: InterfaceComponent<string> = ({
       </div>
       <div
         ref={ref}
+        {...contentDirProps(locale)}
         contentEditable={!disabled}
         suppressContentEditableWarning
         onInput={() => ref.current && onChange(sanitizeHtml(ref.current.innerHTML))}
