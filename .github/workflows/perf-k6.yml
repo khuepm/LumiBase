@@ -40,9 +40,16 @@ jobs:
           # 2026-11-13; keyserver.ubuntu.com still serves the key without it, so
           # apt rejected the repo. Take the key from k6 itself and pin the
           # primary fingerprint so a swapped key still fails closed.
-          curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor --yes -o /usr/share/keyrings/k6-archive-keyring.gpg
-          gpg --show-keys --with-colons /usr/share/keyrings/k6-archive-keyring.gpg \
-            | grep -q '^fpr:::::::::C5AD17C747E3415A3642D57D77C6C491D6AC1D69:$'
+          # The key is checked before it reaches the keyring apt trusts: on a
+          # mismatch the step fails and no keyring is written.
+          k6_key="$(mktemp)"
+          curl -fsSL https://dl.k6.io/key.gpg | gpg --dearmor --yes -o "$k6_key"
+          if ! gpg --show-keys --with-colons "$k6_key" \
+            | grep -q '^fpr:::::::::C5AD17C747E3415A3642D57D77C6C491D6AC1D69:$'; then
+            echo "::error::dl.k6.io/key.gpg primary fingerprint is not C5AD17C747E3415A3642D57D77C6C491D6AC1D69"
+            exit 1
+          fi
+          sudo install -m 0644 "$k6_key" /usr/share/keyrings/k6-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | \
             sudo tee /etc/apt/sources.list.d/k6.list
           sudo apt-get update
@@ -129,9 +136,16 @@ jobs:
           # 2026-11-13; keyserver.ubuntu.com still serves the key without it, so
           # apt rejected the repo. Take the key from k6 itself and pin the
           # primary fingerprint so a swapped key still fails closed.
-          curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor --yes -o /usr/share/keyrings/k6-archive-keyring.gpg
-          gpg --show-keys --with-colons /usr/share/keyrings/k6-archive-keyring.gpg \
-            | grep -q '^fpr:::::::::C5AD17C747E3415A3642D57D77C6C491D6AC1D69:$'
+          # The key is checked before it reaches the keyring apt trusts: on a
+          # mismatch the step fails and no keyring is written.
+          k6_key="$(mktemp)"
+          curl -fsSL https://dl.k6.io/key.gpg | gpg --dearmor --yes -o "$k6_key"
+          if ! gpg --show-keys --with-colons "$k6_key" \
+            | grep -q '^fpr:::::::::C5AD17C747E3415A3642D57D77C6C491D6AC1D69:$'; then
+            echo "::error::dl.k6.io/key.gpg primary fingerprint is not C5AD17C747E3415A3642D57D77C6C491D6AC1D69"
+            exit 1
+          fi
+          sudo install -m 0644 "$k6_key" /usr/share/keyrings/k6-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | \
             sudo tee /etc/apt/sources.list.d/k6.list
           sudo apt-get update
