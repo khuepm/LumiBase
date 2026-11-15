@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-11-14T12:26:57.226Z
+version: 2
+lastUpdated: 2026-11-15T12:16:37.469Z
 sourceLang: en
 translatedFrom: en
-sourceHash: b9b358bafbe19e63
+sourceHash: f141651b66419caa
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T12:26:57.226Z
-codeVerifiedHash: b9b358bafbe19e63
+codeVerified: 2026-11-15T12:16:37.469Z
+codeVerifiedHash: f141651b66419caa
 codeVerifiedClaims: 30
 ---
 
@@ -30,7 +30,8 @@ Ba tính chất đúng với mọi seam:
   log và tiếp tục như thể cài đặt mặc định đã trả lời.
 
 Trang này trình bày registry, các entry point ghép được, phép tra cứu
-site → organization có cache, và entitlement resolver.
+site → organization có cache, entitlement resolver, và nguồn external-action
+tool.
 
 ## Vị trí các thành phần
 
@@ -264,6 +265,29 @@ Hướng dẫn:
 - `req.tenant.organizationId` có thể là `null`: site có thể không xác định, hoặc
   phép tra cứu đã lỗi. Hãy quyết định cài đặt của bạn làm gì trong trường hợp đó.
 - `ctx.requestId` là `null` khi ở ngoài request (cron, queue consumer).
+
+## External-action tools
+
+Seam `externalActions` cho phép entry của một deployment trao cho CMS các agent
+tool gọi tới hệ thống bên ngoài CMS, từ một gói mà repository này không import.
+
+```ts
+registerPlatformSeams({ externalActions: { tools: () => myTools() } });
+```
+
+Nó khác các seam còn lại ở hai điểm, đều có chủ ý:
+
+- **Được đọc lúc đăng ký, không phải theo từng request.** `tools()` chạy một lần
+  bên trong `registerPlatformSeams()`, và mọi định nghĩa được kiểm và đăng ký vào
+  registry tool dùng chung của process ngay tại đó.
+- **Lỗi không bị nuốt.** Một định nghĩa sai dạng hoặc trùng tên làm
+  `registerPlatformSeams()` ném lỗi và không tool nào được đăng ký. Chạy với một
+  tool lặng lẽ biến mất, hoặc với nửa bộ tool, sẽ đổi những gì agent được làm mà
+  không ai hay.
+
+Mặc định: không có tool nào. Định dạng bản khai, quy tắc quyết định và policy
+trước khi thực thi (tuỳ chọn) được mô tả ở
+[External-action tools](../features/external-action-tools.md).
 
 ## Multi-tenancy
 

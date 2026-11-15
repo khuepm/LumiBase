@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 3
-lastUpdated: 2026-11-15T08:14:26.004Z
+version: 4
+lastUpdated: 2026-11-15T15:27:03.615Z
 translatedFrom: en
-sourceHash: c6efa7fcfdcbaa9e
+sourceHash: 1a727fb726aa330f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T08:14:26.004Z
-codeVerifiedHash: c6efa7fcfdcbaa9e
+codeVerified: 2026-11-15T15:27:03.615Z
+codeVerifiedHash: 1a727fb726aa330f
 codeVerifiedClaims: 48
 ---
 
@@ -177,7 +177,7 @@ trình duyệt. Passkey đăng ký trong trình duyệt vẫn dùng được tro
 - Service: `apps/cms/src/modules/mfa/passkey-service.ts` (dùng `@simplewebauthn/server`, chỉ Web Crypto, chạy trên Workers và Node).
 - Route: `apps/cms/src/routes/passkeys.ts`.
 - Trạng thái yếu tố dùng chung: `apps/cms/src/modules/mfa/tfa-state.ts`.
-- Bảng: `packages/database/src/schema/security.ts` (`userPasskeys`), migration `packages/database/drizzle/0031_user_passkeys.sql`. Gắn với danh tính giống các bảng TOTP (khóa theo `user_id`, không có `site_id`): passkey thuộc về một tên miền, không thuộc về một site LumiBase.
+- Bảng: `packages/database/src/schema/security.ts` (`userPasskeys`), migration `packages/database/drizzle/0032_user_passkeys.sql`. Gắn với danh tính giống các bảng TOTP (khóa theo `user_id`, không có `site_id`): passkey thuộc về một tên miền, không thuộc về một site LumiBase.
 - Studio: `apps/studio/src/modules/settings/passkeys-section.tsx`, `apps/studio/src/modules/auth/admin-login-page.tsx`, `apps/studio/src/lib/passkeys.ts`.
 
 ## 8. Giới hạn đã biết

@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-11-14T12:31:25.001Z
+version: 2
+lastUpdated: 2026-11-15T12:16:36.578Z
 sourceLang: en
-contentHash: 7d77db293ed07b78
-codeVerified: 2026-11-14T12:31:25.001Z
-codeVerifiedHash: 7d77db293ed07b78
-codeVerifiedClaims: 18
+contentHash: f546435ef3f2214a
+codeVerified: 2026-11-15T12:16:36.578Z
+codeVerifiedHash: f546435ef3f2214a
+codeVerifiedClaims: 24
 ---
 
 # External-action tools
@@ -22,7 +22,8 @@ external-action tool itself.
 Source: `apps/cms/src/services/external-action-tools.ts` (declaration, registry,
 decision rule), `apps/cms/src/services/ai-harness.ts` (decision and execution),
 `apps/cms/src/services/tool-secret-service.ts` (secrets),
-`apps/cms/src/services/external-action-audit.ts` (audit rows).
+`apps/cms/src/services/external-action-audit.ts` (audit rows),
+`apps/cms/src/services/external-action-policy.ts` (pre-execution policy).
 
 ## What a tool declares
 
@@ -61,6 +62,7 @@ externalActionTools.register({
 | `blastRadius` | `none`, `single`, `bounded` (with `maxAffected`), `broad` | How many external parties one call can reach |
 | `secrets` | names matching `^[A-Z][A-Z0-9_]{1,63}$` | The secrets the handler needs, by reference |
 | `inputSchema` | JSON Schema, `type: "object"` | The arguments; enforced before a run or an approval exists |
+| `policy` | optional, see [Pre-execution policy](#pre-execution-policy) | Whether the site's constitution is evaluated before the tool runs |
 
 Registration refuses a declaration that contradicts itself: a `read_only` tool
 must declare `blastRadius.scope: "none"`, a tool with an effect cannot declare
@@ -122,6 +124,96 @@ is unchanged: it needs `approvals:decide`, it executes with
 
 Any principal that may decide approvals can still **reject** one.
 
+## Pre-execution policy
+
+A tool can declare a `policy`. The site's constitution (the versioned evaluator
+set described in the Content OS docs) is then evaluated on every call of the
+tool, on a flat record describing that call:
+
+```ts
+policy: {
+  constitution: 'required',               // or 'if_active'
+  constitutionHashes: ['sha256:…'],       // optional: the only versions accepted
+  record: (args, facts) => ({             // optional: default is the arguments
+    body: args.body,
+    intentRef: facts.intentId,
+  }),
+},
+```
+
+| Field | Meaning |
+|---|---|
+| `constitution: 'required'` | The call is refused unless the site has an active constitution. Fail closed |
+| `constitution: 'if_active'` | Evaluated when the site has an active constitution; runs without one |
+| `constitutionHashes` | The constitution pinned to the run must have one of these hashes. Any other version refuses the call (`CONSTITUTION_NOT_ACCEPTED`) |
+| `record(args, facts)` | Builds the record the evaluators read. Rule evaluators read top-level fields only, so keep it flat |
+
+The harness always adds its own facts to the record, after the tool's fields, so
+a tool or an argument cannot overwrite them: `tool`, `capability`, `risk`,
+`blastRadius` (the scope), `agentName`, `agentRole`, `intentId` and `runId`.
+
+When the evaluation happens:
+
+- **Before anything else is decided about the call.** After the kill switch,
+  input validation, capability and tool-policy gates and the L0 check, before an
+  approval is parked or the tool runs autonomously.
+- **Again before an approved call executes.** If the policy now refuses (the
+  constitution was deactivated, or the call now breaks a rule), the approval is
+  released back to `pending`, as with a frozen site, and nothing runs.
+
+A run is evaluated against the constitution pinned to it, even after a newer
+version is activated. A `required` policy still refuses on a site that has no
+active version at all, so deactivating the constitution stops every governed
+call, including those of runs already under way.
+
+Outcomes:
+
+| Outcome | What happens | Code |
+|---|---|---|
+| every blocking evaluator passes | the decision continues as in the table above | none |
+| a blocking evaluator fails | refused, at every autonomy level | `CONSTITUTION_VIOLATION` |
+| only evaluators with `onViolation: "require_approval"` fail | parked for a human, even where the level would have run it; a `read_only` tool too | none (`pending_approval`) |
+| a blocking evaluator errors (bad regex, no LLM for an `llm_judge`) | refused, whatever its `onViolation` | `CONSTITUTION_VIOLATION` |
+| `required` and no active constitution | refused; no approval is parked | `CONSTITUTION_REQUIRED` |
+| the pinned version is not in `constitutionHashes` | refused | `CONSTITUTION_NOT_ACCEPTED` |
+| `record` throws or returns a non-object | refused | `POLICY_RECORD_INVALID` |
+
+`onViolation` is an optional field of an evaluator (`block`, the default, or
+`require_approval`). It is part of the constitution and of its hash. The publish
+gate treats both values as blocking.
+
+The refusal message names the evaluators that failed, never the call's content:
+an `llm_judge` reason can quote the arguments, so it is not returned.
+
+A tool without a `policy` is not evaluated and behaves exactly as before.
+
+## Loading tools from a package
+
+A deployment entry that wraps the CMS can hand over tools from a package outside
+this repository through the `externalActions` platform seam, instead of the CMS
+importing them:
+
+```ts
+import { registerPlatformSeams } from '@lumibase/cms/platform';
+import { myTools } from 'my-tools-package';
+
+registerPlatformSeams({
+  externalActions: { tools: () => myTools() },
+});
+```
+
+- `tools()` is called once, inside `registerPlatformSeams()`. Every definition is
+  validated and registered into the process-wide registry right there, so the
+  harness, `tools/list` and MCP see the same set from the first request.
+- All or nothing: if one definition is malformed or a name is taken, none is
+  registered and `registerPlatformSeams()` throws. A deployment must not run with
+  half its tools.
+- The built-in entries (`cloudflare.ts`, `serve.ts`) never register anything:
+  without a registration the registry is empty and the skill catalog is the
+  built-in one, unchanged.
+
+See [Platform extension points](../architecture/platform-extension-points.md).
+
 ## Secrets
 
 A tool names its secrets; an administrator stores the values per site:
@@ -165,7 +257,7 @@ Each step writes one `lumibase_activity` row for the site:
 | `agent.external_action.proposed` | The call was parked as a pending approval |
 | `agent.external_action.approved` | A user released it. Written **before** the handler runs; if this write fails, the handler does not start |
 | `agent.external_action.rejected` | A decider rejected it |
-| `agent.external_action.refused` | The harness would not run or release it (L0, a non-human decider, a frozen scope) |
+| `agent.external_action.refused` | The harness would not run or release it (L0, a non-human decider, a frozen scope, the pre-execution policy) |
 | `agent.external_action.executed` | The handler returned |
 | `agent.external_action.failed` | The handler threw or timed out |
 | `agent.tool_secret.set` / `agent.tool_secret.deleted` | A secret was stored or removed (name only) |
@@ -173,8 +265,10 @@ Each step writes one `lumibase_activity` row for the site:
 The payload holds the tool name, its declaration (`capability`, `risk`,
 `reversibility`, `blastRadius`, `secretRefs`), the agent, the run, tool call and
 approval ids, the autonomy level, the decider kind, a `sha256` digest of the
-arguments (`inputHash`) and the hash of the constitution pinned to the run. It
-never holds argument values or handler output. The run, tool call and approval
+arguments (`inputHash`) and the hash of the constitution pinned to the run. For a
+tool with a policy it also holds `policy`: the outcome, the refusal code, the
+hash of the version evaluated and each evaluator's id, status and `blocking`
+flag. It never holds argument values, evaluator messages or handler output. The run, tool call and approval
 records are written as for any tool call.
 
 ## MCP
@@ -218,12 +312,14 @@ audit row appears on the site that did not act.
 
 - Money or volume caps are not part of this mechanism. A tool declares its blast
   radius; nothing here counts spend or recipients across calls.
-- The constitution is pinned to the run and recorded in the audit row. It is not
-  evaluated against an external action before execution.
+- The pre-execution policy is opt-in per tool. A tool registered without one is
+  governed by its declaration alone, even on a site with an active constitution.
+- An `llm_judge` evaluator needs a configured LLM on the harness. Without one it
+  errors, and a blocking judge then refuses every call (fail closed).
 - The freeze boundary is the tool call: a handler already running is not
   interrupted. Write tools so one call does one bounded thing.
-- Tools are registered in code at process start. There is no API to add one at
-  runtime and no loader for extensions yet.
+- Tools are registered in code at process start, directly or through the
+  `externalActions` seam. There is no API to add one at runtime.
 
 ## Upgrading
 
@@ -231,3 +327,8 @@ Migration `0030_agent_tool_secrets` adds one site-scoped table. No backfill.
 Existing installs need no action; nothing changes until a tool is registered.
 `executeApproved` takes a fourth argument naming the decider. Callers that omit
 it keep working for built-in skills and are refused for human-only approvals.
+
+The pre-execution policy and the `externalActions` seam need no migration and
+change nothing for a tool that declares no policy or for a deployment that
+registers no seam. Constitution evaluators accept an optional `onViolation`
+field; existing versions keep their hash.

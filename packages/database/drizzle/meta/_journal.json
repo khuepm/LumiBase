@@ -223,14 +223,21 @@
       "idx": 31,
       "version": "7",
       "when": 1794729600000,
-      "tag": "0031_user_passkeys",
+      "tag": "0031_ops_errors",
       "breakpoints": true
     },
     {
       "idx": 32,
       "version": "7",
-      "when": 1794816000000,
-      "tag": "0032_social_login_identities",
+      "when": 1794902400000,
+      "tag": "0032_user_passkeys",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794988800000,
+      "tag": "0033_social_login_identities",
       "breakpoints": true
     }
   ]

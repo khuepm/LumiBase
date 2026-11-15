@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 4
-lastUpdated: 2026-11-15T11:43:42.593Z
+version: 5
+lastUpdated: 2026-11-15T15:27:03.886Z
 translatedFrom: en
-sourceHash: 0600eb1200a4adb6
+sourceHash: 7c4a46aa0a7cbab5
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T11:43:42.593Z
-codeVerifiedHash: 0600eb1200a4adb6
+codeVerified: 2026-11-15T15:27:03.886Z
+codeVerifiedHash: 7c4a46aa0a7cbab5
 codeVerifiedClaims: 44
 ---
 
@@ -26,7 +26,7 @@ codeVerifiedClaims: 44
 
 Module: `apps/cms/src/modules/social-auth/routes.ts` · bảng
 `lumibase_user_identities` và `lumibase_social_auth_providers` (migration
-`packages/database/drizzle/0032_social_login_identities.sql`).
+`packages/database/drizzle/0033_social_login_identities.sql`).
 
 ---
 

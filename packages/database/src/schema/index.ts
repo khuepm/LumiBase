@@ -22,5 +22,6 @@ export * from './external-auth';
 export * from './pageviews';
 export * from './git-integration';
 export * from './imports';
+export * from './ops';
 export * from './activation';
 export * from './social-auth';

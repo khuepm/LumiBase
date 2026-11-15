@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 4
-lastUpdated: 2026-11-15T11:43:42.593Z
-contentHash: 0600eb1200a4adb6
-codeVerified: 2026-11-15T11:43:42.593Z
-codeVerifiedHash: 0600eb1200a4adb6
+version: 5
+lastUpdated: 2026-11-15T15:27:03.886Z
+contentHash: 7c4a46aa0a7cbab5
+codeVerified: 2026-11-15T15:27:03.886Z
+codeVerifiedHash: 7c4a46aa0a7cbab5
 codeVerifiedClaims: 44
 ---
 
@@ -23,7 +23,7 @@ codeVerifiedClaims: 44
 
 Module: `apps/cms/src/modules/social-auth/routes.ts` · tables
 `lumibase_user_identities` and `lumibase_social_auth_providers` (migration
-`packages/database/drizzle/0032_social_login_identities.sql`).
+`packages/database/drizzle/0033_social_login_identities.sql`).
 
 ---
 

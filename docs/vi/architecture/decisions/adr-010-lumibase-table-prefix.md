@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-05T10:56:37.304Z
+version: 2
+lastUpdated: 2026-11-14T03:13:31.641Z
 sourceLang: en
 translatedFrom: en
-sourceHash: aa38dc3991e5b3dd
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: 2034e165bb24b23c
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-14T03:13:31.641Z
+codeVerifiedHash: 2034e165bb24b23c
+codeVerifiedClaims: 6
 ---
 
 # ADR-010: Tiền tố `lumibase_` cho toàn bộ bảng hệ thống
@@ -59,8 +62,8 @@ tiền tố vì `drizzle-kit` suy chúng ra từ các tên bảng (đã có ti�
 
 - **Đặt lại migration greenfield.** 39 migration cũ cộng với migration rename trung gian
   đã bị loại bỏ và lịch sử được nén lại thành một
-  `packages/database/drizzle/0000_lumibase_init.sql` duy nhất, được tái sinh bởi `drizzle-kit
-  generate` từ schema (giờ đã có tiền tố). Các bảng được tạo với tên `lumibase_`
+  `packages/database/drizzle/0000_lumibase_init.sql` duy nhất, được tái sinh bởi
+  `drizzle-kit generate` từ schema (giờ đã có tiền tố). Các bảng được tạo với tên `lumibase_`
   ngay từ đầu — không có bước rename riêng. Đây là một thay đổi **chỉ dành cho cài đặt mới**:
   **không có đường nâng cấp** từ một cơ sở dữ liệu trước-tiền-tố; một DB hiện có
   phải bị hủy và tạo lại. (Được chọn vì chưa có instance nào được triển khai.)
