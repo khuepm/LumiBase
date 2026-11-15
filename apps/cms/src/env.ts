@@ -371,6 +371,20 @@ export interface Variables {
   /** Runtime context providing cache, storage, database, search, queue, and media adapters. */
   runtime: RuntimeContext;
   /**
+   * Memoised tenant of this request, with its owning organization. Set lazily
+   * by `tenantRefFor(c)` in `platform/request.ts` — read it through that
+   * helper, never directly: it is unset until something asks.
+   */
+  tenantRef?: {
+    siteId: string;
+    ref: Promise<import('@lumibase/contracts/platform').TenantRef>;
+  };
+  /**
+   * Memoised entitlement snapshot of this request. Set lazily by
+   * `entitlementsFor(c)` in `platform/request.ts`; unset until something asks.
+   */
+  entitlements?: Promise<import('@lumibase/contracts/platform').EntitlementSnapshot>;
+  /**
    * Internal response-type marker for observability/log enrichment.
    * Currently used by `adminPathGuard` (admin-setup-wizard Req 5.2) to
    * tag a request as serving the Studio HTML/asset bundle vs. a regular
