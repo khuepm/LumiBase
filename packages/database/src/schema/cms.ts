@@ -195,6 +195,14 @@ export const items = pgTable(
     status: text('status').default('draft').notNull(),
     data: jsonb('data').default({}).notNull(),
     /**
+     * Optimistic-concurrency counter (content-environments Phase A, migration
+     * 0034). Incremented by every write that changes the item's logical
+     * content: `data`, `status`, pins, soft delete, crypto-shred. Key-rotation
+     * workers that only re-encrypt leave it alone. Exposed as the strong ETag
+     * of `GET /items/:collection/:id`; `If-Match` compares against it.
+     */
+    version: integer('version').default(0).notNull(),
+    /**
      * Field names pinned by a human edit (Law Zero / override-is-law).
      * Agents are denied writes to pinned fields at the harness boundary.
      */
