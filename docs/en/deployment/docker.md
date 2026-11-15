@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-11-12T18:25:51.362Z
+version: 5
+lastUpdated: 2026-11-15T19:31:37.791Z
 sourceLang: en
-contentHash: a8e0d457c7d0b3f8
-codeVerified: 2026-11-12T18:25:51.362Z
-codeVerifiedHash: a8e0d457c7d0b3f8
+contentHash: 1b7f9cf6be140d2b
+codeVerified: 2026-11-15T19:31:37.791Z
+codeVerifiedHash: 1b7f9cf6be140d2b
 codeVerifiedClaims: 20
 ---
 
@@ -80,7 +80,7 @@ possible:
 | Distroless runtime (`gcr.io/distroless/nodejs22-debian13:nonroot`) | Node.js and its runtime libraries only — no shell, no package manager, no `curl`. `docker exec -it <container> sh` does not work; use `docker debug` or an ephemeral debug container instead. |
 | Non-root, fixed UID | Runs as UID/GID `65532`. The previous image also ran unprivileged, as a `lumibase` system user whose UID `adduser --system` picked at build time; the user is now a fixed, numeric UID that `runAsNonRoot` checks can verify. The application files belong to root and are not writable by that user. |
 | Read-only root filesystem | The server writes nothing to disk, so the container runs with `read_only: true`. `docker/docker-compose.prod.yml` and `docker/docker-compose.gcp.yml` set it, together with `cap_drop: [ALL]`, `no-new-privileges` and `init: true`. |
-| Healthcheck | `HEALTHCHECK` runs `docker/scripts/healthcheck.mjs` with the image's own Node. It probes `PORT`, or the worker health port when `LUMIBASE_PROCESS_ROLE=worker`. |
+| Healthcheck | `HEALTHCHECK` runs `docker/scripts/healthcheck.mjs` with the image's own Node. It probes `/health/live` (liveness, no dependency probes) on `PORT`, or on the worker health port when `LUMIBASE_PROCESS_ROLE=worker`. A database or Redis outage therefore does not mark the container unhealthy; use `/health/ready` to see dependency state. |
 | Entrypoint | `docker/scripts/entrypoint.mjs` (Node) replaces `entrypoint.sh`. `SKIP_MIGRATIONS`, `RUN_MIGRATION_PREFLIGHT`, `MIGRATION_MODE` and the `*_FILE` secrets behave as before; `MIGRATION_MODE=preflight` (or `dry-run`) still needs only `DATABASE_URL`. Secret values, `ENCRYPTION_KEY` included, reach the server exactly as supplied. |
 
 ### Where the server writes
@@ -147,7 +147,7 @@ cosign verify-attestation "$IMAGE" --type spdxjson \
   command, override it with `--entrypoint /nodejs/bin/node` and pass
   `dist/migrate.cjs preflight` (or `apply`).
 - **Orchestrator health probes** that used `curl` inside the container must
-  switch to an HTTP probe on `/health` or to
+  switch to an HTTP probe on `/health/live` or to
   `/nodejs/bin/node /app/bin/healthcheck.mjs`.
 
 ## Note: `SERVICE_UNAVAILABLE` when the instance is under pressure
