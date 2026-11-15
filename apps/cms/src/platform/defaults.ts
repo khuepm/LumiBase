@@ -2,6 +2,7 @@ import type {
   AuthorizeDecision,
   EntitlementResolver,
   EntitlementSnapshot,
+  ExternalActionToolSource,
   LimitValue,
 } from '@lumibase/contracts/platform';
 import type { RuntimeContext } from '@lumibase/runtime';
@@ -40,6 +41,12 @@ export const defaultEntitlementResolver: EntitlementResolver<RuntimeContext> = {
   authorize: () => Promise.resolve(ALLOWED),
 };
 
+/** No tools: the CMS itself registers no external-action tool. */
+export const defaultExternalActionToolSource: ExternalActionToolSource = Object.freeze({
+  tools: () => [],
+});
+
 export const DEFAULT_PLATFORM_SEAMS: PlatformSeams = Object.freeze({
   entitlements: defaultEntitlementResolver,
+  externalActions: defaultExternalActionToolSource,
 });
