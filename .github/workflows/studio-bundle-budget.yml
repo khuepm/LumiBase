@@ -1,0 +1,94 @@
+name: Studio bundle budget
+
+# #757: fail a PR when the Studio's INITIAL payload (entry chunk + everything
+# it statically imports, and their CSS) outgrows apps/studio/bundle-budget.json.
+# Lazy route/component chunks are reported but not budgeted. Policy and how to
+# respond to a failure: docs/en/contributing/studio-performance.md.
+
+on:
+  pull_request:
+    paths:
+      - "apps/studio/**"
+      - "packages/sdk/**"
+      - "packages/ui/**"
+      - "packages/contracts/**"
+      - "pnpm-lock.yaml"
+      - "scripts/check-studio-bundle-budget.mjs"
+      - ".github/workflows/studio-bundle-budget.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/studio/**"
+      - "packages/sdk/**"
+      - "packages/ui/**"
+      - "packages/contracts/**"
+      - "pnpm-lock.yaml"
+      - "scripts/check-studio-bundle-budget.mjs"
+      - ".github/workflows/studio-bundle-budget.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: studio-bundle-budget-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24
+
+jobs:
+  budget:
+    name: Initial JS/CSS within budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+          run_install: false
+
+      - name: Get pnpm store directory
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-node${{ env.NODE_VERSION }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Workspace packages resolve from source (`exports` → src/*.ts), so the
+      # Studio builds on its own. `--manifest` writes dist/.vite/manifest.json,
+      # which is what the budget walks; the normal `pnpm build` does not emit it.
+      - name: Build Studio with a Vite manifest
+        run: pnpm -F @lumibase/studio exec vite build --manifest
+
+      - name: Check bundle budget
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/check-studio-bundle-budget.mjs --top 20 2>&1 | tee budget.txt
+          {
+            echo '### Studio bundle budget'
+            echo '```'
+            cat budget.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -3,6 +3,7 @@ import { Check, Crown, Minus, X } from 'lucide-react';
 import { useState } from 'react';
 import type { CompiledPermission, PermissionAction } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
+import { permissionsQueryOptions } from '@/lib/me-queries';
 import { cn } from '@/lib/cn';
 
 const ACTIONS: PermissionAction[] = ['create', 'read', 'update', 'delete', 'share'];
@@ -23,11 +24,7 @@ export function PermissionMatrixPage() {
     queryFn: async () => (await client.schema.listCollections()).data,
   });
 
-  const meQuery = useQuery({
-    queryKey: ['permissions-me'],
-    queryFn: async () => (await client.permissions.me()).data,
-    staleTime: 60_000,
-  });
+  const meQuery = useQuery(permissionsQueryOptions());
 
   const isLoading = collectionsQuery.isLoading || meQuery.isLoading;
   const error = collectionsQuery.error || meQuery.error;

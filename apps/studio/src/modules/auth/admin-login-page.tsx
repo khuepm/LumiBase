@@ -2,7 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { LogIn } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { getActiveSite, hasActiveToken, setActiveToken, setActiveRefreshToken, setActiveSite } from '@/lib/api';
-import { ADMIN_PATH_REGEX } from '@/modules/setup/schemas/admin-path';
+import { ADMIN_PATH_REGEX } from '@/modules/setup/schemas/admin-path-rules';
 import { sanitizeIntentReturnTo } from '@/lib/intents/paths';
 
 interface AdminLoginPageProps {

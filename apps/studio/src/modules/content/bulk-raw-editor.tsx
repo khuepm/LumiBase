@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, Save, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';

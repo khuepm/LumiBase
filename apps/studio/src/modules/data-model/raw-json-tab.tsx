@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, GitCompareArrows, Save } from 'lucide-react';
 import { useState } from 'react';

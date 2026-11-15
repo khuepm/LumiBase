@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { useMutation } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';

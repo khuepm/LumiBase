@@ -3,16 +3,22 @@ import {
   useMutation,
   type UseMutationResult,
 } from '@tanstack/react-query';
-import { clearAccountDraft, getAccountDraft } from '../steps/step-account';
-import { clearPathDraft, getPathDraft } from '../steps/step-path';
+// Drafts come from `setup-drafts`, NOT the step components: this hook is on
+// the router's boot path, and importing the steps here would pull every step
+// (plus Zod and React Hook Form) into the initial bundle (#757).
 import {
+  clearAccountDraft,
   clearEmailIdentityModeDraft,
+  clearPathDraft,
   clearPolicyDraft,
+  clearProjectDraft,
+  getAccountDraft,
   getEmailIdentityModeDraft,
+  getPathDraft,
   getPolicyDraft,
+  getProjectDraft,
   type EmailIdentityMode,
-} from '../steps/step-security';
-import { clearProjectDraft, getProjectDraft } from '../steps/step-project';
+} from '../setup-drafts';
 import { SETUP_TOKEN_STORAGE_KEY } from '../setup-state-gate';
 import { useSetupStore } from '../setup-store';
 

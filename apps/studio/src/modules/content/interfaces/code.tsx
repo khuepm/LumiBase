@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { readOptions, type InterfaceComponent } from './types';
 
 interface CodeOptions {
