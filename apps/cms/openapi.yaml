@@ -3634,6 +3634,106 @@ paths:
                 type: object
                 properties:
                   data: { $ref: '#/components/schemas/ShareResource' }
+  /preview/token:
+    parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+    post:
+      summary: Mint a site-scoped preview token (user principals only; rate-limited 30/min/user)
+      description: Security model in docs/en/architecture/decisions/adr-014-preview-bridge-threat-model.md.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                collection: { type: string }
+                itemId: { type: string }
+                versionKey: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$' }
+                releaseId: { type: string }
+                locale: { type: string }
+                ttlSeconds: { type: integer, minimum: 60, maximum: 3600 }
+      responses:
+        '201':
+          description: Minted; `token` is returned once, `url` is built from the collection's meta.previewUrl (or null)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, additionalProperties: true }
+        '400': { description: Validation failed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: API key principal, or no read permission on the target, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: Collection, item, version or release not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '429': { description: Mint rate limit reached, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '503': { description: Preview signing not configured (JWT_SECRET), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /preview/tokens:
+    parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+    get:
+      summary: Live preview tokens (site admin sees all, others their own)
+      responses: { '200': { description: OK } }
+  /preview/tokens/{id}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Revoke one preview token (site admin any, others their own)
+      responses: { '200': { description: Revoked }, '404': { description: Not found or already revoked } }
+  /preview/tokens/revoke-all:
+    parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+    post:
+      summary: Rotate — revoke every live preview token of the site (site admin)
+      responses: { '200': { description: '{ data: { revoked } }' }, '403': { description: Not a site admin } }
+  /preview/settings:
+    parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
+    get:
+      summary: Preview settings (allowed frame origins, token TTL)
+      responses: { '200': { description: OK } }
+    put:
+      summary: Update preview settings (site admin; exact origins only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                allowedOrigins: { type: array, maxItems: 20, items: { type: string } }
+                ttlSeconds: { type: integer, minimum: 60, maximum: 3600 }
+      responses: { '200': { description: Saved }, '400': { description: Invalid origin }, '403': { description: Not a site admin } }
+  /deliver/preview/{site_id}:
+    get:
+      summary: Public — what a preview token targets (+ the item or release members)
+      security: []
+      parameters:
+        - { name: site_id, in: path, required: true, schema: { type: string } }
+        - { name: x-lumibase-preview, in: header, required: false, schema: { type: string } }
+        - { name: __preview, in: query, required: false, schema: { type: string } }
+      responses:
+        '200': { description: 'OK (Cache-Control: private, no-store; X-Robots-Tag: noindex)' }
+        '401': { description: Invalid, foreign-site, expired or revoked token — one identical body, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /deliver/preview/{site_id}/items/{collection}:
+    get:
+      summary: Public — live items with the preview token's overlay (draft, version branch or release)
+      security: []
+      parameters:
+        - { name: site_id, in: path, required: true, schema: { type: string } }
+        - { name: collection, in: path, required: true, schema: { type: string } }
+        - { name: x-lumibase-preview, in: header, required: false, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: offset, in: query, required: false, schema: { type: integer, minimum: 0 } }
+      responses: { '200': { description: OK }, '401': { description: Token rejected }, '404': { description: Collection not readable } }
+  /deliver/preview/{site_id}/items/{collection}/{id}:
+    get:
+      summary: Public — one item through the preview token's overlay
+      security: []
+      parameters:
+        - { name: site_id, in: path, required: true, schema: { type: string } }
+        - { name: collection, in: path, required: true, schema: { type: string } }
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: x-lumibase-preview, in: header, required: false, schema: { type: string } }
+      responses: { '200': { description: OK }, '401': { description: Token rejected }, '404': { description: Not visible } }
   /permissions/me:
     parameters: [{ $ref: '#/components/parameters/SiteHeader' }]
     get:
