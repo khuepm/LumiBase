@@ -96,3 +96,41 @@ test('Dockerfile keeps a mid-line `#`: only a leading `#` is a comment there', (
   differ('COPY a b # one\n', 'COPY a b # two\n', 'dockerfile');
   same('# English\nFROM node:22\n', '# Tiếng Việt\nFROM node:22\n', 'dockerfile');
 });
+
+test('translated `//` and `/* */` comments in JS/TS/JSONC are not code drift', () => {
+  // Shapes taken from features/email-service.md, features/raw-data-editing.md,
+  // features/ai-first-specification.md and features/extensions-system.md.
+  same('  "cc": ["lead@example.com"],   // optional\n', '  "cc": ["lead@example.com"],   // tùy chọn\n', 'jsonc');
+  same('  schema?: JSONSchema7; // used for monaco validation\n', '  schema?: JSONSchema7; // dùng cho monaco validate\n', 'ts');
+  same(
+    '  /** Approval state: \'pending\' | \'approved\' */\n  status: text(\'status\'),\n',
+    '  /** Trạng thái duyệt: \'pending\' | \'approved\' */\n  status: text(\'status\'),\n',
+    'typescript',
+  );
+  // A translated JSDoc block may wrap onto a different number of lines.
+  same('/**\n * Run the skill.\n */\nrun();\n', '/**\n * Thực thi skill.\n * Sau khi duyệt.\n */\nrun();\n', 'ts');
+  same('<div>\n  {/* Chat frame */}\n</div>\n', '<div>\n  {/* Khung chat */}\n</div>\n', 'tsx');
+  // Trailing whitespace is not code.
+  same('const a =\n  b ||\n', 'const a = \n  b || \n', 'ts');
+});
+
+test('a difference in JS/TS code around a comment is still reported', () => {
+  differ('  "cc": ["a@example.com"],   // optional\n', '  "cc": ["b@example.com"],   // tùy chọn\n', 'jsonc');
+  differ('return { message: `Skill does not exist.` };\n', 'return { message: `Skill không tồn tại.` };\n', 'ts');
+  differ('/** doc */ run(1);\n', '/** tài liệu */ run(2);\n', 'js');
+});
+
+test('`//` and `/*` inside JS strings are code, not comments', () => {
+  for (const line of [
+    "const url = 'https://x.example/a';",
+    'const url = "https://x.example/a";',
+    'const url = `https://${host}/a`;',
+    "glob('src/**/*.ts');",
+    'const s = "a \\" // still quoted";',
+  ]) {
+    assert.equal(stripCodeComments(line, 'ts'), line, line);
+  }
+  differ("fetch('https://a.example/x')\n", "fetch('https://b.example/x')\n", 'js');
+  // An apostrophe in JSX text does not swallow the following lines.
+  assert.equal(stripCodeComments("<p>Don't</p>\nrun(); // go\n", 'tsx'), "<p>Don't</p>\nrun();");
+});

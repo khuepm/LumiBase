@@ -4,9 +4,9 @@ lastUpdated: 2026-07-28T00:04:58.104Z
 sourceLang: vi
 translatedFrom: vi
 sourceHash: bb3a4908115a8717
-mtEngine: claude
-syncStatus: machine-translated
-codeVerified: 2026-07-28T00:04:58.104Z
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-14T03:13:31.165Z
 codeVerifiedHash: bb3a4908115a8717
 codeVerifiedClaims: 16
 ---
@@ -110,7 +110,7 @@ export class AISecureHarness {
   ): Promise<HarnessExecutionResult> {
     const skill = CORE_SKILLS[skillName];
     if (!skill) {
-      return { status: 'denied', message: `Skill ${skillName} does not exist.` };
+      return { status: 'denied', message: `Skill ${skillName} không tồn tại.` };
     }
 
     // 1. Check the user's/session's capabilities against what the skill requires
@@ -119,7 +119,7 @@ export class AISecureHarness {
     );
 
     if (!hasCapabilities) {
-      return { status: 'denied', message: `Missing the capabilities needed for this action.` };
+      return { status: 'denied', message: `Thiếu quyền (Capabilities) để thực hiện hành động này.` };
     }
 
     // 2. Risk evaluation
@@ -144,7 +144,7 @@ export class AISecureHarness {
       return {
         status: 'pending_approval',
         approvalId: approval.id,
-        message: `This action needs a system administrator's approval.`,
+        message: `Hành động này cần sự phê duyệt của quản trị viên hệ thống.`,
       };
     }
 
@@ -164,7 +164,7 @@ export class AISecureHarness {
       .limit(1);
 
     if (!approval || approval.status !== 'pending') {
-      return { status: 'denied', message: 'Invalid request, or it has already been handled.' };
+      return { status: 'denied', message: 'Yêu cầu không hợp lệ hoặc đã được xử lý.' };
     }
 
     // Execute directly
@@ -229,7 +229,7 @@ aiRouter.post('/chat', async (c) => {
   // In a later version, integrate the Gemini/OpenAI API here.
   // Mock example: the user types "create a posts table" -> the LLM recognises the 'createCollection' skill
   let parsedSkill = 'createCollection';
-  let parsedArgs = { name: 'posts', description: 'Created by the AI Copilot' };
+  let parsedArgs = { name: 'posts', description: 'Tạo bởi AI Copilot' };
 
   const harness = new AISecureHarness(db, siteId);
   const userCapabilities = auth.roles?.includes('admin') ? ['*'] : ['items:read'];

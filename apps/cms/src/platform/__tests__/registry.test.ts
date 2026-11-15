@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { limitFor, type EntitlementResolver } from '@lumibase/contracts/platform';
 import type { RuntimeContext } from '@lumibase/runtime';
-import { defaultEntitlementResolver, unlimitedSnapshot } from '../defaults';
+import { DEFAULT_PLATFORM_SEAMS, defaultEntitlementResolver, unlimitedSnapshot } from '../defaults';
 import {
   isPlatformSeamRegistered,
   platform,
@@ -66,7 +66,8 @@ describe('platform seam registry — registration', () => {
 
   it('ignores keys that are not seams', () => {
     registerPlatformSeams({ entitlements: stub, notASeam: stub } as never);
-    expect(Object.keys(platform())).toEqual(['entitlements', 'usage']);
+    expect(Object.keys(platform()).sort()).toEqual(Object.keys(DEFAULT_PLATFORM_SEAMS).sort());
+    expect(Object.keys(platform())).not.toContain('notASeam');
   });
 
   it('throws on a second registration', () => {

@@ -1,3 +1,5 @@
+import type { ExternalActionToolSource } from '@lumibase/contracts/platform';
+import { externalActionTools, type ExternalActionToolRegistry } from '../services/external-action-tools';
 import { DEFAULT_PLATFORM_SEAMS } from './defaults';
 import type { PlatformSeamName, PlatformSeams } from './types';
 
@@ -16,6 +18,37 @@ import type { PlatformSeamName, PlatformSeams } from './types';
 
 let overrides: Partial<PlatformSeams> | null = null;
 let resolved: PlatformSeams | null = null;
+/** Tools this registration put into the process-wide registry; undone by the test reset. */
+let loadedToolNames: string[] = [];
+
+/**
+ * Validates and registers every tool of an `externalActions` source.
+ *
+ * All or nothing: if any definition is refused (malformed, duplicate, or a
+ * name already registered), the ones registered before it are removed again
+ * and the error propagates. A deployment entry that half-loaded its tools
+ * would run with a governance surface nobody reviewed.
+ */
+export function loadExternalActionTools(
+  source: ExternalActionToolSource,
+  registry: ExternalActionToolRegistry = externalActionTools,
+): string[] {
+  const tools = source.tools();
+  if (!Array.isArray(tools)) {
+    throw new Error('externalActions.tools() must return an array of tool definitions.');
+  }
+  const loaded: string[] = [];
+  try {
+    for (const tool of tools) {
+      registry.register(tool);
+      loaded.push(tool.name);
+    }
+  } catch (err) {
+    for (const name of loaded) registry.unregister(name);
+    throw err;
+  }
+  return loaded;
+}
 
 /**
  * Supply implementations for one or more seams. Callable once, and only before
@@ -30,12 +63,17 @@ export function registerPlatformSeams(seams: Partial<PlatformSeams>): void {
   if (resolved) {
     throw new Error('registerPlatformSeams() must run before the first request is served.');
   }
-  const accepted: Partial<Record<PlatformSeamName, PlatformSeams[PlatformSeamName]>> = {};
+  const accepted: Record<string, unknown> = {};
   for (const name of Object.keys(DEFAULT_PLATFORM_SEAMS) as PlatformSeamName[]) {
     const implementation = seams[name];
     if (implementation !== undefined) accepted[name] = implementation;
   }
+  // Tools are loaded now, not on first read: a bad definition fails the entry
+  // at boot, and the harness, `tools/list` and MCP all see the same set from
+  // the first request on. Nothing is recorded if loading fails.
+  const loaded = seams.externalActions ? loadExternalActionTools(seams.externalActions) : [];
   overrides = accepted as Partial<PlatformSeams>;
+  loadedToolNames = loaded;
 }
 
 /** The complete seam set: registered implementations over built-in defaults. */
@@ -55,6 +93,8 @@ export function isPlatformSeamRegistered(name: PlatformSeamName): boolean {
 
 /** Test hook: forget any registration and return to the defaults. */
 export function resetPlatformSeamsForTests(): void {
+  for (const name of loadedToolNames) externalActionTools.unregister(name);
+  loadedToolNames = [];
   overrides = null;
   resolved = null;
 }

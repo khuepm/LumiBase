@@ -2,6 +2,7 @@ import type {
   AuthorizeDecision,
   EntitlementResolver,
   EntitlementSnapshot,
+  ExternalActionToolSource,
   LimitValue,
   UsageEmitter,
 } from '@lumibase/contracts/platform';
@@ -52,7 +53,13 @@ export const defaultUsageEmitter: UsageEmitter<RuntimeContext> = {
   flush: () => FLUSHED,
 };
 
+/** No tools: the CMS itself registers no external-action tool. */
+export const defaultExternalActionToolSource: ExternalActionToolSource = Object.freeze({
+  tools: () => [],
+});
+
 export const DEFAULT_PLATFORM_SEAMS: PlatformSeams = Object.freeze({
   entitlements: defaultEntitlementResolver,
   usage: defaultUsageEmitter,
+  externalActions: defaultExternalActionToolSource,
 });

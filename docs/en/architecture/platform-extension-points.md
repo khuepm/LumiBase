@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-11-15T11:49:52.552Z
+version: 3
+lastUpdated: 2026-11-15T14:59:15.675Z
 sourceLang: en
-contentHash: 6c3696f9847317d3
-codeVerified: 2026-11-15T11:49:52.552Z
-codeVerifiedHash: 6c3696f9847317d3
+contentHash: b65445cc77793e33
+codeVerified: 2026-11-15T14:59:15.675Z
+codeVerifiedHash: b65445cc77793e33
 codeVerifiedClaims: 42
 ---
 
@@ -26,7 +26,8 @@ Three properties hold for every seam:
   throws, the CMS logs the failure and continues as if the default had answered.
 
 This page covers the registry, the composable entry points, the cached
-site-to-organization lookup, the entitlement resolver and the usage emitter.
+site-to-organization lookup, the entitlement resolver, the usage emitter, and the
+external-action tool source.
 
 ## Where things live
 
@@ -380,6 +381,29 @@ Guidelines:
   to another organization later leaves its earlier usage with the old one.
 - A Cloudflare queue needs its own producer binding. Declare it in your
   deployment's `wrangler.toml`, not in the stock one.
+
+## External-action tools
+
+The `externalActions` seam lets a deployment entry hand over agent tools that
+call systems outside the CMS, from a package this repository does not import.
+
+```ts
+registerPlatformSeams({ externalActions: { tools: () => myTools() } });
+```
+
+It differs from the other seams in two ways, both deliberate:
+
+- **It is read at registration, not per request.** `tools()` runs once inside
+  `registerPlatformSeams()`, and every definition is validated and registered
+  into the process-wide tool registry there.
+- **A failure is not absorbed.** A malformed or duplicate definition makes
+  `registerPlatformSeams()` throw and registers none of the tools. Running with a
+  tool silently missing, or with half a tool set, would change what agents may do
+  without anyone noticing.
+
+Default: no tools. The declaration format, the decision rule and the optional
+pre-execution policy are described in
+[External-action tools](../features/external-action-tools.md).
 
 ## Multi-tenancy
 

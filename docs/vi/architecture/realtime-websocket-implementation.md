@@ -6,9 +6,9 @@ translatedFrom: en
 sourceHash: 08e616cc9431daf2
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-09-01T19:25:55.469Z
+codeVerified: 2026-11-14T03:53:46.416Z
 codeVerifiedHash: 08e616cc9431daf2
-codeVerifiedClaims: 20
+codeVerifiedClaims: 26
 ---
 
 # Realtime WebSocket Implementation
@@ -249,6 +249,22 @@ Manual verification:
 
 ## Open items
 
-- Docker realtime adapter chưa có, nên tài liệu hiện tại xem realtime production là Cloudflare-only.
-- Publish và connect cần dùng chung shard resolver để tránh lệch room khi bật multi-region.
+- ~~Docker realtime adapter chưa có~~ — đã ship trong `realtime-audience-channels` (xem bên dưới).
+- ~~Publish và connect cần dùng chung shard resolver~~ — đã ship dưới dạng `resolveRoomName()` trong `apps/cms/src/realtime/shard-config.ts`.
 - Permission-aware per-subscriber payload masking nên được tách thành Phase 2 nếu cần ship nhanh Phase 1.
+
+## Audience plane (realtime cho frontend end-user)
+
+Các mục ở trên mô tả **studio plane** — admin user (bảng `users`) subscribe theo collection. Spec `realtime-audience-channels` (`.kiro/specs/realtime-audience-channels/`) thêm một **audience plane** thứ hai, tách biệt, dành cho end-user của frontend nằm trong một bảng do app sở hữu (khoá theo ví dụ một `citizenID`), không phải `users`.
+
+Các thành phần chính:
+
+- **Protocol** (`@lumibase/contracts` `realtime/protocol.ts`): Zod schema dùng chung `lumibase-sync-v1`, được mở rộng thêm frame `join`/`leave`, frame `notification`, `welcome.plane`, và envelope `RealtimeEvent` có đích `{ plane, target: { userId | subjectId | channel } }`. Frame của studio vẫn tương thích từng byte.
+- **Runtime provider** (`RealtimeProvider`, ADR-002): `runtime.realtime.publish(siteId, event)`. Trên Cloudflare, lệnh này chuyển tiếp tới DO `SiteRoom`; trên Docker, nó publish vào một hub trong process làm nền cho server `ws` (`apps/cms/src/realtime/node-hub.ts`), được gắn trong `serve.ts`. Docker nhiều node (Postgres `LISTEN/NOTIFY` hoặc Redis) là việc của tương lai.
+- **Fan-out** (`apps/cms/src/realtime/fan-out.ts`, `shouldDeliver`): plane → target (userId/subjectId/channel) → subscription theo collection. Bỏ echo chỉ áp dụng cho studio. Hai plane cách ly nghiêm ngặt.
+- **Ticket** (`POST /api/v1/realtime/audience-ticket`): phân quyền nằm ở route, qua `resolveAudienceGrant` — hàm này ánh xạ principal frontend đã xác thực sang một `subjectId` và một allowlist channel lấy từ các claim đã được verify. Ticket đã ký mang `plane:'public'`, `subjectId`, `channels`; DO/hub tin các giá trị này và không bao giờ đọc danh tính từ client.
+- **Notification** (`NotificationService`): lưu một dòng `notifications` và fan-out tới các session của người nhận (`userId` cho studio, `subjectId` cho public), bật cờ `pushed`, và cung cấp `listUndelivered`/`markPushed` để phát lại khi reconnect.
+- **SDK** (`AudienceClient`): lấy audience ticket, join/leave channel, trả ra event của channel cùng notification, reconnect có backoff và join lại các channel.
+- **Scale**: rate-limit/heartbeat/idle theo từng session áp dụng cho cả hai plane; `LUMIBASE_REALTIME_MAX_CONNECTIONS_PER_SUBJECT` giới hạn số session trên mỗi subject; `resolveRoomName`/`subjectBucket` hỗ trợ chia shard audience theo bucket (v1 mặc định dùng một room duy nhất `{siteId}:aud`).
+
+Lý do thiết kế: việc bảng end-user tách khỏi `users` là có chủ ý và đúng. Cách giải quyết cho "realtime không lọc được end-user" là một địa chỉ **subject** logic, tách khỏi nguồn user, được resolve phía server từ một ticket đã verify — không phải gộp bảng.

@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-11-15T11:49:52.552Z
+version: 3
+lastUpdated: 2026-11-15T14:59:15.675Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 6c3696f9847317d3
+sourceHash: b65445cc77793e33
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T11:49:52.552Z
-codeVerifiedHash: 6c3696f9847317d3
+codeVerified: 2026-11-15T14:59:15.675Z
+codeVerifiedHash: b65445cc77793e33
 codeVerifiedClaims: 42
 ---
 
@@ -30,7 +30,8 @@ Ba tính chất đúng với mọi seam:
   log và tiếp tục như thể cài đặt mặc định đã trả lời.
 
 Trang này trình bày registry, các entry point ghép được, phép tra cứu
-site → organization có cache, entitlement resolver và usage emitter.
+site → organization có cache, entitlement resolver, usage emitter, và nguồn
+external-action tool.
 
 ## Vị trí các thành phần
 
@@ -381,6 +382,29 @@ Hướng dẫn:
   đó được chuyển sang organization khác thì usage trước đó vẫn ở lại organization cũ.
 - Queue của Cloudflare cần binding producer riêng. Hãy khai báo nó trong
   `wrangler.toml` của bản triển khai của bạn, không phải bản có sẵn.
+
+## External-action tools
+
+Seam `externalActions` cho phép entry của một deployment trao cho CMS các agent
+tool gọi tới hệ thống bên ngoài CMS, từ một gói mà repository này không import.
+
+```ts
+registerPlatformSeams({ externalActions: { tools: () => myTools() } });
+```
+
+Nó khác các seam còn lại ở hai điểm, đều có chủ ý:
+
+- **Được đọc lúc đăng ký, không phải theo từng request.** `tools()` chạy một lần
+  bên trong `registerPlatformSeams()`, và mọi định nghĩa được kiểm và đăng ký vào
+  registry tool dùng chung của process ngay tại đó.
+- **Lỗi không bị nuốt.** Một định nghĩa sai dạng hoặc trùng tên làm
+  `registerPlatformSeams()` ném lỗi và không tool nào được đăng ký. Chạy với một
+  tool lặng lẽ biến mất, hoặc với nửa bộ tool, sẽ đổi những gì agent được làm mà
+  không ai hay.
+
+Mặc định: không có tool nào. Định dạng bản khai, quy tắc quyết định và policy
+trước khi thực thi (tuỳ chọn) được mô tả ở
+[External-action tools](../features/external-action-tools.md).
 
 ## Multi-tenancy
 
