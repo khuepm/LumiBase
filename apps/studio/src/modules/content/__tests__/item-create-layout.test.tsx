@@ -38,6 +38,8 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: unknown }) => <a>{children as never}</a>,
   useNavigate: () => vi.fn(),
   useParams: () => ({ collection: 'posts', id: 'new' }),
+  // ItemCreate reads `?parent=` for the tree view's "Add child" (#749).
+  useSearch: () => ({}),
 }));
 
 const { ItemCreate } = await import('../item-create');

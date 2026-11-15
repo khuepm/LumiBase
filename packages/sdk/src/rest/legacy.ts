@@ -23,6 +23,7 @@ import {
   ItemRow,
   ListItemsResponse,
   RevisionRow,
+  TreeMoveResult,
   DefaultSchema,
   RoleResource,
   RoleDetail,
@@ -297,6 +298,8 @@ export function legacyRest() {
           data: Partial<Row["data"]>;
           status?: string;
           sort?: number;
+          /** Tree collections (#749): parent item id; null/absent = root. */
+          parentId?: string | null;
           /** ISO timestamps for content scheduling (Publish_Window). */
           publishAt?: string | null;
           unpublishAt?: string | null;
@@ -355,6 +358,36 @@ export function legacyRest() {
             method: "POST",
             body: JSON.stringify({ op, items: payload }),
           }),
+        /**
+         * Hierarchical collections (#749) on a `meta.tree.enabled` collection.
+         * Reads apply the caller's row rules; the anchor must be readable.
+         */
+        tree: {
+          children: (parent: string | null, params?: ListItemsParams): Promise<ListResp> => {
+            const q = buildQuery(params);
+            const sep = q ? "&" : "?";
+            return client.rawRequest<ListResp[keyof ListResp]>(
+              `${base}${q}${sep}tree=children&parent=${encodeURIComponent(parent ?? "null")}`,
+            ) as unknown as Promise<ListResp>;
+          },
+          subtree: (parent: string | null, params?: ListItemsParams): Promise<ListResp> => {
+            const q = buildQuery(params);
+            const sep = q ? "&" : "?";
+            return client.rawRequest<ListResp[keyof ListResp]>(
+              `${base}${q}${sep}tree=subtree&parent=${encodeURIComponent(parent ?? "null")}`,
+            ) as unknown as Promise<ListResp>;
+          },
+          ancestors: (node: string): Promise<ListResp> =>
+            client.rawRequest<ListResp[keyof ListResp]>(
+              `${base}?tree=ancestors&node=${encodeURIComponent(node)}`,
+            ) as unknown as Promise<ListResp>,
+          /** Move an item and its subtree; `position` is its 0-based index among the new siblings. */
+          move: (id: string, input: { parentId: string | null; position?: number }) =>
+            client.rawRequest<TreeMoveResult>(`${base}/${id}/move`, {
+              method: "POST",
+              body: JSON.stringify(input),
+            }),
+        },
         listRevisions: (id: string) =>
           client.rawRequest<RevisionRow[]>(`${base}/${id}/revisions`),
         revertRevision: (id: string, revisionId: string) =>

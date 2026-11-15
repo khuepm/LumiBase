@@ -478,6 +478,14 @@ export interface ItemFilter {
   [key: string]: { [op in ItemFilterOp]?: unknown } | ItemFilter[] | undefined;
 }
 
+/** Result of `items(name).tree.move()` (#749). */
+export interface TreeMoveResult {
+  id: string;
+  parentId: string | null;
+  path: string;
+  sort: number;
+}
+
 export interface ListItemsParams {
   fields?: string[];
   filter?: ItemFilter;
@@ -593,6 +601,9 @@ export interface ItemRow<
   unpublishAt?: string | null;
   /** Editorial workflow state; null when the workflow is not in use. */
   editorialState?: string | null;
+  /** Tree collections (#749): parent item id (null = root) and materialised path `/root/…/self/`. */
+  parentId?: string | null;
+  path?: string | null;
   userCreated: string | null;
   userUpdated: string | null;
   createdAt: string;

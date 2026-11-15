@@ -25,6 +25,7 @@ import { blocksFieldConfigProblems } from './blocks';
 import { AuditLogger } from '../modules/audit/logger';
 import { OutboxWriter, type OutboxActor } from '../modules/cdc/change-feed';
 import { CDC_DISPATCH_QUEUE } from '../modules/cdc/change-feed/dispatcher';
+import { validateTreeMeta } from './tree-service';
 
 /**
  * SchemaService — owns the no-code collection/field/relation lifecycle.
@@ -279,6 +280,12 @@ export class SchemaServiceError extends Error {
   }
 }
 
+/** Reject a malformed `meta.tree` (hierarchical collections, #749). */
+function assertTreeMeta(meta: unknown): void {
+  const problem = validateTreeMeta(meta);
+  if (problem) throw new SchemaServiceError('INVALID_TREE_CONFIG', problem, 400);
+}
+
 /**
  * Enforce that `pii|phi` fields are encrypted (Req 5.2). Throws
  * CLASSIFICATION_REQUIRES_ENCRYPTION (HTTP 422) otherwise.
@@ -482,6 +489,7 @@ export class SchemaService {
 
   async createCollection(input: CollectionInput) {
     ensureName(input.name, 'collection');
+    assertTreeMeta(input.meta);
     assertPrimaryKeyStorageCompatible(
       input.primaryKeyType ?? 'nanoid',
       input.storageMode ?? 'jsonb',
@@ -525,6 +533,7 @@ export class SchemaService {
     if (!current) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
     }
+    assertTreeMeta(patch.meta);
     assertPrimaryKeyStorageCompatible(
       (patch.primaryKeyType ?? current.primaryKeyType) as PrimaryKeyType,
       (patch.storageMode ?? current.storageMode) as StorageMode,
@@ -1089,6 +1098,7 @@ export class SchemaService {
       throw new SchemaServiceError('COLLECTION_RENAME_UNSUPPORTED', 'Schema apply cannot rename collections through this endpoint yet.', 400);
     }
     const { fields: fieldInputs, relations: relationInputs, ...collectionPatch } = input;
+    assertTreeMeta(collectionPatch.meta);
     // Atomic full-schema apply: if the collection doesn't exist yet, create it
     // in the same transaction rather than 404ing. This lets callers PUT a full
     // schema in one call instead of POST-then-PUT.

@@ -376,21 +376,19 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
             {canShare ? <Share2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
             Share
           </button>
-          <button
-            type="button"
-            onClick={() => deleteMutation.mutate()}
-            disabled={deleteMutation.isPending || !canDelete}
-            title={canDelete ? undefined : 'You do not have delete permission on this collection.'}
-            className={cn(
-              'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50',
-              canDelete
-                ? 'border-destructive/40 text-destructive hover:bg-destructive/10'
-                : 'cursor-not-allowed border-muted-foreground/20 text-muted-foreground',
-            )}
-          >
-            {canDelete ? <Trash2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-            Delete
-          </button>
+          {/* Folder mode (#749): a policy without `delete` hides the action
+              entirely rather than showing a dead button. */}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+              className="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete
+            </button>
+          )}
           <div className="relative inline-flex">
             <button
               type="button"

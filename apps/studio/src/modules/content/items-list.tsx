@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import { ArrowDown, ArrowUp, Bookmark, ChevronLeft, ChevronRight, ClipboardCheck, Code2, Download, Filter, Upload, Lock, Plus, RefreshCw, Save } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bookmark, ChevronLeft, ChevronRight, ClipboardCheck, Code2, Download, Filter, ListTree, Upload, Lock, Plus, RefreshCw, Save, Table2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FieldResource } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
@@ -17,6 +17,7 @@ import { resolveDisplay } from './displays/registry';
 import { FilterBuilder, compileFilter, type FilterCondition } from './filter-builder';
 import { MapLayout, geopointFields } from './geo/map-layout';
 import { ListLayoutToggle, type ListLayout } from './geo/list-layout-toggle';
+import { CollectionTreeView } from './tree-view';
 
 const PAGE_SIZE = 25;
 
@@ -59,6 +60,17 @@ export function ItemsListPage() {
     queryKey: ['fields', collection],
     queryFn: async () => (await client.schema.listFields(collection)).data,
   });
+
+  // Hierarchical collections (#749): `meta.tree.enabled` offers a tree view,
+  // which is the default for such collections.
+  const collectionQuery = useQuery({
+    queryKey: ['collection', collection],
+    queryFn: async () => (await client.schema.getCollection(collection)).data,
+  });
+  const treeEnabled =
+    (collectionQuery.data?.meta as { tree?: { enabled?: unknown } } | undefined)?.tree?.enabled === true;
+  const [viewMode, setViewMode] = useState<'tree' | 'table'>('tree');
+  const showTree = treeEnabled && viewMode === 'tree';
 
   const filterPayload = useMemo(() => compileFilter(filters), [filters]);
 
@@ -135,7 +147,8 @@ export function ItemsListPage() {
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       }),
-    enabled: !perms.isLoading && canRead,
+    // Wait for the collection so a tree collection does not also fetch the flat page.
+    enabled: !perms.isLoading && canRead && !collectionQuery.isLoading && !showTree,
   });
 
   const fields = fieldsQuery.data ?? [];
@@ -157,8 +170,9 @@ export function ItemsListPage() {
     [fields, perms, collection],
   );
 
-  // "Map" layout is offered only when the collection has a geopoint field (#746).
-  const hasGeo = geopointFields(filterableFields).length > 0;
+  // "Map" layout is offered only when the collection has a geopoint field (#746),
+  // and only in the table view (the tree view of #749 has no map).
+  const hasGeo = geopointFields(filterableFields).length > 0 && !showTree;
   const showMap = hasGeo && layout === 'map';
 
   const total = itemsQuery.data?.meta?.total ?? 0;
@@ -186,6 +200,28 @@ export function ItemsListPage() {
           <h1 className="text-2xl font-semibold">{collection}</h1>
         </div>
         <div className="flex items-center gap-2">
+          {treeEnabled && (
+            <div className="inline-flex rounded-md border" role="group" aria-label="View">
+              <button
+                type="button"
+                aria-pressed={viewMode === 'tree'}
+                onClick={() => setViewMode('tree')}
+                className={cn('inline-flex items-center gap-1 px-2 py-1 text-xs', viewMode === 'tree' && 'bg-accent')}
+              >
+                <ListTree className="h-3.5 w-3.5" />
+                Tree
+              </button>
+              <button
+                type="button"
+                aria-pressed={viewMode === 'table'}
+                onClick={() => setViewMode('table')}
+                className={cn('inline-flex items-center gap-1 border-l px-2 py-1 text-xs', viewMode === 'table' && 'bg-accent')}
+              >
+                <Table2 className="h-3.5 w-3.5" />
+                Table
+              </button>
+            </div>
+          )}
           <Link
             to="/content/$collection/reviews"
             params={{ collection }}
@@ -327,118 +363,131 @@ export function ItemsListPage() {
         </div>
       )}
 
+      {showTree && canRead && (
+        <CollectionTreeView
+          collection={collection}
+          labelField={visibleFields[0]?.name}
+          canCreate={canCreate}
+          canUpdate={canUpdate}
+        />
+      )}
+
       {showMap && (
         <MapLayout collection={collection} fields={filterableFields} filter={filterPayload} enabled={!perms.isLoading && canRead} />
       )}
 
-      <div className={cn('overflow-hidden rounded-lg border', showMap && 'hidden')}>
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="w-8 px-3 py-2">
-                <input
-                  type="checkbox"
-                  checked={rows.length > 0 && rows.every((r) => selected.has(r.id))}
-                  onChange={(e) => {
-                    const next = new Set(selected);
-                    if (e.target.checked) rows.forEach((r) => next.add(r.id));
-                    else rows.forEach((r) => next.delete(r.id));
-                    setSelected(next);
-                  }}
-                />
-              </th>
-              <SortableTh label="id" field="id" sort={sort} onClick={toggleSort} />
-              <SortableTh label="status" field="status" sort={sort} onClick={toggleSort} />
-              {visibleFields.map((f) => (
-                <SortableTh
-                  key={f.id}
-                  label={f.name}
-                  field={f.name}
-                  sort={sort}
-                  onClick={toggleSort}
-                />
-              ))}
-              <SortableTh label="updated" field="updated_at" sort={sort} onClick={toggleSort} />
-            </tr>
-          </thead>
-          <tbody>
-            {itemsQuery.isLoading && (
-              <tr><td colSpan={visibleFields.length + 4} className="px-4 py-6 text-center text-muted-foreground">Loading…</td></tr>
-            )}
-            {!itemsQuery.isLoading && rows.length === 0 && (
-              <tr><td colSpan={visibleFields.length + 4} className="px-4 py-6 text-center text-muted-foreground">No items match.</td></tr>
-            )}
-            {rows.map((row) => (
-              <tr key={row.id} className="border-t hover:bg-muted/20">
-                <td className="px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(row.id)}
-                    onChange={(e) => {
-                      const next = new Set(selected);
-                      if (e.target.checked) next.add(row.id);
-                      else next.delete(row.id);
-                      setSelected(next);
-                    }}
-                  />
-                </td>
-                <td className="px-4 py-2 font-mono text-xs">
-                  <Link
-                    to="/content/$collection/$id"
-                    params={{ collection, id: row.id }}
-                    className="text-primary hover:underline"
-                  >
-                    {row.id.slice(0, 8)}…
-                  </Link>
-                </td>
-                <td className="px-4 py-2"><StatusBadge status={row.status} /></td>
-                {visibleFields.map((f) => {
-                  const Display = resolveDisplay(f);
-                  return (
-                    <td key={f.id} className="px-4 py-2 text-muted-foreground">
-                      <Display
-                        field={f}
-                        value={row.data?.[f.name]}
-                        row={row.data as Record<string, unknown> | undefined}
+      {!showTree && (
+        <>
+          <div className={cn('overflow-hidden rounded-lg border', showMap && 'hidden')}>
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="w-8 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={rows.length > 0 && rows.every((r) => selected.has(r.id))}
+                      onChange={(e) => {
+                        const next = new Set(selected);
+                        if (e.target.checked) rows.forEach((r) => next.add(r.id));
+                        else rows.forEach((r) => next.delete(r.id));
+                        setSelected(next);
+                      }}
+                    />
+                  </th>
+                  <SortableTh label="id" field="id" sort={sort} onClick={toggleSort} />
+                  <SortableTh label="status" field="status" sort={sort} onClick={toggleSort} />
+                  {visibleFields.map((f) => (
+                    <SortableTh
+                      key={f.id}
+                      label={f.name}
+                      field={f.name}
+                      sort={sort}
+                      onClick={toggleSort}
+                    />
+                  ))}
+                  <SortableTh label="updated" field="updated_at" sort={sort} onClick={toggleSort} />
+                </tr>
+              </thead>
+              <tbody>
+                {itemsQuery.isLoading && (
+                  <tr><td colSpan={visibleFields.length + 4} className="px-4 py-6 text-center text-muted-foreground">Loading…</td></tr>
+                )}
+                {!itemsQuery.isLoading && rows.length === 0 && (
+                  <tr><td colSpan={visibleFields.length + 4} className="px-4 py-6 text-center text-muted-foreground">No items match.</td></tr>
+                )}
+                {rows.map((row) => (
+                  <tr key={row.id} className="border-t hover:bg-muted/20">
+                    <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(row.id)}
+                        onChange={(e) => {
+                          const next = new Set(selected);
+                          if (e.target.checked) next.add(row.id);
+                          else next.delete(row.id);
+                          setSelected(next);
+                        }}
                       />
                     </td>
-                  );
-                })}
-                <td className="px-4 py-2 text-xs text-muted-foreground">
-                  {new Date(row.updatedAt).toLocaleString()}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                    <td className="px-4 py-2 font-mono text-xs">
+                      <Link
+                        to="/content/$collection/$id"
+                        params={{ collection, id: row.id }}
+                        className="text-primary hover:underline"
+                      >
+                        {row.id.slice(0, 8)}…
+                      </Link>
+                    </td>
+                    <td className="px-4 py-2"><StatusBadge status={row.status} /></td>
+                    {visibleFields.map((f) => {
+                      const Display = resolveDisplay(f);
+                      return (
+                        <td key={f.id} className="px-4 py-2 text-muted-foreground">
+                          <Display
+                            field={f}
+                            value={row.data?.[f.name]}
+                            row={row.data as Record<string, unknown> | undefined}
+                          />
+                        </td>
+                      );
+                    })}
+                    <td className="px-4 py-2 text-xs text-muted-foreground">
+                      {new Date(row.updatedAt).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-      <footer className={cn('flex items-center justify-between text-xs text-muted-foreground', showMap && 'hidden')}>
-        <span>
-          {rows.length > 0
-            ? `Showing ${page * PAGE_SIZE + 1}-${page * PAGE_SIZE + rows.length} of ${total}`
-            : `0 of ${total}`}
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-            disabled={page === 0}
-            className="rounded-md border px-2 py-1 disabled:opacity-40"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </button>
-          <span>{page + 1} / {totalPages}</span>
-          <button
-            type="button"
-            onClick={() => setPage((p) => p + 1)}
-            disabled={page + 1 >= totalPages}
-            className="rounded-md border px-2 py-1 disabled:opacity-40"
-          >
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </footer>
+          <footer className={cn('flex items-center justify-between text-xs text-muted-foreground', showMap && 'hidden')}>
+            <span>
+              {rows.length > 0
+                ? `Showing ${page * PAGE_SIZE + 1}-${page * PAGE_SIZE + rows.length} of ${total}`
+                : `0 of ${total}`}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="rounded-md border px-2 py-1 disabled:opacity-40"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <span>{page + 1} / {totalPages}</span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={page + 1 >= totalPages}
+                className="rounded-md border px-2 py-1 disabled:opacity-40"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </footer>
+        </>
+      )}
 
       {showBulk && (
         <BulkRawEditor

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { ChevronLeft, Lock, Save } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { FieldResource, ItemRow } from '@lumibase/sdk';
@@ -24,6 +24,9 @@ export function ItemCreate({ collection }: { collection: string }) {
   const queryClient = useQueryClient();
   const perms = usePermissions();
   const canCreate = perms.can(collection, 'create');
+  // Tree collections (#749): "Add child" links here with `?parent=<id>`.
+  const search = useSearch({ strict: false }) as { parent?: unknown };
+  const parentId = typeof search.parent === 'string' && search.parent ? search.parent : undefined;
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   // Draft-review pilot (Jev J09): panel only in assisted mode; the session
   // from opening the form to the created draft is timed in both modes.
@@ -52,7 +55,8 @@ export function ItemCreate({ collection }: { collection: string }) {
       // Same required rule as the server's create validation (#750).
       const missing = checkRequired(fieldsQuery.data ?? [], draft, layout);
       if (Object.keys(missing).length > 0) throw requiredError(missing);
-      return (await client.items(collection as never).create({ data: draft, status: 'draft' })).data as ItemRow;
+      // `?parent=` from the tree view's "Add child" (#749).
+      return (await client.items(collection as never).create({ data: draft, status: 'draft', ...(parentId ? { parentId } : {}) })).data as ItemRow;
     },
     onError: (err: Error) => {
       setFieldErrors(validationErrorsFrom(err, (fieldsQuery.data ?? []).map((f) => f.name)));

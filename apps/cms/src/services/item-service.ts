@@ -11,7 +11,7 @@ import {
 } from '@lumibase/database';
 import { refreshPhysicalTable, type MaterializeConfig } from './materialize-service';
 import { dispatchItemEvent } from './flow-dispatch';
-import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
 import { validateItem } from './validation';
 import { applyHiddenValuePolicy, parseFormLayout } from '@lumibase/contracts/form-layout';
@@ -73,7 +73,7 @@ import {
   dispatchItemRevalidation,
   invalidateItemsTag,
 } from './content-invalidation';
-import { runSiteTransaction } from './rls-transaction';
+import { runSiteTransaction, type SiteTransaction } from './rls-transaction';
 import { queueAccepts } from './queue-routing';
 import {
   CASTABLE_OPS,
@@ -85,6 +85,21 @@ import {
   inferCastKindFromValue,
   type CastKind,
 } from './json-filter-cast';
+import {
+  depthExpression,
+  depthOf,
+  effectivePath,
+  isSelfOrDescendant,
+  parentPathOf,
+  parseTreeConfig,
+  pathFor,
+  pathPrefixClause,
+  pathSegments,
+  renumberSiblings,
+  treeLockSql,
+  type TreeConfig,
+  type TreeQuery,
+} from './tree-service';
 
 const BULK_INSERT_CHUNK = 100;
 
@@ -116,6 +131,12 @@ export interface ListItemsParams {
    * extra aggregate query. When `false`, `meta.total` is omitted.
    */
   withTotal?: boolean;
+  /**
+   * Tree navigation (#749) on a `meta.tree.enabled` collection: children of a
+   * parent, a subtree, or a node's ancestors. Row rules apply to every row
+   * returned, and the anchor node must itself be readable.
+   */
+  tree?: TreeQuery;
 }
 
 export type ItemFilterOp =
@@ -158,6 +179,9 @@ export interface ItemRow {
   status: string;
   data: Record<string, unknown>;
   sort: number;
+  /** Tree collections only (#749). */
+  parentId?: string | null;
+  path?: string | null;
   userCreated: string | null;
   userUpdated: string | null;
   createdAt: Date;
@@ -962,12 +986,16 @@ export class ItemService {
     const permClause = this.permissions?.whereFor(perm) ?? undefined;
     // PostGIS is probed only when a geo operator is used (#746), once per isolate.
     const geo = filterUsesGeo(params.filter) ? await resolveGeoDialect(this.deps.db) : HAVERSINE_DIALECT;
+    const treeScope = params.tree
+      ? await this.treeListScope(coll, permClause, params.tree)
+      : undefined;
     const where = and(
       scopeSite(items.siteId, this.deps.siteId),
       eq(items.collectionId, coll.id),
       isNull(items.deletedAt),
       params.status ? eq(items.status, params.status) : undefined,
       buildFilter(params.filter, coll.fieldTypes, geo),
+      treeScope?.where,
       permClause,
     );
 
@@ -978,7 +1006,7 @@ export class ItemService {
       .select()
       .from(items)
       .where(where)
-      .orderBy(...buildSort(params.sort, coll.fieldTypes))
+      .orderBy(...(treeScope && !params.sort?.length ? treeScope.order : buildSort(params.sort, coll.fieldTypes)))
       .limit(limit)
       .offset(offset);
 
@@ -1059,15 +1087,26 @@ export class ItemService {
       sort?: number;
       publishAt?: string | Date | null;
       unpublishAt?: string | Date | null;
+      /** Tree collections (#749): parent item id; null/absent = root. */
+      parentId?: string | null;
     },
   ) {
     const coll = await this.resolveCollection(collectionName);
+    const tree = parseTreeConfig(coll.meta);
+    if (payload.parentId && !tree) {
+      throw new ItemServiceError('TREE_NOT_ENABLED', `Collection "${collectionName}" is not a tree collection.`, 400);
+    }
     const primaryKey = resolvePrimaryKey({
       field: coll.primaryKeyField,
       type: coll.primaryKeyType,
       storageMode: coll.storageMode,
     }, payload.data ?? {});
     const perm = await this.perm(collectionName, 'create');
+    // Placing under a parent requires that the parent is readable: a caller
+    // must not be able to probe or attach to items its row rules hide.
+    const parentReadClause = payload.parentId
+      ? this.permissions?.whereFor(await this.perm(collectionName, 'read')) ?? undefined
+      : undefined;
     const knownFields = await this.getKnownWritableFields(collectionName);
     assertWritablePermissionFields(perm, knownFields, payload.data ?? {}, {
       status: payload.status,
@@ -1135,6 +1174,13 @@ export class ItemService {
       await this.assertItemIdAvailable(coll.id, primaryKey.id);
     }
     const row = await runSiteTransaction(this.deps.db, this.deps.siteId, async (tx) => {
+      const placement = tree
+        ? await this.placeNewTreeItem(tx, coll.id, tree, recordId, {
+            parentId: payload.parentId ?? null,
+            sort: payload.sort,
+            parentReadClause,
+          })
+        : undefined;
       const [inserted] = await tx
         .insert(items)
         .values({
@@ -1143,7 +1189,9 @@ export class ItemService {
           collectionId: coll.id,
           data: encryptedData,
           status,
-          sort,
+          sort: placement?.sort ?? sort,
+          parentId: placement?.parentId,
+          path: placement?.path,
           publishAt,
           unpublishAt,
           dekWrapped: cryptoOut.wrappedDek ?? null,
@@ -1487,20 +1535,33 @@ export class ItemService {
       siteId: this.deps.siteId,
     });
 
-    const [row] = await this.deps.db
-      .update(items)
-      .set({ deletedAt: new Date(), userUpdated: this.deps.userId ?? null })
-      .where(
-        and(
-          scopeSite(items.siteId, this.deps.siteId),
-          eq(items.collectionId, coll.id),
-          eq(items.id, id),
-          isNull(items.deletedAt),
-          permClause,
-        ),
-      )
-      .returning({ id: items.id });
-    if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+    const tree = parseTreeConfig(coll.meta);
+    let cascaded: string[] = [];
+    if (tree) {
+      cascaded = await this.deleteTreeNode(coll.id, tree, id, permClause);
+    } else {
+      const [row] = await this.deps.db
+        .update(items)
+        .set({ deletedAt: new Date(), userUpdated: this.deps.userId ?? null })
+        .where(
+          and(
+            scopeSite(items.siteId, this.deps.siteId),
+            eq(items.collectionId, coll.id),
+            eq(items.id, id),
+            isNull(items.deletedAt),
+            permClause,
+          ),
+        )
+        .returning({ id: items.id });
+      if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+    }
+    // Descendants removed by a `cascade` tree delete get the same side effects.
+    for (const childId of cascaded) {
+      await this.writeActivity('delete', coll.name, childId, { cascadedFrom: id });
+      await this.deindexItem(collectionName, childId);
+      await this.publishRealtimeEvent(collectionName, 'delete', childId);
+      await this.writeCdcEvent(collectionName, 'delete', childId, null);
+    }
     await this.writeActivity('delete', coll.name, id, {});
     await this.deindexItem(collectionName, id);
     await this.publishRealtimeEvent(collectionName, 'delete', id);
@@ -1511,6 +1572,352 @@ export class ItemService {
     hooks?.dispatch('items.delete.after', { collection: collectionName, itemId: id, userId: this.deps.userId ?? null, siteId: this.deps.siteId }).catch(() => {});
     await this.afterWriteInvalidation(collectionName);
     return { ok: true } as const;
+  }
+
+  // ---------- Hierarchical collections (#749) ----------
+
+  private requireTree(coll: { meta: unknown; name: string }): TreeConfig {
+    const tree = parseTreeConfig(coll.meta);
+    if (!tree) {
+      throw new ItemServiceError('TREE_NOT_ENABLED', `Collection "${coll.name}" is not a tree collection.`, 400);
+    }
+    return tree;
+  }
+
+  /**
+   * Tree read scope for {@link list}. The anchor (parent / node) must be
+   * readable under the caller's row rules — otherwise 404, the same answer as
+   * for an id that does not exist, so hidden items cannot be probed. Every row
+   * returned additionally passes the read rule in `list` itself; a hidden
+   * ancestor is therefore simply absent from an `ancestors` answer, and a
+   * readable row's `parentId` / `path` are the only trace of hidden ids
+   * (opaque structural ids, never data).
+   */
+  private async treeListScope(
+    coll: { id: string; name: string; meta: unknown },
+    readClause: SQL | undefined,
+    query: TreeQuery,
+  ): Promise<{ where: SQL | undefined; order: SQL[] }> {
+    this.requireTree(coll);
+    const siblingOrder = [asc(items.sort), asc(items.createdAt), asc(items.id)];
+    const anchorId = query.mode === 'ancestors' ? query.node : query.parent;
+    if (anchorId === null) {
+      return query.mode === 'children'
+        ? { where: isNull(items.parentId), order: siblingOrder }
+        : { where: undefined, order: [asc(depthExpression()), ...siblingOrder] };
+    }
+    const [anchor] = await this.deps.db
+      .select({ id: items.id, path: items.path })
+      .from(items)
+      .where(
+        and(
+          scopeSite(items.siteId, this.deps.siteId),
+          eq(items.collectionId, coll.id),
+          eq(items.id, anchorId),
+          isNull(items.deletedAt),
+          readClause,
+        ),
+      )
+      .limit(1);
+    if (!anchor) throw new ItemServiceError('NOT_FOUND', `Item "${anchorId}" not found.`, 404);
+    const anchorPath = effectivePath(anchor);
+    if (query.mode === 'children') {
+      return { where: eq(items.parentId, anchor.id), order: siblingOrder };
+    }
+    if (query.mode === 'subtree') {
+      return {
+        where: and(pathPrefixClause(anchorPath), ne(items.id, anchor.id)),
+        order: [asc(depthExpression()), ...siblingOrder],
+      };
+    }
+    const ancestorIds = pathSegments(anchorPath).slice(0, -1);
+    return {
+      where: ancestorIds.length ? inArray(items.id, ancestorIds) : sql`false`,
+      order: [asc(depthExpression())],
+    };
+  }
+
+  /**
+   * Resolve parent/path/sort for a new tree item. Runs inside the create
+   * transaction under the tree lock, so the parent's path cannot change
+   * between this read and the insert.
+   */
+  private async placeNewTreeItem(
+    tx: SiteTransaction,
+    collectionId: string,
+    tree: TreeConfig,
+    recordId: string,
+    opts: { parentId: string | null; sort?: number; parentReadClause?: SQL },
+  ): Promise<{ parentId: string | null; path: string; sort: number }> {
+    await tx.execute(treeLockSql(this.deps.siteId, collectionId));
+    let parentPath: string | null = null;
+    if (opts.parentId) {
+      const [parent] = await tx
+        .select({ id: items.id, path: items.path })
+        .from(items)
+        .where(
+          and(
+            scopeSite(items.siteId, this.deps.siteId),
+            eq(items.collectionId, collectionId),
+            eq(items.id, opts.parentId),
+            isNull(items.deletedAt),
+            opts.parentReadClause,
+          ),
+        )
+        .limit(1);
+      if (!parent) {
+        throw new ItemServiceError('PARENT_NOT_FOUND', `Parent item "${opts.parentId}" not found.`, 404);
+      }
+      parentPath = effectivePath(parent);
+    }
+    let path: string;
+    try {
+      path = pathFor(parentPath, recordId);
+    } catch (err) {
+      throw new ItemServiceError('TREE_INVALID_ID', (err as Error).message, 400);
+    }
+    if (depthOf(path) > tree.maxDepth) {
+      throw new ItemServiceError('TREE_MAX_DEPTH', `Tree depth would exceed ${tree.maxDepth}.`, 409);
+    }
+    let sort = opts.sort;
+    if (sort === undefined) {
+      const [last] = await tx
+        .select({ max: sql<number | null>`max(${items.sort})` })
+        .from(items)
+        .where(
+          and(
+            scopeSite(items.siteId, this.deps.siteId),
+            eq(items.collectionId, collectionId),
+            opts.parentId ? eq(items.parentId, opts.parentId) : isNull(items.parentId),
+            isNull(items.deletedAt),
+          ),
+        );
+      sort = last?.max === null || last?.max === undefined ? 0 : Number(last.max) + 1;
+    }
+    return { parentId: opts.parentId, path, sort };
+  }
+
+  /**
+   * Move an item (and its whole subtree) under `parentId` (null = root),
+   * optionally at `position` among its new siblings (0-based; siblings are
+   * renumbered 0..n-1 — their `sort` is the only column touched). Without
+   * `position` the item keeps its `sort` when the parent is unchanged and is
+   * appended otherwise.
+   *
+   * Requires `update` on the moved item (row rule) and `read` on the new
+   * parent. One transaction under the per-collection tree lock: the cycle
+   * check, the depth check and the descendant path rewrite see one consistent
+   * tree, and concurrent moves are serialised.
+   */
+  async move(
+    collectionName: string,
+    id: string,
+    input: { parentId: string | null; position?: number },
+  ): Promise<{ id: string; parentId: string | null; path: string; sort: number }> {
+    const coll = await this.resolveCollection(collectionName);
+    const tree = this.requireTree(coll);
+    const perm = await this.perm(collectionName, 'update');
+    const updateClause = this.permissions?.whereFor(perm) ?? undefined;
+    const readClause = input.parentId
+      ? this.permissions?.whereFor(await this.perm(collectionName, 'read')) ?? undefined
+      : undefined;
+    if (input.position !== undefined) {
+      // Reordering writes `sort`; a field whitelist that excludes it refuses.
+      assertWritablePermissionFields(perm, await this.getKnownWritableFields(collectionName), {}, { sort: input.position });
+    }
+    if (input.parentId === id) {
+      throw new ItemServiceError('TREE_CYCLE', 'An item cannot be moved under itself.', 409);
+    }
+
+    const result = await runSiteTransaction(this.deps.db, this.deps.siteId, async (tx) => {
+      await tx.execute(treeLockSql(this.deps.siteId, coll.id));
+      const scope = and(scopeSite(items.siteId, this.deps.siteId), eq(items.collectionId, coll.id));
+      const [node] = await tx
+        .select({ id: items.id, parentId: items.parentId, path: items.path, sort: items.sort })
+        .from(items)
+        .where(and(scope, eq(items.id, id), isNull(items.deletedAt), updateClause))
+        .limit(1);
+      if (!node) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+      const oldPath = effectivePath(node);
+
+      let parentPath: string | null = null;
+      if (input.parentId) {
+        const [parent] = await tx
+          .select({ id: items.id, path: items.path })
+          .from(items)
+          .where(and(scope, eq(items.id, input.parentId), isNull(items.deletedAt), readClause))
+          .limit(1);
+        if (!parent) {
+          throw new ItemServiceError('PARENT_NOT_FOUND', `Parent item "${input.parentId}" not found.`, 404);
+        }
+        parentPath = effectivePath(parent);
+        if (isSelfOrDescendant(parentPath, oldPath)) {
+          throw new ItemServiceError('TREE_CYCLE', 'An item cannot be moved under its own descendant.', 409);
+        }
+      }
+      let newPath: string;
+      try {
+        newPath = pathFor(parentPath, id);
+      } catch (err) {
+        throw new ItemServiceError('TREE_INVALID_ID', (err as Error).message, 400);
+      }
+
+      // Depth: the deepest live descendant moves by the same offset.
+      const [deepest] = await tx
+        .select({ depth: sql<number | null>`max(${depthExpression()})` })
+        .from(items)
+        .where(and(scope, pathPrefixClause(oldPath), isNull(items.deletedAt)));
+      const height = Math.max(0, Number(deepest?.depth ?? depthOf(oldPath)) - depthOf(oldPath));
+      if (depthOf(newPath) + height > tree.maxDepth) {
+        throw new ItemServiceError('TREE_MAX_DEPTH', `Tree depth would exceed ${tree.maxDepth}.`, 409);
+      }
+
+      if (newPath !== oldPath) {
+        // Soft-deleted descendants are rebased too, so a later restore stays consistent.
+        await tx
+          .update(items)
+          .set({ path: sql`${newPath} || substr(${items.path}, ${oldPath.length + 1})` })
+          .where(and(scope, pathPrefixClause(oldPath), ne(items.id, id)));
+      }
+
+      const sameParent = (node.parentId ?? null) === (input.parentId ?? null);
+      let sort = node.sort;
+      if (input.position !== undefined || !sameParent) {
+        const siblings = await tx
+          .select({ id: items.id, sort: items.sort })
+          .from(items)
+          .where(
+            and(
+              scope,
+              input.parentId ? eq(items.parentId, input.parentId) : isNull(items.parentId),
+              isNull(items.deletedAt),
+              ne(items.id, id),
+            ),
+          )
+          .orderBy(asc(items.sort), asc(items.createdAt), asc(items.id));
+        if (input.position === undefined) {
+          sort = siblings.reduce((max, s) => Math.max(max, s.sort + 1), 0);
+        } else {
+          const placed = renumberSiblings(siblings, id, input.position);
+          const current = new Map(siblings.map((s) => [s.id, s.sort]));
+          for (const entry of placed) {
+            if (entry.id === id) {
+              sort = entry.sort;
+            } else if (current.get(entry.id) !== entry.sort) {
+              await tx.update(items).set({ sort: entry.sort }).where(and(scope, eq(items.id, entry.id)));
+            }
+          }
+        }
+      }
+
+      const [moved] = await tx
+        .update(items)
+        .set({
+          parentId: input.parentId,
+          path: newPath,
+          sort,
+          userUpdated: this.deps.userId ?? null,
+          updatedAt: new Date(),
+        })
+        .where(and(scope, eq(items.id, id)))
+        .returning({ id: items.id, parentId: items.parentId, sort: items.sort });
+      if (!moved) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+      return { from: node.parentId ?? null, path: newPath, moved };
+    });
+
+    await this.writeActivity('update', coll.name, id, {
+      move: { from: result.from, to: input.parentId, position: input.position ?? null },
+    });
+    await this.publishRealtimeEvent(collectionName, 'update', id);
+    await this.writeCdcEvent(collectionName, 'update', id, null, ['parent_id', 'path', 'sort']);
+    await this.afterWriteInvalidation(collectionName);
+    return {
+      id: result.moved.id,
+      parentId: result.moved.parentId ?? null,
+      path: result.path,
+      sort: result.moved.sort,
+    };
+  }
+
+  /**
+   * Soft-delete a tree node per the collection's `onDelete` policy. Returns
+   * the ids of descendants removed by `cascade` (empty otherwise).
+   *  - `restrict` (default): refuse with 409 while live descendants exist.
+   *  - `cascade`: delete the whole live subtree; every descendant must pass
+   *    the caller's delete rule, or nothing is deleted (403).
+   *  - `reparent`: children move up to the deleted item's parent; descendant
+   *    paths drop the deleted segment.
+   */
+  private async deleteTreeNode(
+    collectionId: string,
+    tree: TreeConfig,
+    id: string,
+    deleteClause: SQL | undefined,
+  ): Promise<string[]> {
+    return runSiteTransaction(this.deps.db, this.deps.siteId, async (tx) => {
+      await tx.execute(treeLockSql(this.deps.siteId, collectionId));
+      const scope = and(scopeSite(items.siteId, this.deps.siteId), eq(items.collectionId, collectionId));
+      const [node] = await tx
+        .select({ id: items.id, parentId: items.parentId, path: items.path })
+        .from(items)
+        .where(and(scope, eq(items.id, id), isNull(items.deletedAt), deleteClause))
+        .limit(1);
+      if (!node) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+      const nodePath = effectivePath(node);
+      const descendants = await tx
+        .select({ id: items.id })
+        .from(items)
+        .where(and(scope, pathPrefixClause(nodePath), ne(items.id, id), isNull(items.deletedAt)));
+      const now = new Date();
+      const userUpdated = this.deps.userId ?? null;
+      let cascaded: string[] = [];
+      if (descendants.length > 0) {
+        if (tree.onDelete === 'restrict') {
+          throw new ItemServiceError(
+            'TREE_HAS_CHILDREN',
+            `Item "${id}" has ${descendants.length} descendant(s); move or delete them first.`,
+            409,
+          );
+        }
+        if (tree.onDelete === 'cascade') {
+          cascaded = descendants.map((d) => d.id);
+          if (deleteClause) {
+            const [allowed] = await tx
+              .select({ n: sql<number>`count(*)::int` })
+              .from(items)
+              .where(and(scope, inArray(items.id, cascaded), isNull(items.deletedAt), deleteClause));
+            if (Number(allowed?.n ?? 0) !== cascaded.length) {
+              throw new ItemServiceError(
+                'FORBIDDEN',
+                'Cascade delete would remove descendants you are not allowed to delete.',
+                403,
+              );
+            }
+          }
+          await tx
+            .update(items)
+            .set({ deletedAt: now, userUpdated })
+            .where(and(scope, inArray(items.id, cascaded)));
+        } else {
+          const upPath = parentPathOf(nodePath);
+          await tx
+            .update(items)
+            .set({ parentId: node.parentId ?? null })
+            .where(and(scope, eq(items.parentId, id)));
+          await tx
+            .update(items)
+            .set({ path: sql`${upPath} || substr(${items.path}, ${nodePath.length + 1})` })
+            .where(and(scope, pathPrefixClause(nodePath), ne(items.id, id)));
+        }
+      }
+      const [row] = await tx
+        .update(items)
+        .set({ deletedAt: now, userUpdated })
+        .where(and(scope, eq(items.id, id), isNull(items.deletedAt), deleteClause))
+        .returning({ id: items.id });
+      if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+      return cascaded;
+    });
   }
 
   /**
