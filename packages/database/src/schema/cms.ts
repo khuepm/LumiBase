@@ -240,6 +240,18 @@ export const items = pgTable(
      */
     editorialState: text('editorial_state'),
     /**
+     * Publication timestamps (#687, migration 0037). `firstPublishedAt` is
+     * stamped once, on the first transition into `published`, and never moves.
+     * `publishedAt` is the most recent publish (kept on unpublish, so it reads
+     * "last published at"). `hasUnpublishedChanges` flips on when the data of
+     * an item that has been published is edited, and clears on the next
+     * publish. Maintained by ItemService / EditorialService / the scheduler
+     * through `publication-state.ts`.
+     */
+    firstPublishedAt: timestamp('first_published_at'),
+    publishedAt: timestamp('published_at'),
+    hasUnpublishedChanges: boolean('has_unpublished_changes').default(false).notNull(),
+    /**
      * Per-record wrapped DEK for envelope encryption (Req 4.5). Null unless
      * `LUMIBASE_ENVELOPE_ENCRYPTION` is enabled; deleting it crypto-shreds the
      * record (Req 11.2).
@@ -284,6 +296,10 @@ export const items = pgTable(
     treePathIdx: index('items_tree_path_idx')
       .on(t.siteId, t.collectionId, t.path.op('text_pattern_ops'))
       .where(sql`${t.path} is not null`),
+    /** "Modified since publish" list filter (#687, migration 0037). */
+    unpublishedChangesIdx: index('items_unpublished_changes_idx')
+      .on(t.siteId, t.collectionId)
+      .where(sql`${t.hasUnpublishedChanges} = true and ${t.deletedAt} is null`),
   }),
 );
 

@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 52
-lastUpdated: 2026-11-15T22:10:29.536Z
+version: 53
+lastUpdated: 2026-11-15T23:02:34.936Z
 sourceLang: en
 translatedFrom: en
-sourceHash: bd99a908b2210d9f
+sourceHash: 981f8dd20409daf7
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T22:10:29.536Z
-codeVerifiedHash: bd99a908b2210d9f
-codeVerifiedClaims: 598
+codeVerified: 2026-11-15T23:02:34.936Z
+codeVerifiedHash: 981f8dd20409daf7
+codeVerifiedClaims: 608
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -593,6 +593,8 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `DELETE` | `/api/v1/items/:collection/:id` | Xóa mục — **409 nếu bị chặn bởi phụ thuộc** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | Liệt kê các bản ghi tham chiếu tới mục này |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Xử lý hàng loạt các phụ thuộc của quan hệ |
+| `POST` | `/api/v1/items/:collection/:id/reorder` | Sắp xếp thủ công trên collection có `meta.manualSort`: `{ after: id \| null }` hoặc `{ before: id }` ([Editorial UX](../features/editorial-ux.md#sắp-xếp-thủ-công)) |
+| `POST` | `/api/v1/items/:collection/:id/duplicate` | Lưu thành bản sao: một bản sao `draft` với trường duy nhất được thêm hậu tố (`relations` trong body; xem bên dưới) |
 | `POST` | `/api/v1/items/:collection/:id/move` | Di chuyển một item cùng cây con của nó trong collection dạng cây; liệt kê với `?tree=children\|subtree\|ancestors` ([Collection phân cấp](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | Liệt kê các bản sửa đổi (revisions) |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Khôi phục lại một bản sửa đổi |
@@ -640,6 +642,44 @@ File không hợp lệ bị từ chối với `400 VALIDATION` / `413 PAYLOAD_TO
 
 Mặc định không đổi, nên các client hiện tại tiếp tục nhận `meta.total`. `@lumibase/sdk` `readItems` chấp nhận tùy chọn `meta` tương tự.
 
+**Trạng thái xuất bản, nhóm (cohort) và bản sao (epic #668).**
+
+- **Dấu thời gian xuất bản (#687).** Mỗi item mang `firstPublishedAt` (gán
+  ở lần xuất bản đầu tiên, không bao giờ đổi), `publishedAt` (lần xuất bản gần
+  nhất, giữ nguyên khi gỡ xuất bản) và `hasUnpublishedChanges`. Một lần ghi là
+  *xuất bản* khi item chuyển sang `published`, hoặc khi body gửi rõ
+  `status: "published"` (xuất bản lại). Sửa dữ liệu của item đã từng được xuất
+  bản sẽ đặt `hasUnpublishedChanges: true`; lần xuất bản kế tiếp xoá cờ này.
+  Lưu mà không đổi gì thì không đổi gì. `GET /items/:collection?modifiedSincePublish=true`
+  chỉ liệt kê item đã bị sửa. GraphQL trả các giá trị này qua `_firstPublishedAt`,
+  `_publishedAt` và `_hasUnpublishedChanges`.
+- **Cohort (#688).** `GET /items/:collection` và `GET /items/:collection/:id`
+  nhận `publicationState=live|preview|all`: `live` = `published` và nằm trong
+  khung xuất bản, `preview` = `draft` + `published`, `all` = không lọc theo
+  cohort. Phần mở rộng quan hệ lồng nhau (`fields=rel.*`, `deep`) theo cùng
+  cohort. Người gọi ẩn danh và người dùng realm frontend luôn nhận `live`, bất
+  kể yêu cầu gì. Không truyền tham số thì hành vi không đổi (chỉ RBAC quyết
+  định). Giá trị lạ trả `400 VALIDATION`. Trường danh sách và `_by_id` của
+  GraphQL nhận cùng đối số `publicationState`; quan hệ lồng nhau đi theo nó.
+- **Nhân bản (#689).** `POST /items/:collection/:id/duplicate` với body tuỳ
+  chọn `{ relations?: "reference"|"deep"|"none", translations?: boolean,
+  locale?: string, overrides?: object }` tạo một bản sao `draft` qua đường tạo
+  item thông thường (cần `read` trên bản gốc và `create` trên collection).
+  Trường chuỗi duy nhất (và `slug`) được thêm hậu tố `-copy`, `-copy-2`, …;
+  giá trị duy nhất khác bị bỏ. `reference` (mặc định) sao chép liên kết m2m,
+  `deep` sao chép thêm một tầng item con o2m, `none` chỉ sao chép item.
+  `translations: false` chỉ giữ `locale` (mặc định: locale mặc định của site)
+  của các trường `translatable-text`. Phản hồi `201 { data, meta: { sourceId,
+  related } }`; một mục audit `item_duplicated` ghi lại bản gốc.
+- **Bỏ qua revision (#693).** `PATCH`/`PUT ?saveRevision=false` ghi item mà
+  không tạo dòng revision (autosave, ghi bằng máy). Lần ghi do agent thực hiện
+  luôn ghi revision (provenance). Collection có thể giới hạn lịch sử bằng
+  `meta.revisionRetention: { maxRevisions?, maxAgeDays? }`; một lượt quét mỗi
+  giờ xoá revision cũ nhưng luôn giữ revision mới nhất của mỗi item, revision
+  đang staged, revision được release ghim và revision của agent.
+
+Xem [Editorial UX](../features/editorial-ux.md).
+
 **Header tùy chọn:**
 - `X-Lumi-Draft: true` — lấy phiên bản nháp
 - `X-Lumi-Locale: vi` — áp dụng dịch ở phía server
@@ -669,6 +709,7 @@ Một **Release** gom các bản sửa đổi mục cụ thể trên nhiều col
 | `GET` | `/api/v1/releases` | Liệt kê các release (`?status=&page=&limit=`) |
 | `GET` | `/api/v1/releases/:id` | Chi tiết release + các mục của nó |
 | `PATCH` | `/api/v1/releases/:id` | Cập nhật meta, `addItems`/`removeItems`, đặt `publishAt` |
+| `GET` | `/api/v1/releases/:id/validate` | Tóm tắt kiểm tra hợp lệ trước khi xuất bản (#692) |
 | `POST` | `/api/v1/releases/:id/publish` | Xuất bản ngay (thủ công) |
 | `DELETE` | `/api/v1/releases/:id` | Xóa release (xóa nối tiếp các mục) |
 
@@ -690,6 +731,18 @@ Một **Release** gom các bản sửa đổi mục cụ thể trên nhiều col
 **Response Xuất bản** (`{ data: { release, status, outcomes } }`): `status` là `published` | `partially_failed` | `failed`; mỗi outcome là `{ collection, itemId, outcome: 'published'|'skipped'|'failed', reason? }`. Xuất bản một phần / thất bại vẫn trả về **HTTP 200** kèm kết quả.
 
 **Mã lỗi:** `EMPTY_RELEASE` (422), `ALREADY_PUBLISHED` (409), `RELEASE_IMMUTABLE` (409, chỉnh sửa các mục của release đã xuất bản), `ITEM_NOT_FOUND` (404), `REVISION_STAGED` (409, ghim bản sửa đổi chưa commit), `VALIDATION_FAILED` (422, bao gồm `publishAt` trong quá khứ). Các yếu tố chặn xuất bản từng mục xuất hiện dưới dạng lý do outcome `EDITORIAL_GATE_REQUIRED` / `ITEM_DELETED`.
+
+**Tóm tắt kiểm tra hợp lệ (#692).** `GET /releases/:id/validate` kiểm tra đầy đủ
+(gồm cả trường bắt buộc và điều kiện form-layout) mọi item mà release sẽ xuất
+bản — dùng snapshot của revision được ghim nếu có. Phản hồi:
+`{ data: { valid, checked, items: [{ collection, itemId, issues: [{ field, code, message }] }] } }`;
+`items` chỉ liệt kê item có vấn đề, và `field` là đường dẫn dạng dấu chấm tới
+trường lỗi. Khi xuất bản, cùng phép kiểm tra này chạy trước: item không hợp lệ
+không bao giờ được xuất bản và nhận lý do outcome `VALIDATION_FAILED` kèm
+`issues`. Ở chế độ `all_or_nothing` điều đó làm cả release thất bại; ở
+`best_effort` các item hợp lệ vẫn được xuất bản. Trang **Releases** của Studio
+hiển thị bản tóm tắt với liên kết mở trình soạn item ngay tại trường lỗi
+(`#field=<name>`).
 
 Các release lên lịch được xuất bản qua nhịp `content-scheduler` dùng chung (`sweepDueReleases`) — idempotent và nhận biết `maintenanceWindow`.
 

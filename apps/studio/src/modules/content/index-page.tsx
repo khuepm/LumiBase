@@ -19,7 +19,8 @@ export function ContentIndexPage() {
       <header>
         <h1 className="text-2xl font-semibold">Content</h1>
         <p className="text-sm text-muted-foreground">
-          Pick a collection to browse, filter, and edit items.
+          Pick a collection to browse, filter, and edit items. Bundles of items that publish
+          together live under <Link to="/releases" className="text-primary hover:underline">Releases</Link>.
         </p>
       </header>
 

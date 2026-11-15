@@ -12,9 +12,16 @@ import {
 import { refreshPhysicalTable, type MaterializeConfig } from './materialize-service';
 import { dispatchItemEvent } from './flow-dispatch';
 import { nextItemVersion } from './item-etag';
+import { isManualSort, manualSortOrder, nextManualSort } from './item-reorder';
+import {
+  publicationStamps,
+  publicationStateClause,
+  sameItemData,
+  type PublicationState,
+} from './publication-state';
 import { and, asc, desc, eq, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
-import { validateItem } from './validation';
+import { validateItem, type ValidationIssue } from './validation';
 import { applyHiddenValuePolicy, parseFormLayout } from '@lumibase/contracts/form-layout';
 import { hasBlocksFields, resolveBlockTemplates } from './blocks';
 import {
@@ -146,6 +153,11 @@ export interface ListItemsParams {
    * returned, and the anchor node must itself be readable.
    */
   tree?: TreeQuery;
+  /**
+   * "Modified since publish" (#687): only items that have been published and
+   * whose data was edited after their last publish.
+   */
+  modifiedSincePublish?: boolean;
 }
 
 export type ItemFilterOp =
@@ -193,6 +205,10 @@ export interface ItemRow {
   /** Tree collections only (#749). */
   parentId?: string | null;
   path?: string | null;
+  /** Publication state (#687). */
+  firstPublishedAt?: Date | null;
+  publishedAt?: Date | null;
+  hasUnpublishedChanges?: boolean;
   userCreated: string | null;
   userUpdated: string | null;
   createdAt: Date;
@@ -349,6 +365,19 @@ export interface ItemServiceDeps {
    * user, otherwise system.
    */
   cdcActor?: OutboxActor;
+  /**
+   * Publication cohort for reads (#688): `live` | `preview` | `all`. Applies
+   * to list, detail and nested relation expansion. `undefined` = no cohort
+   * filter (historical behaviour). The request factory clamps anonymous
+   * callers to `live`.
+   */
+  publicationState?: PublicationState;
+  /**
+   * `false` skips the revision row on `patch` (#693, `?saveRevision=false`)
+   * for autosave / machine writes. Ignored for agent-authored writes — their
+   * revision is the provenance record and is always kept.
+   */
+  saveRevision?: boolean;
 }
 
 const STRUCTURAL_FIELDS = new Set([
@@ -1058,9 +1087,11 @@ export class ItemService {
       eq(items.collectionId, coll.id),
       isNull(items.deletedAt),
       params.status ? eq(items.status, params.status) : undefined,
+      params.modifiedSincePublish ? eq(items.hasUnpublishedChanges, true) : undefined,
       buildFilter(params.filter, coll.fieldTypes, geo),
       treeScope?.where,
       permClause,
+      publicationStateClause(this.deps.publicationState),
     );
 
     const limit = Math.min(params.limit ?? 25, 200);
@@ -1070,7 +1101,13 @@ export class ItemService {
       .select()
       .from(items)
       .where(where)
-      .orderBy(...(treeScope && !params.sort?.length ? treeScope.order : buildSort(params.sort, coll.fieldTypes)))
+      .orderBy(
+        ...(treeScope && !params.sort?.length
+          ? treeScope.order
+          : !params.sort?.length && isManualSort(coll.meta)
+            ? manualSortOrder()
+            : buildSort(params.sort, coll.fieldTypes)),
+      )
       .limit(limit)
       .offset(offset);
 
@@ -1136,6 +1173,7 @@ export class ItemService {
           eq(items.id, id),
           isNull(items.deletedAt),
           permClause,
+          publicationStateClause(this.deps.publicationState),
         ),
       )
       .limit(1);
@@ -1200,7 +1238,10 @@ export class ItemService {
         409,
       );
     }
-    const sort = payload.sort ?? 0;
+    // Manual-sort collections (#690) append new items at the end.
+    const sort = payload.sort ?? (isManualSort(coll.meta) && !tree
+      ? await nextManualSort(this.deps.db, this.deps.siteId, coll.id)
+      : 0);
     const createSnapshot = buildPermissionSnapshot({
       data: withPresets,
       status,
@@ -1264,6 +1305,7 @@ export class ItemService {
           path: placement?.path,
           publishAt,
           unpublishAt,
+          ...publicationStamps(null, { status, dataChanged: true }),
           dekWrapped: cryptoOut.wrappedDek ?? null,
           userCreated: this.deps.userId ?? null,
           userUpdated: this.deps.userId ?? null,
@@ -1465,6 +1507,11 @@ export class ItemService {
           status: finalStatus,
           sort: finalSort,
           pinnedFields: nextPinned,
+          ...publicationStamps(rawRow, {
+            status: finalStatus,
+            dataChanged: !sameItemData(finalData, currentData),
+            publishRequested: patch.status === 'published',
+          }),
           dekWrapped: cryptoOut.wrappedDek ?? null,
           ...(effectiveWindow
             ? { publishAt: effectiveWindow.publishAt, unpublishAt: effectiveWindow.unpublishAt }
@@ -1489,7 +1536,7 @@ export class ItemService {
           ? preconditionFailed(id)
           : new ItemServiceError('UPDATE_FAILED', 'Failed to update item.');
       }
-      await tx.insert(revisions).values({
+      if (this.shouldSaveRevision()) await tx.insert(revisions).values({
         siteId: this.deps.siteId,
         collectionId: coll.id,
         itemId: id,
@@ -2404,7 +2451,10 @@ export class ItemService {
       relatedCollection.id,
       rel.manyField,
       parentIds,
-      this.permissions?.whereFor(relatedPerm) ?? undefined,
+      and(
+        this.permissions?.whereFor(relatedPerm) ?? undefined,
+        publicationStateClause(this.deps.publicationState),
+      ),
     );
     const projected = await this.projectRelatedRows(rel.manyCollection, relatedRows, relatedPerm, selected.fields);
     const byParent = new Map<string, Record<string, unknown>[]>();
@@ -2526,6 +2576,7 @@ export class ItemService {
           inArray(items.id, ids),
           isNull(items.deletedAt),
           relatedPermClause,
+          publicationStateClause(this.deps.publicationState),
         ),
       );
     return this.projectRelatedRows(collectionName, relatedRows as ItemRow[], relatedPerm, fields);
@@ -3026,6 +3077,29 @@ export class ItemService {
   }
 
   /** Lists pinned fields for an item. */
+  /**
+   * Full validation of an item as it would be published (#692): its stored
+   * data — or `data`, e.g. a release's pinned snapshot — against the
+   * collection schema, required fields and form-layout conditions included.
+   * The item must be readable by the caller. Returns the issues; `[]` = valid.
+   */
+  async validateForPublish(
+    collectionName: string,
+    id: string,
+    data?: Record<string, unknown>,
+  ): Promise<ValidationIssue[]> {
+    const row = (await this.detail(collectionName, id)) as ItemRow;
+    const subject = data ?? row.data ?? {};
+    const compiled = await this.schemaService.getCompiled(collectionName);
+    if (!compiled) return [];
+    const layout = parseFormLayout(compiled.meta?.formLayout);
+    const blockTemplates = hasBlocksFields(compiled.fields)
+      ? await resolveBlockTemplates(compiled.fields, (name) => this.schemaService.getCompiled(name))
+      : undefined;
+    const result = validateItem(compiled.fields, subject, { partial: false, layout, context: subject, blockTemplates });
+    return result.ok ? [] : result.issues;
+  }
+
   async listPins(collectionName: string, id: string): Promise<{ pinnedFields: string[] }> {
     const coll = await this.resolveCollection(collectionName);
     await this.perm(collectionName, 'read');
@@ -3070,6 +3144,15 @@ export class ItemService {
       );
     await this.writeActivity('pin.release', coll.name, id, { field });
     return { pinnedFields: next };
+  }
+
+  /**
+   * Whether a `patch` records a revision (#693). Callers may opt out with
+   * `saveRevision: false` (autosave, machine writes); agent writes always
+   * keep theirs because the revision carries their provenance.
+   */
+  private shouldSaveRevision(): boolean {
+    return this.deps.saveRevision !== false || this.provenance.authorType === 'agent';
   }
 
   private async writeRevision(

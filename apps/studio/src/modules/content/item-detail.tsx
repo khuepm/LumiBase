@@ -39,6 +39,8 @@ import {
 import { readEditorIntentSearch } from './editor-intent-search';
 import { ItemCreate } from './item-create';
 import { EditorialActions } from './editorial-actions';
+import { DuplicateItemButton, PublicationInfo } from './item-publication';
+import { useFocusFieldFromHash } from './focus-field';
 import { DraftReviewPanel } from './draft-review-panel';
 import { useReviewRollout, useReviewSession } from './use-review-pilot';
 import { PreviewPane, PreviewSplit } from './preview-pane';
@@ -455,6 +457,7 @@ function ItemEditor({
             canUpdate={canUpdate}
             isDirty={isDirty}
           />
+          <DuplicateItemButton collection={collection} id={id} canCreate={perms.can(collection, 'create')} />
           <button
             type="button"
             onClick={() => setShareOpen(true)}
@@ -845,6 +848,7 @@ function ItemEditor({
             ) : null}
             <Meta label="Updated" value={new Date(itemQuery.data.updatedAt).toLocaleString()} />
             <Meta label="Created" value={new Date(itemQuery.data.createdAt).toLocaleString()} />
+            <PublicationInfo item={itemQuery.data} />
           </dl>
           {/* Content scheduling (Req 10.1). Empty = unset; the Delivery API
               only serves items inside the current Publish_Window. */}
@@ -997,6 +1001,8 @@ export function FieldsTab({
 }) {
   // resolveInterface reads the extension registry during render.
   useExtensionUpdates();
+  // `#field=<name>` deep links from the release validation summary (#692).
+  useFocusFieldFromHash(fields.length);
   if (fields.length === 0) {
     return <p className="text-sm text-muted-foreground">No editable fields.</p>;
   }

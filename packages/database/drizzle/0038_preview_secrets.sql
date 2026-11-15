@@ -1,4 +1,4 @@
--- 0037_preview_secrets — site-scoped preview tokens (epic #667, V01 #679).
+-- 0038_preview_secrets — site-scoped preview tokens (epic #667, V01 #679).
 --
 -- Additive only: one new table, no backfill, nothing existing altered.
 -- Re-runnable (IF NOT EXISTS / duplicate_object guards). Site-isolated:
