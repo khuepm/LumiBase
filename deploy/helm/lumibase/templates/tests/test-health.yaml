@@ -14,7 +14,9 @@ metadata:
     {{- include "lumibase.componentLabels" (dict "ctx" . "component" "test") | nindent 4 }}
   annotations:
     helm.sh/hook: test
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    # Kept after success so `helm test --logs` can read it; the next run
+    # replaces it (before-hook-creation).
+    helm.sh/hook-delete-policy: before-hook-creation
 spec:
   restartPolicy: Never
   automountServiceAccountToken: false

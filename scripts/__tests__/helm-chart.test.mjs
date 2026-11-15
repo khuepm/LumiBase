@@ -389,6 +389,8 @@ test('config overrides chart keys and every chart-set variable is read by the co
 test('the helm test pod probes the health and setup routes with the image Node', { skip }, () => {
   const pod = find(mustRender(), 'Pod');
   assert.equal(pod.metadata.annotations['helm.sh/hook'], 'test');
+  // A succeeded pod must survive until `helm test --logs` reads it (kind smoke).
+  assert.doesNotMatch(pod.metadata.annotations['helm.sh/hook-delete-policy'], /hook-succeeded/);
   const c = pod.spec.containers[0];
   assert.deepEqual(c.command, ['/nodejs/bin/node', '-e']);
   for (const path of ['/health', '/api/v1/setup/state', '/setup']) assert.ok(c.args[0].includes(`'${path}'`), path);
