@@ -982,6 +982,19 @@ components:
         decisionReason: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
         decidedAt: { type: string, format: date-time, nullable: true }
+    AgentReceiptsAlertThresholds:
+      type: object
+      additionalProperties: false
+      description: An absent threshold is not checked.
+      properties:
+        maxRunFailureRate: { type: number, minimum: 0, maximum: 1 }
+        maxVetoRate: { type: number, minimum: 0, maximum: 1 }
+        maxOverrideRate: { type: number, minimum: 0, maximum: 1 }
+        maxApprovalLatencyP90Minutes: { type: number, exclusiveMinimum: 0, maximum: 43200 }
+        maxCostUsd: { type: number, minimum: 0 }
+        maxTokens: { type: integer, minimum: 0 }
+        maxOpenDrift: { type: integer, minimum: 0 }
+        maxIncidents: { type: integer, minimum: 0 }
     AgentQuestion:
       type: object
       description: >-
@@ -4898,6 +4911,78 @@ paths:
       responses:
         '200': { description: Decision recorded }
         '409': { description: Already processed, or NOT_AN_APPROVAL for an askUser question id }
+
+  /agent/receipts:
+    get:
+      summary: Agent receipts — runs, approvals, overrides, cost, drift (#713)
+      description: >-
+        Read-only aggregation over a window (default the last 30 days, at most
+        180) of runs, tool calls by skill and outcome, approval latency, vetoes,
+        askUser questions, human overrides, token/USD cost, drift, incidents,
+        autonomy grants and promotions, a daily series and the alert thresholds
+        crossed. Control plane (site administrators).
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: since, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: until, in: query, required: false, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, description: AgentReceipts (packages/contracts/src/agent-receipts.ts) }
+        '400': { description: VALIDATION or WINDOW_TOO_WIDE }
+
+  /agent/receipts/export:
+    get:
+      summary: Export agent receipts as CSV (#713)
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+        - { name: kind, in: query, required: false, schema: { type: string, enum: [runs, tool_calls, approvals], default: runs } }
+        - { name: since, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: until, in: query, required: false, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: CSV, at most 10000 rows (X-Export-Rows, X-Export-Truncated headers)
+          content:
+            text/csv:
+              schema: { type: string }
+        '400': { description: VALIDATION or WINDOW_TOO_WIDE }
+
+  /agent/receipts/alerts:
+    parameters:
+      - $ref: '#/components/parameters/SiteHeader'
+    get:
+      summary: Read agent receipts alert thresholds (#713)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AgentReceiptsAlertThresholds' }
+    put:
+      summary: Replace agent receipts alert thresholds (#713)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentReceiptsAlertThresholds' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/AgentReceiptsAlertThresholds' }
+        '400': { description: VALIDATION (unknown key or rate outside 0-1) }
 
   /agent/questions:
     get:
