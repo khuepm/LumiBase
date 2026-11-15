@@ -6,6 +6,7 @@ import { runSchedulerTick, sweepRetention } from '../services/scheduler-worker';
 import { runGoalDispatchTick } from '../services/goal-dispatch-service';
 import { sweepAllSites } from '../services/deployment/status-poller';
 import { sweepDueVetoCommits } from '../services/veto-commit-worker';
+import { sweepRevisionRetention } from '../services/revision-retention';
 import { runCdcDispatchSweep } from '../modules/cdc/change-feed/dispatcher';
 
 /**
@@ -18,6 +19,7 @@ vi.mock('../services/scheduler-worker', () => ({
   runSchedulerTick: vi.fn(async () => ({ published: 0, unpublished: 0, releasesPublished: 0, flowsEnqueued: 0 })),
   sweepRetention: vi.fn(async () => 0),
 }));
+vi.mock('../services/revision-retention', () => ({ sweepRevisionRetention: vi.fn(async () => 0) }));
 vi.mock('../services/goal-dispatch-service', () => ({
   runGoalDispatchTick: vi.fn(async () => ({ sites: 0, dispatched: 0, completed: 0, skipped: 0, blocked: 0 })),
 }));
@@ -43,7 +45,7 @@ describe('sweep schedule (B131)', () => {
   it('splits the sweeps by the cadence Docker runs them at', () => {
     expect(Object.keys(MINUTE_SWEEPS).sort()).toEqual(['cdc-dispatch', 'content-scheduler', 'deployment-poll', 'goal-dispatch']);
     expect(Object.keys(FIVE_MINUTE_SWEEPS)).toEqual(['veto-sweep']);
-    expect(Object.keys(HOURLY_SWEEPS)).toEqual(['retention-sweep']);
+    expect(Object.keys(HOURLY_SWEEPS)).toEqual(['retention-sweep', 'revision-retention']);
   });
 });
 
@@ -60,6 +62,7 @@ describe('runWorkerSweeps passes the Docker providers (B131)', () => {
     await runWorkerSweeps({ ...FIVE_MINUTE_SWEEPS, ...HOURLY_SWEEPS }, deps);
     expect(sweepDueVetoCommits).toHaveBeenCalledWith({ db, cache: runtime.cache, search: runtime.search, queue: runtime.queue });
     expect(sweepRetention).toHaveBeenCalledWith({ db, queue: runtime.queue });
+    expect(sweepRevisionRetention).toHaveBeenCalledWith({ db });
   });
 
   it('the CDC sweep delivers to webhooks only, so extension lanes are skipped, not failed', async () => {

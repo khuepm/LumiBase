@@ -21,6 +21,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { AuditLogger } from '../modules/audit/logger';
+import { publishStampsSql } from './publication-state';
 
 export type EditorialState =
   | 'draft'
@@ -183,7 +184,13 @@ export class EditorialService {
     const next = applyTransition(current, action);
     await this.deps.db
       .update(items)
-      .set({ editorialState: next, status: statusForEditorialState(next), updatedAt: new Date() })
+      .set({
+        editorialState: next,
+        status: statusForEditorialState(next),
+        updatedAt: new Date(),
+        // Reaching `published` through the workflow is a publish (#687).
+        ...(statusForEditorialState(next) === 'published' ? publishStampsSql() : {}),
+      })
       .where(and(scopeSite(items.siteId, this.deps.siteId), eq(items.collectionId, collId), eq(items.id, itemId)));
     await this.audit(collectionName, itemId, current, next, action);
     return next;
