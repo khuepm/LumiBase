@@ -1,10 +1,10 @@
 ---
-version: 16
-lastUpdated: 2026-11-14T12:31:30.227Z
+version: 17
+lastUpdated: 2026-11-15T18:24:40.216Z
 sourceLang: en
-contentHash: 26c9ba05b78320c7
-codeVerified: 2026-11-14T12:31:30.227Z
-codeVerifiedHash: 26c9ba05b78320c7
+contentHash: 2e2a77d52a0e23ad
+codeVerified: 2026-11-15T18:24:40.216Z
+codeVerifiedHash: 2e2a77d52a0e23ad
 codeVerifiedClaims: 20
 ---
 
@@ -164,6 +164,7 @@ Compiled schemas expose generated system fields in addition to user-defined rows
 | `siteId`, `collectionId` | text FK |
 | `status` | text | `draft`/`published`/`archived` |
 | `data` | jsonb | values keyed by field.name |
+| `version` | integer, default 0 | Optimistic-concurrency counter: incremented by every write that changes the item's content (data, status, pins, soft delete, crypto-shred); key-rotation workers that only re-encrypt leave it alone. Served as the item's `ETag`; `If-Match` compares against it. |
 | `sort` | integer |
 | `userCreated`, `userUpdated` | text FK users |
 | `publishAt`, `unpublishAt` | timestamp nullable | Scheduling window (Req 7); the reconcile worker flips status, delivery filters to the window. |

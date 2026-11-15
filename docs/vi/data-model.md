@@ -1,13 +1,13 @@
 ---
-version: 16
-lastUpdated: 2026-11-14T12:31:30.227Z
+version: 17
+lastUpdated: 2026-11-15T18:24:40.216Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 26c9ba05b78320c7
+sourceHash: 2e2a77d52a0e23ad
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T12:31:30.227Z
-codeVerifiedHash: 26c9ba05b78320c7
+codeVerified: 2026-11-15T18:24:40.216Z
+codeVerifiedHash: 2e2a77d52a0e23ad
 codeVerifiedClaims: 20
 ---
 
@@ -168,6 +168,7 @@ Compiled schema phơi ra các system field được sinh tự động, bên cạ
 | `siteId`, `collectionId` | text FK |
 | `status` | text | `draft`/`published`/`archived` |
 | `data` | jsonb | giá trị đánh key theo field.name |
+| `version` | integer, default 0 | Bộ đếm optimistic concurrency: tăng sau mỗi lần ghi làm đổi nội dung item (data, status, pin, xoá mềm, crypto-shred); worker xoay khoá chỉ mã hoá lại thì không tăng. Được trả làm `ETag` của item; `If-Match` so sánh với nó. |
 | `sort` | integer |
 | `userCreated`, `userUpdated` | text FK users |
 | `publishAt`, `unpublishAt` | timestamp nullable | Khung thời gian scheduling (Req 7); worker reconcile đổi status, delivery filter theo khung này. |
