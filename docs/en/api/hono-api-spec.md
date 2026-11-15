@@ -1,11 +1,11 @@
 ---
-version: 53
-lastUpdated: 2026-11-15T22:14:26.404Z
+version: 54
+lastUpdated: 2026-11-15T23:03:24.320Z
 sourceLang: en
-contentHash: 16425acb71035763
-codeVerified: 2026-11-15T22:14:26.404Z
-codeVerifiedHash: 16425acb71035763
-codeVerifiedClaims: 592
+contentHash: 03db69c605bb350f
+codeVerified: 2026-11-15T23:03:24.320Z
+codeVerifiedHash: 03db69c605bb350f
+codeVerifiedClaims: 606
 ---
 
 # Hono API Specification — LumiBase
@@ -911,11 +911,22 @@ Scheduled releases publish via the shared `content-scheduler` tick
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/v1/files/presigned-url` | Get presigned R2/S3 PUT URL |
-| `POST` | `/api/v1/files` | Register file metadata after upload |
-| `GET` | `/api/v1/files` | List files (filterable) |
+| `POST` | `/api/v1/files` | Register file metadata after upload; fills `contentHash` + embedded metadata, returns `meta.duplicates` |
+| `GET` | `/api/v1/files` | List files: `?folder=<id\|root>&subfolders=true&search=&mime=image/*,application/pdf&ids=&limit=&offset=` → `meta.total` |
 | `GET` | `/api/v1/files/:id` | File metadata |
-| `PATCH` | `/api/v1/files/:id` | Update metadata (title, tags, folder) |
-| `DELETE` | `/api/v1/files/:id` | Delete file |
+| `PATCH` | `/api/v1/files/:id` | Rename (`filenameDownload`), move (`folder`), editorial `metadata`; id and storage key never change |
+| `DELETE` | `/api/v1/files/:id` | Safe delete: `409 FILE_IN_USE` with references unless `?confirm=true` (policy `confirm`); never under policy `block` |
+| `PUT` | `/api/v1/files/:id/content` | Replace the bytes in place (same id/key/references, `version`+1, previous kept for undo); `If-Match: "v<n>"`, `?filename=` |
+| `GET` | `/api/v1/files/:id/content` | Deliver current bytes; `?v=<version>` → immutable; `423` while a malware scan is pending/failed |
+| `GET` | `/api/v1/files/:id/versions` | Previous binaries within the retention window |
+| `POST` | `/api/v1/files/:id/versions/:versionId/restore` | Restore a previous binary (itself a replace) |
+| `GET` | `/api/v1/files/:id/usage` | Items and pages referencing the file |
+| `POST` | `/api/v1/files/:id/scan` | Re-run the malware scan (site admin) |
+| `GET` | `/api/v1/files/duplicates?hash=` | Same-content files (SHA-256 hex); also `POST` with `{ hash }` |
+| `POST` | `/api/v1/files/bulk` | `{ ids, folder?, metadata? }` bulk move / editorial metadata; `meta.skipped` |
+| `GET/PUT` | `/api/v1/files/settings` | DAM settings (`files.dam`); `PUT` site admin |
+| `GET` | `/api/v1/files/folders` · `/folders/tree` | Folders (flat / nested with `path`) |
+| `POST/PATCH/DELETE` | `/api/v1/files/folders[/:id]` | Create / rename+move (`409 FOLDER_CYCLE`) / delete empty (`409 FOLDER_NOT_EMPTY`); site admin |
 | `GET` | `/api/v1/assets/:id` | Serve/transform image (query params below) |
 | `POST` | `/api/v1/media/:key` | Upload raw media bytes (RBAC `media:create`; upload guard applies) |
 | `GET` | `/api/v1/media/:key` | Download media (served as `attachment` + `nosniff`); with transform params → 302 to derivative |
@@ -938,9 +949,14 @@ image URL (CF Image Resizing / Imgproxy). No params → the original bytes.
 `?preset=<key>` resolves a saved `transform_presets` row for the site. See
 `.kiro/specs/image-transform-dsl`.
 
+**Access to `/api/v1/files`.** Site admins have full access; other members need a
+`files` policy permission whose rule is evaluated per file against `folder`,
+`folder_path`, `uploaded_by`, `mime` and `id` (folder-scoped permissions). See
+`docs/en/features/digital-asset-management.md` (epic #670).
+
 **Upload policy (`/api/v1/uploads/config`).** Enforced by the `file-upload-policy`
 guard on every upload surface (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`,
-`POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
+`PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): a public role cannot upload; the body is size-capped on
 its true byte length; the declared MIME must be in the allowlist and match the
 filename extension; raw bytes are content-sniffed (magic bytes) and executables /
 active-content SVGs are rejected; raster images are scanned for an embedded

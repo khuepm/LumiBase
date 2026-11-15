@@ -153,6 +153,71 @@ export function defineCdcSubscriber<TData = Record<string, unknown>>(
   return def;
 }
 
+/* ── Studio host services (media picker, #708) ─────────────────────────────── */
+
+/** An asset returned by the media picker — the `lumibase_files` row shape. */
+export interface PickedAsset {
+  id: string;
+  filenameDisk: string;
+  filenameDownload: string;
+  mime: string;
+  filesize: number;
+  width: number | null;
+  height: number | null;
+  folder: string | null;
+  version?: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface MediaPickerOptions {
+  /**
+   * Assets shown as already selected when the picker opens. Accepts file ids
+   * or storage keys (`filenameDisk`), since the built-in `file` interface
+   * stores the key.
+   */
+  initiallySelected?: string[];
+  /** Allow choosing more than one asset (default false). */
+  multiple?: boolean;
+  /** Exact MIME types or `type/*` prefixes, e.g. `['image/*', 'application/pdf']`. */
+  allowedMimeTypes?: string[];
+  /** Start in (and limit to) this folder; `null` = library root. */
+  folder?: string | null;
+  /** With `folder`, also show files in its sub-folders (default true). */
+  includeSubfolders?: boolean;
+  /** Upper bound on the selection when `multiple` (default unlimited). */
+  max?: number;
+  /** Dialog title override. */
+  title?: string;
+}
+
+/**
+ * Services the Studio exposes to UI extensions (interfaces, panels, modules).
+ * The same picker the built-in file fields use — one picker everywhere.
+ */
+export interface StudioHost {
+  /** Resolves to the chosen assets, or `null` when the editor cancels. */
+  openMediaPicker(options?: MediaPickerOptions): Promise<PickedAsset[] | null>;
+}
+
+const STUDIO_HOST_KEY = '__lumibaseStudioHost__';
+
+/**
+ * The running Studio's host services, or `null` outside the Studio (tests,
+ * SSR, a server-side extension). Read it at call time, not module load: the
+ * Studio registers it when its shell mounts.
+ */
+export function getStudioHost(): StudioHost | null {
+  const host = (globalThis as Record<string, unknown>)[STUDIO_HOST_KEY];
+  return host && typeof (host as StudioHost).openMediaPicker === 'function' ? (host as StudioHost) : null;
+}
+
+/** Studio-internal: install (or clear with `null`) the host services. */
+export function registerStudioHost(host: StudioHost | null): void {
+  const g = globalThis as Record<string, unknown>;
+  if (host) g[STUDIO_HOST_KEY] = host;
+  else delete g[STUDIO_HOST_KEY];
+}
+
 /* ── Studio intents (issue #759) ─────────────────────────────────────────── */
 
 /**

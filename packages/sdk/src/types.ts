@@ -1538,7 +1538,68 @@ export interface FileResource {
   folder: string | null;
   metadata: Record<string, unknown>;
   uploadedBy: string | null;
+  /** Full SHA-256 (hex) of the current binary; null until known (#706). */
+  contentHash?: string | null;
+  /** Binary revision; bumped by every in-place replace (#703). */
+  version?: number;
+  /** Malware scan state (#707): `skipped` | `pending` | `clean` | `infected` | `error`. */
+  scanStatus?: string;
   createdAt: string;
+  updatedAt?: string;
+}
+
+/** A previous binary of a file, kept for undo after a replace (#703). */
+export interface FileVersionResource {
+  id: string;
+  siteId: string;
+  fileId: string;
+  version: number;
+  filenameDisk: string;
+  filenameDownload: string;
+  mime: string;
+  filesize: number;
+  width: number | null;
+  height: number | null;
+  contentHash: string | null;
+  metadata: Record<string, unknown>;
+  replacedBy: string | null;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** Where a file is used (#706). */
+export type FileReferenceResource =
+  | { kind: "item"; collection: string; id: string; status: string; fields: string[] }
+  | { kind: "page"; id: string; slug: string; title: string };
+
+export interface FolderTreeNodeResource extends Omit<FolderResource, "siteId" | "createdAt"> {
+  path: string;
+  namePath: string;
+  depth: number;
+  children: FolderTreeNodeResource[];
+}
+
+/** Query for `files.list` — every key optional (media picker backend, #708). */
+export interface FileListQuery {
+  /** Folder id, or `"root"` for files outside any folder. */
+  folder?: string;
+  /** Widen `folder` to its whole subtree. */
+  subfolders?: boolean;
+  search?: string;
+  /** Exact MIME types or `type/*` prefixes. */
+  mime?: string[];
+  ids?: string[];
+  limit?: number;
+  offset?: number;
+}
+
+/** Per-site DAM settings (`files.dam`). */
+export interface DamSettingsResource {
+  deletePolicy: "confirm" | "block";
+  versionRetentionDays: number;
+  stripGpsOnPublic: boolean;
+  extractMetadata: boolean;
+  scan: { enabled: boolean; provider: "http"; onError: "quarantine" | "allow" };
 }
 
 export interface UploadTypeCatalogueEntry {
