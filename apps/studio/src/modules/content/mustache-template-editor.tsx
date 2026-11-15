@@ -130,7 +130,7 @@ export function MustacheTemplateEditor({
           className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
         />
         {suggestions.length > 0 && (
-          <ul className="absolute left-2 top-full z-20 mt-1 max-h-56 w-72 overflow-auto rounded-md border bg-popover text-xs shadow-md">
+          <ul className="absolute start-2 top-full z-20 mt-1 max-h-56 w-72 overflow-auto rounded-md border bg-popover text-xs shadow-md">
             {suggestions.map((s, i) => (
               <li key={s.name}>
                 <button
@@ -141,7 +141,7 @@ export function MustacheTemplateEditor({
                     insertSuggestion(s.name);
                   }}
                   onMouseEnter={() => setHoverIndex(i)}
-                  className={`flex w-full items-center justify-between px-2 py-1 text-left ${i === hoverIndex ? 'bg-accent' : 'hover:bg-accent/60'
+                  className={`flex w-full items-center justify-between px-2 py-1 text-start ${i === hoverIndex ? 'bg-accent' : 'hover:bg-accent/60'
                     }`}
                 >
                   <span className="font-mono">{s.name}</span>

@@ -29,14 +29,21 @@
 //   node scripts/docs-i18n/verify-code-refs.mjs --json          # machine-readable
 //
 // Exit code: 0 = no findings, 1 = findings, 2 = bad usage.
+//
+// LIBRARY USE (#756)
+// ------------------
+// The checks are also exported for the drift gate and the self-heal fixers
+// (`gate-code-drift.mjs`, `self-heal.mjs`). They run the SAME checks against a
+// pluggable source tree — the working copy (`fsTree`) or a git revision
+// (`gitTree` in `git-tree.mjs`) — so "stale at the PR head but fine at its base"
+// is computed by this file and cannot drift from what `stamp-pair --verified`
+// enforces. Every finding carries the 1-based line it occurs on, so CI can point
+// at it.
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { LOCALES, DOCS_ROOT, REPO_ROOT } from './config.mjs';
-
-const ARGS = process.argv.slice(2);
-const AS_JSON = ARGS.includes('--json');
-const RELS = ARGS.filter((a) => !a.startsWith('--'));
 
 /** Top-level dirs that make a path reference unambiguously about this repo. */
 const REPO_ROOTS = [
@@ -51,16 +58,16 @@ const REPO_ROOTS = [
 ];
 
 /** Source trees searched for env-var reads and route mounts. */
-const SOURCE_DIRS = ['apps', 'packages', 'scripts', 'docker', '.github'];
-const SOURCE_EXTS = ['.ts', '.tsx', '.mjs', '.js', '.yml', '.yaml', '.toml', '.json', '.sh', '.example'];
-const SKIP_DIRS = new Set(['node_modules', 'dist', '.turbo', 'build', '.next', 'coverage']);
+export const SOURCE_DIRS = ['apps', 'packages', 'scripts', 'docker', '.github'];
+export const SOURCE_EXTS = ['.ts', '.tsx', '.mjs', '.js', '.yml', '.yaml', '.toml', '.json', '.sh', '.example'];
+export const SKIP_DIRS = new Set(['node_modules', 'dist', '.turbo', 'build', '.next', 'coverage']);
 
 /**
  * Env-var families the docs are expected to keep honest. Deliberately an
  * allowlist: a bare `[A-Z_]+` pattern would match prose acronyms and SQL
  * keywords inside code fences and drown the real findings.
  */
-const ENV_PATTERN =
+export const ENV_PATTERN =
   /`(LUMIBASE_[A-Z0-9_]+|VAPID_[A-Z0-9_]+|CF_ACCESS_[A-Z0-9_]+|STUDIO_[A-Z0-9_]+|FRONTEND_[A-Z0-9_]+|REFRESH_COOKIE_[A-Z0-9_]+|ANTHROPIC_[A-Z0-9_]+|GITHUB_[A-Z0-9_]+|GITLAB_[A-Z0-9_]+|CLOUDFLARE_[A-Z0-9_]+|WORKERS_AI_[A-Z0-9_]+|VERTEX_[A-Z0-9_]+|OPENAI_API_KEY|GEMINI_API_KEY|NVIDIA_[A-Z0-9_]+|JWT_SECRET|ENCRYPTION_KEY|DATABASE_URL|CORS_ALLOWED_ORIGINS|METRICS_TOKEN|SENTRY_[A-Z0-9_]+|CDC_[A-Z0-9_]+|KAFKA_[A-Z0-9_]+|DEBEZIUM_[A-Z0-9_]+|AIRBYTE_[A-Z0-9_]+|MATERIALIZED_[A-Z0-9_]+|CLICKHOUSE_[A-Z0-9_]+|MEILISEARCH_[A-Z0-9_]+|SOURCE_DATABASE_URL)`/g;
 
 const FILE_REF_PATTERN = /`([a-zA-Z0-9_./@-]+\.(?:ts|tsx|mjs|sql|yaml|yml))`/g;
@@ -103,27 +110,39 @@ const URL_ROUTE_PATTERN =
 /** Example values in docs — an ID stands in for real data, not a real mount. */
 const EXAMPLE_ID = /(?:^|\/)(?:[a-z]{2,4}_[A-Za-z0-9]{6,}|\d{4,})(?:\/|$)/;
 
-let sourceCorpus = null;
-function corpus() {
-  if (sourceCorpus != null) return sourceCorpus;
-  const parts = [];
-  for (const base of SOURCE_DIRS) {
-    const abs = path.join(REPO_ROOT, base);
-    if (!fs.existsSync(abs)) continue;
-    walk(abs, (file) => {
-      if (!SOURCE_EXTS.includes(path.extname(file))) return;
-      try {
-        parts.push(fs.readFileSync(file, 'utf8'));
-      } catch {
-        /* unreadable file — nothing to assert from it */
+/**
+ * The source tree the claims are checked against. `fsTree` reads the working
+ * copy; `gitTree` (git-tree.mjs) reads a committed revision with the same shape:
+ *   exists(rel)  — a file or directory exists at this repo-relative path
+ *   corpus()     — concatenated text of every source file (env reads, mounts)
+ */
+export function fsTree(root = REPO_ROOT) {
+  let sourceCorpus = null;
+  return {
+    root,
+    exists: (rel) => fs.existsSync(path.join(root, rel)),
+    corpus() {
+      if (sourceCorpus != null) return sourceCorpus;
+      const parts = [];
+      for (const base of SOURCE_DIRS) {
+        const abs = path.join(root, base);
+        if (!fs.existsSync(abs)) continue;
+        walk(abs, (file) => {
+          if (!SOURCE_EXTS.includes(path.extname(file))) return;
+          try {
+            parts.push(fs.readFileSync(file, 'utf8'));
+          } catch {
+            /* unreadable file — nothing to assert from it */
+          }
+        });
       }
-    });
-  }
-  sourceCorpus = parts.join('\n');
-  return sourceCorpus;
+      sourceCorpus = parts.join('\n');
+      return sourceCorpus;
+    },
+  };
 }
 
-function walk(dir, onFile) {
+export function walk(dir, onFile) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue;
@@ -153,7 +172,7 @@ function walk(dir, onFile) {
  */
 const PLANNED_DIRECTIVE = /<!--\s*verify-code-refs:\s*planned\s+([^>]+?)\s*-->/g;
 
-function readPlannedClaims(raw) {
+export function readPlannedClaims(raw) {
   const planned = new Set();
   PLANNED_DIRECTIVE.lastIndex = 0;
   let m;
@@ -166,10 +185,14 @@ function readPlannedClaims(raw) {
 }
 
 /** Strip fenced code blocks that are illustrative output rather than claims. */
-function stripIgnorableFences(body) {
+export function stripIgnorableFences(body) {
   // Keep the text — we still want refs inside shell/ts examples — but drop
-  // blocks explicitly marked as output or as a user-side file tree.
-  return body.replace(/```(?:text|txt|tree|output)\n[\s\S]*?```/g, '');
+  // blocks explicitly marked as output or as a user-side file tree. The block
+  // is blanked down to its newlines rather than removed, so a match offset in
+  // the stripped text maps to the same line of the original file.
+  return body.replace(/```(?:text|txt|tree|output)\n[\s\S]*?```/g, (block) =>
+    block.replace(/[^\n]/g, ''),
+  );
 }
 
 /**
@@ -178,7 +201,7 @@ function stripIgnorableFences(body) {
  * is satisfied. Otherwise it is SKIPPED, not failed — `app/page.tsx` in a
  * Next.js integration guide is about the reader's project, not ours.
  */
-const RELATIVE_BASES = [
+export const RELATIVE_BASES = [
   'packages/database/',
   'apps/cms/src/',
   'apps/studio/src/',
@@ -186,83 +209,138 @@ const RELATIVE_BASES = [
   'apps/',
 ];
 
-function checkFileRef(ref) {
+/** True when a file claim is written repo-rooted (`apps/…`, `scripts/…`). */
+export function isRepoRooted(ref) {
+  return REPO_ROOTS.some((r) => ref.startsWith(r));
+}
+
+function checkFileRef(ref, tree) {
   if (/^(?:https?:|\/|@)/.test(ref) || ref.startsWith('./')) return { verdict: 'skip' };
-  if (REPO_ROOTS.some((r) => ref.startsWith(r))) {
-    return fs.existsSync(path.join(REPO_ROOT, ref))
+  if (isRepoRooted(ref)) {
+    return tree.exists(ref)
       ? { verdict: 'ok' }
       : { verdict: 'fail', detail: 'file does not exist' };
   }
   for (const base of RELATIVE_BASES) {
-    if (fs.existsSync(path.join(REPO_ROOT, base + ref))) return { verdict: 'ok' };
+    if (tree.exists(base + ref)) return { verdict: 'ok' };
   }
   return { verdict: 'skip' };
 }
 
-function checkEnvVar(name) {
-  return corpus().includes(name)
+function checkEnvVar(name, tree) {
+  return tree.corpus().includes(name)
     ? { verdict: 'ok' }
     : { verdict: 'fail', detail: 'not read anywhere in apps/, packages/, scripts/, docker/' };
 }
 
-function checkRoute(route) {
-  if (EXAMPLE_ID.test(route)) return { verdict: 'skip' };
-  const segments = route
+/** Literal path segments of a route claim — what a mount has to contain. */
+export function routeSegments(route) {
+  return route
     .replace(/^\/api\/v1\//, '/')
     .split('/')
     .filter((s) => s && !s.startsWith(':') && !s.startsWith('{') && !s.startsWith('$'));
+}
+
+function checkRoute(route, tree) {
+  if (EXAMPLE_ID.test(route)) return { verdict: 'skip' };
+  const segments = routeSegments(route);
   if (segments.length === 0) return { verdict: 'skip' };
   // Match the mount prefix, not the full path: routers register `/items` and
   // handlers add `/:collection`, so the full string never appears verbatim.
   const head = segments.slice(0, 2);
-  const missing = head.filter((s) => !corpus().includes(s));
+  const missing = head.filter((s) => !tree.corpus().includes(s));
   return missing.length === 0
     ? { verdict: 'ok' }
-    : { verdict: 'fail', detail: `no mount found for "${missing.join('/')}"` };
+    : { verdict: 'fail', detail: `no mount found for "${missing.join('/')}"`, missing };
 }
 
 const CHECKS = [
-  { kind: 'file', pattern: FILE_REF_PATTERN, run: checkFileRef },
-  { kind: 'env', pattern: ENV_PATTERN, run: checkEnvVar },
-  { kind: 'route', pattern: ROUTE_PATTERN, run: checkRoute },
-  { kind: 'route', pattern: API_RELATIVE_ROUTE_PATTERN, run: checkRoute },
-  { kind: 'route', pattern: TABLE_ROUTE_PATTERN, run: checkRoute },
-  { kind: 'route', pattern: URL_ROUTE_PATTERN, run: checkRoute },
+  { kind: 'file', pattern: FILE_REF_PATTERN },
+  { kind: 'env', pattern: ENV_PATTERN },
+  { kind: 'route', pattern: ROUTE_PATTERN },
+  { kind: 'route', pattern: API_RELATIVE_ROUTE_PATTERN },
+  { kind: 'route', pattern: TABLE_ROUTE_PATTERN },
+  { kind: 'route', pattern: URL_ROUTE_PATTERN },
 ];
 
-/** Verify one doc file. Returns { findings, checked, skipped }. */
-export function verifyDoc(absPath) {
-  const raw = fs.readFileSync(absPath, 'utf8');
-  const plannedClaims = readPlannedClaims(raw);
-  const body = stripIgnorableFences(raw);
-  const findings = [];
-  let checked = 0;
-  let skipped = 0;
-  let planned = 0;
-  const seen = new Set();
+const RUNNERS = { file: checkFileRef, env: checkEnvVar, route: checkRoute };
 
-  for (const { kind, pattern, run } of CHECKS) {
+/** 1-based line number of a character offset. */
+function lineAt(text, index) {
+  let line = 1;
+  for (let i = 0; i < index; i += 1) if (text.charCodeAt(i) === 10) line += 1;
+  return line;
+}
+
+/**
+ * Every claim a doc makes, once per (kind, claim), with every line it occurs
+ * on. Shared by the verifier, the changed-file -> doc mapping and the fixers,
+ * so the three agree on what a "claim" is.
+ * @returns {{ kind: 'file'|'env'|'route', claim: string, lines: number[] }[]}
+ */
+export function extractClaims(raw) {
+  const body = stripIgnorableFences(raw);
+  const byKey = new Map();
+  for (const { kind, pattern } of CHECKS) {
     pattern.lastIndex = 0;
     let m;
     while ((m = pattern.exec(body)) !== null) {
       const claim = m[1];
       const key = `${kind}:${claim}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const { verdict, detail } = run(claim);
-      if (verdict === 'skip') {
-        skipped += 1;
-        continue;
+      const line = lineAt(body, m.index + m[0].indexOf(claim));
+      const existing = byKey.get(key);
+      if (existing) {
+        if (!existing.lines.includes(line)) existing.lines.push(line);
+      } else {
+        byKey.set(key, { kind, claim, lines: [line] });
       }
-      if (verdict === 'fail' && plannedClaims.has(claim)) {
-        planned += 1;
-        continue;
-      }
-      checked += 1;
-      if (verdict === 'fail') findings.push({ kind, claim, detail });
+    }
+  }
+  for (const c of byKey.values()) c.lines.sort((a, b) => a - b);
+  return [...byKey.values()];
+}
+
+/**
+ * Verify a doc's raw text against a source tree. Each finding carries `line`
+ * (first occurrence) and `lines` (every occurrence), 1-based against the raw
+ * file including its front matter.
+ */
+export function verifyText(raw, tree = defaultTree()) {
+  const plannedClaims = readPlannedClaims(raw);
+  const findings = [];
+  let checked = 0;
+  let skipped = 0;
+  let planned = 0;
+
+  for (const c of extractClaims(raw)) {
+    const { verdict, detail, missing } = RUNNERS[c.kind](c.claim, tree);
+    if (verdict === 'skip') {
+      skipped += 1;
+      continue;
+    }
+    if (verdict === 'fail' && plannedClaims.has(c.claim)) {
+      planned += 1;
+      continue;
+    }
+    checked += 1;
+    if (verdict === 'fail') {
+      const finding = { kind: c.kind, claim: c.claim, detail, line: c.lines[0], lines: c.lines };
+      if (missing) finding.missing = missing;
+      findings.push(finding);
     }
   }
   return { findings, checked, skipped, planned };
+}
+
+let cachedDefaultTree = null;
+function defaultTree() {
+  cachedDefaultTree ??= fsTree(REPO_ROOT);
+  return cachedDefaultTree;
+}
+
+/** Verify one doc file. Returns { findings, checked, skipped, planned }. */
+export function verifyDoc(absPath, tree = defaultTree()) {
+  return verifyText(fs.readFileSync(absPath, 'utf8'), tree);
 }
 
 /**
@@ -277,10 +355,10 @@ export function isUnverifiable(result) {
 }
 
 /** Every doc rel present in at least one locale. */
-function allRels() {
+export function allRels(docsRoot = DOCS_ROOT) {
   const rels = new Set();
   for (const locale of LOCALES) {
-    const root = path.join(DOCS_ROOT, locale);
+    const root = path.join(docsRoot, locale);
     if (!fs.existsSync(root)) continue;
     walk(root, (file) => {
       if (file.endsWith('.md')) rels.add(path.relative(root, file));
@@ -289,58 +367,70 @@ function allRels() {
   return [...rels].sort();
 }
 
-const targets = RELS.length > 0 ? RELS : allRels();
-const results = [];
+function main() {
+  const ARGS = process.argv.slice(2);
+  const AS_JSON = ARGS.includes('--json');
+  const RELS = ARGS.filter((a) => !a.startsWith('--'));
 
-for (const rel of targets) {
-  for (const locale of LOCALES) {
-    const abs = path.join(DOCS_ROOT, locale, rel);
-    if (!fs.existsSync(abs)) continue;
-    const { findings, checked, skipped, planned } = verifyDoc(abs);
-    results.push({ rel, locale, checked, skipped, planned, findings });
+  const targets = RELS.length > 0 ? RELS : allRels();
+  const results = [];
+
+  for (const rel of targets) {
+    for (const locale of LOCALES) {
+      const abs = path.join(DOCS_ROOT, locale, rel);
+      if (!fs.existsSync(abs)) continue;
+      const { findings, checked, skipped, planned } = verifyDoc(abs);
+      results.push({ rel, locale, checked, skipped, planned, findings });
+    }
   }
-}
 
-const withFindings = results.filter((r) => r.findings.length > 0);
-const unverifiable = results.filter((r) => isUnverifiable(r));
-const totalFindings = withFindings.reduce((n, r) => n + r.findings.length, 0);
-const totalChecked = results.reduce((n, r) => n + r.checked, 0);
-const totalSkipped = results.reduce((n, r) => n + r.skipped, 0);
-const totalPlanned = results.reduce((n, r) => n + (r.planned ?? 0), 0);
+  const withFindings = results.filter((r) => r.findings.length > 0);
+  const unverifiable = results.filter((r) => isUnverifiable(r));
+  const totalFindings = withFindings.reduce((n, r) => n + r.findings.length, 0);
+  const totalChecked = results.reduce((n, r) => n + r.checked, 0);
+  const totalSkipped = results.reduce((n, r) => n + r.skipped, 0);
+  const totalPlanned = results.reduce((n, r) => n + (r.planned ?? 0), 0);
 
-if (AS_JSON) {
-  console.log(
-    JSON.stringify(
-      {
-        docs: results.length,
-        claimsChecked: totalChecked,
-        claimsSkipped: totalSkipped,
-        claimsPlanned: totalPlanned,
-        findings: totalFindings,
-        unverifiable: unverifiable.map((r) => `docs/${r.locale}/${r.rel}`),
-        results: withFindings,
-      },
-      null,
-      2,
-    ),
-  );
-} else {
-  console.log(
-    `[verify-code-refs] docs=${results.length} claims=${totalChecked} skipped=${totalSkipped} ` +
-      `planned=${totalPlanned} findings=${totalFindings} unverifiable=${unverifiable.length}`,
-  );
-  for (const r of withFindings) {
-    console.log(`\n  docs/${r.locale}/${r.rel}`);
-    for (const f of r.findings) console.log(`    [${f.kind}] ${f.claim} — ${f.detail}`);
-  }
-  if (totalFindings === 0) console.log('  no stale code references found');
-  if (unverifiable.length > 0 && RELS.length > 0) {
+  if (AS_JSON) {
     console.log(
-      `\n  NOTE: ${unverifiable.length} doc(s) make no claim this tooling can test — ` +
-        'that is not a pass. They need human review before being marked verified:',
+      JSON.stringify(
+        {
+          docs: results.length,
+          claimsChecked: totalChecked,
+          claimsSkipped: totalSkipped,
+          claimsPlanned: totalPlanned,
+          findings: totalFindings,
+          unverifiable: unverifiable.map((r) => `docs/${r.locale}/${r.rel}`),
+          results: withFindings,
+        },
+        null,
+        2,
+      ),
     );
-    for (const r of unverifiable) console.log(`    docs/${r.locale}/${r.rel}`);
+  } else {
+    console.log(
+      `[verify-code-refs] docs=${results.length} claims=${totalChecked} skipped=${totalSkipped} ` +
+        `planned=${totalPlanned} findings=${totalFindings} unverifiable=${unverifiable.length}`,
+    );
+    for (const r of withFindings) {
+      console.log(`\n  docs/${r.locale}/${r.rel}`);
+      for (const f of r.findings) console.log(`    :${f.line} [${f.kind}] ${f.claim} — ${f.detail}`);
+    }
+    if (totalFindings === 0) console.log('  no stale code references found');
+    if (unverifiable.length > 0 && RELS.length > 0) {
+      console.log(
+        `\n  NOTE: ${unverifiable.length} doc(s) make no claim this tooling can test — ` +
+          'that is not a pass. They need human review before being marked verified:',
+      );
+      for (const r of unverifiable) console.log(`    docs/${r.locale}/${r.rel}`);
+    }
   }
+
+  process.exit(totalFindings > 0 ? 1 : 0);
 }
 
-process.exit(totalFindings > 0 ? 1 : 0);
+// Only run as a CLI when invoked directly, so the checks above can be imported
+// by the drift gate, the self-heal fixers and the tests without side effects.
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+  main();
+}

@@ -49,7 +49,7 @@ export function QuestionAnswerForm({
     >
       {!compact && (
         <p className="text-sm">
-          <MessageCircleQuestion className="mr-1 inline h-4 w-4 text-violet-600" />
+          <MessageCircleQuestion className="me-1 inline h-4 w-4 text-violet-600" />
           {question.question}
         </p>
       )}

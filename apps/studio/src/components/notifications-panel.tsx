@@ -330,7 +330,7 @@ export function NotificationsPanel() {
       >
         <Bell className="h-4 w-4" />
         {unreadCount > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+          <span className="absolute -end-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
@@ -342,7 +342,7 @@ export function NotificationsPanel() {
           role="dialog"
           aria-label="Notifications"
           className={cn(
-            'absolute right-0 top-full z-50 mt-2 w-80 rounded-lg border bg-background shadow-lg',
+            'absolute end-0 top-full z-50 mt-2 w-80 rounded-lg border bg-background shadow-lg',
             'animate-in fade-in-0 zoom-in-95',
           )}
         >

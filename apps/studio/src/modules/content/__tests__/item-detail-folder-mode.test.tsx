@@ -42,7 +42,7 @@ vi.mock('@/lib/use-permissions', () => ({
     filterFields: (_c: string, _a: string, f: string[]) => f,
   }),
 }));
-vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined }));
+vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined, useExtensionUpdates: () => 0 }));
 vi.mock('@/lib/keybindings/use-keybindings', () => ({ useSaveHandler: () => undefined }));
 vi.mock('@/components/presence-chip', () => ({ PresenceStack: () => null }));
 vi.mock('@/components/co-editing-banner', () => ({ CoEditingBanner: () => null }));
@@ -54,7 +54,10 @@ vi.mock('../translation-mode', () => ({ TranslationMode: () => null }));
 vi.mock('../editorial-actions', () => ({ EditorialActions: () => null }));
 vi.mock('../draft-review-panel', () => ({ DraftReviewPanel: () => null }));
 vi.mock('../provenance-badge', () => ({ ProvenanceBadge: () => null }));
-vi.mock('../use-site-locales', () => ({ useSiteLocales: () => ['en'] }));
+vi.mock('../use-site-locales', () => ({
+  useSiteLocales: () => ['en'],
+  useSiteLocalesState: () => ({ locales: ['en'], isLoaded: true }),
+}));
 vi.mock('../use-review-pilot', () => ({
   useReviewRollout: () => 'off',
   useReviewSession: () => ({ finish: () => undefined }),

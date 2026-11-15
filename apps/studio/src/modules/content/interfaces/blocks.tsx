@@ -21,6 +21,7 @@ import { useId, useMemo, useState } from 'react';
 import type { FieldResource } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { resolveInterface } from './registry';
+import { useExtensionUpdates } from '@/lib/extension-loader';
 import type { InterfaceComponent } from './types';
 
 /**
@@ -216,7 +217,7 @@ export const BlocksInterface: InterfaceComponent<BlockValue[]> = ({ value, field
             </button>
           ))}
           {(opts.min !== undefined || opts.max !== undefined) && (
-            <span className="ml-auto text-[10px] text-muted-foreground">
+            <span className="ms-auto text-[10px] text-muted-foreground">
               {blocks.length}
               {opts.max !== undefined ? ` / ${opts.max}` : ''} blocks
               {opts.min !== undefined && blocks.length < opts.min ? ` (min ${opts.min})` : ''}
@@ -257,6 +258,7 @@ function SortableBlock({
   onMove: (dir: -1 | 1) => void;
   onDataChange: (data: Record<string, unknown>) => void;
 }) {
+  useExtensionUpdates(); // sub-fields resolve extension interfaces during render
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: block.id,
     disabled,
@@ -287,7 +289,7 @@ function SortableBlock({
           onClick={onToggle}
           aria-expanded={!collapsed}
           aria-controls={bodyId}
-          className="flex flex-1 items-center gap-2 text-left text-sm"
+          className="flex flex-1 items-center gap-2 text-start text-sm"
         >
           {collapsed ? (
             <ChevronRight className="h-3.5 w-3.5" aria-hidden />
@@ -347,7 +349,7 @@ function SortableBlock({
               <div key={sf.name} id={inputId}>
                 <span className="mb-1 block text-xs font-medium text-muted-foreground">
                   {sf.label ?? sf.name}
-                  {sf.required && <span className="ml-1 text-destructive">*</span>}
+                  {sf.required && <span className="ms-1 text-destructive">*</span>}
                 </span>
                 <Interface
                   field={sf}

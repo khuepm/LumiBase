@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-07-25T08:11:35.552Z
+version: 3
+lastUpdated: 2026-11-15T16:54:45.327Z
 sourceLang: en
-contentHash: 42e2b8eba52703f7
-codeVerified: 2026-07-25T08:11:35.552Z
-codeVerifiedHash: 42e2b8eba52703f7
+contentHash: b7103310614498d6
+codeVerified: 2026-11-15T16:54:45.327Z
+codeVerifiedHash: b7103310614498d6
 codeVerifiedClaims: 2
 ---
 
@@ -214,14 +214,14 @@ lumibase extension publish --token $MARKETPLACE_TOKEN
 ## Local development in Studio
 
 ```bash
-# Install your local extension in Studio dev mode
+# Studio dev server
 pnpm -F @lumibase/studio dev
 
-# In another terminal
-lumibase extension install ./my-extension/dist/index.js --local --watch
+# In another terminal: watch, rebuild and hot-swap your extension
+npx tsx packages/extension-cli/src/cli.ts dev --dir ./my-extension
 ```
 
-The Studio's hot reload picks up extension changes automatically in dev mode.
+`lumibase-ext dev` rebuilds the extension on save and hot-swaps it into Studio (UI slots) and into a CMS running on Node (hooks, endpoints, operations) without a restart. It is for local development on Node/Docker only, not Workers. See [Extension Hot Reload](./extension-hot-reload.md) for setup and the security model.
 
 ## Sending email from an extension
 

@@ -1,6 +1,8 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useEffect, useState, type ReactNode } from 'react';
 import { hasActiveToken } from '@/lib/api';
+import { getAdminBase } from '@/lib/admin-base';
+import { isIntentPathname, loginUrlForIntent } from '@/lib/intents/paths';
 import { shouldAutoRedirectToAdmin } from './setup-environment';
 import { selectAdminPath, useSetupStore } from './setup-store';
 import {
@@ -35,6 +37,18 @@ export function AdminReadyGate({ children }: AdminReadyGateProps) {
       navigate({ to: '/setup' });
       return;
     }
+    if (query.data?.state === 'initialized' && !hasActiveToken() && isIntentPathname(location.pathname)) {
+      // Intent links (#759) carry the private admin path already, so sending
+      // the user to that login page reveals nothing new; the link survives
+      // sign-in as a sanitised `next` (internal intent paths only).
+      const base =
+        getAdminBase(location.pathname) || (adminPath && shouldAutoRedirectToAdmin() ? adminPath : '');
+      const href = loginUrlForIntent(base, location.pathname, location.searchStr);
+      if (href) {
+        navigate({ href, replace: true });
+        return;
+      }
+    }
     if (
       query.data?.state === 'initialized' &&
       !hasActiveToken() &&
@@ -43,7 +57,7 @@ export function AdminReadyGate({ children }: AdminReadyGateProps) {
     ) {
       navigate({ to: `${adminPath}/login` });
     }
-  }, [adminPath, navigate, query.data?.state]);
+  }, [adminPath, navigate, query.data?.state, location.pathname, location.searchStr]);
 
   // Stable error screen first — never fall back to the spinner while a
   // manual retry is in flight (avoids a continuous-refresh feeling when

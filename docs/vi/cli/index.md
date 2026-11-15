@@ -1,14 +1,14 @@
 ---
 title: LumiBase CLI
-version: 10
-lastUpdated: 2026-11-14T02:04:01.690Z
+version: 11
+lastUpdated: 2026-11-15T18:38:14.206Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5c01ccd14e7b9304
+sourceHash: 7295cb0b24592431
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T02:04:01.690Z
-codeVerifiedHash: 5c01ccd14e7b9304
+codeVerified: 2026-11-15T18:38:14.206Z
+codeVerifiedHash: 7295cb0b24592431
 codeVerifiedClaims: 22
 ---
 
@@ -173,6 +173,7 @@ lumibase skills install @acme/lumibase-skills
 ## Liên quan
 
 - [SDK — typegen](../sdk/typegen.md) — API lập trình nằm sau `lumibase types`
+- [Cấu hình typegen và target](./typegen-config.md) — `lumibase.typegen.config.ts`: nhiều cấu hình, đầu ra Zod / GraphQL SDL / OpenAPI, `--watch`
 - [Bắt đầu](../getting-started.md#bạn-thật-sự-cần-cái-nào) — starter vs platform vs consumer client, và `lumibase` nằm ở đâu
 - [Phát triển cục bộ](../deployment/local-development.md) — chạy CMS và Studio mà CLI này trỏ vào
 - [npm publishing](../release/npm-publishing.md) — cách package được phát hành
