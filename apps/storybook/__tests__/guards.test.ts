@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { MIN_JUSTIFICATION, a11yException } from '../src/support/a11y';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -70,15 +70,24 @@ const BYPASS_PATTERNS: Array<[RegExp, string]> = [
   [/manual\s*:\s*true/, 'a11y `manual: true`'],
 ];
 
+// Building a TypeScript program over the ui package (React + Radix types) takes
+// several seconds on a cold CI runner, so do it once with its own budget.
+const PROGRAM_BUILD_TIMEOUT_MS = 60_000;
+
 describe('@lumibase/ui story coverage (#755 acceptance: every primitive has a story)', () => {
+  let exportsOfUi: string[] = [];
+  beforeAll(() => {
+    exportsOfUi = uiValueExports(uiEntry);
+  }, PROGRAM_BUILD_TIMEOUT_MS);
+
   it('finds the ui package exports', () => {
-    expect(uiValueExports(uiEntry)).toContain('cn');
+    expect(exportsOfUi).toContain('cn');
   });
 
   it('every value export of @lumibase/ui is imported by a story under src/ui', () => {
     const uiStories = storyFiles.filter((file) => file.startsWith(path.join(storiesRoot, 'ui') + path.sep));
     const covered = new Set(uiStories.flatMap((file) => importedFromUi(readFileSync(file, 'utf8'))));
-    const missing = uiValueExports(uiEntry).filter((name) => !covered.has(name));
+    const missing = exportsOfUi.filter((name) => !covered.has(name));
     expect(missing, `write a story in apps/storybook/src/ui/ for: ${missing.join(', ')}`).toEqual([]);
   });
 
