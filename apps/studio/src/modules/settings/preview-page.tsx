@@ -165,7 +165,7 @@ export function PreviewSettingsPage() {
         </div>
         {rotate.error && <p role="alert" className="text-xs text-destructive">Rotation failed (site admins only).</p>}
         {rotate.data && <p className="text-xs text-muted-foreground">Revoked {rotate.data.revoked} token(s).</p>}
-        <table className="w-full text-left text-xs">
+        <table className="w-full text-start text-xs">
           <thead className="text-muted-foreground">
             <tr>
               <th className="py-1">Target</th>
@@ -184,7 +184,7 @@ export function PreviewSettingsPage() {
                 <td className="py-1">{t.locale ?? '—'}</td>
                 <td className="py-1">{new Date(t.expiresAt).toLocaleString()}</td>
                 <td className="py-1">{t.useCount}</td>
-                <td className="py-1 text-right">
+                <td className="py-1 text-end">
                   <button
                     type="button"
                     aria-label={`Revoke token ${t.id}`}

@@ -37,8 +37,10 @@ export function clampSplit(value: number): number {
  * splitter): arrows move by a step, Home/End jump to the bounds, Enter resets.
  * Returns the new value, or `null` when the key is not ours.
  */
-export function splitFromKey(key: string, value: number): number | null {
-  switch (key) {
+export function splitFromKey(key: string, value: number, rtl = false): number | null {
+  // In RTL the editor sits on the right, so ←/→ move the divider the other way.
+  const mirrored = rtl ? ({ ArrowLeft: 'ArrowRight', ArrowRight: 'ArrowLeft' } as Record<string, string>)[key] ?? key : key;
+  switch (mirrored) {
     case 'ArrowLeft':
     case 'ArrowDown':
       return clampSplit(value - SPLIT_STEP);
@@ -57,9 +59,10 @@ export function splitFromKey(key: string, value: number): number | null {
 }
 
 /** Split percentage for a pointer at `clientX` over a container. */
-export function splitFromPointer(clientX: number, left: number, width: number): number {
+export function splitFromPointer(clientX: number, left: number, width: number, rtl = false): number {
   if (width <= 0) return SPLIT_DEFAULT;
-  return clampSplit(((clientX - left) / width) * 100);
+  const fromStart = rtl ? left + width - clientX : clientX - left;
+  return clampSplit((fromStart / width) * 100);
 }
 
 export type FrameDecision =

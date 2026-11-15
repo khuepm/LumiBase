@@ -50,6 +50,10 @@ describe('preview-pane-state', () => {
     expect(splitFromKey('a', 50)).toBeNull();
     expect(splitFromPointer(300, 100, 400)).toBe(50);
     expect(splitFromPointer(300, 0, 0)).toBe(SPLIT_DEFAULT);
+    // RTL: the editor is on the right, so the maths and the arrows mirror.
+    expect(splitFromPointer(400, 100, 400, true)).toBe(SPLIT_MIN + 0); // 25 % from the right edge
+    expect(splitFromKey('ArrowLeft', 50, true)).toBe(55);
+    expect(splitFromKey('ArrowRight', 50, true)).toBe(45);
   });
 
   it('frames only the template origin or an allowlisted origin, never the Studio itself', () => {

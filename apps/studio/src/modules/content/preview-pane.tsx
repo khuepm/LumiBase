@@ -62,7 +62,8 @@ export function PreviewSplit({ editor, preview }: PreviewSplitProps) {
     const move = (event: PointerEvent) => {
       if (!dragging.current || !containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      setSplit(splitFromPointer(event.clientX, rect.left, rect.width));
+      const rtl = getComputedStyle(containerRef.current).direction === 'rtl';
+      setSplit(splitFromPointer(event.clientX, rect.left, rect.width, rtl));
     };
     const up = () => {
       dragging.current = false;
@@ -77,7 +78,7 @@ export function PreviewSplit({ editor, preview }: PreviewSplitProps) {
 
   return (
     <div ref={containerRef} className="flex min-h-[70vh] w-full items-stretch gap-0" data-testid="preview-split">
-      <div className="min-w-0 overflow-auto pr-2" style={{ width: `${split}%` }}>
+      <div className="min-w-0 overflow-auto pe-2" style={{ width: `${split}%` }}>
         {editor}
       </div>
       <div
@@ -93,14 +94,15 @@ export function PreviewSplit({ editor, preview }: PreviewSplitProps) {
           event.preventDefault();
         }}
         onKeyDown={(event) => {
-          const next = splitFromKey(event.key, split);
+          const rtl = containerRef.current ? getComputedStyle(containerRef.current).direction === 'rtl' : false;
+          const next = splitFromKey(event.key, split, rtl);
           if (next === null) return;
           event.preventDefault();
           setSplit(next);
         }}
         className="w-1.5 shrink-0 cursor-col-resize rounded bg-border hover:bg-primary/40 focus:bg-primary focus:outline-none"
       />
-      <div className="min-w-0 flex-1 pl-2" style={{ width: `${clampSplit(100 - split)}%` }}>
+      <div className="min-w-0 flex-1 ps-2" style={{ width: `${clampSplit(100 - split)}%` }}>
         {preview}
       </div>
     </div>
@@ -291,7 +293,7 @@ export function PreviewPane(props: PreviewPaneProps) {
               </button>
             );
           })}
-          <span className={cn('ml-2 text-[10px]', connected ? 'text-emerald-600' : 'text-muted-foreground')}>
+          <span className={cn('ms-2 text-[10px]', connected ? 'text-emerald-600' : 'text-muted-foreground')}>
             {connected ? 'Live' : 'Static'}
           </span>
         </div>

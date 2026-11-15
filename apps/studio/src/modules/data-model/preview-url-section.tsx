@@ -37,7 +37,7 @@ export function PreviewUrlSection({ collectionName }: { collectionName: string }
           <p className="text-xs text-muted-foreground">
             Enables the live preview pane in the item editor. Placeholders:{' '}
             {PREVIEW_URL_PLACEHOLDERS.map((p) => (
-              <code key={p} className="mr-1 font-mono">{`{${p}}`}</code>
+              <code key={p} className="me-1 font-mono">{`{${p}}`}</code>
             ))}
           </p>
         </div>
