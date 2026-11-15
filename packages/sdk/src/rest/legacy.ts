@@ -52,6 +52,10 @@ import {
   ShareCreateInput,
   ShareResource,
   ShareSecretResult,
+  PreviewSettingsResource,
+  PreviewTokenMintInput,
+  PreviewTokenResource,
+  PreviewTokenSecretResult,
   PresetResource,
   TranslationResource,
   ContentVersion,
@@ -956,6 +960,29 @@ export function legacyRest() {
         }),
     };
 
+    /** Live preview tokens + settings (epic #667). User principals only. */
+    const preview = {
+      mintToken: (input: PreviewTokenMintInput) =>
+        client.rawRequest<PreviewTokenSecretResult>("/api/v1/preview/token", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      listTokens: () => client.rawRequest<PreviewTokenResource[]>("/api/v1/preview/tokens"),
+      revokeToken: (id: string) =>
+        client.rawRequest<PreviewTokenResource>(`/api/v1/preview/tokens/${encodeURIComponent(id)}/revoke`, {
+          method: "POST",
+        }),
+      /** Rotation: revoke every live preview token of the site (site admin). */
+      revokeAll: () =>
+        client.rawRequest<{ revoked: number }>("/api/v1/preview/tokens/revoke-all", { method: "POST" }),
+      getSettings: () => client.rawRequest<PreviewSettingsResource>("/api/v1/preview/settings"),
+      updateSettings: (input: PreviewSettingsResource) =>
+        client.rawRequest<PreviewSettingsResource>("/api/v1/preview/settings", {
+          method: "PUT",
+          body: JSON.stringify(input),
+        }),
+    };
+
     const shares = {
       create: (input: ShareCreateInput) =>
         client.rawRequest<ShareSecretResult>("/api/v1/shares", {
@@ -1107,6 +1134,7 @@ export function legacyRest() {
       access,
       apiKeys,
       shares,
+      preview,
       me,
       permissions,
       presets,

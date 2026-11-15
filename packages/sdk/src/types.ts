@@ -1044,6 +1044,45 @@ export interface ShareSecretResult extends ShareResource {
   url: string;
 }
 
+/** `POST /api/v1/preview/token` body (epic #667). Item (+ version) or release. */
+export interface PreviewTokenMintInput {
+  collection?: string;
+  itemId?: string;
+  versionKey?: string;
+  releaseId?: string;
+  locale?: string;
+  ttlSeconds?: number;
+}
+
+/** A preview secret row (never includes the token hash). */
+export interface PreviewTokenResource {
+  id: string;
+  siteId: string;
+  collection: string | null;
+  itemId: string | null;
+  versionKey: string | null;
+  releaseId: string | null;
+  locale: string | null;
+  createdBy: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  revokedBy: string | null;
+  useCount: number;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+/** Mint result: the token (shown once) and the URL built from the collection's `meta.previewUrl`. */
+export interface PreviewTokenSecretResult extends PreviewTokenResource {
+  token: string;
+  url: string | null;
+}
+
+export interface PreviewSettingsResource {
+  allowedOrigins: string[];
+  ttlSeconds: number;
+}
+
 export interface PresetResource {
   id: string;
   siteId: string;
