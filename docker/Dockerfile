@@ -78,6 +78,6 @@ COPY docker/scripts/entrypoint.mjs docker/scripts/entrypoint-lib.mjs docker/scri
 # without resolving a user name.
 USER 65532:65532
 EXPOSE 1989
-HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
   CMD ["/nodejs/bin/node", "/app/bin/healthcheck.mjs"]
 ENTRYPOINT ["/nodejs/bin/node", "/app/bin/entrypoint.mjs"]

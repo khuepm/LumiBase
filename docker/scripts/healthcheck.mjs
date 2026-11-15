@@ -11,7 +11,11 @@ import { healthPort } from './entrypoint-lib.mjs';
 
 const url = `http://127.0.0.1:${healthPort(process.env)}/health`;
 try {
-  const res = await fetch(url, { signal: AbortSignal.timeout(2500) });
+  // `/health` still answers 200 when a backing service is down, but only after
+  // that service's probe gives up: the database and queue probes wait up to
+  // 3000 ms (apps/cms/src/routes/health.ts). 4.5 s leaves room for that, and
+  // stays under the Dockerfile HEALTHCHECK `--timeout=5s`.
+  const res = await fetch(url, { signal: AbortSignal.timeout(4500) });
   process.exit(res.ok ? 0 : 1);
 } catch {
   process.exit(1);

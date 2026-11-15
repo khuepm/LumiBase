@@ -9,7 +9,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Fixed
+- Docker image and Helm chart health probes outlast `/health` (#734, #742). `/health` answers 200 while a backing service is down, but only after that service's probe gives up (up to 3 s for the database and queue); the image's `healthcheck.mjs` gave up at 2.5 s and the chart's probes at 3 s, so the container never turned `healthy` and Kubernetes could restart pods during a database outage. The probe now waits 4.5 s, the Dockerfile `HEALTHCHECK` allows 5 s, and the chart's startup, liveness and readiness probes use `timeoutSeconds: 5`. Found by the v2.1.0 release smoke test, which also skipped publishing the 2.1.0 Helm chart.
 
 ## [2.1.0] - 2026-11-16
 
