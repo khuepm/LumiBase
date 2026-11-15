@@ -8,6 +8,7 @@ import { isDesktopShell } from './lib/shell';
 import { ServerConnection } from './components/server-connection';
 import { hydrateTokens } from './lib/token-store';
 import { MediaPickerProvider } from './modules/files/media-picker';
+import { listenForShellIntentLinks } from './lib/intents/shell-deep-link';
 
 /**
  * Root component. Hands off to TanStack Router; AppShell + active module
@@ -25,6 +26,15 @@ export function App() {
     // reads them, in parallel with i18n init.
     Promise.all([initI18n(), hydrateTokens()]).finally(() => setReady(true));
   }, []);
+
+  // Shell deep links (`lumibase://intent/edit?…`) open the same intent route
+  // the browser uses (#759). No-op outside the Tauri shell.
+  useEffect(() => {
+    if (!ready || !connected) return;
+    return listenForShellIntentLinks((path) => {
+      void router.navigate({ href: path });
+    });
+  }, [ready, connected]);
 
   if (!ready) {
     return <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">Loading Studio…</div>;

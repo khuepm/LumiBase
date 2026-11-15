@@ -85,10 +85,10 @@ export function FileDetailsDrawer({ fileId, onClose, onChanged }: Props) {
   const usage = usageQuery.data ?? [];
 
   return (
-    <aside className="fixed inset-y-0 right-0 z-40 flex w-[28rem] flex-col border-l bg-background shadow-xl" aria-label="File details">
+    <aside className="fixed inset-y-0 end-0 z-40 flex w-[28rem] flex-col border-s bg-background shadow-xl" aria-label="File details">
       <header className="flex items-center gap-2 border-b px-4 py-3">
         <h2 className="truncate font-semibold">{file?.filenameDownload ?? '…'}</h2>
-        <button type="button" onClick={onClose} aria-label="Close" className="ml-auto rounded p-1 hover:bg-muted">
+        <button type="button" onClick={onClose} aria-label="Close" className="ms-auto rounded p-1 hover:bg-muted">
           <X className="h-4 w-4" />
         </button>
       </header>
@@ -200,7 +200,7 @@ export function FileDetailsDrawer({ fileId, onClose, onChanged }: Props) {
                     <span>
                       v{v.version} · {v.filenameDownload} · until {new Date(v.expiresAt).toLocaleDateString()}
                     </span>
-                    <button type="button" disabled={restore.isPending} onClick={() => restore.mutate(v.id)} className="ml-auto text-primary underline">
+                    <button type="button" disabled={restore.isPending} onClick={() => restore.mutate(v.id)} className="ms-auto text-primary underline">
                       Restore
                     </button>
                   </li>
@@ -228,7 +228,7 @@ export function FileDetailsDrawer({ fileId, onClose, onChanged }: Props) {
             {pendingDelete ? (
               <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs">
                 <p className="font-medium">This file is used in {pendingDelete.references.length} place(s):</p>
-                <ul className="list-disc pl-4">
+                <ul className="list-disc ps-4">
                   {pendingDelete.references.slice(0, 10).map((r) => (
                     <li key={`${r.kind}:${r.id}`}>{referenceLabel(r)}</li>
                   ))}

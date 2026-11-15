@@ -1,0 +1,189 @@
+name: Docs Self-Heal
+
+# Doc/code drift (#756, epic #677 X05).
+#
+#   pull_request  -> `gate`: fail when the PR makes a doc claim stale (a cited
+#                    file moved, a route segment / env var / export renamed or
+#                    removed), with an annotation on the exact doc line.
+#   push to main  -> `heal`: rewrite the mechanical drift in BOTH locales and
+#   + dispatch       open or update ONE pull request on `docs/self-heal`,
+#                    listing every fix and every stale claim that needs a human.
+#
+# Deterministic only. There is no model call, no translation and no
+# ANTHROPIC_API_KEY here — a deliberate project decision (docs/.i18n/TASKS.md §6).
+# The fixes are paths, env names, routes and identifiers: code, identical in
+# EN and VI. The PR is never auto-merged; a human reviews it.
+
+on:
+  pull_request:
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'scripts/**'
+      - 'docker/**'
+      - '.github/**'
+      - 'docs/en/**'
+      - 'docs/vi/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'scripts/**'
+      - 'docker/**'
+      - '.github/**'
+      - 'docs/en/**'
+      - 'docs/vi/**'
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Revision to measure drift from (default: the base recorded in the open self-heal PR, else HEAD~1)'
+        required: false
+        type: string
+
+env:
+  NODE_VERSION: 24
+  HEAL_BRANCH: docs/self-heal
+
+jobs:
+  gate:
+    name: Doc claims still match the code
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    concurrency:
+      group: docs-drift-gate-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # The gate diffs against the PR base with rename detection and follows
+          # git rename history, so it needs the full history.
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          # Plain node + local .mjs; no install, so no pnpm cache (see ci.yml).
+          package-manager-cache: false
+
+      - name: Gate stale doc claims introduced by this PR
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_REF"
+          node scripts/docs-i18n/gate-code-drift.mjs \
+            --base "$(git merge-base HEAD FETCH_HEAD)" --head HEAD \
+            --json docs/.i18n/code-drift-report.json
+
+      - name: Upload drift report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs-code-drift-report
+          path: docs/.i18n/code-drift-report.json
+          if-no-files-found: ignore
+
+  heal:
+    name: Open/update the docs self-heal PR
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Least privilege: push the heal branch, open/edit its PR. Nothing else.
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      # One heal at a time; a newer push supersedes. The range base is read back
+      # from the open PR, so a cancelled run loses nothing.
+      group: docs-self-heal
+      cancel-in-progress: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      # The range is sticky: while a self-heal PR is open, keep measuring from
+      # the base it recorded, so drift from earlier pushes is regenerated on
+      # top of the new main instead of being dropped.
+      - name: Choose the drift base
+        id: base
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_BASE: ${{ inputs.base }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          pr_body="$(gh pr list --head "$HEAL_BRANCH" --state open --json body --jq '.[0].body // ""')"
+          stored="$(printf '%s' "$pr_body" | sed -n 's/.*<!-- self-heal-base: \([0-9a-f]\{40\}\) -->.*/\1/p' | head -n1)"
+          base=""
+          if [ -n "${INPUT_BASE:-}" ]; then
+            base="$INPUT_BASE"
+          elif [ -n "$stored" ] && git cat-file -e "${stored}^{commit}" 2>/dev/null; then
+            base="$stored"
+          elif [ -n "${BEFORE:-}" ] && ! [[ "$BEFORE" =~ ^0+$ ]] && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            base="$BEFORE"
+          else
+            base="HEAD~1"
+          fi
+          base="$(git rev-parse --verify "${base}^{commit}")"
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+          echo "Drift base: $base"
+
+      - name: Run deterministic fixers
+        shell: bash
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: |
+          set -euo pipefail
+          node scripts/docs-i18n/self-heal.mjs --base "$BASE_SHA" --head HEAD \
+            --report "$RUNNER_TEMP/self-heal.md" --json "$RUNNER_TEMP/self-heal.json"
+          cat "$RUNNER_TEMP/self-heal.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update the self-heal PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --head "$HEAL_BRANCH" --state open --json number --jq '.[0].number // ""')"
+          if [ -z "$(git status --porcelain docs)" ]; then
+            echo "No mechanical drift to fix."
+            if [ -n "$existing" ]; then
+              gh pr close "$existing" --delete-branch \
+                --comment "Closed by the self-heal workflow: no mechanical doc drift remains on ${DEFAULT_BRANCH}."
+            fi
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Rebuilt from the default branch on every run, so reruns are
+          # idempotent: the branch always holds exactly today's fixes.
+          git checkout -B "$HEAL_BRANCH"
+          git add docs/en docs/vi
+          git commit -m "docs: self-heal mechanical doc/code drift"
+          git push --force origin "$HEAL_BRANCH"
+          title="docs: self-heal doc/code drift (deterministic, review required)"
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --title "$title" --body-file "$RUNNER_TEMP/self-heal.md"
+          else
+            gh pr create --base "$DEFAULT_BRANCH" --head "$HEAL_BRANCH" \
+              --title "$title" --body-file "$RUNNER_TEMP/self-heal.md"
+          fi

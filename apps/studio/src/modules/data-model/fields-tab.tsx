@@ -431,7 +431,7 @@ function SystemFieldRow({ field, onEdit }: SystemFieldRowProps) {
           {field.name}
         </button>
         {field.label && (
-          <span className="ml-2 text-xs text-muted-foreground">{field.label}</span>
+          <span className="ms-2 text-xs text-muted-foreground">{field.label}</span>
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
@@ -498,12 +498,12 @@ function SortableField({ id, field, onEdit, onDelete }: SortableFieldProps) {
             {field.name}
           </button>
           {field.label && (
-            <span className="ml-2 text-xs text-muted-foreground">{field.label}</span>
+            <span className="ms-2 text-xs text-muted-foreground">{field.label}</span>
           )}
         </div>
 
         {/* Badges */}
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        <div className="ms-auto flex shrink-0 items-center gap-1.5">
           {field.required && (
             <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
               required

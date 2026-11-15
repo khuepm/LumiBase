@@ -128,7 +128,7 @@ function ActivityLogTable() {
   return (
     <div className="overflow-hidden rounded-lg border bg-background shadow-sm">
       <table className="w-full text-sm">
-        <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground border-b">
+        <thead className="bg-muted/40 text-start text-xs uppercase text-muted-foreground border-b">
           <tr>
             <th className="px-4 py-3">Timestamp</th>
             <th className="px-4 py-3">User ID</th>

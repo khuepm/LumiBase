@@ -15,8 +15,14 @@ import { formatSafeError } from "@lumibase/contracts/utils";
  * Extensions are cached in memory; calling `clearCache()` forces a reload.
  */
 
-import { type ComponentType, lazy, Suspense } from 'react';
+import { type ComponentType, lazy, Suspense, useSyncExternalStore } from 'react';
+import { supersedesDevBuild } from '@lumibase/contracts/extensions';
 import { getApiClient } from '@/lib/api';
+import {
+  clearIntentHandlers,
+  hasIntentCapability,
+  registerIntentHandlers,
+} from '@/lib/intents/registry';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +42,17 @@ export interface ExtensionEntry {
 
 const cache = new Map<string, ExtensionEntry>();
 let loaded = false;
+
+/**
+ * Extensions granted an `intents:claim:*` capability (issue #759). Their
+ * bundles are imported only when an intent link is being resolved, never on a
+ * normal Studio boot.
+ */
+const intentSources = new Map<
+  string,
+  { capabilities: string[]; load: () => Promise<Record<string, unknown>> }
+>();
+let intentsLoaded: Promise<void> | null = null;
 
 /**
  * Load all enabled UI extensions from the API and cache them.
@@ -115,6 +132,7 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
       enabled: boolean;
       bundleUrl: string;
       manifest: Record<string, string>;
+      capabilities?: unknown;
     }>;
 
     for (const ext of exts) {
@@ -123,6 +141,18 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
 
       const bundleUrl = ext.bundleUrl;
       const name = ext.name;
+
+      // GRANTED capabilities (server-side subset of the manifest) scope which
+      // intents this extension may claim.
+      const capabilities = Array.isArray(ext.capabilities)
+        ? ext.capabilities.filter((c): c is string => typeof c === 'string')
+        : [];
+      if (hasIntentCapability(capabilities)) {
+        intentSources.set(name, {
+          capabilities,
+          load: async () => (await import(/* @vite-ignore */ bundleUrl)) as Record<string, unknown>,
+        });
+      }
 
       // Create a lazy component from the bundle's default export.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -146,13 +176,139 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
   }
 
   loaded = true;
+  notifyExtensionUpdates();
   return Array.from(cache.values());
 }
 
 /** Clear the extension cache (forces a reload on next call). */
 export function clearExtensionCache(): void {
   cache.clear();
+  hotImpls.clear();
   loaded = false;
+  intentSources.clear();
+  intentsLoaded = null;
+  clearIntentHandlers();
+}
+
+/**
+ * Import the bundles of extensions allowed to claim intents and register the
+ * handlers they export as `intents` (named export, or `default.intents`).
+ * Idempotent; a failing bundle is skipped so the built-in handler still runs.
+ */
+export function loadExtensionIntentHandlers(): Promise<void> {
+  if (!intentsLoaded) {
+    intentsLoaded = (async () => {
+      await loadExtensions();
+      for (const [name, source] of intentSources) {
+        try {
+          const mod = await source.load();
+          const fromDefault = (mod.default as { intents?: unknown } | undefined)?.intents;
+          registerIntentHandlers(name, source.capabilities, mod.intents ?? fromDefault);
+        } catch (err) {
+          console.warn(`[extension-loader] intent handlers of "${name}" unavailable:`, formatSafeError(err));
+        }
+      }
+    })();
+  }
+  return intentsLoaded;
+}
+
+// ─── Dev hot reload (#754) ───────────────────────────────────────────────────
+//
+// `lumibase-ext dev` pushes rebuilt UI bundles; `extension-dev-client.ts`
+// imports each one and calls `hotSwapExtension`. The registry entry's
+// `component` becomes a STABLE wrapper per extension name that renders the
+// latest implementation, so whoever already resolved the component (e.g.
+// `resolveInterface`) keeps a valid reference and simply re-renders. Only the
+// extension's own subtree remounts on a swap; host state — the form values an
+// interface edits via `value`/`onChange`, routing, query cache — is untouched.
+
+interface HotImpl {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  component: ComponentType<any>;
+  session: string;
+  version: number;
+}
+
+const hotImpls = new Map<string, HotImpl>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const hotWrappers = new Map<string, ComponentType<any>>();
+const hotListeners = new Set<() => void>();
+/** Bumped whenever the set of resolvable extensions changes. */
+let extensionGeneration = 0;
+
+function subscribeHot(listener: () => void): () => void {
+  hotListeners.add(listener);
+  return () => hotListeners.delete(listener);
+}
+
+function notifyExtensionUpdates(): void {
+  extensionGeneration += 1;
+  for (const listener of [...hotListeners]) listener();
+}
+
+/** Subscribe to dev hot-swaps (any extension). Returns an unsubscribe fn. */
+export function subscribeExtensionUpdates(listener: () => void): () => void {
+  return subscribeHot(listener);
+}
+
+const getExtensionGeneration = () => extensionGeneration;
+
+/**
+ * Re-render when an extension is loaded or hot-swapped. Components that pick
+ * a component through the registry DURING render (`resolveInterface`) call
+ * this: otherwise a form drawn before the dev hub's first build arrived keeps
+ * its fallback editor until something else happens to re-render it.
+ */
+export function useExtensionUpdates(): number {
+  return useSyncExternalStore(subscribeHot, getExtensionGeneration, getExtensionGeneration);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function hotWrapperFor(name: string): ComponentType<any> {
+  const existing = hotWrappers.get(name);
+  if (existing) return existing;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function HotExtension(props: Record<string, any>) {
+    const impl = useSyncExternalStore(subscribeHot, () => hotImpls.get(name));
+    if (!impl) return null;
+    const Impl = impl.component;
+    return <Impl {...props} />;
+  }
+  HotExtension.displayName = `HotExtension(${name})`;
+  hotWrappers.set(name, HotExtension);
+  return HotExtension;
+}
+
+/** Version currently rendered for a hot-reloaded extension (dev only). */
+export function getHotExtensionVersion(name: string): number | undefined {
+  return hotImpls.get(name)?.version;
+}
+
+/**
+ * Install (or replace) the implementation of a UI extension at `version`.
+ * Out-of-order or duplicate versions are ignored. Returns true when swapped.
+ */
+export function hotSwapExtension(input: {
+  name: string;
+  slot: ExtensionSlot;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  component: ComponentType<any>;
+  /** `lumibase-ext dev` run; versions restart at 1 when the CLI restarts. */
+  session: string;
+  version: number;
+}): boolean {
+  if (!supersedesDevBuild(hotImpls.get(input.name), input)) return false;
+  hotImpls.set(input.name, { component: input.component, session: input.session, version: input.version });
+  const entry = cache.get(input.name);
+  cache.set(input.name, {
+    name: input.name,
+    slot: input.slot,
+    component: hotWrapperFor(input.name),
+    manifest: entry?.manifest ?? {},
+  });
+  notifyExtensionUpdates();
+  return true;
 }
 
 /** Get a cached extension by name. Returns undefined if not loaded. */
@@ -222,12 +378,14 @@ class ExtensionErrorBoundary extends React.Component<
  * an error boundary so one bad extension cannot take down the Studio.
  */
 export function ExtensionComponent({ name, ...props }: ExtensionComponentProps) {
-  const entry = cache.get(name);
+  // Subscribed so an extension that first appears via dev hot reload renders.
+  const entry = useSyncExternalStore(subscribeHot, () => cache.get(name));
   if (!entry) return null;
 
   const Component = entry.component;
   return (
-    <ExtensionErrorBoundary name={name}>
+    // Keyed by hot version: a fixed build clears a previous render crash.
+    <ExtensionErrorBoundary key={hotImpls.get(name)?.version ?? 0} name={name}>
       <Suspense
         fallback={
           <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">

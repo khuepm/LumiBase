@@ -2,6 +2,7 @@ import { Eye, FileText } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { sanitizeHtml } from '@/lib/sanitize-html';
+import { contentDirProps } from '@/lib/text-direction';
 import { readOptions, type InterfaceComponent } from './types';
 
 interface MarkdownOptions {
@@ -25,8 +26,10 @@ export const MarkdownInterface: InterfaceComponent<string> = ({
   field,
   disabled,
   onChange,
+  locale,
 }) => {
   const opts = readOptions<MarkdownOptions>(field);
+  const dirProps = contentDirProps(locale);
   const [mode, setMode] = useState<Mode>('write');
   const html = useMemo(() => renderMarkdown(value ?? ''), [value]);
 
@@ -42,6 +45,7 @@ export const MarkdownInterface: InterfaceComponent<string> = ({
       </div>
       {mode === 'write' ? (
         <textarea
+          {...dirProps}
           value={value ?? ''}
           disabled={disabled}
           rows={opts.rows ?? 8}
@@ -51,6 +55,7 @@ export const MarkdownInterface: InterfaceComponent<string> = ({
         />
       ) : (
         <div
+          {...dirProps}
           className="prose prose-sm max-w-none px-3 py-2"
           dangerouslySetInnerHTML={{ __html: html }}
         />

@@ -32,7 +32,7 @@ const client = {
 };
 
 vi.mock('@/lib/api', () => ({ getApiClient: () => client, hasActiveToken: () => true }));
-vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined }));
+vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined, useExtensionUpdates: () => 0 }));
 vi.mock('@/hooks/use-presence', () => ({ useCoEditors: () => ({ coEditors: [], connected: false }) }));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: unknown }) => <a>{children as never}</a>,

@@ -114,17 +114,21 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
 };
 
 export function resolveInterface(field: FieldResource): InterfaceComponent<unknown> {
-  // 1. Static registry (Phase A-F built-ins).
+  // 1. Built-in interface named by the field.
   if (REGISTRY[field.interface]) return REGISTRY[field.interface] as InterfaceComponent<unknown>;
-  if (REGISTRY[field.type]) return REGISTRY[field.type] as InterfaceComponent<unknown>;
 
-  // 2. Dynamically loaded extension interfaces (Phase F).
-  // Extension must declare type: 'interface' and name matching field.interface.
-  const extEntry = getExtension(field.interface);
+  // 2. Extension interface named by the field (installed or hot-reloaded).
+  // It must win over the by-type alias below: otherwise an extension
+  // interface on a `string` / `text` / `number` / `boolean` field never
+  // renders and the plain built-in editor shows instead.
+  const extEntry = field.interface ? getExtension(field.interface) : undefined;
   if (extEntry?.slot === 'interface') {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return extEntry.component as InterfaceComponent<any>;
   }
+
+  // 3. Sensible default editor for the field's type.
+  if (REGISTRY[field.type]) return REGISTRY[field.type] as InterfaceComponent<unknown>;
 
   return JsonRawInterface as InterfaceComponent<unknown>;
 }

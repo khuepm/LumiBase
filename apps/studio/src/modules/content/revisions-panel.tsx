@@ -69,7 +69,7 @@ export function RevisionsPanel({ collection, itemId, onRevert }: RevisionsPanelP
               type="button"
               onClick={() => setSelected(rev.id)}
               className={cn(
-                'w-full rounded-md border px-2 py-1.5 text-left text-xs',
+                'w-full rounded-md border px-2 py-1.5 text-start text-xs',
                 selected === rev.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/40',
               )}
             >
@@ -139,7 +139,7 @@ export function RevisionsPanel({ collection, itemId, onRevert }: RevisionsPanelP
                   />
                   Show unchanged fields
                 </label>
-                <div className="max-h-[55vh] overflow-y-auto pr-1">
+                <div className="max-h-[55vh] overflow-y-auto pe-1">
                   <RevisionsDiff
                     before={active.delta?.before ?? null}
                     after={active.delta?.after ?? null}

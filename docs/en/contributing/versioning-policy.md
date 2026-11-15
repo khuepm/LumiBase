@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-11-08T10:34:22.156Z
+version: 3
+lastUpdated: 2026-11-15T16:45:24.375Z
 sourceLang: en
-contentHash: 044d600787d055d0
-codeVerified: 2026-11-08T10:34:22.156Z
-codeVerifiedHash: 044d600787d055d0
+contentHash: 9076eff6b8ece122
+codeVerified: 2026-11-15T16:45:24.375Z
+codeVerifiedHash: 9076eff6b8ece122
 codeVerifiedClaims: 12
 ---
 
@@ -91,6 +91,11 @@ patch or minor.
 
 This window is a commitment for the maintained line; it may be extended for a
 given release at the maintainers' discretion, never silently shortened.
+
+The runtimes a release runs on (Node.js, Cloudflare Workers compatibility date,
+PostgreSQL, Redis, Next.js/React, browsers) have their own support windows, and
+dropping one is a breaking change under this policy. See
+[Supported runtimes](./supported-runtimes.md).
 
 ## Release cadence & gates
 

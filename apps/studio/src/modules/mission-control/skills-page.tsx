@@ -195,14 +195,14 @@ export function SkillsPage() {
 
           {visible.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-start text-sm">
                 <thead className="text-xs text-muted-foreground">
                   <tr className="border-b">
-                    <th className="py-1.5 pr-3 font-medium">Skill</th>
-                    <th className="py-1.5 pr-3 font-medium">Status</th>
-                    <th className="py-1.5 pr-3 font-medium">Risk</th>
-                    <th className="py-1.5 pr-3 font-medium">Version</th>
-                    <th className="py-1.5 pr-3 font-medium">Priority</th>
+                    <th className="py-1.5 pe-3 font-medium">Skill</th>
+                    <th className="py-1.5 pe-3 font-medium">Status</th>
+                    <th className="py-1.5 pe-3 font-medium">Risk</th>
+                    <th className="py-1.5 pe-3 font-medium">Version</th>
+                    <th className="py-1.5 pe-3 font-medium">Priority</th>
                     <th className="py-1.5 font-medium">Scope</th>
                   </tr>
                 </thead>
@@ -212,18 +212,18 @@ export function SkillsPage() {
                       key={skill.id}
                       className={cn('border-b last:border-0', selected?.id === skill.id && 'bg-muted/40')}
                     >
-                      <td className="py-2 pr-3">
+                      <td className="py-2 pe-3">
                         <button
                           type="button"
                           onClick={() => open({ kind: 'edit', id: skill.id })}
                           aria-current={selected?.id === skill.id ? 'true' : undefined}
-                          className="text-left font-medium hover:underline"
+                          className="text-start font-medium hover:underline"
                         >
                           {skill.name}
                         </button>
                         <code className="block text-[11px] text-muted-foreground">{skill.slug}</code>
                       </td>
-                      <td className="py-2 pr-3">
+                      <td className="py-2 pe-3">
                         <span
                           className={cn('rounded-full px-2 py-0.5 text-xs', STATUS_STYLES[skill.status])}
                         >
@@ -232,14 +232,14 @@ export function SkillsPage() {
                       </td>
                       <td
                         className={cn(
-                          'py-2 pr-3 text-xs',
+                          'py-2 pe-3 text-xs',
                           skill.riskClass === 'high' && 'font-medium text-destructive',
                         )}
                       >
                         {skill.riskClass}
                       </td>
-                      <td className="py-2 pr-3 text-xs">v{skill.version}</td>
-                      <td className="py-2 pr-3 text-xs">{skill.priority}</td>
+                      <td className="py-2 pe-3 text-xs">v{skill.version}</td>
+                      <td className="py-2 pe-3 text-xs">{skill.priority}</td>
                       <td className="py-2 text-xs text-muted-foreground">{scopeSummary(skill)}</td>
                     </tr>
                   ))}

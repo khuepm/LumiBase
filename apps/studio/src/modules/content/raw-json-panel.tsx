@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -62,7 +62,7 @@ export function RawJsonPanel({ value, onChange }: RawJsonPanelProps) {
         {error ? <AlertCircle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
         <span>{error ?? 'Valid JSON — saves apply via the Save button.'}</span>
       </div>
-      <div className="overflow-hidden rounded-md border">
+      <div className="overflow-hidden rounded-md border" dir="ltr">
         <Editor
           height="60vh"
           defaultLanguage="json"

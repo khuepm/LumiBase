@@ -12,17 +12,17 @@ export function UploadQueuePanel({ tasks, queue }: { tasks: ReadonlyArray<Upload
   const overall = tasks.reduce((n, t) => n + (t.status === 'done' ? 1 : t.progress), 0) / tasks.length;
 
   return (
-    <aside className="fixed bottom-4 right-4 z-40 w-96 rounded-xl border bg-background shadow-lg" aria-label="Upload queue">
+    <aside className="fixed bottom-4 end-4 z-40 w-96 rounded-xl border bg-background shadow-lg" aria-label="Upload queue">
       <header className="flex items-center gap-2 border-b px-3 py-2 text-sm">
         <span className="font-medium">
           {active > 0 ? `Uploading ${done}/${tasks.length}` : `Uploaded ${done}/${tasks.length}`}
         </span>
         {failed > 0 && (
-          <button type="button" onClick={() => queue.retryFailed()} className="ml-auto inline-flex items-center gap-1 text-xs text-primary">
+          <button type="button" onClick={() => queue.retryFailed()} className="ms-auto inline-flex items-center gap-1 text-xs text-primary">
             <RotateCcw className="h-3 w-3" /> Retry {failed} failed
           </button>
         )}
-        <button type="button" onClick={() => queue.clearFinished()} className={cn('text-xs text-muted-foreground hover:text-foreground', failed === 0 && 'ml-auto')}>
+        <button type="button" onClick={() => queue.clearFinished()} className={cn('text-xs text-muted-foreground hover:text-foreground', failed === 0 && 'ms-auto')}>
           Clear finished
         </button>
       </header>

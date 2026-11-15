@@ -19,6 +19,23 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      # Framework majors move together or not at all (#760). Next.js, React and
+      # their type packages are one compatibility surface: a lone `react` major
+      # against an old `next`, or `@types/react` ahead of `react`, is exactly the
+      # half-migrated state the supported-runtime policy forbids. One grouped PR
+      # per framework major, checked by `.github/workflows/runtime-matrix.yml`.
+      # See docs/en/contributing/supported-runtimes.md.
+      framework-majors:
+        update-types:
+          - "major"
+        patterns:
+          - "next"
+          - "@next/*"
+          - "eslint-config-next"
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
     # Majors still get their own PR (excluded from the group above by default).
     ignore:
       # TypeScript 7 (the native compiler) breaks the toolchain, not our code:
@@ -26,6 +43,13 @@ updates:
       # `useCaseSensitiveFileNames`. Closed in #417. Remove this entry once both
       # support TS 7; minor/patch bumps of 5.x still come through the group.
       - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # `@types/node` majors track Node.js majors. Moving them is a change to
+      # the supported-runtime matrix (engines.node, .nvmrc, the Dockerfile and
+      # the CI matrix move together — `pnpm check:all` enforces it), not a
+      # routine bump, and a types major for a non-LTS line (25, or 27 before
+      # its LTS date) must never land. Minor/patch still come through the group.
+      - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
 
   # Keep GitHub Actions pinned to current, maintained versions.
@@ -50,3 +74,14 @@ updates:
     labels:
       - "dependencies"
       - "docker"
+    ignore:
+      # Never move the Node.js major of the image from here (#760). #803 bumped
+      # the builder to `node:25-slim`: a non-LTS line, with no corepack, while
+      # the distroless runtime stayed on Node 22 — built on one major, run on
+      # another. The runtime image carries its major in the image NAME
+      # (`nodejs22-debian13`), which Dependabot cannot rewrite, so a builder
+      # major bump is always half a change. Majors are moved by hand with the
+      # rest of the matrix (docs/en/contributing/supported-runtimes.md →
+      # "Changing the matrix"); digest and same-major tag bumps keep flowing.
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]

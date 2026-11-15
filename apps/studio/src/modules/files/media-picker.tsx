@@ -176,14 +176,14 @@ export function MediaPicker({
       <div className="flex h-[80vh] w-full max-w-5xl flex-col rounded-xl border bg-background shadow-lg">
         <header className="flex items-center gap-3 border-b px-4 py-3">
           <h2 className="text-lg font-semibold">{title ?? t('files.picker.title', 'Choose media')}</h2>
-          <div className="relative ml-auto w-72">
-            <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <div className="relative ms-auto w-72">
+            <Search className="pointer-events-none absolute start-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <input
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t('files.picker.search', 'Search name, alt, keywords, credit…')}
-              className="w-full rounded-md border py-1.5 pl-8 pr-2 text-sm outline-none focus:border-primary"
+              className="w-full rounded-md border py-1.5 ps-8 pe-2 text-sm outline-none focus:border-primary"
             />
           </div>
           <button type="button" onClick={onCancel} aria-label={t('common.close', 'Close')} className="rounded p-1 hover:bg-muted">
@@ -191,13 +191,13 @@ export function MediaPicker({
           </button>
         </header>
         <div className="flex min-h-0 flex-1">
-          <nav className="w-56 shrink-0 overflow-y-auto border-r p-2 text-sm" aria-label={t('files.folders', 'Folders')}>
+          <nav className="w-56 shrink-0 overflow-y-auto border-e p-2 text-sm" aria-label={t('files.folders', 'Folders')}>
             {!scoped && (
-              <button type="button" onClick={() => setFolder(undefined)} className={cn('block w-full rounded px-2 py-1 text-left hover:bg-muted', folder === undefined && 'bg-muted font-medium')}>
+              <button type="button" onClick={() => setFolder(undefined)} className={cn('block w-full rounded px-2 py-1 text-start hover:bg-muted', folder === undefined && 'bg-muted font-medium')}>
                 {t('files.picker.all', 'All files')}
               </button>
             )}
-            <button type="button" onClick={() => setFolder(scoped ? scopeFolder : null)} className={cn('block w-full rounded px-2 py-1 text-left hover:bg-muted', folder === (scoped ? scopeFolder : null) && 'bg-muted font-medium')}>
+            <button type="button" onClick={() => setFolder(scoped ? scopeFolder : null)} className={cn('block w-full rounded px-2 py-1 text-start hover:bg-muted', folder === (scoped ? scopeFolder : null) && 'bg-muted font-medium')}>
               {scoped ? t('files.picker.scope', 'This folder') : t('files.root', 'Root')}
             </button>
             {!scoped &&
@@ -206,8 +206,8 @@ export function MediaPicker({
                   type="button"
                   key={node.id}
                   onClick={() => setFolder(node.id)}
-                  style={{ paddingLeft: 8 + depth * 12 }}
-                  className={cn('flex w-full items-center gap-1 rounded py-1 pr-2 text-left hover:bg-muted', folder === node.id && 'bg-muted font-medium')}
+                  style={{ paddingInlineStart: 8 + depth * 12 }}
+                  className={cn('flex w-full items-center gap-1 rounded py-1 pe-2 text-start hover:bg-muted', folder === node.id && 'bg-muted font-medium')}
                 >
                   <Folder className="h-3.5 w-3.5 shrink-0 text-blue-500" />
                   <span className="truncate">{node.name}</span>
@@ -239,7 +239,7 @@ export function MediaPicker({
                       >
                         {f.mime.startsWith('image/') ? <ImageIcon className="h-8 w-8 text-muted-foreground" /> : <FileIcon className="h-8 w-8 text-muted-foreground" />}
                         <span className="w-full truncate text-center">{f.filenameDownload}</span>
-                        {isSel && <Check className="absolute right-1 top-1 h-4 w-4 text-primary" />}
+                        {isSel && <Check className="absolute end-1 top-1 h-4 w-4 text-primary" />}
                       </button>
                     </li>
                   );
@@ -260,7 +260,7 @@ export function MediaPicker({
             {selected.size} {t('files.picker.selected', 'selected')}
             {multiple && max !== undefined ? ` / ${max}` : ''}
           </span>
-          <button type="button" onClick={onCancel} className="ml-auto rounded-md px-4 py-2 font-medium hover:bg-muted">
+          <button type="button" onClick={onCancel} className="ms-auto rounded-md px-4 py-2 font-medium hover:bg-muted">
             {t('common.cancel', 'Cancel')}
           </button>
           <button

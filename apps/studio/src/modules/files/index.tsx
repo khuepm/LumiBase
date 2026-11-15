@@ -245,7 +245,7 @@ export function FilesPage() {
           type="button"
           onClick={() => setCurrentFolder(null)}
           {...folderDropProps(null)}
-          className={cn('flex w-full items-center gap-1 rounded px-2 py-1 text-left hover:bg-muted', currentFolder === null && 'bg-muted font-medium', dropTarget === null && 'ring-2 ring-primary')}
+          className={cn('flex w-full items-center gap-1 rounded px-2 py-1 text-start hover:bg-muted', currentFolder === null && 'bg-muted font-medium', dropTarget === null && 'ring-2 ring-primary')}
         >
           <HardDrive className="h-4 w-4" /> {t('files.root', 'Root')}
         </button>
@@ -288,14 +288,14 @@ export function FilesPage() {
               ))}
             </nav>
           </div>
-          <div className="relative ml-auto w-64">
-            <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <div className="relative ms-auto w-64">
+            <Search className="pointer-events-none absolute start-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <input
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t('files.search', 'Search name, alt, keywords, credit…')}
-              className="w-full rounded-md border py-1.5 pl-8 pr-2 text-sm outline-none focus:border-primary"
+              className="w-full rounded-md border py-1.5 ps-8 pe-2 text-sm outline-none focus:border-primary"
             />
           </div>
           <button type="button" onClick={() => setIsCreatingFolder(true)} className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-1.5 text-sm font-medium hover:bg-muted">
@@ -321,7 +321,7 @@ export function FilesPage() {
             <span>
               {selected.size} {t('files.selected', 'selected')}
             </span>
-            <button type="button" onClick={() => setBulkEditOpen(true)} className="ml-auto inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-muted">
+            <button type="button" onClick={() => setBulkEditOpen(true)} className="ms-auto inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-muted">
               <Tags className="h-4 w-4" /> {t('files.bulkEdit', 'Edit metadata')}
             </button>
             <MoveToMenu tree={tree} onMove={(folder) => moveFiles.mutate({ ids: [...selected], folder })} />
@@ -365,7 +365,7 @@ export function FilesPage() {
                     e.stopPropagation();
                     toggleSelect(file.id);
                   }}
-                  className="absolute left-2 top-2 text-muted-foreground"
+                  className="absolute start-2 top-2 text-muted-foreground"
                 >
                   {selected.has(file.id) ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4 opacity-0 group-hover:opacity-100" />}
                 </button>
@@ -428,14 +428,14 @@ function FolderTreeView({ nodes, depth = 0, ...props }: FolderTreeViewProps) {
             draggable
             onDragStart={(e) => props.onDragStart(e, n.id)}
             {...props.dropProps(n.id)}
-            style={{ paddingLeft: 8 + depth * 12 }}
+            style={{ paddingInlineStart: 8 + depth * 12 }}
             className={cn(
-              'group flex items-center gap-1 rounded py-1 pr-1 hover:bg-muted',
+              'group flex items-center gap-1 rounded py-1 pe-1 hover:bg-muted',
               props.current === n.id && 'bg-muted font-medium',
               props.dropTarget === n.id && 'ring-2 ring-primary',
             )}
           >
-            <button type="button" onClick={() => props.onOpen(n.id)} className="flex min-w-0 flex-1 items-center gap-1 text-left">
+            <button type="button" onClick={() => props.onOpen(n.id)} className="flex min-w-0 flex-1 items-center gap-1 text-start">
               <Folder className="h-3.5 w-3.5 shrink-0 text-blue-500" />
               <span className="truncate">{n.name}</span>
             </button>

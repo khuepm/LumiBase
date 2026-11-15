@@ -154,7 +154,7 @@ export function SloTable({ rows, linkBase }: { rows: SloRow[]; linkBase?: string
   return (
     <table className="w-full text-sm">
       <thead>
-        <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+        <tr className="border-b text-start text-xs uppercase text-muted-foreground">
           <th className="py-2">Intent</th>
           <th>Collection</th>
           <th>Status</th>
@@ -183,7 +183,7 @@ export function SloTable({ rows, linkBase }: { rows: SloRow[]; linkBase?: string
             <td>
               {open}
               {unevaluated > 0 && (
-                <span className="ml-1 rounded-full bg-sky-100 px-1.5 py-0.5 text-xs text-sky-900">
+                <span className="ms-1 rounded-full bg-sky-100 px-1.5 py-0.5 text-xs text-sky-900">
                   {unevaluated} not evaluated
                 </span>
               )}
