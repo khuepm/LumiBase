@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { FieldResource } from '@lumibase/sdk';
 import { cn } from '@/lib/cn';
 import { resolveInterface } from './registry';
+import { useExtensionUpdates } from '@/lib/extension-loader';
 import { readOptions, type InterfaceComponent } from './types';
 
 interface RepeaterOptions {
@@ -125,6 +126,7 @@ function RepeaterRow({
   onRemove: () => void;
   onMove: (dir: -1 | 1) => void;
 }) {
+  useExtensionUpdates(); // sub-fields resolve extension interfaces during render
   const title = labelTemplate
     ? labelTemplate.replace(/\{(\w+)\}/g, (_m, key) => String(row[key] ?? '')).trim() ||
     `Item ${idx + 1}`
@@ -136,7 +138,7 @@ function RepeaterRow({
         <button
           type="button"
           onClick={onToggle}
-          className="flex flex-1 items-center gap-2 text-left text-sm"
+          className="flex flex-1 items-center gap-2 text-start text-sm"
         >
           <span className={cn('text-xs font-mono text-muted-foreground')}>#{idx + 1}</span>
           <span className="truncate">{title}</span>
@@ -179,8 +181,8 @@ function RepeaterRow({
               <div key={sf.name}>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
                   {sf.name}
-                  {sf.required && <span className="ml-1 text-destructive">*</span>}
-                  <span className="ml-2 text-[10px] uppercase">
+                  {sf.required && <span className="ms-1 text-destructive">*</span>}
+                  <span className="ms-2 text-[10px] uppercase">
                     {sf.interface || sf.type}
                   </span>
                 </label>

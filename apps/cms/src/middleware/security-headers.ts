@@ -22,11 +22,24 @@ const DEFAULT_SECURITY_HEADER_POLICY: Record<string, string[]> = {
  */
 export const withSecurityHeaders = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   await next();
-  c.header('Content-Security-Policy', serializeContentSecurityPolicy(DEFAULT_SECURITY_HEADER_POLICY));
+  // A route may set its own, stricter CSP (e.g. the `sandbox` policy on
+  // user-uploaded media, #740). Keep it and add the baseline as a second
+  // header: browsers enforce every CSP header, so the result can only be
+  // stricter than either policy alone — never weaker.
+  const routePolicy = c.res.headers.get('Content-Security-Policy');
+  const baseline = serializeContentSecurityPolicy(DEFAULT_SECURITY_HEADER_POLICY);
+  if (routePolicy && routePolicy !== baseline) {
+    c.header('Content-Security-Policy', baseline, { append: true });
+  } else {
+    c.header('Content-Security-Policy', baseline);
+  }
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('X-Frame-Options', 'DENY');
   c.header('Referrer-Policy', 'no-referrer');
-  c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  // `geolocation=(self)`: the Studio (served from this origin in Docker) offers
+  // "Use my location" on geopoint fields (#746). Same-origin only — no frame or
+  // third-party origin gets it, and the browser still asks the person.
+  c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self), payment=(), usb=()');
   c.header('Cross-Origin-Opener-Policy', 'same-origin');
   c.header('Cross-Origin-Resource-Policy', 'same-site');
 };

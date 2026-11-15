@@ -18,9 +18,10 @@ ${pc.bold("Usage")}
 
 ${pc.bold("Commands")}
   init [name]     Scaffold a new LumiBase project
-  types           Generate TypeScript types from a live schema
+  types           Generate TS / Zod / GraphQL SDL / OpenAPI from a schema
   skills          Sync Site Skills (AI agent playbooks) with a site
   doctor          Check configuration and connectivity
+                  ${pc.dim("(--security: audit the project's config against the production checklist)")}
 
 ${pc.bold("Connection")}
   Resolved with precedence flag > environment > ${pc.cyan("lumibase.config.json")}.
@@ -38,6 +39,11 @@ ${pc.bold("lumibase types")}
   --import-from <pkg>  Module the generated file imports from ${pc.dim('(default: lumibase)')}
   --check         Fail if the file is missing or stale ${pc.dim("(use in CI)")}
   --stdout        Print to stdout instead of writing a file
+  --watch         Regenerate whenever the schema changes ${pc.dim("(polls; Ctrl+C to stop)")}
+  --interval <ms> Poll interval for --watch ${pc.dim("(default: 2000)")}
+  --config <path> Typegen config ${pc.dim("(default: lumibase.typegen.config.{ts,mts,js,mjs,json})")}
+                  ${pc.dim("A config file holds one or more configs, each with targets:")}
+                  ${pc.dim("ts | zod | graphql-sdl | openapi | manifest. --check and --watch apply to all.")}
 
 ${pc.bold("lumibase skills")} ${pc.dim("— Markdown playbooks (skills/*.skill.md) kept in git; needs an admin token")}
   list            Show the skills on the site
@@ -57,6 +63,12 @@ ${pc.bold("lumibase skills")} ${pc.dim("— Markdown playbooks (skills/*.skill.m
     --activate    Activate on install ${pc.dim("(default: drafts, to review in Studio)")}
     --dry-run     Show what would change without writing
 
+${pc.bold("lumibase doctor --security")} ${pc.dim("— reads .env, .env.local, .dev.vars, wrangler.toml, docker-compose.yml")}
+  --production    Apply the production checklist even if NODE_ENV is not production
+  --env-file <a,b> Read these dotenv files instead of the defaults
+  --json          Print the report as JSON
+  ${pc.dim("Exits 1 when any finding is critical.")}
+
 ${pc.bold("Examples")}
   ${pc.dim("$")} lumibase init my-site
   ${pc.dim("$")} lumibase types --out src/lumibase-types.d.ts
@@ -65,6 +77,7 @@ ${pc.bold("Examples")}
   ${pc.dim("$")} lumibase skills push --check
   ${pc.dim("$")} lumibase skills install @acme/lumibase-skills
   ${pc.dim("$")} lumibase doctor
+  ${pc.dim("$")} lumibase doctor --security --production
 
   Docs: ${pc.cyan("https://docs.lumibase.dev")}
 `;

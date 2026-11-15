@@ -47,3 +47,28 @@ export async function checkTotpVerifyRateLimit(
   if (!ipResult.allowed) return ipResult;
   return checkLimit(rl, `rl:totp:user:${userId}`, TOTP_VERIFY_USER_LIMIT);
 }
+
+/** Passkey ceremonies (#735): options are cheap but unauthenticated, so they get an IP budget. */
+export const PASSKEY_OPTIONS_IP_LIMIT = 60;
+
+export async function checkPasskeyOptionsRateLimit(
+  limiter: RateLimiterProvider | undefined,
+  ip: string,
+): Promise<TotpRateLimitResult> {
+  return checkLimit(limiter ?? fallbackLimiter, `rl:passkey-options:ip:${ip}`, PASSKEY_OPTIONS_IP_LIMIT);
+}
+
+/**
+ * Passkey verification shares the TOTP budgets' sizes but not their counters:
+ * per IP before the credential is known, per user once it is.
+ */
+export async function checkPasskeyVerifyRateLimit(
+  limiter: RateLimiterProvider | undefined,
+  ip: string,
+  userId?: string,
+): Promise<TotpRateLimitResult> {
+  const rl = limiter ?? fallbackLimiter;
+  const ipResult = await checkLimit(rl, `rl:passkey:ip:${ip}`, TOTP_VERIFY_IP_LIMIT);
+  if (!ipResult.allowed || !userId) return ipResult;
+  return checkLimit(rl, `rl:passkey:user:${userId}`, TOTP_VERIFY_USER_LIMIT);
+}

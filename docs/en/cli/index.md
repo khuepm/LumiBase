@@ -1,12 +1,12 @@
 ---
 title: LumiBase CLI
-version: 9
-lastUpdated: 2026-11-12T18:43:33.929Z
+version: 11
+lastUpdated: 2026-11-15T18:38:14.206Z
 sourceLang: en
-contentHash: 111bf5c2e41878da
-codeVerified: 2026-11-12T18:43:33.929Z
-codeVerifiedHash: 111bf5c2e41878da
-codeVerifiedClaims: 20
+contentHash: 7295cb0b24592431
+codeVerified: 2026-11-15T18:38:14.206Z
+codeVerifiedHash: 7295cb0b24592431
+codeVerifiedClaims: 22
 ---
 
 # LumiBase CLI
@@ -39,7 +39,7 @@ Node.js 22+ is required for the CLI; the launcher in `packages/cli/bin/lumibase.
 | --- | --- |
 | `lumibase init [name]` | Scaffold a new project |
 | `lumibase types` | Generate TypeScript types from a running CMS |
-| `lumibase doctor` | Report resolved configuration and probe connectivity |
+| `lumibase doctor` | Report resolved configuration and probe connectivity (`--security`: audit the config against the production checklist) |
 | `lumibase skills <list\|pull\|push\|install>` | Sync Site Skills (agent playbooks) with a site |
 
 `lumibase help` and `lumibase version` are also accepted, as are `--help` / `-h` and `--version` / `-v`.
@@ -129,6 +129,18 @@ The health probe calls the unauthenticated `/health` endpoint (`apps/cms/src/rou
 
 `doctor` exits non-zero if any check fails.
 
+### `lumibase doctor --security`
+
+`--security` replaces the connectivity checks with an offline audit of the project's configuration. It reads `.env`, `.env.local`, `.dev.vars`, `wrangler.toml` `[vars]` and the compose `environment:` entries. Each finding has a severity (`critical`, `warning`, `info`), the rule it applies and a fix hint. Secret values are never printed.
+
+| Flag | Effect |
+| --- | --- |
+| `--production` | Apply the production checklist even when `NODE_ENV` / `LUMIBASE_ENV` is not `production` |
+| `--env-file <a,b>` | Read these dotenv files instead of the defaults |
+| `--json` | Print the report as JSON (`ok`, `mode`, `runtime`, `sources`, `summary`, `findings`) |
+
+The command exits `1` when any finding is critical. A fresh `create-lumibase` scaffold passes with zero critical findings. For the full rule list, see [Secure defaults](../security/secure-defaults.md).
+
 ## `lumibase skills`
 
 Syncs [Site Skills](../features/site-skills.md) — Markdown playbooks for the site's agents — between a directory in your repository and a site. The CLI only moves files: the CMS parses and validates each document, so the format has one implementation.
@@ -158,6 +170,7 @@ lumibase skills install @acme/lumibase-skills
 ## Related
 
 - [SDK — typegen](../sdk/typegen.md) — the programmatic API behind `lumibase types`
+- [Typegen configs and targets](./typegen-config.md) — `lumibase.typegen.config.ts`: several configs, Zod / GraphQL SDL / OpenAPI outputs, `--watch`
 - [Getting started](../getting-started.md#which-one-do-you-actually-want) — starter vs platform vs consumer client, and where `lumibase` fits
 - [Local development](../deployment/local-development.md) — running the CMS and Studio this CLI points at
 - [npm publishing](../release/npm-publishing.md) — how the package is released

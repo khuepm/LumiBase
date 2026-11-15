@@ -229,8 +229,29 @@
     {
       "idx": 32,
       "version": "7",
-      "when": 1794816000000,
-      "tag": "0032_items_site_scoped_pk",
+      "when": 1794902400000,
+      "tag": "0032_user_passkeys",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794988800000,
+      "tag": "0033_social_login_identities",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1795075200000,
+      "tag": "0034_item_tree",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1795161600000,
+      "tag": "0035_items_site_scoped_pk",
       "breakpoints": true
     }
   ]

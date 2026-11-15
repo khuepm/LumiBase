@@ -1,10 +1,10 @@
 ---
-version: 6
-lastUpdated: 2026-11-07T20:13:02.148Z
+version: 7
+lastUpdated: 2026-11-14T02:15:35.397Z
 sourceLang: en
-contentHash: 80808d4cc8186154
-codeVerified: 2026-11-07T15:45:38.286Z
-codeVerifiedHash: 0b4d8fa32947d4c3
+contentHash: 40ce7652d5196dc5
+codeVerified: 2026-11-14T02:15:35.397Z
+codeVerifiedHash: 40ce7652d5196dc5
 codeVerifiedClaims: 36
 ---
 
@@ -71,10 +71,14 @@ team can understand, review, and later enforce Harness usage of it.
    `accept`; `PUT` is `requireSiteAdmin`, persisted to the `settings` row keyed
    `upload_policy`, restricted to catalogued MIME types).
 
-   **Serving hardening (`routes/media.ts`):** downloads are returned with
-   `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff`, so a
-   stored HTML/SVG object cannot be rendered (and its script executed) under the
-   app origin when opened top-level. This composes with the global CSP
+   **Serving hardening (`routes/media.ts`):** `Content-Disposition` is
+   `inline` only for an allow-list of passive raster/video types and
+   `attachment` for everything else (SVG, PDF, HTML, text, unknown), always with
+   `X-Content-Type-Options: nosniff` and a `sandbox` CSP, and SVGs are
+   re-sanitised on the way out — so a stored HTML/SVG object cannot be rendered
+   (and its script executed) under the app origin when opened top-level. Full
+   detail, including magic-byte sniffing, the polyglot corpus and the SVG
+   sanitiser: [upload-security.md](./upload-security.md). This composes with the global CSP
    (`script-src 'self'`, no `unsafe-inline`) as defense-in-depth. The storage
    adapters map the logical `contentType` onto the native R2 `httpMetadata` /
    S3 `ContentType` field so the served `Content-Type` round-trips correctly
@@ -126,7 +130,8 @@ team can understand, review, and later enforce Harness usage of it.
   MIME outside the allowlist, mismatch their declared extension/content, or embed
   active SVG content are rejected before writing to storage — on every covered
   upload surface, including `POST /api/v1/media/:key`.
-- Media downloads are served as attachments with `nosniff`, and the served
+- Media is served inline only for passive images/video and otherwise as an
+  attachment, always with `nosniff` and a sandbox CSP, and the served
   `Content-Type` round-trips through both storage adapters.
 - Every response carries a CSP and the baseline security headers.
 - The outbound URL guard has tests for localhost, private IPs, link-local

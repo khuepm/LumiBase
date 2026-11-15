@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
@@ -276,7 +276,7 @@ function GuardsSection({
       )}
 
       {mode === 'json' && (
-        <div className="overflow-hidden rounded-md border">
+        <div className="overflow-hidden rounded-md border" dir="ltr">
           <Editor
             height="180px"
             defaultLanguage="json"

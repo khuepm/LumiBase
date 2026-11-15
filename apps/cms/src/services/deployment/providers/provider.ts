@@ -40,6 +40,11 @@ export interface DeploymentRef {
 export interface TriggerOptions {
   branch?: string;
   reason?: string;
+  /**
+   * Pin the build to this commit (#743 promotion fallback). Adapters that can
+   * build a specific commit honour it; the others build `branch`.
+   */
+  commitSha?: string;
 }
 
 export interface InboundRequest {
@@ -66,6 +71,12 @@ export interface DeploymentProvider {
   verifyWebhook(req: InboundRequest, secret: string): Promise<boolean>;
   /** Parse an inbound status-webhook payload into a normalized ref. */
   parseWebhook(rawBody: string): DeploymentRef | null;
+  /**
+   * Promote an existing, already-built deployment of the SAME project to its
+   * production slot without rebuilding (#743). Optional: a provider without it
+   * is promoted by re-triggering the same ref instead.
+   */
+  promote?(token: string, target: ProviderTarget, providerDeploymentId: string): Promise<DeploymentRef>;
 }
 
 const registry = new Map<string, DeploymentProvider>();

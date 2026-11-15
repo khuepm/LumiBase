@@ -428,13 +428,13 @@ export function MarketplacePage() {
       {/* Filter and Search Bar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute start-3 top-2.5 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
             placeholder={t('search_extensions', 'Search by name, publisher...')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border bg-background pl-9 pr-4 py-2 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
+            className="w-full rounded-lg border bg-background ps-9 pe-4 py-2 text-sm outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
           />
         </div>
 
@@ -532,7 +532,7 @@ export function MarketplacePage() {
                   <button
                     type="button"
                     onClick={() => handleDownload(ext.marketplaceSlug)}
-                    className="ml-auto inline-flex items-center gap-1 rounded-md border px-2 py-1 font-medium hover:bg-muted"
+                    className="ms-auto inline-flex items-center gap-1 rounded-md border px-2 py-1 font-medium hover:bg-muted"
                   >
                     <Download className="h-3.5 w-3.5" />
                     {t('download_package', 'Download')}
@@ -578,7 +578,7 @@ export function MarketplacePage() {
           <div className="w-full max-w-2xl rounded-xl border bg-background p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150">
             <button
               onClick={() => setSelectedSlug(null)}
-              className="absolute right-4 top-4 text-muted-foreground hover:text-foreground transition rounded-md p-1 hover:bg-muted"
+              className="absolute end-4 top-4 text-muted-foreground hover:text-foreground transition rounded-md p-1 hover:bg-muted"
             >
               <X className="h-5 w-5" />
             </button>

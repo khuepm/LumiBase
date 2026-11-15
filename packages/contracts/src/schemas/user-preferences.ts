@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidTimeZone } from '../field/zoned-datetime';
 
 /**
  * Per-user preferences — shared by CMS (validation on `PATCH /me/preferences`)
@@ -99,7 +100,15 @@ export function resolveSaveAction(userPref: unknown, siteDefault: unknown): Save
 export const UserPreferencesSchema = z.looseObject({
   language: z.string().optional(),
   theme: z.enum(['auto', 'light', 'dark']).optional(),
-  timezone: z.string().optional(),
+  /**
+   * Studio display time zone (IANA, #747). `null` clears it → the browser's
+   * zone. Unknown ids are rejected so a typo cannot break every date render.
+   */
+  timezone: z
+    .string()
+    .refine((tz) => isValidTimeZone(tz), 'Unknown IANA time zone')
+    .nullable()
+    .optional(),
   keybindings: KeybindingMapSchema.optional(),
   /** Post-save navigation; `null` clears the override → site default. */
   saveAction: SaveActionSchema.nullable().optional(),

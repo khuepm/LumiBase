@@ -1,0 +1,31 @@
+---
+import type { GetStaticPaths } from 'astro';
+import Base from '../../layouts/Base.astro';
+import { getPosts, postSlug, type Post } from '../../lib/lumibase';
+
+// One HTML file per post with a usable slug, generated at build time.
+export const getStaticPaths = (async () => {
+  const posts = await getPosts();
+  return posts.flatMap((post) => {
+    const slug = postSlug(post);
+    return slug ? [{ params: { slug }, props: { post } }] : [];
+  });
+}) satisfies GetStaticPaths;
+
+interface Props {
+  post: Post;
+}
+
+const { post } = Astro.props;
+const title = post.data.title ?? 'Untitled';
+---
+
+<Base title={title}>
+  <p><a href="/">← All posts</a></p>
+  <article>
+    <h1>{title}</h1>
+    {/* Rendered as text, not `set:html`: CMS content is untrusted input until
+        you add a sanitiser you trust. */}
+    {post.data.body && <p>{post.data.body}</p>}
+  </article>
+</Base>

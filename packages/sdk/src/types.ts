@@ -1,10 +1,52 @@
 export type DefaultSchema = Record<string, Record<string, unknown>>;
 
+/**
+ * Turn the output of `lumibase types` into a schema the client accepts.
+ *
+ * Typegen emits one `interface` per collection and a `LumibaseCollections`
+ * interface mapping names to them. Interfaces carry no implicit index
+ * signature, so `createLumiClient<LumibaseSchema>()` fails the
+ * `DefaultSchema` constraint. Mapping over the keys yields structurally
+ * identical anonymous object types, which do satisfy it:
+ *
+ * ```ts
+ * import type { LumibaseSchema } from './lumibase-types';
+ * const lumi = createLumiClient<SchemaOf<LumibaseSchema>>({ … });
+ * ```
+ */
+export type SchemaOf<T> = {
+  [Collection in keyof T & string]: { [Field in keyof T[Collection]]: T[Collection][Field] };
+};
+
 export type ID = string;
 export type Locale = string;
 export type Brand<TBrand extends string, TValue> = TValue & {
   readonly __brand: TBrand;
 };
+
+/**
+ * Value of a timezone-aware datetime field (`options.timezone: true`, #747).
+ * Write either `{ instant, tz }` or `{ local, tz }`; reads return all three.
+ */
+export interface ZonedDateTime {
+  /** ISO-8601 instant in UTC. */
+  instant: string;
+  /** IANA time zone the value was authored in. */
+  tz: string;
+  /** UTC offset of `tz` at `instant`, e.g. `-04:00`. */
+  offset: string;
+}
+
+/**
+ * One block of a `blocks` field (dynamic zone, #748). `type` is the block
+ * template's collection name and discriminates the union; generated types
+ * narrow it to a literal per template.
+ */
+export interface LumibaseBlock<TType extends string = string, TData = Record<string, unknown>> {
+  id: string;
+  type: TType;
+  data: TData;
+}
 
 export type AgentRiskLevel = "safe" | "review_required" | "dangerous" | "blocked";
 
@@ -436,13 +478,30 @@ export type ItemFilterOp =
   | "_json_contains"
   | "_has_key"
   | "_has_any_keys"
-  | "_has_all_keys";
+  | "_has_all_keys"
+  // geopoint fields: `{ lat, lng, radius }` (metres) / `[minLng, minLat, maxLng, maxLat]`.
+  | "_near"
+  | "_within_bbox";
+
+/** Value of a `geopoint` field: WGS 84 degrees. */
+export interface GeoPoint {
+  lat: number;
+  lng: number;
+}
 
 export interface ItemFilter {
   _and?: ItemFilter[];
   _or?: ItemFilter[];
   /** Field key; may be a dotted path into nested JSON, e.g. "meta.author.country". */
   [key: string]: { [op in ItemFilterOp]?: unknown } | ItemFilter[] | undefined;
+}
+
+/** Result of `items(name).tree.move()` (#749). */
+export interface TreeMoveResult {
+  id: string;
+  parentId: string | null;
+  path: string;
+  sort: number;
 }
 
 export interface ListItemsParams {
@@ -560,6 +619,9 @@ export interface ItemRow<
   unpublishAt?: string | null;
   /** Editorial workflow state; null when the workflow is not in use. */
   editorialState?: string | null;
+  /** Tree collections (#749): parent item id (null = root) and materialised path `/root/…/self/`. */
+  parentId?: string | null;
+  path?: string | null;
   userCreated: string | null;
   userUpdated: string | null;
   createdAt: string;
@@ -1731,10 +1793,62 @@ export interface DeploymentResource {
   commitMessage: string | null;
   url: string | null;
   triggeredBy: string | null;
-  triggerSource: "manual" | "auto" | "agent";
+  triggerSource: "manual" | "auto" | "agent" | "promote";
   errorMessage: string | null;
   logExcerpt: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+}
+
+/** Deployment environment (#743): preview / staging / production or any site-defined slug. */
+export interface DeploymentEnvironmentResource {
+  key: string;
+  name: string;
+  targetIds: string[];
+  requiresApproval: boolean;
+  promotesTo: string | null;
+}
+
+/** A parked deploy/promotion waiting for a human approver (#743). */
+export interface DeploymentApprovalResource {
+  id: string;
+  kind: "trigger" | "promote";
+  scope: "environment" | "target";
+  environment: string;
+  sourceEnvironment: string | null;
+  sourceDeploymentId: string | null;
+  targetIds: string[];
+  branch: string | null;
+  reason: string | null;
+  status: "pending" | "deciding" | "approved" | "rejected" | "expired" | "failed";
+  requestedBy: { type: string; id: string | null } | null;
+  createdAt: string;
+  expiresAt: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  result: unknown;
+  /** Present on list responses: whether the caller may decide it. */
+  canDecide?: boolean;
+}
+
+export interface DeploymentDispatchResult {
+  targetId: string;
+  ok: boolean;
+  deployment: DeploymentResource | null;
+  mode?: "native" | "retrigger";
+  error?: { code: string; message: string };
+}
+
+/** Outcome of an environment deploy / promotion request. */
+export type DeploymentRequestOutcome =
+  | { status: "dispatched"; environment: string | null; results: DeploymentDispatchResult[] }
+  | { status: "pending_approval"; environment: string; approval: DeploymentApprovalResource };
+
+/** What the caller may do on the deployments page. */
+export interface DeploymentAccessResource {
+  admin: boolean;
+  capabilities: string[];
+  humanDecider: boolean;
+  environments: Array<{ key: string; canTrigger: boolean; canApprove: boolean }>;
 }

@@ -137,11 +137,18 @@ jobs:
             echo "::notice::Skipping Cloudflare Pages deployment because CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not configured."
           fi
 
+      # Storybook (#755) is published inside the docs site at /storybook/:
+      # the docs build copies apps/storybook/storybook-static into dist/.
+      - name: Build Storybook
+        run: pnpm storybook:build
+
       - name: Build docs
         # VITE_GA_ID is inlined at build time, same contract as the landing app's
         # NEXT_PUBLIC_GA_ID below. Unset means no GA tag and no cookie banner.
+        # STORYBOOK_REQUIRED=1 fails the build if /storybook/ would be missing.
         env:
           VITE_GA_ID: ${{ vars.VITE_GA_ID }}
+          STORYBOOK_REQUIRED: "1"
         run: pnpm docs:build
 
       - name: Deploy docs to Cloudflare Pages
@@ -195,6 +202,10 @@ jobs:
             exit 1
           fi
           echo "SPA 404 shell fallback OK ($probe -> $status, shell served)."
+
+          # 3. The published Storybook (#755) must be served under /storybook/.
+          curl --fail --silent --show-error --location --retry 5 --retry-delay 5 \
+            --max-time 20 "$base/storybook/index.json" --output /dev/null
 
       - name: Build landing
         # NEXT_PUBLIC_GA_ID is inlined at build time (static export). Leave the

@@ -1,0 +1,18 @@
+# Local `wrangler dev` secrets. create-lumibase copied this file to .dev.vars
+# (gitignored) and generated a fresh JWT_SECRET there — no template carries one.
+# Make your own: `openssl rand -base64 48`.
+#
+# Production: never put secrets in wrangler.toml [vars] (plaintext, committed).
+#   npx wrangler secret put JWT_SECRET
+#   npx wrangler secret put ENCRYPTION_KEY
+JWT_SECRET=
+# AES-256 key (base64 of 32 bytes), also generated: `openssl rand -base64 32`.
+ENCRYPTION_KEY=
+
+# Organization plane (server-side; signup off unless explicitly enabled).
+LUMIBASE_ALLOW_ORG_SIGNUP=false
+# Global organization MCP kill switch: off disables it; org setting defaults off.
+LUMIBASE_MCP_ORG_TOOLS=on
+
+# Audit this configuration against the production checklist:
+#   npx lumibase doctor --security --production

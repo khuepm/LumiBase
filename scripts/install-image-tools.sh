@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Install the container supply-chain tools used by the image workflows (#734):
-# Trivy (vulnerability gate), Syft (SBOM) and cosign (keyless signing).
+# Trivy (vulnerability gate), Syft (SBOM) and cosign (keyless signing), plus
+# Helm and kind for the Helm chart lint, kind smoke test and OCI push (#742).
 #
-#   scripts/install-image-tools.sh trivy syft cosign
+#   scripts/install-image-tools.sh trivy syft cosign helm kind
 #
 # Pinned by version AND SHA-256, the same rule ci.yml applies to actionlint,
 # rather than pulling third-party actions: the binary is verified before it
@@ -23,6 +24,10 @@ SYFT_VERSION=1.57.1
 SYFT_SHA256=bf52519eb57f675d47c07d43213cb6dff6449f3d6d1147ff6701ed91f44eef0c
 COSIGN_VERSION=3.1.4
 COSIGN_SHA256=424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa
+HELM_VERSION=3.19.0
+HELM_SHA256=a7f81ce08007091b86d8bd696eb4d86b8d0f2e1b9f6c714be62f82f96a594496
+KIND_VERSION=0.30.0
+KIND_SHA256=517ab7fc89ddeed5fa65abf71530d90648d9638ef0c4cde22c2c11f8097b8889
 
 dest="${RUNNER_TEMP:-$PWD}/image-tools"
 mkdir -p "$dest"
@@ -54,8 +59,21 @@ for tool in "$@"; do
       chmod +x "$dest/cosign"
       "$dest/cosign" version
       ;;
+    helm)
+      fetch "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" \
+        "$HELM_SHA256" "$work/helm.tar.gz"
+      tar -xzf "$work/helm.tar.gz" -C "$work" linux-amd64/helm
+      mv "$work/linux-amd64/helm" "$dest/helm"
+      "$dest/helm" version --short
+      ;;
+    kind)
+      fetch "https://github.com/kubernetes-sigs/kind/releases/download/v${KIND_VERSION}/kind-linux-amd64" \
+        "$KIND_SHA256" "$dest/kind"
+      chmod +x "$dest/kind"
+      "$dest/kind" version
+      ;;
     *)
-      echo "unknown tool: $tool (expected trivy, syft or cosign)" >&2
+      echo "unknown tool: $tool (expected trivy, syft, cosign, helm or kind)" >&2
       exit 2
       ;;
   esac

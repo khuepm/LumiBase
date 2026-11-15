@@ -1,6 +1,6 @@
 {
   "name": "lumibase",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "LumiBase in one package — the JS/TS client (re-exports @lumibase/sdk) plus the `lumibase` CLI: generate TypeScript types from a live schema, check your setup, scaffold a project.",
   "license": "Apache-2.0",
   "type": "module",
@@ -35,6 +35,7 @@
   },
   "dependencies": {
     "@lumibase/sdk": "workspace:*",
+    "jiti": "^2.7.0",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
@@ -48,7 +49,7 @@
     "bin"
   ],
   "engines": {
-    "node": ">=22"
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "keywords": [
     "lumibase",

@@ -1,0 +1,5 @@
+{
+  "$comment": "Initial Studio payload budget (#757), gzip bytes. Enforced by scripts/check-studio-bundle-budget.mjs in CI (.github/workflows/studio-bundle-budget.yml). Set from the measured result after #757 (initial JS 182502 B gzip, CSS 13329 B gzip) plus ~10% headroom. Raise only with a stated reason in the PR; see docs/en/contributing/studio-performance.md.",
+  "initialJsGzipBytes": 200000,
+  "initialCssGzipBytes": 15000
+}

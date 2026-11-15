@@ -1,9 +1,9 @@
 ---
 title: Tutorials
-version: 1
-lastUpdated: 2026-08-02T19:07:54.568Z
+version: 2
+lastUpdated: 2026-11-15T08:38:15.064Z
 sourceLang: en
-contentHash: ec70515719fa4318
+contentHash: 5968e4800387720d
 ---
 
 # Tutorials
@@ -21,6 +21,18 @@ assumes no prior LumiBase knowledge and lists its prerequisites up front.
   <td>A Next.js page that fetches a <code>posts</code> collection and renders it</td>
   <td><img alt="0.9.0" src="https://img.shields.io/badge/%E2%89%A5%200.9.0-F5A623"></td>
   <td>Beginner</td>
+</tr>
+<tr>
+  <td><a href="./astro-starter.md">Astro starter — static site on Cloudflare Pages</a></td>
+  <td>A static blog built from a <code>posts</code> collection at build time, deployed with <code>wrangler pages deploy</code></td>
+  <td><img alt="2.0.0" src="https://img.shields.io/badge/%E2%89%A5%202.0.0-F5A623"></td>
+  <td>Beginner</td>
+</tr>
+<tr>
+  <td><a href="./sveltekit-starter.md">SvelteKit starter — server loads and draft preview</a></td>
+  <td>A Cloudflare Pages site that reads content per request, with signed-cookie draft preview</td>
+  <td><img alt="2.0.0" src="https://img.shields.io/badge/%E2%89%A5%202.0.0-F5A623"></td>
+  <td>Intermediate</td>
 </tr>
 </tbody>
 </table>

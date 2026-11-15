@@ -21,7 +21,11 @@ export type FieldType =
   | 'csv'
   | 'hash'
   | 'geometry'
-  | 'alias';
+  | 'alias'
+  /** Dynamic zone (#748): ordered `{ id, type, data }` blocks; see `options.allowedBlocks`. */
+  | 'blocks'
+  /** `{ lat, lng }` point (#746) — see `./geopoint`. */
+  | 'geopoint';
 
 export type FieldWidth = 'half' | 'full' | 'fill';
 
@@ -54,3 +58,9 @@ export interface FieldDefinition<TOptions = unknown> {
   group?: string;
   sortOrder?: number;
 }
+
+// Slug charset policy (#751).
+export * from './slug';
+// Timezone-aware datetime values (#747).
+export * from './zoned-datetime';
+export * from './geopoint';

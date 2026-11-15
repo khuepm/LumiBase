@@ -30,7 +30,14 @@ export const CASTABLE_OPS: ReadonlySet<string> = new Set([
 
 const NUMERIC_TYPES = new Set(['integer', 'biginteger', 'decimal', 'float', 'double', 'number', 'numeric']);
 const BOOLEAN_TYPES = new Set(['boolean']);
-const TIMESTAMP_TYPES = new Set(['date', 'datetime', 'timestamp']);
+/**
+ * Pseudo type the item service puts in its field-type map for a `datetime` /
+ * `timestamp` field with `options.timezone` (#747). Its value is an object
+ * (`{ instant, tz, offset }`), so filters and sort read `instant`.
+ */
+export const ZONED_DATETIME_FILTER_TYPE = 'datetime_tz';
+
+const TIMESTAMP_TYPES = new Set(['date', 'datetime', 'timestamp', ZONED_DATETIME_FILTER_TYPE]);
 
 /**
  * Map a schema field type to a cast kind. Unknown / string-like types return
@@ -43,7 +50,10 @@ export function castKindForFieldType(type: string | null | undefined): CastKind 
   if (NUMERIC_TYPES.has(t)) return 'numeric';
   if (BOOLEAN_TYPES.has(t)) return 'boolean';
   if (TIMESTAMP_TYPES.has(t)) return 'timestamp';
-  if (t === 'json' || t === 'alias') return null;
+  if (t === 'json' || t === 'alias' || t === 'blocks') return null;
+  // `{ lat, lng }` object (#746): compare via `_near` / `_within_bbox`, or a
+  // nested path (`loc.lat`) which infers numeric from the value.
+  if (t === 'geopoint') return null;
   return 'text';
 }
 
@@ -88,13 +98,15 @@ const NUMERIC_GUARD =
 /**
  * timestamp: ISO-8601 date with optional time and UTC offset. The regex bounds
  * every field (month 01-12, day 01-31, hour 00-23, minute 00-59, second
- * 00-60 — PostgreSQL accepts a leap second — and offset up to 15:59). The
+ * 00-60 — PostgreSQL accepts a leap second — and offset up to 15:59). Hour 24
+ * is allowed only as exactly `24:00`, `24:00:00` or `24:00:00.000…`: the
+ * end-of-day midnight PostgreSQL also casts (to 00:00 of the next day). The
  * nested CASE then rejects year 0000 and days past the end of the month
  * (leap years included) before the cast runs.
  */
 const TIMESTAMP_SHAPE =
   `'^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])` +
-  `([T ]([01][0-9]|2[0-3]):[0-5][0-9](:([0-5][0-9]|60)(\\.[0-9]{1,9})?)?` +
+  `([T ](([01][0-9]|2[0-3]):[0-5][0-9](:([0-5][0-9]|60)(\\.[0-9]{1,9})?)?|24:00(:00(\\.0{1,9})?)?)` +
   `(Z|[+-](0[0-9]|1[0-5])(:?[0-5][0-9])?)?)?$'`;
 const DAYS_IN_MONTH =
   `(case substr($T, 6, 2)::int when 2 then ` +

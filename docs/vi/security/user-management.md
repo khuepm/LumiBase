@@ -1,14 +1,14 @@
 ---
-version: 10
-lastUpdated: 2026-11-13T06:05:36.387Z
+version: 13
+lastUpdated: 2026-11-14T02:32:19.524Z
 sourceLang: en
 translatedFrom: en
-sourceHash: dc71a4b0f99e7e47
+sourceHash: 5fc1233101995b59
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T06:05:36.387Z
-codeVerifiedHash: dc71a4b0f99e7e47
-codeVerifiedClaims: 120
+codeVerified: 2026-11-14T02:32:19.524Z
+codeVerifiedHash: 5fc1233101995b59
+codeVerifiedClaims: 122
 ---
 
 # User Management Best Practices
@@ -144,8 +144,11 @@ công. Cả hai nhận `dryRun: true`, và mọi thay đổi được áp dụng
   tồn tại; tài khoản và membership được commit trong một transaction, nên
   membership bị từ chối không bao giờ để lại tài khoản mồ côi.
 
-Liên kết nhiều định danh ngoài (social / SSO) vào một tài khoản là việc tiếp
-theo tách riêng (`user_identities`), không thuộc policy này.
+Có thể liên kết nhiều định danh ngoài vào một tài khoản qua bảng
+`lumibase_user_identities` (mỗi cặp `(issuer, subject)` một dòng). Thành viên
+dùng bảng này cho đăng nhập mạng xã hội — xem [Social login](./social-login.md);
+việc tự động liên kết ở đó chỉ xảy ra khi provider khẳng định email đã được
+xác minh, và việc so khớp email theo chế độ ở trên.
 
 ---
 
@@ -227,8 +230,8 @@ Visitor (Next.js)            CMS                              Email
 | `POST /api/v1/auth/logout` | public | Revoke family của refresh token được trình ra và xóa cookie. Idempotent. |
 | `POST /api/v1/me/change-password` | bearer | Body `{currentPassword,newPassword}`. Xác minh mật khẩu hiện tại, đặt hash mới, revoke tất cả refresh token. |
 | `GET /api/v1/me/sessions` | bearer | Các session đang hoạt động của caller (refresh token còn sống), đã redact. |
-| `DELETE /api/v1/me/sessions/:id` | bearer | Revoke một trong các session của chính caller. |
-| `DELETE /api/v1/me/sessions` | bearer | Revoke TẤT CẢ session của caller (logout mọi nơi). |
+| `DELETE /api/v1/me/sessions/:id` | bearer | Revoke một trong các session của chính caller (`:id` = `sessionId`); có hiệu lực ngay. |
+| `DELETE /api/v1/me/sessions` | bearer | Revoke TẤT CẢ session của caller (logout mọi nơi); `?scope=others` giữ lại session hiện tại. |
 | `GET /api/v1/auth/me` | bearer | Principal hiện tại kèm `isFrontendUser`. |
 
 ### Guardrail được nướng sẵn vào
@@ -379,6 +382,34 @@ nó (bất kỳ giá trị non-empty nào).
   vật liệu token), `DELETE /me/sessions/:id` revoke một cái, và
   `DELETE /me/sessions` revoke tất cả (logout mọi nơi). Các hàng đã
   hết-hạn/revoke được dọn bởi tiến trình prune hằng giờ (§4d).
+- **Session & thiết bị (#730).** Một *session* là một rotation family của
+  refresh token. Mỗi lần login và refresh đều ký family id vào access JWT
+  dưới dạng `sid`, nên:
+  - mỗi hàng của `GET /me/sessions` có `sessionId` ổn định (giữ nguyên qua
+    rotation), `startedAt` (token cũ nhất còn lưu của session),
+    `lastSeenAt` (lần refresh gần nhất), `lastIp`, `lastUserAgent` và
+    `current: true` cho session đang gửi request;
+  - `DELETE /me/sessions/:id` nhận `sessionId` (row `id` đang sống vẫn dùng
+    được cho client cũ) và trả về `{ sessionId, revoked, current }`; revoke
+    session hiện tại thì cookie refresh cũng bị xoá;
+  - `DELETE /me/sessions?scope=others` đăng xuất mọi session trừ session
+    hiện tại (`{ status: 'other_sessions_revoked', revoked }`). Token không
+    có `sid` nhận `409 NO_CURRENT_SESSION` thay vì bị coi là "all";
+  - **revoke có hiệu lực ngay trên cả hai runtime**: `withAuth` từ chối
+    access JWT có `sid` không còn hàng refresh nào sống (một lookup có index
+    mỗi request bearer, chạy trên system handle để token Studio thao tác ở
+    site anh em vẫn resolve được). Access token ký trước khi có `sid` bỏ qua
+    kiểm tra này cho tới khi hết hạn;
+  - **xác nhận enroll TOTP** (`POST /me/tfa/confirm`) đăng xuất mọi session
+    *khác* — chúng được xác thực chỉ bằng mật khẩu — và giữ lại thiết bị vừa
+    enroll. Đổi/reset mật khẩu vẫn huỷ mọi session, kể cả session hiện tại
+    (tăng `tokenVersion`);
+  - audit event: `session_revoked` (`sessionId`, `current`) và
+    `sessions_revoked` (`scope: all | others`, `revoked`); `mfa_enrolled`
+    có thêm `revokedOtherSessions`.
+
+  Studio hiển thị danh sách ở **Settings → Security → Active sessions**,
+  với nút "Sign out" cho từng thiết bị và "Sign out other sessions".
 
 ## 4f. Xác thực hai yếu tố (TOTP)
 
@@ -444,6 +475,12 @@ phụ có phạm vi tenant thì vẫn có: audit event được ghi với `siteI
 request, và tháo 2FA thu hồi refresh token của site hiện tại. Các env knob là
 ở mức deployment: `ENCRYPTION_KEY` (bắt buộc để enroll) và
 `LUMIBASE_TOTP_ISSUER` (nhãn trong app authenticator, mặc định `LumiBase`).
+
+**Passkey.** Passkey (WebAuthn) đứng cạnh TOTP: là yếu tố thứ hai sau mật khẩu
+(`amr: ["pwd","webauthn"]`) hoặc đăng nhập staff không mật khẩu
+(`amr: ["webauthn"]`), cả hai đều đặt `tfaVerified`. Khi người dùng có passkey,
+`/auth/login` trả `methods` trong phản hồi `mfa_required`. Mã khôi phục dùng
+chung với TOTP. Xem [Passkey](./passkeys.md).
 
 ## 5. Onboarding staff (KHÔNG dùng tự phục vụ)
 

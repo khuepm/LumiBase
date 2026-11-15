@@ -38,3 +38,61 @@ export const DeployTriggerSchema = z.object({
   reason: z.string().max(1000).optional(),
 });
 export type DeployTriggerInput = z.infer<typeof DeployTriggerSchema>;
+
+// ── Environments, promotion and the approval gate (#743) ────────────────────
+
+/** Environment key: lowercase slug, also the `<scope>` of `deploy:trigger:<scope>`. */
+export const DeploymentEnvironmentKeySchema = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9_-]{0,31}$/, 'Environment key must be a lowercase slug (a-z, 0-9, _ and -).');
+
+export const DeploymentEnvironmentSchema = z.object({
+  key: DeploymentEnvironmentKeySchema,
+  name: z.string().min(1).max(64),
+  /** Deployment targets this environment deploys to (one or more, or none yet). */
+  targetIds: z.array(z.string().min(1).max(64)).max(20).default([]),
+  /** Trigger/promote into this environment parks a pending approval first. */
+  requiresApproval: z.boolean().default(false),
+  /** Environment that `POST /environments/:key/promote` promotes into. */
+  promotesTo: DeploymentEnvironmentKeySchema.nullable().default(null),
+});
+export type DeploymentEnvironment = z.infer<typeof DeploymentEnvironmentSchema>;
+
+export const DeploymentEnvironmentsSchema = z
+  .array(DeploymentEnvironmentSchema)
+  .max(10)
+  .superRefine((envs, ctx) => {
+    const keys = new Set<string>();
+    for (const [i, env] of envs.entries()) {
+      if (keys.has(env.key)) {
+        ctx.addIssue({ code: 'custom', path: [i, 'key'], message: `Duplicate environment key '${env.key}'.` });
+      }
+      keys.add(env.key);
+    }
+    for (const [i, env] of envs.entries()) {
+      if (env.promotesTo === null) continue;
+      if (env.promotesTo === env.key) {
+        ctx.addIssue({ code: 'custom', path: [i, 'promotesTo'], message: 'An environment cannot promote into itself.' });
+      } else if (!keys.has(env.promotesTo)) {
+        ctx.addIssue({ code: 'custom', path: [i, 'promotesTo'], message: `Unknown environment '${env.promotesTo}'.` });
+      }
+    }
+  });
+
+export const DeploymentEnvironmentsUpdateSchema = z.object({
+  environments: DeploymentEnvironmentsSchema,
+});
+export type DeploymentEnvironmentsUpdateInput = z.infer<typeof DeploymentEnvironmentsUpdateSchema>;
+
+export const DeployPromoteSchema = z.object({
+  /** Deployment in the source environment to promote; defaults to its latest `ready` one. */
+  deploymentId: z.string().min(1).max(64).optional(),
+  reason: z.string().max(1000).optional(),
+});
+export type DeployPromoteInput = z.infer<typeof DeployPromoteSchema>;
+
+export const DeployApprovalDecisionSchema = z.object({
+  decision: z.enum(['approved', 'rejected']),
+  reason: z.string().max(1000).optional(),
+});
+export type DeployApprovalDecisionInput = z.infer<typeof DeployApprovalDecisionSchema>;

@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "lumibase.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lumibase.componentLabels" (dict "ctx" . "component" "cms") | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "lumibase.selectorLabels" (dict "ctx" . "component" "cms") | nindent 4 }}

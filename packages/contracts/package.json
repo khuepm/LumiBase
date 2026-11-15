@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/contracts",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Shared Zod schemas, types, policy DSL, and field DSL for LumiBase. Pure ESM — no Hono/React runtime deps.",
   "license": "Apache-2.0",
   "type": "module",
@@ -32,6 +32,8 @@
     "./schemas": "./src/schemas/index.ts",
     "./extensions": "./src/extensions/index.ts",
     "./platform": "./src/platform/index.ts",
+    "./intents": "./src/intents/index.ts",
+    "./form-layout": "./src/form-layout/index.ts",
     "./version": "./src/version.ts",
     "./utils": "./src/utils/logger.ts"
   },
@@ -70,6 +72,16 @@
         "types": "./dist/platform/index.d.ts",
         "import": "./dist/platform/index.js",
         "require": "./dist/platform/index.cjs"
+      },
+      "./intents": {
+        "types": "./dist/intents/index.d.ts",
+        "import": "./dist/intents/index.js",
+        "require": "./dist/intents/index.cjs"
+      },
+      "./form-layout": {
+        "types": "./dist/form-layout/index.d.ts",
+        "import": "./dist/form-layout/index.js",
+        "require": "./dist/form-layout/index.cjs"
       },
       "./version": {
         "types": "./dist/version.d.ts",

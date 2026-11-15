@@ -1,6 +1,7 @@
 import type { SQL } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { items } from '@lumibase/database';
+import { containsPattern, endsWithPattern, startsWithPattern } from './like-pattern';
 import type { PolicyRule } from '@lumibase/contracts';
 
 /**
@@ -183,23 +184,26 @@ export function compileWhere(rule: PolicyRule | null | undefined, ctx: MagicCont
         case '_lte':
           clauses.push(sql`${expr} <= ${v}`);
           break;
+        // Values are matched literally (#738): a magic var such as
+        // `$CURRENT_USER.email` holding `%` or `_` must not widen the rule, and
+        // the SQL must agree with the in-memory `evaluate` (plain substring).
         case '_contains':
-          clauses.push(sql`${expr} ilike ${'%' + String(v) + '%'}`);
+          clauses.push(sql`${expr} ilike ${containsPattern(v)}`);
           break;
         case '_starts_with':
-          clauses.push(sql`${expr} ilike ${String(v) + '%'}`);
+          clauses.push(sql`${expr} ilike ${startsWithPattern(v)}`);
           break;
         case '_ends_with':
-          clauses.push(sql`${expr} ilike ${'%' + String(v)}`);
+          clauses.push(sql`${expr} ilike ${endsWithPattern(v)}`);
           break;
         case '_icontains':
-          clauses.push(sql`lower(${expr}) like ${'%' + String(v).toLowerCase() + '%'}`);
+          clauses.push(sql`lower(${expr}) like ${containsPattern(String(v).toLowerCase())}`);
           break;
         case '_istarts_with':
-          clauses.push(sql`lower(${expr}) like ${String(v).toLowerCase() + '%'}`);
+          clauses.push(sql`lower(${expr}) like ${startsWithPattern(String(v).toLowerCase())}`);
           break;
         case '_iends_with':
-          clauses.push(sql`lower(${expr}) like ${'%' + String(v).toLowerCase()}`);
+          clauses.push(sql`lower(${expr}) like ${endsWithPattern(String(v).toLowerCase())}`);
           break;
         case '_between': {
           if (!Array.isArray(v) || v.length !== 2) {

@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 46
-lastUpdated: 2026-11-14T12:31:26.652Z
+version: 50
+lastUpdated: 2026-11-15T18:29:03.519Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 05c921e5657b5afa
+sourceHash: 3d2993c6d2c70e62
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T12:31:26.652Z
-codeVerifiedHash: 05c921e5657b5afa
-codeVerifiedClaims: 518
+codeVerified: 2026-11-15T18:29:03.519Z
+codeVerifiedHash: 3d2993c6d2c70e62
+codeVerifiedClaims: 580
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -116,6 +116,7 @@ Phản hồi lỗi:
 | `_json_contains` | JSONB `@>` — chứa giá trị / sub-object / phần tử mảng |
 | `_has_key` | Trường JSON object có chứa key này |
 | `_has_any_keys`, `_has_all_keys` | Trường JSON object chứa bất kỳ / tất cả các key này (mảng chuỗi) |
+| `_near`, `_within_bbox` | Trường geopoint: trong bán kính `{ lat, lng, radius }` mét / trong khung `[minLng, minLat, maxLng, maxLat]` — xem [Trường geopoint](../features/geopoint.md) |
 
 **Tìm kiếm bên trong JSON.** Một key trường lọc có thể là **đường dẫn dấu chấm** vào trường JSON/JSONB lồng nhau — ví dụ `filter={"metadata.author.country":{"_eq":"VN"}}` biên dịch thành tra cứu `data #>> '{metadata,author,country}'`. Các phân đoạn đường dẫn bị giới hạn trong `[A-Za-z0-9_]` và được bind dưới dạng tham số (an toàn trước SQL injection); độ sâu tối đa là 8. Các toán tử `_json_contains` / `_has_*` chạy trên JSONB và sử dụng index GIN hiện có. Các key cấp cao nhất và các trường cấu trúc hoạt động chính xác như trước.
 
@@ -182,10 +183,30 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/me/tfa/confirm` | bearer | Xác nhận enroll bằng một code sống → recovery code dùng-một-lần |
 | `POST` | `/api/v1/me/tfa/recovery-codes` | bearer | Tạo lại recovery code (mật khẩu + TOTP code) |
 | `DELETE` | `/api/v1/me/tfa` | bearer | Tắt TOTP (mật khẩu + một TOTP code hoặc một recovery code); thu hồi session và tăng `tokenVersion` |
+| `POST` | `/api/v1/auth/passkey/options` | public | Options xác thực passkey: có `challengeToken` = yếu tố thứ hai, không có = đăng nhập staff không mật khẩu → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/auth/passkey/verify` | public | Hoàn tất nghi thức passkey → cùng payload session với login (`amr` chứa `webauthn`, `tfaVerified`) |
+| `GET` | `/api/v1/me/passkeys` | bearer | Các passkey của người gọi + `recoveryCodesRemaining`, `totpEnabled`, `available` |
+| `POST` | `/api/v1/me/passkeys/registration-options` | bearer | Bắt đầu đăng ký passkey (step-up mật khẩu) → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/me/passkeys` | bearer | Hoàn tất đăng ký → `{ passkey, recoveryCodes }` (chỉ có code khi là yếu tố đầu tiên) |
+| `PATCH` | `/api/v1/me/passkeys/:id` | bearer | Đổi tên passkey |
+| `DELETE` | `/api/v1/me/passkeys/:id` | bearer | Xóa passkey (mật khẩu); yếu tố thứ hai cuối cùng sẽ thu hồi session và tăng `tokenVersion` |
+| `POST` | `/api/v1/me/passkeys/recovery-codes` | bearer | Tạo lại recovery code (mật khẩu + phiên mở bằng passkey) |
 | `POST` | `/api/v1/me/change-password` | bearer | Xác nhận mật khẩu hiện tại, đặt hash mới, thu hồi refresh token + tăng `tokenVersion` |
 | `GET` | `/api/v1/me/sessions` | bearer | Liệt kê các phiên hoạt động của người gọi (live refresh tokens, đã ẩn thông tin nhạy cảm) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Thu hồi một phiên làm việc của người gọi |
-| `DELETE` | `/api/v1/me/sessions` | bearer | Thu hồi tất cả các phiên làm việc của người gọi |
+| `DELETE` | `/api/v1/me/sessions` | bearer | Thu hồi tất cả các phiên làm việc của người gọi; `?scope=others` giữ lại phiên hiện tại |
+| `GET` | `/api/v1/me/security-history` | bearer | Các sự kiện bảo mật của chính người gọi (đăng nhập, thiết bị mới, đổi mật khẩu/MFA, thu hồi phiên), đã che bớt; `?cursor=&limit=&scope=site\|account` — xem [Lịch sử bảo mật](../security/security-history.md) |
+| `GET` | `/api/v1/me/security-history/export` | bearer | Tải về cùng lịch sử đó; `?format=json\|csv&scope=` (tối đa 5.000 dòng, 10 lần xuất / 15 phút) |
+| `GET` | `/api/v1/auth/social/providers` | public | Các provider đăng nhập mạng xã hội đang bật cho site |
+| `POST` | `/api/v1/auth/social/:provider/start` | public | Bắt đầu đăng nhập Google / Apple / GitHub (PKCE) → `authorizationUrl` |
+| `GET`/`POST` | `/api/v1/auth/social/callback/:siteId/:provider` | provider | Callback của provider (`POST` = `form_post` của Apple); redirect về URI trong allow-list kèm code dùng một lần |
+| `POST` | `/api/v1/auth/social/exchange` | public | Đổi code dùng một lần bằng `codeVerifier` của client → phiên (`aud: frontend`) |
+| `GET` | `/api/v1/me/identities` | bearer | Các danh tính đăng nhập đã liên kết + `hasPassword` |
+| `POST` | `/api/v1/me/identities/:provider/link` | bearer | Bắt đầu liên kết một provider với tài khoản đang đăng nhập |
+| `POST` | `/api/v1/me/identities/complete` | bearer | Hoàn tất liên kết (code dùng một lần + `codeVerifier`) |
+| `DELETE` | `/api/v1/me/identities/:id` | bearer | Huỷ liên kết một provider (không bao giờ là cách đăng nhập cuối cùng) |
+| `GET` | `/api/v1/admin/social-providers` | site-admin | Cấu hình provider mạng xã hội theo site (secret chỉ ghi) |
+| `PUT`/`DELETE` | `/api/v1/admin/social-providers/:provider` | site-admin | Cấu hình / xoá một provider — xem [Social login](../security/social-login.md) |
 | `POST` | `/api/v1/users/subscriber-access` | site-admin | Cấp quyền `read` cho subscriber trên một collection (Policy DSL) |
 | `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | Liệt kê / thu hồi quyền đọc của subscriber |
 | `GET` | `/api/v1/me/preferences` | bearer | Blob tùy chọn của người dùng hiện tại (toàn cục identity) |
@@ -241,6 +262,13 @@ không còn trong cấu hình. Ở trường hợp sau, `DELETE /me/tfa` chấp 
 **recovery code** thay cho TOTP code, để user tháo được một enrollment mà seed
 của nó không còn giải mã được. Xem
 [Vận hành khoá mã hoá](../operations/encryption-keys.md).
+
+**Passkey (WebAuthn).** Khi user có thêm (hoặc chỉ có) passkey, phản hồi
+`mfa_required` có thêm `methods` (`["totp"]`, `["webauthn"]` hoặc cả hai), và
+challenge có thể hoàn tất bằng `POST /auth/passkey/options` +
+`POST /auth/passkey/verify` thay cho `verify-totp`. Cùng hai endpoint đó khi
+không có `challengeToken` cho đăng nhập staff không mật khẩu. Xem
+[Passkey](../security/passkeys.md).
 
 **Quản lý chấp thuận (Consent management)** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 
@@ -433,6 +461,8 @@ Mã lỗi organization bổ sung gồm `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`
 | `PUT` | `/api/v1/collections/:name/schema` | Áp dụng schema (idempotent, nhận biết diff) |
 | `POST` | `/api/v1/collections/diff` | So sánh schema bundle với hiện tại |
 | `GET` | `/api/v1/collections/:name/index-advice?path=&cast=` | Gợi ý index cho đường dẫn JSON (chỉ đọc, `schema:read`) |
+| `GET` | `/api/v1/collections/:name/form-layout` | Bố cục form item: tab, nhóm, đường phân cách, điều kiện (`schema:read`); xem [Bố cục form](../features/form-layout.md) |
+| `PUT` | `/api/v1/collections/:name/form-layout` | Thay (hoặc với `null` thì xóa) bố cục form (`schema:update`) |
 
 **Request tạo collection:**
 ```json
@@ -563,6 +593,7 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `DELETE` | `/api/v1/items/:collection/:id` | Xóa mục — **409 nếu bị chặn bởi phụ thuộc** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | Liệt kê các bản ghi tham chiếu tới mục này |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Xử lý hàng loạt các phụ thuộc của quan hệ |
+| `POST` | `/api/v1/items/:collection/:id/move` | Di chuyển một item cùng cây con của nó trong collection dạng cây; liệt kê với `?tree=children\|subtree\|ancestors` ([Collection phân cấp](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | Liệt kê các bản sửa đổi (revisions) |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Khôi phục lại một bản sửa đổi |
 | `GET` | `/api/v1/items/:collection/:id/versions` | Liệt kê các bản nháp có tên (mỗi bản có cờ `mainChanged`) |
@@ -798,9 +829,13 @@ Authorization: Bearer <token>
 ## 7c. Deployments
 
 Deployment target theo site (Vercel / Netlify), kích hoạt deploy thủ công,
-trạng thái build và log (spec `deployment-integrations`). Mọi route trừ inbound
-webhook đều yêu cầu site admin (`requireSiteAdmin`): `400 TENANT_REQUIRED` khi
-không resolve được site, `403 FORBIDDEN` khi không có quyền admin. Token của
+trạng thái build và log (spec `deployment-integrations`), cùng môi trường, promote
+và phê duyệt deploy (#743, xem `docs/en/features/deployment-environments.md`). Mọi
+route trừ inbound webhook cần site admin hoặc một capability `deploy:*`
+(permission row `lumibase_deploy:<scope>`): `400 TENANT_REQUIRED` khi không
+resolve được site, `403 FORBIDDEN` khi không có cả hai. Tạo/sửa/xoá target,
+`PUT /environments` và `GET /:id/logs` vẫn chỉ dành cho site admin (`requireSiteAdmin`).
+Token của
 Provider được mã hoá khi ghi và không bao giờ được trả về. Body được xác thực bằng
 `DeploymentTargetCreateSchema` / `DeploymentTargetUpdateSchema` /
 `DeployTriggerSchema` (`@lumibase/contracts`); parse lỗi trả về
@@ -814,11 +849,18 @@ Provider không được đăng ký trong deployment này (chỉ có `vercel` v�
 | `POST` | `/api/v1/deployments/targets` | Tạo `{ provider (vercel\|netlify), name, projectId, token, defaultBranch?, productionUrl? }` → `201`. Token được kiểm với Provider trước khi lưu bất cứ thứ gì: `400 TOKEN_INVALID` |
 | `PATCH` | `/api/v1/deployments/targets/:id` | Cập nhật `{ name?, projectId?, token?, defaultBranch?, productionUrl?, status? (active\|inactive) }`. Có `token` thì token được kiểm lại và mã hoá lại (rotation). `404 NOT_FOUND`, `400 TOKEN_INVALID`, `400 UNKNOWN_PROVIDER` (chỉ khi có gửi `token`) |
 | `DELETE` | `/api/v1/deployments/targets/:id` | Xoá target (các deployment của nó bị xoá theo cascade) → `{ data: null }`. `404 NOT_FOUND` |
-| `POST` | `/api/v1/deployments/targets/:id/deploy` | Kích hoạt build `{ branch?, reason? }` → `201` kèm dòng deployment mới (`triggerSource: "manual"`). `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `400 UNKNOWN_PROVIDER`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (gọi Provider thất bại; vẫn ghi một dòng `error`) |
+| `POST` | `/api/v1/deployments/targets/:id/deploy` | Kích hoạt build `{ branch?, reason? }` → `201` kèm dòng deployment mới (`triggerSource: "manual"`). Cần `deploy:trigger:<targetId>`, `deploy:trigger:<env>` của một môi trường chứa nó, hoặc `deploy:trigger:*`; khi một trong các môi trường đó có `requiresApproval` thì response là `202 { data: { status: "pending_approval", environment, approval } }` và không có gì được dispatch. `403 FORBIDDEN`, `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `400 UNKNOWN_PROVIDER`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (gọi Provider thất bại; vẫn ghi một dòng `error`) |
 | `GET` | `/api/v1/deployments` | Liệt kê deployment, mới nhất trước (`createdAt` giảm dần, `id` giảm dần để phân định khi trùng). Lọc `?targetId=&status=&limit=`. `limit` phải là số nguyên không âm: mặc định 50 khi vắng hoặc rỗng, `0` trả danh sách rỗng, giá trị trên 200 bị giới hạn ở 200. Mọi giá trị khác (`abc`, `-5`, `1.5`) trả `400 VALIDATION`. Không có `meta` |
 | `GET` | `/api/v1/deployments/:id` | Lấy một deployment. `404 NOT_FOUND` |
 | `GET` | `/api/v1/deployments/:id/logs` | Lấy build log từ Provider, đã che secret → `{ data: { log } }`. `404 NOT_FOUND` khi deployment không tồn tại hoặc chưa có id phía Provider, `400 UNKNOWN_PROVIDER` khi target hoặc Provider của nó không khả dụng |
 | `POST` | `/api/v1/deployments/:id/refresh` | Ép đồng bộ trạng thái từ Provider (không làm gì khi trạng thái đã là terminal). `404 NOT_FOUND` khi deployment không tồn tại. Khi chưa có id phía Provider, hoặc target hay Provider không khả dụng, dòng được trả về nguyên trạng (`200`, không bao giờ `UNKNOWN_PROVIDER`) |
+| `GET` | `/api/v1/deployments/access` | `{ admin, capabilities, humanDecider, environments: [{ key, canTrigger, canApprove }] }` của người gọi |
+| `GET` | `/api/v1/deployments/environments` | Bản đồ môi trường (settings key `deployment.environments`, mặc định `preview` / `staging` → `production` / `production` có `requiresApproval`). `500 ENVIRONMENTS_INVALID` khi bản đồ đã lưu không hợp lệ |
+| `PUT` | `/api/v1/deployments/environments` | Site admin. Thay bản đồ `{ environments: [{ key, name, targetIds, requiresApproval, promotesTo }] }` (`DeploymentEnvironmentsUpdateSchema`). `400 VALIDATION` (trùng key, `promotesTo` không tồn tại), `400 UNKNOWN_TARGET` |
+| `POST` | `/api/v1/deployments/environments/:key/deploy` | Deploy mọi target của môi trường `{ branch?, reason? }`. Cần `deploy:trigger:<key>` (hoặc trên mọi target, hoặc `*`). `201 { data: { status: "dispatched", environment, results: [{ targetId, ok, deployment, error? }] } }`, hoặc `202 { data: { status: "pending_approval", environment, approval } }` khi `requiresApproval`. `403 FORBIDDEN`, `404 ENVIRONMENT_NOT_FOUND`, `409 NO_TARGETS` |
+| `POST` | `/api/v1/deployments/environments/:key/promote` | Promote deployment `ready` mới nhất của môi trường (hoặc `{ deploymentId }`) vào môi trường `promotesTo` của nó `{ deploymentId?, reason? }`; dùng đúng bản build khi Provider hỗ trợ promote, nếu không thì kích hoạt lại cùng commit. Cần quyền trigger trên môi trường đích. `201` / `202` như trên. `404 NOT_FOUND` (deployment không thuộc môi trường), `409 NO_PROMOTION_TARGET`, `409 SOURCE_NOT_READY` |
+| `GET` | `/api/v1/deployments/approvals` | Các approval deploy, mới nhất trước, mặc định `?status=pending` (`status=all` cho mọi trạng thái), mỗi cái kèm `canDecide` cho người gọi |
+| `POST` | `/api/v1/deployments/approvals/:id/decide` | `{ decision: "approved" \| "rejected", reason? }` (`DeployApprovalDecisionSchema`). Phê duyệt cần một người đã đăng nhập, không phải người yêu cầu, có `deploy:approve:<env>` hoặc `deploy:approve:*`; người yêu cầu được từ chối (rút lại) yêu cầu của mình. `403 HUMAN_APPROVER_REQUIRED` / `SELF_APPROVAL_FORBIDDEN` / `FORBIDDEN`, `404 NOT_FOUND`, `409 APPROVAL_ALREADY_DECIDED` / `APPROVAL_EXPIRED` / `REQUESTER_REVOKED` / `PLAN_STALE` |
 
 Công khai (không có phiên; xác thực bằng chữ ký):
 
@@ -1416,6 +1458,11 @@ Các biến có thể điều chỉnh (env): `LUMIBASE_DELIVER_SMAXAGE` (giây, 
 | `POST` | `/api/v1/utils/render-template` | Render một display template phía server |
 | `POST` | `/api/v1/utils/jsonata/test` | Đánh giá biểu thức JSONata |
 | `GET` | `/api/v1/metrics` | Prometheus metrics (chỉ ở chế độ Docker) |
+| `GET` | `/api/v1/openapi.json` | Tài liệu OpenAPI 3.1 trực tiếp theo site và quyền của người gọi — `404` cho tới khi được bật |
+| `GET` | `/api/v1/openapi/config` | Đọc công tắc OpenAPI trực tiếp (site admin) |
+| `PUT` | `/api/v1/openapi/config` | `{ enabled, realms }` — bật và chọn realm (site admin, có audit) |
+
+Tài liệu OpenAPI trực tiếp được mô tả trong [Tài liệu OpenAPI trực tiếp](live-openapi.md).
 
 **Phản hồi sức khỏe (Health response):**
 ```json

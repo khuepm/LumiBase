@@ -189,7 +189,8 @@ describe.skipIf(!hasDbIntegrationUrl)('JSON field Cast_Rule — DB integration',
         const r = await check(v, 'timestamp', 'pg_temp.try_ts');
         // ISO-shaped dates the server can cast are accepted, not just tolerated.
         if (r.castable && /^[0-9]{4}-/.test(v) && !/[+-](1[6-9]|[2-9][0-9])/.test(v.slice(10))) expect(r.ok).toBe(true);
-      }), { numRuns: 300 });
+        // Pinned counterexamples: end-of-day `24:00` is castable (found by seed -1433985432).
+      }), { numRuns: 300, examples: [['0001-01-01T24:00'], ['2024-02-29T24:00:00Z'], ['2024-01-01T24:00:01']] });
       throw new RollbackForTest();
     }).catch((err) => {
       if (!(err instanceof RollbackForTest)) throw err;

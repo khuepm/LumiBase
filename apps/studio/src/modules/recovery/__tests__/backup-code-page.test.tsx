@@ -90,17 +90,18 @@ describe('BackupCodePage — rendering', () => {
 
 describe('BackupCodePage — successful recovery (200)', () => {
   it('accepts the unlock token in memory and resets the password', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        jsonResponse(200, {
-          data: {
-            adminPath: '/lumi-7f3a9c',
-            oneTimeUnlockToken: 'unlock-token-abc123',
-          },
-        }),
-      )
-      .mockResolvedValueOnce(jsonResponse(200, { data: { reset: true } }));
+    // The success panel also loads the public password policy (#733);
+    // route by URL so the recover / reset assertions stay order-exact.
+    const actionCalls: unknown[][] = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/v1/auth/password-policy')) {
+        return { ok: false, status: 503, headers: { get: () => null }, json: async () => ({}) } as unknown as Response;
+      }
+      actionCalls.push([url, init]);
+      return actionCalls.length === 1
+        ? jsonResponse(200, { data: { adminPath: '/lumi-7f3a9c', oneTimeUnlockToken: 'unlock-token-abc123' } })
+        : jsonResponse(200, { data: { reset: true } });
+    });
     vi.stubGlobal('fetch', fetchMock);
 
     renderWithClient(<BackupCodePage />);
@@ -141,15 +142,15 @@ describe('BackupCodePage — successful recovery (200)', () => {
       screen.getByRole('link', { name: 'Go to admin login' }),
     ).toHaveAttribute('href', '/lumi-7f3a9c/login');
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const recoverCall = fetchMock.mock.calls[0]!;
+    expect(actionCalls).toHaveLength(2);
+    const recoverCall = actionCalls[0]!;
     expect(recoverCall[0]).toBe('/api/v1/admin/security/recover');
     expect(JSON.parse((recoverCall[1] as RequestInit).body as string)).toEqual({
       email: 'admin@example.com',
       backupCode: 'A2BC-D3EF',
     });
 
-    const resetCall = fetchMock.mock.calls[1]!;
+    const resetCall = actionCalls[1]!;
     expect(resetCall[0]).toBe('/api/v1/admin/security/reset-password');
     expect(JSON.parse((resetCall[1] as RequestInit).body as string)).toEqual({
       unlockToken: 'unlock-token-abc123',

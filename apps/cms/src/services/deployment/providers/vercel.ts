@@ -72,6 +72,8 @@ export const vercelProvider: DeploymentProvider = {
       target: 'production',
       gitSource: {
         ref: opts.branch ?? target.defaultBranch ?? undefined,
+        // Promotion fallback pins the exact commit that was built upstream.
+        ...(opts.commitSha ? { sha: opts.commitSha } : {}),
       },
     };
     const res = await guardedFetch(`${API}/v13/deployments`, {
@@ -86,6 +88,17 @@ export const vercelProvider: DeploymentProvider = {
       );
     }
     return toRef(json);
+  },
+
+  async promote(token, target, providerDeploymentId) {
+    // Points the project's production domains at an existing deployment; no
+    // rebuild. Responds without a deployment body, so read it back after.
+    const res = await guardedFetch(
+      `${API}/v10/projects/${encodeURIComponent(target.projectId)}/promote/${encodeURIComponent(providerDeploymentId)}`,
+      { method: 'POST', headers: bearer(token) },
+    );
+    if (!res.ok) throw new Error(`Vercel promote failed (${res.status}).`);
+    return vercelProvider.getStatus(token, target, providerDeploymentId);
   },
 
   async getStatus(token, _target, providerDeploymentId) {

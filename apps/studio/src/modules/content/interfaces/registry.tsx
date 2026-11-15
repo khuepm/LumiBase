@@ -1,5 +1,6 @@
 import type { FieldResource } from '@lumibase/sdk';
 import { AioInterface } from './aio';
+import { BlocksInterface } from './blocks';
 import { CodeInterface } from './code';
 import { CollectionItemDropdownInterface } from './collection-item-dropdown';
 import { ColorInterface } from './color';
@@ -10,6 +11,7 @@ import { InputAutocompleteApiInterface } from './input-autocomplete-api';
 import { InputHashInterface } from './input-hash';
 import { JsonRawInterface } from './json-raw';
 import { MapInterface } from './map';
+import { GeopointInterface } from './geopoint';
 import { MarkdownInterface } from './markdown';
 import { NumberInterface } from './number';
 import { RelationTreeViewInterface } from './relation-o2m-tree-view';
@@ -95,6 +97,10 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
   'translatable-text': TranslatableText,
   seo: SeoInterface,
   aio: AioInterface,
+  // Dynamic zones (#748) — also resolves by the `blocks` storage type.
+  blocks: BlocksInterface,
+  // `{ lat, lng }` point on a MapLibre map (#746); also resolves by field type.
+  geopoint: GeopointInterface,
 
   // Aliases by underlying type so collections without an explicit interface
   // still get a sensible editor.
@@ -108,17 +114,21 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
 };
 
 export function resolveInterface(field: FieldResource): InterfaceComponent<unknown> {
-  // 1. Static registry (Phase A-F built-ins).
+  // 1. Built-in interface named by the field.
   if (REGISTRY[field.interface]) return REGISTRY[field.interface] as InterfaceComponent<unknown>;
-  if (REGISTRY[field.type]) return REGISTRY[field.type] as InterfaceComponent<unknown>;
 
-  // 2. Dynamically loaded extension interfaces (Phase F).
-  // Extension must declare type: 'interface' and name matching field.interface.
-  const extEntry = getExtension(field.interface);
+  // 2. Extension interface named by the field (installed or hot-reloaded).
+  // It must win over the by-type alias below: otherwise an extension
+  // interface on a `string` / `text` / `number` / `boolean` field never
+  // renders and the plain built-in editor shows instead.
+  const extEntry = field.interface ? getExtension(field.interface) : undefined;
   if (extEntry?.slot === 'interface') {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return extEntry.component as InterfaceComponent<any>;
   }
+
+  // 3. Sensible default editor for the field's type.
+  if (REGISTRY[field.type]) return REGISTRY[field.type] as InterfaceComponent<unknown>;
 
   return JsonRawInterface as InterfaceComponent<unknown>;
 }

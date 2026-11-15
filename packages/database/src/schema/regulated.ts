@@ -87,7 +87,7 @@ export const contentReviews = pgTable(
       .notNull()
       .references(() => sites.id, { onDelete: 'cascade' }),
     /**
-     * Same-site item. The migration (0032) declares the composite FK with
+     * Same-site item. The migration (0035) declares the composite FK with
      * `ON DELETE SET NULL (item_id)`, which keeps `site_id`; Drizzle has no
      * column-list form, so that FK lives in SQL only.
      */

@@ -1,14 +1,73 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { logger } from 'hono/logger';
+import { cors } from 'hono/cors';
+import { secureHeaders } from 'hono/secure-headers';
+import { getConnInfo } from '@hono/node-server/conninfo';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from './db/client.js';
 import { posts } from './db/schema.js';
 
+// ── Secure defaults (create-lumibase #731) ─────────────────────────────────
+// Fail closed on a missing or short secret rather than run with one.
+const jwtSecret = process.env['JWT_SECRET'] ?? '';
+if (jwtSecret.length < 32) {
+  throw new Error('JWT_SECRET must be set to 32+ random characters (openssl rand -base64 48).');
+}
+
+// Exact-origin CORS allowlist. `*` is refused: never reflect arbitrary origins.
+const allowedOrigins = (process.env['CORS_ALLOWED_ORIGINS'] ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+if (allowedOrigins.includes('*')) {
+  throw new Error('CORS_ALLOWED_ORIGINS must list exact origins, not "*".');
+}
+
+// Fixed-window limit per client IP. In-process: put a shared limiter (Redis)
+// or your edge's rate limiting in front once you run more than one process.
+const rateLimit = Number.parseInt(process.env['LUMIBASE_API_RATE_LIMIT'] ?? '600', 10);
+const hits = new Map<string, { count: number; resetAt: number }>();
+
 const app = new Hono();
 
 app.use('*', logger());
+app.use(
+  '*',
+  secureHeaders({
+    contentSecurityPolicy: {
+      defaultSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      baseUri: ["'none'"],
+      formAction: ["'none'"],
+    },
+    referrerPolicy: 'no-referrer',
+  }),
+);
+app.use(
+  '*',
+  cors({
+    origin: (origin) => (allowedOrigins.includes(origin) ? origin : null),
+    credentials: true,
+  }),
+);
+app.use('*', async (c, next) => {
+  if (!(rateLimit > 0)) return next();
+  const ip = getConnInfo(c).remote.address ?? 'unknown';
+  const now = Date.now();
+  if (hits.size > 10_000) {
+    for (const [key, value] of hits) if (value.resetAt <= now) hits.delete(key);
+  }
+  const entry = hits.get(ip);
+  if (!entry || entry.resetAt <= now) {
+    hits.set(ip, { count: 1, resetAt: now + 60_000 });
+  } else if (++entry.count > rateLimit) {
+    c.header('Retry-After', String(Math.ceil((entry.resetAt - now) / 1000)));
+    return c.json({ errors: [{ code: 'RATE_LIMITED', message: 'Too many requests.' }] }, 429);
+  }
+  return next();
+});
 
 app.get('/', (c) => c.json({ name: '{{projectName}}', status: 'ok' }));
 

@@ -1,7 +1,10 @@
 import { collections as collectionsTable, fields, relations, scopeSite } from '@lumibase/database';
 import { asc, eq } from 'drizzle-orm';
 import type { Database } from '@lumibase/database';
+import { isZonedDateTimeField } from '@lumibase/contracts/field';
 import { compileSystemFields, type PrimaryKeyType, type RelationType } from './schema-service';
+import { relationAlias } from './item-service';
+import { isBlocksField, readBlocksOptions } from './blocks';
 
 export interface TypegenManifest {
   version: number;
@@ -21,6 +24,13 @@ export interface TypegenCollection {
 export interface TypegenField {
   name: string;
   type: string;
+  /**
+   * Studio interface id (`translatable-text`, `file`, `files`, …). Carried so
+   * consumers that need the wire shape can tell a per-locale map or a file
+   * reference from a plain scalar: the `lumibase types` Zod / OpenAPI targets
+   * (#753) and the live OpenAPI document (#745).
+   */
+  interface?: string;
   required: boolean;
   nullable: boolean;
   readonly: boolean;
@@ -32,6 +42,10 @@ export interface TypegenField {
   kind?: 'm2o' | 'o2m' | 'm2m' | 'm2a';
   target?: string;
   enum?: string[];
+  /** Timezone-aware datetime (#747): value is `{ instant, tz, offset }`. */
+  timezone?: boolean;
+  /** Dynamic zones (#748): block template names a `blocks` field accepts. */
+  allowedBlocks?: string[];
 }
 
 export interface TypegenRelation {
@@ -43,6 +57,10 @@ export interface TypegenRelation {
   oneCollection: string;
   oneField: string | null;
   junctionCollection: string | null;
+  /** The stored relation row's `type` (`kind` is relative to this collection). */
+  relationType: RelationType;
+  /** Name of the nested field the GraphQL schema exposes for this relation. */
+  alias: string;
 }
 
 export class TypegenService {
@@ -82,6 +100,7 @@ export class TypegenService {
         const field: TypegenField = {
           name: f.name,
           type: f.type,
+          interface: f.interface,
           required: f.required,
           nullable: f.nullable,
           readonly: f.readonly,
@@ -90,6 +109,7 @@ export class TypegenService {
           encrypted: f.encrypted,
           primaryKey: f.name === coll.primaryKeyField,
         };
+        if (isZonedDateTimeField(f)) field.timezone = true;
 
         // Detect relation fields
         const rel = relationRows.find(
@@ -115,6 +135,10 @@ export class TypegenService {
           }
         }
 
+        if (isBlocksField(f)) {
+          field.allowedBlocks = readBlocksOptions(f.options as Record<string, unknown> | null).allowedBlocks;
+        }
+
         return field;
       });
 
@@ -124,6 +148,7 @@ export class TypegenService {
         .map((field) => ({
           name: field.name,
           type: field.type,
+          interface: field.interface,
           required: !field.nullable,
           nullable: field.nullable,
           readonly: field.readonly,
@@ -151,6 +176,8 @@ export class TypegenService {
               oneCollection: relation.oneCollection,
               oneField: relation.oneField,
               junctionCollection: relation.junctionCollection,
+              relationType: kind,
+              alias: relationAlias(relation),
             }];
           }
 
@@ -164,6 +191,8 @@ export class TypegenService {
               oneCollection: relation.oneCollection,
               oneField: relation.oneField,
               junctionCollection: relation.junctionCollection,
+              relationType: kind,
+              alias: relationAlias(relation),
             }];
           }
 

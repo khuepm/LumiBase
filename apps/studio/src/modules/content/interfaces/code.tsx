@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { readOptions, type InterfaceComponent } from './types';
 
 interface CodeOptions {
@@ -16,7 +16,7 @@ export const CodeInterface: InterfaceComponent<string> = ({
 }) => {
   const opts = readOptions<CodeOptions>(field);
   return (
-    <div className="overflow-hidden rounded-md border">
+    <div className="overflow-hidden rounded-md border" dir="ltr">
       <Editor
         height={opts.height ?? '20vh'}
         defaultLanguage={opts.language ?? 'plaintext'}

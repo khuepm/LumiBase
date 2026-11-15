@@ -99,10 +99,12 @@ export function readItem<
   Row = ItemRow<Schema[Collection] extends Record<string, unknown> ? Schema[Collection] : Record<string, unknown>>
 >(collection: Collection, id: string, fields?: string[]) {
   return async (client: LumiClient<Schema>): Promise<Row> => {
+    // The endpoint answers `{ data: Row }`; unwrap it so the runtime value
+    // matches the declared `Row` (it used to hand back the envelope).
     const res = await client.rawRequest<Row>(
       `/api/v1/items/${collection}/${id}${fields?.length ? `?fields=${fields.join(",")}` : ""}`
     );
-    return res as unknown as Row;
+    return res.data;
   };
 }
 

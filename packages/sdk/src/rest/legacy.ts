@@ -23,6 +23,7 @@ import {
   ItemRow,
   ListItemsResponse,
   RevisionRow,
+  TreeMoveResult,
   DefaultSchema,
   RoleResource,
   RoleDetail,
@@ -74,6 +75,10 @@ import {
   ExtensionResource,
   DeploymentTargetResource,
   DeploymentResource,
+  DeploymentEnvironmentResource,
+  DeploymentApprovalResource,
+  DeploymentRequestOutcome,
+  DeploymentAccessResource,
 } from "../types";
 
 /**
@@ -85,7 +90,8 @@ import {
 export interface UserPreferencesPayload {
   language?: string;
   theme?: "auto" | "light" | "dark";
-  timezone?: string;
+  /** Display time zone (IANA); `null` clears it → browser zone (#747). */
+  timezone?: string | null;
   keybindings?: Record<string, string>;
   [key: string]: unknown;
 }
@@ -237,6 +243,20 @@ export function legacyRest() {
       listRelations: relations.list,
       createRelation: relations.create,
       deleteRelation: relations.delete,
+      /**
+       * Collection form layout (#750): tabs / groups / dividers + conditions.
+       * Typed loosely so the SDK stays decoupled from contracts; parse with
+       * `parseFormLayout` from `@lumibase/contracts/form-layout`.
+       */
+      getFormLayout: (name: string) =>
+        client.rawRequest<{ layout: unknown }>(
+          `/api/v1/collections/${name}/form-layout`,
+        ),
+      setFormLayout: (name: string, layout: unknown) =>
+        client.rawRequest<{ layout: unknown }>(
+          `/api/v1/collections/${name}/form-layout`,
+          { method: "PUT", body: JSON.stringify({ layout }) },
+        ),
     };
 
     function items<TName extends keyof TSchema & string>(name: TName) {
@@ -282,6 +302,8 @@ export function legacyRest() {
           data: Partial<Row["data"]>;
           status?: string;
           sort?: number;
+          /** Tree collections (#749): parent item id; null/absent = root. */
+          parentId?: string | null;
           /** ISO timestamps for content scheduling (Publish_Window). */
           publishAt?: string | null;
           unpublishAt?: string | null;
@@ -340,6 +362,36 @@ export function legacyRest() {
             method: "POST",
             body: JSON.stringify({ op, items: payload }),
           }),
+        /**
+         * Hierarchical collections (#749) on a `meta.tree.enabled` collection.
+         * Reads apply the caller's row rules; the anchor must be readable.
+         */
+        tree: {
+          children: (parent: string | null, params?: ListItemsParams): Promise<ListResp> => {
+            const q = buildQuery(params);
+            const sep = q ? "&" : "?";
+            return client.rawRequest<ListResp[keyof ListResp]>(
+              `${base}${q}${sep}tree=children&parent=${encodeURIComponent(parent ?? "null")}`,
+            ) as unknown as Promise<ListResp>;
+          },
+          subtree: (parent: string | null, params?: ListItemsParams): Promise<ListResp> => {
+            const q = buildQuery(params);
+            const sep = q ? "&" : "?";
+            return client.rawRequest<ListResp[keyof ListResp]>(
+              `${base}${q}${sep}tree=subtree&parent=${encodeURIComponent(parent ?? "null")}`,
+            ) as unknown as Promise<ListResp>;
+          },
+          ancestors: (node: string): Promise<ListResp> =>
+            client.rawRequest<ListResp[keyof ListResp]>(
+              `${base}?tree=ancestors&node=${encodeURIComponent(node)}`,
+            ) as unknown as Promise<ListResp>,
+          /** Move an item and its subtree; `position` is its 0-based index among the new siblings. */
+          move: (id: string, input: { parentId: string | null; position?: number }) =>
+            client.rawRequest<TreeMoveResult>(`${base}/${id}/move`, {
+              method: "POST",
+              body: JSON.stringify(input),
+            }),
+        },
         listRevisions: (id: string) =>
           client.rawRequest<RevisionRow[]>(`${base}/${id}/revisions`),
         revertRevision: (id: string, revisionId: string) =>
@@ -948,11 +1000,51 @@ export function legacyRest() {
           }),
         delete: (id: string) =>
           client.rawRequest<null>(`/api/v1/deployments/targets/${id}`, { method: "DELETE" }),
+        /**
+         * Resolves with the deployment (201), or — when the target belongs to
+         * an approval-gated environment (#743) — with a `pending_approval`
+         * outcome (202).
+         */
         deploy: (id: string, input: { branch?: string; reason?: string } = {}) =>
-          client.rawRequest<DeploymentResource>(`/api/v1/deployments/targets/${id}/deploy`, {
-            method: "POST",
-            body: JSON.stringify(input),
+          client.rawRequest<DeploymentResource | Extract<DeploymentRequestOutcome, { status: "pending_approval" }>>(
+            `/api/v1/deployments/targets/${id}/deploy`,
+            {
+              method: "POST",
+              body: JSON.stringify(input),
+            },
+          ),
+      },
+      // Environments, promotion and deploy approvals (#743).
+      access: () => client.rawRequest<DeploymentAccessResource>("/api/v1/deployments/access"),
+      environments: {
+        list: () =>
+          client.rawRequest<DeploymentEnvironmentResource[]>("/api/v1/deployments/environments"),
+        update: (environments: DeploymentEnvironmentResource[]) =>
+          client.rawRequest<DeploymentEnvironmentResource[]>("/api/v1/deployments/environments", {
+            method: "PUT",
+            body: JSON.stringify({ environments }),
           }),
+        deploy: (key: string, input: { branch?: string; reason?: string } = {}) =>
+          client.rawRequest<DeploymentRequestOutcome>(
+            `/api/v1/deployments/environments/${encodeURIComponent(key)}/deploy`,
+            { method: "POST", body: JSON.stringify(input) },
+          ),
+        promote: (key: string, input: { deploymentId?: string; reason?: string } = {}) =>
+          client.rawRequest<DeploymentRequestOutcome>(
+            `/api/v1/deployments/environments/${encodeURIComponent(key)}/promote`,
+            { method: "POST", body: JSON.stringify(input) },
+          ),
+      },
+      approvals: {
+        list: (status: string = "pending") =>
+          client.rawRequest<DeploymentApprovalResource[]>(
+            `/api/v1/deployments/approvals?status=${encodeURIComponent(status)}`,
+          ),
+        decide: (id: string, input: { decision: "approved" | "rejected"; reason?: string }) =>
+          client.rawRequest<DeploymentApprovalResource>(
+            `/api/v1/deployments/approvals/${encodeURIComponent(id)}/decide`,
+            { method: "POST", body: JSON.stringify(input) },
+          ),
       },
       list: (params?: { targetId?: string; status?: string }) => {
         const qs = new URLSearchParams();

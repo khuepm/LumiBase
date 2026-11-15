@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { AlertTriangle, Clock, Gauge, Inbox, OctagonX } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { DashboardWidget, WidgetSkeleton } from '@/components/dashboard-widget';
 import { cn } from '@/lib/cn';
 import { ActivityFeed } from './activity-feed';
 import { missionControlApi } from './api';
@@ -22,6 +23,11 @@ import { useInboxData } from './use-inbox';
  * a stat row over the whole Content OS, the five most urgent exceptions
  * with their inline actions, and SLO health per intent. Every card links
  * into the sub-route that holds the full story.
+ *
+ * Progressive (#757): every card and section reads its own query and shows
+ * its own placeholder, so the board paints as each source answers instead of
+ * waiting on the slowest one, and a widget that throws is contained by its
+ * `DashboardWidget` boundary.
  */
 
 function formatRemaining(deadline: string): string {
@@ -39,9 +45,12 @@ function StatCard({
   tone,
   to,
   onClick,
+  loading = false,
 }: {
   icon: ReactNode;
   value: string;
+  /** Source still loading: show a placeholder, never a fake value. */
+  loading?: boolean;
   label: string;
   tone?: 'alert' | 'ok';
   to?: string;
@@ -52,19 +61,23 @@ function StatCard({
       <span
         className={cn(
           'inline-flex h-8 w-8 items-center justify-center rounded-md',
-          tone === 'alert' ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground',
+          !loading && tone === 'alert' ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground',
         )}
       >
         {icon}
       </span>
       <span>
-        <span className="block text-lg font-semibold leading-tight">{value}</span>
+        {loading ? (
+          <span aria-label={`Loading ${label}`} className="block h-5 w-10 animate-pulse rounded bg-muted" />
+        ) : (
+          <span className="block text-lg font-semibold leading-tight">{value}</span>
+        )}
         <span className="block text-xs text-muted-foreground">{label}</span>
       </span>
     </>
   );
   const cls =
-    'flex w-full items-center gap-3 rounded-lg border bg-background p-3 text-left hover:bg-muted/40';
+    'flex w-full items-center gap-3 rounded-lg border bg-background p-3 text-start hover:bg-muted/40';
   return to ? (
     <Link to={to as never} className={cls}>
       {body}
@@ -76,10 +89,16 @@ function StatCard({
   );
 }
 
+function SloHealthSection({ base }: { base: string }) {
+  const { rows, isLoading } = useSloRows();
+  if (isLoading) return <WidgetSkeleton label="Loading SLO health" />;
+  return <SloTable rows={rows} linkBase={`${base}/intents`} />;
+}
+
 function DashboardBody() {
   const base = useMissionControlBase();
   const { openKillSwitch } = useMissionControlActions();
-  const { counts, isLoading } = useInboxData();
+  const { counts, loading } = useInboxData();
   const { rows, isLoading: sloLoading } = useSloRows();
   const killSwitchQuery = useQuery({
     queryKey: ['mc-kill-switch'],
@@ -95,7 +114,8 @@ function DashboardBody() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatCard
           icon={<Inbox className="h-4 w-4" />}
-          value={isLoading ? '…' : String(needsHuman)}
+          value={String(needsHuman)}
+          loading={loading.approvals || loading.questions || loading.intents}
           label="awaiting decision"
           tone={needsHuman > 0 ? 'alert' : 'ok'}
           to={`${base}/inbox`}
@@ -105,6 +125,7 @@ function DashboardBody() {
           value={
             counts.nearestAutoCommitAt ? formatRemaining(counts.nearestAutoCommitAt) : '—'
           }
+          loading={loading.staged}
           label={
             counts.staged > 0
               ? `next auto-commit (${counts.staged} staged)`
@@ -115,7 +136,8 @@ function DashboardBody() {
         />
         <StatCard
           icon={<Gauge className="h-4 w-4" />}
-          value={sloLoading ? '…' : sloCard.value}
+          value={sloCard.value}
+          loading={sloLoading}
           label={sloCard.label}
           tone={sloCard.tone}
           to={`${base}/intents`}
@@ -123,6 +145,7 @@ function DashboardBody() {
         <StatCard
           icon={<OctagonX className="h-4 w-4" />}
           value={String(activeFreezes)}
+          loading={killSwitchQuery.isLoading}
           label={activeFreezes === 1 ? 'active freeze' : 'active freezes'}
           tone={activeFreezes > 0 ? 'alert' : 'ok'}
           onClick={openKillSwitch}
@@ -130,6 +153,7 @@ function DashboardBody() {
         <StatCard
           icon={<AlertTriangle className="h-4 w-4" />}
           value={String(counts.incidents)}
+          loading={loading.autonomy}
           label="open incidents"
           tone={counts.incidents > 0 ? 'alert' : 'ok'}
           to={`${base}/inbox`}
@@ -137,48 +161,44 @@ function DashboardBody() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[3fr_2fr]">
-        <section className="rounded-lg border bg-background p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Exceptions</h2>
+        <DashboardWidget
+          title="Exceptions"
+          action={
             <Link to={`${base}/inbox` as never} className="text-xs text-primary hover:underline">
               Open inbox →
             </Link>
-          </div>
+          }
+        >
           <ExceptionInbox limit={5} />
-        </section>
+        </DashboardWidget>
 
         <div className="space-y-4">
-          <section className="rounded-lg border bg-background p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">SLO health</h2>
+          <DashboardWidget
+            title="SLO health"
+            action={
               <Link to={`${base}/intents` as never} className="text-xs text-primary hover:underline">
                 All intents →
               </Link>
-            </div>
-            {sloLoading ? (
-              <p className="text-sm text-muted-foreground">Loading SLO health…</p>
-            ) : (
-              <SloTable rows={rows} linkBase={`${base}/intents`} />
-            )}
-          </section>
+            }
+          >
+            <SloHealthSection base={base} />
+          </DashboardWidget>
 
-          <section className="rounded-lg border bg-background p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Agent activity</h2>
+          <DashboardWidget
+            title="Agent activity"
+            action={
               <Link to={`${base}/goals` as never} className="text-xs text-primary hover:underline">
                 Goal tree →
               </Link>
-            </div>
+            }
+          >
             <ActivityFeed />
-          </section>
+          </DashboardWidget>
 
           {/* Rollout switchboard (content-os-ui Req 15): which subsystems are armed. */}
-          <section className="rounded-lg border bg-background p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Rollout</h2>
-            </div>
+          <DashboardWidget title="Rollout">
             <RolloutFlagsPanel />
-          </section>
+          </DashboardWidget>
         </div>
       </div>
     </div>

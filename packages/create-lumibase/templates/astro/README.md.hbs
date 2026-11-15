@@ -1,0 +1,149 @@
+# {{projectName}}
+
+A static website built with [Astro](https://astro.build) from LumiBase content,
+ready to deploy to Cloudflare Pages.
+
+Content is fetched **once, at build time**, through the `lumibase` client. The
+result is plain HTML in `dist/` — no server, no API calls from visitors, no
+credentials in the browser.
+
+## Quick start
+
+```bash
+cp .env.example .env   # LUMIBASE_URL, LUMIBASE_SITE_ID, LUMIBASE_PUBLISHABLE_KEY
+npm install
+npm run dev            # http://localhost:4321
+npm run build          # static site in dist/
+```
+
+With `LUMIBASE_URL` or the key empty, the build still succeeds and produces a
+"connect your CMS" page, so a first deploy never fails on missing settings. A
+build that **is** configured but cannot reach the CMS fails on purpose:
+publishing an empty site over a working one is worse than keeping the last
+good deploy.
+
+## What the CMS needs to provide
+
+This site only reads. Whoever runs the LumiBase instance provides:
+
+1. **A publishable key** — Studio → Access → API keys, marked publishable (the
+   token starts with `lbk_pub_`). The build refuses any other kind of token in
+   `LUMIBASE_PUBLISHABLE_KEY`.
+2. **A read grant restricted to published rows.** `GET /api/v1/items` applies
+   no published-only filter of its own; the build asks for `status=published`
+   explicitly, but the grant is what actually enforces it.
+3. **A `posts` collection** with `title`, `slug` and `body` fields — or change
+   the collection in `src/lib/lumibase.ts` and regenerate types.
+
+No CMS yet? `npm create lumibase my-cms -- --template nextjs` scaffolds one that runs
+locally in Docker (CMS + Studio + Postgres) and creates exactly the key and
+grant above. For hosting, see the one-click deploys:
+https://docs.lumibase.dev/en/docs/deployment/one-click
+
+## Typed content
+
+`src/lumibase-types.d.ts` holds the generated types for your collections; the
+version shipped here matches the `posts` collection described above.
+Regenerate it from your real schema:
+
+```bash
+LUMIBASE_TOKEN=… npm run types        # writes src/lumibase-types.d.ts
+npm run types:check                   # CI: fails when the file is stale
+```
+
+`LUMIBASE_TOKEN` needs schema read access, so it is a secret. It is only used
+by these two commands, never by the build.
+
+## Deploy to Cloudflare Pages
+
+`astro build` writes everything to `dist/`; `wrangler.jsonc` names that
+directory and the Pages project (`{{projectName}}`).
+
+**Option A — Git integration.** Connect the repository in the Cloudflare
+dashboard (Workers & Pages → Create → Pages → Connect to Git) with:
+
+| Setting | Value |
+|---|---|
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| Environment variables | `LUMIBASE_URL`, `LUMIBASE_SITE_ID`; `LUMIBASE_PUBLISHABLE_KEY` as a **secret** |
+
+**Option B — direct upload** from your machine or CI:
+
+```bash
+npm run build
+CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… npm run deploy
+```
+
+The token needs the *Cloudflare Pages: Edit* permission. In GitHub Actions,
+keep both values in repository secrets and skip the deploy when they are
+absent, so forks and pull requests still build:
+
+```yaml
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: $\{{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: $\{{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci && npm run build
+        env:
+          LUMIBASE_URL: $\{{ vars.LUMIBASE_URL }}
+          LUMIBASE_SITE_ID: $\{{ vars.LUMIBASE_SITE_ID }}
+          LUMIBASE_PUBLISHABLE_KEY: $\{{ secrets.LUMIBASE_PUBLISHABLE_KEY }}
+      - name: Deploy to Cloudflare Pages
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        run: npm run deploy -- --branch main
+```
+
+## Rebuild when content changes (deploy hook)
+
+A static site shows what existed at build time. To rebuild when an editor
+publishes:
+
+1. In the Pages project: Settings → Builds → **Deploy hooks** → add one for
+   your production branch. Cloudflare gives you a URL; anyone holding it can
+   start a build, so treat it as a secret.
+2. In LumiBase, create a Flow with an `event` trigger
+   (`triggerOptions: { "collection": "posts" }`) whose graph has one `http`
+   node: `{ "url": "<deploy hook URL>", "method": "POST" }`. Event flows need
+   the CMS's `flow-events` queue to be configured.
+
+The trigger fires on every create, update and delete in `posts`, drafts
+included; add a `condition` node in front of the `http` node if only some
+changes should rebuild. Each call starts a Pages build, which counts against
+your Pages build quota.
+
+## Draft preview builds
+
+`LUMIBASE_PREVIEW=true` builds drafts as well, using `LUMIBASE_PREVIEW_TOKEN` —
+a secret token (`lbk_…`) whose grant includes unpublished rows. Set both only
+on a **protected** environment, for example the Pages *Preview* environment
+behind Cloudflare Access; `*.pages.dev` preview URLs are public otherwise. A
+preview build adds a banner and `noindex`, and fails if the token is missing
+or is a publishable key.
+
+A static site has no server to switch preview on per visitor. For per-request
+draft preview, use the SvelteKit starter (`--template sveltekit`).
+
+## Visual editing
+
+LumiBase visual editing (the planned `@lumibase/visual-editing` package) is not
+released yet. `src/components/VisualEditing.astro` is the hook point: it is
+rendered only on preview builds and is empty today.
+
+## Scripts
+
+| Script | What it does |
+|---|---|
+| `npm run dev` | Astro dev server; content is re-read on reload |
+| `npm run build` | Static build into `dist/` |
+| `npm run preview` | Serve `dist/` locally |
+| `npm run typecheck` | `astro check` |
+| `npm run types` / `types:check` | Generate / verify `src/lumibase-types.d.ts` |
+| `npm run deploy` | `wrangler pages deploy dist` |

@@ -16,6 +16,10 @@
 
 - <!-- List breaking changes, or write `None`. -->
 
+## Security
+
+- <!-- One line per fixed vulnerability, linking its GitHub Security Advisory and CVE (docs/en/security/advisory-template.md), or write `None`. -->
+
 ## Migrations
 
 - <!-- State whether database/schema migrations are included. -->

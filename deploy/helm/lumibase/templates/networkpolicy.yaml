@@ -1,0 +1,64 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "lumibase.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lumibase.componentLabels" (dict "ctx" . "component" "cms") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "lumibase.selectorLabels" (dict "ctx" . "component" "cms") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - port: http
+          protocol: TCP
+      {{- with .Values.networkPolicy.ingressFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+        # Pods of this release (the helm test pod).
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $.Release.Name }}
+      {{- end }}
+{{- if .Values.worker.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "lumibase.worker.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lumibase.componentLabels" (dict "ctx" . "component" "worker") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "lumibase.selectorLabels" (dict "ctx" . "component" "worker") | nindent 6 }}
+  policyTypes: [Ingress]
+  # Only the kubelet probes the worker's health port, and traffic from the
+  # pod's own node is always allowed, so nothing else needs to be admitted.
+  ingress: []
+{{- end }}
+{{- range $svc := list "postgresql" "redis" "meilisearch" }}
+{{- if (index $.Values $svc).enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-%s" (include "lumibase.fullname" $) $svc | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "lumibase.componentLabels" (dict "ctx" $ "component" $svc) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "lumibase.selectorLabels" (dict "ctx" $ "component" $svc) | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- include "lumibase.dataClients" $ | nindent 8 }}
+{{- end }}
+{{- end }}
+{{- end }}

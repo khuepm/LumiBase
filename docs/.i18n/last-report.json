@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-15T16:45:24.598Z",
+  "generatedAt": "2026-11-15T18:49:03.147Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 169,
+    "upToDate": 193,
     "planned": 0
   },
   "actions": [
@@ -194,6 +194,18 @@
     },
     {
       "rel": "api/hono-api-spec.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "api/live-openapi.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
@@ -841,6 +853,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "deployment/kubernetes-helm.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "deployment/local-development.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -926,6 +950,18 @@
     },
     {
       "rel": "deployment/shared-domain-environments.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "deployment/static-export-cloudflare-pages.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
@@ -1141,6 +1177,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/deployment-environments.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/deployment-integrations.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1178,6 +1226,18 @@
     },
     {
       "rel": "features/draft-review.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/dynamic-zones.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
@@ -1237,6 +1297,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/field-value-options.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/firebase-sync.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1261,6 +1333,30 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/form-layout.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/geopoint.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/git-integration.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1274,6 +1370,18 @@
     },
     {
       "rel": "features/governed-write-parity.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/hierarchical-collections.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
@@ -1568,6 +1676,18 @@
       "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/timezone-aware-datetime.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
       "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0
@@ -1885,7 +2005,55 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "security/advisories.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/advisory-runbook.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/advisory-template.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "security/anti-abuse.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/bootstrap-and-token-race-audit.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
@@ -1933,6 +2101,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "security/filter-sanitisation-audit.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "security/idor-testing.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1946,6 +2126,30 @@
     },
     {
       "rel": "security/owasp-api-top-10-audit.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/passkeys.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/password-policy.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
@@ -1981,7 +2185,79 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "security/secure-defaults.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/security-history.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/social-login.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/upload-security.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "security/user-management.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "security/vulnerability-disclosure.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "tutorials/astro-starter.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
@@ -2006,6 +2282,18 @@
     },
     {
       "rel": "tutorials/nextjs-quickstart.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "tutorials/sveltekit-starter.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
