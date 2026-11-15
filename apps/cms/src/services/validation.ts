@@ -1,4 +1,9 @@
 import { z, type ZodTypeAny } from 'zod';
+import {
+  requiredSkippedFields,
+  resolveFormVisibility,
+  type FormLayout,
+} from '@lumibase/contracts/form-layout';
 import type { CompiledField } from './schema-service';
 
 /**
@@ -39,7 +44,7 @@ const TYPE_BASE: Record<string, () => ZodTypeAny> = {
   timestamp: () => z.string(),
 };
 
-function buildFieldSchema(field: CompiledField): ZodTypeAny {
+function buildFieldSchema(field: CompiledField, skipRequired = false): ZodTypeAny {
   let schema = (TYPE_BASE[field.type] ?? (() => z.unknown()))();
 
   const rules = (field.validation?.rules as RuleObject[] | undefined) ?? [];
@@ -48,7 +53,7 @@ function buildFieldSchema(field: CompiledField): ZodTypeAny {
     schema = applyRule(schema, rule);
   }
 
-  if (!field.required) schema = schema.nullable().optional();
+  if (!field.required || skipRequired) schema = schema.nullable().optional();
   return schema;
 }
 
@@ -86,15 +91,34 @@ function applyRule(schema: ZodTypeAny, rule: RuleObject): ZodTypeAny {
   }
 }
 
+export interface ValidateItemOptions {
+  partial?: boolean;
+  /**
+   * Collection form layout (#750). A field hidden by a layout condition
+   * skips the required check only when it (or an ancestor node) sets
+   * `skipRequiredWhenHidden: true`; type and rule checks still run on any
+   * value it carries.
+   */
+  layout?: FormLayout | null;
+  /**
+   * The full record conditions are evaluated against. On a PATCH this is the
+   * stored item merged with the patch; defaults to `data`.
+   */
+  context?: Record<string, unknown>;
+}
+
 export function validateItem(
   compiledFields: CompiledField[],
   data: Record<string, unknown>,
-  options: { partial?: boolean } = {},
+  options: ValidateItemOptions = {},
 ): { ok: true; data: Record<string, unknown> } | { ok: false; issues: ValidationIssue[] } {
+  const skipped = options.layout
+    ? requiredSkippedFields(resolveFormVisibility(options.layout, options.context ?? data))
+    : new Set<string>();
   const shape: Record<string, ZodTypeAny> = {};
   for (const f of compiledFields) {
     if (options.partial && data[f.name] === undefined) continue;
-    shape[f.name] = buildFieldSchema(f);
+    shape[f.name] = buildFieldSchema(f, skipped.has(f.name));
   }
   const schema = z.looseObject(shape);
   const result = schema.safeParse(data);

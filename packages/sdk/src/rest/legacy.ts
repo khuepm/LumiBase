@@ -237,6 +237,20 @@ export function legacyRest() {
       listRelations: relations.list,
       createRelation: relations.create,
       deleteRelation: relations.delete,
+      /**
+       * Collection form layout (#750): tabs / groups / dividers + conditions.
+       * Typed loosely so the SDK stays decoupled from contracts; parse with
+       * `parseFormLayout` from `@lumibase/contracts/form-layout`.
+       */
+      getFormLayout: (name: string) =>
+        client.rawRequest<{ layout: unknown }>(
+          `/api/v1/collections/${name}/form-layout`,
+        ),
+      setFormLayout: (name: string, layout: unknown) =>
+        client.rawRequest<{ layout: unknown }>(
+          `/api/v1/collections/${name}/form-layout`,
+          { method: "PUT", body: JSON.stringify({ layout }) },
+        ),
     };
 
     function items<TName extends keyof TSchema & string>(name: TName) {

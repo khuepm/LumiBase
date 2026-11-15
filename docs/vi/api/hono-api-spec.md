@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 46
-lastUpdated: 2026-11-14T12:31:26.652Z
+version: 47
+lastUpdated: 2026-11-15T11:59:59.798Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 05c921e5657b5afa
+sourceHash: 47bbe5ddaefb77c8
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T12:31:26.652Z
-codeVerifiedHash: 05c921e5657b5afa
-codeVerifiedClaims: 518
+codeVerified: 2026-11-15T11:59:59.798Z
+codeVerifiedHash: 47bbe5ddaefb77c8
+codeVerifiedClaims: 520
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -433,6 +433,8 @@ Mã lỗi organization bổ sung gồm `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`
 | `PUT` | `/api/v1/collections/:name/schema` | Áp dụng schema (idempotent, nhận biết diff) |
 | `POST` | `/api/v1/collections/diff` | So sánh schema bundle với hiện tại |
 | `GET` | `/api/v1/collections/:name/index-advice?path=&cast=` | Gợi ý index cho đường dẫn JSON (chỉ đọc, `schema:read`) |
+| `GET` | `/api/v1/collections/:name/form-layout` | Bố cục form item: tab, nhóm, đường phân cách, điều kiện (`schema:read`); xem [Bố cục form](../features/form-layout.md) |
+| `PUT` | `/api/v1/collections/:name/form-layout` | Thay (hoặc với `null` thì xóa) bố cục form (`schema:update`) |
 
 **Request tạo collection:**
 ```json

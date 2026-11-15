@@ -14,6 +14,7 @@ import { dispatchItemEvent } from './flow-dispatch';
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
 import { validateItem } from './validation';
+import { applyHiddenValuePolicy, parseFormLayout } from '@lumibase/contracts/form-layout';
 import {
   searchIndexName,
   type CacheProvider,
@@ -1148,7 +1149,7 @@ export class ItemService {
       : currentData;
 
     if (patch.data) {
-      await this.runValidation(collectionName, patch.data, true);
+      await this.runValidation(collectionName, patch.data, true, merged);
     }
 
     // Before hook — extensions can mutate patch data before update.
@@ -1162,9 +1163,14 @@ export class ItemService {
     }) ?? { collection: collectionName };
     const hookPatch = hookCtx.patch as Record<string, unknown> | undefined;
     if (hookPatch) {
-      await this.runValidation(collectionName, hookPatch, true);
+      await this.runValidation(collectionName, hookPatch, true, { ...merged, ...hookPatch });
     }
-    const finalData = hookPatch ? { ...merged, ...hookPatch } : merged;
+    const mergedFinal = hookPatch ? { ...merged, ...hookPatch } : merged;
+    // Form-layout hidden-value policy (#750): a data write re-applies `clear`
+    // to fields its conditions now hide; a status/sort-only patch leaves data alone.
+    const finalData = patch.data || hookPatch
+      ? await this.applyHiddenValues(collectionName, mergedFinal)
+      : mergedFinal;
     const finalStatus = patch.status ?? rawRow.status;
     const finalSort = patch.sort ?? rawRow.sort;
     // Editorial gate (Req 8.2): on collections with editorialWorkflow=true, an
@@ -1299,14 +1305,22 @@ export class ItemService {
     return row;
   }
 
+  /**
+   * Validate a payload against the compiled schema. `context` is the full
+   * record form-layout conditions read (#750) — the merged item on a PATCH.
+   * A full (create) validation also applies the layout's hidden-value
+   * policy to the returned data.
+   */
   private async runValidation(
     collectionName: string,
     data: Record<string, unknown>,
     partial: boolean,
+    context?: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const compiled = await this.schemaService.getCompiled(collectionName);
     if (!compiled) return data;
-    const result = validateItem(compiled.fields, data, { partial });
+    const layout = parseFormLayout(compiled.meta?.formLayout);
+    const result = validateItem(compiled.fields, data, { partial, layout, context });
     if (!result.ok) {
       throw new ItemServiceError(
         'VALIDATION',
@@ -1314,7 +1328,19 @@ export class ItemService {
         400,
       );
     }
-    return result.data;
+    if (partial || !layout) return result.data;
+    return applyHiddenValuePolicy(compiled.fields, result.data, layout).data;
+  }
+
+  /** Drop stale values of fields hidden with `hiddenValue: 'clear'` (#750). */
+  private async applyHiddenValues(
+    collectionName: string,
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const compiled = await this.schemaService.getCompiled(collectionName);
+    const layout = parseFormLayout(compiled?.meta?.formLayout);
+    if (!compiled || !layout) return data;
+    return applyHiddenValuePolicy(compiled.fields, data, layout).data;
   }
 
   async replace(collectionName: string, id: string, body: { data: Record<string, unknown>; status?: string; sort?: number }) {
