@@ -44,6 +44,7 @@
         "type": "category",
         "label": "CLI & SDK",
         "items": ["cli", "cli/typegen-config", "sdk", "sdk/javascript", "sdk/typegen"]
+        "items": ["cli", "sdk", "sdk/javascript", "sdk/typegen", "sdk/frameworks"]
       },
       {
         "type": "category",

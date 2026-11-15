@@ -1,0 +1,19 @@
+{
+  "name": "example-vue-adapter",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Smoke example for @lumibase/vue (Vue 3 composables + Nuxt module). Type-checked in CI via `pnpm -r typecheck`.",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lumibase/sdk": "workspace:*",
+    "@lumibase/vue": "workspace:*",
+    "vue": "^3.5.45"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^5.6.2"
+  }
+}

@@ -7,6 +7,12 @@ packages:
   # installs & builds it standalone inside apps/marketplace instead.
   - "!apps/marketplace"
   - "packages/*"
+  # Framework-adapter smoke examples (#752): workspace members so CI's
+  # `pnpm -r typecheck` compiles them against the adapters' source. Listed
+  # one by one — the other examples/ stay standalone (their own installs).
+  - "examples/vue-adapter"
+  - "examples/svelte-adapter"
+  - "examples/astro-adapter"
 
 # pnpm 10+ reads install settings from THIS file, not from the `pnpm` key in
 # package.json — it emits one `[WARN]` line and then ignores that key. The
