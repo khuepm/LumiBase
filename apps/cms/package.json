@@ -66,11 +66,13 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261106.1",
+    "@seriousme/openapi-schema-validator": "2.11.0",
     "@types/node": "^26.6.6",
     "@types/nodemailer": "8.0.2",
     "@types/ws": "^8.18.2",
     "esbuild": "^0.28.0",
     "fast-check": "^4.10.2",
+    "openapi-typescript": "7.13.0",
     "tsx": "^4.23.15",
     "typescript": "^5.6.2",
     "vitest": "^5.1.0",

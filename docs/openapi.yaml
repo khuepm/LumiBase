@@ -836,6 +836,30 @@ paths:
                       version: { type: string }
                       runtime: { type: string }
 
+  /api/v1/openapi.json:
+    get:
+      tags: [utils]
+      summary: Live OpenAPI 3.1 document for the caller's site and role
+      description: |
+        This static file documents the whole platform. `GET /api/v1/openapi.json`
+        is its per-site counterpart: generated from the live schema, filtered by
+        the caller's permissions (collections, field masks, operations), cached
+        per schema version + permission fingerprint. Disabled by default; a site
+        admin enables it and picks realms with `PUT /api/v1/openapi/config`.
+        Returns `404 NOT_FOUND` (same body as an unknown route) while disabled.
+      operationId: getLiveOpenApi
+      responses:
+        '200':
+          description: OpenAPI 3.1 document
+          content:
+            application/json:
+              schema: { type: object }
+        '404':
+          description: Disabled for this site or for the caller's realm
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
   # ─── Agent Harness ───────────────────────────────────────────────────────
   /api/v1/agent/runs:
     get:

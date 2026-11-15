@@ -1,11 +1,11 @@
 ---
-version: 47
-lastUpdated: 2026-11-14T12:31:26.652Z
+version: 48
+lastUpdated: 2026-11-15T08:37:17.778Z
 sourceLang: en
-contentHash: 05c921e5657b5afa
-codeVerified: 2026-11-14T12:31:26.652Z
-codeVerifiedHash: 05c921e5657b5afa
-codeVerifiedClaims: 518
+contentHash: 3e6cf08f99882045
+codeVerified: 2026-11-15T08:37:17.778Z
+codeVerifiedHash: 3e6cf08f99882045
+codeVerifiedClaims: 522
 ---
 
 # Hono API Specification — LumiBase
@@ -1628,6 +1628,11 @@ tombstones), `LUMIBASE_DELIVER_RATE_LIMIT` (req/min/IP, default `1200`,
 | `POST` | `/api/v1/utils/render-template` | Render a display template server-side |
 | `POST` | `/api/v1/utils/jsonata/test` | Evaluate JSONata expression |
 | `GET` | `/api/v1/metrics` | Prometheus metrics (Docker mode only) |
+| `GET` | `/api/v1/openapi.json` | Live OpenAPI 3.1 document for the caller's site and permissions — `404` until enabled |
+| `GET` | `/api/v1/openapi/config` | Read the live OpenAPI switch (site admin) |
+| `PUT` | `/api/v1/openapi/config` | `{ enabled, realms }` — enable it and choose realms (site admin, audited) |
+
+The live OpenAPI document is described in [Live OpenAPI document](live-openapi.md).
 
 **Health response:**
 ```json

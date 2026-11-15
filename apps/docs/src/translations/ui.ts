@@ -64,6 +64,27 @@ export const ui = {
   },
   'consent.change': { en: 'Change my choice', vi: 'Đổi lựa chọn' },
   'consent.review': { en: 'Review choices', vi: 'Xem lựa chọn' },
+  'explorer.title': { en: 'API explorer', vi: 'Trình khám phá API' },
+  'explorer.intro': {
+    en: "Load your site's live OpenAPI document (GET /api/v1/openapi.json) and browse it here. Nothing is fetched until you press Load, and credentials stay in this tab's memory only.",
+    vi: 'Nạp tài liệu OpenAPI trực tiếp của site bạn (GET /api/v1/openapi.json) và duyệt ngay tại đây. Không có gì được tải cho tới khi bạn bấm Nạp, và thông tin xác thực chỉ nằm trong bộ nhớ của tab này.',
+  },
+  'explorer.url': { en: 'Document URL', vi: 'URL tài liệu' },
+  'explorer.site': { en: 'Site id (X-Lumi-Site)', vi: 'Site id (X-Lumi-Site)' },
+  'explorer.token': { en: 'Bearer token (optional)', vi: 'Bearer token (tuỳ chọn)' },
+  'explorer.load': { en: 'Load', vi: 'Nạp' },
+  'explorer.invalid-url': {
+    en: 'Enter an absolute http(s) URL.',
+    vi: 'Hãy nhập một URL http(s) tuyệt đối.',
+  },
+  'explorer.load-failed': {
+    en: 'Could not load the viewer.',
+    vi: 'Không tải được trình xem.',
+  },
+  'explorer.cors-hint': {
+    en: 'The CMS must allow this origin in CORS. A 404 means the endpoint is disabled for this site or for your realm.',
+    vi: 'CMS phải cho phép origin này trong CORS. Lỗi 404 nghĩa là endpoint đang tắt cho site này hoặc cho realm của bạn.',
+  },
 } satisfies Record<string, Record<string, string>>;
 
 export type UiKey = keyof typeof ui;
