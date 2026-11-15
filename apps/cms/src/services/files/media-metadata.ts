@@ -444,18 +444,27 @@ function decodeEntities(s: string): string {
     .replace(/&amp;/g, '&');
 }
 
+/**
+ * Text content of an XMP value. Tags are removed, entities decoded, and any
+ * angle bracket left over (nested tags, or `&lt;` decoding to `<`) is dropped,
+ * so an extracted value can never carry markup.
+ */
+function xmpText(fragment: string): string | undefined {
+  return clean(decodeEntities(fragment.replace(/<[^>]*>/g, '')).replace(/[<>]/g, ''));
+}
+
 function xmpList(xml: string, prop: string): string[] {
   const block = new RegExp(`<${prop}(?:\\s[^>]*)?>([\\s\\S]*?)</${prop}>`, 'i').exec(xml);
   if (block) {
     const items = [...block[1]!.matchAll(/<rdf:li(?:\s[^>]*)?>([\s\S]*?)<\/rdf:li>/gi)]
-      .map((m) => clean(decodeEntities(m[1]!.replace(/<[^>]+>/g, ''))))
+      .map((m) => xmpText(m[1]!))
       .filter((v): v is string => !!v);
     if (items.length > 0) return items.slice(0, MAX_LIST);
-    const text = clean(decodeEntities(block[1]!.replace(/<[^>]+>/g, '')));
+    const text = xmpText(block[1]!);
     if (text) return [text];
   }
   const attr = new RegExp(`\\s${prop}="([^"]*)"`, 'i').exec(xml);
-  const v = attr ? clean(decodeEntities(attr[1]!)) : undefined;
+  const v = attr ? xmpText(attr[1]!) : undefined;
   return v ? [v] : [];
 }
 

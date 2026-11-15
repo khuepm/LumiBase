@@ -4,6 +4,7 @@ import {
   extractMediaMetadata,
   hasGpsMetadata,
   metadataSearchText,
+  parseXmp,
   stripGpsMetadata,
 } from '../media-metadata';
 import { XMP_WITH_GPS, buildJpeg, buildPng, buildWebp, pngCrcsValid, tiffBlock } from './fixtures';
@@ -70,6 +71,16 @@ describe('extractMediaMetadata', () => {
       }),
       { numRuns: 300 },
     );
+  });
+
+  it('never returns markup from XMP values (nested tags, encoded brackets)', () => {
+    const x = parseXmp(
+      '<x:xmpmeta><dc:title><rdf:Alt><rdf:li>A<<script>script>alert(1)<</script>/script>B</rdf:li></rdf:Alt></dc:title>' +
+        '<rdf:Description photoshop:Credit="&lt;img src=x onerror=alert(1)&gt;"/></x:xmpmeta>',
+    )!;
+    expect(x.title).not.toMatch(/[<>]/);
+    expect(x.credit).not.toMatch(/[<>]/);
+    expect(x.credit).toContain('img src=x');
   });
 
   it('flattens the summary into lowercase search text', () => {
