@@ -44,6 +44,9 @@ export function castKindForFieldType(type: string | null | undefined): CastKind 
   if (BOOLEAN_TYPES.has(t)) return 'boolean';
   if (TIMESTAMP_TYPES.has(t)) return 'timestamp';
   if (t === 'json' || t === 'alias') return null;
+  // `{ lat, lng }` object (#746): compare via `_near` / `_within_bbox`, or a
+  // nested path (`loc.lat`) which infers numeric from the value.
+  if (t === 'geopoint') return null;
   return 'text';
 }
 

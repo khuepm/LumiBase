@@ -10,7 +10,7 @@ import {
   type GraphQLFieldConfigMap,
 } from 'graphql';
 import { JSONScalar, DateTimeScalar } from './scalars';
-import { mapFieldType } from './type-mapping';
+import { mapFieldType, resolveFieldValue } from './type-mapping';
 import { toGraphQLError } from './errors';
 import type { GraphQLContext } from './context';
 import { ItemServiceError, relationAlias } from '../services/item-service';
@@ -88,7 +88,7 @@ function buildItemType(
         fields[field.name] = {
           type: mapFieldType(field),
           description: field.note ?? undefined,
-          resolve: (src) => (src.data ?? {})[field.name],
+          resolve: (src) => resolveFieldValue(field, (src.data ?? {})[field.name]),
         };
       }
 

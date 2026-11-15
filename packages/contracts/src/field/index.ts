@@ -21,7 +21,9 @@ export type FieldType =
   | 'csv'
   | 'hash'
   | 'geometry'
-  | 'alias';
+  | 'alias'
+  /** `{ lat, lng }` point (#746) — see `./geopoint`. */
+  | 'geopoint';
 
 export type FieldWidth = 'half' | 'full' | 'fill';
 
@@ -54,3 +56,5 @@ export interface FieldDefinition<TOptions = unknown> {
   group?: string;
   sortOrder?: number;
 }
+
+export * from './geopoint';

@@ -27,7 +27,7 @@ export const fieldDefinitionSchema = z.object({
   // not `dateTime`; no `float`. The server stores any string (B206).
   type: z.string().min(1).describe(
     'Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, ' +
-    'date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias. ' +
+    'date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias, geopoint ({ lat, lng }). ' +
     'Not validated server-side; GraphQL currently types `datetime` as String (B206).',
   ),
   interface: z.string().min(1).describe(

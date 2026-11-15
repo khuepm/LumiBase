@@ -1,4 +1,5 @@
 import { z, type ZodTypeAny } from 'zod';
+import { GeoPointSchema } from '@lumibase/contracts/schemas';
 import type { CompiledField } from './schema-service';
 
 /**
@@ -37,6 +38,8 @@ const TYPE_BASE: Record<string, () => ZodTypeAny> = {
   datetime: () => z.string(),
   time: () => z.string(),
   timestamp: () => z.string(),
+  // `{ lat, lng }`, finite and in range (#746).
+  geopoint: () => GeoPointSchema,
 };
 
 function buildFieldSchema(field: CompiledField): ZodTypeAny {

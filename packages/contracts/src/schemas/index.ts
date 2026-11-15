@@ -352,3 +352,4 @@ export {
   type TelemetryEventName,
   type TelemetryEvent,
 } from './telemetry';
+export { GeoPointSchema, GeoNearSchema, GeoBBoxSchema } from './geopoint';
