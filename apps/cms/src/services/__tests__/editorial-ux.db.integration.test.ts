@@ -15,6 +15,7 @@ import { pruneCollectionRevisions, sweepRevisionRetention } from '../revision-re
 import { ItemDuplicateService, nextCopyValue } from '../item-duplicate';
 import { SchemaService } from '../schema-service';
 import { auditLog } from '@lumibase/database';
+import { ReleaseService } from '../release-service';
 import { connectDbIntegration, hasDbIntegrationUrl } from '../../__tests__/helpers/db-harness';
 
 /**
@@ -333,6 +334,82 @@ describe.skipIf(!hasDbIntegrationUrl)('#668 editorial UX — DB integration', ()
       await svc.create('posts_tags', { data: { post_id: src.id, tag_id: 't1' } });
       const res = await dup().duplicate(POSTS, src.id, { relations: 'none' });
       expect(res.related).toEqual({});
+    });
+  });
+
+  describe('C08 release validation summary (#692)', () => {
+    async function seedPages(): Promise<void> {
+      const [pages] = await db
+        .insert(collections)
+        .values({ siteId: SITE, name: 'pages', label: 'Pages' })
+        .returning({ id: collections.id });
+      await db.insert(fields).values([
+        { siteId: SITE, collectionId: pages!.id, name: 'title', type: 'string', interface: 'input' },
+        { siteId: SITE, collectionId: pages!.id, name: 'body', type: 'string', interface: 'input', required: true },
+      ]);
+    }
+
+    /** Insert straight into the table so the row can be invalid (as legacy/imported data can be). */
+    async function rawItem(data: Record<string, unknown>): Promise<string> {
+      const [coll] = await db
+        .select({ id: collections.id })
+        .from(collections)
+        .where(and(eq(collections.siteId, SITE), eq(collections.name, 'pages')));
+      const [r] = await db
+        .insert(items)
+        .values({ siteId: SITE, collectionId: coll!.id, data })
+        .returning({ id: items.id });
+      return r!.id;
+    }
+
+    it('lists invalid items with field paths and blocks an all_or_nothing publish', async () => {
+      await seedPages();
+      const ok = await rawItem({ title: 'ok', body: 'text' });
+      const bad = await rawItem({ title: 'missing body' });
+      const releases = new ReleaseService({ db, siteId: SITE });
+      const release = await releases.create({ name: 'launch' });
+      await releases.patch(release!.id, {
+        addItems: [
+          { collection: 'pages', itemId: ok, targetStatus: 'published' },
+          { collection: 'pages', itemId: bad, targetStatus: 'published' },
+        ],
+      });
+
+      const summary = await releases.validate(release!.id);
+      expect(summary.valid).toBe(false);
+      expect(summary.checked).toBe(2);
+      expect(summary.items).toHaveLength(1);
+      expect(summary.items[0]).toMatchObject({ collection: 'pages', itemId: bad });
+      expect(summary.items[0]!.issues.map((i) => i.field)).toContain('body');
+
+      const result = await releases.publish(release!.id);
+      expect(result.status).toBe('failed');
+      expect(result.outcomes.find((o) => o.itemId === bad)).toMatchObject({ reason: 'VALIDATION_FAILED' });
+      expect((await row(db, ok)).status).toBe('draft');
+
+      // Fixing the item clears the summary and lets the release publish.
+      await db.update(items).set({ data: { title: 'fixed', body: 'now' } }).where(eq(items.id, bad));
+      expect((await releases.validate(release!.id)).valid).toBe(true);
+      const second = await releases.publish(release!.id);
+      expect(second.status).toBe('published');
+    });
+
+    it('best_effort publishes the valid items and fails only the invalid one', async () => {
+      await seedPages();
+      const ok = await rawItem({ title: 'ok', body: 'text' });
+      const bad = await rawItem({ title: 'missing body' });
+      const releases = new ReleaseService({ db, siteId: SITE });
+      const release = await releases.create({ name: 'best', atomicityMode: 'best_effort' });
+      await releases.patch(release!.id, {
+        addItems: [
+          { collection: 'pages', itemId: ok, targetStatus: 'published' },
+          { collection: 'pages', itemId: bad, targetStatus: 'published' },
+        ],
+      });
+      const result = await releases.publish(release!.id);
+      expect(result.status).toBe('partially_failed');
+      expect((await row(db, ok)).status).toBe('published');
+      expect((await row(db, bad)).status).toBe('draft');
     });
   });
 });

@@ -9,7 +9,16 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+- Editorial UX (epic #668). Items carry `firstPublishedAt`, `publishedAt` and `hasUnpublishedChanges`; list only modified items with `?modifiedSincePublish=true`, and Studio shows the publish dates and a "Modified since publish" badge and list toggle (#687).
+- `publicationState=live|preview|all` on `GET /items/:collection` and `GET /items/:collection/:id`, and as a GraphQL argument. Nested relations follow the cohort; anonymous and frontend-realm callers are always served `live` (#688).
+- `POST /items/:collection/:id/duplicate`: a draft copy with unique fields and `slug` suffixed (`-copy`, `-copy-2`, …), m2m links copied by reference or one level of o2m children copied (`relations: "deep"`), optional single-locale translations, and an `item_duplicated` audit entry. Studio has a **Duplicate** action; the SDK has `items(name).duplicate()` (#689).
+- `PATCH`/`PUT /items/:collection/:id?saveRevision=false` skips the revision row for autosave and machine writes (agent writes always keep theirs); SDK `patchWithoutRevision()`. Collections can cap history with `meta.revisionRetention: { maxRevisions?, maxAgeDays? }`, pruned by an hourly `revision-retention` sweep (#693).
+- Release validation summary: `GET /releases/:id/validate` lists every invalid item with field paths, and publishing blocks invalid items with reason `VALIDATION_FAILED`. Studio gains a **Releases** page whose issues link to the item editor at the field (`#field=<name>`) (#692).
+
+### Upgrade notes
+- Migration `0035_item_publication_state` adds three columns and a partial index to `lumibase_items` and backfills `first_published_at`/`published_at` for items that are already `published` (from `publish_at`, else `updated_at`). It is additive and re-runnable.
+- A release that contains an item failing full validation (for example a required field left empty by an import) is now blocked at publish. Run `GET /releases/:id/validate` on pending scheduled releases after upgrading.
 
 ## [2.1.0] - 2026-11-16
 

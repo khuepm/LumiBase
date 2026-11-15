@@ -27,6 +27,7 @@ import {
   type Database,
 } from '@lumibase/database';
 import { type ItemService, ItemServiceError } from './item-service';
+import type { ValidationIssue } from './validation';
 import { itemServiceForSystem } from './item-service-factory';
 import { AuditLogger } from '../modules/audit/logger';
 
@@ -39,6 +40,24 @@ export interface PublishOutcome {
   itemId: string;
   outcome: 'published' | 'skipped' | 'failed';
   reason?: string;
+  /** Field-level problems when `reason` is `VALIDATION_FAILED` (#692). */
+  issues?: ValidationIssue[];
+}
+
+/** One item of a release that would not pass validation (#692). */
+export interface ReleaseItemValidation {
+  collection: string;
+  itemId: string;
+  issues: ValidationIssue[];
+}
+
+/** Pre-publish validation summary of a release (#692). */
+export interface ReleaseValidation {
+  valid: boolean;
+  /** Items checked (those whose target status is `published`). */
+  checked: number;
+  /** Only the items with issues. */
+  items: ReleaseItemValidation[];
 }
 
 export class ReleaseServiceError extends Error {
@@ -276,10 +295,19 @@ export class ReleaseService {
     const svc = this.itemService();
     const mode = release.atomicityMode as AtomicityMode;
     let outcomes: PublishOutcome[];
+    // Validation summary (#692): an item that would not pass full validation
+    // never publishes. In all_or_nothing that blocks the whole release.
+    const invalid = await this.validationBlockers(itemRows, svc);
+    const invalidKeys = new Set(invalid.map((o) => `${o.collection}\u0000${o.itemId}`));
 
     if (mode === 'all_or_nothing') {
       // Pre-flight: confirm every item can publish before mutating anything.
-      const blockers = await this.preflight(itemRows, svc);
+      const blockers = [
+        ...invalid,
+        ...(await this.preflight(itemRows, svc)).filter(
+          (b) => !invalidKeys.has(`${b.collection}\u0000${b.itemId}`),
+        ),
+      ];
       if (blockers.length > 0) {
         await this.markStatus(id, 'failed', summarize(blockers));
         await this.persistOutcomes(blockers);
@@ -290,8 +318,9 @@ export class ReleaseService {
         outcomes.push(await this.publishOneItem(ri, svc));
       }
     } else {
-      outcomes = [];
+      outcomes = [...invalid];
       for (const ri of itemRows) {
+        if (invalidKeys.has(`${ri.collection}\u0000${ri.itemId}`)) continue;
         try {
           outcomes.push(await this.publishOneItem(ri, svc));
         } catch (err) {
@@ -309,6 +338,65 @@ export class ReleaseService {
     const status = decideStatus(outcomes);
     await this.markStatus(id, status, status === 'published' ? null : summarize(outcomes), status === 'published');
     return { release: await this.loadRelease(id), status, outcomes };
+  }
+
+  /**
+   * Pre-publish validation summary (#692): every item the release would
+   * publish, validated in full (required fields included) as it would be
+   * written — the pinned revision's snapshot when there is one.
+   */
+  async validate(id: string): Promise<ReleaseValidation> {
+    await this.loadRelease(id);
+    const itemRows = await this.deps.db
+      .select()
+      .from(releaseItems)
+      .where(and(scopeSite(releaseItems.siteId, this.deps.siteId), eq(releaseItems.releaseId, id)));
+    return this.validateItems(itemRows, this.itemService());
+  }
+
+  private async validateItems(itemRows: ReleaseItemRow[], svc: ItemService): Promise<ReleaseValidation> {
+    const out: ReleaseItemValidation[] = [];
+    let checked = 0;
+    for (const ri of itemRows) {
+      if (ri.targetStatus !== 'published') continue;
+      const live = await this.loadItem(ri);
+      // A missing/deleted item is the preflight's ITEM_DELETED, not a validation issue.
+      if (!live || live.deletedAt) continue;
+      checked += 1;
+      let issues: ValidationIssue[];
+      try {
+        issues = await svc.validateForPublish(ri.collection, ri.itemId, await this.pinnedSnapshot(ri));
+      } catch (err) {
+        // Unreadable to the caller (FORBIDDEN/NOT_FOUND under row rules): the
+        // publish would fail on it too, so report it in the same list.
+        if (!(err instanceof ItemServiceError)) throw err;
+        issues = [{ field: '', code: err.code, message: err.message }];
+      }
+      if (issues.length > 0) out.push({ collection: ri.collection, itemId: ri.itemId, issues });
+    }
+    return { valid: out.length === 0, checked, items: out };
+  }
+
+  private async validationBlockers(itemRows: ReleaseItemRow[], svc: ItemService): Promise<PublishOutcome[]> {
+    const summary = await this.validateItems(itemRows, svc);
+    return summary.items.map((i) => ({
+      collection: i.collection,
+      itemId: i.itemId,
+      outcome: 'failed' as const,
+      reason: 'VALIDATION_FAILED',
+      issues: i.issues,
+    }));
+  }
+
+  /** A pinned revision's snapshot (`delta.after`), or undefined for live state. */
+  private async pinnedSnapshot(ri: ReleaseItemRow): Promise<Record<string, unknown> | undefined> {
+    if (!ri.revisionId) return undefined;
+    const [rev] = await this.deps.db
+      .select({ delta: revisions.delta })
+      .from(revisions)
+      .where(and(scopeSite(revisions.siteId, this.deps.siteId), eq(revisions.id, ri.revisionId)))
+      .limit(1);
+    return (rev?.delta as { after?: Record<string, unknown> } | undefined)?.after ?? undefined;
   }
 
   /** Returns outcomes for any item that cannot publish (empty = all clear). */

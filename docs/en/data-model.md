@@ -1,10 +1,10 @@
 ---
-version: 19
-lastUpdated: 2026-11-15T18:28:59.126Z
+version: 20
+lastUpdated: 2026-11-15T19:44:53.851Z
 sourceLang: en
-contentHash: a569ee25f43387da
-codeVerified: 2026-11-15T18:28:59.126Z
-codeVerifiedHash: a569ee25f43387da
+contentHash: 70c87403720cf7dc
+codeVerified: 2026-11-15T19:44:53.851Z
+codeVerifiedHash: 70c87403720cf7dc
 codeVerifiedClaims: 20
 ---
 
@@ -169,6 +169,9 @@ Compiled schemas expose generated system fields in addition to user-defined rows
 | `userCreated`, `userUpdated` | text FK users |
 | `publishAt`, `unpublishAt` | timestamp nullable | Scheduling window (Req 7); the reconcile worker flips status, delivery filters to the window. |
 | `editorialState` | text nullable | Human review state (Req 9): `draft`/`in_review`/`approved`/`published`/`rejected`. Distinct from the AI veto-window. |
+| `firstPublishedAt` | timestamp nullable | First publish (#687, migration 0035). Set once, never moved by a re-publish. |
+| `publishedAt` | timestamp nullable | Most recent publish (#687). Kept when the item is unpublished. |
+| `hasUnpublishedChanges` | boolean, default false | Data edited since the last publish (#687); cleared by the next publish. Partial index `items_unpublished_changes_idx (siteId, collectionId) WHERE has_unpublished_changes AND deleted_at IS NULL`. |
 | `dekWrapped` | text nullable | Envelope mode (Req 4.5): the per-record DEK wrapped by the KEK. Non-null ⇒ this record's encrypted fields use a per-record DEK; null ⇒ shared-key mode. Reads are self-describing from this column. |
 | `createdAt`, `updatedAt` | timestamp |
 | `deletedAt` | timestamp nullable |
@@ -177,6 +180,7 @@ Indexes: `(siteId, collectionId, status)`, GIN on `data`, `(siteId, status, publ
 
 ### `revisions`
 - `id`, `siteId`, `itemId`, `collectionId`, `delta jsonb`, `parentId`, `userId`, `createdAt`.
+- A `PATCH ?saveRevision=false` writes no revision (#693); a collection's `meta.revisionRetention: { maxRevisions?, maxAgeDays? }` lets the hourly `revision-retention` sweep prune old rows (never an item's newest, staged, release-pinned or agent revisions).
 
 ### `releases` (Content Releases)
 - A cross-collection publish bundle. `id`, `siteId`, `name`, `description`, `status` (`draft`|`scheduled`|`published`|`failed`|`partially_failed`), `atomicityMode` (`all_or_nothing`|`best_effort`), `publishAt`, `publishedAt`, `maintenanceWindow jsonb`, `statusReason`, `createdBy → users.id (set null)`, `createdAt`, `updatedAt`.

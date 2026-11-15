@@ -499,6 +499,26 @@ export interface ListItemsParams {
    * for a cheaper list (e.g. infinite scroll) and omits `meta.total`.
    */
   meta?: 'total_count' | 'none';
+  /**
+   * Publication cohort (#688): `live` (published, inside its window),
+   * `preview` (draft + published) or `all`. Anonymous callers always get `live`.
+   */
+  publicationState?: PublicationState;
+  /** Only items edited since their last publish (#687). */
+  modifiedSincePublish?: boolean;
+}
+
+export type PublicationState = 'live' | 'preview' | 'all';
+
+/** Options for `items(name).duplicate()` — `POST /items/:collection/:id/duplicate` (#689). */
+export interface DuplicateItemOptions {
+  /** `reference` (default) copies m2m links; `deep` also copies o2m children; `none` copies the item alone. */
+  relations?: 'none' | 'reference' | 'deep';
+  /** `false` keeps only `locale` of translatable fields. Default `true`. */
+  translations?: boolean;
+  locale?: string;
+  /** Field values to set on the copy. */
+  overrides?: Record<string, unknown>;
 }
 
 /** Options for `items(name).export()` — `GET /items/:collection/export` (#727). */
@@ -601,6 +621,12 @@ export interface ItemRow<
   unpublishAt?: string | null;
   /** Editorial workflow state; null when the workflow is not in use. */
   editorialState?: string | null;
+  /** First publish; set once, never moves (#687). */
+  firstPublishedAt?: string | null;
+  /** Most recent publish; kept on unpublish (#687). */
+  publishedAt?: string | null;
+  /** Data edited since the last publish (#687). */
+  hasUnpublishedChanges?: boolean;
   /** Tree collections (#749): parent item id (null = root) and materialised path `/root/…/self/`. */
   parentId?: string | null;
   path?: string | null;

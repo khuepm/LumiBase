@@ -38,6 +38,8 @@ export function ItemsListPage() {
 
   const [filters, setFilters] = useState<FilterCondition[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  // "Modified since publish" (#687): published-once items edited since.
+  const [modifiedOnly, setModifiedOnly] = useState(false);
   const [sort, setSort] = useState<SortState>({ field: 'updated_at', dir: 'desc' });
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -139,9 +141,10 @@ export function ItemsListPage() {
   const canCreate = perms.can(collection, 'create');
 
   const itemsQuery = useQuery({
-    queryKey: ['items', collection, filterPayload, sort, page],
+    queryKey: ['items', collection, filterPayload, sort, page, modifiedOnly],
     queryFn: () =>
       client.items(collection as never).list({
+        ...(modifiedOnly ? { modifiedSincePublish: true } : {}),
         filter: filterPayload,
         sort: [`${sort.dir === 'desc' ? '-' : ''}${sort.field}`],
         limit: PAGE_SIZE,
@@ -287,6 +290,21 @@ export function ItemsListPage() {
           >
             <Filter className="h-3.5 w-3.5" />
             Filters {filters.length > 0 && <span className="text-primary">({filters.length})</span>}
+          </button>
+          <button
+            type="button"
+            aria-pressed={modifiedOnly}
+            onClick={() => {
+              setModifiedOnly((v) => !v);
+              setPage(0);
+            }}
+            title="Only items edited since they were last published"
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs',
+              modifiedOnly && 'bg-accent',
+            )}
+          >
+            Modified since publish
           </button>
           {selected.size > 0 && (
             <button

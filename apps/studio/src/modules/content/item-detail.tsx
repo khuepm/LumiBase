@@ -29,6 +29,8 @@ import { translatableFields, tmLearnEntries } from './translatable-fields';
 import { useSiteLocales } from './use-site-locales';
 import { ItemCreate } from './item-create';
 import { EditorialActions } from './editorial-actions';
+import { DuplicateItemButton, PublicationInfo } from './item-publication';
+import { useFocusFieldFromHash } from './focus-field';
 import { DraftReviewPanel } from './draft-review-panel';
 import { useReviewRollout, useReviewSession } from './use-review-pilot';
 
@@ -361,6 +363,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
             canUpdate={canUpdate}
             isDirty={isDirty}
           />
+          <DuplicateItemButton collection={collection} id={id} canCreate={perms.can(collection, 'create')} />
           <button
             type="button"
             onClick={() => setShareOpen(true)}
@@ -699,6 +702,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
             ) : null}
             <Meta label="Updated" value={new Date(itemQuery.data.updatedAt).toLocaleString()} />
             <Meta label="Created" value={new Date(itemQuery.data.createdAt).toLocaleString()} />
+            <PublicationInfo item={itemQuery.data} />
           </dl>
           {/* Content scheduling (Req 10.1). Empty = unset; the Delivery API
               only serves items inside the current Publish_Window. */}
@@ -828,6 +832,8 @@ export function FieldsTab({
   /** Field key → validation message (inline + tab error badges). */
   errors?: Readonly<Record<string, string>>;
 }) {
+  // `#field=<name>` deep links from the release validation summary (#692).
+  useFocusFieldFromHash(fields.length);
   if (fields.length === 0) {
     return <p className="text-sm text-muted-foreground">No editable fields.</p>;
   }

@@ -1,11 +1,11 @@
 ---
-version: 51
-lastUpdated: 2026-11-15T18:29:03.519Z
+version: 52
+lastUpdated: 2026-11-15T19:44:51.079Z
 sourceLang: en
-contentHash: 3d2993c6d2c70e62
-codeVerified: 2026-11-15T18:29:03.519Z
-codeVerifiedHash: 3d2993c6d2c70e62
-codeVerifiedClaims: 580
+contentHash: a9ae2ea121d40a47
+codeVerified: 2026-11-15T19:44:51.079Z
+codeVerifiedHash: a9ae2ea121d40a47
+codeVerifiedClaims: 590
 ---
 
 # Hono API Specification — LumiBase
@@ -673,6 +673,7 @@ active `siteId`.
 | `DELETE` | `/api/v1/items/:collection/:id` | Delete item — **409 if blocked by dependents** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | List records that reference this item |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Batch-resolve a relation's dependents |
+| `POST` | `/api/v1/items/:collection/:id/duplicate` | Save-as-copy: a `draft` copy with unique fields suffixed (`relations` in the body; see below) |
 | `POST` | `/api/v1/items/:collection/:id/move` | Move an item and its subtree in a tree collection; list with `?tree=children\|subtree\|ancestors` ([Hierarchical collections](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | List revisions |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Revert to revision |
@@ -733,6 +734,45 @@ created; missing `create` (or `update` for `upsert`) permission is `403`. See
 The default is unchanged, so existing clients keep receiving `meta.total`.
 The `@lumibase/sdk` `readItems` accepts the same `meta` option.
 
+**Publication state, cohorts and copies (epic #668).**
+
+- **Publication stamps (#687).** Every item carries `firstPublishedAt` (set by
+  the first publish, never moved), `publishedAt` (the most recent publish, kept
+  on unpublish) and `hasUnpublishedChanges`. A write is a *publish* when the
+  item becomes `published`, or when the body sends `status: "published"`
+  explicitly (a re-publish). Editing the data of an item that has been
+  published sets `hasUnpublishedChanges: true`; the next publish clears it. A
+  no-op save changes nothing. `GET /items/:collection?modifiedSincePublish=true`
+  lists only modified items. GraphQL exposes them as `_firstPublishedAt`,
+  `_publishedAt` and `_hasUnpublishedChanges`.
+- **Cohorts (#688).** `GET /items/:collection` and `GET /items/:collection/:id`
+  accept `publicationState=live|preview|all`: `live` = `published` and inside
+  the publish window, `preview` = `draft` + `published`, `all` = no cohort
+  filter. Nested relation expansion (`fields=rel.*`, `deep`) follows the same
+  cohort. Anonymous and frontend-realm callers are always served `live`,
+  whatever they ask for. Without the parameter the behaviour is unchanged
+  (RBAC alone decides). An unknown value is `400 VALIDATION`. GraphQL list and
+  `_by_id` fields take the same `publicationState` argument; nested relations
+  follow it.
+- **Duplicate (#689).** `POST /items/:collection/:id/duplicate` with an
+  optional body `{ relations?: "reference"|"deep"|"none", translations?: boolean,
+  locale?: string, overrides?: object }` creates a `draft` copy through the
+  normal create path (needs `read` on the source and `create` on the
+  collection). Unique string fields (and `slug`) get a `-copy`, `-copy-2`, …
+  suffix; other unique values are dropped. `reference` (default) copies m2m
+  links, `deep` also copies one level of o2m children, `none` copies the item
+  alone. `translations: false` keeps only `locale` (default: the site default
+  locale) of `translatable-text` fields. Response `201 { data, meta: { sourceId,
+  related } }`; an `item_duplicated` audit entry names the source.
+- **Skipping revisions (#693).** `PATCH`/`PUT ?saveRevision=false` writes the
+  item without a revision row (autosave, machine writes). Agent-authored writes
+  always record their revision (provenance). A collection can cap its history
+  with `meta.revisionRetention: { maxRevisions?, maxAgeDays? }`; an hourly
+  sweep prunes older revisions but always keeps each item's newest revision,
+  staged revisions, revisions pinned by a release and agent revisions.
+
+See [Editorial UX](../features/editorial-ux.md).
+
 **Optional headers:**
 - `X-Lumi-Draft: true` — fetch draft version
 - `X-Lumi-Locale: vi` — apply translation server-side
@@ -765,6 +805,7 @@ editorial gate, validation, permissions and hooks all apply.
 | `GET` | `/api/v1/releases` | List releases (`?status=&page=&limit=`) |
 | `GET` | `/api/v1/releases/:id` | Release detail + its items |
 | `PATCH` | `/api/v1/releases/:id` | Update meta, `addItems`/`removeItems`, set `publishAt` |
+| `GET` | `/api/v1/releases/:id/validate` | Pre-publish validation summary (#692) |
 | `POST` | `/api/v1/releases/:id/publish` | Publish now (manual) |
 | `DELETE` | `/api/v1/releases/:id` | Delete release (items cascade) |
 
@@ -797,6 +838,17 @@ partial/failed publish still returns **HTTP 200** with the outcomes.
 (404), `REVISION_STAGED` (409, pinning an uncommitted revision),
 `VALIDATION_FAILED` (422, incl. `publishAt` in the past). Per-item publish
 blockers surface as outcome reasons `EDITORIAL_GATE_REQUIRED` / `ITEM_DELETED`.
+
+**Validation summary (#692).** `GET /releases/:id/validate` validates, in full
+(required fields and form-layout conditions included), every item the release
+would publish — the pinned revision's snapshot when there is one. Response:
+`{ data: { valid, checked, items: [{ collection, itemId, issues: [{ field, code, message }] }] } }`;
+`items` lists only items with problems, and `field` is the dotted path of the
+offending field. Publishing runs the same check first: an invalid item never
+publishes and gets the outcome reason `VALIDATION_FAILED` with its `issues`. In
+`all_or_nothing` that fails the whole release; in `best_effort` the valid items
+still publish. Studio's **Releases** page shows the summary with links that open
+the item editor at the field (`#field=<name>`).
 
 Scheduled releases publish via the shared `content-scheduler` tick
 (`sweepDueReleases`) — idempotent and `maintenanceWindow`-aware.

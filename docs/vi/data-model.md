@@ -1,13 +1,13 @@
 ---
-version: 18
-lastUpdated: 2026-11-15T08:14:23.698Z
+version: 19
+lastUpdated: 2026-11-15T19:44:53.851Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a569ee25f43387da
+sourceHash: 70c87403720cf7dc
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T18:28:59.126Z
-codeVerifiedHash: a569ee25f43387da
+codeVerified: 2026-11-15T19:44:53.851Z
+codeVerifiedHash: 70c87403720cf7dc
 codeVerifiedClaims: 20
 ---
 
@@ -173,6 +173,9 @@ Compiled schema phơi ra các system field được sinh tự động, bên cạ
 | `userCreated`, `userUpdated` | text FK users |
 | `publishAt`, `unpublishAt` | timestamp nullable | Khung thời gian scheduling (Req 7); worker reconcile đổi status, delivery filter theo khung này. |
 | `editorialState` | text nullable | Trạng thái human review (Req 9): `draft`/`in_review`/`approved`/`published`/`rejected`. Khác với veto-window của AI. |
+| `firstPublishedAt` | timestamp nullable | Lần xuất bản đầu tiên (#687, migration 0035). Gán một lần, xuất bản lại không làm đổi. |
+| `publishedAt` | timestamp nullable | Lần xuất bản gần nhất (#687). Giữ nguyên khi item bị gỡ xuất bản. |
+| `hasUnpublishedChanges` | boolean, default false | Dữ liệu đã bị sửa kể từ lần xuất bản gần nhất (#687); lần xuất bản kế tiếp xoá cờ. Index một phần `items_unpublished_changes_idx (siteId, collectionId) WHERE has_unpublished_changes AND deleted_at IS NULL`. |
 | `dekWrapped` | text nullable | Chế độ envelope (Req 4.5): DEK theo từng record, được bọc bởi KEK. Non-null ⇒ các field encrypted của record này dùng DEK riêng; null ⇒ chế độ shared-key. Việc đọc là tự-mô-tả từ cột này. |
 | `createdAt`, `updatedAt` | timestamp |
 | `deletedAt` | timestamp nullable |
@@ -181,6 +184,7 @@ Index: `(siteId, collectionId, status)`, GIN trên `data`, `(siteId, status, pub
 
 ### `revisions`
 - `id`, `siteId`, `itemId`, `collectionId`, `delta jsonb`, `parentId`, `userId`, `createdAt`.
+- `PATCH ?saveRevision=false` không ghi revision (#693); `meta.revisionRetention: { maxRevisions?, maxAgeDays? }` của collection cho phép lượt quét `revision-retention` mỗi giờ xoá dòng cũ (không bao giờ xoá revision mới nhất của một item, revision đang staged, revision được release ghim hay revision của agent).
 
 ### `releases` (Content Releases)
 - Một bundle publish xuyên collection. `id`, `siteId`, `name`, `description`, `status` (`draft`|`scheduled`|`published`|`failed`|`partially_failed`), `atomicityMode` (`all_or_nothing`|`best_effort`), `publishAt`, `publishedAt`, `maintenanceWindow jsonb`, `statusReason`, `createdBy → users.id (set null)`, `createdAt`, `updatedAt`.

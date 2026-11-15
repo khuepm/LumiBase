@@ -19,7 +19,7 @@ import {
 } from './publication-state';
 import { and, asc, desc, eq, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
-import { validateItem } from './validation';
+import { validateItem, type ValidationIssue } from './validation';
 import { applyHiddenValuePolicy, parseFormLayout } from '@lumibase/contracts/form-layout';
 import { hasBlocksFields, resolveBlockTemplates } from './blocks';
 import {
@@ -3006,6 +3006,29 @@ export class ItemService {
   }
 
   /** Lists pinned fields for an item. */
+  /**
+   * Full validation of an item as it would be published (#692): its stored
+   * data — or `data`, e.g. a release's pinned snapshot — against the
+   * collection schema, required fields and form-layout conditions included.
+   * The item must be readable by the caller. Returns the issues; `[]` = valid.
+   */
+  async validateForPublish(
+    collectionName: string,
+    id: string,
+    data?: Record<string, unknown>,
+  ): Promise<ValidationIssue[]> {
+    const row = (await this.detail(collectionName, id)) as ItemRow;
+    const subject = data ?? row.data ?? {};
+    const compiled = await this.schemaService.getCompiled(collectionName);
+    if (!compiled) return [];
+    const layout = parseFormLayout(compiled.meta?.formLayout);
+    const blockTemplates = hasBlocksFields(compiled.fields)
+      ? await resolveBlockTemplates(compiled.fields, (name) => this.schemaService.getCompiled(name))
+      : undefined;
+    const result = validateItem(compiled.fields, subject, { partial: false, layout, context: subject, blockTemplates });
+    return result.ok ? [] : result.issues;
+  }
+
   async listPins(collectionName: string, id: string): Promise<{ pinnedFields: string[] }> {
     const coll = await this.resolveCollection(collectionName);
     await this.perm(collectionName, 'read');
