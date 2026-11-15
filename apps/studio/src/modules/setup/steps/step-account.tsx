@@ -404,13 +404,13 @@ export function StepAccount({ onSubmitted }: StepAccountProps) {
             ]
               .filter(Boolean)
               .join(' ')}
-            className={inputClass(Boolean(errors.password), 'pr-10')}
+            className={inputClass(Boolean(errors.password), 'pe-10')}
             {...register('password')}
           />
           <button
             type="button"
             onClick={() => setShowPassword((v) => !v)}
-            className="absolute inset-y-0 right-2 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
+            className="absolute inset-y-0 end-2 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
             aria-label={showPassword ? 'Hide password' : 'Show password'}
             tabIndex={-1}
           >
@@ -460,13 +460,13 @@ export function StepAccount({ onSubmitted }: StepAccountProps) {
             aria-describedby={
               errors.confirmPassword ? `${confirmId}-error` : undefined
             }
-            className={inputClass(Boolean(errors.confirmPassword), 'pr-10')}
+            className={inputClass(Boolean(errors.confirmPassword), 'pe-10')}
             {...register('confirmPassword')}
           />
           <button
             type="button"
             onClick={() => setShowConfirm((v) => !v)}
-            className="absolute inset-y-0 right-2 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
+            className="absolute inset-y-0 end-2 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
             aria-label={
               showConfirm ? 'Hide confirm password' : 'Show confirm password'
             }
@@ -649,7 +649,7 @@ function PasswordStrengthMeter({
           ))}
         </div>
         <span
-          className={`min-w-[5.5rem] text-right text-xs ${insufficient ? 'text-red-600' : 'text-emerald-700'
+          className={`min-w-[5.5rem] text-end text-xs ${insufficient ? 'text-red-600' : 'text-emerald-700'
             }`}
         >
           {label}

@@ -16,6 +16,12 @@ export interface InterfaceProps<T = unknown> {
   disabled?: boolean;
   /** Notify parent of a new value. */
   onChange: (next: T | null) => void;
+  /**
+   * Content locale of the value, when the caller knows it (e.g. one locale of
+   * a translatable field). Text editors use it for `dir`/`lang` via
+   * `contentDirProps` (#761); without it they fall back to `dir="auto"`.
+   */
+  locale?: string;
 }
 
 /** Component signature for everything in `interfaces/registry.tsx`. */

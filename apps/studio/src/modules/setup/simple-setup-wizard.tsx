@@ -475,14 +475,14 @@ function EssentialsStep({
               type={showPassword ? 'text' : 'password'}
               value={account.password}
               onChange={updateAccount('password')}
-              className={inputClass(Boolean(errors.password), 'pr-10')}
+              className={inputClass(Boolean(errors.password), 'pe-10')}
               autoComplete="new-password"
             />
             <button
               type="button"
               onClick={() => setShowPassword((value) => !value)}
               aria-label={showPassword ? 'Hide password' : 'Show password'}
-              className="absolute inset-y-0 right-0 inline-flex w-10 items-center justify-center text-muted-foreground transition hover:text-foreground"
+              className="absolute inset-y-0 end-0 inline-flex w-10 items-center justify-center text-muted-foreground transition hover:text-foreground"
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4" aria-hidden="true" />
@@ -521,14 +521,14 @@ function EssentialsStep({
               type={showConfirmPassword ? 'text' : 'password'}
               value={account.confirmPassword}
               onChange={updateAccount('confirmPassword')}
-              className={inputClass(Boolean(errors.confirmPassword), 'pr-10')}
+              className={inputClass(Boolean(errors.confirmPassword), 'pe-10')}
               autoComplete="new-password"
             />
             <button
               type="button"
               onClick={() => setShowConfirmPassword((value) => !value)}
               aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
-              className="absolute inset-y-0 right-0 inline-flex w-10 items-center justify-center text-muted-foreground transition hover:text-foreground"
+              className="absolute inset-y-0 end-0 inline-flex w-10 items-center justify-center text-muted-foreground transition hover:text-foreground"
             >
               {showConfirmPassword ? (
                 <EyeOff className="h-4 w-4" aria-hidden="true" />
@@ -579,7 +579,7 @@ function EssentialsStep({
         <button
           type="button"
           onClick={onAdvancedSetup}
-          className="text-left text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          className="text-start text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
         >
           Continue in advanced setup
         </button>

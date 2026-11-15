@@ -54,3 +54,63 @@
     display: none;
   }
 }
+
+/*
+ * RTL (#761): mirror icons whose meaning is a direction along the reading
+ * axis — back/forward, previous/next, expand-into, send, sign in/out, the
+ * sidebar collapse toggle. `<html dir="rtl">` is set from the UI language.
+ *
+ * Not mirrored, on purpose: logos, media, checkmarks, clocks, external-link,
+ * text-alignment icons (they name a physical side) and up/down arrows. An icon
+ * that carries its own rotation (`rotate-90` for an expanded tree chevron) is
+ * left alone, since mirroring would compose with the rotation and point it the
+ * wrong way. Opt a single icon out with `rtl-no-flip`, or opt a custom SVG in
+ * with `rtl-flip`. Code editors and flow canvases render `dir="ltr"`.
+ */
+@layer base {
+  [dir='rtl']
+    :is(
+      .lucide-chevron-left,
+      .lucide-chevron-right,
+      .lucide-chevrons-left,
+      .lucide-chevrons-right,
+      .lucide-chevron-first,
+      .lucide-chevron-last,
+      .lucide-arrow-left,
+      .lucide-arrow-right,
+      .lucide-arrow-big-left,
+      .lucide-arrow-big-right,
+      .lucide-move-left,
+      .lucide-move-right,
+      .lucide-panel-left-open,
+      .lucide-panel-left-close,
+      .lucide-panel-right-open,
+      .lucide-panel-right-close,
+      .lucide-log-in,
+      .lucide-log-out,
+      .lucide-send,
+      .lucide-send-horizontal,
+      .lucide-reply,
+      .lucide-forward,
+      .lucide-undo,
+      .lucide-undo-2,
+      .lucide-redo,
+      .lucide-redo-2,
+      .lucide-list-indent-increase,
+      .lucide-list-indent-decrease,
+      .rtl-flip
+    ):not([class*='rotate-']):not(.rtl-no-flip) {
+    transform: scaleX(-1);
+  }
+
+  /* Code blocks (JSON previews, generated types, snippets) read LTR in any UI. */
+  [dir='rtl'] pre {
+    direction: ltr;
+    text-align: left;
+  }
+
+  /* URLs, e-mail addresses and phone numbers are LTR strings in any UI. */
+  [dir='rtl'] :is(input[type='url'], input[type='email'], input[type='tel']) {
+    direction: ltr;
+  }
+}

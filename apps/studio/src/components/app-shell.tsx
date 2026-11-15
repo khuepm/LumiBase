@@ -32,6 +32,7 @@ import { SearchPalette } from '@/components/search-palette';
 import { clearActiveToken, getApiClient, hasActiveToken, logout } from '@/lib/api';
 import { VersionInfoFooter } from '@/components/version-info-footer';
 import { SiteLanguageSync } from '@/components/site-language';
+import { UiLanguagePicker } from '@/components/ui-language-picker';
 import { getAdminBase } from '@/lib/admin-base';
 import { getEnvironmentBadge } from '@/lib/environment-badge';
 import { useInboxData } from '@/modules/mission-control/use-inbox';
@@ -127,7 +128,7 @@ function MissionControlBadge() {
   return (
     <span
       aria-label={`${counts.total} exceptions awaiting attention`}
-      className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
+      className="absolute -end-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
     >
       {counts.total > 9 ? '9+' : counts.total}
     </span>
@@ -289,7 +290,7 @@ export function AppShell({ children }: AppShellProps) {
       <a
         href="#main-content"
         className={cn(
-          'absolute left-2 top-2 z-50 rounded bg-primary px-3 py-1.5 text-sm font-medium',
+          'absolute start-2 top-2 z-50 rounded bg-primary px-3 py-1.5 text-sm font-medium',
           'text-primary-foreground shadow-md',
           'translate-y-[-200%] transition-transform focus:translate-y-0',
         )}
@@ -301,7 +302,7 @@ export function AppShell({ children }: AppShellProps) {
           Bottom Nav — app-shell spec §1.2) */}
       <nav
         aria-label="Module navigation"
-        className={cn('hidden shrink-0 flex-col border-r bg-muted/30 py-4 md:flex', expandedNav ? 'w-56' : 'w-16')}
+        className={cn('hidden shrink-0 flex-col border-e bg-muted/30 py-4 md:flex', expandedNav ? 'w-56' : 'w-16')}
       >
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onModuleDragEnd}>
           <SortableContext items={sidebarModules.map((module) => module.id)} strategy={verticalListSortingStrategy}>
@@ -354,6 +355,7 @@ export function AppShell({ children }: AppShellProps) {
                 ⌘P
               </kbd>
             </button>
+            <UiLanguagePicker />
             <ConnectionStatusDot />
             <ReleaseUpdateNotice compact />
             <NotificationsPanel />

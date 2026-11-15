@@ -105,7 +105,7 @@ export function RawJsonTab({ collectionName }: RawJsonTabProps) {
 
   return (
     <div className="space-y-3">
-      <div className="overflow-hidden rounded-md border">
+      <div className="overflow-hidden rounded-md border" dir="ltr">
         <Editor
           height="420px"
           defaultLanguage="json"

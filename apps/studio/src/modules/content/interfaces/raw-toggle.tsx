@@ -66,7 +66,7 @@ export function RawToggle({ children, value, onChange, disabled }: RawToggleProp
       </div>
       {raw ? (
         <div className="space-y-1">
-          <div className="overflow-hidden rounded-md border">
+          <div className="overflow-hidden rounded-md border" dir="ltr">
             <Editor
               height="20vh"
               defaultLanguage="json"

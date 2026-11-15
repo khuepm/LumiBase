@@ -78,7 +78,7 @@ export function DeveloperTypesPage() {
           </p>
         )}
         {code && (
-          <div className="overflow-hidden rounded-md border">
+          <div className="overflow-hidden rounded-md border" dir="ltr">
             <Editor
               height="500px"
               defaultLanguage="typescript"

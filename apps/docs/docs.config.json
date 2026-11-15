@@ -66,6 +66,7 @@
           "features/site-skills",
           "features/external-action-tools",
           "features/draft-review",
+          "features/studio-rtl-layout",
           "features/jev-benchmark",
           "features/jev-draft-review-pilot",
           "features/jev-automation",

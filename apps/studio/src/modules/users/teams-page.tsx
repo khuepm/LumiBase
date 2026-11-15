@@ -162,7 +162,7 @@ function TeamEditorDialog({ team, onClose }: { team: TeamResource | null; onClos
               disabled={!name || mutation.isPending}
               className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
             >
-              <Save className="mr-2 h-4 w-4 inline" />
+              <Save className="me-2 h-4 w-4 inline" />
               {mutation.isPending ? 'Saving…' : 'Save'}
             </button>
           </div>
@@ -254,7 +254,7 @@ function TeamMembersDialog({ team, onClose }: { team: TeamResource; onClose: () 
                     <td className="px-4 py-3 font-medium">
                       {u ? (u.firstName ? `${u.firstName} ${u.lastName}` : u.email) : m.userId}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-end">
                       <button
                         type="button"
                         onClick={() => {

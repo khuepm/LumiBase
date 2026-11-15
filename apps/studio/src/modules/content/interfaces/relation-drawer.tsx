@@ -166,7 +166,7 @@ function ExistingPicker({
               <button
                 type="button"
                 onClick={() => toggle(row.id)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
+                className="flex w-full items-center gap-2 px-3 py-2 text-start text-sm hover:bg-accent"
               >
                 {multiple && (
                   <span

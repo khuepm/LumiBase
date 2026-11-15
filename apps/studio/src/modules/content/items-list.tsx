@@ -198,7 +198,7 @@ export function ItemsListPage() {
             </Link>
           )}
           {/* Live Mode Toggle */}
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground mr-2 cursor-pointer">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground me-2 cursor-pointer">
             <input
               type="checkbox"
               checked={liveMode}
@@ -321,7 +321,7 @@ export function ItemsListPage() {
 
       <div className="overflow-hidden rounded-lg border">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+          <thead className="bg-muted/40 text-start text-xs uppercase text-muted-foreground">
             <tr>
               <th className="w-8 px-3 py-2">
                 <input

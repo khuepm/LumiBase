@@ -89,7 +89,7 @@ export function SettingsLayout({ children }: SettingsLayoutProps) {
     <div className="-m-4 flex h-full flex-col sm:-m-6 sm:flex-row">
       <aside
         aria-label="Settings navigation"
-        className="max-h-64 w-full shrink-0 overflow-y-auto border-b bg-muted/20 px-3 py-3 sm:max-h-none sm:w-52 sm:border-b-0 sm:border-r sm:py-6"
+        className="max-h-64 w-full shrink-0 overflow-y-auto border-b bg-muted/20 px-3 py-3 sm:max-h-none sm:w-52 sm:border-b-0 sm:border-e sm:py-6"
       >
         <button type="button" className="flex w-full items-center justify-between px-2 text-sm font-medium sm:hidden"
           aria-expanded={mobileNavigationOpen} aria-controls="settings-navigation-links"

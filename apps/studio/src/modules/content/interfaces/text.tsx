@@ -1,3 +1,4 @@
+import { contentDirProps } from '@/lib/text-direction';
 import { readOptions, type InterfaceComponent } from './types';
 
 interface TextOptions {
@@ -11,11 +12,13 @@ export const TextInterface: InterfaceComponent<string> = ({
   field,
   disabled,
   onChange,
+  locale,
 }) => {
   const opts = readOptions<TextOptions>(field);
   return (
     <input
       type="text"
+      {...contentDirProps(locale)}
       value={value ?? ''}
       placeholder={opts.placeholder}
       maxLength={opts.maxLength}
@@ -32,10 +35,12 @@ export const TextMultilineInterface: InterfaceComponent<string> = ({
   field,
   disabled,
   onChange,
+  locale,
 }) => {
   const opts = readOptions<TextOptions & { rows?: number }>(field);
   return (
     <textarea
+      {...contentDirProps(locale)}
       value={value ?? ''}
       placeholder={opts.placeholder}
       maxLength={opts.maxLength}

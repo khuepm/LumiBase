@@ -136,7 +136,7 @@ function RepeaterRow({
         <button
           type="button"
           onClick={onToggle}
-          className="flex flex-1 items-center gap-2 text-left text-sm"
+          className="flex flex-1 items-center gap-2 text-start text-sm"
         >
           <span className={cn('text-xs font-mono text-muted-foreground')}>#{idx + 1}</span>
           <span className="truncate">{title}</span>
@@ -179,8 +179,8 @@ function RepeaterRow({
               <div key={sf.name}>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
                   {sf.name}
-                  {sf.required && <span className="ml-1 text-destructive">*</span>}
-                  <span className="ml-2 text-[10px] uppercase">
+                  {sf.required && <span className="ms-1 text-destructive">*</span>}
+                  <span className="ms-2 text-[10px] uppercase">
                     {sf.interface || sf.type}
                   </span>
                 </label>

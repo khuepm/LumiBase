@@ -134,7 +134,7 @@ export function BulkRawEditor({ collection, ids, onClose, onSaved }: BulkRawEdit
           </div>
         )}
 
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden" dir="ltr">
           {allLoaded ? (
             <Editor
               height="100%"

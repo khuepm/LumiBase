@@ -501,7 +501,7 @@ export function FlowEditor() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left Sidebar: settings + registry-driven palette */}
-        <div className="w-64 border-r bg-muted/10 p-4 flex flex-col gap-4 overflow-y-auto">
+        <div className="w-64 border-e bg-muted/10 p-4 flex flex-col gap-4 overflow-y-auto">
           <div>
             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Flow settings</h3>
             <div className="space-y-3">
@@ -615,7 +615,7 @@ export function FlowEditor() {
                       key={op.key}
                       onClick={() => addNode(op.key)}
                       title={op.description}
-                      className="flex items-center justify-between rounded-lg border bg-background p-2.5 hover:bg-accent text-left group transition-all"
+                      className="flex items-center justify-between rounded-lg border bg-background p-2.5 hover:bg-accent text-start group transition-all"
                     >
                       <div className="flex items-center gap-2">
                         <div className={`flex h-6 w-6 items-center justify-center rounded ${pres.color}`}>
@@ -633,7 +633,8 @@ export function FlowEditor() {
         </div>
 
         {/* Canvas */}
-        <div className="flex-1 relative bg-muted/5">
+        {/* The flow canvas is a diagram with physical left/right handles: always LTR (#761). */}
+        <div className="flex-1 relative bg-muted/5" dir="ltr">
           <ReactFlow
             nodes={decoratedNodes}
             edges={edges}
@@ -652,7 +653,7 @@ export function FlowEditor() {
         </div>
 
         {/* Right Sidebar: node config / run history */}
-        <div className="w-80 border-l bg-background p-4 overflow-y-auto flex flex-col gap-4">
+        <div className="w-80 border-s bg-background p-4 overflow-y-auto flex flex-col gap-4">
           <div className="flex items-center gap-1 border-b pb-2">
             <button
               type="button"

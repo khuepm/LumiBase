@@ -202,7 +202,7 @@ export function NotificationsSettingsPage() {
       {/* 3. Guide */}
       <section className="rounded-lg border p-4">
         <h2 className="mb-2 text-sm font-semibold">How to connect the frontend</h2>
-        <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground">
+        <ol className="list-decimal space-y-1.5 ps-5 text-sm text-muted-foreground">
           <li>
             Ensure the deployment has VAPID keys set (see Server check above). Generate a pair with{' '}
             <code className="rounded bg-muted px-1 font-mono text-xs">

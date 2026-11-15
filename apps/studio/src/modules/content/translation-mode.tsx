@@ -1,4 +1,5 @@
 import type { FieldResource, TmSource } from '@lumibase/sdk';
+import { contentDirProps } from '@/lib/text-direction';
 import { TmSuggestPopover } from './tm-suggest-popover';
 import {
   completionPct,
@@ -79,6 +80,7 @@ export function TranslationMode({
                   {sourceLocale} (source)
                 </span>
                 <textarea
+                  {...contentDirProps(sourceLocale)}
                   value={source}
                   readOnly
                   rows={2}
@@ -91,6 +93,7 @@ export function TranslationMode({
                   {targetLocale} (target)
                 </span>
                 <textarea
+                  {...contentDirProps(targetLocale)}
                   value={target}
                   readOnly={readOnly}
                   onChange={(e) => setTarget(field, e.target.value, 'human')}

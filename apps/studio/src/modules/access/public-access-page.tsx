@@ -241,8 +241,8 @@ function RealmSection({
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-muted-foreground">
-                <th className="py-2 pr-4 font-medium">Collection</th>
+              <tr className="border-b text-start text-muted-foreground">
+                <th className="py-2 pe-4 font-medium">Collection</th>
                 {realm.allowedActions.map((action) => (
                   <th key={action} className="px-3 py-2 font-medium">
                     {ACTION_LABEL[action]}
@@ -254,10 +254,10 @@ function RealmSection({
             <tbody>
               {collections.map((collection) => (
                 <tr key={collection.name} className="border-b last:border-0">
-                  <td className="py-2 pr-4">
+                  <td className="py-2 pe-4">
                     <span className="font-medium">{collection.label ?? collection.name}</span>
                     {collection.label && (
-                      <span className="ml-1.5 text-xs text-muted-foreground">
+                      <span className="ms-1.5 text-xs text-muted-foreground">
                         {collection.name}
                       </span>
                     )}

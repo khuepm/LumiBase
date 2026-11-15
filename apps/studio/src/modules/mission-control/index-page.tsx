@@ -64,7 +64,7 @@ function StatCard({
     </>
   );
   const cls =
-    'flex w-full items-center gap-3 rounded-lg border bg-background p-3 text-left hover:bg-muted/40';
+    'flex w-full items-center gap-3 rounded-lg border bg-background p-3 text-start hover:bg-muted/40';
   return to ? (
     <Link to={to as never} className={cls}>
       {body}
