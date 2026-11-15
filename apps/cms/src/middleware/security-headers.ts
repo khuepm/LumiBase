@@ -36,7 +36,10 @@ export const withSecurityHeaders = (): MiddlewareHandler<AppEnv> => async (c, ne
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('X-Frame-Options', 'DENY');
   c.header('Referrer-Policy', 'no-referrer');
-  c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  // `geolocation=(self)`: the Studio (served from this origin in Docker) offers
+  // "Use my location" on geopoint fields (#746). Same-origin only — no frame or
+  // third-party origin gets it, and the browser still asks the person.
+  c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self), payment=(), usb=()');
   c.header('Cross-Origin-Opener-Policy', 'same-origin');
   c.header('Cross-Origin-Resource-Policy', 'same-site');
 };

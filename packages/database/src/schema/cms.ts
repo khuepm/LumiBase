@@ -196,9 +196,10 @@ export const items = pgTable(
     data: jsonb('data').default({}).notNull(),
     /**
      * Optimistic-concurrency counter (content-environments Phase A, migration
-     * 0034). Incremented by every write that changes the item's logical
-     * content: `data`, `status`, pins, soft delete, crypto-shred. Key-rotation
-     * workers that only re-encrypt leave it alone. Exposed as the strong ETag
+     * 0035). Incremented by every write that changes the item's logical
+     * content: `data`, `status`, pins, soft delete (incl. tree cascade),
+     * crypto-shred, moving the item in a tree. Descendant path rebases, sibling
+     * sort renumbering and key-rotation re-encryption leave it alone. Exposed as the strong ETag
      * of `GET /items/:collection/:id`; `If-Match` compares against it.
      */
     version: integer('version').default(0).notNull(),
@@ -208,6 +209,16 @@ export const items = pgTable(
      */
     pinnedFields: jsonb('pinned_fields').default([]).notNull(),
     sort: integer('sort').default(0).notNull(),
+    /**
+     * Hierarchical collections (#749). Only written for collections with
+     * `meta.tree.enabled`; NULL/NULL reads as a root. `path` is the
+     * materialised ancestor chain including the item itself (`/root/child/`),
+     * maintained server-side by ItemService (create/move/delete) under a
+     * per-collection advisory lock. No FK on `parent_id`: integrity is kept by
+     * the service and soft-deleted parents keep their rows.
+     */
+    parentId: text('parent_id'),
+    path: text('path'),
     /**
      * Content scheduling window (Req 7). When set, the Scheduler publishes at
      * `publishAt` and unpublishes at `unpublishAt`; delivery filters to the
@@ -256,6 +267,14 @@ export const items = pgTable(
     deliverIdx: index('items_deliver_idx')
       .on(t.siteId, t.collectionId, t.status, t.publishAt, t.unpublishAt)
       .where(sql`${t.deletedAt} is null`),
+    /** Tree children + sibling order (#749, migration 0034_item_tree). */
+    treeParentIdx: index('items_tree_parent_idx')
+      .on(t.siteId, t.collectionId, t.parentId, t.sort)
+      .where(sql`${t.deletedAt} is null`),
+    /** Tree subtree prefix scans (#749, migration 0034_item_tree). */
+    treePathIdx: index('items_tree_path_idx')
+      .on(t.siteId, t.collectionId, t.path.op('text_pattern_ops'))
+      .where(sql`${t.path} is not null`),
   }),
 );
 

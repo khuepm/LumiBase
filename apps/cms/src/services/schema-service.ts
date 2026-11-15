@@ -12,11 +12,21 @@ import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 import type { CacheProvider, EdgeCacheProvider, QueueProvider } from '@lumibase/runtime';
 import { createSwrCache, type SwrCache } from '@lumibase/runtime';
 import type { CdcOperation, CdcResource, FieldClassification } from '@lumibase/contracts';
+import { validateFieldOptions } from '@lumibase/contracts/schemas';
+import { validateZonedDateTimeOptions } from '@lumibase/contracts/field';
+import {
+  parseFormLayout,
+  renameFieldInLayout,
+  validateFormLayout,
+  type FormLayout,
+} from '@lumibase/contracts/form-layout';
 import { invalidateDeliverTag } from './content-invalidation';
+import { blocksFieldConfigProblems } from './blocks';
 import { bumpSchemaVersion } from './schema-version';
 import { AuditLogger } from '../modules/audit/logger';
 import { OutboxWriter, type OutboxActor } from '../modules/cdc/change-feed';
 import { CDC_DISPATCH_QUEUE } from '../modules/cdc/change-feed/dispatcher';
+import { validateTreeMeta } from './tree-service';
 
 /**
  * SchemaService — owns the no-code collection/field/relation lifecycle.
@@ -271,6 +281,12 @@ export class SchemaServiceError extends Error {
   }
 }
 
+/** Reject a malformed `meta.tree` (hierarchical collections, #749). */
+function assertTreeMeta(meta: unknown): void {
+  const problem = validateTreeMeta(meta);
+  if (problem) throw new SchemaServiceError('INVALID_TREE_CONFIG', problem, 400);
+}
+
 /**
  * Enforce that `pii|phi` fields are encrypted (Req 5.2). Throws
  * CLASSIFICATION_REQUIRES_ENCRYPTION (HTTP 422) otherwise.
@@ -285,6 +301,53 @@ export function assertClassificationEncryptable(
       `Fields classified "${classification}" must be encrypted.`,
       422,
     );
+  }
+}
+
+/**
+ * #751 — validate `options.allowClear` / `minLength` / `maxLength` / `slug`
+ * against the field's type and interface. Every schema write path (REST
+ * field routes, schema apply, config-as-code, MCP) goes through
+ * create/update/renameField, so this is the single schema-side chokepoint.
+ */
+export function assertFieldOptionsValid(field: {
+  name: string;
+  type: string;
+  interface: string;
+  options: unknown;
+  length?: number | null;
+}): void {
+  const issues = validateFieldOptions(field);
+  if (issues.length > 0) {
+    throw new SchemaServiceError(
+      'INVALID_FIELD_OPTIONS',
+      `Field "${field.name}": ${issues.map((i) => `${i.path}: ${i.message}`).join(' ')}`,
+      422,
+    );
+  }
+}
+
+/**
+ * Reject malformed timezone-aware datetime options (#747): `timezone` on a
+ * non-datetime type, an unknown `defaultTimezone`, a bad `disambiguation`.
+ */
+export function assertZonedDateTimeOptions(type: string, options: unknown): void {
+  const message = validateZonedDateTimeOptions(type, options);
+  if (message) throw new SchemaServiceError('INVALID_FIELD_OPTIONS', message, 422);
+}
+
+/**
+ * Validate a `blocks` (dynamic zone, #748) field definition. Throws
+ * INVALID_FIELD_CONFIG (HTTP 422) listing every problem; no-op for other types.
+ */
+export function assertBlocksFieldConfig(input: {
+  type?: string;
+  options?: Record<string, unknown> | null;
+  encrypted?: boolean | null;
+}): void {
+  const problems = blocksFieldConfigProblems(input);
+  if (problems.length > 0) {
+    throw new SchemaServiceError('INVALID_FIELD_CONFIG', `Invalid blocks field: ${problems.join(' ')}`, 422);
   }
 }
 
@@ -427,10 +490,13 @@ export class SchemaService {
 
   async createCollection(input: CollectionInput) {
     ensureName(input.name, 'collection');
+    assertTreeMeta(input.meta);
     assertPrimaryKeyStorageCompatible(
       input.primaryKeyType ?? 'nanoid',
       input.storageMode ?? 'jsonb',
     );
+    // A brand-new collection has no fields yet, so only an empty layout fits.
+    assertMetaFormLayout(input.meta, []);
     const existing = await this.getCollection(input.name);
     if (existing) {
       throw new SchemaServiceError(
@@ -468,10 +534,14 @@ export class SchemaService {
     if (!current) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${name}" not found.`, 404);
     }
+    assertTreeMeta(patch.meta);
     assertPrimaryKeyStorageCompatible(
       (patch.primaryKeyType ?? current.primaryKeyType) as PrimaryKeyType,
       (patch.storageMode ?? current.storageMode) as StorageMode,
     );
+    if (hasMetaFormLayout(patch.meta)) {
+      assertMetaFormLayout(patch.meta, (await this.listFields(name)).map((f) => f.name));
+    }
     const [row] = await this.deps.db
       .update(collections)
       .set({ ...patch, updatedAt: new Date() })
@@ -524,6 +594,50 @@ export class SchemaService {
 
   // ---------- Fields ----------
 
+  // ---------- Form layout (#750) ----------
+
+  /** The collection's form layout, or `null` when none (or unreadable) is stored. */
+  async getFormLayout(collectionName: string): Promise<FormLayout | null> {
+    const collection = await this.getCollection(collectionName);
+    if (!collection) {
+      throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
+    }
+    return parseFormLayout((collection.meta as Record<string, unknown> | null)?.formLayout);
+  }
+
+  /**
+   * Replace the collection's form layout (`null` removes it). Validated
+   * against the collection's current fields; stored at `meta.formLayout`
+   * with every other meta key preserved.
+   */
+  async setFormLayout(collectionName: string, layout: unknown): Promise<FormLayout | null> {
+    const collection = await this.getCollection(collectionName);
+    if (!collection) {
+      throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
+    }
+    let next: FormLayout | null = null;
+    if (layout !== null && layout !== undefined) {
+      const fieldNames = (await this.listFields(collectionName)).map((f) => f.name);
+      next = checkFormLayout(layout, fieldNames);
+    }
+    const meta = { ...((collection.meta as Record<string, unknown> | null) ?? {}) };
+    if (next) meta.formLayout = next;
+    else delete meta.formLayout;
+    await this.updateCollection(collectionName, { meta });
+    return next;
+  }
+
+  private async renameFieldInStoredLayout(collection: CollectionRow, from: string, to: string) {
+    if (from === to) return;
+    const meta = (collection.meta as Record<string, unknown> | null) ?? {};
+    const layout = parseFormLayout(meta.formLayout);
+    if (!layout) return;
+    await this.deps.db
+      .update(collections)
+      .set({ meta: { ...meta, formLayout: renameFieldInLayout(layout, from, to) }, updatedAt: new Date() })
+      .where(and(scopeSite(collections.siteId, this.deps.siteId), eq(collections.id, collection.id)));
+  }
+
   async listFields(collectionName: string) {
     const collection = await this.getCollection(collectionName);
     if (!collection) {
@@ -561,6 +675,15 @@ export class SchemaService {
   async createField(collectionName: string, input: FieldInput) {
     ensureName(input.name, 'field');
     assertClassificationEncryptable(input.classification, input.encrypted);
+    assertFieldOptionsValid({
+      name: input.name,
+      type: input.type,
+      interface: input.interface,
+      options: input.options,
+      length: input.length,
+    });
+    assertZonedDateTimeOptions(input.type, input.options);
+    assertBlocksFieldConfig(input);
     const collection = await this.getCollection(collectionName);
     if (!collection) {
       throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
@@ -605,6 +728,21 @@ export class SchemaService {
     const nextClassification = input.classification ?? existingClassification;
     const nextEncrypted = input.encrypted ?? existing.encrypted;
     assertClassificationEncryptable(nextClassification, nextEncrypted);
+    if (input.options !== undefined) {
+      assertFieldOptionsValid({
+        name: fieldName,
+        type: input.type ?? existing.type,
+        interface: input.interface ?? existing.interface,
+        options: input.options,
+        length: input.length !== undefined ? input.length : existing.length,
+      });
+    }
+    assertZonedDateTimeOptions(input.type ?? existing.type, input.options ?? existing.options);
+    assertBlocksFieldConfig({
+      type: input.type ?? existing.type,
+      options: input.options ?? (existing.options as Record<string, unknown> | null),
+      encrypted: nextEncrypted,
+    });
     const populatedRows = await this.countFieldDataRows(collection.id, fieldName);
     assertFieldMutationAllowed(
       existing,
@@ -668,6 +806,21 @@ export class SchemaService {
     if (!existing) {
       throw new SchemaServiceError('NOT_FOUND', `Field "${fieldName}" not found.`, 404);
     }
+    if (input.options !== undefined) {
+      assertFieldOptionsValid({
+        name: input.name,
+        type: input.type ?? existing.type,
+        interface: input.interface ?? existing.interface,
+        options: input.options,
+        length: input.length !== undefined ? input.length : existing.length,
+      });
+    }
+    assertZonedDateTimeOptions(input.type ?? existing.type, input.options ?? existing.options);
+    assertBlocksFieldConfig({
+      type: input.type ?? existing.type,
+      options: input.options ?? (existing.options as Record<string, unknown> | null),
+      encrypted: input.encrypted ?? existing.encrypted,
+    });
     const populatedRows = await this.countFieldDataRows(collection.id, fieldName);
     assertFieldMutationAllowed(existing, input, populatedRows, {
       migrationPlan: input.migrationPlan,
@@ -678,6 +831,7 @@ export class SchemaService {
       .set({ ...toFieldDbInput(input), updatedAt: new Date() })
       .where(eq(fields.id, existing.id))
       .returning();
+    await this.renameFieldInStoredLayout(collection, fieldName, input.name);
     await this.invalidate(collection.name);
     // Rename is an update keyed on the new field name.
     await this.emitCdcSchemaEvent(
@@ -945,6 +1099,7 @@ export class SchemaService {
       throw new SchemaServiceError('COLLECTION_RENAME_UNSUPPORTED', 'Schema apply cannot rename collections through this endpoint yet.', 400);
     }
     const { fields: fieldInputs, relations: relationInputs, ...collectionPatch } = input;
+    assertTreeMeta(collectionPatch.meta);
     // Atomic full-schema apply: if the collection doesn't exist yet, create it
     // in the same transaction rather than 404ing. This lets callers PUT a full
     // schema in one call instead of POST-then-PUT.
@@ -982,6 +1137,12 @@ export class SchemaService {
       populatedRowsByField.set(field.name, await this.countFieldDataRows(current.id, field.name));
     }
     const diff = buildSchemaDiff(current, currentFields, currentRelations, input, populatedRowsByField);
+    if (hasMetaFormLayout(collectionPatch.meta)) {
+      assertMetaFormLayout(
+        collectionPatch.meta,
+        (fieldInputs ?? currentFields).map((f) => f.name),
+      );
+    }
 
     const [updated] = await this.deps.db
       .update(collections)
@@ -1886,4 +2047,27 @@ export function relationReferencesField(
     (relation.manyCollection === collectionName && relation.manyField === fieldName) ||
     (relation.oneCollection === collectionName && relation.oneField === fieldName)
   );
+}
+
+/** True when a meta patch carries a non-null `formLayout`. */
+function hasMetaFormLayout(meta: Record<string, unknown> | undefined): meta is Record<string, unknown> {
+  return !!meta && meta.formLayout !== undefined && meta.formLayout !== null;
+}
+
+function assertMetaFormLayout(meta: Record<string, unknown> | undefined, fieldNames: string[]) {
+  if (!hasMetaFormLayout(meta)) return;
+  checkFormLayout(meta.formLayout, fieldNames);
+}
+
+/** Validate a candidate layout or throw `INVALID_FORM_LAYOUT` (400). */
+function checkFormLayout(layout: unknown, fieldNames: string[]): FormLayout {
+  const result = validateFormLayout(layout, fieldNames);
+  if (!result.ok) {
+    throw new SchemaServiceError(
+      'INVALID_FORM_LAYOUT',
+      result.issues.map((i) => `${i.path}: ${i.message}`).join('; '),
+      400,
+    );
+  }
+  return result.layout;
 }

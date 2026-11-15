@@ -26,6 +26,7 @@ export function generateTypes(manifest: TypegenManifest, options: GenerateOption
 }
 
 function generateSingleFile(manifest: TypegenManifest, branded: boolean, importSource: string): string {
+  const known: ReadonlySet<string> = new Set(manifest.collections.map((c) => c.name));
   const imports = [
     `import type { ID, Locale } from '${importSource}';`,
     branded ? `import type { Brand } from '${importSource}';` : '',
@@ -35,11 +36,13 @@ function generateSingleFile(manifest: TypegenManifest, branded: boolean, importS
 
   const collectionInterfaces = manifest.collections
     .map((coll) => {
-      const base = generateCollectionInterface(coll, branded);
+      const base = generateCollectionInterface(coll, branded, known);
       const expanded = generateExpandedType(coll);
       return [base, expanded].filter(Boolean).join('\n\n');
     })
     .join('\n\n');
+
+  const blockTypes = generateBlockTypes(manifest, branded, known);
 
   const collectionsMap = `export interface LumibaseCollections {
 ${manifest.collections.map((c) => `  ${c.name}: ${capitalize(c.name)};`).join('\n')}
@@ -47,7 +50,8 @@ ${manifest.collections.map((c) => `  ${c.name}: ${capitalize(c.name)};`).join('\
 
   const schemaType = 'export type LumibaseSchema = LumibaseCollections;';
 
-  return `${imports}\n\n${collectionInterfaces}\n\n${collectionsMap}\n\n${schemaType}`;
+  const body = [collectionInterfaces, blockTypes, collectionsMap, schemaType].filter(Boolean).join('\n\n');
+  return `${imports}\n\n${body}`;
 }
 
 function generatePerCollection(manifest: TypegenManifest, branded: boolean, importSource: string): string {
@@ -56,10 +60,14 @@ function generatePerCollection(manifest: TypegenManifest, branded: boolean, impo
   return generateSingleFile(manifest, branded, importSource);
 }
 
-function generateCollectionInterface(coll: TypegenManifest['collections'][0], branded: boolean): string {
+function generateCollectionInterface(
+  coll: TypegenManifest['collections'][0],
+  branded: boolean,
+  known: ReadonlySet<string>,
+): string {
   const fields = coll.fields
     .map((f) => {
-      const tsType = mapFieldTypeToTs(f, coll, branded);
+      const tsType = mapFieldTypeToTs(f, coll, branded, known);
       const optional = f.required ? '' : '?';
       const readonly = f.readonly || f.generated ? 'readonly ' : '';
       return `  ${readonly}${f.name}${optional}: ${tsType};`;
@@ -97,7 +105,65 @@ function expandedRelationType(relation: TypegenRelation): string {
   return `Array<{ collection: string; item: unknown }>`;
 }
 
-function mapFieldTypeToTs(field: TypegenField, coll: TypegenCollection, branded: boolean): string {
+/**
+ * Dynamic zones (#748): for every block template referenced by a `blocks`
+ * field, emit `<Template>BlockData` (the template's user fields — block data
+ * carries no system columns) and `<Template>Block`, the union member
+ * discriminated on the literal `type`.
+ */
+function generateBlockTypes(manifest: TypegenManifest, branded: boolean, known: ReadonlySet<string>): string {
+  const byName = new Map(manifest.collections.map((c) => [c.name, c]));
+  const referenced = new Set<string>();
+  for (const coll of manifest.collections) {
+    for (const f of coll.fields) {
+      if (f.type === 'blocks') for (const t of f.allowedBlocks ?? []) referenced.add(t);
+    }
+  }
+  return [...referenced]
+    .filter((name) => byName.has(name))
+    .sort()
+    .map((name) => {
+      const coll = byName.get(name)!;
+      const dataFields = coll.fields
+        .filter((f) => !f.system && !f.primaryKey)
+        .map((f) => {
+          const optional = f.required ? '' : '?';
+          return `  ${f.name}${optional}: ${mapFieldTypeToTs(f, coll, branded, known)};`;
+        })
+        .join('\n');
+      const t = capitalize(name);
+      return `export interface ${t}BlockData {
+${dataFields}
+}
+
+export interface ${t}Block {
+  id: string;
+  type: ${JSON.stringify(name)};
+  data: ${t}BlockData;
+}`;
+    })
+    .join('\n\n');
+}
+
+function blocksUnionType(field: TypegenField, isKnown: (name: string) => boolean): string {
+  const members = (field.allowedBlocks ?? []).map((name) =>
+    isKnown(name)
+      ? `${capitalize(name)}Block`
+      : `{ id: string; type: ${JSON.stringify(name)}; data: Record<string, unknown> }`,
+  );
+  if (members.length === 0) return 'Array<{ id: string; type: string; data: Record<string, unknown> }>';
+  return `Array<${members.join(' | ')}>`;
+}
+
+function mapFieldTypeToTs(
+  field: TypegenField,
+  coll: TypegenCollection,
+  branded: boolean,
+  known: ReadonlySet<string> = new Set(),
+): string {
+  if (field.type === 'blocks') {
+    return nullable(field, blocksUnionType(field, (name) => known.has(name)));
+  }
   if (field.kind === 'm2o') {
     return nullable(field, mapScalarFieldType(field, branded));
   }
@@ -124,7 +190,11 @@ function mapFieldTypeToTs(field: TypegenField, coll: TypegenCollection, branded:
   return nullable(field, field.encrypted ? `${tsType} | '***'` : tsType);
 }
 
+/** Inline shape of a timezone-aware datetime (#747); mirrors `ZonedDateTime`. */
+const ZONED_DATETIME_TS = '{ instant: string; tz: string; offset: string }';
+
 function mapScalarFieldType(field: TypegenField, branded: boolean): string {
+  if (field.timezone) return ZONED_DATETIME_TS;
   const typeMap: Record<string, string> = {
     string: 'string',
     text: 'string',
@@ -141,6 +211,7 @@ function mapScalarFieldType(field: TypegenField, branded: boolean): string {
     time: 'string',
     timestamp: 'string',
     geometry: 'GeoJSON.Geometry',
+    geopoint: '{ lat: number; lng: number }',
   };
 
   return typeMap[field.type] || 'unknown';

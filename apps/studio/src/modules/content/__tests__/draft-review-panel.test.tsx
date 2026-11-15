@@ -59,6 +59,7 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
   useNavigate: () => vi.fn(),
   useParams: () => params,
+  useSearch: () => ({}),
 }));
 
 import { ItemDetailPage } from '../item-detail';

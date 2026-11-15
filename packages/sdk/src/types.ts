@@ -6,6 +6,30 @@ export type Brand<TBrand extends string, TValue> = TValue & {
   readonly __brand: TBrand;
 };
 
+/**
+ * Value of a timezone-aware datetime field (`options.timezone: true`, #747).
+ * Write either `{ instant, tz }` or `{ local, tz }`; reads return all three.
+ */
+export interface ZonedDateTime {
+  /** ISO-8601 instant in UTC. */
+  instant: string;
+  /** IANA time zone the value was authored in. */
+  tz: string;
+  /** UTC offset of `tz` at `instant`, e.g. `-04:00`. */
+  offset: string;
+}
+
+/**
+ * One block of a `blocks` field (dynamic zone, #748). `type` is the block
+ * template's collection name and discriminates the union; generated types
+ * narrow it to a literal per template.
+ */
+export interface LumibaseBlock<TType extends string = string, TData = Record<string, unknown>> {
+  id: string;
+  type: TType;
+  data: TData;
+}
+
 export type AgentRiskLevel = "safe" | "review_required" | "dangerous" | "blocked";
 
 export interface AgentGoalResource {
@@ -436,13 +460,30 @@ export type ItemFilterOp =
   | "_json_contains"
   | "_has_key"
   | "_has_any_keys"
-  | "_has_all_keys";
+  | "_has_all_keys"
+  // geopoint fields: `{ lat, lng, radius }` (metres) / `[minLng, minLat, maxLng, maxLat]`.
+  | "_near"
+  | "_within_bbox";
+
+/** Value of a `geopoint` field: WGS 84 degrees. */
+export interface GeoPoint {
+  lat: number;
+  lng: number;
+}
 
 export interface ItemFilter {
   _and?: ItemFilter[];
   _or?: ItemFilter[];
   /** Field key; may be a dotted path into nested JSON, e.g. "meta.author.country". */
   [key: string]: { [op in ItemFilterOp]?: unknown } | ItemFilter[] | undefined;
+}
+
+/** Result of `items(name).tree.move()` (#749). */
+export interface TreeMoveResult {
+  id: string;
+  parentId: string | null;
+  path: string;
+  sort: number;
 }
 
 export interface ListItemsParams {
@@ -567,6 +608,9 @@ export interface ItemRow<
   unpublishAt?: string | null;
   /** Editorial workflow state; null when the workflow is not in use. */
   editorialState?: string | null;
+  /** Tree collections (#749): parent item id (null = root) and materialised path `/root/…/self/`. */
+  parentId?: string | null;
+  path?: string | null;
   userCreated: string | null;
   userUpdated: string | null;
   createdAt: string;

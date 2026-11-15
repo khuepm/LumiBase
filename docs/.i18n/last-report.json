@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-15T18:26:46.221Z",
+  "generatedAt": "2026-11-15T18:49:03.147Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 187,
+    "upToDate": 193,
     "planned": 0
   },
   "actions": [
@@ -1237,6 +1237,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/dynamic-zones.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/email-service.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1285,6 +1297,18 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/field-value-options.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/firebase-sync.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1309,6 +1333,30 @@
       "missingPlaceholders": 0
     },
     {
+      "rel": "features/form-layout.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/geopoint.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
       "rel": "features/git-integration.md",
       "type": "up-to-date",
       "reason": "in sync",
@@ -1322,6 +1370,18 @@
     },
     {
       "rel": "features/governed-write-parity.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/hierarchical-collections.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
@@ -1616,6 +1676,18 @@
       "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/timezone-aware-datetime.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
       "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0

@@ -1,13 +1,13 @@
 ---
-version: 19
-lastUpdated: 2026-11-15T18:30:37.383Z
+version: 20
+lastUpdated: 2026-11-15T19:08:40.165Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ac06b7d41ad4cb78
+sourceHash: f30437b478535c32
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T18:30:37.383Z
-codeVerifiedHash: ac06b7d41ad4cb78
+codeVerified: 2026-11-15T19:08:40.165Z
+codeVerifiedHash: f30437b478535c32
 codeVerifiedClaims: 20
 ---
 
@@ -169,7 +169,7 @@ Compiled schema phơi ra các system field được sinh tự động, bên cạ
 | `siteId`, `collectionId` | text FK |
 | `status` | text | `draft`/`published`/`archived` |
 | `data` | jsonb | giá trị đánh key theo field.name |
-| `version` | integer, default 0 | Bộ đếm optimistic concurrency: tăng sau mỗi lần ghi làm đổi nội dung item (data, status, pin, xoá mềm, crypto-shred); worker xoay khoá chỉ mã hoá lại thì không tăng. Được trả làm `ETag` của item; `If-Match` so sánh với nó. |
+| `version` | integer, default 0 | Bộ đếm optimistic concurrency: tăng sau mỗi lần ghi làm đổi nội dung item (data, status, pin, xoá mềm kể cả cascade trong cây, crypto-shred, di chuyển item trong cây); rebase path của con cháu, đánh số lại sort của anh em và worker xoay khoá chỉ mã hoá lại thì không tăng. Được trả làm `ETag` của item; `If-Match` so sánh với nó. |
 | `sort` | integer |
 | `userCreated`, `userUpdated` | text FK users |
 | `publishAt`, `unpublishAt` | timestamp nullable | Khung thời gian scheduling (Req 7); worker reconcile đổi status, delivery filter theo khung này. |

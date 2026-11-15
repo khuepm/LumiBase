@@ -163,6 +163,32 @@ describe.skipIf(!hasDbIntegrationUrl)('ItemService write precondition (If-Match)
     expect(await versionOf(db, id)).toBe(2);
   });
 
+  it('a tree move bumps the moved item only; cascade delete bumps every deleted node', async () => {
+    const [coll] = await db
+      .insert(collections)
+      .values({ siteId: SITE, name: 'folders', label: 'Folders', meta: { tree: { enabled: true, onDelete: 'cascade' } } })
+      .returning({ id: collections.id });
+    await db.insert(fields).values({ siteId: SITE, collectionId: coll!.id, name: 'title', type: 'string', interface: 'input' });
+    const node = async (title: string, parentId: string | null = null) =>
+      ((await svc.create('folders', { data: { title }, parentId })) as { id: string }).id;
+    const root1 = await node('r1');
+    const root2 = await node('r2');
+    const child = await node('c', root1);
+    const grandchild = await node('g', child);
+
+    // Moving `child` rebases `grandchild`'s path, which is not a change to
+    // `grandchild` itself: an editor holding its tag must still be able to save.
+    await svc.move('folders', child, { parentId: root2 });
+    expect(await versionOf(db, child)).toBe(1);
+    expect(await versionOf(db, grandchild)).toBe(0);
+    expect(await versionOf(db, root1)).toBe(0);
+    await svc.patch('folders', grandchild, { data: { title: 'g2' } }, { expectedVersions: [0] });
+
+    await svc.softDelete('folders', child);
+    expect(await versionOf(db, child)).toBe(2);
+    expect(await versionOf(db, grandchild)).toBe(2);
+  });
+
   it('crypto-shred and soft delete increment the version', async () => {
     const { id } = (await svc.create('posts', { data: { title: 'A' } })) as { id: string };
     await svc.cryptoShred('posts', id);
