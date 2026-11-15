@@ -1,11 +1,11 @@
 ---
-version: 47
-lastUpdated: 2026-11-14T12:31:26.652Z
+version: 48
+lastUpdated: 2026-11-15T11:55:59.334Z
 sourceLang: en
-contentHash: 05c921e5657b5afa
-codeVerified: 2026-11-14T12:31:26.652Z
-codeVerifiedHash: 05c921e5657b5afa
-codeVerifiedClaims: 518
+contentHash: 358d29aa08df5085
+codeVerified: 2026-11-15T11:55:59.334Z
+codeVerifiedHash: 358d29aa08df5085
+codeVerifiedClaims: 520
 ---
 
 # Hono API Specification — LumiBase
@@ -643,6 +643,7 @@ active `siteId`.
 | `DELETE` | `/api/v1/items/:collection/:id` | Delete item — **409 if blocked by dependents** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | List records that reference this item |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Batch-resolve a relation's dependents |
+| `POST` | `/api/v1/items/:collection/:id/move` | Move an item and its subtree in a tree collection; list with `?tree=children\|subtree\|ancestors` ([Hierarchical collections](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | List revisions |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Revert to revision |
 | `GET` | `/api/v1/items/:collection/:id/versions` | List named draft versions (each has a `mainChanged` flag) |

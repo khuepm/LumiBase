@@ -218,6 +218,13 @@
       "when": 1794643200000,
       "tag": "0030_agent_tool_secrets",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794902400000,
+      "tag": "0033_item_tree",
+      "breakpoints": true
     }
   ]
 }

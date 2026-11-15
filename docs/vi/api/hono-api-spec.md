@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 46
-lastUpdated: 2026-11-14T12:31:26.652Z
+version: 47
+lastUpdated: 2026-11-15T11:55:59.334Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 05c921e5657b5afa
+sourceHash: 358d29aa08df5085
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T12:31:26.652Z
-codeVerifiedHash: 05c921e5657b5afa
-codeVerifiedClaims: 518
+codeVerified: 2026-11-15T11:55:59.334Z
+codeVerifiedHash: 358d29aa08df5085
+codeVerifiedClaims: 520
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -563,6 +563,7 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `DELETE` | `/api/v1/items/:collection/:id` | Xóa mục — **409 nếu bị chặn bởi phụ thuộc** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | Liệt kê các bản ghi tham chiếu tới mục này |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Xử lý hàng loạt các phụ thuộc của quan hệ |
+| `POST` | `/api/v1/items/:collection/:id/move` | Di chuyển một item cùng cây con của nó trong collection dạng cây; liệt kê với `?tree=children\|subtree\|ancestors` ([Collection phân cấp](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | Liệt kê các bản sửa đổi (revisions) |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Khôi phục lại một bản sửa đổi |
 | `GET` | `/api/v1/items/:collection/:id/versions` | Liệt kê các bản nháp có tên (mỗi bản có cờ `mainChanged`) |
