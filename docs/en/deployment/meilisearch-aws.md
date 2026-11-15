@@ -3,9 +3,9 @@ version: 1
 lastUpdated: 2026-07-28T10:25:03.615Z
 sourceLang: en
 contentHash: fd79fbc9b05f2fea
-codeVerified: 2026-07-28T10:25:03.615Z
+codeVerified: 2026-11-14T03:13:30.886Z
 codeVerifiedHash: fd79fbc9b05f2fea
-codeVerifiedClaims: 8
+codeVerifiedClaims: 10
 ---
 
 # Deploying MeiliSearch on AWS
