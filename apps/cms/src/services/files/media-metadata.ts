@@ -450,7 +450,19 @@ function decodeEntities(s: string): string {
  * so an extracted value can never carry markup.
  */
 function xmpText(fragment: string): string | undefined {
-  return clean(decodeEntities(fragment.replace(/<[^>]*>/g, '')).replace(/[<>]/g, ''));
+  return clean(withoutMarkup(decodeEntities(withoutMarkup(fragment))));
+}
+
+/** Drop everything between `<` and `>` plus any unmatched bracket (single pass, no regex). */
+function withoutMarkup(input: string): string {
+  let out = '';
+  let depth = 0;
+  for (const ch of input) {
+    if (ch === '<') depth++;
+    else if (ch === '>') depth = Math.max(0, depth - 1);
+    else if (depth === 0) out += ch;
+  }
+  return out;
 }
 
 function xmpList(xml: string, prop: string): string[] {

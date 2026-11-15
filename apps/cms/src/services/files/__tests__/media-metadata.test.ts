@@ -79,8 +79,9 @@ describe('extractMediaMetadata', () => {
         '<rdf:Description photoshop:Credit="&lt;img src=x onerror=alert(1)&gt;"/></x:xmpmeta>',
     )!;
     expect(x.title).not.toMatch(/[<>]/);
-    expect(x.credit).not.toMatch(/[<>]/);
-    expect(x.credit).toContain('img src=x');
+    // Entity-encoded markup decodes to a tag and is dropped with it.
+    expect(x.credit).toBeUndefined();
+    expect(x.title).toBe('Aalert(1)B');
   });
 
   it('flattens the summary into lowercase search text', () => {
