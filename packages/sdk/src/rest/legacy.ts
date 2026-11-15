@@ -1,5 +1,22 @@
 import { LumiClient } from "../client";
 import { RealtimeClient } from "../realtime";
+
+/** Options for item `patch` / `replace`. */
+export interface ItemWriteOptions {
+  /**
+   * Only write if the item is still at this version (from `ItemRow.version`
+   * or the detail response's `ETag`). If someone else changed it first, the
+   * request fails with a `LumiError` of status 412 and code
+   * `PRECONDITION_FAILED`, and nothing is written. Omit to overwrite
+   * unconditionally (the default).
+   */
+  ifMatch?: number;
+}
+
+function ifMatchInit(options: ItemWriteOptions | undefined): { headers?: Record<string, string> } {
+  if (options?.ifMatch === undefined) return {};
+  return { headers: { "if-match": `"${options.ifMatch}"` } };
+}
 import {
   CollectionResource,
   CollectionInput,
@@ -322,17 +339,21 @@ export function legacyRest() {
             publishAt?: string | null;
             unpublishAt?: string | null;
           },
+          options?: ItemWriteOptions,
         ) =>
           client.rawRequest<Row>(`${base}/${id}`, {
             method: "PATCH",
             body: JSON.stringify(input),
+            ...ifMatchInit(options),
           }),
         replace: (
           id: string,
           input: { data: Row["data"]; status?: string; sort?: number },
+          options?: ItemWriteOptions,
         ) =>
           client.rawRequest<Row>(`${base}/${id}`, {
             method: "PUT",
+            ...ifMatchInit(options),
             body: JSON.stringify(input),
           }),
         delete: (id: string) =>

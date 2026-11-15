@@ -1,13 +1,13 @@
 ---
-version: 18
-lastUpdated: 2026-11-15T08:14:23.698Z
+version: 21
+lastUpdated: 2026-11-15T21:51:33.293Z
 sourceLang: en
 translatedFrom: en
-sourceHash: a569ee25f43387da
+sourceHash: 9c5b4d6fa0ddd174
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T18:28:59.126Z
-codeVerifiedHash: a569ee25f43387da
+codeVerified: 2026-11-15T21:51:33.293Z
+codeVerifiedHash: 9c5b4d6fa0ddd174
 codeVerifiedClaims: 20
 ---
 
@@ -120,6 +120,8 @@ Chiến lược primary key:
 - `nanoid`: định danh chuỗi logic mặc định do LumiBase sinh.
 - `uuid`: chuỗi UUID do service sinh.
 - `string`: định danh chuỗi do caller cung cấp.
+
+Với mọi chiến lược, id của item là duy nhất **trong mỗi site**, trên tất cả collection của site đó: `items` có primary key `(siteId, id)` (migration `0035`). Hai site có thể dùng cùng một id; trong một site, id bị dùng lại, kể cả ở collection khác, bị từ chối với `409 ITEM_ID_EXISTS`.
 - `integer` / `bigInteger`: chiến lược dựa trên sequence, dành riêng cho storage materialized/physical; collection JSONB chặn các tổ hợp này.
 
 Storage mode được khai báo tường minh có chủ đích:
@@ -165,10 +167,11 @@ Compiled schema phơi ra các system field được sinh tự động, bên cạ
 ### `items`
 | Column | Type |
 |---|---|
-| `id` | text PK |
+| `id` | text | duy nhất trong mỗi site |
 | `siteId`, `collectionId` | text FK |
 | `status` | text | `draft`/`published`/`archived` |
 | `data` | jsonb | giá trị đánh key theo field.name |
+| `version` | integer, default 0 | Bộ đếm optimistic concurrency: tăng sau mỗi lần ghi làm đổi nội dung item (data, status, pin, xoá mềm kể cả cascade trong cây, crypto-shred, di chuyển item trong cây); rebase path của con cháu, đánh số lại sort của anh em và worker xoay khoá chỉ mã hoá lại thì không tăng. Được trả làm `ETag` của item; `If-Match` so sánh với nó. |
 | `sort` | integer |
 | `userCreated`, `userUpdated` | text FK users |
 | `publishAt`, `unpublishAt` | timestamp nullable | Khung thời gian scheduling (Req 7); worker reconcile đổi status, delivery filter theo khung này. |
@@ -177,17 +180,18 @@ Compiled schema phơi ra các system field được sinh tự động, bên cạ
 | `createdAt`, `updatedAt` | timestamp |
 | `deletedAt` | timestamp nullable |
 
-Index: `(siteId, collectionId, status)`, GIN trên `data`, `(siteId, status, publishAt)`, `(siteId, status, unpublishAt)`.
+Primary key `(siteId, id)`. Index: `(siteId, collectionId, status)`, GIN trên `data`, `(siteId, status, publishAt)`, `(siteId, status, unpublishAt)`.
 
 ### `revisions`
 - `id`, `siteId`, `itemId`, `collectionId`, `delta jsonb`, `parentId`, `userId`, `createdAt`.
+- `(siteId, itemId) → items (siteId, id)` (cascade): một revision luôn thuộc về một item của chính site đó.
 
 ### `releases` (Content Releases)
 - Một bundle publish xuyên collection. `id`, `siteId`, `name`, `description`, `status` (`draft`|`scheduled`|`published`|`failed`|`partially_failed`), `atomicityMode` (`all_or_nothing`|`best_effort`), `publishAt`, `publishedAt`, `maintenanceWindow jsonb`, `statusReason`, `createdBy → users.id (set null)`, `createdAt`, `updatedAt`.
 - Index: `releases_site_status_idx (siteId, status)`, `releases_publish_due_idx (siteId, status, publishAt)` (đối xứng với `items.publishDueIdx` cho vòng quét của scheduler).
 
 ### `release_items` (Content Releases)
-- Bảng junction release ↔ item, có thể ghim vào một revision cụ thể. `id`, `siteId`, `releaseId → releases.id (cascade)`, `collection`, `itemId → items.id (cascade)`, `targetStatus` (mặc định `published`), `revisionId → revisions.id (set null)`, `outcome` (`published`|`skipped`|`failed`), `outcomeReason`, `createdAt`.
+- Bảng junction release ↔ item, có thể ghim vào một revision cụ thể. `id`, `siteId`, `releaseId → releases.id (cascade)`, `collection`, `(siteId, itemId) → items (siteId, id)` (cascade), `targetStatus` (mặc định `published`), `revisionId → revisions.id (set null)`, `outcome` (`published`|`skipped`|`failed`), `outcomeReason`, `createdAt`.
 - Unique `(releaseId, collection, itemId)` (key cho upsert); index `(siteId, releaseId)`.
 
 ### `activity`
@@ -528,7 +532,7 @@ Audit mọi lần đọc đã giải mã của field `pii`/`phi` (Req 6). Không
 Index: `(siteId, timestamp)`, `(actor, timestamp)`.
 
 ### `content_reviews`
-Record ký duyệt biên tập của con người (Req 9). `itemId` dùng `onDelete: set null` để lịch sử review vẫn tồn tại sau khi xoá dữ liệu (Req 11.3).
+Record ký duyệt biên tập của con người (Req 9). `(siteId, itemId) → items (siteId, id)` với `ON DELETE SET NULL (item_id)`: xoá item sẽ xoá `itemId` và giữ `siteId`, để lịch sử review vẫn tồn tại sau khi xoá dữ liệu (Req 11.3). Dạng có danh sách cột cần PostgreSQL 15+.
 | Column | Type | Note |
 |---|---|---|
 | `id` | text PK | nanoid |
