@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 50
-lastUpdated: 2026-11-15T18:29:03.519Z
+version: 51
+lastUpdated: 2026-11-15T19:48:29.207Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3d2993c6d2c70e62
+sourceHash: 381baef6750eadbc
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T18:29:03.519Z
-codeVerifiedHash: 3d2993c6d2c70e62
-codeVerifiedClaims: 580
+codeVerified: 2026-11-15T19:48:29.207Z
+codeVerifiedHash: 381baef6750eadbc
+codeVerifiedClaims: 596
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -679,6 +679,41 @@ Một **Release** gom các bản sửa đổi mục cụ thể trên nhiều col
 **Mã lỗi:** `EMPTY_RELEASE` (422), `ALREADY_PUBLISHED` (409), `RELEASE_IMMUTABLE` (409, chỉnh sửa các mục của release đã xuất bản), `ITEM_NOT_FOUND` (404), `REVISION_STAGED` (409, ghim bản sửa đổi chưa commit), `VALIDATION_FAILED` (422, bao gồm `publishAt` trong quá khứ). Các yếu tố chặn xuất bản từng mục xuất hiện dưới dạng lý do outcome `EDITORIAL_GATE_REQUIRED` / `ITEM_DELETED`.
 
 Các release lên lịch được xuất bản qua nhịp `content-scheduler` dùng chung (`sweepDueReleases`) — idempotent và nhận biết `maintenanceWindow`.
+
+---
+
+## 3c. Live preview (epic #667)
+
+Preview token cho phép frontend đọc nội dung draft trong thời gian ngắn. Mô hình
+bảo mật: [ADR-014](../architecture/decisions/adr-014-preview-bridge-threat-model.md);
+hướng dẫn: [Live preview & visual editing](../features/visual-editing.md).
+
+| Method | Path | Mô tả |
+|--------|------|-------|
+| `POST` | `/api/v1/preview/token` | Mint token (chỉ user principal; 30/phút/user → `429`) |
+| `GET` | `/api/v1/preview/tokens` | Token còn sống (site admin: tất cả; người khác: của mình) |
+| `POST` | `/api/v1/preview/tokens/:id/revoke` | Thu hồi một token (site admin: bất kỳ; người khác: của mình) |
+| `POST` | `/api/v1/preview/tokens/revoke-all` | Xoay vòng — thu hồi mọi token còn sống của site (site admin) |
+| `GET` | `/api/v1/preview/settings` | `{ allowedOrigins, ttlSeconds }` |
+| `PUT` | `/api/v1/preview/settings` | Cập nhật (site admin; chỉ origin chính xác) |
+| `GET` | `/api/v1/deliver/preview/:site_id` | Public: token nhắm tới gì (+ item / thành viên release) |
+| `GET` | `/api/v1/deliver/preview/:site_id/items/:collection` | Public: item đang live + overlay của token (`?limit=&offset=`, tối đa 100) |
+| `GET` | `/api/v1/deliver/preview/:site_id/items/:collection/:id` | Public: một item qua overlay |
+
+**Body khi mint** — một item (+ `versionKey` tuỳ chọn) hoặc một release:
+```json
+{ "collection": "posts", "itemId": "itm_1", "versionKey": "redesign", "locale": "vi", "ttlSeconds": 900 }
+```
+`201 { data: { id, token, expiresAt, url, … } }` — `token` chỉ hiện một lần;
+`url` dựng từ `meta.previewUrl` của collection (hoặc `null`).
+
+**Lần đọc public** nhận token ở header `x-lumibase-preview` hoặc `?__preview=`.
+Mọi lỗi (sai định dạng, site khác, hết hạn, bị thu hồi, người tạo mất quyền) đều
+là `401 { errors: [{ code: "PREVIEW_UNAUTHORIZED" }] }` với body giống hệt nhau.
+Response: `Cache-Control: private, no-store`, `X-Robots-Tag: noindex, nofollow`,
+`Referrer-Policy: no-referrer`. Sự kiện audit: `preview.token_minted`,
+`preview.read`, `preview.token_rejected`, `preview.token_revoked`,
+`preview.tokens_rotated`, `preview.settings_updated`.
 
 ---
 
