@@ -137,8 +137,11 @@ app.use(
   cors({
     origin: (origin, c) => resolveCorsOrigin(origin, c.env),
     credentials: true,
-    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password', 'X-LumiBase-Refresh', 'X-Confirm-Delete'],
-    exposeHeaders: ['X-Request-Id', 'Retry-After'],
+    // `If-Match` / `ETag`: optimistic concurrency on item writes
+    // (content-environments Phase A). Studio and the Tauri shell are
+    // cross-origin, so both must be listed or the browser hides them.
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Lumi-Site', 'X-Lumi-Client', 'X-Request-Id', 'X-Lumi-Share-Password', 'X-LumiBase-Refresh', 'X-Confirm-Delete', 'If-Match'],
+    exposeHeaders: ['X-Request-Id', 'Retry-After', 'ETag'],
   }),
 );
 
