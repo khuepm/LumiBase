@@ -1,6 +1,12 @@
 import { z, type ZodTypeAny } from 'zod';
 import { checkSlug, codePointLength, type SlugPolicy } from '@lumibase/contracts/field';
 import { SINGLE_CHOICE_INTERFACES, TEXT_LENGTH_FIELD_TYPES } from '@lumibase/contracts/schemas';
+import {
+  isZonedDateTimeField,
+  normalizeZonedDateTime,
+  ZonedDateTimeError,
+  type ZonedDateTimeFieldOptions,
+} from '@lumibase/contracts/field';
 import type { CompiledField } from './schema-service';
 
 /**
@@ -41,7 +47,36 @@ const TYPE_BASE: Record<string, () => ZodTypeAny> = {
   timestamp: () => z.string(),
 };
 
+/**
+ * Timezone-aware datetime (#747): accepts `{ instant, tz }`, `{ local, tz }`
+ * or an ISO string and normalizes it to `{ instant, tz, offset }`. The
+ * string/number rules (`min`, `regex`, …) do not apply to this shape.
+ */
+function buildZonedFieldSchema(field: CompiledField): ZodTypeAny {
+  const options = field.options as ZonedDateTimeFieldOptions;
+  const core = z.unknown().transform((value, ctx) => {
+    if (value === null || value === undefined) {
+      if (field.required) {
+        ctx.addIssue({ code: 'custom', message: 'Required' });
+        return z.NEVER;
+      }
+      return null;
+    }
+    try {
+      return normalizeZonedDateTime(value, options);
+    } catch (err) {
+      if (err instanceof ZonedDateTimeError) {
+        ctx.addIssue({ code: 'custom', message: `${err.code}: ${err.message}` });
+        return z.NEVER;
+      }
+      throw err;
+    }
+  });
+  return field.required ? core : core.optional();
+}
+
 function buildFieldSchema(field: CompiledField): ZodTypeAny {
+  if (isZonedDateTimeField(field)) return buildZonedFieldSchema(field);
   let schema = (TYPE_BASE[field.type] ?? (() => z.unknown()))();
 
   const rules = (field.validation?.rules as RuleObject[] | undefined) ?? [];

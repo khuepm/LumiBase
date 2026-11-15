@@ -30,7 +30,14 @@ export const CASTABLE_OPS: ReadonlySet<string> = new Set([
 
 const NUMERIC_TYPES = new Set(['integer', 'biginteger', 'decimal', 'float', 'double', 'number', 'numeric']);
 const BOOLEAN_TYPES = new Set(['boolean']);
-const TIMESTAMP_TYPES = new Set(['date', 'datetime', 'timestamp']);
+/**
+ * Pseudo type the item service puts in its field-type map for a `datetime` /
+ * `timestamp` field with `options.timezone` (#747). Its value is an object
+ * (`{ instant, tz, offset }`), so filters and sort read `instant`.
+ */
+export const ZONED_DATETIME_FILTER_TYPE = 'datetime_tz';
+
+const TIMESTAMP_TYPES = new Set(['date', 'datetime', 'timestamp', ZONED_DATETIME_FILTER_TYPE]);
 
 /**
  * Map a schema field type to a cast kind. Unknown / string-like types return

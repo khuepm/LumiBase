@@ -27,6 +27,8 @@ export interface TypegenField {
   kind?: 'm2o' | 'o2m' | 'm2m' | 'm2a';
   target?: string;
   enum?: string[];
+  /** Timezone-aware datetime (#747): value is `{ instant, tz, offset }`. */
+  timezone?: boolean;
 }
 
 export interface TypegenRelation {

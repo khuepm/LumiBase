@@ -57,6 +57,7 @@ import { DISPLAY_CATALOGUE } from '@/modules/content/displays/registry';
 import { MustacheTemplateEditor } from '@/modules/content/mustache-template-editor';
 import { useSaveHandler } from '@/lib/keybindings/use-keybindings';
 import { FieldOptionControls, fieldOptionIssues } from './field-option-controls';
+import { ZONED_DATETIME_FIELD_TYPES } from '@lumibase/contracts/field';
 
 const NAME_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
 
@@ -568,6 +569,14 @@ function InterfaceTab({
         />
       )}
 
+      {ZONED_DATETIME_FIELD_TYPES.includes(form.type) && (
+        <TimezoneOptionToggle
+          optionsDraft={optionsDraft}
+          disabled={!optionsJsonOk}
+          onOptionsDraftChange={onOptionsDraftChange}
+        />
+      )}
+
       <JsonTextarea
         label="Interface options"
         hint="JSON options passed to the interface component."
@@ -577,6 +586,46 @@ function InterfaceTab({
         rows={8}
       />
     </div>
+  );
+}
+
+/**
+ * Shortcut for `options.timezone` on datetime / timestamp fields (#747): the
+ * value is then stored as `{ instant, tz, offset }`. Edits the same JSON draft
+ * as the "Interface options" box below, so the two never disagree.
+ */
+function TimezoneOptionToggle({
+  optionsDraft,
+  disabled,
+  onOptionsDraftChange,
+}: {
+  optionsDraft: string;
+  disabled: boolean;
+  onOptionsDraftChange: (v: string) => void;
+}) {
+  const parsed = parseJsonObject(optionsDraft);
+  const enabled = parsed.ok && parsed.value.timezone === true;
+  return (
+    <label className="flex items-start gap-2 rounded-md border p-3 text-xs">
+      <input
+        type="checkbox"
+        checked={enabled}
+        disabled={disabled}
+        onChange={(e) => {
+          const next = { ...(parsed.ok ? parsed.value : {}) };
+          if (e.target.checked) next.timezone = true;
+          else delete next.timezone;
+          onOptionsDraftChange(stringifyJson(next));
+        }}
+      />
+      <span>
+        <strong className="text-foreground">Timezone-aware</strong>
+        <span className="block text-muted-foreground">
+          Store the instant plus the IANA time zone it was entered in. Filters and sort use the instant. Existing
+          values keep their shape until they are next saved.
+        </span>
+      </span>
+    </label>
   );
 }
 

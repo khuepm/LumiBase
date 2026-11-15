@@ -6,6 +6,19 @@ export type Brand<TBrand extends string, TValue> = TValue & {
   readonly __brand: TBrand;
 };
 
+/**
+ * Value of a timezone-aware datetime field (`options.timezone: true`, #747).
+ * Write either `{ instant, tz }` or `{ local, tz }`; reads return all three.
+ */
+export interface ZonedDateTime {
+  /** ISO-8601 instant in UTC. */
+  instant: string;
+  /** IANA time zone the value was authored in. */
+  tz: string;
+  /** UTC offset of `tz` at `instant`, e.g. `-04:00`. */
+  offset: string;
+}
+
 export type AgentRiskLevel = "safe" | "review_required" | "dangerous" | "blocked";
 
 export interface AgentGoalResource {
