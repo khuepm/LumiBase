@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { useQuery } from '@tanstack/react-query';
 import { Download } from 'lucide-react';
 import { generateTypes, type TypegenManifest } from '@lumibase/sdk';

@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getActiveSite, getApiClient } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';
+import { permissionsQueryOptions } from '@/lib/me-queries';
 import {
   defaultPromptLanguage,
   localizePrompt,
@@ -150,10 +151,7 @@ export function McpSetupPage() {
     queryKey: ['access', 'roles'],
     queryFn: async () => (await client.roles.list()).data,
   });
-  const permissionsQuery = useQuery({
-    queryKey: ['me', 'permissions'],
-    queryFn: async () => (await client.permissions.me()).data,
-  });
+  const permissionsQuery = useQuery(permissionsQueryOptions());
   const createKey = useMutation({
     mutationFn: async () => {
       const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();

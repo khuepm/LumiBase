@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { Code2, Eye } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';

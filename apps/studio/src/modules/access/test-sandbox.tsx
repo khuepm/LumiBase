@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Check, Play, X } from 'lucide-react';
 import { useState } from 'react';

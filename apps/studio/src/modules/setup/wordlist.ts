@@ -38,7 +38,7 @@ import {
   DEFAULT_ADMIN_PATHS_BLACKLIST,
   RESERVED_PATH_PREFIXES,
   normalizeAdminPath,
-} from './schemas/admin-path';
+} from './schemas/admin-path-rules';
 
 // ────────────────────────────────────────────────────────────────────────
 // The wordlist

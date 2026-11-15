@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Globe, Loader2, ShieldAlert, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { getApiClient } from '@/lib/api';
+import { PERMISSIONS_QUERY_KEY } from '@/lib/me-queries';
 import { cn } from '@/lib/cn';
 
 /**
@@ -50,7 +51,7 @@ export function PublicAccessPage() {
     queryClient.invalidateQueries({ queryKey: QUERY_KEY });
     // A grant changes the caller's own effective bundle too when they are not
     // an admin; drop the cached `/permissions/me` so gated UI re-resolves.
-    queryClient.invalidateQueries({ queryKey: ['permissions-me'] });
+    queryClient.invalidateQueries({ queryKey: PERMISSIONS_QUERY_KEY });
   };
 
   /** Surface the server's refusal text — it explains *why* a grant is refused. */

@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 

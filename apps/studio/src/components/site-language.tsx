@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getApiClient, hasActiveToken } from '@/lib/api';
+import { mePreferencesQueryOptions } from '@/lib/me-queries';
 import { resolveUiLanguage } from '@/lib/ui-language';
 
 /**
@@ -24,12 +25,7 @@ export function SiteLanguageSync() {
     enabled,
     staleTime: 60_000,
   });
-  const prefsQuery = useQuery({
-    queryKey: ['me-preferences'],
-    queryFn: async () =>
-      (await getApiClient().rawRequest<{ language?: string | null }>('/api/v1/me/preferences')).data,
-    enabled,
-  });
+  const prefsQuery = useQuery({ ...mePreferencesQueryOptions(), enabled });
 
   const settled = !siteQuery.isPending && !prefsQuery.isPending;
   const siteDefault = (siteQuery.data as { defaultLanguage?: string } | undefined)?.defaultLanguage;

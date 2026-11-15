@@ -17,34 +17,24 @@ import {
   PanelLeftOpen,
   GripVertical,
 } from 'lucide-react';
-import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { NotificationsPanel } from '@/components/notifications-panel';
 import { ReleaseUpdateNotice } from '@/components/release-update-notice';
 import { ConnectionStatusDot } from '@/components/connection-status-dot';
-import { CommandPalette } from '@/components/command-palette';
+import { MissionControlBadge, ModuleNavItem, type ModuleDef } from '@/components/module-nav-item';
 import { SearchPalette } from '@/components/search-palette';
 import { clearActiveToken, getApiClient, hasActiveToken, logout } from '@/lib/api';
 import { VersionInfoFooter } from '@/components/version-info-footer';
 import { SiteLanguageSync } from '@/components/site-language';
 import { getAdminBase } from '@/lib/admin-base';
 import { getEnvironmentBadge } from '@/lib/environment-badge';
-import { useInboxData } from '@/modules/mission-control/use-inbox';
 import { useGlobalShortcuts } from '@/lib/keybindings/use-keybindings';
 import { useKeybindingsStore } from '@/lib/keybindings/store';
 import { withAdminBase } from '@/lib/keybindings/commands';
-
-interface ModuleDef {
-  id: string;
-  label: string;
-  icon: typeof FileText;
-  to: string;
-}
+import { mePreferencesQueryOptions, permissionsQueryOptions } from '@/lib/me-queries';
 
 const MODULES: ModuleDef[] = [
   { id: 'content', label: 'Content', icon: FileText, to: '/' },
@@ -75,36 +65,13 @@ function orderedModules(order: string[]): ModuleDef[] {
   return [...result, ...MODULES.filter((module) => !seen.has(module.id))];
 }
 
-function SortableModule({ module, active, adminBase, expanded, editing }: {
-  module: ModuleDef;
-  active: boolean;
-  adminBase: string;
-  expanded: boolean;
-  editing: boolean;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: module.id, disabled: !editing });
-  const Icon = module.icon;
-  const className = cn(
-    'relative flex h-10 items-center rounded-md transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
-    expanded ? 'w-full gap-3 px-3' : 'w-10 justify-center',
-    active && !editing ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent',
-    editing && 'cursor-grab active:cursor-grabbing',
-  );
-  const contents = <><Icon className="h-5 w-5 shrink-0" aria-hidden="true" />{expanded && <span className="truncate text-sm">{module.label}</span>}{module.id === 'mission-control' && !editing && <MissionControlBadge />}</>;
-  return (
-    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 10 : undefined }} className={cn('w-full', isDragging && 'opacity-70')}>
-      {editing ? (
-        <button type="button" aria-label={`Move ${module.label}`} className={className} {...attributes} {...listeners}>
-          {contents}
-        </button>
-      ) : (
-        <Link to={`${adminBase}${module.to === '/' ? '' : module.to}` || '/'} aria-label={module.label} aria-current={active ? 'page' : undefined} title={module.label} className={className}>
-          {contents}
-        </Link>
-      )}
-    </div>
-  );
-}
+// Heavy, interaction-only chrome is split out of the boot chunk (#757):
+// `@dnd-kit/*` loads only while an admin reorders the sidebar, `cmdk` only
+// once the command palette is opened. The read-only sidebar renders plain
+// links (`ModuleNavItem`), which is also the Suspense fallback while the
+// sortable list loads, so the sidebar never blanks.
+const SortableModuleNav = lazy(() => import('@/components/sortable-module-nav').then((m) => ({ default: m.SortableModuleNav })));
+const CommandPalette = lazy(() => import('@/components/command-palette').then((m) => ({ default: m.CommandPalette })));
 
 /**
  * The modules surfaced directly in the mobile Bottom Nav (app-shell spec
@@ -114,25 +81,6 @@ function SortableModule({ module, active, adminBase, expanded, editing }: {
 const environmentBadge = getEnvironmentBadge();
 
 const MOBILE_PRIMARY_IDS = ['content', 'files', 'automation', 'settings'] as const;
-
-/**
- * Exception count on the Mission Control icon (content-os-ui task 7; Req
- * 6.1-6.4). Editors working in other modules must not miss a ticking veto
- * window. Shares the inbox query cache with Mission Control, hides itself
- * entirely at zero or when the data is unavailable.
- */
-function MissionControlBadge() {
-  const { counts } = useInboxData();
-  if (counts.total === 0) return null;
-  return (
-    <span
-      aria-label={`${counts.total} exceptions awaiting attention`}
-      className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
-    >
-      {counts.total > 9 ? '9+' : counts.total}
-    </span>
-  );
-}
 
 interface AppShellProps {
   children: ReactNode;
@@ -179,35 +127,24 @@ export function AppShell({ children }: AppShellProps) {
 
   // Load the user's stored keybindings once, then merge over defaults. The
   // dispatcher reads `resolvedKeymap` from the store, so it picks these up.
-  const prefsQuery = useQuery({
-    queryKey: ['me', 'preferences'],
-    queryFn: () => getApiClient().me.getPreferences(),
-    enabled: hasActiveToken(),
-    staleTime: 5 * 60_000,
-  });
-  const permissionsQuery = useQuery({
-    queryKey: ['me', 'permissions'],
-    queryFn: async () => (await getApiClient().permissions.me()).data,
-    enabled: hasActiveToken(),
-    staleTime: 5 * 60_000,
-  });
+  // Shared keys (lib/me-queries): the language sync, `usePermissions` and
+  // the save-action hook read the same cache entries, so boot makes one
+  // request per endpoint (#757).
+  const prefsQuery = useQuery({ ...mePreferencesQueryOptions(), enabled: hasActiveToken() });
+  const permissionsQuery = useQuery({ ...permissionsQueryOptions(), enabled: hasActiveToken() });
   const [moduleOrder, setModuleOrder] = useState(DEFAULT_MODULE_ORDER);
   const [expandedNav, setExpandedNav] = useState(false);
   const [editingNav, setEditingNav] = useState(false);
   const [navigationError, setNavigationError] = useState('');
   const navigationSave = useRef(Promise.resolve());
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
   useEffect(() => {
     if (!prefsQuery.data) return;
-    const keybindings = (prefsQuery.data.data?.keybindings ?? {}) as Record<string, string>;
+    const keybindings = (prefsQuery.data.keybindings ?? {}) as Record<string, string>;
     setOverrides(keybindings);
     setLoaded(true);
-    const order = prefsQuery.data.data?.navigationOrder;
+    const order = prefsQuery.data.navigationOrder;
     if (Array.isArray(order)) setModuleOrder(order.filter((id): id is string => typeof id === 'string'));
-    setExpandedNav(prefsQuery.data.data?.navigationExpanded === true);
+    setExpandedNav(prefsQuery.data.navigationExpanded === true);
   }, [prefsQuery.data, setOverrides, setLoaded]);
 
   function saveNavigation(patch: { navigationOrder?: string[]; navigationExpanded?: boolean }) {
@@ -221,11 +158,7 @@ export function AppShell({ children }: AppShellProps) {
     });
   }
 
-  function onModuleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const current = orderedModules(moduleOrder).map((module) => module.id);
-    const next = arrayMove(current, current.indexOf(String(active.id)), current.indexOf(String(over.id)));
+  function onModuleReorder(next: string[]) {
     setModuleOrder(next);
     saveNavigation({ navigationOrder: next });
   }
@@ -281,6 +214,9 @@ export function AppShell({ children }: AppShellProps) {
   };
   const isAdmin = permissionsQuery.data?.admin === true;
   const sidebarModules = orderedModules(moduleOrder);
+  const staticSidebar = sidebarModules.map((module) => (
+    <ModuleNavItem key={module.id} module={module} active={activeModule === module.id} adminBase={adminBase} expanded={expandedNav} editing={false} />
+  ));
 
   return (
     <div className="flex h-screen w-screen">
@@ -303,13 +239,13 @@ export function AppShell({ children }: AppShellProps) {
         aria-label="Module navigation"
         className={cn('hidden shrink-0 flex-col border-r bg-muted/30 py-4 md:flex', expandedNav ? 'w-56' : 'w-16')}
       >
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onModuleDragEnd}>
-          <SortableContext items={sidebarModules.map((module) => module.id)} strategy={verticalListSortingStrategy}>
-            <div className={cn('flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3', !expandedNav && 'items-center')}>
-              {sidebarModules.map((module) => <SortableModule key={module.id} module={module} active={activeModule === module.id} adminBase={adminBase} expanded={expandedNav} editing={editingNav} />)}
-            </div>
-          </SortableContext>
-        </DndContext>
+        <div className={cn('flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3', !expandedNav && 'items-center')}>
+          {editingNav ? (
+            <Suspense fallback={staticSidebar}>
+              <SortableModuleNav modules={sidebarModules} activeModule={activeModule} adminBase={adminBase} expanded={expandedNav} onReorder={onModuleReorder} />
+            </Suspense>
+          ) : staticSidebar}
+        </div>
         {navigationError && <p role="alert" className="px-2 text-xs text-destructive">{navigationError}</p>}
         <div className={cn('mt-2 flex flex-col gap-1 border-t px-3 pt-2', !expandedNav && 'items-center')}>
           {isAdmin && (
@@ -382,11 +318,15 @@ export function AppShell({ children }: AppShellProps) {
       {/* Mobile Bottom Nav — replaces the sidebar on small screens */}
       <BottomNav activeModule={activeModule} adminBase={adminBase} />
 
-      <CommandPalette
-        open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        adminBase={adminBase}
-      />
+      {paletteOpen && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            open
+            onClose={() => setPaletteOpen(false)}
+            adminBase={adminBase}
+          />
+        </Suspense>
+      )}
 
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
