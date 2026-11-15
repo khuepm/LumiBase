@@ -23,6 +23,7 @@ const SECTIONS = [
   { id: 'goals', label: 'Goals', path: '/goals' },
   { id: 'agents', label: 'Agents', path: '/agents' },
   { id: 'trust', label: 'Trust ledger', path: '/trust' },
+  { id: 'receipts', label: 'Receipts', path: '/receipts' },
   { id: 'constitution', label: 'Constitution', path: '/constitution' },
   { id: 'skills', label: 'Skills', path: '/skills' },
 ] as const;

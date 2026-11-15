@@ -1,11 +1,11 @@
 ---
-version: 51
-lastUpdated: 2026-11-15T18:29:03.519Z
+version: 52
+lastUpdated: 2026-11-15T19:40:16.328Z
 sourceLang: en
-contentHash: 3d2993c6d2c70e62
-codeVerified: 2026-11-15T18:29:03.519Z
-codeVerifiedHash: 3d2993c6d2c70e62
-codeVerifiedClaims: 580
+contentHash: 97062a2d06428a0d
+codeVerified: 2026-11-15T19:40:16.328Z
+codeVerifiedHash: 97062a2d06428a0d
+codeVerifiedClaims: 584
 ---
 
 # Hono API Specification — LumiBase
@@ -1226,6 +1226,9 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `GET/POST/PATCH/DELETE` | `/api/v1/agent/roles[/:name]` | Agent role library CRUD (admin) — seeded with Planner, Writer, … |
 | `GET` | `/api/v1/agent/autonomy` | Trust ledger: grants + open incidents |
 | `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Promotion proposals; `POST :id/decide` is the only path to a higher level (admin) |
+| `GET` | `/api/v1/agent/receipts` | Agent receipts (#713): read-only aggregation of runs (by status/agent, failure rate), tool calls by skill × outcome with p50 latency, approvals (status, approver, latency p50/p90/avg), vetoes, `askUser` questions, human overrides, token/USD cost, drift, incidents, autonomy grants and promotions, a daily series and the alert thresholds crossed. `?since&until` (ISO, default the last 30 days, at most 180 days; `400 VALIDATION` / `WINDOW_TOO_WIDE`). Admin (control plane). See [agent receipts](../features/agent-receipts.md) |
+| `GET` | `/api/v1/agent/receipts/export` | CSV (`text/csv`) of `?kind=runs` (default) \| `tool_calls` \| `approvals` over the same window, at most 10,000 rows (`X-Export-Rows`, `X-Export-Truncated`). Tool inputs/outputs are never exported; text cells that start with `= + - @` are prefixed with `'` |
+| `GET/PUT` | `/api/v1/agent/receipts/alerts` | Alert thresholds (`maxRunFailureRate`, `maxVetoRate`, `maxOverrideRate`, `maxApprovalLatencyP90Minutes`, `maxCostUsd`, `maxTokens`, `maxOpenDrift`, `maxIncidents`); an absent key is not checked. Stored in the `agent.receipts.alerts` setting; unknown keys or rates outside 0–1 → `400 VALIDATION` |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Veto window: pending stagings enriched with `approvalId/collection/itemId/patch/agentRole` from the staging revision (null fields when the staging is gone); `POST :id/veto` discards a staging |
 | `GET` | `/api/v1/agent/approvals` | Approval inbox (`status` filter; defaults to `pending`) |
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Human decision on a parked action. Body `{ decision: 'approved' \| 'rejected', reason? }`; needs `approvals:decide` (403 otherwise), `404` for an unknown or other-tenant id, `409` when the approval already left `pending`. On `approved` the harness owns the state transition, so execution and the status write happen once. Execution re-resolves **the requester's** current rights and runs with `requester ∩ decider`: an approval whose requester was since revoked, demoted or removed is denied, and one with no recorded requester (parked before provenance existed) is denied with `APPROVAL_PROVENANCE_MISSING`. An approval stored with `approvalPolicy: human_required` (every [external-action tool](../features/external-action-tools.md)) is released only by a signed-in user: an API key, a connector token or an agent gets `409 EXECUTION_FAILED` carrying `HUMAN_APPROVAL_REQUIRED`, and the approval stays `pending` |

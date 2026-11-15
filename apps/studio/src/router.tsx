@@ -76,6 +76,7 @@ const MissionControlIntentDetailPage = lazy(() => import('./modules/mission-cont
 const MissionControlGoalsPage = lazy(() => import('./modules/mission-control/goals-page').then((m) => ({ default: m.GoalsPage })));
 const MissionControlAgentsPage = lazy(() => import('./modules/mission-control/agents-page').then((m) => ({ default: m.AgentsPage })));
 const MissionControlTrustPage = lazy(() => import('./modules/mission-control/trust-page').then((m) => ({ default: m.TrustPage })));
+const MissionControlReceiptsPage = lazy(() => import('./modules/mission-control/receipts-page').then((m) => ({ default: m.ReceiptsPage })));
 const MissionControlConstitutionPage = lazy(() => import('./modules/mission-control/constitution-page').then((m) => ({ default: m.ConstitutionPage })));
 const MissionControlSkillsPage = lazy(() => import('./modules/mission-control/skills-page').then((m) => ({ default: m.SkillsPage })));
 const InsightsListPage = lazy(() => import('./modules/insights/list-page').then((m) => ({ default: m.InsightsListPage })));
@@ -1020,6 +1021,13 @@ const missionControlTrustRoute = createRoute({
   component: withSuspense(MissionControlTrustPage),
 });
 
+// Agent receipts — runs, approvals, overrides, cost, drift (#713).
+const missionControlReceiptsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/receipts',
+  component: withSuspense(MissionControlReceiptsPage),
+});
+
 const missionControlConstitutionRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/mission-control/constitution',
@@ -1074,6 +1082,12 @@ const adminPathMissionControlTrustRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/mission-control/trust',
   component: withSuspense(MissionControlTrustPage),
+});
+
+const adminPathMissionControlReceiptsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/receipts',
+  component: withSuspense(MissionControlReceiptsPage),
 });
 
 const adminPathMissionControlConstitutionRoute = createRoute({
@@ -1389,6 +1403,7 @@ const routeTree = rootRoute.addChildren([
     missionControlGoalsRoute,
     missionControlAgentsRoute,
     missionControlTrustRoute,
+    missionControlReceiptsRoute,
     missionControlConstitutionRoute,
     missionControlSkillsRoute,
     adminPathMissionControlRoute,
@@ -1398,6 +1413,7 @@ const routeTree = rootRoute.addChildren([
     adminPathMissionControlGoalsRoute,
     adminPathMissionControlAgentsRoute,
     adminPathMissionControlTrustRoute,
+    adminPathMissionControlReceiptsRoute,
     adminPathMissionControlConstitutionRoute,
     adminPathMissionControlSkillsRoute,
     insightsRoute,

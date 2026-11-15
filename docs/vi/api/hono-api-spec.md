@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 50
-lastUpdated: 2026-11-15T18:29:03.519Z
+version: 51
+lastUpdated: 2026-11-15T19:40:16.328Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3d2993c6d2c70e62
+sourceHash: 97062a2d06428a0d
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T18:29:03.519Z
-codeVerifiedHash: 3d2993c6d2c70e62
-codeVerifiedClaims: 580
+codeVerified: 2026-11-15T19:40:16.328Z
+codeVerifiedHash: 97062a2d06428a0d
+codeVerifiedClaims: 584
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -1088,6 +1088,9 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `GET/POST/PATCH/DELETE` | `/api/v1/agent/roles[/:name]` | CRUD thư viện vai trò Agent (admin) — khởi tạo sẵn với Planner, Writer, … |
 | `GET` | `/api/v1/agent/autonomy` | Sổ bộ tin cậy: quyền hạn + sự cố đang mở |
 | `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Đề xuất thăng cấp; `POST :id/decide` là con đường duy nhất lên cấp cao hơn (admin) |
+| `GET` | `/api/v1/agent/receipts` | Agent receipts (#713): tổng hợp chỉ-đọc về run (theo status/agent, tỉ lệ lỗi), tool call theo skill × kết cục kèm latency p50, approval (status, người duyệt, latency p50/p90/trung bình), veto, câu hỏi `askUser`, lần con người bác bỏ, chi phí token/USD, drift, incident, autonomy grant và thăng cấp, chuỗi theo ngày và các ngưỡng cảnh báo bị vượt. `?since&until` (ISO, mặc định 30 ngày gần nhất, tối đa 180 ngày; `400 VALIDATION` / `WINDOW_TOO_WIDE`). Admin (control plane). Xem [agent receipts](../features/agent-receipts.md) |
+| `GET` | `/api/v1/agent/receipts/export` | CSV (`text/csv`) của `?kind=runs` (mặc định) \| `tool_calls` \| `approvals` trong cùng cửa sổ, tối đa 10.000 dòng (`X-Export-Rows`, `X-Export-Truncated`). Không bao giờ xuất input/output của tool; ô văn bản bắt đầu bằng `= + - @` được thêm tiền tố `'` |
+| `GET/PUT` | `/api/v1/agent/receipts/alerts` | Ngưỡng cảnh báo (`maxRunFailureRate`, `maxVetoRate`, `maxOverrideRate`, `maxApprovalLatencyP90Minutes`, `maxCostUsd`, `maxTokens`, `maxOpenDrift`, `maxIncidents`); khoá vắng thì không kiểm. Lưu ở setting `agent.receipts.alerts`; khoá lạ hoặc tỉ lệ ngoài 0–1 → `400 VALIDATION` |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Cửa sổ veto: các bản staging đang chờ bổ sung `approvalId/collection/itemId/patch/agentRole` từ bản sửa đổi staging (trường null khi staging không còn); `POST :id/veto` loại bỏ một staging |
 | `GET` | `/api/v1/agent/approvals` | Hộp thư approval (bộ lọc `status`; mặc định `pending`) |
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Quyết định của con người cho một hành động đang bị giữ. Body `{ decision: 'approved' \| 'rejected', reason? }`; cần `approvals:decide` (nếu không thì 403), `404` cho id không tồn tại hoặc thuộc tenant khác, `409` khi approval đã rời `pending`. Với `approved`, harness là nơi duy nhất đổi trạng thái, nên việc thực thi và việc ghi status xảy ra đúng một lần. Lúc thực thi, quyền của **người yêu cầu** được resolve lại và hành động chạy với `requester ∩ decider`: approval mà người yêu cầu đã bị thu hồi, hạ quyền hay rời site sẽ bị từ chối, và approval không có thông tin người yêu cầu (bị giữ từ trước khi có cột provenance) bị từ chối với `APPROVAL_PROVENANCE_MISSING`. Approval lưu với `approvalPolicy: human_required` (mọi [external-action tool](../features/external-action-tools.md)) chỉ được giải phóng bởi một người dùng đã đăng nhập: API key, connector token hoặc agent nhận `409 EXECUTION_FAILED` kèm `HUMAN_APPROVAL_REQUIRED`, và approval vẫn ở `pending` |

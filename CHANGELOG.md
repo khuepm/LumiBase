@@ -9,7 +9,13 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+- Extensions can register governed MCP tools, prompts and resources (#715, epic #671 A07). An `mcp` block in the extension manifest declares them; `defineTool` / `defineMcp` / `mcpManifest` in `@lumibase/extension-sdk` author them. Each block needs an admin grant on the installed row (`mcp:tools`, `mcp:prompts`, `mcp:resources`). Tools are advertised as `ext_<key>__<tool>` and run through the same harness path as external-action tools (capability, autonomy gradient, human-only approval); a `schema:write` or `delete*` tool always waits for a signed-in human. The HTTP MCP endpoint gains `resources/list` and `resources/read`; the stdio `@lumibase/mcp-server` discovers extension tools at startup and forwards every call to the governed endpoint. Example: `examples/extension-mcp-notes`.
+- Agent receipts dashboard (#713, epic #671 A05): **Mission Control → Receipts** and `GET /api/v1/agent/receipts` report runs by agent and outcome, tool calls by skill × outcome, approval latency (p50/p90), veto and human-override rates, `askUser` questions, token/USD cost, drift, incidents, autonomy grants and promotions, and a daily series over a window of up to 180 days. Read-only from existing ledger and audit tables (no new writes on the agent hot path). Alert thresholds (`GET/PUT /api/v1/agent/receipts/alerts`) are evaluated at read time; `GET /api/v1/agent/receipts/export` returns CSV for runs, tool calls or approvals.
+
+### Changed
+- The extension manifest accepted by `POST/PATCH /api/v1/extensions` may now carry the structured `mcp` block; it is validated at install time. Other manifest values must still be strings.
+- `buildAuthorizedHarness` (approval decision routes) is now async, so the decision path knows the site's extension tools.
 
 ## [2.1.0] - 2026-11-16
 

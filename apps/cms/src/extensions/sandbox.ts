@@ -82,6 +82,17 @@ export interface ExtensionModule {
     'items.delete.after': HookFn;
     'items.export.before': HookFn;
   }>;
+  /**
+   * MCP tool handlers (#715), matched by name against the manifest's
+   * `mcp.tools`. Only `handler` is read from the bundle; everything that is
+   * listed comes from the manifest.
+   */
+  mcp?: {
+    tools?: Array<{
+      name: string;
+      handler: (args: Record<string, unknown>, ctx: { siteId: string; runId: string | null }) => Promise<unknown>;
+    }>;
+  };
   /** Endpoint handler — called when a request hits /extensions/:name/* */
   handler?: (app: unknown) => void;
   /** Interface / Display / Layout / Panel for Studio */

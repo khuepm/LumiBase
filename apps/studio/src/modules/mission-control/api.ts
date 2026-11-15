@@ -1,10 +1,45 @@
 import { getActiveSite, getActiveToken } from '@/lib/api';
+import type {
+  AgentReceipts,
+  AgentReceiptsAlertThresholds,
+  AgentReceiptsExportKind,
+} from '@lumibase/contracts';
+
+export type { AgentReceipts, AgentReceiptsAlertThresholds, AgentReceiptsExportKind };
 
 /**
  * Mission Control API access (content-os tasks 17-18).
  * Thin typed fetchers over the Agent API; same auth header convention as
  * the AI approvals settings page.
  */
+
+function agentHeaders(): Record<string, string> {
+  const token = getActiveToken();
+  const site = getActiveSite();
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(site ? { 'X-Lumi-Site': site } : {}),
+    'X-Lumi-Client': 'studio',
+  };
+}
+
+/** `?since=…&until=…` for the receipts endpoints (#713). */
+function receiptsQuery(window: { since: string; until: string }, extra: Record<string, string> = {}): string {
+  return `?${new URLSearchParams({ since: window.since, until: window.until, ...extra }).toString()}`;
+}
+
+/**
+ * Downloads a receipts CSV (#713). Not JSON, so not `agentFetch`; same
+ * headers, and the server's error envelope is surfaced verbatim.
+ */
+async function receiptsCsv(kind: AgentReceiptsExportKind, window: { since: string; until: string }): Promise<{ blob: Blob; truncated: boolean }> {
+  const res = await fetch(`/api/v1/agent/receipts/export${receiptsQuery(window, { kind })}`, { headers: agentHeaders() });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { errors?: Array<{ message: string }> };
+    throw new Error(body.errors?.[0]?.message ?? `Request failed: ${res.status}`);
+  }
+  return { blob: await res.blob(), truncated: res.headers.get('X-Export-Truncated') === 'true' };
+}
 
 async function agentFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getActiveToken();
@@ -325,6 +360,15 @@ export interface SiteSkillMatchResult {
 const SKILLS = '/api/v1/agent/skills';
 
 export const missionControlApi = {
+  receipts: (window: { since: string; until: string }) =>
+    agentFetch<AgentReceipts>(`/api/v1/agent/receipts${receiptsQuery(window)}`),
+  receiptAlerts: () => agentFetch<AgentReceiptsAlertThresholds>('/api/v1/agent/receipts/alerts'),
+  setReceiptAlerts: (thresholds: AgentReceiptsAlertThresholds) =>
+    agentFetch<AgentReceiptsAlertThresholds>('/api/v1/agent/receipts/alerts', {
+      method: 'PUT',
+      body: JSON.stringify(thresholds),
+    }),
+  exportReceipts: receiptsCsv,
   approvals: () => agentFetch<AgentApproval[]>('/api/v1/agent/approvals'),
   decideApproval: (id: string, decision: 'approved' | 'rejected', reason?: string) =>
     agentFetch(`/api/v1/agent/approvals/${id}/decide`, {

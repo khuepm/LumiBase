@@ -11,3 +11,22 @@ export {
   type VerifyResult,
   type KeyResolver,
 } from './signature';
+export {
+  EXTENSION_MCP_GRANTS,
+  EXTENSION_TOOL_RISK_CLASSES,
+  EXTENSION_TOOL_NAME_RE,
+  EXTENSION_CAPABILITY_RE,
+  EXTENSION_MCP_DEFAULT_READ_CAPABILITY,
+  extensionMcpToolSchema,
+  extensionMcpPromptSchema,
+  extensionMcpResourceSchema,
+  extensionMcpManifestSchema,
+  parseExtensionMcpManifest,
+  extensionToolName,
+  extensionResourceUri,
+  type ExtensionToolRiskClass,
+  type ExtensionMcpToolDeclaration,
+  type ExtensionMcpPromptDeclaration,
+  type ExtensionMcpResourceDeclaration,
+  type ExtensionMcpManifest,
+} from './mcp';
