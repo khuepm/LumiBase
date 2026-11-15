@@ -46,7 +46,7 @@ export class AutomatedDecisionsService {
         createdAt: revisions.createdAt,
       })
       .from(revisions)
-      .innerJoin(items, eq(revisions.itemId, items.id))
+      .innerJoin(items, and(eq(revisions.siteId, items.siteId), eq(revisions.itemId, items.id)))
       .where(
         and(
           eq(revisions.siteId, params.siteId),
