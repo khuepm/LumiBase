@@ -1,11 +1,11 @@
 ---
-version: 47
-lastUpdated: 2026-11-14T12:31:26.652Z
+version: 48
+lastUpdated: 2026-11-15T11:59:59.798Z
 sourceLang: en
-contentHash: 05c921e5657b5afa
-codeVerified: 2026-11-14T12:31:26.652Z
-codeVerifiedHash: 05c921e5657b5afa
-codeVerifiedClaims: 518
+contentHash: 47bbe5ddaefb77c8
+codeVerified: 2026-11-15T11:59:59.798Z
+codeVerifiedHash: 47bbe5ddaefb77c8
+codeVerifiedClaims: 520
 ---
 
 # Hono API Specification — LumiBase
@@ -486,6 +486,8 @@ Organization errors additionally include `400 VALIDATION`, `400 SCOPE_NOT_ALLOWE
 | `PUT` | `/api/v1/collections/:name/schema` | Apply schema (idempotent, diff-aware) |
 | `POST` | `/api/v1/collections/diff` | Compare bundle schema vs current |
 | `GET` | `/api/v1/collections/:name/index-advice?path=&cast=` | JSON path index advisor (read-only, `schema:read`) |
+| `GET` | `/api/v1/collections/:name/form-layout` | Item form layout: tabs, groups, dividers, conditions (`schema:read`); see [Form layout](../features/form-layout.md) |
+| `PUT` | `/api/v1/collections/:name/form-layout` | Replace (or with `null` remove) the form layout (`schema:update`) |
 
 **Create collection request:**
 ```json

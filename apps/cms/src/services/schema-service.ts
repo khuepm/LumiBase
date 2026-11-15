@@ -14,6 +14,12 @@ import { createSwrCache, type SwrCache } from '@lumibase/runtime';
 import type { CdcOperation, CdcResource, FieldClassification } from '@lumibase/contracts';
 import { validateFieldOptions } from '@lumibase/contracts/schemas';
 import { validateZonedDateTimeOptions } from '@lumibase/contracts/field';
+import {
+  parseFormLayout,
+  renameFieldInLayout,
+  validateFormLayout,
+  type FormLayout,
+} from '@lumibase/contracts/form-layout';
 import { invalidateDeliverTag } from './content-invalidation';
 import { AuditLogger } from '../modules/audit/logger';
 import { OutboxWriter, type OutboxActor } from '../modules/cdc/change-feed';
@@ -464,6 +470,8 @@ export class SchemaService {
       input.primaryKeyType ?? 'nanoid',
       input.storageMode ?? 'jsonb',
     );
+    // A brand-new collection has no fields yet, so only an empty layout fits.
+    assertMetaFormLayout(input.meta, []);
     const existing = await this.getCollection(input.name);
     if (existing) {
       throw new SchemaServiceError(
@@ -505,6 +513,9 @@ export class SchemaService {
       (patch.primaryKeyType ?? current.primaryKeyType) as PrimaryKeyType,
       (patch.storageMode ?? current.storageMode) as StorageMode,
     );
+    if (hasMetaFormLayout(patch.meta)) {
+      assertMetaFormLayout(patch.meta, (await this.listFields(name)).map((f) => f.name));
+    }
     const [row] = await this.deps.db
       .update(collections)
       .set({ ...patch, updatedAt: new Date() })
@@ -556,6 +567,50 @@ export class SchemaService {
   }
 
   // ---------- Fields ----------
+
+  // ---------- Form layout (#750) ----------
+
+  /** The collection's form layout, or `null` when none (or unreadable) is stored. */
+  async getFormLayout(collectionName: string): Promise<FormLayout | null> {
+    const collection = await this.getCollection(collectionName);
+    if (!collection) {
+      throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
+    }
+    return parseFormLayout((collection.meta as Record<string, unknown> | null)?.formLayout);
+  }
+
+  /**
+   * Replace the collection's form layout (`null` removes it). Validated
+   * against the collection's current fields; stored at `meta.formLayout`
+   * with every other meta key preserved.
+   */
+  async setFormLayout(collectionName: string, layout: unknown): Promise<FormLayout | null> {
+    const collection = await this.getCollection(collectionName);
+    if (!collection) {
+      throw new SchemaServiceError('NOT_FOUND', `Collection "${collectionName}" not found.`, 404);
+    }
+    let next: FormLayout | null = null;
+    if (layout !== null && layout !== undefined) {
+      const fieldNames = (await this.listFields(collectionName)).map((f) => f.name);
+      next = checkFormLayout(layout, fieldNames);
+    }
+    const meta = { ...((collection.meta as Record<string, unknown> | null) ?? {}) };
+    if (next) meta.formLayout = next;
+    else delete meta.formLayout;
+    await this.updateCollection(collectionName, { meta });
+    return next;
+  }
+
+  private async renameFieldInStoredLayout(collection: CollectionRow, from: string, to: string) {
+    if (from === to) return;
+    const meta = (collection.meta as Record<string, unknown> | null) ?? {};
+    const layout = parseFormLayout(meta.formLayout);
+    if (!layout) return;
+    await this.deps.db
+      .update(collections)
+      .set({ meta: { ...meta, formLayout: renameFieldInLayout(layout, from, to) }, updatedAt: new Date() })
+      .where(and(scopeSite(collections.siteId, this.deps.siteId), eq(collections.id, collection.id)));
+  }
 
   async listFields(collectionName: string) {
     const collection = await this.getCollection(collectionName);
@@ -739,6 +794,7 @@ export class SchemaService {
       .set({ ...toFieldDbInput(input), updatedAt: new Date() })
       .where(eq(fields.id, existing.id))
       .returning();
+    await this.renameFieldInStoredLayout(collection, fieldName, input.name);
     await this.invalidate(collection.name);
     // Rename is an update keyed on the new field name.
     await this.emitCdcSchemaEvent(
@@ -1043,6 +1099,12 @@ export class SchemaService {
       populatedRowsByField.set(field.name, await this.countFieldDataRows(current.id, field.name));
     }
     const diff = buildSchemaDiff(current, currentFields, currentRelations, input, populatedRowsByField);
+    if (hasMetaFormLayout(collectionPatch.meta)) {
+      assertMetaFormLayout(
+        collectionPatch.meta,
+        (fieldInputs ?? currentFields).map((f) => f.name),
+      );
+    }
 
     const [updated] = await this.deps.db
       .update(collections)
@@ -1945,4 +2007,27 @@ export function relationReferencesField(
     (relation.manyCollection === collectionName && relation.manyField === fieldName) ||
     (relation.oneCollection === collectionName && relation.oneField === fieldName)
   );
+}
+
+/** True when a meta patch carries a non-null `formLayout`. */
+function hasMetaFormLayout(meta: Record<string, unknown> | undefined): meta is Record<string, unknown> {
+  return !!meta && meta.formLayout !== undefined && meta.formLayout !== null;
+}
+
+function assertMetaFormLayout(meta: Record<string, unknown> | undefined, fieldNames: string[]) {
+  if (!hasMetaFormLayout(meta)) return;
+  checkFormLayout(meta.formLayout, fieldNames);
+}
+
+/** Validate a candidate layout or throw `INVALID_FORM_LAYOUT` (400). */
+function checkFormLayout(layout: unknown, fieldNames: string[]): FormLayout {
+  const result = validateFormLayout(layout, fieldNames);
+  if (!result.ok) {
+    throw new SchemaServiceError(
+      'INVALID_FORM_LAYOUT',
+      result.issues.map((i) => `${i.path}: ${i.message}`).join('; '),
+      400,
+    );
+  }
+  return result.layout;
 }

@@ -7,6 +7,11 @@ import {
   ZonedDateTimeError,
   type ZonedDateTimeFieldOptions,
 } from '@lumibase/contracts/field';
+import {
+  requiredSkippedFields,
+  resolveFormVisibility,
+  type FormLayout,
+} from '@lumibase/contracts/form-layout';
 import type { CompiledField } from './schema-service';
 
 /**
@@ -52,11 +57,12 @@ const TYPE_BASE: Record<string, () => ZodTypeAny> = {
  * or an ISO string and normalizes it to `{ instant, tz, offset }`. The
  * string/number rules (`min`, `regex`, …) do not apply to this shape.
  */
-function buildZonedFieldSchema(field: CompiledField): ZodTypeAny {
+function buildZonedFieldSchema(field: CompiledField, skipRequired = false): ZodTypeAny {
+  const required = field.required && !skipRequired;
   const options = field.options as ZonedDateTimeFieldOptions;
   const core = z.unknown().transform((value, ctx) => {
     if (value === null || value === undefined) {
-      if (field.required) {
+      if (required) {
         ctx.addIssue({ code: 'custom', message: 'Required' });
         return z.NEVER;
       }
@@ -72,11 +78,11 @@ function buildZonedFieldSchema(field: CompiledField): ZodTypeAny {
       throw err;
     }
   });
-  return field.required ? core : core.optional();
+  return required ? core : core.optional();
 }
 
-function buildFieldSchema(field: CompiledField): ZodTypeAny {
-  if (isZonedDateTimeField(field)) return buildZonedFieldSchema(field);
+function buildFieldSchema(field: CompiledField, skipRequired = false): ZodTypeAny {
+  if (isZonedDateTimeField(field)) return buildZonedFieldSchema(field, skipRequired);
   let schema = (TYPE_BASE[field.type] ?? (() => z.unknown()))();
 
   const rules = (field.validation?.rules as RuleObject[] | undefined) ?? [];
@@ -87,7 +93,7 @@ function buildFieldSchema(field: CompiledField): ZodTypeAny {
 
   schema = applyOptionParity(schema, field);
 
-  if (!field.required) schema = schema.nullable().optional();
+  if (!field.required || skipRequired) schema = schema.nullable().optional();
   return schema;
 }
 
@@ -197,19 +203,36 @@ function applyRule(schema: ZodTypeAny, rule: RuleObject): ZodTypeAny {
   }
 }
 
+export interface ValidateItemOptions {
+  partial?: boolean;
+  /**
+   * Collection form layout (#750). A field hidden by a layout condition
+   * skips the required check only when it (or an ancestor node) sets
+   * `skipRequiredWhenHidden: true`; type and rule checks still run on any
+   * value it carries.
+   */
+  layout?: FormLayout | null;
+  /**
+   * The full record conditions are evaluated against. On a PATCH this is the
+   * stored item merged with the patch; defaults to `data`.
+   */
+  context?: Record<string, unknown>;
+  /** Stored item data before this write (updates only) — enables `allowClear: false` (#751). */
+  current?: Record<string, unknown> | null;
+}
+
 export function validateItem(
   compiledFields: CompiledField[],
   data: Record<string, unknown>,
-  options: {
-    partial?: boolean;
-    /** Stored item data before this write (updates only) — enables `allowClear: false`. */
-    current?: Record<string, unknown> | null;
-  } = {},
+  options: ValidateItemOptions = {},
 ): { ok: true; data: Record<string, unknown> } | { ok: false; issues: ValidationIssue[] } {
+  const skipped = options.layout
+    ? requiredSkippedFields(resolveFormVisibility(options.layout, options.context ?? data))
+    : new Set<string>();
   const shape: Record<string, ZodTypeAny> = {};
   for (const f of compiledFields) {
     if (options.partial && data[f.name] === undefined) continue;
-    shape[f.name] = buildFieldSchema(f);
+    shape[f.name] = buildFieldSchema(f, skipped.has(f.name));
   }
   const schema = z.looseObject(shape);
   const result = schema.safeParse(data);
