@@ -42,7 +42,25 @@ import {
 import { AUTONOMY_LEVELS, AutonomyService } from './autonomy-service';
 import { KillSwitchService } from './kill-switch-service';
 import { getLoadGuard } from './load-guard-service';
-import { ToolRegistryService } from './tool-registry-service';
+import { ToolRegistryService, type AgentToolDefinition } from './tool-registry-service';
+import {
+  HUMAN_REQUIRED_APPROVAL_POLICY,
+  externalActionMetadata,
+  externalActionTools,
+  governanceFor,
+  scrubSecrets,
+  validateExternalActionInput,
+  type ExternalActionMetadata,
+  type ExternalActionToolDefinition,
+  type ExternalActionToolRegistry,
+} from './external-action-tools';
+import {
+  externalActionInputHash,
+  recordExternalActionAudit,
+  type ApprovalDecider,
+  type ExternalActionAuditEntry,
+} from './external-action-audit';
+import { ToolSecretError, ToolSecretService } from './tool-secret-service';
 import { VetoService } from './veto-service';
 import {
   AgentQuestionService,
@@ -64,7 +82,7 @@ export interface SkillDefinition {
   description: string;
   requiredCapabilities: string[];
   /** Service this skill connects to (for documentation/tracing). */
-  service: 'schema' | 'items' | 'ai' | 'access' | 'intents' | 'flows' | 'deployments' | 'cdc-feed' | 'agent';
+  service: 'schema' | 'items' | 'ai' | 'access' | 'intents' | 'flows' | 'deployments' | 'cdc-feed' | 'agent' | 'external';
   handler: (args: Record<string, unknown>) => Promise<unknown>;
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
@@ -77,6 +95,12 @@ export interface SkillDefinition {
    * its existing autonomy behaviour is unchanged.
    */
   dangerous?: boolean;
+  /**
+   * Declared metadata of an external-action tool (`external-action-tools.ts`).
+   * Present only on tools whose effect lands outside the CMS; the harness
+   * decides on it instead of on the name/capability heuristics above.
+   */
+  external?: ExternalActionMetadata;
 }
 
 /**
@@ -154,6 +178,11 @@ export interface AISecureHarnessConfig {
    * is reached immediately. Best-effort — never blocks execution.
    */
   notify?: AgentNotifier;
+  /**
+   * Registry of external-action tools this harness offers. Defaults to the
+   * process-wide registry, so every construction site sees the same tools.
+   */
+  externalTools?: ExternalActionToolRegistry;
 }
 
 // ---------------------------------------------------------------------------
@@ -2306,6 +2335,63 @@ function buildCoreSkills(services: SkillServices): Record<string, SkillDefinitio
  */
 export const CORE_SKILLS: Record<string, SkillDefinition> = buildCoreSkills({});
 
+/** Message of every refusal to run an external-action tool outside the governed path. */
+const EXTERNAL_TOOL_UNGOVERNED =
+  'EXTERNAL_TOOL_UNGOVERNED: external-action tools run only through the governed harness path';
+
+/**
+ * Projects registered external-action tools into skill definitions.
+ *
+ * `run` is the only way the handler is ever reached; the harness passes its
+ * own guarded executor, and the listing catalog below passes none, so a skill
+ * taken from the catalog cannot execute.
+ *
+ * A tool whose name is already a core skill is skipped: a registration must
+ * not be able to replace `deleteCollection` with something else.
+ */
+function externalSkillDefinitions(
+  registry: ExternalActionToolRegistry,
+  base: Record<string, SkillDefinition>,
+  run?: (tool: ExternalActionToolDefinition, args: Record<string, unknown>) => Promise<unknown>,
+): Record<string, SkillDefinition> {
+  const skills: Record<string, SkillDefinition> = {};
+  for (const tool of registry.list()) {
+    if (Object.hasOwn(base, tool.name)) {
+      console.warn(`[ai-harness] external tool "${tool.name}" shadows a core skill and was ignored`);
+      continue;
+    }
+    const metadata = externalActionMetadata(tool);
+    skills[tool.name] = {
+      name: tool.name,
+      description: tool.description,
+      requiredCapabilities: [tool.capability],
+      service: 'external',
+      inputSchema: tool.inputSchema,
+      owner: tool.owner ?? 'external',
+      dangerous: governanceFor(metadata).effectful,
+      external: metadata,
+      handler: run
+        ? (args) => run(tool, args)
+        : async () => {
+            throw new Error(EXTERNAL_TOOL_UNGOVERNED);
+          },
+    };
+  }
+  return skills;
+}
+
+/**
+ * Core skills plus registered external-action tools, for LISTING only
+ * (`tools/list`, `GET /agent/tools`). Handlers of external tools in this
+ * catalog refuse to run; execution goes through an `AISecureHarness`.
+ */
+export function skillCatalog(
+  registry: ExternalActionToolRegistry = externalActionTools,
+): Record<string, SkillDefinition> {
+  if (registry.size === 0) return CORE_SKILLS;
+  return { ...CORE_SKILLS, ...externalSkillDefinitions(registry, CORE_SKILLS) };
+}
+
 // ---------------------------------------------------------------------------
 // AI Secure Harness
 // ---------------------------------------------------------------------------
@@ -2489,6 +2575,18 @@ export class AISecureHarness {
   private readonly queue?: QueueProvider;
   private readonly cache?: CacheProvider;
   private readonly notify?: AgentNotifier;
+  private readonly keys?: KeyProvider;
+  private readonly externalTools: ExternalActionToolRegistry;
+  /**
+   * External tools the governed path has cleared to run right now. A handler
+   * runs only while its name is in here, so `runSkill` called from anywhere
+   * else (it is public) cannot reach an external effect.
+   */
+  private readonly externalClearance = new Set<string>();
+  /** Run the handler in flight belongs to; read by the external executor. */
+  private activeRunId: string | null = null;
+  /** Who is deciding the approval in flight; set for the span of `executeApproved`. */
+  private activeDecider: ApprovalDecider | null = null;
   /** Set when a skill handler reaches a service; drives retry safety (#453). */
   private readonly serviceTouch = new ServiceTouchTracker();
 
@@ -2505,6 +2603,8 @@ export class AISecureHarness {
     this.queue = config.queue;
     this.cache = config.cache;
     this.notify = config.notify;
+    this.keys = config.keys;
+    this.externalTools = config.externalTools ?? externalActionTools;
     const hasService = Boolean(
       config.schemaService ||
         config.itemService ||
@@ -2519,10 +2619,11 @@ export class AISecureHarness {
     // When services are provided, build fresh skills wired to real services.
     // When no services are provided, use the shared CORE_SKILLS object
     // (allows tests to mutate handlers directly on the exported object).
+    let baseSkills: Record<string, SkillDefinition>;
     if (hasService) {
       // Services are proxied so the harness can tell a failure that never
       // reached one (safe to retry) from a failure that did (ambiguous).
-      this.skills = buildCoreSkills({
+      baseSkills = buildCoreSkills({
         schemaService: this.serviceTouch.wrap(config.schemaService),
         itemService: this.serviceTouch.wrap(this.itemService),
         accessService: this.serviceTouch.wrap(config.accessService),
@@ -2543,8 +2644,15 @@ export class AISecureHarness {
         ...('llm' in config ? { llm: config.llm ?? null } : {}),
       });
     } else {
-      this.skills = CORE_SKILLS;
+      baseSkills = CORE_SKILLS;
     }
+    // External-action tools join the same map, so one registry, one capability
+    // check and one policy evaluation cover them. With none registered the map
+    // is the base object itself (tests mutate the shared CORE_SKILLS).
+    const externalSkills = externalSkillDefinitions(this.externalTools, baseSkills, (tool, args) =>
+      this.runExternalHandler(tool, args),
+    );
+    this.skills = Object.keys(externalSkills).length > 0 ? { ...baseSkills, ...externalSkills } : baseSkills;
 
     this.runService = new AgentRunService(this.db, this.siteId, config.queue, config.notify);
     this.toolRegistry = new ToolRegistryService(this.db, this.siteId, this.skills);
@@ -2656,6 +2764,11 @@ export class AISecureHarness {
    * message naming the offending field(s).
    */
   private validateToolInput(skillName: string, args: Record<string, unknown>): string | null {
+    const external = this.externalDefinition(skillName);
+    if (external) {
+      const issue = validateExternalActionInput(external.inputSchema, args);
+      return issue ? `Input validation error for "${skillName}": ${issue}` : null;
+    }
     const verdict = validateAgentToolInput(skillName, args);
     if (verdict.ok) return null;
     const detail = verdict.issues
@@ -2880,6 +2993,12 @@ export class AISecureHarness {
         });
         return { status: 'denied', message, ...run, toolCallId };
       }
+    }
+
+    // External-action tools are decided on their declaration, not on the
+    // name/capability heuristics below.
+    if (tool.external) {
+      return this.executeExternalAction({ tool, skillName, args, contextMessage, envelope, run, toolCallId, startedAt });
     }
 
     // Step 3: Evaluate risk. Name/capability classification first, then the
@@ -3353,6 +3472,12 @@ export class AISecureHarness {
       return { status: 'denied', message: 'Insufficient capabilities' };
     }
 
+    // The legacy branch records no run, no tool call and no approval
+    // provenance, so nothing with an effect outside the CMS may run on it.
+    if (skill.external) {
+      return { status: 'denied', code: 'EXTERNAL_TOOL_UNGOVERNED', message: EXTERNAL_TOOL_UNGOVERNED };
+    }
+
     // Same input contract as the governed branch, and for the same reason: the
     // approval insert below must never park arguments that cannot execute.
     const inputError = this.validateToolInput(skillName, args);
@@ -3411,6 +3536,7 @@ export class AISecureHarness {
     }
 
     const skill = this.skills[skillName]!;
+    this.activeRunId = runContext?.runId ?? null;
 
     // Item writes performed by skills are agent-authored: stamp revision
     // provenance with the executing run before the handler touches data.
@@ -3477,6 +3603,11 @@ export class AISecureHarness {
     approvalId: string,
     userId: string,
     userCapabilities: string[],
+    /**
+     * Who is deciding. Required for an approval only a human may decide (every
+     * external-action tool): absent or non-human, such an approval is refused.
+     */
+    decider?: ApprovalDecider,
   ): Promise<HarnessExecutionResult> {
     // Query approval record scoped to current site
     const [record] = await this.db
@@ -3523,6 +3654,36 @@ export class AISecureHarness {
       }
     }
 
+    // Human-only approvals. An external-action tool's approval is released by a
+    // signed-in person and by nothing else: not an API key (whoever holds it),
+    // not an agent reviewer, not a caller that did not say who it is. Checked
+    // on BOTH the live declaration and the policy stored when the approval was
+    // parked, so neither re-registering the tool with a milder declaration nor
+    // editing the row turns the requirement off.
+    const humanOnly =
+      Boolean(skill.external) || agentApproval?.approvalPolicy === HUMAN_REQUIRED_APPROVAL_POLICY;
+    if (skill.external && !this.agentHarnessEnabled) {
+      return { status: 'denied', code: 'EXTERNAL_TOOL_UNGOVERNED', message: EXTERNAL_TOOL_UNGOVERNED };
+    }
+    if (humanOnly && decider?.kind !== 'human') {
+      const message =
+        'HUMAN_APPROVAL_REQUIRED: this approval can only be decided by a signed-in user; API keys and agents cannot approve it';
+      if (skill.external) {
+        await this.auditExternal({
+          stage: 'refused',
+          tool: record.skillName,
+          metadata: skill.external,
+          agentName: agentApproval?.requestedByAgent ?? record.agentName,
+          runId: agentApproval?.runId ?? null,
+          approvalId: agentApproval?.id ?? null,
+          code: 'HUMAN_APPROVAL_REQUIRED',
+          message,
+          decider: decider ?? null,
+        });
+      }
+      return { status: 'denied', code: 'HUMAN_APPROVAL_REQUIRED', message };
+    }
+
     // Re-resolve the ORIGINAL requester before executing (#472).
     //
     // The decider's capabilities were the only ones consulted here. An approval
@@ -3561,9 +3722,11 @@ export class AISecureHarness {
     // Scoped for the duration of the decision and restored afterwards, because a
     // harness built per request is reused for anything else on that request.
     const restoreScope = this.scopeToRequester(requesterGrant);
+    this.activeDecider = decider ?? null;
     try {
       return await this.executeApprovedUnderScope(record, userId);
     } finally {
+      this.activeDecider = null;
       restoreScope();
     }
   }
@@ -3863,8 +4026,27 @@ export class AISecureHarness {
     // First-class approvals retain the requesting agent even when an older
     // legacy row still carries the historical copilot default.
     const approvalFrozenScope = await approvalKillSwitch.frozenScopeFor(run.agentName);
+    const externalMetadata = this.skills[record.skillName]?.external;
+    const externalAudit = externalMetadata
+      ? {
+          tool: record.skillName,
+          metadata: externalMetadata,
+          agentName: run.agentName,
+          runId: run.runId,
+          approvalId: existingAgentApproval?.id ?? null,
+          decider: this.activeDecider,
+        }
+      : null;
     if (approvalFrozenScope) {
       if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
+      if (externalAudit) {
+        await this.auditExternal({
+          ...externalAudit,
+          stage: 'refused',
+          code: 'FROZEN',
+          message: `frozen: agent runtime is frozen for this ${approvalFrozenScope}`,
+        });
+      }
       return {
         status: 'denied',
         message: `frozen: agent runtime is frozen for this ${approvalFrozenScope}`,
@@ -3889,12 +4071,29 @@ export class AISecureHarness {
     // a stale flag would misclassify the next failure.
     this.serviceTouch.reset();
 
+    // The decision is on record BEFORE the external effect. This write is not
+    // best-effort: if it fails, the throw is caught by the caller, the claim is
+    // released (nothing was touched yet) and the handler never starts.
+    const externalInputHash = externalAudit
+      ? await externalActionInputHash(record.arguments as Record<string, unknown>)
+      : null;
+    if (externalAudit) {
+      await recordExternalActionAudit(this.db, this.siteId, {
+        ...externalAudit,
+        stage: 'approved',
+        toolCallId,
+        inputHash: externalInputHash,
+      });
+    }
+
     let result;
     try {
-      result = await this.runSkill(
-        record.skillName,
-        record.arguments as Record<string, unknown>,
-        { runId: run.runId },
+      result = await this.withExternalClearance(externalAudit ? record.skillName : null, () =>
+        this.runSkill(
+          record.skillName,
+          record.arguments as Record<string, unknown>,
+          { runId: run.runId },
+        ),
       );
     } catch (err) {
       if (err instanceof OutcomePersistenceError) throw err;
@@ -3911,6 +4110,16 @@ export class AISecureHarness {
       });
       await this.runService.failRun(run.runId, message);
       return { status: 'denied', message, runId: run.runId, toolCallId };
+    }
+
+    if (externalAudit) {
+      await this.auditExternal({
+        ...externalAudit,
+        stage: result.success ? 'executed' : 'failed',
+        toolCallId,
+        inputHash: externalInputHash,
+        ...(result.success ? {} : { code: result.code ?? 'EXECUTION_FAILED', message: result.error }),
+      });
     }
 
     if (result.success) {
@@ -4108,6 +4317,7 @@ export class AISecureHarness {
   async rejectApproval(
     approvalId: string,
     userId: string,
+    decider?: ApprovalDecider,
   ): Promise<boolean> {
     // A reject races the same decision boundary an approve does, so it has to
     // contend for the SAME row first (#453).
@@ -4179,7 +4389,232 @@ export class AISecureHarness {
     if (rejected.length > 0) {
       const linked = await this.loadAgentApprovalFor(approvalId);
       if (linked) observeApprovalDecision({ ...linked, status: 'rejected' });
+      if (this.externalTools.size > 0) {
+        const [record] = await this.db
+          .select({ skillName: aiApprovals.skillName, agentName: aiApprovals.agentName })
+          .from(aiApprovals)
+          .where(and(eq(aiApprovals.id, approvalId), eq(aiApprovals.siteId, this.siteId)))
+          .limit(1);
+        const metadata = record ? this.skills[record.skillName]?.external : undefined;
+        if (record && metadata) {
+          await this.auditExternal({
+            stage: 'rejected',
+            tool: record.skillName,
+            metadata,
+            agentName: linked?.requestedByAgent ?? record.agentName,
+            runId: linked?.runId ?? null,
+            approvalId: linked?.id ?? null,
+            decider: decider ?? null,
+          });
+        }
+      }
     }
     return rejected.length > 0;
+  }
+
+  // ---------- External-action tools ----------
+
+  /** The registered definition behind a skill name, when it is an external tool. */
+  private externalDefinition(skillName: string): ExternalActionToolDefinition | undefined {
+    if (!Object.hasOwn(this.skills, skillName) || !this.skills[skillName]!.external) return undefined;
+    return this.externalTools.get(skillName);
+  }
+
+  /**
+   * Writes an audit row for an event that has ALREADY happened (a proposal was
+   * parked, a call was refused, a handler returned). A failure to write it must
+   * not turn a completed external effect into a reported failure, so it is
+   * logged instead of thrown. The one audit write that gates an effect, the
+   * `approved` row, does not go through here.
+   */
+  private async auditExternal(entry: ExternalActionAuditEntry): Promise<void> {
+    try {
+      await recordExternalActionAudit(this.db, this.siteId, entry);
+    } catch (err) {
+      console.error(
+        `[ai-harness] external action audit (${entry.stage}, ${entry.tool}) was not recorded: ${runErrorMessage(err)}`,
+      );
+    }
+  }
+
+  /** Runs `fn` with `skillName` cleared to execute, and always revokes it. */
+  private async withExternalClearance<T>(skillName: string | null, fn: () => Promise<T>): Promise<T> {
+    if (!skillName) return fn();
+    this.externalClearance.add(skillName);
+    try {
+      return await fn();
+    } finally {
+      this.externalClearance.delete(skillName);
+    }
+  }
+
+  /**
+   * The only place an external-action handler is called.
+   *
+   * Secrets are decrypted here, for this site, immediately before the call,
+   * and exist only in the context object the handler receives. Whatever the
+   * handler returns or throws is scrubbed of those values before it leaves
+   * this method, so they cannot reach the tool result, the stored tool call,
+   * the run, a log line or an audit row even when a handler echoes them.
+   */
+  private async runExternalHandler(
+    tool: ExternalActionToolDefinition,
+    args: Record<string, unknown>,
+  ): Promise<unknown> {
+    if (!this.externalClearance.has(tool.name)) {
+      throw new Error(EXTERNAL_TOOL_UNGOVERNED);
+    }
+    let secrets: Map<string, string>;
+    try {
+      secrets = await new ToolSecretService({ db: this.db, siteId: this.siteId, keys: this.keys }).resolve(tool.secrets);
+    } catch (err) {
+      // Before the handler: nothing external happened, the call is retryable.
+      throw new Error(
+        err instanceof ToolSecretError ? `${err.code}: ${err.message}` : 'SECRET_UNREADABLE: tool secrets could not be resolved',
+      );
+    }
+    // From here on the outcome is unknown if anything fails (#453).
+    this.serviceTouch.markTouched();
+    try {
+      const output = await tool.handler(args, {
+        siteId: this.siteId,
+        runId: this.activeRunId,
+        secret: (name) => {
+          const value = secrets.get(name);
+          if (value === undefined) {
+            throw new Error(`Secret "${name}" is not declared by tool "${tool.name}"`);
+          }
+          return value;
+        },
+      });
+      return scrubSecrets(output, secrets);
+    } catch (err) {
+      throw new Error(scrubSecrets(runErrorMessage(err), secrets));
+    }
+  }
+
+  /**
+   * Decision for an external-action tool. Reached after the kill switch, input
+   * validation, capability and tool-policy gates that every tool call passes.
+   * The rule itself is {@link governanceFor}.
+   */
+  private async executeExternalAction(input: {
+    tool: AgentToolDefinition;
+    skillName: string;
+    args: Record<string, unknown>;
+    contextMessage?: string | undefined;
+    envelope: AgentRunEnvelope;
+    run: { goalId: string; runId: string; agentName: string };
+    toolCallId: string;
+    startedAt: number;
+  }): Promise<HarnessExecutionResult> {
+    const { tool, skillName, args, envelope, run, toolCallId, startedAt } = input;
+    const metadata = tool.external!;
+    const governance = governanceFor(metadata);
+
+    // The run carries the constitution it started under, whatever the
+    // decision turns out to be.
+    let constitutionHash: string | null = null;
+    try {
+      const { ConstitutionService } = await import('./constitution-service');
+      constitutionHash = await new ConstitutionService({ db: this.db, siteId: this.siteId }).pinToRun(run.runId);
+    } catch {
+      constitutionHash = null;
+    }
+    const audit = {
+      tool: skillName,
+      metadata,
+      agentName: run.agentName,
+      runId: run.runId,
+      toolCallId,
+      inputHash: await externalActionInputHash(args),
+      constitutionHash,
+    };
+
+    let level: number | null = null;
+    if (governance.effectful) {
+      // `dangerous: true` makes the no-grant default L1: an external effect is
+      // never autonomous just because nobody configured a grant.
+      level = await new AutonomyService({ db: this.db, siteId: this.siteId, notify: this.notify }).resolve(
+        envelope.agentName ?? run.agentName,
+        metadata.capability,
+        {
+          dangerous: true,
+          intentCap: envelope.autonomyCap ?? null,
+          irreversible: metadata.reversibility === 'irreversible',
+        },
+      );
+
+      if (level === AUTONOMY_LEVELS.SHADOW) {
+        const message = `autonomy_shadow: L0 cannot act; "${skillName}" was not executed`;
+        await this.runService.finishToolCall(toolCallId, {
+          status: 'denied',
+          error: message,
+          latencyMs: Date.now() - startedAt,
+        });
+        await this.runService.failRun(run.runId, message, { stopReason: 'autonomy_shadow' });
+        await this.auditExternal({ ...audit, stage: 'refused', autonomyLevel: level, code: 'AUTONOMY_SHADOW', message });
+        return { status: 'denied', code: 'AUTONOMY_SHADOW', message, ...run, toolCallId };
+      }
+
+      const autonomous =
+        !governance.alwaysRequiresApproval &&
+        governance.minAutonomousLevel !== null &&
+        level >= governance.minAutonomousLevel;
+      if (!autonomous) {
+        const parked = await this.parkForApproval({
+          skillName,
+          args,
+          contextMessage: input.contextMessage,
+          run,
+          toolCallId,
+          approvalPolicy: HUMAN_REQUIRED_APPROVAL_POLICY,
+          startedAt,
+          requestedByPrincipal: envelope.requestedByPrincipal ?? null,
+        });
+        if (parked.status === 'pending_approval') {
+          await this.auditExternal({
+            ...audit,
+            stage: 'proposed',
+            autonomyLevel: level,
+            approvalId: parked.agentApprovalId ?? null,
+          });
+        }
+        return parked;
+      }
+      agentAutonomousOpsTotal.inc({ level: `L${level}` });
+    }
+
+    const result = await this.withExternalClearance(skillName, () =>
+      this.runSkill(skillName, args, { runId: run.runId }),
+    );
+    if (result.success) {
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'executed',
+        output: result.data,
+        latencyMs: Date.now() - startedAt,
+      });
+      await this.runService.closeRun(run.runId, {
+        toolCalls: 1,
+        lastToolLatencyMs: Date.now() - startedAt,
+        ...(level !== null ? { autonomyLevel: level } : {}),
+      });
+      await this.auditExternal({ ...audit, stage: 'executed', autonomyLevel: level });
+      return { status: 'executed', data: result.data, ...run, toolCallId };
+    }
+    await this.runService.finishToolCall(toolCallId, {
+      status: 'failed',
+      error: result.error,
+      latencyMs: Date.now() - startedAt,
+    });
+    await this.runService.failRun(run.runId, result.error, { toolCalls: 1 });
+    await this.auditExternal({
+      ...audit,
+      stage: 'failed',
+      autonomyLevel: level,
+      code: result.code ?? 'EXECUTION_FAILED',
+      message: result.error,
+    });
+    return { status: 'denied', code: result.code, message: result.error, ...run, toolCallId };
   }
 }

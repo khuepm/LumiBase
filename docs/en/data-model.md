@@ -1,10 +1,10 @@
 ---
-version: 15
-lastUpdated: 2026-11-13T15:31:05.385Z
+version: 16
+lastUpdated: 2026-11-14T12:31:30.227Z
 sourceLang: en
-contentHash: ffe6886c5e7614f4
-codeVerified: 2026-11-13T15:32:52.775Z
-codeVerifiedHash: ffe6886c5e7614f4
+contentHash: 26c9ba05b78320c7
+codeVerified: 2026-11-14T12:31:30.227Z
+codeVerifiedHash: 26c9ba05b78320c7
 codeVerifiedClaims: 20
 ---
 
@@ -411,6 +411,7 @@ Turning the draft-review pilot off deletes none of these rows.
 | `constitutions` | Versioned publish-gate evaluator sets; sha256 hash identity; at most one `active` per site |
 | `site_skills` | Site Skills (`site-skills.ts`, migration 0026): playbooks injected into matching agent runs. Unique `(siteId, slug)`; `status` `draft`/`active`/`archived`; `riskClass`; scope columns `surfaces`, `tools`, `collections`, `triggers`, `requiredCapabilities`; current `body`, `version`, `hash` |
 | `site_skill_versions` | Immutable version trail of a site skill: unique `(skillId, version)`, content `snapshot`, sha256 `hash`, `source`/`sourceRef`, `changeNote`, author. Both tables are in the `site_isolation` RLS list |
+| `agent_tool_secrets` | Secrets of external-action tools (`ai.ts`, migration 0030). Unique `(siteId, name)`; `ciphertext` is a `KeyProvider` envelope bound to site and name, `keyId` the key version, `updatedBy` the administrator. Never returned by an API. In the `site_isolation` RLS set. See [external-action tools](features/external-action-tools.md) |
 
 Content OS columns on existing tables:
 

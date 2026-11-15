@@ -327,6 +327,37 @@ export const agentTools = pgTable(
   }),
 );
 
+/**
+ * Secrets for external-action tools, per site.
+ *
+ * An external-action tool declares the NAMES of the secrets it needs; the
+ * value lives here, encrypted with the runtime KeyProvider (versioned
+ * `{keyId}:{body}` envelope, AAD bound to site and name), and is decrypted by
+ * the harness only while the handler runs. No API returns `ciphertext` or the
+ * plaintext: a secret can be set, replaced and deleted, never read back.
+ */
+export const agentToolSecrets = pgTable(
+  'lumibase_agent_tool_secrets',
+  {
+    id: id(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => sites.id, { onDelete: 'cascade' }),
+    /** Reference name a tool declares, e.g. `TICKETS_API_TOKEN`. */
+    name: text('name').notNull(),
+    /** AES-GCM envelope of the value. */
+    ciphertext: text('ciphertext').notNull(),
+    /** KeyProvider key version that wrapped the value. */
+    keyId: text('key_id').notNull(),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    siteNameUnique: uniqueIndex('agent_tool_secrets_site_name_unique').on(t.siteId, t.name),
+  }),
+);
+
 export const agentPermissions = pgTable(
   'lumibase_agent_permissions',
   {

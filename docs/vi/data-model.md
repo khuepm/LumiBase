@@ -1,13 +1,13 @@
 ---
-version: 15
-lastUpdated: 2026-11-13T15:31:05.385Z
+version: 16
+lastUpdated: 2026-11-14T12:31:30.227Z
 sourceLang: en
 translatedFrom: en
-sourceHash: ffe6886c5e7614f4
+sourceHash: 26c9ba05b78320c7
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T15:32:52.775Z
-codeVerifiedHash: ffe6886c5e7614f4
+codeVerified: 2026-11-14T12:31:30.227Z
+codeVerifiedHash: 26c9ba05b78320c7
 codeVerifiedClaims: 20
 ---
 
@@ -414,6 +414,7 @@ Tắt pilot kiểm tra bản nháp không xoá dòng nào trong các bảng này
 | `constitutions` | Tập evaluator cho publish-gate, có version; định danh bằng hash sha256; mỗi site tối đa một bản `active` |
 | `site_skills` | Site Skills (`site-skills.ts`, migration 0026): playbook được chèn vào các agent run khớp. Unique `(siteId, slug)`; `status` `draft`/`active`/`archived`; `riskClass`; các cột phạm vi `surfaces`, `tools`, `collections`, `triggers`, `requiredCapabilities`; `body`, `version`, `hash` hiện tại |
 | `site_skill_versions` | Vết phiên bản bất biến của một site skill: unique `(skillId, version)`, `snapshot` nội dung, `hash` sha256, `source`/`sourceRef`, `changeNote`, tác giả. Cả hai bảng nằm trong danh sách RLS `site_isolation` |
+| `agent_tool_secrets` | Bí mật của external-action tool (`ai.ts`, migration 0030). Unique `(siteId, name)`; `ciphertext` là envelope của `KeyProvider` gắn với site và tên, `keyId` là phiên bản khoá, `updatedBy` là quản trị viên. Không API nào trả về. Nằm trong tập RLS `site_isolation`. Xem [external-action tools](features/external-action-tools.md) |
 
 Các cột Content OS thêm vào bảng có sẵn:
 
