@@ -57,7 +57,7 @@ function Avatar({ user }: { user: PresenceEntry }) {
         fontSize: 11,
         fontWeight: 600,
         border: '2px solid var(--color-background, #fff)',
-        marginLeft: -6,
+        marginInlineStart: -6,
         flexShrink: 0,
         cursor: 'default',
         userSelect: 'none',
@@ -89,7 +89,7 @@ export function PresenceStack({ peers, maxVisible = 4 }: PresenceStackProps) {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        paddingLeft: 6,
+        paddingInlineStart: 6,
         gap: 0,
       }}
     >
@@ -111,7 +111,7 @@ export function PresenceStack({ peers, maxVisible = 4 }: PresenceStackProps) {
             fontSize: 10,
             fontWeight: 700,
             border: '2px solid var(--color-background, #fff)',
-            marginLeft: -6,
+            marginInlineStart: -6,
             flexShrink: 0,
           }}
         >

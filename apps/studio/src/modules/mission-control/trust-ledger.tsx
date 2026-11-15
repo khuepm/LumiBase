@@ -140,7 +140,7 @@ export function TrustLedger() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+              <tr className="border-b text-start text-xs uppercase text-muted-foreground">
                 <th className="py-2">Role</th>
                 <th>Capability</th>
                 <th>Level</th>
@@ -189,7 +189,7 @@ export function TrustLedger() {
               >
                 <span>
                   Promotion proposal <code className="rounded bg-muted px-1 text-xs">{proposal.id}</code>
-                  <span className="ml-2 text-xs text-muted-foreground">
+                  <span className="ms-2 text-xs text-muted-foreground">
                     {new Date(proposal.createdAt).toLocaleString()}
                   </span>
                 </span>

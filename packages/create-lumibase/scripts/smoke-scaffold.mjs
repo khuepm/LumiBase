@@ -31,6 +31,15 @@
  * Pages". The build runs with no CMS configured, which is the first-deploy
  * path both starters support (a "connect your CMS" page).
  *
+ * Framework matrix (#760, `.github/workflows/runtime-matrix.yml`):
+ *   node scripts/smoke-scaffold.mjs --template nextjs --pm npm --next 15 --build --skip-audit
+ *     --next <major>   install `next@^<major>` instead of the template's pin, so
+ *                      CI proves the template on Next.js current and current−1
+ *     --build          also run `next build` after the typecheck (nextjs only)
+ *     --skip-audit     skip the production audit — the matrix answers "does it
+ *                      work on this framework line?", the default smoke keeps
+ *                      answering "is the shipped graph clean?"
+ *
  * Network is required. This is not part of `pnpm test` — it is a separate
  * command so the unit suite stays offline and fast.
  */
@@ -58,7 +67,15 @@ const BUILD_OUTPUT = {
 const PACKAGE_MANAGERS = ['npm', 'pnpm'];
 
 function parseArgs(argv) {
-  const options = { templates: TEMPLATES, pms: PACKAGE_MANAGERS, keep: false, workdir: null };
+  const options = {
+    templates: TEMPLATES,
+    pms: PACKAGE_MANAGERS,
+    keep: false,
+    workdir: null,
+    next: null,
+    build: false,
+    audit: true,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--') {
@@ -66,6 +83,15 @@ function parseArgs(argv) {
       continue;
     } else if (arg === '--keep') {
       options.keep = true;
+    } else if (arg === '--build') {
+      options.build = true;
+    } else if (arg === '--skip-audit') {
+      options.audit = false;
+    } else if (arg === '--next') {
+      const value = argv[i + 1];
+      if (!/^\d+$/.test(value ?? '')) throw new Error('--next must be a Next.js major, e.g. 16');
+      options.next = value;
+      i += 1;
     } else if (arg === '--workdir') {
       const value = argv[i + 1];
       if (!value) throw new Error('--workdir needs a directory');
@@ -122,7 +148,7 @@ function packReleaseClients(workdir) {
   return tarballs;
 }
 
-function smoke({ template, pm, workdir, tarballs }) {
+function smoke({ template, pm, workdir, tarballs, next, build, audit: runAudit }) {
   const label = `${template} × ${pm}`;
   const projectName = `smoke-${template}-${pm}`;
   const projectDir = join(workdir, projectName);
@@ -156,6 +182,7 @@ function smoke({ template, pm, workdir, tarballs }) {
     const manifestPath = join(projectDir, 'package.json');
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     manifest.dependencies.lumibase = tarballs.lumibase;
+    if (next && template === 'nextjs') manifest.dependencies.next = `^${next}`;
     manifest.overrides = { ...manifest.overrides, '@lumibase/sdk': tarballs['@lumibase/sdk'] };
     manifest.pnpm = {
       ...manifest.pnpm,
@@ -173,7 +200,7 @@ function smoke({ template, pm, workdir, tarballs }) {
   // Audit the installed production graph: a manifest-only test missed the
   // vulnerable PostCSS pinned by Next.js in a fresh Next.js starter. The
   // Astro and SvelteKit starters get the same check (#744).
-  if (CLIENT_TEMPLATES.has(template)) {
+  if (CLIENT_TEMPLATES.has(template) && runAudit) {
     const audit = run(pm, ['audit', pm === 'npm' ? '--omit=dev' : '--prod', '--audit-level=moderate'], projectDir);
     if (audit.status !== 0) {
       return { label, step: `${pm} audit`, status: audit.status, output: audit.output };
@@ -185,18 +212,25 @@ function smoke({ template, pm, workdir, tarballs }) {
     return { label, step: `${pm} run typecheck`, status: typecheck.status, output: typecheck.output };
   }
 
+  if (template === 'nextjs' && build) {
+    const built = run(pm, ['run', 'build'], projectDir);
+    if (built.status !== 0) {
+      return { label, step: `${pm} run build`, status: built.status, output: built.output };
+    }
+  }
+
   const expectedOutput = BUILD_OUTPUT[template];
   if (expectedOutput) {
-    const build = run(pm, ['run', 'build'], projectDir);
-    if (build.status !== 0) {
-      return { label, step: `${pm} run build`, status: build.status, output: build.output };
+    const built = run(pm, ['run', 'build'], projectDir);
+    if (built.status !== 0) {
+      return { label, step: `${pm} run build`, status: built.status, output: built.output };
     }
     if (!existsSync(join(projectDir, expectedOutput))) {
       return {
         label,
         step: `${pm} run build`,
         status: 1,
-        output: `build exited 0 but left no ${expectedOutput}\n${build.output}`,
+        output: `build exited 0 but left no ${expectedOutput}\n${built.output}`,
       };
     }
   }
@@ -231,7 +265,7 @@ function main(argv) {
     for (const template of options.templates) {
       for (const pm of options.pms) {
         process.stdout.write(`• ${template} × ${pm} … `);
-        const result = smoke({ template, pm, workdir, tarballs });
+        const result = smoke({ ...options, template, pm, workdir, tarballs });
         if (result.status === 0) {
           console.log('ok');
         } else {

@@ -82,7 +82,7 @@ export function CdcPipelineListPage() {
       {data && data.length > 0 && (
         <div className="overflow-hidden rounded-lg border">
           <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+            <thead className="bg-muted/40 text-start text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-2 font-medium">Name</th>
                 <th className="px-4 py-2 font-medium">Status</th>

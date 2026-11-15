@@ -224,6 +224,8 @@ describe('generateOpenApiDocument — properties', () => {
                     oneCollection: s.collectionNames[f.relateTo!]!,
                     oneField: null,
                     junctionCollection: null,
+                    relationType: 'm2o' as const,
+                    alias: f.name,
                   })),
               },
             ),
@@ -264,5 +266,7 @@ describe('generateOpenApiDocument — properties', () => {
       }),
       { numRuns: 60 },
     );
-  });
+    // 60 full OpenAPI 3.1 validations take 8–14 s alone; the 15 s default
+    // flakes when the whole suite runs in parallel.
+  }, 60_000);
 });

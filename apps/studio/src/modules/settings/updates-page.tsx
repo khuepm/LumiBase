@@ -119,7 +119,7 @@ export function UpdatesPage() {
 
       <section className="rounded-xl border bg-muted/20 p-5 text-sm text-muted-foreground">
         <h2 className="font-semibold text-foreground">Phase-one safety guardrails</h2>
-        <ul className="mt-2 list-disc space-y-1 pl-5">
+        <ul className="mt-2 list-disc space-y-1 ps-5">
           <li>Studio only displays “new version available” notices with upgrade-guide and changelog links.</li>
           <li>The UI cannot restart services, apply migrations, or trigger an upgrade workflow.</li>
           <li>Telemetry requires a separate opt-in and is intentionally not sent by this manifest check.</li>

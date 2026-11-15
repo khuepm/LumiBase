@@ -138,7 +138,7 @@ export function ChangePasswordSection() {
           {error ? (
             <div role="alert" className="text-sm text-red-600">
               {error.rules ? (
-                <ul className="list-disc pl-5">
+                <ul className="list-disc ps-5">
                   {error.rules.filter((r) => !r.ok).map((r) => (
                     <li key={r.rule}>{r.message}</li>
                   ))}

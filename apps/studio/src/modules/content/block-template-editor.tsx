@@ -105,7 +105,7 @@ function FieldSelect({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-primary appearance-none pr-6"
+          className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-primary appearance-none pe-6"
         >
           <option value="">— literal —</option>
           {fields.map((f) => (
@@ -401,7 +401,7 @@ function AddBlockToolbar({ onAdd }: { onAdd: (type: BlockType) => void }) {
         Add block
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 w-44 rounded-md border bg-popover shadow-md overflow-hidden">
+        <div className="absolute start-0 top-full z-20 mt-1 w-44 rounded-md border bg-popover shadow-md overflow-hidden">
           {BLOCK_TYPES.map((type) => (
             <button
               key={type}

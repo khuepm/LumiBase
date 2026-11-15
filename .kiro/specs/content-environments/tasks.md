@@ -115,7 +115,7 @@ Một phase chỉ được mở PR khi đạt đủ exit criteria của nó, và
 - [x] §14.9 đã chốt: Fork giữ id item, remap schema/file/folder; lời Req 2.4, 2.5, 8.3, 8.6 đã sửa theo. Có hiệu lực khi #811 merge (dòng cuối của G0). *Decided (owner, 2026-11-16).*
 - [x] §14.2, §14.3, §14.5, §14.6 hoãn sau v1. *Decided (owner, 2026-11-16).*
 - [x] Phạm vi v1 = Phase A–D; Phase E (task 8–10) là v1.1; task 10.1 đã chuyển sang Phase D thành 7.8. *Decided (owner, 2026-11-16).*
-- [ ] PR #811 (`0032_items_site_scoped_pk`) đã merge trước khi mở Phase B; số migration của feature này cấp cao hơn `0032`.
+- [ ] PR #811 (`0035_items_site_scoped_pk`) đã merge trước khi mở Phase B; số migration của feature này cấp cao hơn `0035`.
 
 ### Điều kiện chung cho mọi PR của feature này
 
@@ -198,7 +198,7 @@ Một phase chỉ được mở PR khi đạt đủ exit criteria của nó, và
 
 Phase A — những gì đã giao:
 
-- Migration `0035_items_version` (viết tay; ban đầu là `0034`, đổi sang `0035` khi `0034_item_tree` vào main trước): `lumibase_items.version integer NOT NULL DEFAULT 0`.
+- Migration `0036_items_version` (viết tay; ban đầu là `0034`, đổi sang `0035` khi `0034_item_tree` vào main trước, rồi `0036` khi `0035_items_site_scoped_pk` (#811) vào main): `lumibase_items.version integer NOT NULL DEFAULT 0`.
 - `version = version + 1` (biểu thức phía DB, `nextItemVersion()` trong `services/item-etag.ts`) ở: `ItemService.patch` (và `replace`, `bulk` update, `revertRevision` đi qua nó), `softDelete`, `cryptoShred`, `releasePin`, `EditorialService` transition, ba UPDATE của `scheduler-worker` (publish, unpublish, retention archive), `dependents-service` set_null/reassign, và (sau khi merge #749 tree collections) `move` của chính item được di chuyển cùng mọi node bị xoá theo cascade. Không tăng: worker envelope/rewrap (chỉ mã hoá lại), rebase `path` của con cháu và đánh số lại `sort` của anh em khi di chuyển — đó là hiệu ứng cấu trúc, tăng ở đó sẽ làm `If-Match` của người đang sửa một item khác trong cây thất bại vô cớ.
 - `ItemService.patch/replace(…, { expectedVersions })`: kiểm sớm sau SELECT rồi kiểm lại trong cùng `UPDATE … WHERE version = $v`; không khớp → `PRECONDITION_FAILED` 412, transaction rollback, không ghi gì.
 - Route: `ETag` ở GET detail (qua out-param `ItemDetailMeta`, nên vẫn có khi dùng `fields=`) và ở PATCH/PUT thành công; `If-Match` parse theo RFC 9110 (tag yếu không khớp, `*` = không điều kiện). CORS: allow `If-Match`, expose `ETag`.
@@ -227,4 +227,4 @@ Phát hiện ngoài phạm vi (DoD §7): `envelope-migration-worker` và `rewrap
 
 ### Design drift do PR #811
 
-Trên `main`, `lumibase_items` có `PRIMARY KEY (id)` toàn instance (`packages/database/src/schema/cms.ts:23`, `:187`). #811 đổi sang `PRIMARY KEY (site_id, id)` (`packages/database/drizzle/0032_items_site_scoped_pk.sql`) với FK composite cùng site từ `revisions`, `release_items`, `content_reviews`. Lý do "id toàn cục nên phải remap" chỉ còn đúng cho schema/file/folder; với item, Fork giữ id (design §2.1, §14.9 — Decided 2026-11-16). Ghi chú cho #811 (không thuộc PR này): comment trong `schema/cms.ts` của nhánh đó vẫn ghi "migration 0029" trong khi file là `0032`.
+Trên `main`, `lumibase_items` có `PRIMARY KEY (id)` toàn instance (`packages/database/src/schema/cms.ts:23`, `:187`). #811 đổi sang `PRIMARY KEY (site_id, id)` (`packages/database/drizzle/0035_items_site_scoped_pk.sql`) với FK composite cùng site từ `revisions`, `release_items`, `content_reviews`. Lý do "id toàn cục nên phải remap" chỉ còn đúng cho schema/file/folder; với item, Fork giữ id (design §2.1, §14.9 — Decided 2026-11-16). Ghi chú cho #811 (không thuộc PR này): comment trong `schema/cms.ts` của nhánh đó vẫn ghi "migration 0029" trong khi file là `0032`.

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { AlertTriangle, Pause, Pencil, Play, Radar, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/cn';
+import { IntentLink } from '@/components/intent-link';
 import { missionControlApi, type ContentIntent } from './api';
 import { MissionControlLayout, useAdminBase, useMissionControlBase } from './layout';
 import { isSemanticDrift, SemanticDriftDetail, semanticRuleLabel } from './semantic-drift-detail';
@@ -412,12 +413,14 @@ function IntentDetailBody({ intentId }: { intentId: string }) {
                       )
                     )}
                   </span>
-                  <Link
-                    to={`${adminBase}/content/${intent.collection}/${drift.itemId}` as never}
+                  <IntentLink
+                    adminBase={adminBase}
+                    intent={{ action: 'edit', collection: intent.collection, id: String(drift.itemId) }}
+                    fallbackTo={`${adminBase}/content/${intent.collection}/${drift.itemId}`}
                     className="text-primary hover:underline"
                   >
                     Open item →
-                  </Link>
+                  </IntentLink>
                   {isSemanticDrift(drift) && <SemanticDriftDetail drift={drift} />}
                 </li>
               ))}

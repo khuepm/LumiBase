@@ -1,3 +1,4 @@
+import { contentDirProps } from '@/lib/text-direction';
 import { codePointLength } from '@lumibase/contracts/field';
 import { readOptions, type InterfaceComponent } from './types';
 
@@ -21,7 +22,7 @@ export function LengthHint({ value, opts }: { value: string; opts: TextOptions }
   const tooShort = minLength !== undefined && value !== '' && len < minLength;
   return (
     <p
-      className={`mt-0.5 text-right text-[10px] ${tooLong || tooShort ? 'text-destructive' : 'text-muted-foreground'}`}
+      className={`mt-0.5 text-end text-[10px] ${tooLong || tooShort ? 'text-destructive' : 'text-muted-foreground'}`}
       aria-live="polite"
     >
       {tooShort ? `Minimum ${minLength} · ` : ''}
@@ -36,12 +37,14 @@ export const TextInterface: InterfaceComponent<string> = ({
   field,
   disabled,
   onChange,
+  locale,
 }) => {
   const opts = readOptions<TextOptions>(field);
   return (
     <div>
       <input
         type="text"
+        {...contentDirProps(locale)}
         value={value ?? ''}
         placeholder={opts.placeholder}
         disabled={disabled}
@@ -59,11 +62,13 @@ export const TextMultilineInterface: InterfaceComponent<string> = ({
   field,
   disabled,
   onChange,
+  locale,
 }) => {
   const opts = readOptions<TextOptions & { rows?: number }>(field);
   return (
     <div>
       <textarea
+        {...contentDirProps(locale)}
         value={value ?? ''}
         placeholder={opts.placeholder}
         rows={opts.rows ?? 4}

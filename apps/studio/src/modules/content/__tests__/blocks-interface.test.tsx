@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { useState } from 'react';
 import type { FieldResource } from '@lumibase/sdk';
 
-vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined }));
+vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined, useExtensionUpdates: () => 0 }));
 
 const listFields = vi.fn();
 vi.mock('@/lib/api', () => ({

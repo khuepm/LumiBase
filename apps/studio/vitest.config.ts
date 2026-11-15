@@ -23,6 +23,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Dev-only virtual module (vite-plugins/dev-extensions.ts); stubbed for tests.
+      'virtual:lumibase-extensions': path.resolve(__dirname, './src/test/virtual-lumibase-extensions.ts'),
     },
   },
 });

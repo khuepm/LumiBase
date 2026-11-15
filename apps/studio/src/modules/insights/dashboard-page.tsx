@@ -93,7 +93,7 @@ export function DashboardViewPage() {
               <button
                 type="button"
                 onClick={() => deletePanelMutation.mutate(panel.id)}
-                className="absolute right-1 top-1 z-10 hidden rounded px-1 text-xs text-muted-foreground hover:text-destructive group-hover:block"
+                className="absolute end-1 top-1 z-10 hidden rounded px-1 text-xs text-muted-foreground hover:text-destructive group-hover:block"
                 title="Delete panel"
               >
                 ✕

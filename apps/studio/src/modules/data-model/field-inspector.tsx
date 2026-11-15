@@ -287,7 +287,7 @@ export function FieldInspector({
             <p className="text-xs text-muted-foreground">
               {currentIfaceItem?.label ?? form.interface}
               {form.locked && (
-                <span className="ml-2 inline-flex items-center gap-0.5 text-amber-600">
+                <span className="ms-2 inline-flex items-center gap-0.5 text-amber-600">
                   <Lock className="h-3 w-3" /> system
                 </span>
               )}

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { FieldResource } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { contentDirProps } from '@/lib/text-direction';
 
 export function TranslatableText({
   value,
@@ -43,6 +44,9 @@ export function TranslatableText({
           </div>
           <input
             type="text"
+            // Each locale's value is typed in that locale's direction, whatever
+            // the UI language is (an Arabic value in an English UI is RTL, #761).
+            {...contentDirProps(lang)}
             value={map[lang] ?? ''}
             onChange={(e) => updateLocale(lang, e.target.value)}
             className="flex-1 rounded-md border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"

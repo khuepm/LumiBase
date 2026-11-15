@@ -251,7 +251,14 @@
       "idx": 35,
       "version": "7",
       "when": 1795161600000,
-      "tag": "0035_items_version",
+      "tag": "0035_items_site_scoped_pk",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795248000000,
+      "tag": "0036_items_version",
       "breakpoints": true
     }
   ]

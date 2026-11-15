@@ -1,6 +1,6 @@
 {
   "name": "create-lumibase",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Scaffold a new LumiBase project — Edge-native Headless CMS",
   "license": "Apache-2.0",
   "type": "module",
@@ -38,7 +38,7 @@
     "bin"
   ],
   "engines": {
-    "node": ">=22"
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "keywords": [
     "lumibase",

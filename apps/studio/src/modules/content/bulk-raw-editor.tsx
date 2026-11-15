@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, Save, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -134,7 +134,7 @@ export function BulkRawEditor({ collection, ids, onClose, onSaved }: BulkRawEdit
           </div>
         )}
 
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden" dir="ltr">
           {allLoaded ? (
             <Editor
               height="100%"
