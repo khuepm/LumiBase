@@ -112,7 +112,9 @@ jobs:
           ITEMS_PER_COLLECTION: 200
           PAGES_PER_SITE: 20
           COLLECTION_COUNT: 2
-        run: pnpm exec tsx apps/cms/k6/seed.ts
+        # tsx is a dependency of @lumibase/cms, not of the workspace root, so a
+        # root-level `pnpm exec tsx` fails with "Command tsx not found".
+        run: pnpm -F @lumibase/cms exec tsx k6/seed.ts
 
       - name: Start CMS (web role)
         env:
