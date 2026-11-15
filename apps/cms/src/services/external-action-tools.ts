@@ -24,59 +24,26 @@
  * constructed.
  */
 
-export type ExternalActionRisk = 'low' | 'medium' | 'high';
+import {
+  EXTERNAL_ACTION_FACT_KEYS,
+  type ExternalActionPolicy,
+  type ExternalActionToolDefinition,
+  type ExternalActionReversibility,
+  type ExternalActionRisk,
+  type ExternalActionBlastRadius,
+} from '@lumibase/contracts/platform';
 
-/**
- * - `read_only`: the call changes nothing at the remote system.
- * - `reversible`: the effect can be fully undone by a later call.
- * - `irreversible`: it cannot (a message was delivered, money moved, a build
- *   was published).
- */
-export type ExternalActionReversibility = 'read_only' | 'reversible' | 'irreversible';
-
-/**
- * How many external parties one call can affect.
- *
- * - `none`: nobody outside the caller (reads);
- * - `single`: exactly one external record, account or recipient;
- * - `bounded`: at most `maxAffected` of them;
- * - `broad`: no bound the tool can state (a production deploy, a public post).
- */
-export type ExternalActionBlastRadius =
-  | { scope: 'none' }
-  | { scope: 'single' }
-  | { scope: 'bounded'; maxAffected: number }
-  | { scope: 'broad' };
-
-/** What a handler receives besides its arguments. */
-export interface ExternalActionContext {
-  siteId: string;
-  /** The run this call belongs to, when the governed path created one. */
-  runId: string | null;
-  /**
-   * Resolved secret values, by declared name. Asking for a name the tool did
-   * not declare throws: a handler cannot reach a secret it did not announce.
-   */
-  secret(name: string): string;
-}
-
-export interface ExternalActionToolDefinition {
-  /** Tool name as advertised in `tools/list`. Must not shadow a core skill. */
-  name: string;
-  description: string;
-  /** The one capability a caller needs, e.g. `tickets:comment`. */
-  capability: string;
-  risk: ExternalActionRisk;
-  reversibility: ExternalActionReversibility;
-  blastRadius: ExternalActionBlastRadius;
-  /** Names of the secrets the handler needs. Empty when it needs none. */
-  secrets: readonly string[];
-  /** JSON Schema (object) for the arguments; enforced before anything runs. */
-  inputSchema: Record<string, unknown>;
-  /** Who maintains the tool; shown in the registry. */
-  owner?: string;
-  handler: (args: Record<string, unknown>, context: ExternalActionContext) => Promise<unknown>;
-}
+// The declaration shapes are contracts: a package outside the CMS writes them.
+export type {
+  ExternalActionBlastRadius,
+  ExternalActionContext,
+  ExternalActionFacts,
+  ExternalActionPolicy,
+  ExternalActionReversibility,
+  ExternalActionRisk,
+  ExternalActionToolDefinition,
+  ExternalActionToolSource,
+} from '@lumibase/contracts/platform';
 
 /** The declared metadata without the handler: safe to list, store and audit. */
 export interface ExternalActionMetadata {
@@ -147,6 +114,7 @@ export function governanceFor(
 const TOOL_NAME_RE = /^[a-z][a-zA-Z0-9_]{2,63}$/;
 const CAPABILITY_RE = /^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/;
 const SECRET_NAME_RE = /^[A-Z][A-Z0-9_]{1,63}$/;
+const CONSTITUTION_HASH_RE = /^sha256:[0-9a-f]{64}$/;
 
 export function isValidToolSecretName(name: string): boolean {
   return SECRET_NAME_RE.test(name);
@@ -215,6 +183,26 @@ export function validateExternalActionTool(tool: ExternalActionToolDefinition): 
     fail('inputSchema must be a JSON Schema of type "object"');
   }
   if (typeof tool.handler !== 'function') fail('handler must be a function');
+  if (tool.policy !== undefined) validatePolicy(tool.policy, fail);
+}
+
+function validatePolicy(policy: ExternalActionPolicy, fail: (message: string) => never): void {
+  if (!policy || typeof policy !== 'object') fail('policy must be an object');
+  if (policy.constitution !== 'required' && policy.constitution !== 'if_active') {
+    fail('policy.constitution must be "required" or "if_active"');
+  }
+  if (policy.constitutionHashes !== undefined) {
+    if (
+      !Array.isArray(policy.constitutionHashes) ||
+      policy.constitutionHashes.length === 0 ||
+      policy.constitutionHashes.some((hash) => typeof hash !== 'string' || !CONSTITUTION_HASH_RE.test(hash))
+    ) {
+      fail('policy.constitutionHashes must be a non-empty list of "sha256:<64 hex>" hashes');
+    }
+  }
+  if (policy.record !== undefined && typeof policy.record !== 'function') {
+    fail('policy.record must be a function');
+  }
 }
 
 /**

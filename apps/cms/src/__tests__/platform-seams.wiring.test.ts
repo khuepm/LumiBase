@@ -152,3 +152,31 @@ describe('platform seams — package entry points', () => {
     expect(contracts.publishConfig.exports['./platform']).toBeDefined();
   });
 });
+
+describe('platform seams — usage emitter mount (index.ts)', () => {
+  const source = read('index.ts');
+
+  it('mounts withUsage globally, directly after withRuntime and before any router', () => {
+    const runtime = source.indexOf("app.use('*', withRuntime());");
+    const usage = source.indexOf("app.use('*', withUsage());");
+    const cors = source.indexOf("cors({");
+    const firstRoute = source.search(/\bapp\.route\(/);
+    expect(runtime).toBeGreaterThan(-1);
+    expect(usage).toBeGreaterThan(runtime);
+    // Nothing but comments between the two mounts.
+    expect(source.slice(runtime, usage).replace(/\/\/.*$/gm, '').trim()).toBe("app.use('*', withRuntime());");
+    expect(cors).toBeGreaterThan(usage);
+    expect(firstRoute).toBeGreaterThan(usage);
+  });
+
+  it('hands the drain to waitUntil instead of awaiting it on the response', () => {
+    const middleware = read('middleware/usage.ts').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+    expect(middleware).toContain('(drain) => runDetached(c, drain)');
+    expect(middleware).not.toMatch(/await\s+drain/);
+  });
+
+  it('both agent-run consumers pass the runtime so queued runs report usage', () => {
+    expect(read('cloudflare-agent-queue.ts')).toMatch(/env: workerEnv, runtime,/);
+    expect(read('serve.ts')).toMatch(/registerAgentRunWorker\(\{[\s\S]*?\n\s+runtime,\n\s+\}\);/);
+  });
+});
