@@ -1,11 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-11-14T12:26:57.226Z
+version: 3
+lastUpdated: 2026-11-15T14:59:15.675Z
 sourceLang: en
-contentHash: b9b358bafbe19e63
-codeVerified: 2026-11-14T12:26:57.226Z
-codeVerifiedHash: b9b358bafbe19e63
-codeVerifiedClaims: 30
+contentHash: b65445cc77793e33
+codeVerified: 2026-11-15T14:59:15.675Z
+codeVerifiedHash: b65445cc77793e33
+codeVerifiedClaims: 42
 ---
 
 # Platform extension points
@@ -26,7 +26,8 @@ Three properties hold for every seam:
   throws, the CMS logs the failure and continues as if the default had answered.
 
 This page covers the registry, the composable entry points, the cached
-site-to-organization lookup, and the entitlement resolver.
+site-to-organization lookup, the entitlement resolver, the usage emitter, and the
+external-action tool source.
 
 ## Where things live
 
@@ -37,6 +38,9 @@ site-to-organization lookup, and the entitlement resolver.
 | Built-in defaults | `apps/cms/src/platform/defaults.ts` |
 | Request-scoped helpers | `apps/cms/src/platform/request.ts` |
 | Entitlement middleware | `apps/cms/src/middleware/entitlement.ts` |
+| Usage contracts | `packages/contracts/src/platform/usage.ts` |
+| Usage scope and `recordUsage()` | `apps/cms/src/platform/usage.ts` |
+| Usage middleware | `apps/cms/src/middleware/usage.ts` |
 | Site-to-organization lookup | `apps/cms/src/services/domains/site-organization-cache.ts` |
 
 The contracts package has no runtime dependencies, so the runtime handle in
@@ -262,15 +266,157 @@ Guidelines:
   lookup may have failed. Decide what your implementation does in that case.
 - `ctx.requestId` is `null` outside a request (cron, queue consumers).
 
+## Usage emitter
+
+The usage emitter reports what a request or a background job consumed, already
+attributed to a site and its organization. It is for operators who want
+per-organization usage reporting without scraping logs or metrics that carry no
+tenant.
+
+It is separate from the opt-in anonymous telemetry described in
+[Activation milestones and usage telemetry](../operations/usage-telemetry.md):
+different payload, different switch, no shared storage.
+
+```ts
+interface UsageEvent {
+  id: string;            // uuidv7, the idempotency key
+  kind: string;          // see USAGE_KINDS
+  tenant: TenantRef;     // site and organization at the moment of the event
+  quantity: number;      // signed for deltas (storage.bytes, seat.change)
+  unit: 'count' | 'bytes' | 'tokens' | 'ms';
+  occurredAt: string;    // ISO 8601, UTC
+  attributes?: Readonly<Record<string, string | number | boolean>>;
+}
+
+interface UsageEmitter<TRuntime = unknown> {
+  emit(event: UsageEvent): void;                  // synchronous, must not throw
+  flush(ctx: SeamContext<TRuntime>): Promise<void>; // never awaited by the response
+}
+```
+
+### Default
+
+`emit` and `flush` do nothing. In practice they are never reached: every call
+site checks registration first, so with nothing registered no event is built,
+no tenant is looked up and nothing is written.
+
+### What the CMS emits
+
+| Kind | Where | Quantity |
+|---|---|---|
+| `api.request` | `withUsage()`, every request on the authenticated API | 1 |
+| `delivery.request` | `withUsage()`, every request on `/api/v1/deliver/*` | 1 |
+| `storage.bytes` | `POST /api/v1/files` (+`filesize`), `DELETE /api/v1/files/:id` (−`filesize`), media upload (+bytes written) | signed bytes |
+| `seat.change` | organization created (+1 owner), member invited (+1, new members only), member removed (−1) | ±1 |
+| `agent.run` | `AgentRunService.closeRun` / `failRun` | 1 |
+| `ai.tokens` | every model call made through `createLLMProvider()` that reports usage, one event per direction | tokens |
+| `email.sent` | `EmailService.send` when the transport accepts the message | recipients |
+
+`attributes` holds classification values only: surface, method, status class,
+principal kind (`user`, `api_key`, `anonymous`), duration, model id, transport.
+Never a path, a body, an address or a user id.
+
+Requests that name neither a site nor an organization (health checks, sign-in
+pages) produce no event, and CORS preflights are not counted.
+
+### Off the request path
+
+`withUsage()` is mounted globally right after `withRuntime()`. When an emitter is
+registered it opens a *usage scope* around the request. Call sites record into
+that scope with `recordUsage()`, which only appends to a list; the scope travels
+with the async context (`AsyncLocalStorage`, available on Workers through
+`nodejs_compat`), so a service such as the email transport records into the
+request it serves without being handed anything.
+
+When the response is decided, the scope's drain — tenant attribution through the
+cached site-to-organization lookup, `emit` for each event, then one `flush` — is
+handed to `executionCtx.waitUntil` on Workers and left to run on its own on Node.
+The response never waits for it.
+
+Background jobs open their own scope with `runWithUsageScope()`. The agent-run
+queue consumer does this on both runtimes, so a queued run reports its model
+tokens and its terminal state; the drain is awaited at the end of the job.
+
+Measured with `pnpm -F @lumibase/cms bench:usage-seam` (in-process, 20,000
+requests per variant, interleaved): with nothing registered the median request
+time is within noise of the app without the middleware; with a buffering
+emitter registered the median rises by about 17 µs per request.
+
+### Failure handling
+
+An `emit` that throws loses that event and is logged; a `flush` that rejects is
+logged. Neither affects the response. Losing an event is preferred to failing a
+request.
+
+### Writing an emitter
+
+```ts
+import type { UsageEmitter, UsageEvent } from '@lumibase/contracts/platform';
+import type { RuntimeContext } from '@lumibase/runtime';
+
+export function createQueueEmitter(): UsageEmitter<RuntimeContext> {
+  let buffer: UsageEvent[] = [];
+  return {
+    emit(event) {
+      buffer.push(event);
+    },
+    async flush(ctx) {
+      if (buffer.length === 0) return;
+      const batch = buffer;
+      buffer = [];
+      await ctx.runtime.queue.enqueue('usage-events', 'batch', { events: batch });
+    },
+  };
+}
+```
+
+Guidelines:
+
+- Buffer in `emit`; do I/O in `flush`. One emitter object serves every request
+  of the isolate or process, so a module-level buffer is shared — swap it out
+  before awaiting, as above.
+- Deduplicate on `event.id`. Queues deliver at least once, and the same event may
+  reach you twice.
+- `tenant.organizationId` is the owner at the moment of the event. A site moved
+  to another organization later leaves its earlier usage with the old one.
+- A Cloudflare queue needs its own producer binding. Declare it in your
+  deployment's `wrangler.toml`, not in the stock one.
+
+## External-action tools
+
+The `externalActions` seam lets a deployment entry hand over agent tools that
+call systems outside the CMS, from a package this repository does not import.
+
+```ts
+registerPlatformSeams({ externalActions: { tools: () => myTools() } });
+```
+
+It differs from the other seams in two ways, both deliberate:
+
+- **It is read at registration, not per request.** `tools()` runs once inside
+  `registerPlatformSeams()`, and every definition is validated and registered
+  into the process-wide tool registry there.
+- **A failure is not absorbed.** A malformed or duplicate definition makes
+  `registerPlatformSeams()` throw and registers none of the tools. Running with a
+  tool silently missing, or with half a tool set, would change what agents may do
+  without anyone noticing.
+
+Default: no tools. The declaration format, the decision rule and the optional
+pre-execution policy are described in
+[External-action tools](../features/external-action-tools.md).
+
 ## Multi-tenancy
 
 - **Isolated per tenant:** the site-to-organization cache entry (keyed by site
-  id), the memoised tenant and snapshot (kept on the per-request context).
+  id), the memoised tenant and snapshot (kept on the per-request context), the
+  usage scope (one per request or job, attributed per site).
 - **Shared across the deployment:** the registry. One registration applies to
-  every site in the process or isolate.
+  every site in the process or isolate. The same emitter object receives every
+  site's events; each event carries its own tenant.
 
 How this is verified: `apps/cms/src/services/domains/__tests__/site-organization-cache.test.ts`
 and `apps/cms/src/middleware/__tests__/entitlement.test.ts` run two sites side by
 side and assert that neither sees the other's owner or decision.
 `apps/cms/src/routes/__tests__/site-organization-cache.db.integration.test.ts`
-checks invalidation against PostgreSQL.
+checks invalidation against PostgreSQL. `apps/cms/src/platform/__tests__/usage.test.ts`
+covers attribution of request and service events to their site.

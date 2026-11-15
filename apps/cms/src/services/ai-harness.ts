@@ -2,6 +2,7 @@ import { validateGroundedContent, type GroundingSource } from './grounded-conten
 import { applyContentMigrationSchema, planContentMigration, type ContentMigrationArgs } from './content-migration-service';
 import {
   agentApprovals,
+  agentGoals,
   aiApprovals,
   collections as collectionsTable,
   flowRuns,
@@ -61,6 +62,7 @@ import {
   type ApprovalDecider,
   type ExternalActionAuditEntry,
 } from './external-action-audit';
+import { evaluateExternalActionPolicy, type ExternalActionPolicyVerdict } from './external-action-policy';
 import { ToolSecretError, ToolSecretService } from './tool-secret-service';
 import { VetoService } from './veto-service';
 import {
@@ -2603,6 +2605,8 @@ export class AISecureHarness {
   private readonly cache?: CacheProvider;
   private readonly notify?: AgentNotifier;
   private readonly keys?: KeyProvider;
+  /** LLM for `llm_judge` evaluators of an external tool's policy; absent fails them closed. */
+  private readonly llm: ConfiguredLLM | null;
   private readonly externalTools: ExternalActionToolRegistry;
   /**
    * External tools the governed path has cleared to run right now. A handler
@@ -2631,6 +2635,7 @@ export class AISecureHarness {
     this.cache = config.cache;
     this.notify = config.notify;
     this.keys = config.keys;
+    this.llm = config.llm ?? null;
     this.externalTools = config.externalTools ?? externalActionTools;
     const hasService = Boolean(
       config.schemaService ||
@@ -4080,6 +4085,43 @@ export class AISecureHarness {
         runId: run.runId,
       };
     }
+    // The policy is evaluated again right before the effect: the constitution
+    // may have been deactivated, or the call may now break a rule, since it was
+    // proposed. A refusal releases the claim like a freeze does, so the
+    // approval can be decided again once the site's policy allows it. A
+    // `require_approval` verdict is satisfied: this IS the human approval.
+    const externalTool = externalAudit ? this.externalDefinition(record.skillName) : undefined;
+    let approvedPolicy: ExternalActionPolicyVerdict | null = null;
+    if (externalAudit && externalTool?.policy) {
+      let pinnedHash: string | null = null;
+      try {
+        const { ConstitutionService } = await import('./constitution-service');
+        pinnedHash = await new ConstitutionService({ db: this.db, siteId: this.siteId }).pinToRun(run.runId);
+      } catch {
+        pinnedHash = null;
+      }
+      approvedPolicy = await this.externalPolicyVerdict(externalTool, record.arguments as Record<string, unknown>, {
+        runId: run.runId,
+        agentName: run.agentName,
+        goalId: run.goalId,
+        agentRole: null,
+        intentId: null,
+        pinnedHash,
+      });
+      if (approvedPolicy.outcome === 'refuse') {
+        if (existingAgentApproval) await this.releaseClaim(existingAgentApproval.id);
+        const message = approvedPolicy.message ?? 'Refused by policy';
+        await this.auditExternal({
+          ...externalAudit,
+          stage: 'refused',
+          code: approvedPolicy.code ?? null,
+          message,
+          constitutionHash: pinnedHash,
+          policy: approvedPolicy,
+        });
+        return { status: 'denied', code: approvedPolicy.code, message, runId: run.runId };
+      }
+    }
     if (existingAgentApproval) {
       // Resume only after the freeze gate: a rejected attempt must leave the
       // run parked so lifting the freeze can safely resume the same approval.
@@ -4110,6 +4152,7 @@ export class AISecureHarness {
         stage: 'approved',
         toolCallId,
         inputHash: externalInputHash,
+        policy: approvedPolicy,
       });
     }
 
@@ -4521,6 +4564,54 @@ export class AISecureHarness {
   }
 
   /**
+   * The pre-execution policy verdict for one external call. See
+   * `external-action-policy.ts`. The facts come from the run: role and intent
+   * from the call's envelope, falling back to the run's goal, which is also
+   * where they are read from when an approved call executes later.
+   */
+  private async externalPolicyVerdict(
+    tool: ExternalActionToolDefinition,
+    args: Record<string, unknown>,
+    run: {
+      runId: string;
+      agentName: string;
+      goalId: string;
+      agentRole: string | null;
+      intentId: string | null;
+      pinnedHash: string | null;
+    },
+  ): Promise<ExternalActionPolicyVerdict> {
+    if (!tool.policy) return { outcome: 'not_evaluated', constitutionHash: null, evaluators: [] };
+    let { agentRole, intentId } = run;
+    if ((agentRole === null || intentId === null) && run.goalId) {
+      const [goal] = await this.db
+        .select({ agentRole: agentGoals.agentRole, intentId: agentGoals.intentId })
+        .from(agentGoals)
+        .where(and(eq(agentGoals.id, run.goalId), eq(agentGoals.siteId, this.siteId)))
+        .limit(1);
+      agentRole ??= goal?.agentRole ?? null;
+      intentId ??= goal?.intentId ?? null;
+    }
+    const { ConstitutionService } = await import('./constitution-service');
+    return evaluateExternalActionPolicy({
+      tool,
+      args,
+      facts: {
+        tool: tool.name,
+        capability: tool.capability,
+        risk: tool.risk,
+        blastRadius: tool.blastRadius.scope,
+        agentName: run.agentName,
+        agentRole,
+        intentId,
+        runId: run.runId,
+      },
+      pinnedHash: run.pinnedHash,
+      constitutions: new ConstitutionService({ db: this.db, siteId: this.siteId, llm: this.llm }),
+    });
+  }
+
+  /**
    * Decision for an external-action tool. Reached after the kill switch, input
    * validation, capability and tool-policy gates that every tool call passes.
    * The rule itself is {@link governanceFor}.
@@ -4583,8 +4674,39 @@ export class AISecureHarness {
         await this.auditExternal({ ...audit, stage: 'refused', autonomyLevel: level, code: 'AUTONOMY_SHADOW', message });
         return { status: 'denied', code: 'AUTONOMY_SHADOW', message, ...run, toolCallId };
       }
+    }
 
+    // Pre-execution policy: the constitution decides before anything is parked
+    // or run. A tool without a policy is `not_evaluated` and unaffected.
+    const definition = this.externalDefinition(skillName);
+    const policy = definition
+      ? await this.externalPolicyVerdict(definition, args, {
+          runId: run.runId,
+          agentName: run.agentName,
+          goalId: run.goalId,
+          agentRole: envelope.agentRole ?? null,
+          intentId: envelope.intentId ?? null,
+          pinnedHash: constitutionHash,
+        })
+      : null;
+    if (policy?.outcome === 'refuse') {
+      const message = policy.message ?? 'Refused by policy';
+      await this.runService.finishToolCall(toolCallId, {
+        status: 'denied',
+        error: message,
+        latencyMs: Date.now() - startedAt,
+      });
+      await this.runService.failRun(run.runId, message, { stopReason: 'policy_refused' });
+      await this.auditExternal({ ...audit, stage: 'refused', autonomyLevel: level, code: policy.code ?? null, message, policy });
+      return { status: 'denied', code: policy.code, message, ...run, toolCallId };
+    }
+    const policyNeedsHuman = policy?.outcome === 'require_approval';
+
+    if (governance.effectful || policyNeedsHuman) {
       const autonomous =
+        governance.effectful &&
+        !policyNeedsHuman &&
+        level !== null &&
         !governance.alwaysRequiresApproval &&
         governance.minAutonomousLevel !== null &&
         level >= governance.minAutonomousLevel;
@@ -4605,6 +4727,7 @@ export class AISecureHarness {
             stage: 'proposed',
             autonomyLevel: level,
             approvalId: parked.agentApprovalId ?? null,
+            policy,
           });
         }
         return parked;
@@ -4626,7 +4749,7 @@ export class AISecureHarness {
         lastToolLatencyMs: Date.now() - startedAt,
         ...(level !== null ? { autonomyLevel: level } : {}),
       });
-      await this.auditExternal({ ...audit, stage: 'executed', autonomyLevel: level });
+      await this.auditExternal({ ...audit, stage: 'executed', autonomyLevel: level, policy });
       return { status: 'executed', data: result.data, ...run, toolCallId };
     }
     await this.runService.finishToolCall(toolCallId, {
@@ -4641,6 +4764,7 @@ export class AISecureHarness {
       autonomyLevel: level,
       code: result.code ?? 'EXECUTION_FAILED',
       message: result.error,
+      policy,
     });
     return { status: 'denied', code: result.code, message: result.error, ...run, toolCallId };
   }

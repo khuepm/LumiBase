@@ -2,7 +2,9 @@ import type {
   AuthorizeDecision,
   EntitlementResolver,
   EntitlementSnapshot,
+  ExternalActionToolSource,
   LimitValue,
+  UsageEmitter,
 } from '@lumibase/contracts/platform';
 import type { RuntimeContext } from '@lumibase/runtime';
 import type { PlatformSeams } from './types';
@@ -40,6 +42,24 @@ export const defaultEntitlementResolver: EntitlementResolver<RuntimeContext> = {
   authorize: () => Promise.resolve(ALLOWED),
 };
 
+const FLUSHED: Promise<void> = Promise.resolve();
+
+/**
+ * Usage default: drops everything. The call sites check registration before
+ * building an event (`./usage`), so in practice this is never even reached.
+ */
+export const defaultUsageEmitter: UsageEmitter<RuntimeContext> = {
+  emit: () => undefined,
+  flush: () => FLUSHED,
+};
+
+/** No tools: the CMS itself registers no external-action tool. */
+export const defaultExternalActionToolSource: ExternalActionToolSource = Object.freeze({
+  tools: () => [],
+});
+
 export const DEFAULT_PLATFORM_SEAMS: PlatformSeams = Object.freeze({
   entitlements: defaultEntitlementResolver,
+  usage: defaultUsageEmitter,
+  externalActions: defaultExternalActionToolSource,
 });

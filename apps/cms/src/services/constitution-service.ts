@@ -21,11 +21,25 @@ import {
  * pinned hash even if the active version changes mid-run (Property 12).
  */
 
+/**
+ * What a blocking failure of an evaluator does to a governed external action
+ * (see `external-action-policy.ts`):
+ * - `block` (default): the action is refused;
+ * - `require_approval`: the action is not refused but can only run once a
+ *   human approves it, at any autonomy level.
+ *
+ * The publish gate treats both as blocking: publishing already has its own
+ * audited human override.
+ */
+export type ConstitutionViolationAction = 'block' | 'require_approval';
+
 export interface RuleEvaluator {
   id: string;
   type: 'rule';
   /** Blocking failures veto publish; non-blocking ones only report. */
   blocking?: boolean;
+  /** See {@link ConstitutionViolationAction}. Default `block`. */
+  onViolation?: ConstitutionViolationAction;
   description?: string;
   rule: {
     field: string;
@@ -38,6 +52,8 @@ export interface LlmJudgeEvaluator {
   id: string;
   type: 'llm_judge';
   blocking?: boolean;
+  /** See {@link ConstitutionViolationAction}. Default `block`. */
+  onViolation?: ConstitutionViolationAction;
   description?: string;
   /** Judge instruction; the content sample is appended as context. */
   prompt: string;
@@ -187,6 +203,9 @@ function validateEvaluators(input: unknown): ConstitutionEvaluator[] {
       throw new ConstitutionError('VALIDATION', `Duplicate evaluator id "${e.id}".`);
     }
     ids.add(e.id);
+    if (e.onViolation !== undefined && e.onViolation !== 'block' && e.onViolation !== 'require_approval') {
+      throw new ConstitutionError('VALIDATION', `Evaluator "${e.id}": onViolation must be "block" or "require_approval".`);
+    }
     if (e.type === 'rule') {
       const rule = (e as RuleEvaluator).rule;
       if (!rule || typeof rule.field !== 'string' || typeof rule.op !== 'string') {
@@ -371,19 +390,44 @@ export class ConstitutionService {
     if (!active) {
       return { allowed: true, hash: null, failures: [] };
     }
-    const evaluators = active.evaluators as ConstitutionEvaluator[];
-    const failures: EvaluatorResult[] = [];
-    for (const evaluator of evaluators) {
-      const result =
-        evaluator.type === 'rule'
-          ? evaluateRuleEvaluator(evaluator, content)
-          : await this.runLlmJudge(evaluator, content);
-      if (result.status !== 'pass') {
-        failures.push(result);
-      }
-    }
+    const results = await this.evaluate(active.evaluators as ConstitutionEvaluator[], content);
+    const failures = results.filter((result) => result.status !== 'pass');
     const blockingFailure = failures.some((f) => f.blocking);
     return { allowed: !blockingFailure, hash: active.hash, failures };
+  }
+
+  /**
+   * Runs every evaluator of a version against one record, in order. Never
+   * throws for an evaluator: a broken regex or an unreachable judge is an
+   * `error` result, which callers treat as a failure (fail closed).
+   */
+  async evaluate(
+    evaluators: readonly ConstitutionEvaluator[],
+    record: Record<string, unknown>,
+  ): Promise<EvaluatorResult[]> {
+    const results: EvaluatorResult[] = [];
+    for (const evaluator of evaluators) {
+      results.push(
+        evaluator.type === 'rule'
+          ? evaluateRuleEvaluator(evaluator, record)
+          : await this.runLlmJudge(evaluator, record),
+      );
+    }
+    return results;
+  }
+
+  /**
+   * The version of this site whose hash is `hash`, whatever its status. A run
+   * pins a hash; this is how the evaluators behind that pin are found again.
+   */
+  async getByHash(hash: string) {
+    const [row] = await this.deps.db
+      .select()
+      .from(constitutions)
+      .where(and(eq(constitutions.siteId, this.deps.siteId), eq(constitutions.hash, hash)))
+      .orderBy(desc(constitutions.version))
+      .limit(1);
+    return row;
   }
 
   /**

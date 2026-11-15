@@ -20,6 +20,7 @@ import { registerItemTools } from './items.js';
 import { registerReleaseTools } from './releases.js';
 import { registerShareTools } from './shares.js';
 import { registerOpsTools } from './ops.js';
+import { registerOpsDiagnosticsTools } from './ops-diagnostics.js';
 import { registerPermissionTools } from './permissions.js';
 import { registerRelationTools } from './relations.js';
 import { registerSearchMediaTools } from './search-media.js';
@@ -44,8 +45,12 @@ import { registerWebhookTools } from './webhooks.js';
 export function registerAllTools(
   server: McpServer,
   client: LumiBaseClient,
-  options: { dispatcher?: GovernedDispatcher | null; tokenKind?: 'site' | 'organization'; siteId?: string; readOnly?: boolean } = {},
+  options: { dispatcher?: GovernedDispatcher | null; tokenKind?: 'site' | 'organization'; siteId?: string; readOnly?: boolean; opsOnly?: boolean } = {},
 ): void {
+  // Ops diagnostics use their own operator token and are never site-scoped or
+  // governed, so they register on the raw server, outside every profile wrapper.
+  if (client.hasOpsToken) registerOpsDiagnosticsTools(server, client);
+  if (options.opsOnly) return;
   const tokenKind = options.tokenKind ?? client.tokenKind ?? 'site';
   const siteId = options.siteId ?? client.siteId;
   const readOnly = options.readOnly ?? client.readOnly ?? false;

@@ -20,6 +20,7 @@ import { withStudioAccess } from './middleware/studio-access';
 import { withControlPlaneAccessGuard } from './middleware/control-plane-access-guard';
 import { withFileUploadPolicy } from './middleware/file-upload-policy';
 import { apiSurface, withEntitlement } from './middleware/entitlement';
+import { withUsage } from './middleware/usage';
 import { withSecurityHeaders } from './middleware/security-headers';
 import { withTenant } from './middleware/tenant';
 import { withTenantExists } from './middleware/tenant-exists';
@@ -112,6 +113,8 @@ import {
   gitPublicRouter,
 } from './modules/git-integration/routes';
 import { formatSafeError } from '@lumibase/contracts/utils';
+import { captureOpsError } from './modules/ops/capture';
+import { opsRouter } from './modules/ops/routes';
 import { ENTITLEMENT_DIMENSIONS } from '@lumibase/contracts/platform';
 
 const app = new Hono<AppEnv>();
@@ -124,6 +127,10 @@ app.use('*', withTracing());
 app.use('*', withSecurityHeaders());
 app.use('*', withMetrics());
 app.use('*', withRuntime());
+// Usage emitter seam: a pass-through unless a deployment registered an emitter.
+// Wraps everything below, so delivery and the authenticated chain are both
+// reported from this one point, after the response.
+app.use('*', withUsage());
 app.use(
   '*',
   cors({
@@ -175,6 +182,10 @@ app.route('/api/v1/utils', utilsRouter);
 app.route('/api/v1/system', systemRouter);
 // Prometheus metrics endpoint (public, no auth).
 app.route('/metrics', metricsRouter);
+// Read-only ops diagnostics plane (`.kiro/specs/ops-diagnostics`). Gated by the
+// static `LUMIBASE_OPS_TOKEN` inside the router (unset → 404); not a tenant
+// route, so it is mounted outside `api` (no withTenant/withAuth).
+app.route('/api/v1/ops', opsRouter);
 // Comprehensive health check — tests DB, cache, search, storage, queue connectivity.
 app.route('/health', healthRouter);
 // Serves interactive auth testing page
@@ -462,6 +473,7 @@ app.notFound((c) =>
 app.onError((err, c) => {
   const requestId = c.get('requestId');
   console.error('[lumibase-cms] unhandled error', { requestId, err: formatSafeError(err) });
+  captureOpsError(c, { err, status: 500, errorCode: 'INTERNAL' });
   return c.json(
     { errors: [{ code: 'INTERNAL', message: 'Internal Server Error', requestId }] },
     500,

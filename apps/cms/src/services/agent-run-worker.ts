@@ -1,5 +1,6 @@
 import type { Database } from '@lumibase/database';
-import type { CacheProvider, KeyProvider, QueueProvider, SearchProvider } from '@lumibase/runtime';
+import type { CacheProvider, KeyProvider, QueueProvider, RuntimeContext, SearchProvider } from '@lumibase/runtime';
+import { backgroundUsageSource, runWithUsageScope } from '../platform/usage';
 import { AISecureHarness } from './ai-harness';
 import { ExtensionsService } from './extensions-service';
 import { AgentRunService, runErrorMessage } from './agent-run-service';
@@ -101,6 +102,12 @@ export interface AgentRunWorkerDeps {
    * awaits the sends itself before the job settles.
    */
   waitUntil?: (promise: Promise<unknown>) => void;
+  /**
+   * Full runtime, for the usage emitter seam: a job runs in its own usage
+   * scope (model tokens, the run itself) drained when the job settles. Absent,
+   * the job reports no usage.
+   */
+  runtime?: RuntimeContext;
 }
 
 /**
@@ -213,6 +220,15 @@ async function settleDeferralIfAny(
  * here immediately: waiting on a human never holds this worker.
  */
 export async function processAgentRunJob(
+  deps: AgentRunWorkerDeps,
+  payload: AgentRunJobPayload,
+): Promise<void> {
+  if (!deps.runtime) return executeAgentRunJob(deps, payload);
+  const source = backgroundUsageSource({ runtime: deps.runtime, db: deps.db, siteId: payload.siteId });
+  return runWithUsageScope(source, () => executeAgentRunJob(deps, payload));
+}
+
+async function executeAgentRunJob(
   deps: AgentRunWorkerDeps,
   payload: AgentRunJobPayload,
 ): Promise<void> {

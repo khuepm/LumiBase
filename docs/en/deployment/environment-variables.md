@@ -1,11 +1,11 @@
 ---
-version: 20
-lastUpdated: 2026-11-13T15:31:04.103Z
+version: 22
+lastUpdated: 2026-11-15T15:10:13.708Z
 sourceLang: en
-contentHash: a5f4809eb95a93bc
-codeVerified: 2026-11-13T15:32:52.559Z
-codeVerifiedHash: a5f4809eb95a93bc
-codeVerifiedClaims: 96
+contentHash: 00159aeddfcd4dc0
+codeVerified: 2026-11-15T15:10:13.708Z
+codeVerifiedHash: 00159aeddfcd4dc0
+codeVerifiedClaims: 98
 ---
 
 # Environment Variables Reference
@@ -25,7 +25,7 @@ This page documents every environment variable and Cloudflare binding used by Lu
 | `LUMIBASE_ENV` | ✓ | — | Environment label: `development`, `staging`, `production` |
 | `LUMIBASE_RUNTIME` | Docker only | `cloudflare` | `docker` for Node.js/Docker; Cloudflare Workers infers from bindings |
 | `CORS_ALLOWED_ORIGINS` | ✓ in production | — | Comma-separated browser origins allowed to call the API; `*` is rejected in production. On Docker, when unset, the image entrypoint uses this deployment's own origin (`LUMIBASE_PUBLIC_URL`, then the platform's public URL) — the Studio is served from that origin. A value with no host, such as `https://`, counts as unset |
-| `LUMIBASE_PUBLIC_URL` | ✗ (Docker only) | — | Public origin of this deployment, e.g. `https://cms.example.com`. Read by the image entrypoint to default `CORS_ALLOWED_ORIGINS` and to print the setup wizard URL. Without it the entrypoint uses `RENDER_EXTERNAL_URL`, `RAILWAY_PUBLIC_DOMAIN` or `FLY_APP_NAME` when the platform sets them. See [One-click deploys](./one-click.md) |
+| `LUMIBASE_PUBLIC_URL` | ✗ | — | Public origin of this deployment, e.g. `https://cms.example.com`. Read by the image entrypoint to default `CORS_ALLOWED_ORIGINS` and to print the setup wizard URL. Without it the entrypoint uses `RENDER_EXTERNAL_URL`, `RAILWAY_PUBLIC_DOMAIN` or `FLY_APP_NAME` when the platform sets them. See [One-click deploys](./one-click.md). The server also uses it to build the MCP OAuth resource URI (`<origin>/api/v1/mcp…`) that a token's `aud` must match. Without it that origin comes from the request (upgraded to `https` by `X-Forwarded-Proto`), so **set it behind a TLS-terminating proxy** when you use the [remote MCP connector](../agent-setup/oauth-connector.md) |
 | `JWT_SECRET` | ✓ | — | Secret for signing/verifying application JWTs. Min 32 chars. **For Cloudflare production, set with `wrangler secret put JWT_SECRET --env production`; never commit or place in `[env.production.vars]`.** |
 | `LUMIBASE_DEV_AUTH` | Local dev only | `false` | Set to `true` to bypass Logto auth in local dev. **Never enable in production; `pnpm release:check` fails if production resolves to `true`.** |
 | `LUMIBASE_ALLOW_ORG_SIGNUP` | Optional | unset | Set to `true` to allow authenticated Studio users to create organizations. Bootstrap instance operators may create organizations without this flag. Site creation and deletion use the organization API; the legacy admin site-management routes and their test-only flag have been removed. |
@@ -121,6 +121,7 @@ rather than a typed error.
 | `DATABASE_POOL_MAX` | ✗ | Maximum DB pool connections (default: `10`) |
 | `DATABASE_SSL` | ✗ | `true` to require SSL for DB connection |
 | `LUMIBASE_DB_RLS` | ✗ | Request-path RLS scope: `off` (default) or `enforce`. Any other value fails closed (startup error on Docker, `503 RLS_MISCONFIGURED` on Workers). See [Request-path RLS scope](../features/rls-request-scope.md) |
+| `LUMIBASE_OPS_TOKEN` | ✗ | Static bearer secret (≥ 32 chars) for the read-only ops diagnostics plane `/api/v1/ops/*` and error capture lookup. Unset or shorter: the plane answers 404 everywhere. See [Ops diagnostics](../features/ops-diagnostics.md) |
 | `DATABASE_SYSTEM_URL` | With `LUMIBASE_DB_RLS=enforce` (Docker) | Connection string of the system role (`BYPASSRLS`) used by workers, cron and system routes. Unset: those paths use `DATABASE_URL`. Also read from `DATABASE_SYSTEM_URL_FILE` |
 
 For Cloudflare Workers, use the `HYPERDRIVE` binding (see [Cloudflare Bindings](#cloudflare-bindings)).
