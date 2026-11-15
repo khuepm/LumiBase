@@ -49,7 +49,7 @@ export const RichTextInterface: InterfaceComponent<Value> = (props) => {
               {l}
             </button>
           ))}
-        <button type="button" onClick={() => setRaw((v) => !v)} className="ml-auto text-primary hover:underline">
+        <button type="button" onClick={() => setRaw((v) => !v)} className="ms-auto text-primary hover:underline">
           {raw ? 'Preview' : 'Edit JSON'}
         </button>
       </div>

@@ -186,6 +186,18 @@ export async function resolvePrincipalCapabilities(
   };
 }
 
+/**
+ * The granted capabilities of a resolution whose caller is `standard`, else
+ * null (#743). For entry points that must never act for a browser-held
+ * credential (publishable API key, frontend session, organization key)
+ * whatever its policies say — deploys, for one. Lives here so the caller class
+ * stays read only by the resolvers.
+ */
+export function standardCallerCapabilities(resolution: GovernedCapabilityResolution): string[] | null {
+  if (!resolution.allowed || resolution.callerClass !== 'standard') return null;
+  return resolution.capabilities;
+}
+
 /** Re-exported so call sites need one import to persist a principal. */
 export { callerClassFromAuth, principalRefFromAuth };
 export type { AuthenticatedPrincipalRef, PrincipalCallerClass };

@@ -1,0 +1,64 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`generateTypes — blocks > matches the output snapshot 1`] = `
+"import type { ID, Locale } from './stub';
+import type { Brand } from './stub';
+
+export interface Cta {
+  readonly id: Brand<'ID', string>;
+  readonly created_at: string;
+  label: string;
+  url?: string | null;
+}
+
+export type CtaExpanded = Cta;
+
+export interface Hero {
+  readonly id: Brand<'ID', string>;
+  title: string;
+  height?: number | null;
+  items?: Array<CtaBlock> | null;
+}
+
+export type HeroExpanded = Hero;
+
+export interface Pages {
+  readonly id: Brand<'ID', string>;
+  title: string;
+  sections: Array<HeroBlock | CtaBlock | { id: string; type: "ghost"; data: Record<string, unknown> }>;
+  aside?: Array<{ id: string; type: string; data: Record<string, unknown> }> | null;
+}
+
+export type PagesExpanded = Pages;
+
+export interface CtaBlockData {
+  label: string;
+  url?: string | null;
+}
+
+export interface CtaBlock {
+  id: string;
+  type: "cta";
+  data: CtaBlockData;
+}
+
+export interface HeroBlockData {
+  title: string;
+  height?: number | null;
+  items?: Array<CtaBlock> | null;
+}
+
+export interface HeroBlock {
+  id: string;
+  type: "hero";
+  data: HeroBlockData;
+}
+
+export interface LumibaseCollections {
+  cta: Cta;
+  hero: Hero;
+  pages: Pages;
+}
+
+export type LumibaseSchema = LumibaseCollections;"
+`;

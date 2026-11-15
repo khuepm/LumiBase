@@ -14,6 +14,8 @@ import { getRequestContext, mergeRequestContext } from './request-context';
 const PUBLIC_AUTH_PATHS = new Set([
   '/api/v1/auth/login',
   '/api/v1/auth/verify-totp',
+  '/api/v1/auth/passkey/options',
+  '/api/v1/auth/passkey/verify',
 ]);
 
 /**

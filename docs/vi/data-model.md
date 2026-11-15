@@ -1,13 +1,13 @@
 ---
-version: 16
-lastUpdated: 2026-11-14T12:31:30.227Z
+version: 19
+lastUpdated: 2026-11-15T21:36:02.367Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 26c9ba05b78320c7
+sourceHash: b374fe064ed760b0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T12:31:30.227Z
-codeVerifiedHash: 26c9ba05b78320c7
+codeVerified: 2026-11-15T21:36:02.367Z
+codeVerifiedHash: b374fe064ed760b0
 codeVerifiedClaims: 20
 ---
 
@@ -38,6 +38,7 @@ Các file schema được chia theo domain:
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
+| `social-auth.ts` | `lumibase_user_identities`, `lumibase_social_auth_providers` |
 | `imports.ts` | `lumibase_import_jobs` |
 | `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 
@@ -119,6 +120,8 @@ Chiến lược primary key:
 - `nanoid`: định danh chuỗi logic mặc định do LumiBase sinh.
 - `uuid`: chuỗi UUID do service sinh.
 - `string`: định danh chuỗi do caller cung cấp.
+
+Với mọi chiến lược, id của item là duy nhất **trong mỗi site**, trên tất cả collection của site đó: `items` có primary key `(siteId, id)` (migration `0035`). Hai site có thể dùng cùng một id; trong một site, id bị dùng lại, kể cả ở collection khác, bị từ chối với `409 ITEM_ID_EXISTS`.
 - `integer` / `bigInteger`: chiến lược dựa trên sequence, dành riêng cho storage materialized/physical; collection JSONB chặn các tổ hợp này.
 
 Storage mode được khai báo tường minh có chủ đích:
@@ -164,7 +167,7 @@ Compiled schema phơi ra các system field được sinh tự động, bên cạ
 ### `items`
 | Column | Type |
 |---|---|
-| `id` | text PK |
+| `id` | text | duy nhất trong mỗi site |
 | `siteId`, `collectionId` | text FK |
 | `status` | text | `draft`/`published`/`archived` |
 | `data` | jsonb | giá trị đánh key theo field.name |
@@ -176,17 +179,18 @@ Compiled schema phơi ra các system field được sinh tự động, bên cạ
 | `createdAt`, `updatedAt` | timestamp |
 | `deletedAt` | timestamp nullable |
 
-Index: `(siteId, collectionId, status)`, GIN trên `data`, `(siteId, status, publishAt)`, `(siteId, status, unpublishAt)`.
+Primary key `(siteId, id)`. Index: `(siteId, collectionId, status)`, GIN trên `data`, `(siteId, status, publishAt)`, `(siteId, status, unpublishAt)`.
 
 ### `revisions`
 - `id`, `siteId`, `itemId`, `collectionId`, `delta jsonb`, `parentId`, `userId`, `createdAt`.
+- `(siteId, itemId) → items (siteId, id)` (cascade): một revision luôn thuộc về một item của chính site đó.
 
 ### `releases` (Content Releases)
 - Một bundle publish xuyên collection. `id`, `siteId`, `name`, `description`, `status` (`draft`|`scheduled`|`published`|`failed`|`partially_failed`), `atomicityMode` (`all_or_nothing`|`best_effort`), `publishAt`, `publishedAt`, `maintenanceWindow jsonb`, `statusReason`, `createdBy → users.id (set null)`, `createdAt`, `updatedAt`.
 - Index: `releases_site_status_idx (siteId, status)`, `releases_publish_due_idx (siteId, status, publishAt)` (đối xứng với `items.publishDueIdx` cho vòng quét của scheduler).
 
 ### `release_items` (Content Releases)
-- Bảng junction release ↔ item, có thể ghim vào một revision cụ thể. `id`, `siteId`, `releaseId → releases.id (cascade)`, `collection`, `itemId → items.id (cascade)`, `targetStatus` (mặc định `published`), `revisionId → revisions.id (set null)`, `outcome` (`published`|`skipped`|`failed`), `outcomeReason`, `createdAt`.
+- Bảng junction release ↔ item, có thể ghim vào một revision cụ thể. `id`, `siteId`, `releaseId → releases.id (cascade)`, `collection`, `(siteId, itemId) → items (siteId, id)` (cascade), `targetStatus` (mặc định `published`), `revisionId → revisions.id (set null)`, `outcome` (`published`|`skipped`|`failed`), `outcomeReason`, `createdAt`.
 - Unique `(releaseId, collection, itemId)` (key cho upsert); index `(siteId, releaseId)`.
 
 ### `activity`
@@ -263,6 +267,10 @@ Quá trình sinh SDK dùng manifest này để phát ra interface collection cơ
 ### `refresh_tokens` (migration `0005`, vật lý `lumibase_refresh_tokens`)
 - `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — không bao giờ lưu plaintext), `familyId` (chuỗi rotation), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
 - Token gia hạn session, có rotation và thu hồi được. Dùng lại một row đã revoke sẽ revoke toàn bộ `familyId` (phát hiện đánh cắp). Được quét dọn bởi cron mỗi giờ sau khi hết hạn. Xem [`security/user-management.md`](./security/user-management.md) §4d.
+
+### `user_passkeys` (migration `0031`, vật lý `lumibase_user_passkeys`)
+- `id` (nanoid), `userId`, `credentialId` (base64url, unique), `publicKey` (khóa công khai COSE), `counter`, `transports`, `aaguid`, `name`, `deviceType`, `backedUp`, `rpId`, `createdAt`, `lastUsedAt`, `updatedAt`.
+- Gắn với định danh như `lumibase_user_totp_credentials`: khóa theo `user_id`, không có `site_id`, không nằm trong RLS — passkey thuộc về một RP ID (tên miền), không thuộc site. Không lưu gì bí mật. Xem [`security/passkeys.md`](./security/passkeys.md).
 
 ### System collections cần seed permissions
 
@@ -452,6 +460,14 @@ Cả ba đều scope theo `site_id` với RLS `site_isolation`. Xem `docs/vi/fea
 - Issuer JWT ngoài được tin cậy, theo từng site. **Chỉ config public — không có secret** (chữ ký được verify dựa trên JWKS của issuer). `id`, `siteId` (FK sites, cascade), `issuer` (khớp claim `iss`), `jwksUri`/`discoveryUrl` (bắt buộc một trong hai), `audience` (jsonb: string|string[]), `algorithms` (jsonb: allowlist thuật toán bất đối xứng), `claimMapping` (jsonb: `{ email, roles, siteId?, externalId? }`), `roleMapping` (jsonb: `{ "<claim role>": { roleId|systemKey } }`), `defaultRoleId`, `jitProvisioning`, `clockSkewSeconds`, `enabled`, `createdAt`, `updatedAt`.
 - Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0000_lumibase_init` (đã hợp nhất). Xem [security/external-jwt-auth.md](./security/external-jwt-auth.md).
 
+### `user_identities` (`social-auth.ts`, migration `0032`)
+- Danh tính đăng nhập ngoài liên kết với một tài khoản: `id`, `userId` (FK users, cascade), `issuer`, `subject`, `emailAtLink`, `createdAt`. Unique `(issuer, subject)`; index trên `user_id`.
+- **Identity-global** giống `users` — không có `site_id`, không chịu RLS; quyền truy cập site vẫn nằm ở `user_sites`. Migration `0032` backfill mọi `users.external_id` với issuer `urn:lumibase:external-id`. Xem [security/social-login.md](./security/social-login.md).
+
+### `social_auth_providers` (`social-auth.ts`, migration `0032`)
+- Cấu hình Google / Apple / GitHub theo site: `id`, `siteId` (FK sites, cascade), `provider`, `enabled`, `clientId`, `clientSecretCiphertext`, `appleTeamId`, `appleKeyId`, `applePrivateKeyCiphertext`, `allowedRedirectUris` (jsonb), `createdAt`, `updatedAt`. Unique `(siteId, provider)`; RLS `site_isolation`.
+- Secret là envelope AES-GCM của KeyProvider, ràng buộc theo site + provider, không bao giờ lưu plaintext và không bao giờ được API trả về.
+
 ### `lumibase_firebase_sync_pipelines`
 | Column | Type | Note |
 |---|---|---|
@@ -515,7 +531,7 @@ Audit mọi lần đọc đã giải mã của field `pii`/`phi` (Req 6). Không
 Index: `(siteId, timestamp)`, `(actor, timestamp)`.
 
 ### `content_reviews`
-Record ký duyệt biên tập của con người (Req 9). `itemId` dùng `onDelete: set null` để lịch sử review vẫn tồn tại sau khi xoá dữ liệu (Req 11.3).
+Record ký duyệt biên tập của con người (Req 9). `(siteId, itemId) → items (siteId, id)` với `ON DELETE SET NULL (item_id)`: xoá item sẽ xoá `itemId` và giữ `siteId`, để lịch sử review vẫn tồn tại sau khi xoá dữ liệu (Req 11.3). Dạng có danh sách cột cần PostgreSQL 15+.
 | Column | Type | Note |
 |---|---|---|
 | `id` | text PK | nanoid |

@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-11-12T20:47:43.451Z
+version: 4
+lastUpdated: 2026-11-15T21:57:22.542Z
 sourceLang: en
-contentHash: 11f1310a2fc1d029
-codeVerified: 2026-11-12T20:47:43.451Z
-codeVerifiedHash: 11f1310a2fc1d029
+contentHash: 2a7cd82af0d95f46
+codeVerified: 2026-11-15T21:57:22.542Z
+codeVerifiedHash: 2a7cd82af0d95f46
 codeVerifiedClaims: 6
 ---
 
@@ -28,6 +28,7 @@ LumiBase treats each field as a first-class schema object. A field has independe
 | `hash` | `string` | One-way stored hash. |
 | `geometry` | `GeoJSON.Geometry` | Stored as GeoJSON-like JSON. |
 | `alias` | virtual | Used for relation aliases, groups, and presentation-only fields. |
+| `blocks` | `Array<{ id, type, data }>` | Dynamic zone: ordered blocks, each validated against a block template listed in `options.allowedBlocks`. See [Dynamic zones](./dynamic-zones.md). |
 
 ## 2. Field Metadata
 

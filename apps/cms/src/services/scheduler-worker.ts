@@ -98,7 +98,8 @@ export async function sweepDuePublish(deps: SchedulerDeps, now = new Date()): Pr
     await deps.db
       .update(items)
       .set({ status: 'published', editorialState: 'published', updatedAt: new Date() })
-      .where(and(eq(items.id, row.id), ne(items.status, 'published')));
+      // Item ids are unique per site only: match the site too.
+      .where(and(eq(items.siteId, row.siteId), eq(items.id, row.id), ne(items.status, 'published')));
   }
 
   // Revalidate affected collections once.
@@ -151,7 +152,7 @@ export async function sweepDueUnpublish(deps: SchedulerDeps, now = new Date()): 
         editorialState: target === 'draft' ? 'draft' : null,
         updatedAt: new Date(),
       })
-      .where(and(eq(items.id, row.id), eq(items.status, 'published')));
+      .where(and(eq(items.siteId, row.siteId), eq(items.id, row.id), eq(items.status, 'published')));
     if (!collIdsBySite.has(row.siteId)) collIdsBySite.set(row.siteId, new Set());
     collIdsBySite.get(row.siteId)!.add(row.collectionId);
   }
@@ -254,7 +255,7 @@ export async function sweepRetention(deps: SchedulerDeps, now = new Date()): Pro
           const r = await deps.db
             .update(items)
             .set({ status: 'archived', updatedAt: new Date() })
-            .where(and(eq(items.id, it.id), ne(items.status, 'archived')))
+            .where(and(eq(items.siteId, row.siteId), eq(items.id, it.id), ne(items.status, 'archived')))
             .returning({ id: items.id });
           if (r.length > 0) count += 1;
         } else if (policy.action === 'crypto_shred') {

@@ -5,6 +5,7 @@ export * from './schemas/index';
 export * from './realtime/protocol';
 export * from './agent-tools/index';
 export * from './platform/index';
+export * from './intents/index';
 export type ID = string;
 export type Locale = string;
 
@@ -12,3 +13,5 @@ export type Brand<B, T> = T & { __brand: B };
 
 export * from './org-permissions';
 export * from './token-prefix';
+export * from './form-layout/index';
+export * from './security-history';

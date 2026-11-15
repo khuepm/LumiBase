@@ -30,6 +30,16 @@ components:
       schema: { type: string }
       description: Active tenant id. Required for every authenticated endpoint.
   schemas:
+    OpenApiConfig:
+      type: object
+      additionalProperties: false
+      required: [enabled, realms]
+      properties:
+        enabled: { type: boolean, default: false }
+        realms:
+          type: array
+          items: { type: string, enum: [studio, frontend, api_key, public] }
+          description: Realms that may fetch `/openapi.json`. Default `[studio]`.
     Error:
       type: object
       properties:
@@ -1882,6 +1892,91 @@ paths:
                                   oneCollection: { type: string }
                                   oneField: { type: string, nullable: true }
                                   junctionCollection: { type: string, nullable: true }
+  /openapi.json:
+    get:
+      summary: Live OpenAPI 3.1 document for the caller (#745)
+      description: |
+        Generated per site from the live schema and filtered by the caller's
+        permissions: only collections the caller can read, only fields its
+        field mask lets through, only the operations it holds. The `public`
+        realm (anonymous, ADR-011) gets the read surface only. Disabled by
+        default — enable with `PUT /openapi/config`. While disabled, or for a
+        realm the site did not list, it answers with the same 404 body as an
+        unknown route. Cached per (site, schema version, permission
+        fingerprint); a schema change invalidates it.
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+      responses:
+        '200':
+          description: An OpenAPI 3.1 document (not wrapped in `{ data }` — it is consumed by OpenAPI tooling).
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { type: object, required: [openapi, info, paths], properties: { openapi: { const: 3.1.0 } } }
+        '304':
+          description: Not modified (matching `If-None-Match`).
+        '401':
+          description: No credentials and the site has no public access
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Disabled, or the caller's realm is not allowed (`NOT_FOUND`, same body as an unknown route)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /openapi/config:
+    get:
+      summary: Read the live OpenAPI switch (site admin)
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/OpenApiConfig' }
+        '403':
+          description: Not a site admin
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    put:
+      summary: Enable/disable the live OpenAPI document and choose realms (site admin)
+      description: Stored in the `settings` table under key `openapi`; audited as `openapi_config_updated`.
+      parameters:
+        - $ref: '#/components/parameters/SiteHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenApiConfig' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/OpenApiConfig' }
+        '400':
+          description: Invalid body (`VALIDATION`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Not a site admin
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /auth/me:
     get:
       summary: Current authenticated principal for active site
@@ -2633,6 +2728,14 @@ paths:
                 sort: { type: integer }
       responses:
         '201': { description: Created }
+        '409':
+          description: >-
+            `ITEM_ID_EXISTS`: a caller-chosen id (string primary key) is already
+            used in this site, in any collection. Ids are unique per site, so
+            another site may use the same id.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /imports:
     parameters:
       - $ref: '#/components/parameters/SiteHeader'

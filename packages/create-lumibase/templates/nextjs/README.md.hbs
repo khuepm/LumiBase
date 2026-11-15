@@ -5,12 +5,17 @@ A Next.js website backed by LumiBase — CMS, Studio, and seeded content.
 ## Quick start
 
 ```bash
-cp .env.example .env
 npm run cms:up        # CMS + Studio + Postgres + Redis
 npm run cms:bootstrap # first admin + public read grant + publishable key
 npm run cms:seed      # sample posts
 npm run dev           # http://localhost:3000
 ```
+
+`create-lumibase` already wrote `.env` (gitignored) with a fresh `JWT_SECRET`,
+`ENCRYPTION_KEY` and first-admin password — no template ships a secret or a
+default admin. If you cloned this project instead, run `cp .env.example .env`
+and fill those three in (`openssl rand -base64 48`, `openssl rand -base64 32`,
+and a 12+ character password); `cms:up` refuses to start without them.
 
 The CMS container runs database migrations itself on first boot, so there is no
 separate migrate step. `cms:bootstrap` writes the publishable key back into
@@ -153,8 +158,13 @@ To gate first-run setup behind a one-time token, set
 
 This stack is for local development:
 
-- `JWT_SECRET` and `ENCRYPTION_KEY` in `docker-compose.yml` are dev values —
-  replace them.
+- Run `npx lumibase doctor --security --production`: it checks this
+  configuration (secrets, CORS, cookie flags, setup gate, RLS, rate limits,
+  database TLS) against the production checklist and exits non-zero on any
+  critical finding.
+- `JWT_SECRET` and `ENCRYPTION_KEY` come from `.env` and are unique to this
+  project. Keep them out of git, and store them in your host's secret manager
+  when you deploy.
 - The CMS image is pinned by semver tag. For a production deployment, pin
   the digest that tag resolves to (`docker buildx imagetools inspect
   ghcr.io/khuepm/lumibase-cms:{{lumibaseVersion}}`) so the image cannot change

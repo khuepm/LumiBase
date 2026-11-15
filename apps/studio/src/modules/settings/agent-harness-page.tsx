@@ -282,7 +282,7 @@ function ApprovalsTable({ approvals, onChanged }: { approvals: AgentApproval[]; 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="overflow-hidden rounded-md border bg-background">
-        <table className="w-full table-fixed text-left text-sm">
+        <table className="w-full table-fixed text-start text-sm">
           <thead className="border-b bg-muted/50 text-xs uppercase text-muted-foreground">
             <tr>
               {['Approval', 'Subject', 'Status', 'Policy', 'Agent', ''].map((column, index) => (
@@ -397,7 +397,7 @@ function ArtifactsTable({ artifacts }: { artifacts: AgentArtifact[] }) {
   return (
     <div className="space-y-2">
       <div className="overflow-hidden rounded-md border bg-background">
-        <table className="w-full table-fixed text-left text-sm">
+        <table className="w-full table-fixed text-start text-sm">
           <thead className="border-b bg-muted/50 text-xs uppercase text-muted-foreground">
             <tr>
               {['Artifact', 'Type', 'Title', 'Status', 'Hash', ''].map((column, i) => (
@@ -420,7 +420,7 @@ function ArtifactsTable({ artifacts }: { artifacts: AgentArtifact[] }) {
                   <td className="truncate px-3 py-2" title={artifact.title}>{artifact.title}</td>
                   <td className="truncate px-3 py-2">{artifact.status}</td>
                   <td className="truncate px-3 py-2" title={artifact.hash}>{artifact.hash}</td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2 text-end">
                     <button
                       type="button"
                       onClick={() => void evaluate(artifact)}
@@ -478,7 +478,7 @@ function Metric({ label, value }: { label: string; value: number }) {
 function DataTable({ columns, rows }: { columns: string[]; rows: string[][] }) {
   return (
     <div className="overflow-hidden rounded-md border bg-background">
-      <table className="w-full table-fixed text-left text-sm">
+      <table className="w-full table-fixed text-start text-sm">
         <thead className="border-b bg-muted/50 text-xs uppercase text-muted-foreground">
           <tr>{columns.map((column) => <th key={column} className="px-3 py-2 font-medium">{column}</th>)}</tr>
         </thead>

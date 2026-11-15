@@ -30,3 +30,5 @@
 ---
 
 **Implementation status:** Implemented 2026-07-17. Rate brake + `setupServiceOverride` seam trong `routes.ts`, type trong `env.ts`, 5 tests mới. `pnpm -F @lumibase/cms test setup/` 95/95, typecheck sạch. Giới hạn đã biết (ghi trong design): in-memory per-isolate ⇒ hạn mức thực = `10 × số_isolate`; DB lock + unique index vẫn là hard guard chống admin trùng.
+
+**Follow-up #732 (epic #674 S03, 2026-11-14):** race guard vẫn giữ nguyên (`FOR UPDATE` + `users_is_bootstrap_unique`); bổ sung phân loại bên thua — request đến trước khi setup khác commit nhận `409 SETUP_ALREADY_COMPLETED` (so `receivedAt` với `initialized_at`), request đến sau vẫn `404`. `23505` trên `users_is_bootstrap_unique` (kể cả lỗi bọc trong `cause`) cũng là `409`. Test DB: `setup-complete-race.db.integration.test.ts` (8 request song song → 1×201, 7×409, đúng một admin). Kiểm toán đầy đủ: `docs/en/security/bootstrap-and-token-race-audit.md`.

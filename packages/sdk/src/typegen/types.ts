@@ -16,6 +16,12 @@ export interface TypegenCollection {
 export interface TypegenField {
   name: string;
   type: string;
+  /**
+   * Studio interface id (`translatable-text`, `file`, `files`, …). Optional so
+   * manifests from older servers still type-check; generators use it to tell a
+   * per-locale map or a file reference from a plain scalar.
+   */
+  interface?: string;
   required: boolean;
   nullable: boolean;
   readonly?: boolean;
@@ -27,6 +33,10 @@ export interface TypegenField {
   kind?: 'm2o' | 'o2m' | 'm2m' | 'm2a';
   target?: string;
   enum?: string[];
+  /** Timezone-aware datetime (#747): value is `{ instant, tz, offset }`. */
+  timezone?: boolean;
+  /** Dynamic zones (#748): block template names a `blocks` field accepts. */
+  allowedBlocks?: string[];
 }
 
 export interface TypegenRelation {
@@ -38,4 +48,12 @@ export interface TypegenRelation {
   oneCollection?: string;
   oneField?: string | null;
   junctionCollection?: string | null;
+  /**
+   * The relation row's own `type`. `kind` is the direction seen from this
+   * collection (an m2o row reads as `o2m` from its one side); the GraphQL SDL
+   * target needs the stored type to mirror which nested fields the server adds.
+   */
+  relationType?: 'm2o' | 'o2m' | 'm2m' | 'm2a';
+  /** Field name the server's GraphQL expansion uses for this relation. */
+  alias?: string;
 }

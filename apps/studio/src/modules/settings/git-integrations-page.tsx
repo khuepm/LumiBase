@@ -323,7 +323,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
               disabled={!valid || mutation.isPending}
               className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
             >
-              <Save className="mr-2 inline h-4 w-4" />
+              <Save className="me-2 inline h-4 w-4" />
               {mutation.isPending ? 'Connecting…' : 'Connect'}
             </button>
           </div>
@@ -387,7 +387,7 @@ function PullRequestsDrawer({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm">
-      <div className="flex h-full w-full max-w-xl flex-col border-l bg-background shadow-xl">
+      <div className="flex h-full w-full max-w-xl flex-col border-s bg-background shadow-xl">
         <div className="flex items-center justify-between border-b p-4">
           <div>
             <h2 className="font-semibold">Pull requests</h2>

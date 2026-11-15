@@ -189,6 +189,19 @@ export function useInboxData() {
     counts,
     intents: intents ?? [],
     isLoading: approvalsQuery.isLoading || stagedQuery.isLoading,
+    /**
+     * Per-source loading flags (#757 progressive dashboard): each stat card
+     * waits only on the sources it reads, so a slow endpoint shows a
+     * placeholder on its own card instead of holding the whole row back —
+     * and a card never renders a fake `0` while its source is still loading.
+     */
+    loading: {
+      approvals: approvalsQuery.isLoading,
+      staged: stagedQuery.isLoading,
+      autonomy: autonomyQuery.isLoading,
+      intents: intentsQuery.isLoading,
+      questions: questionsQuery.isLoading,
+    },
     /** True once every source either loaded or failed — gates the badge. */
     isError:
       approvalsQuery.isError &&

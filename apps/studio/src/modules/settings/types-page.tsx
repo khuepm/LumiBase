@@ -1,8 +1,9 @@
-import Editor from '@monaco-editor/react';
+import Editor from '@/components/lazy-monaco-editor';
 import { useQuery } from '@tanstack/react-query';
 import { Download } from 'lucide-react';
 import { generateTypes, type TypegenManifest } from '@lumibase/sdk';
 import { getApiClient, getActiveSite } from '@/lib/api';
+import { OpenApiSettingsCard } from './openapi-settings-card';
 
 /**
  * Settings → Developer → Types page.
@@ -46,6 +47,8 @@ export function DeveloperTypesPage() {
         </p>
       </header>
 
+      <OpenApiSettingsCard />
+
       <section className="space-y-2">
         <h2 className="text-sm font-medium">CLI</h2>
         <pre className="rounded-md bg-muted p-3 text-xs">{cliSnippet}</pre>
@@ -78,7 +81,7 @@ export function DeveloperTypesPage() {
           </p>
         )}
         {code && (
-          <div className="overflow-hidden rounded-md border">
+          <div className="overflow-hidden rounded-md border" dir="ltr">
             <Editor
               height="500px"
               defaultLanguage="typescript"

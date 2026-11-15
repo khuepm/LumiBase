@@ -1,15 +1,15 @@
 ---
 title: LumiBase CLI
-version: 10
-lastUpdated: 2026-11-13T06:20:02.940Z
+version: 12
+lastUpdated: 2026-11-15T21:57:22.334Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 32b28106fb02ad1f
+sourceHash: 6f43a3732ad7e73f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T06:20:02.940Z
-codeVerifiedHash: 32b28106fb02ad1f
-codeVerifiedClaims: 20
+codeVerified: 2026-11-15T21:57:22.334Z
+codeVerifiedHash: 6f43a3732ad7e73f
+codeVerifiedClaims: 22
 ---
 
 # LumiBase CLI
@@ -42,7 +42,7 @@ CLI yêu cầu Node.js 22+; launcher tại `packages/cli/bin/lumibase.js` từ c
 | --- | --- |
 | `lumibase init [name]` | Tạo khung một project mới |
 | `lumibase types` | Sinh type TypeScript từ một CMS đang chạy |
-| `lumibase doctor` | Báo cáo cấu hình đã resolve và thăm dò kết nối |
+| `lumibase doctor` | Báo cáo cấu hình đã resolve và thăm dò kết nối (`--security`: rà soát cấu hình theo checklist production) |
 | `lumibase skills <list\|pull\|push\|install>` | Đồng bộ Site Skills (playbook cho agent) với một site |
 | `lumibase migrate <source>` | Migrate nội dung từ CMS khác (Contentful); chỉ dry run nếu không có `--apply` |
 
@@ -133,6 +133,18 @@ Bước health gọi endpoint `/health` không cần xác thực (`apps/cms/src/
 
 `doctor` thoát với mã khác 0 nếu có bất kỳ mục nào fail.
 
+### `lumibase doctor --security`
+
+`--security` thay các bước kiểm tra kết nối bằng một lượt rà soát cấu hình của dự án, chạy offline. Nó đọc `.env`, `.env.local`, `.dev.vars`, `[vars]` trong `wrangler.toml` và các mục `environment:` trong file compose. Mỗi phát hiện có mức độ (`critical`, `warning`, `info`), quy tắc được áp dụng và gợi ý cách sửa. Giá trị secret không bao giờ được in ra.
+
+| Flag | Tác dụng |
+| --- | --- |
+| `--production` | Áp dụng checklist production kể cả khi `NODE_ENV` / `LUMIBASE_ENV` không phải `production` |
+| `--env-file <a,b>` | Đọc các file dotenv này thay cho các file mặc định |
+| `--json` | In báo cáo dạng JSON (`ok`, `mode`, `runtime`, `sources`, `summary`, `findings`) |
+
+Lệnh thoát với mã `1` khi có bất kỳ phát hiện critical nào. Một bản scaffold mới từ `create-lumibase` qua được với không phát hiện critical nào. Danh sách quy tắc đầy đủ nằm ở [Mặc định an toàn](../security/secure-defaults.md).
+
 ## `lumibase skills`
 
 Đồng bộ [Site Skills](../features/site-skills.md) — các playbook Markdown cho agent của site — giữa một thư mục trong repository của bạn và một site. CLI chỉ chuyển file: CMS parse và validate từng tài liệu, nên định dạng chỉ có một bản cài đặt.
@@ -179,6 +191,7 @@ asset đã upload được bỏ qua. Các flag, bảng ánh xạ field và giớ
 ## Liên quan
 
 - [SDK — typegen](../sdk/typegen.md) — API lập trình nằm sau `lumibase types`
+- [Cấu hình typegen và target](./typegen-config.md) — `lumibase.typegen.config.ts`: nhiều cấu hình, đầu ra Zod / GraphQL SDL / OpenAPI, `--watch`
 - [Bắt đầu](../getting-started.md#bạn-thật-sự-cần-cái-nào) — starter vs platform vs consumer client, và `lumibase` nằm ở đâu
 - [Phát triển cục bộ](../deployment/local-development.md) — chạy CMS và Studio mà CLI này trỏ vào
 - [npm publishing](../release/npm-publishing.md) — cách package được phát hành

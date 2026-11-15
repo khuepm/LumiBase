@@ -1,0 +1,56 @@
+---
+import Base from '../layouts/Base.astro';
+import { contentConfig, getPosts, postSlug } from '../lib/lumibase';
+
+// Runs once, at build time. Visitors get the resulting HTML.
+const posts = await getPosts();
+const preview = contentConfig.configured && contentConfig.config.preview;
+---
+
+<Base title="My LumiBase site">
+  {
+    !contentConfig.configured ? (
+      <>
+        <h1>Almost there</h1>
+        <p>This site was built without a LumiBase connection, so there is no content yet.</p>
+        <p>
+          Missing: {contentConfig.missing.map((name) => <code>{name} </code>)}
+        </p>
+        <ol>
+          <li>
+            <code>cp .env.example .env</code> and fill in the CMS URL, site id and a{' '}
+            <em>publishable</em> key (<code>lbk_pub_…</code>).
+          </li>
+          <li>
+            <code>npm run build</code> again — or set the same variables on your Cloudflare Pages
+            project and redeploy.
+          </li>
+        </ol>
+      </>
+    ) : (
+      <>
+        <h1>My LumiBase site</h1>
+        <p class="muted">Static HTML built by Astro from LumiBase content.</p>
+        {posts.length === 0 ? (
+          <p>No published posts yet. Publish one in Studio, then rebuild.</p>
+        ) : (
+          <ul class="posts">
+            {posts.map((post) => {
+              const slug = postSlug(post);
+              return (
+                <li>
+                  <h2>
+                    {slug ? <a href={`/posts/${slug}/`}>{post.data.title ?? 'Untitled'}</a> : (post.data.title ?? 'Untitled')}
+                  </h2>
+                  {preview && post.status !== 'published' && (
+                    <p class="muted">Status: {post.status}</p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </>
+    )
+  }
+</Base>

@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/khuepm/lumibase/security/advisories/new
+    about: Report vulnerabilities privately (never in a public issue). See SECURITY.md.
   - name: 📖 Documentation
     url: https://github.com/khuepm/lumibase/tree/main/docs/en
     about: Read the LumiBase documentation before opening an issue.

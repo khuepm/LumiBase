@@ -52,13 +52,13 @@ export function UsersPage() {
 
       <div className="overflow-hidden rounded-lg border bg-background shadow-sm">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground border-b">
+          <thead className="bg-muted/40 text-start text-xs uppercase text-muted-foreground border-b">
             <tr>
               <th className="px-4 py-3">User</th>
               <th className="px-4 py-3">Role</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Last Seen</th>
-              <th className="w-24 px-4 py-3 text-right">Actions</th>
+              <th className="w-24 px-4 py-3 text-end">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -95,7 +95,7 @@ export function UsersPage() {
                 <td className="px-4 py-3 text-xs text-muted-foreground">
                   {row.lastSeenAt ? new Date(row.lastSeenAt).toLocaleString() : 'Never'}
                 </td>
-                <td className="px-4 py-3 text-right">
+                <td className="px-4 py-3 text-end">
                   <div className="flex items-center justify-end gap-2">
                     <button
                       type="button"

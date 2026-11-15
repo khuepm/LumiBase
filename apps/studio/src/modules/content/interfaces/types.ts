@@ -16,6 +16,12 @@ export interface InterfaceProps<T = unknown> {
   disabled?: boolean;
   /** Notify parent of a new value. */
   onChange: (next: T | null) => void;
+  /**
+   * Content locale of the value, when the caller knows it (e.g. one locale of
+   * a translatable field). Text editors use it for `dir`/`lang` via
+   * `contentDirProps` (#761); without it they fall back to `dir="auto"`.
+   */
+  locale?: string;
 }
 
 /** Component signature for everything in `interfaces/registry.tsx`. */
@@ -28,5 +34,7 @@ export type InterfaceComponent<T = unknown> = React.FC<InterfaceProps<T>>;
  */
 export function readOptions<T>(field: FieldResource): T {
   const meta = (field as unknown as { meta?: Record<string, unknown> }).meta;
-  return (meta?.options as T) ?? ({} as T);
+  // The fields API returns `options` at the top level; `meta.options` is the
+  // legacy Directus-style location. Prefer meta, fall back to top level.
+  return ((meta?.options ?? field.options) as T) ?? ({} as T);
 }

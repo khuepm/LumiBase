@@ -43,9 +43,9 @@ export function SaveBookmarkDialog({ collection, view, canManageShared, onClose 
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true" aria-labelledby="save-bookmark-title">
       <div className="w-full max-w-sm space-y-4 rounded-lg border bg-background p-5 shadow-lg">
-        <h2 className="text-base font-semibold">Save bookmark</h2>
+        <h2 id="save-bookmark-title" className="text-base font-semibold">Save bookmark</h2>
 
         <label className="block space-y-1">
           <span className="text-sm text-muted-foreground">Name</span>

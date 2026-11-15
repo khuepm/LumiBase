@@ -1,13 +1,22 @@
-# Database
+# Database (dev container from docker-compose.yml, bound to 127.0.0.1)
 DATABASE_URL=postgresql://lumibase:lumibase@localhost:5432/lumibase
 
 # Redis (optional — for queue/cache)
 REDIS_URL=redis://localhost:6379
 
-# Auth
-JWT_SECRET=change-me-in-production
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=change-me
+# Auth. create-lumibase generated a fresh value into .env (gitignored); no
+# template ever carries one. Make your own: `openssl rand -base64 48`.
+JWT_SECRET=
+# AES-256 key for encrypting stored credentials (base64 of 32 bytes), also
+# generated. Make your own: `openssl rand -base64 32`.
+ENCRYPTION_KEY=
+
+# Browser origins allowed to call this API — an exact, comma-separated
+# allowlist. Never "*": the server refuses to start with it.
+CORS_ALLOWED_ORIGINS=http://localhost:3000
+
+# Requests per minute per client IP (0 turns limiting off — don't in production).
+LUMIBASE_API_RATE_LIMIT=600
 
 # App
 PORT=8787
@@ -17,3 +26,6 @@ NODE_ENV=development
 LUMIBASE_ALLOW_ORG_SIGNUP=false
 # Global organization MCP kill switch: off disables it; org setting defaults off.
 LUMIBASE_MCP_ORG_TOOLS=on
+
+# Audit this configuration against the production checklist:
+#   npx lumibase doctor --security --production

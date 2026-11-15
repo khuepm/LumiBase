@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { Check, ChevronDown, ChevronLeft, Copy, Lock, Pin, Save, Share2, Star, Trash2, X } from 'lucide-react';
 import type { SaveAction } from '@lumibase/contracts/schemas';
 import { useSaveAction, saveActionLabel } from './use-save-action';
@@ -14,7 +14,11 @@ import { PresenceStack } from '@/components/presence-chip';
 import { CoEditingBanner } from '@/components/co-editing-banner';
 import { useCoEditors } from '@/hooks/use-presence';
 import { resolveInterface } from './interfaces/registry';
+import { useExtensionUpdates } from '@/lib/extension-loader';
 import { GroupContainer, type GroupVariant } from './interfaces/group';
+import { placedFields, resolveFormVisibility, type FormLayout } from '@lumibase/contracts/form-layout';
+import { LayoutNodes } from './form-layout-renderer';
+import { checkRequired, useFormLayout, validationErrorsFrom } from './form-layout-state';
 import { RawToggle } from './interfaces/raw-toggle';
 import { ProvenanceBadge } from './provenance-badge';
 import { RevisionsPanel } from './revisions-panel';
@@ -23,7 +27,15 @@ import { VersionPanel } from './version-panel';
 import { DependentRecordsDialog, type DependentGroup } from './dependent-records-dialog';
 import { TranslationMode } from './translation-mode';
 import { translatableFields, tmLearnEntries } from './translatable-fields';
-import { useSiteLocales } from './use-site-locales';
+import { useSiteLocalesState } from './use-site-locales';
+import {
+  FieldRevealContext,
+  localeNoticeMessage,
+  planIntentLocale,
+  useIntentFieldFocus,
+  type LocalePlan,
+} from './field-focus';
+import { readEditorIntentSearch } from './editor-intent-search';
 import { ItemCreate } from './item-create';
 import { EditorialActions } from './editorial-actions';
 import { DraftReviewPanel } from './draft-review-panel';
@@ -39,11 +51,34 @@ type Tab = 'fields' | 'translation' | 'revisions' | 'versions' | 'raw';
 export function ItemDetailPage() {
   // Non-strict: rendered by both `/content/...` and `/$adminPath/content/...`.
   const { collection, id } = useParams({ strict: false }) as { collection: string; id: string };
-  if (id === 'new') return <ItemCreate key={collection} collection={collection} />;
-  return <ItemEditor key={`${collection}/${id}`} collection={collection} id={id} />;
+  // `?locale=&field=` come from intent links (issue #759); validated here so a
+  // hand-edited URL can never inject anything but a locale tag / field name.
+  const intentSearch = readEditorIntentSearch(useSearch({ strict: false }));
+  if (id === 'new') {
+    return <ItemCreate key={collection} collection={collection} intentField={intentSearch.field} />;
+  }
+  return (
+    <ItemEditor
+      key={`${collection}/${id}`}
+      collection={collection}
+      id={id}
+      intentLocale={intentSearch.locale}
+      intentField={intentSearch.field}
+    />
+  );
 }
 
-function ItemEditor({ collection, id }: { collection: string; id: string }) {
+function ItemEditor({
+  collection,
+  id,
+  intentLocale,
+  intentField,
+}: {
+  collection: string;
+  id: string;
+  intentLocale?: string;
+  intentField?: string;
+}) {
   const client = getApiClient();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -61,7 +96,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
   // Translation mode (translation-memory-ui): the site's default is the source
   // locale; the user picks a target to translate into.
-  const locales = useSiteLocales();
+  const { locales, isLoaded: localesLoaded } = useSiteLocalesState();
   const [targetLocale, setTargetLocale] = useState<string | null>(null);
   // Translatable fields the user set by hand (or applied a human TM match) in
   // this session — learned into TM on save when `translations.learnTm` is on.
@@ -167,6 +202,9 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
   }, [itemQuery.data, draft]);
 
   const fields = fieldsQuery.data ?? [];
+  // Form layout (#750): tabs / groups / dividers + conditional visibility.
+  const layout = useFormLayout(collection);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   // Fields the user can read at all — anything else is invisible (server
   // strips it from the payload, but we'd render an empty input otherwise).
   const editable: FieldResource[] = useMemo(
@@ -191,7 +229,32 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
       setTargetLocale(locales.find((l) => l !== sourceLocale) ?? sourceLocale);
     }
   }, [locales, sourceLocale, targetLocale]);
-  const hasTranslatableFields = translatableFields(editable).length > 0;
+  const translatableEditable = useMemo(() => translatableFields(editable), [editable]);
+  const hasTranslatableFields = translatableEditable.length > 0;
+
+  // Intent links (issue #759): pick the tab/locale once the editor and the
+  // site's locale setting are loaded, then reveal + focus the linked field.
+  const [localePlan, setLocalePlan] = useState<LocalePlan | null>(null);
+  const editorReady =
+    Boolean(itemQuery.data) && draft !== null && fieldsQuery.isSuccess && !perms.isLoading;
+  useEffect(() => {
+    if (!intentLocale || localePlan || !editorReady || !localesLoaded) return;
+    const plan = planIntentLocale({
+      requested: intentLocale,
+      locales,
+      translatable: translatableEditable.map((f) => f.name),
+      field: intentField,
+    });
+    if (!plan) return;
+    setLocalePlan(plan);
+    setTab(plan.tab);
+    if (plan.targetLocale) setTargetLocale(plan.targetLocale);
+  }, [intentLocale, intentField, localePlan, editorReady, localesLoaded, locales, translatableEditable]);
+  const fieldFocus = useIntentFieldFocus({
+    field: intentField,
+    fields: tab === 'translation' ? translatableEditable : editable,
+    ready: editorReady && (!intentLocale || localePlan !== null),
+  });
 
   const isDirty = useMemo(() => {
     if (!itemQuery.data || draft === null) return false;
@@ -205,6 +268,10 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!draft) return null;
+      // Same required rule as the server (PATCH = partial), so the form can
+      // flag the field — and its tab — without a round trip.
+      const missing = checkRequired(fields, draft, layout, true);
+      if (Object.keys(missing).length > 0) throw requiredError(missing);
       const res = await client.items(collection as never).patch(id, {
         data: draft,
         publishAt: localInputToIso(publishAt),
@@ -227,7 +294,11 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
       }
       return res.data as ItemRow;
     },
+    onError: (err: Error) => {
+      setFieldErrors(validationErrorsFrom(err, fields.map((f) => f.name)));
+    },
     onSuccess: () => {
+      setFieldErrors({});
       queryClient.invalidateQueries({ queryKey: ['item', collection, id] });
       queryClient.invalidateQueries({ queryKey: ['items', collection] });
       queryClient.invalidateQueries({ queryKey: ['revisions', collection, id] });
@@ -362,21 +433,19 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
             {canShare ? <Share2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
             Share
           </button>
-          <button
-            type="button"
-            onClick={() => deleteMutation.mutate()}
-            disabled={deleteMutation.isPending || !canDelete}
-            title={canDelete ? undefined : 'You do not have delete permission on this collection.'}
-            className={cn(
-              'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs disabled:opacity-50',
-              canDelete
-                ? 'border-destructive/40 text-destructive hover:bg-destructive/10'
-                : 'cursor-not-allowed border-muted-foreground/20 text-muted-foreground',
-            )}
-          >
-            {canDelete ? <Trash2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-            Delete
-          </button>
+          {/* Folder mode (#749): a policy without `delete` hides the action
+              entirely rather than showing a dead button. */}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+              className="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete
+            </button>
+          )}
           <div className="relative inline-flex">
             <button
               type="button"
@@ -387,7 +456,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
               disabled={!isDirty || saveMutation.isPending || !canUpdate}
               title={canUpdate ? saveActionLabel(saveAction.effective) : 'You do not have update permission on this collection.'}
               className={cn(
-                'inline-flex items-center gap-1 rounded-l-md px-3 py-1 text-xs font-medium',
+                'inline-flex items-center gap-1 rounded-s-md px-3 py-1 text-xs font-medium',
                 isDirty && canUpdate
                   ? 'bg-primary text-primary-foreground hover:opacity-90'
                   : 'bg-muted text-muted-foreground',
@@ -406,7 +475,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
               onClick={() => setSaveMenuOpen((v) => !v)}
               disabled={saveMutation.isPending || !canUpdate}
               className={cn(
-                'inline-flex items-center rounded-r-md border-l border-primary-foreground/20 px-1.5 py-1',
+                'inline-flex items-center rounded-e-md border-s border-primary-foreground/20 px-1.5 py-1',
                 canUpdate ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-muted text-muted-foreground',
               )}
             >
@@ -414,7 +483,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
             </button>
             {saveMenuOpen && (
               <div
-                className="absolute right-0 top-full z-20 mt-1 w-52 rounded-md border border-border bg-background py-1 text-xs shadow-md"
+                className="absolute end-0 top-full z-20 mt-1 w-52 rounded-md border border-border bg-background py-1 text-xs shadow-md"
                 onMouseLeave={() => setSaveMenuOpen(false)}
               >
                 {(['stay', 'return', 'create_new'] as const).map((a) => (
@@ -427,7 +496,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
                       setPendingAction(a);
                       saveMutation.mutate();
                     }}
-                    className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-muted disabled:opacity-50"
+                    className="flex w-full items-center justify-between px-3 py-1.5 text-start hover:bg-muted disabled:opacity-50"
                   >
                     {saveActionLabel(a)}
                     {saveAction.effective === a && <Check className="h-3 w-3" />}
@@ -441,7 +510,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
                     setSaveMenuOpen(false);
                     saveAction.setDefault(saveAction.effective);
                   }}
-                  className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-muted-foreground hover:bg-muted"
+                  className="flex w-full items-center gap-1.5 px-3 py-1.5 text-start text-muted-foreground hover:bg-muted"
                 >
                   <Star className="h-3 w-3" />
                   Set “{saveActionLabel(saveAction.effective)}” as default
@@ -581,7 +650,20 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
         </div>
       )}
 
+      {localePlan?.notice && intentLocale && (
+        <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+          {localeNoticeMessage(localePlan.notice, intentLocale)}
+        </div>
+      )}
+      {fieldFocus.status === 'missing' && intentField && (
+        <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+          The linked field “{intentField}” is not available here — it may be hidden, removed, or
+          outside your permissions.
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_22rem]">
+        <FieldRevealContext.Provider value={fieldFocus.reveal}>
         <section className="rounded-lg border bg-background p-4">
           {tab === 'fields' && (
             <FieldsTab
@@ -592,6 +674,8 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
               perms={perms}
               pinnedFields={pinsQuery.data ?? []}
               onReleasePin={canUpdate ? (field) => releasePinMutation.mutate(field) : undefined}
+              layout={layout}
+              errors={fieldErrors}
             />
           )}
           {tab === 'translation' && draft && targetLocale && (
@@ -646,6 +730,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
             />
           )}
         </section>
+        </FieldRevealContext.Provider>
 
         <aside className="rounded-lg border bg-muted/20 p-3">
           <h2 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Tabs</h2>
@@ -718,6 +803,14 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
 }
 
 /** ISO timestamp → `datetime-local` input value (local time), or '' when unset. */
+/** Synthesized `VALIDATION` error for a client-side required failure. */
+export function requiredError(missing: Record<string, string>) {
+  const message = Object.entries(missing)
+    .map(([field, msg]) => `${field}: ${msg}`)
+    .join('; ');
+  return Object.assign(new Error(message), { body: { errors: [{ code: 'VALIDATION', message }] } });
+}
+
 function isoToLocalInput(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
@@ -750,7 +843,7 @@ function TabButton({
         type="button"
         onClick={() => onClick(value)}
         className={cn(
-          'w-full rounded-md px-2 py-1 text-left',
+          'w-full rounded-md px-2 py-1 text-start',
           current === value ? 'bg-background font-medium shadow-sm' : 'hover:bg-background/60',
         )}
       >
@@ -787,6 +880,8 @@ export function FieldsTab({
   pinnedFields,
   onReleasePin,
   writeAction = 'update',
+  layout = null,
+  errors = {},
 }: {
   fields: FieldResource[];
   value: Record<string, unknown>;
@@ -799,7 +894,13 @@ export function FieldsTab({
   onReleasePin?: (field: string) => void;
   /** Field permission that makes a cell writable; `create` on the new-item form. */
   writeAction?: Extract<PermissionAction, 'create' | 'update'>;
+  /** Collection form layout (#750); null renders the classic flat form. */
+  layout?: FormLayout | null;
+  /** Field key → validation message (inline + tab error badges). */
+  errors?: Readonly<Record<string, string>>;
 }) {
+  // resolveInterface reads the extension registry during render.
+  useExtensionUpdates();
   if (fields.length === 0) {
     return <p className="text-sm text-muted-foreground">No editable fields.</p>;
   }
@@ -809,6 +910,9 @@ export function FieldsTab({
   const groupFieldNames = new Set(
     fields.filter((f) => f.interface?.startsWith('group-')).map((f) => f.name),
   );
+  // Fields the form layout places render inside its tabs/groups, never also
+  // in the default section or a legacy group container.
+  const placed = new Set(placedFields(layout));
   const bySort = (a: FieldResource, b: FieldResource) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
   const widthClass = (w?: FieldResource['width']) =>
     w === 'half' ? 'sm:col-span-1' : 'col-span-1 sm:col-span-2';
@@ -817,9 +921,9 @@ export function FieldsTab({
     // Group container — render its children in a nested grid.
     if (f.interface?.startsWith('group-')) {
       const variant = f.interface.replace('group-', '') as GroupVariant;
-      const children = fields.filter((c) => c.group === f.name).sort(bySort);
+      const children = fields.filter((c) => c.group === f.name && !placed.has(c.name)).sort(bySort);
       return (
-        <div key={f.id} className="col-span-1 sm:col-span-2">
+        <div key={f.id} className="col-span-1 sm:col-span-2" data-field-anchor={f.name}>
           <GroupContainer variant={variant} field={f}>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children.map(renderField)}</div>
           </GroupContainer>
@@ -835,8 +939,17 @@ export function FieldsTab({
       if (!writable) return;
       onChange({ ...value, [f.name]: next });
     };
+    const error = errors[f.name];
+    const errorId = `field-error-${f.name}`;
     return (
-      <div key={f.id} className={widthClass(f.width)}>
+      <div
+        key={f.id}
+        className={widthClass(f.width)}
+        data-field={f.name}
+        data-field-anchor={f.name}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+      >
         <label className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
           <span>{f.name}</span>
           {f.required && <span className="text-destructive">*</span>}
@@ -851,7 +964,7 @@ export function FieldsTab({
                 <button
                   type="button"
                   onClick={() => onReleasePin(f.name)}
-                  className="ml-0.5 rounded-full px-1 hover:bg-sky-100"
+                  className="ms-0.5 rounded-full px-1 hover:bg-sky-100"
                   aria-label={`Release pin on ${f.name}`}
                   title="Release pin — allow agents to write this field again."
                 >
@@ -861,7 +974,7 @@ export function FieldsTab({
             </span>
           )}
           {!writable && (
-            <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
+            <span className="ms-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
               <Lock className="h-3 w-3" /> read-only
             </span>
           )}
@@ -871,6 +984,11 @@ export function FieldsTab({
             <Interface field={f} value={cellValue} onChange={setCell} />
           </RawToggle>
         </div>
+        {error && (
+          <p id={errorId} className="mt-1 text-xs text-destructive">
+            {error}
+          </p>
+        )}
       </div>
     );
   };
@@ -880,5 +998,29 @@ export function FieldsTab({
     .filter((f) => !f.group || !groupFieldNames.has(f.group))
     .sort(bySort);
 
-  return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{topLevel.map(renderField)}</div>;
+  if (!layout) {
+    return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{topLevel.map(renderField)}</div>;
+  }
+
+  // Layout mode: unplaced fields keep the classic flat rendering in a default
+  // section, then the layout's tabs / groups / dividers follow.
+  const byName = new Map(fields.map((f) => [f.name, f]));
+  const visibility = resolveFormVisibility(layout, value ?? {});
+  const unplaced = topLevel.filter((f) => !placed.has(f.name));
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {unplaced.map(renderField)}
+      <LayoutNodes
+        nodes={layout.nodes}
+        ctx={{
+          visibility,
+          errors,
+          renderField: (key) => {
+            const f = byName.get(key);
+            return f ? renderField(f) : null;
+          },
+        }}
+      />
+    </div>
+  );
 }

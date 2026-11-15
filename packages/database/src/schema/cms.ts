@@ -1,10 +1,12 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  foreignKey,
   index,
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -184,7 +186,12 @@ export const relations = pgTable(
 export const items = pgTable(
   'lumibase_items',
   {
-    id: id(),
+    /**
+     * Item id, unique within its site (primary key `(site_id, id)`, migration
+     * 0035). String primary keys are caller-chosen, so the same id may exist in
+     * two sites; every lookup by id must also filter by `site_id`.
+     */
+    id: text('id').$defaultFn(() => nanoid()).notNull(),
     siteId: text('site_id')
       .notNull()
       .references(() => sites.id, { onDelete: 'cascade' }),
@@ -200,6 +207,16 @@ export const items = pgTable(
      */
     pinnedFields: jsonb('pinned_fields').default([]).notNull(),
     sort: integer('sort').default(0).notNull(),
+    /**
+     * Hierarchical collections (#749). Only written for collections with
+     * `meta.tree.enabled`; NULL/NULL reads as a root. `path` is the
+     * materialised ancestor chain including the item itself (`/root/child/`),
+     * maintained server-side by ItemService (create/move/delete) under a
+     * per-collection advisory lock. No FK on `parent_id`: integrity is kept by
+     * the service and soft-deleted parents keep their rows.
+     */
+    parentId: text('parent_id'),
+    path: text('path'),
     /**
      * Content scheduling window (Req 7). When set, the Scheduler publishes at
      * `publishAt` and unpublishes at `unpublishAt`; delivery filters to the
@@ -225,6 +242,7 @@ export const items = pgTable(
     deletedAt: timestamp('deleted_at'),
   },
   (t) => ({
+    pk: primaryKey({ name: 'lumibase_items_pkey', columns: [t.siteId, t.id] }),
     collectionStatusIdx: index('items_collection_status_idx').on(
       t.siteId,
       t.collectionId,
@@ -248,6 +266,14 @@ export const items = pgTable(
     deliverIdx: index('items_deliver_idx')
       .on(t.siteId, t.collectionId, t.status, t.publishAt, t.unpublishAt)
       .where(sql`${t.deletedAt} is null`),
+    /** Tree children + sibling order (#749, migration 0034_item_tree). */
+    treeParentIdx: index('items_tree_parent_idx')
+      .on(t.siteId, t.collectionId, t.parentId, t.sort)
+      .where(sql`${t.deletedAt} is null`),
+    /** Tree subtree prefix scans (#749, migration 0034_item_tree). */
+    treePathIdx: index('items_tree_path_idx')
+      .on(t.siteId, t.collectionId, t.path.op('text_pattern_ops'))
+      .where(sql`${t.path} is not null`),
   }),
 );
 
@@ -258,9 +284,7 @@ export const revisions = pgTable(
     siteId: text('site_id')
       .notNull()
       .references(() => sites.id, { onDelete: 'cascade' }),
-    itemId: text('item_id')
-      .notNull()
-      .references(() => items.id, { onDelete: 'cascade' }),
+    itemId: text('item_id').notNull(),
     collectionId: text('collection_id')
       .notNull()
       .references(() => collections.id, { onDelete: 'cascade' }),
@@ -288,6 +312,12 @@ export const revisions = pgTable(
     createdAt: createdAt(),
   },
   (t) => ({
+    /** Same-site item (composite FK, migration 0035). */
+    itemFk: foreignKey({
+      name: 'lumibase_revisions_item_fk',
+      columns: [t.siteId, t.itemId],
+      foreignColumns: [items.siteId, items.id],
+    }).onDelete('cascade'),
     itemIdx: index('revisions_item_idx').on(t.itemId, t.createdAt),
     stagedIdx: index('revisions_staged_idx')
       .on(t.siteId, t.autoCommitAt)
@@ -613,9 +643,7 @@ export const releaseItems = pgTable(
       .references(() => releases.id, { onDelete: 'cascade' }),
     /** Collection name (releases span collections). */
     collection: text('collection').notNull(),
-    itemId: text('item_id')
-      .notNull()
-      .references(() => items.id, { onDelete: 'cascade' }),
+    itemId: text('item_id').notNull(),
     /** Target `items.status` to set on publish (`published` default). */
     targetStatus: text('target_status').default('published').notNull(),
     /** Revision pin; null → publish the item's live state at publish time. */
@@ -626,6 +654,12 @@ export const releaseItems = pgTable(
     createdAt: createdAt(),
   },
   (t) => ({
+    /** Same-site item (composite FK, migration 0035). */
+    itemFk: foreignKey({
+      name: 'lumibase_release_items_item_fk',
+      columns: [t.siteId, t.itemId],
+      foreignColumns: [items.siteId, items.id],
+    }).onDelete('cascade'),
     releaseItemUnique: uniqueIndex('release_items_release_item_unique').on(
       t.releaseId,
       t.collection,

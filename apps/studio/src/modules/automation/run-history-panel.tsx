@@ -189,7 +189,7 @@ export function RunHistoryPanel({
                   setSelectedRunId(next);
                   if (next === null) onRunSelected?.(null);
                 }}
-                className={`flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs hover:bg-accent ${selectedRunId === run.id ? 'border-primary bg-accent' : ''
+                className={`flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-start text-xs hover:bg-accent ${selectedRunId === run.id ? 'border-primary bg-accent' : ''
                   }`}
               >
                 <StatusIcon status={run.status} />

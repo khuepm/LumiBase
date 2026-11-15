@@ -8,11 +8,15 @@ interface Choice {
 
 interface SelectRadioOptions {
   choices?: Choice[];
+  /** #751 — `false` hides the clear affordance; the API rejects clearing a set value. */
+  allowClear?: boolean;
 }
 
 /**
  * `select-radio` — single-choice radio group bound to `meta.options.choices`.
- * Stores the selected value as a `string`.
+ * Stores the selected value as a `string`. A "Clear selection" control is
+ * offered while a value is set, unless `allowClear: false` or the field is
+ * required.
  */
 export const SelectRadioInterface: InterfaceComponent<string> = ({
   value,
@@ -27,29 +31,43 @@ export const SelectRadioInterface: InterfaceComponent<string> = ({
     return <p className="text-xs text-muted-foreground">No choices configured.</p>;
   }
 
+  const canClear = opts.allowClear !== false && !field.required && value != null && value !== '';
+
   return (
-    <div className="grid grid-cols-2 gap-1.5">
-      {choices.map((c) => {
-        const active = value === c.value;
-        return (
-          <label
-            key={c.value}
-            className={cn(
-              'flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-sm hover:bg-muted/40',
-              active && 'border-primary bg-primary/5',
-            )}
-          >
-            <input
-              type="radio"
-              name={field.name}
-              checked={active}
-              disabled={disabled}
-              onChange={() => onChange(c.value)}
-            />
-            {c.text ?? c.value}
-          </label>
-        );
-      })}
+    <div className="space-y-1">
+      <div className="grid grid-cols-2 gap-1.5">
+        {choices.map((c) => {
+          const active = value === c.value;
+          return (
+            <label
+              key={c.value}
+              className={cn(
+                'flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-sm hover:bg-muted/40',
+                active && 'border-primary bg-primary/5',
+              )}
+            >
+              <input
+                type="radio"
+                name={field.name}
+                checked={active}
+                disabled={disabled}
+                onChange={() => onChange(c.value)}
+              />
+              {c.text ?? c.value}
+            </label>
+          );
+        })}
+      </div>
+      {canClear && (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(null)}
+          className="text-xs text-muted-foreground underline-offset-2 hover:underline disabled:opacity-50"
+        >
+          Clear selection
+        </button>
+      )}
     </div>
   );
 };

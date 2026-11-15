@@ -6,34 +6,40 @@
  * - Remote: also reads `DATABASE_URL` but expects the production connection
  *   string (Hyperdrive/Neon/Supabase) injected via secret manager.
  *
+ * Commands:
+ * - `apply` (default) takes the session-level advisory lock
+ *   `MIGRATION_LOCK_KEY` (src/migration-runner.ts) around the whole apply, so
+ *   concurrent runners serialise and the later ones find nothing to apply.
+ *   `MIGRATION_LOCK_TIMEOUT` (seconds, default 900) bounds the wait.
+ * - `preflight` / `version` report the schema version; nothing is written.
+ * - `wait [--timeout N]` is a read-only gate: exits 0 once no migration of the
+ *   bundled journal is pending, polling with backoff, and 1 after N seconds
+ *   (default 600). The Helm chart's worker runs it before the worker starts.
+ * - `MIGRATE_TARGET=<tag>` stops the history at that tag for every command.
+ *
  * Usage:
  *   pnpm --filter @lumibase/database migrate
  *   pnpm --filter @lumibase/database migrate:preflight
  *   pnpm --filter @lumibase/database migrate:version
+ *   pnpm --filter @lumibase/database exec tsx scripts/migrate.ts wait --timeout 600
  *   DATABASE_URL=... pnpm --filter @lumibase/database migrate:remote
  */
-import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
+import os from 'node:os';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import type { Sql } from 'postgres';
 import { detectHistoryMismatch, formatHistoryMismatchError } from '../src/migration-guard';
+import {
+  materializeMigrationsFolder,
+  pendingMigrations,
+  readLocalMigrations as readJournalMigrations,
+  waitForNoPendingMigrations,
+  withMigrationLock,
+  type MigrationMetadata,
+} from '../src/migration-runner';
 
-type Command = 'apply' | 'preflight' | 'version';
-
-interface JournalEntry {
-  idx: number;
-  version: string;
-  when: number;
-  tag: string;
-  breakpoints: boolean;
-}
-
-interface MigrationMetadata extends JournalEntry {
-  hash: string;
-}
+type Command = 'apply' | 'preflight' | 'version' | 'wait';
 
 interface AppliedMigration {
   id: number;
@@ -54,7 +60,23 @@ interface MigrationStatus {
 }
 
 const MIGRATIONS_FOLDER = process.env.MIGRATIONS_FOLDER ?? './drizzle';
+// Stop the history at this tag (staged upgrades, the CI N-1 → N upgrade test).
+// Applies to every command, so the `wait` gate agrees with what was applied.
+const MIGRATE_TARGET = process.env.MIGRATE_TARGET?.trim() || undefined;
+// How long a runner waits for another one to release the migration lock.
+const LOCK_TIMEOUT_SECONDS = positiveInt(process.env.MIGRATION_LOCK_TIMEOUT, 900);
+const DEFAULT_WAIT_TIMEOUT_SECONDS = 600;
 const DRIZZLE_MIGRATIONS_TABLE = 'drizzle.__drizzle_migrations';
+
+function positiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function usage(): never {
+  console.error('Usage: migrate [apply|preflight|dry-run|version|wait [--timeout <seconds>]]');
+  process.exit(1);
+}
 
 function parseCommand(argv: string[]): Command {
   const [command] = argv;
@@ -73,28 +95,27 @@ function parseCommand(argv: string[]): Command {
     case 'status':
     case '--version':
       return 'version';
+    case 'wait':
+      return 'wait';
     default:
       console.error(`Error: unknown migration command "${command}".`);
-      console.error('Usage: migrate [apply|preflight|dry-run|version]');
-      process.exit(1);
+      return usage();
   }
 }
 
-function readLocalMigrations(migrationsFolder = MIGRATIONS_FOLDER): MigrationMetadata[] {
-  const journalPath = path.join(migrationsFolder, 'meta', '_journal.json');
-  if (!fs.existsSync(journalPath)) {
-    throw new Error(`Can't find ${journalPath}. Set MIGRATIONS_FOLDER when running outside the repo or Docker image root.`);
+function parseWaitTimeoutSeconds(argv: string[]): number {
+  const at = argv.indexOf('--timeout');
+  if (at < 0) return DEFAULT_WAIT_TIMEOUT_SECONDS;
+  const value = Number.parseInt(argv[at + 1] ?? '', 10);
+  if (!Number.isFinite(value) || value <= 0) {
+    console.error('Error: --timeout needs a positive number of seconds.');
+    return usage();
   }
+  return value;
+}
 
-  const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as { entries: JournalEntry[] };
-  return journal.entries.map((entry) => {
-    const migrationPath = path.join(migrationsFolder, `${entry.tag}.sql`);
-    const sql = fs.readFileSync(migrationPath, 'utf8');
-    return {
-      ...entry,
-      hash: crypto.createHash('sha256').update(sql).digest('hex'),
-    };
-  });
+function readLocalMigrations(): MigrationMetadata[] {
+  return readJournalMigrations(MIGRATIONS_FOLDER, MIGRATE_TARGET);
 }
 
 async function getAppliedMigrations(client: Sql): Promise<AppliedMigration[]> {
@@ -143,7 +164,7 @@ async function getMigrationStatus(client: Sql): Promise<MigrationStatus> {
   const appliedMigrations = await getAppliedMigrations(client);
   const latestAppliedTimestamp = appliedMigrations.at(-1)?.created_at;
   const appliedCutoff = latestAppliedTimestamp === undefined ? null : Number(latestAppliedTimestamp);
-  const pending = localMigrations.filter((migration) => appliedCutoff === null || migration.when > appliedCutoff);
+  const pending = pendingMigrations(localMigrations, appliedCutoff);
   const latestAvailable = localMigrations.at(-1) ?? null;
   const current = resolveCurrentVersion(localMigrations, appliedMigrations);
 
@@ -180,6 +201,63 @@ function printStatus(status: MigrationStatus, mode: Command): void {
   }
 }
 
+async function applyMigrations(client: Sql): Promise<void> {
+  // Concurrent runners (several web pods, entrypoint mode on two replicas)
+  // serialise here; everything that decides what to apply is read inside the
+  // lock, so a runner that waited finds the schema current and exits 0.
+  await withMigrationLock(
+    client,
+    async () => {
+      // Refuse to run a squashed history on top of a database migrated with
+      // the pre-squash history (would strand data in tables the app no longer reads).
+      const mismatch = detectHistoryMismatch(readLocalMigrations(), await getAppliedMigrations(client));
+      if (mismatch) {
+        if (process.env.FORCE_MIGRATE === 'true') {
+          console.warn(formatHistoryMismatchError(mismatch));
+          console.warn('[migrate] FORCE_MIGRATE=true set — continuing anyway.');
+        } else {
+          console.error(formatHistoryMismatchError(mismatch));
+          process.exitCode = 1;
+          return;
+        }
+      }
+
+      const before = (await getAppliedMigrations(client)).length;
+      const folder = materializeMigrationsFolder(MIGRATIONS_FOLDER, MIGRATE_TARGET, os.tmpdir());
+      console.log(
+        `[migrate] Applying migrations from ${MIGRATIONS_FOLDER}${MIGRATE_TARGET ? ` up to ${MIGRATE_TARGET}` : ''} ...`,
+      );
+      await migrate(drizzle(client), { migrationsFolder: folder });
+      const applied = (await getAppliedMigrations(client)).length - before;
+      console.log(
+        applied > 0
+          ? `[migrate] Applied ${applied} migration(s).`
+          : '[migrate] Nothing to apply: the schema is already current.',
+      );
+    },
+    { timeoutMs: LOCK_TIMEOUT_SECONDS * 1000, log: (line) => console.log(line) },
+  );
+}
+
+async function waitUntilCurrent(client: Sql, timeoutSeconds: number): Promise<void> {
+  console.log(
+    `[migrate] Waiting up to ${timeoutSeconds}s for the schema to reach ` +
+      `${readLocalMigrations().at(-1)?.tag ?? 'the bundled journal'} (read-only).`,
+  );
+  const ready = await waitForNoPendingMigrations(
+    async () => {
+      const applied = await getAppliedMigrations(client);
+      const last = applied.at(-1);
+      return pendingMigrations(readLocalMigrations(), last ? Number(last.created_at) : null).map((m) => m.tag);
+    },
+    { timeoutMs: timeoutSeconds * 1000, log: (line) => console.log(line) },
+  );
+  if (!ready) {
+    console.error(`[migrate] Gave up after ${timeoutSeconds}s: migrations are still pending.`);
+    process.exitCode = 1;
+  }
+}
+
 async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) {
@@ -187,17 +265,23 @@ async function main() {
     process.exit(1);
   }
 
-  const command = parseCommand(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const command = parseCommand(argv);
+  const waitTimeoutSeconds = command === 'wait' ? parseWaitTimeoutSeconds(argv) : 0;
 
   console.log('[migrate] Connecting...');
-  const client = postgres(url, { max: 1 });
+  // One connection for the whole run, never recycled: the migration lock is
+  // held by this session, and the unlock must run on the same connection.
+  const client = postgres(url, { max: 1, max_lifetime: null });
 
   try {
-    // Refuse to run a squashed history on top of a database migrated with the
-    // pre-squash history (would strand data in tables the app no longer reads).
-    const mismatch = detectHistoryMismatch(readLocalMigrations(), await getAppliedMigrations(client));
+    if (command === 'wait') {
+      await waitUntilCurrent(client, waitTimeoutSeconds);
+      return;
+    }
 
     if (command === 'preflight' || command === 'version') {
+      const mismatch = detectHistoryMismatch(readLocalMigrations(), await getAppliedMigrations(client));
       const status = await getMigrationStatus(client);
       printStatus(status, command);
       if (mismatch) {
@@ -209,23 +293,8 @@ async function main() {
       return;
     }
 
-    if (mismatch) {
-      if (process.env.FORCE_MIGRATE === 'true') {
-        console.warn(formatHistoryMismatchError(mismatch));
-        console.warn('[migrate] FORCE_MIGRATE=true set — continuing anyway.');
-      } else {
-        console.error(formatHistoryMismatchError(mismatch));
-        process.exitCode = 1;
-        return;
-      }
-    }
-
-    const db = drizzle(client);
-
-    console.log(`[migrate] Applying migrations from ${MIGRATIONS_FOLDER} ...`);
-    await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-
-    console.log('[migrate] Done.');
+    await applyMigrations(client);
+    if (process.exitCode !== 1) console.log('[migrate] Done.');
   } finally {
     await client.end();
   }

@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 3
-lastUpdated: 2026-11-12T20:47:43.451Z
+version: 4
+lastUpdated: 2026-11-15T21:57:22.542Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 11f1310a2fc1d029
+sourceHash: 2a7cd82af0d95f46
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T20:47:43.451Z
-codeVerifiedHash: 11f1310a2fc1d029
+codeVerified: 2026-11-15T21:57:22.542Z
+codeVerifiedHash: 2a7cd82af0d95f46
 codeVerifiedClaims: 6
 ---
 
@@ -34,6 +34,7 @@ LumiBase coi mỗi field là schema object first-class. Field có metadata độ
 | `hash` | `string` | Hash một chiều. |
 | `geometry` | `GeoJSON.Geometry` | Lưu dưới dạng GeoJSON-like JSON. |
 | `alias` | virtual | Dùng cho relation aliases, groups và presentation-only fields. |
+| `blocks` | `Array<{ id, type, data }>` | Dynamic zone: danh sách block có thứ tự, mỗi block được validate theo một block template nằm trong `options.allowedBlocks`. Xem [Dynamic zones](./dynamic-zones.md). |
 
 ## 2. Field metadata
 

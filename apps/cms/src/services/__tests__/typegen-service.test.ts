@@ -115,6 +115,42 @@ function createDb() {
       createdAt: new Date(),
       updatedAt: new Date(),
     },
+    {
+      id: "field_starts_at",
+      siteId: "site_1",
+      collectionId: "col_posts",
+      name: "starts_at",
+      type: "datetime",
+      interface: "datetime",
+      display: null,
+      label: "Starts at",
+      note: null,
+      defaultValue: null,
+      nullable: true,
+      unique: false,
+      indexed: false,
+      searchable: false,
+      length: null,
+      precision: null,
+      scale: null,
+      special: [],
+      options: { timezone: true },
+      displayOptions: {},
+      validation: { rules: [] },
+      conditions: [],
+      translations: {},
+      required: false,
+      readonly: false,
+      hidden: false,
+      encrypted: false,
+      versioned: false,
+      rawEnabled: true,
+      width: "full",
+      group: null,
+      sortOrder: 3,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
   ];
   const relationRows = [
     {
@@ -187,6 +223,9 @@ describe("TypegenService", () => {
       system: false,
       branded: "AuthorsId",
     });
+    // Timezone-aware datetime (#747) is flagged; plain fields are not.
+    expect(posts.fields.find((field) => field.name === "starts_at")).toMatchObject({ timezone: true });
+    expect(posts.fields.find((field) => field.name === "title")?.timezone).toBeUndefined();
     expect(posts.relations).toEqual([
       {
         field: "author_id",
@@ -197,7 +236,11 @@ describe("TypegenService", () => {
         oneCollection: "authors",
         oneField: "posts",
         junctionCollection: null,
+        relationType: "m2o",
+        alias: "author",
       },
     ]);
+    expect(posts.fields.find((field) => field.name === "title")?.interface).toBe("input");
+    expect(posts.fields.find((field) => field.name === "id")?.interface).toBe("input");
   });
 });

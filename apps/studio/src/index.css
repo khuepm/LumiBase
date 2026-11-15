@@ -10,10 +10,12 @@
     --primary: 240 5.9% 10%;
     --primary-foreground: 0 0% 98%;
     --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
+    /* 44% (was 46.1%) and the reds below meet WCAG AA 4.5:1 on their surfaces
+       — found by the Storybook a11y gate (#755). */
+    --muted-foreground: 240 3.8% 44%;
     --accent: 240 4.8% 95.9%;
     --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
+    --destructive: 0 70% 45%;
     --destructive-foreground: 0 0% 98%;
     --border: 240 5.9% 90%;
     --input: 240 5.9% 90%;
@@ -31,8 +33,9 @@
     --muted-foreground: 240 5% 64.9%;
     --accent: 240 3.7% 15.9%;
     --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
+    /* Bright red + dark label: 30.6% red text was 2:1 on the dark background. */
+    --destructive: 0 90% 65%;
+    --destructive-foreground: 240 10% 3.9%;
     --border: 240 3.7% 15.9%;
     --input: 240 3.7% 15.9%;
     --ring: 240 4.9% 83.9%;
@@ -52,5 +55,65 @@
   }
   .scrollbar-none::-webkit-scrollbar {
     display: none;
+  }
+}
+
+/*
+ * RTL (#761): mirror icons whose meaning is a direction along the reading
+ * axis — back/forward, previous/next, expand-into, send, sign in/out, the
+ * sidebar collapse toggle. `<html dir="rtl">` is set from the UI language.
+ *
+ * Not mirrored, on purpose: logos, media, checkmarks, clocks, external-link,
+ * text-alignment icons (they name a physical side) and up/down arrows. An icon
+ * that carries its own rotation (`rotate-90` for an expanded tree chevron) is
+ * left alone, since mirroring would compose with the rotation and point it the
+ * wrong way. Opt a single icon out with `rtl-no-flip`, or opt a custom SVG in
+ * with `rtl-flip`. Code editors and flow canvases render `dir="ltr"`.
+ */
+@layer base {
+  [dir='rtl']
+    :is(
+      .lucide-chevron-left,
+      .lucide-chevron-right,
+      .lucide-chevrons-left,
+      .lucide-chevrons-right,
+      .lucide-chevron-first,
+      .lucide-chevron-last,
+      .lucide-arrow-left,
+      .lucide-arrow-right,
+      .lucide-arrow-big-left,
+      .lucide-arrow-big-right,
+      .lucide-move-left,
+      .lucide-move-right,
+      .lucide-panel-left-open,
+      .lucide-panel-left-close,
+      .lucide-panel-right-open,
+      .lucide-panel-right-close,
+      .lucide-log-in,
+      .lucide-log-out,
+      .lucide-send,
+      .lucide-send-horizontal,
+      .lucide-reply,
+      .lucide-forward,
+      .lucide-undo,
+      .lucide-undo-2,
+      .lucide-redo,
+      .lucide-redo-2,
+      .lucide-list-indent-increase,
+      .lucide-list-indent-decrease,
+      .rtl-flip
+    ):not([class*='rotate-']):not(.rtl-no-flip) {
+    transform: scaleX(-1);
+  }
+
+  /* Code blocks (JSON previews, generated types, snippets) read LTR in any UI. */
+  [dir='rtl'] pre {
+    direction: ltr;
+    text-align: left;
+  }
+
+  /* URLs, e-mail addresses and phone numbers are LTR strings in any UI. */
+  [dir='rtl'] :is(input[type='url'], input[type='email'], input[type='tel']) {
+    direction: ltr;
   }
 }

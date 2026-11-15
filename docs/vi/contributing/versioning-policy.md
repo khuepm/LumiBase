@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-11-08T10:34:22.156Z
+version: 3
+lastUpdated: 2026-11-15T16:45:24.375Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 044d600787d055d0
+sourceHash: 9076eff6b8ece122
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-08T10:34:22.156Z
-codeVerifiedHash: 044d600787d055d0
+codeVerified: 2026-11-15T16:45:24.375Z
+codeVerifiedHash: 9076eff6b8ece122
 codeVerifiedClaims: 12
 ---
 
@@ -94,6 +94,11 @@ một patch hay minor.
 
 Window này là một cam kết cho line được duy trì; nó có thể được kéo dài cho một
 release cụ thể theo quyết định của maintainer, không bao giờ bị rút ngắn trong im lặng.
+
+Các runtime mà một release chạy trên đó (Node.js, compatibility date của Cloudflare
+Workers, PostgreSQL, Redis, Next.js/React, trình duyệt) có support window riêng, và
+việc loại bỏ một runtime là breaking change theo chính sách này. Xem
+[Runtime được hỗ trợ](./supported-runtimes.md).
 
 ## Release cadence & gates
 

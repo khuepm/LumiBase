@@ -12,6 +12,8 @@ interface ImportMetaEnv {
   readonly VITE_LUMIBASE_BUILD_TIME?: string;
   readonly VITE_LUMIBASE_RELEASE_CHANNEL?: string;
   readonly VITE_LUMIBASE_ALLOW_ADMIN_PATH_REDIRECT?: string;
+  /** MapLibre style URL for geopoint maps (#746); defaults to OpenFreeMap Liberty. */
+  readonly VITE_MAP_STYLE_URL?: string;
 }
 
 /**

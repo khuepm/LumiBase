@@ -148,6 +148,12 @@ to the SPA as a `shell://deep-link` event (`src/lib.rs`) for auth callbacks.
 `tauri-plugin-single-instance` ensures a deep-link launch focuses the running
 window instead of opening a duplicate.
 
+Studio consumes the event for **intent links** (#759): `lumibase://intent/edit?collection=…&id=…`
+(and `https://studio.lumibase.dev/intent/…` once `/intent` is added to the mobile
+`pathPrefix`) opens the same `/intent/{action}` route as the browser
+(`apps/studio/src/lib/intents/shell-deep-link.ts`). Other URLs are ignored there
+and stay with their own consumer. See `docs/en/features/studio-intent-links.md`.
+
 ## Auto-update (desktop)
 
 Desktop builds check for updates in the background on launch (`src/lib.rs`) via
@@ -213,6 +219,12 @@ shell working** (see the "Shell impact" step in
 | C9 | Release bumps `apps/shell/package.json` **and** `src-tauri/Cargo.toml` + `tauri.conf.json` together (package.json is in `sync-version.mjs`; the Rust/Tauri versions are not — bump them by hand). | `/release` flow | updater version math / store version is wrong. |
 
 ## Roadmap / not yet implemented
+
+- **Passkeys (WebAuthn) in the webview.** The Studio hides every passkey
+  control inside the shell (C5): the webviews either lack WebAuthn or run it
+  under `tauri://localhost`, which no server RP ID can match. Password, TOTP and
+  recovery codes work; see `docs/en/security/passkeys.md` §6. Native support
+  would need a platform authenticator plugin plus associated-domain setup.
 
 - **iOS/Android store submission** (Fastlane lanes, provisioning) beyond the CI
   build jobs.

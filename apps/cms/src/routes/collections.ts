@@ -281,6 +281,38 @@ collectionsRouter.get('/:name/compiled', async (c) => {
   return c.json({ data });
 });
 
+// ---------- Form layout: tabs / groups / dividers + conditions (#750) ----------
+
+collectionsRouter.get('/:name/form-layout', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:read');
+  if (denied) return denied;
+  try {
+    const layout = await buildService(c).getFormLayout(c.req.param('name'));
+    return c.json({ data: { layout } });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+const formLayoutBodySchema = z.object({ layout: z.unknown() }).strict();
+
+collectionsRouter.put('/:name/form-layout', async (c) => {
+  const denied = await requireSchemaPermission(c, 'schema:update');
+  if (denied) return denied;
+  const parsed = formLayoutBodySchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'Body must be { "layout": FormLayout | null }.' }] }, 400);
+  }
+  try {
+    const layout = await buildService(c).setFormLayout(c.req.param('name'), parsed.data.layout ?? null);
+    return c.json({ data: { layout } });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
 // ---------- JSON path index advisor (#729) ----------
 
 const CAST_KINDS = ['numeric', 'boolean', 'timestamp', 'text'] as const;

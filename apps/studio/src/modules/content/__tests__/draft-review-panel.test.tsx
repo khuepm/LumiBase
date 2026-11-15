@@ -53,12 +53,13 @@ const client = {
 };
 
 vi.mock('@/lib/api', () => ({ getApiClient: () => client, hasActiveToken: () => true }));
-vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined }));
+vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined, useExtensionUpdates: () => 0 }));
 vi.mock('@/hooks/use-presence', () => ({ useCoEditors: () => ({ coEditors: [], connected: false }) }));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
   useNavigate: () => vi.fn(),
   useParams: () => params,
+  useSearch: () => ({}),
 }));
 
 import { ItemDetailPage } from '../item-detail';
@@ -573,6 +574,8 @@ describe('cancel', () => {
     renderPanel();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Review draft' }));
+    // The request leaves only after the idempotency key is hashed (async).
+    await waitFor(() => expect(signal).toBeDefined());
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel review' }));
 
     expect(signal?.aborted).toBe(true);

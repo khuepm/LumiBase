@@ -1,0 +1,68 @@
+{{- if .Values.tests.enabled }}
+{{- /*
+`helm test <release>`: from inside the cluster, through the Service, check
+that /health answers 200 and reports a status, that the setup state endpoint
+answers, and (when the Studio is served) that /setup returns the Studio shell.
+Uses the release image's own Node: the image has no shell and no curl.
+*/ -}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ printf "%s-test-health" (include "lumibase.fullname" .) | trunc 63 | trimSuffix "-" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lumibase.componentLabels" (dict "ctx" . "component" "test") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    # Kept after success so `helm test --logs` can read it; the next run
+    # replaces it (before-hook-creation).
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    {{- toYaml .Values.cms.podSecurityContext | nindent 4 }}
+  containers:
+    - name: health
+      image: {{ include "lumibase.image" . }}
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      command: ["/nodejs/bin/node", "-e"]
+      args:
+        - |
+          const base = process.env.BASE;
+          const fail = (m) => { console.error(m); process.exit(1); };
+          const get = async (path) => {
+            const res = await fetch(base + path, { signal: AbortSignal.timeout(10000) });
+            return { status: res.status, body: await res.text() };
+          };
+          (async () => {
+            const health = await get('/health');
+            if (health.status !== 200) fail(`/health answered ${health.status}`);
+            const status = JSON.parse(health.body).status;
+            if (!['healthy', 'degraded'].includes(status)) fail(`/health status: ${status}`);
+            console.log(`/health: 200 (${status})`);
+            const setup = await get('/api/v1/setup/state');
+            if (setup.status !== 200) fail(`/api/v1/setup/state answered ${setup.status}`);
+            console.log(`/api/v1/setup/state: ${setup.body}`);
+            if (process.env.STUDIO === 'true') {
+              const page = await get('/setup');
+              if (page.status !== 200 || !page.body.includes('<title>LumiBase Studio</title>')) {
+                fail(`/setup did not serve the Studio shell (${page.status})`);
+              }
+              console.log('/setup: Studio shell served');
+            }
+          })().catch((err) => fail(String(err)));
+      env:
+        - name: BASE
+          value: {{ printf "http://%s:%v" (include "lumibase.fullname" .) .Values.service.port | quote }}
+        - name: STUDIO
+          value: {{ ternary "true" "false" .Values.studio.enabled | quote }}
+      securityContext:
+        {{- toYaml .Values.cms.securityContext | nindent 8 }}
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 128Mi
+{{- end }}
