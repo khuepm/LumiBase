@@ -39,7 +39,7 @@ Kế hoạch triển khai **Content Environments** theo 6 phase. Mỗi phase t�
   - [ ] 4.7 Integration test trên Postgres thật: fork `all` và `collections[]`, relation m2o/m2m/m2a còn đúng, chạy lại sau lỗi không nhân bản, Origin không đổi một byte (Req 2.3-2.7)
 
 - [ ] 5. Cô lập Side_System
-  - [ ] 5.1 Copy webhooks/flows/CDC/deployments ở trạng thái disabled, không secret; intents `paused` (Req 4.1, 4.2; design §4)
+  - [ ] 5.1 Copy webhooks/flows/CDC/deployments ở trạng thái disabled, không secret; intents `paused`; extension của Environment luôn `enabled = false` sau fork — kể cả official extension mà `finalizeSiteProvisioning` tự cài (Req 4.1, 4.2; design §4 mục 1a)
   - [ ] 5.2 `isEnvironment(siteId)` cache theo request; chặn tại **từng** điểm phát ra ngoài — `dispatchItemEvent`, `CdcDispatcher`, `dispatchFirebaseSync`, `runRevalidationDispatch`, email/push — vì không có dispatcher chung (Req 4.1-4.3; design §4)
   - [ ] 5.3 Delivery: `X-Robots-Tag: noindex` cho site con; xác nhận cache key + search index tách theo `siteId` (Req 4.4; design §4)
   - [ ] 5.4 Test: ghi item trong Environment không bắn webhook, không chạy flow, không tạo agent run của Origin (Req 4.1-4.3)
@@ -140,7 +140,7 @@ Một phase chỉ được mở PR khi đạt đủ exit criteria của nó, và
 - [ ] Canary chéo site theo design §2.2 mục 3 (sửa/xoá/publish theo lịch/retention trên item Environment cùng id → item Origin không đổi) pass trên schema có migration `0032`.
 - [ ] Field mã hoá (shared và envelope) đọc được trong Environment sau fork.
 - [ ] Giết worker giữa chừng rồi chạy lại → không dòng trùng, kết thúc `ready`.
-- [ ] Ghi item trong Environment → 0 webhook gửi, 0 flow run, 0 agent run, 0 email/push (đếm ở dispatcher).
+- [ ] Ghi item trong Environment → 0 webhook gửi, 0 flow run, 0 agent run, 0 email/push (đếm ở dispatcher); 0 extension bật trong Environment ngay sau fork, 0 hook chạy.
 - [ ] Xoá file trong Environment không xoá object storage mà Origin còn dùng; xoá cả Environment xong Origin vẫn tải được mọi file.
 - [ ] Bảng loại trừ (API keys, secrets, sessions, audit, revisions, agent memory, trust ledger) có test khẳng định 0 dòng trong site con.
 - [ ] Fork ở giới hạn item đã chốt hoàn tất trong ngân sách thời gian đã chốt ở G0, trên cả runtime Docker và Workers.

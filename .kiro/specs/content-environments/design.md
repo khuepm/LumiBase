@@ -240,6 +240,7 @@ Không có dispatcher chung. Sau mỗi ghi, `ItemService.patch` gọi riêng t�
 Hệ quả cho thiết kế:
 
 1. Lớp chặn **chính** là dữ liệu: vì mọi kênh đọc cấu hình theo `siteId` của Environment, Fork chỉ cần không copy (hoặc copy ở trạng thái disabled) cấu hình của kênh đó — bảng §4 ở trên cộng các mục bổ sung ở §3.5 (`revalidation.targets`, Firebase Sync).
+1a. Ngoại lệ của lớp chặn dữ liệu — **extension hooks**: tạo site mới qua `finalizeSiteProvisioning` (`apps/cms/src/services/site-provisioning.ts:48`) gọi `reconcileOfficialExtensions`, vốn chèn mọi official extension với `enabled = enabledByDefault` (`apps/cms/src/services/official-extension-reconciler.ts:96-103`). Nếu Fork đi qua đường provisioning chuẩn, Environment sẽ có extension **bật sẵn** dù Fork không copy dòng nào, và hook của chúng chạy trên mỗi lần ghi item. Fork phải bỏ qua bước reconcile, hoặc reconcile rồi ép `enabled = false` cho mọi extension của Environment; extension của Origin cũng copy ở trạng thái disabled.
 2. `isEnvironment(siteId)` (cache theo request) là lớp **phòng thủ thứ hai**, đặt ở từng điểm phát có đi ra ngoài: `dispatchItemEvent`, `CdcDispatcher` (trước khi gửi), `dispatchFirebaseSync`, `runRevalidationDispatch`, và kênh email/push. Năm điểm, không phải một; task 5.2 và gate GB đếm ở từng điểm.
 
 ## 5. List / detail / delete
