@@ -17,6 +17,11 @@ import { formatSafeError } from "@lumibase/contracts/utils";
 
 import { type ComponentType, lazy, Suspense } from 'react';
 import { getApiClient } from '@/lib/api';
+import {
+  clearIntentHandlers,
+  hasIntentCapability,
+  registerIntentHandlers,
+} from '@/lib/intents/registry';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +41,17 @@ export interface ExtensionEntry {
 
 const cache = new Map<string, ExtensionEntry>();
 let loaded = false;
+
+/**
+ * Extensions granted an `intents:claim:*` capability (issue #759). Their
+ * bundles are imported only when an intent link is being resolved, never on a
+ * normal Studio boot.
+ */
+const intentSources = new Map<
+  string,
+  { capabilities: string[]; load: () => Promise<Record<string, unknown>> }
+>();
+let intentsLoaded: Promise<void> | null = null;
 
 /**
  * Load all enabled UI extensions from the API and cache them.
@@ -115,6 +131,7 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
       enabled: boolean;
       bundleUrl: string;
       manifest: Record<string, string>;
+      capabilities?: unknown;
     }>;
 
     for (const ext of exts) {
@@ -123,6 +140,18 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
 
       const bundleUrl = ext.bundleUrl;
       const name = ext.name;
+
+      // GRANTED capabilities (server-side subset of the manifest) scope which
+      // intents this extension may claim.
+      const capabilities = Array.isArray(ext.capabilities)
+        ? ext.capabilities.filter((c): c is string => typeof c === 'string')
+        : [];
+      if (hasIntentCapability(capabilities)) {
+        intentSources.set(name, {
+          capabilities,
+          load: async () => (await import(/* @vite-ignore */ bundleUrl)) as Record<string, unknown>,
+        });
+      }
 
       // Create a lazy component from the bundle's default export.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -153,6 +182,32 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
 export function clearExtensionCache(): void {
   cache.clear();
   loaded = false;
+  intentSources.clear();
+  intentsLoaded = null;
+  clearIntentHandlers();
+}
+
+/**
+ * Import the bundles of extensions allowed to claim intents and register the
+ * handlers they export as `intents` (named export, or `default.intents`).
+ * Idempotent; a failing bundle is skipped so the built-in handler still runs.
+ */
+export function loadExtensionIntentHandlers(): Promise<void> {
+  if (!intentsLoaded) {
+    intentsLoaded = (async () => {
+      await loadExtensions();
+      for (const [name, source] of intentSources) {
+        try {
+          const mod = await source.load();
+          const fromDefault = (mod.default as { intents?: unknown } | undefined)?.intents;
+          registerIntentHandlers(name, source.capabilities, mod.intents ?? fromDefault);
+        } catch (err) {
+          console.warn(`[extension-loader] intent handlers of "${name}" unavailable:`, formatSafeError(err));
+        }
+      }
+    })();
+  }
+  return intentsLoaded;
 }
 
 /** Get a cached extension by name. Returns undefined if not loaded. */

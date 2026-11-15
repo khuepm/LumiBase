@@ -10,6 +10,7 @@ import { FieldsTab } from './item-detail';
 import { DraftReviewPanel } from './draft-review-panel';
 import { useReviewRollout, useReviewSession } from './use-review-pilot';
 import { useSiteLocales } from './use-site-locales';
+import { FieldRevealContext, useIntentFieldFocus } from './field-focus';
 
 function errorMessage(err: unknown): string {
   const e = err as { body?: { errors?: Array<{ message?: string }> }; message?: string };
@@ -17,7 +18,7 @@ function errorMessage(err: unknown): string {
 }
 
 /** New-item form: creates a draft, then hands off to the regular editor. */
-export function ItemCreate({ collection }: { collection: string }) {
+export function ItemCreate({ collection, intentField }: { collection: string; intentField?: string }) {
   const client = getApiClient();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -42,6 +43,13 @@ export function ItemCreate({ collection }: { collection: string }) {
         .filter((f) => perms.fieldAllowed(collection, 'create', f.name)),
     [fieldsQuery.data, perms, collection],
   );
+
+  // `create` intent links may name a field to focus on the empty form (#759).
+  const fieldFocus = useIntentFieldFocus({
+    field: intentField,
+    fields,
+    ready: fieldsQuery.isSuccess && !perms.isLoading && canCreate,
+  });
 
   const createMutation = useMutation({
     mutationFn: async () =>
@@ -106,15 +114,22 @@ export function ItemCreate({ collection }: { collection: string }) {
 
       <div className={cn('grid grid-cols-1 gap-4', reviewMode === 'assisted' && 'lg:grid-cols-[1fr_22rem]')}>
         <section className="rounded-lg border bg-background p-4">
-          <FieldsTab
-            fields={fields}
-            value={draft}
-            onChange={setDraft}
-            collection={collection}
-            perms={perms}
-            pinnedFields={[]}
-            writeAction="create"
-          />
+          {fieldFocus.status === 'missing' && intentField && (
+            <p role="status" className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+              The linked field “{intentField}” is not available on this form.
+            </p>
+          )}
+          <FieldRevealContext.Provider value={fieldFocus.reveal}>
+            <FieldsTab
+              fields={fields}
+              value={draft}
+              onChange={setDraft}
+              collection={collection}
+              perms={perms}
+              pinnedFields={[]}
+              writeAction="create"
+            />
+          </FieldRevealContext.Provider>
         </section>
         {/* Draft review of the unsaved form (Jev J08): only profile fields the
             user may create are sent. Apply edits the form; nothing is saved.

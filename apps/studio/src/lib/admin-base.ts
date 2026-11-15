@@ -23,6 +23,8 @@ const PREFIXABLE_SEGMENTS = new Set([
   'cdc',
   'settings',
   'recovery',
+  // Intent links (#759): `/{adminPath}/intent/edit?…`.
+  'intent',
 ]);
 
 /** Segments that are never an admin prefix (modules + root-only routes). */

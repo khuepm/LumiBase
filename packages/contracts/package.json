@@ -32,6 +32,7 @@
     "./schemas": "./src/schemas/index.ts",
     "./extensions": "./src/extensions/index.ts",
     "./platform": "./src/platform/index.ts",
+    "./intents": "./src/intents/index.ts",
     "./version": "./src/version.ts",
     "./utils": "./src/utils/logger.ts"
   },
@@ -70,6 +71,11 @@
         "types": "./dist/platform/index.d.ts",
         "import": "./dist/platform/index.js",
         "require": "./dist/platform/index.cjs"
+      },
+      "./intents": {
+        "types": "./dist/intents/index.d.ts",
+        "import": "./dist/intents/index.js",
+        "require": "./dist/intents/index.cjs"
       },
       "./version": {
         "types": "./dist/version.d.ts",
