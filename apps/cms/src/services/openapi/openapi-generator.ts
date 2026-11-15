@@ -215,6 +215,13 @@ function addCollectionSchemas(
       data: { $ref: `#/components/schemas/${base}.Fields` },
       publishAt: nullableTimestamp,
       unpublishAt: nullableTimestamp,
+      firstPublishedAt: { ...nullableTimestamp, readOnly: true, description: 'First publish; never moves (#687).' },
+      publishedAt: { ...nullableTimestamp, readOnly: true, description: 'Most recent publish (#687).' },
+      hasUnpublishedChanges: {
+        type: 'boolean',
+        readOnly: true,
+        description: 'Data edited since the last publish (#687).',
+      },
       userCreated: nullableString,
       userUpdated: nullableString,
       createdAt: { ...timestamp, readOnly: true },
@@ -282,7 +289,17 @@ function addCollectionPaths(
       operationId: `list_${opId}`,
       tags: ['items'],
       summary: `List ${name}`,
-      parameters: [ref('fields'), ref('filter'), ref('sort'), ref('limit'), ref('offset'), ref('status'), ref('meta')],
+      parameters: [
+        ref('fields'),
+        ref('filter'),
+        ref('sort'),
+        ref('limit'),
+        ref('offset'),
+        ref('status'),
+        ref('meta'),
+        ref('publicationState'),
+        ref('modifiedSincePublish'),
+      ],
       responses: {
         '200': {
           description: 'A page of items.',
@@ -305,7 +322,7 @@ function addCollectionPaths(
       operationId: `get_${opId}`,
       tags: ['items'],
       summary: `Get one ${name}`,
-      parameters: [ref('fields')],
+      parameters: [ref('fields'), ref('publicationState')],
       responses: { ...single('The item.'), ...errorResponses(['401', '403', '404']) },
     },
   };
@@ -325,6 +342,7 @@ function addCollectionPaths(
       operationId: `update_${opId}`,
       tags: ['items'],
       summary: `Update ${name}`,
+      parameters: [ref('saveRevision')],
       requestBody: body,
       responses: { ...single('Updated.'), ...errorResponses(['400', '401', '403', '404', '409']) },
     };
@@ -341,6 +359,49 @@ function addCollectionPaths(
   const segment = encodeURIComponent(name);
   paths[`/items/${segment}`] = listPath;
   paths[`/items/${segment}/{id}`] = detailPath;
+  if (access.update) {
+    paths[`/items/${segment}/{id}/reorder`] = {
+      parameters: [idParam],
+      post: {
+        operationId: `reorder_${opId}`,
+        tags: ['items'],
+        summary: `Move one ${name} in the manual order (collections with \`meta.manualSort\`)`,
+        requestBody: {
+          required: true,
+          content: jsonContent({
+            oneOf: [
+              { type: 'object', properties: { after: { type: ['string', 'null'] } }, required: ['after'] },
+              { type: 'object', properties: { before: { type: 'string' } }, required: ['before'] },
+            ],
+          }),
+        },
+        responses: { ...single('The moved item.'), ...errorResponses(['400', '401', '403', '404', '409']) },
+      },
+    };
+  }
+  if (access.create) {
+    paths[`/items/${segment}/{id}/duplicate`] = {
+      parameters: [idParam],
+      post: {
+        operationId: `duplicate_${opId}`,
+        tags: ['items'],
+        summary: `Duplicate one ${name} as a draft copy`,
+        requestBody: {
+          required: false,
+          content: jsonContent({
+            type: 'object',
+            properties: {
+              relations: { type: 'string', enum: ['none', 'reference', 'deep'], default: 'reference' },
+              translations: { type: 'boolean', default: true },
+              locale: { type: 'string' },
+              overrides: { type: 'object', additionalProperties: true },
+            },
+          }),
+        },
+        responses: { ...single('The copy.', '201'), ...errorResponses(['400', '401', '403', '404', '409']) },
+      },
+    };
+  }
 }
 
 function sharedParameters(): Record<string, unknown> {
@@ -371,6 +432,25 @@ function sharedParameters(): Record<string, unknown> {
       in: 'query',
       schema: { type: 'string', enum: ['total_count', 'none'], default: 'total_count' },
       description: '`none` skips the `count(*)` and omits `meta.total`.',
+    },
+    publicationState: {
+      name: 'publicationState',
+      in: 'query',
+      schema: { type: 'string', enum: ['live', 'preview', 'all'] },
+      description:
+        'Publication cohort (#688): `live` = published inside its window, `preview` = draft + published, `all` = no filter. Anonymous callers always get `live`.',
+    },
+    modifiedSincePublish: {
+      name: 'modifiedSincePublish',
+      in: 'query',
+      schema: { type: 'string', enum: ['true', 'false'] },
+      description: 'Only items edited since their last publish (#687).',
+    },
+    saveRevision: {
+      name: 'saveRevision',
+      in: 'query',
+      schema: { type: 'string', enum: ['true', 'false'], default: 'true' },
+      description: '`false` skips the revision row (autosave, machine writes). Agent writes always keep theirs (#693).',
     },
   };
 }

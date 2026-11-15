@@ -109,6 +109,12 @@ const retention: Sweep = async ({ db, runtime }) => {
   return sweepRetention({ db, queue: runtime.queue });
 };
 
+/** Revision retention (#693). Docker runs it hourly at :23. */
+const revisionRetention: Sweep = async ({ db }) => {
+  const { sweepRevisionRetention } = await import('./services/revision-retention');
+  return sweepRevisionRetention({ db });
+};
+
 /** Sweeps Docker runs every minute or faster. */
 export const MINUTE_SWEEPS: Record<string, Sweep> = {
   'content-scheduler': contentScheduler,
@@ -125,6 +131,7 @@ export const FIVE_MINUTE_SWEEPS: Record<string, Sweep> = {
 /** Sweeps Docker runs hourly. */
 export const HOURLY_SWEEPS: Record<string, Sweep> = {
   'retention-sweep': retention,
+  'revision-retention': revisionRetention,
 };
 
 /** Runs every sweep in `sweeps` concurrently; resolves when all have settled. Never throws. */

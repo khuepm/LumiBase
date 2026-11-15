@@ -1,10 +1,10 @@
 ---
-version: 20
-lastUpdated: 2026-11-15T21:36:02.367Z
+version: 22
+lastUpdated: 2026-11-15T22:14:30.509Z
 sourceLang: en
-contentHash: b374fe064ed760b0
-codeVerified: 2026-11-15T21:36:02.367Z
-codeVerifiedHash: b374fe064ed760b0
+contentHash: 5291626126e22d89
+codeVerified: 2026-11-15T22:14:30.509Z
+codeVerifiedHash: 5291626126e22d89
 codeVerifiedClaims: 20
 ---
 
@@ -167,10 +167,14 @@ Compiled schemas expose generated system fields in addition to user-defined rows
 | `siteId`, `collectionId` | text FK |
 | `status` | text | `draft`/`published`/`archived` |
 | `data` | jsonb | values keyed by field.name |
+| `version` | integer, default 0 | Optimistic-concurrency counter: incremented by every write that changes the item's content (data, status, pins, soft delete including tree cascade, crypto-shred, moving the item in a tree); descendant path rebases, sibling sort renumbering and key-rotation re-encryption leave it alone. Served as the item's `ETag`; `If-Match` compares against it. |
 | `sort` | integer |
 | `userCreated`, `userUpdated` | text FK users |
 | `publishAt`, `unpublishAt` | timestamp nullable | Scheduling window (Req 7); the reconcile worker flips status, delivery filters to the window. |
 | `editorialState` | text nullable | Human review state (Req 9): `draft`/`in_review`/`approved`/`published`/`rejected`. Distinct from the AI veto-window. |
+| `firstPublishedAt` | timestamp nullable | First publish (#687, migration 0037). Set once, never moved by a re-publish. |
+| `publishedAt` | timestamp nullable | Most recent publish (#687). Kept when the item is unpublished. |
+| `hasUnpublishedChanges` | boolean, default false | Data edited since the last publish (#687); cleared by the next publish. Partial index `items_unpublished_changes_idx (siteId, collectionId) WHERE has_unpublished_changes AND deleted_at IS NULL`. |
 | `dekWrapped` | text nullable | Envelope mode (Req 4.5): the per-record DEK wrapped by the KEK. Non-null ⇒ this record's encrypted fields use a per-record DEK; null ⇒ shared-key mode. Reads are self-describing from this column. |
 | `createdAt`, `updatedAt` | timestamp |
 | `deletedAt` | timestamp nullable |
@@ -180,6 +184,7 @@ Primary key `(siteId, id)`. Indexes: `(siteId, collectionId, status)`, GIN on `d
 ### `revisions`
 - `id`, `siteId`, `itemId`, `collectionId`, `delta jsonb`, `parentId`, `userId`, `createdAt`.
 - `(siteId, itemId) → items (siteId, id)` (cascade): a revision always belongs to an item of its own site.
+- A `PATCH ?saveRevision=false` writes no revision (#693); a collection's `meta.revisionRetention: { maxRevisions?, maxAgeDays? }` lets the hourly `revision-retention` sweep prune old rows (never an item's newest, staged, release-pinned or agent revisions).
 
 ### `releases` (Content Releases)
 - A cross-collection publish bundle. `id`, `siteId`, `name`, `description`, `status` (`draft`|`scheduled`|`published`|`failed`|`partially_failed`), `atomicityMode` (`all_or_nothing`|`best_effort`), `publishAt`, `publishedAt`, `maintenanceWindow jsonb`, `statusReason`, `createdBy → users.id (set null)`, `createdAt`, `updatedAt`.

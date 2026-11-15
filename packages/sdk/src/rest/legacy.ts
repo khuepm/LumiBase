@@ -1,5 +1,22 @@
 import { LumiClient } from "../client";
 import { RealtimeClient } from "../realtime";
+
+/** Options for item `patch` / `replace`. */
+export interface ItemWriteOptions {
+  /**
+   * Only write if the item is still at this version (from `ItemRow.version`
+   * or the detail response's `ETag`). If someone else changed it first, the
+   * request fails with a `LumiError` of status 412 and code
+   * `PRECONDITION_FAILED`, and nothing is written. Omit to overwrite
+   * unconditionally (the default).
+   */
+  ifMatch?: number;
+}
+
+function ifMatchInit(options: ItemWriteOptions | undefined): { headers?: Record<string, string> } {
+  if (options?.ifMatch === undefined) return {};
+  return { headers: { "if-match": `"${options.ifMatch}"` } };
+}
 import {
   CollectionResource,
   CollectionInput,
@@ -17,6 +34,7 @@ import {
   TypegenSchemaFilters,
   ListItemsParams,
   ExportItemsParams,
+  DuplicateItemOptions,
   ImportJob,
   ImportJobStatus,
   ImportRowError,
@@ -281,6 +299,8 @@ export function legacyRest() {
         if (params.offset !== undefined)
           qs.set("offset", String(params.offset));
         if (params.status) qs.set("status", params.status);
+        if (params.publicationState) qs.set("publicationState", params.publicationState);
+        if (params.modifiedSincePublish) qs.set("modifiedSincePublish", "true");
         const s = qs.toString();
         return s ? `?${s}` : "";
       }
@@ -322,17 +342,21 @@ export function legacyRest() {
             publishAt?: string | null;
             unpublishAt?: string | null;
           },
+          options?: ItemWriteOptions,
         ) =>
           client.rawRequest<Row>(`${base}/${id}`, {
             method: "PATCH",
             body: JSON.stringify(input),
+            ...ifMatchInit(options),
           }),
         replace: (
           id: string,
           input: { data: Row["data"]; status?: string; sort?: number },
+          options?: ItemWriteOptions,
         ) =>
           client.rawRequest<Row>(`${base}/${id}`, {
             method: "PUT",
+            ...ifMatchInit(options),
             body: JSON.stringify(input),
           }),
         delete: (id: string) =>
@@ -361,6 +385,33 @@ export function legacyRest() {
           client.rawRequest<Row[]>(`${base}/bulk`, {
             method: "POST",
             body: JSON.stringify({ op, items: payload }),
+          }),
+        /**
+         * Save-as-copy (#689): a draft copy with unique fields suffixed
+         * (`-copy`, `-copy-2`, …). Goes through the normal create path.
+         */
+        duplicate: (id: string, options: DuplicateItemOptions = {}) =>
+          client.rawRequest<Row>(`${base}/${encodeURIComponent(id)}/duplicate`, {
+            method: "POST",
+            body: JSON.stringify(options),
+          }),
+        /**
+         * Manual ordering (#690) on a `meta.manualSort` collection: place `id`
+         * right after `after` (null = first) or right before `before`.
+         */
+        reorder: (id: string, target: { after: string | null } | { before: string }) =>
+          client.rawRequest<Row>(`${base}/${encodeURIComponent(id)}/reorder`, {
+            method: "POST",
+            body: JSON.stringify(target),
+          }),
+        /**
+         * Patch without recording a revision (#693) — for autosave and
+         * machine writes. Agent-authored writes keep their revision anyway.
+         */
+        patchWithoutRevision: (id: string, input: { data?: Partial<Row["data"]> }) =>
+          client.rawRequest<Row>(`${base}/${id}?saveRevision=false`, {
+            method: "PATCH",
+            body: JSON.stringify(input),
           }),
         /**
          * Hierarchical collections (#749) on a `meta.tree.enabled` collection.

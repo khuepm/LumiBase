@@ -202,6 +202,15 @@ export const items = pgTable(
     status: text('status').default('draft').notNull(),
     data: jsonb('data').default({}).notNull(),
     /**
+     * Optimistic-concurrency counter (content-environments Phase A, migration
+     * 0036). Incremented by every write that changes the item's logical
+     * content: `data`, `status`, pins, soft delete (incl. tree cascade),
+     * crypto-shred, moving the item in a tree. Descendant path rebases, sibling
+     * sort renumbering and key-rotation re-encryption leave it alone. Exposed as the strong ETag
+     * of `GET /items/:collection/:id`; `If-Match` compares against it.
+     */
+    version: integer('version').default(0).notNull(),
+    /**
      * Field names pinned by a human edit (Law Zero / override-is-law).
      * Agents are denied writes to pinned fields at the harness boundary.
      */
@@ -229,6 +238,18 @@ export const items = pgTable(
      * preserves Tier 1 behaviour for collections without `editorialWorkflow`.
      */
     editorialState: text('editorial_state'),
+    /**
+     * Publication timestamps (#687, migration 0037). `firstPublishedAt` is
+     * stamped once, on the first transition into `published`, and never moves.
+     * `publishedAt` is the most recent publish (kept on unpublish, so it reads
+     * "last published at"). `hasUnpublishedChanges` flips on when the data of
+     * an item that has been published is edited, and clears on the next
+     * publish. Maintained by ItemService / EditorialService / the scheduler
+     * through `publication-state.ts`.
+     */
+    firstPublishedAt: timestamp('first_published_at'),
+    publishedAt: timestamp('published_at'),
+    hasUnpublishedChanges: boolean('has_unpublished_changes').default(false).notNull(),
     /**
      * Per-record wrapped DEK for envelope encryption (Req 4.5). Null unless
      * `LUMIBASE_ENVELOPE_ENCRYPTION` is enabled; deleting it crypto-shreds the
@@ -274,6 +295,10 @@ export const items = pgTable(
     treePathIdx: index('items_tree_path_idx')
       .on(t.siteId, t.collectionId, t.path.op('text_pattern_ops'))
       .where(sql`${t.path} is not null`),
+    /** "Modified since publish" list filter (#687, migration 0037). */
+    unpublishedChangesIdx: index('items_unpublished_changes_idx')
+      .on(t.siteId, t.collectionId)
+      .where(sql`${t.hasUnpublishedChanges} = true and ${t.deletedAt} is null`),
   }),
 );
 

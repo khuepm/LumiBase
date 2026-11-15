@@ -25,6 +25,7 @@ import { RevisionsPanel } from './revisions-panel';
 import { RawJsonPanel } from './raw-json-panel';
 import { VersionPanel } from './version-panel';
 import { DependentRecordsDialog, type DependentGroup } from './dependent-records-dialog';
+import { isPreconditionFailed } from './save-conflict';
 import { TranslationMode } from './translation-mode';
 import { translatableFields, tmLearnEntries } from './translatable-fields';
 import { useSiteLocalesState } from './use-site-locales';
@@ -38,6 +39,8 @@ import {
 import { readEditorIntentSearch } from './editor-intent-search';
 import { ItemCreate } from './item-create';
 import { EditorialActions } from './editorial-actions';
+import { DuplicateItemButton, PublicationInfo } from './item-publication';
+import { useFocusFieldFromHash } from './focus-field';
 import { DraftReviewPanel } from './draft-review-panel';
 import { useReviewRollout, useReviewSession } from './use-review-pilot';
 
@@ -94,6 +97,8 @@ function ItemEditor({
 
   const [tab, setTab] = useState<Tab>('fields');
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
+  // Item version the current draft is based on; sent as `If-Match` on save.
+  const [baseVersion, setBaseVersion] = useState<number | undefined>(undefined);
   // Translation mode (translation-memory-ui): the site's default is the source
   // locale; the user picks a target to translate into.
   const { locales, isLoaded: localesLoaded } = useSiteLocalesState();
@@ -192,12 +197,15 @@ function ItemEditor({
     },
   });
 
-  // Hydrate draft from server data once.
+  // Hydrate draft from server data once. `baseVersion` pins the version the
+  // draft was built from, so a background refetch cannot silently move the
+  // save's `If-Match` forward and overwrite someone else's edit.
   useEffect(() => {
     if (itemQuery.data && draft === null) {
       setDraft({ ...(itemQuery.data.data as Record<string, unknown>) });
       setPublishAt(isoToLocalInput(itemQuery.data.publishAt));
       setUnpublishAt(isoToLocalInput(itemQuery.data.unpublishAt));
+      setBaseVersion(itemQuery.data.version);
     }
   }, [itemQuery.data, draft]);
 
@@ -272,11 +280,15 @@ function ItemEditor({
       // flag the field — and its tab — without a round trip.
       const missing = checkRequired(fields, draft, layout, true);
       if (Object.keys(missing).length > 0) throw requiredError(missing);
-      const res = await client.items(collection as never).patch(id, {
-        data: draft,
-        publishAt: localInputToIso(publishAt),
-        unpublishAt: localInputToIso(unpublishAt),
-      });
+      const res = await client.items(collection as never).patch(
+        id,
+        {
+          data: draft,
+          publishAt: localInputToIso(publishAt),
+          unpublishAt: localInputToIso(unpublishAt),
+        },
+        { ifMatch: baseVersion },
+      );
       // Learn human-edited translations into TM (Req 6.1). Best-effort: a TM
       // write failure must not fail the save that already succeeded.
       const toLearn = tmLearnEntries({
@@ -297,7 +309,10 @@ function ItemEditor({
     onError: (err: Error) => {
       setFieldErrors(validationErrorsFrom(err, fields.map((f) => f.name)));
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
+      // The draft stays on screen after a save, so it is now based on the
+      // version the server just wrote.
+      if (saved) setBaseVersion(saved.version);
       setFieldErrors({});
       queryClient.invalidateQueries({ queryKey: ['item', collection, id] });
       queryClient.invalidateQueries({ queryKey: ['items', collection] });
@@ -418,6 +433,7 @@ function ItemEditor({
             canUpdate={canUpdate}
             isDirty={isDirty}
           />
+          <DuplicateItemButton collection={collection} id={id} canCreate={perms.can(collection, 'create')} />
           <button
             type="button"
             onClick={() => setShareOpen(true)}
@@ -524,11 +540,33 @@ function ItemEditor({
       {/* Real-time warning when more than one person has this item open. */}
       <CoEditingBanner coEditors={coEditors} />
 
-      {saveMutation.error && (
+      {saveMutation.error && isPreconditionFailed(saveMutation.error) ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive"
+        >
+          <span className="flex-1">
+            Someone else changed this item after you opened it, so your changes were not saved. Copy anything
+            you want to keep, then load the latest version.
+          </span>
+          <button
+            type="button"
+            className="rounded border border-destructive/40 px-2 py-1 font-medium hover:bg-destructive/10"
+            onClick={() => {
+              saveMutation.reset();
+              // Refetch first: clearing the draft re-hydrates it from the
+              // cached item, which must already be the latest version.
+              void itemQuery.refetch().then(() => setDraft(null));
+            }}
+          >
+            Discard my changes and load latest
+          </button>
+        </div>
+      ) : saveMutation.error ? (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
           Save failed.
         </div>
-      )}
+      ) : null}
 
       {dependentGroups && (
         <DependentRecordsDialog
@@ -770,6 +808,7 @@ function ItemEditor({
             ) : null}
             <Meta label="Updated" value={new Date(itemQuery.data.updatedAt).toLocaleString()} />
             <Meta label="Created" value={new Date(itemQuery.data.createdAt).toLocaleString()} />
+            <PublicationInfo item={itemQuery.data} />
           </dl>
           {/* Content scheduling (Req 10.1). Empty = unset; the Delivery API
               only serves items inside the current Publish_Window. */}
@@ -801,6 +840,7 @@ function ItemEditor({
     </div>
   );
 }
+
 
 /** ISO timestamp → `datetime-local` input value (local time), or '' when unset. */
 /** Synthesized `VALIDATION` error for a client-side required failure. */
@@ -901,6 +941,8 @@ export function FieldsTab({
 }) {
   // resolveInterface reads the extension registry during render.
   useExtensionUpdates();
+  // `#field=<name>` deep links from the release validation summary (#692).
+  useFocusFieldFromHash(fields.length);
   if (fields.length === 0) {
     return <p className="text-sm text-muted-foreground">No editable fields.</p>;
   }
