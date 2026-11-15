@@ -7,8 +7,8 @@ type: application
 # Chart and app version follow the root package.json (`pnpm version:sync`
 # rewrites both lines). The release workflow packages the chart with the tag's
 # version, so `--version X` of the OCI chart deploys image X by default.
-version: 2.0.0
-appVersion: "2.0.0"
+version: 2.1.0
+appVersion: "2.1.0"
 kubeVersion: ">=1.25.0-0"
 home: https://github.com/khuepm/lumibase
 sources:

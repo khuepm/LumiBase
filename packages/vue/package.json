@@ -1,6 +1,6 @@
 {
   "name": "@lumibase/vue",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Vue 3 composables and a Nuxt module for LumiBase — a thin, typed layer over @lumibase/sdk.",
   "license": "Apache-2.0",
   "type": "module",
