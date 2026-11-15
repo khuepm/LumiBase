@@ -38,7 +38,7 @@
       {
         "type": "category",
         "label": "Tutorials",
-        "items": ["tutorials", "tutorials/nextjs-quickstart"]
+        "items": ["tutorials", "tutorials/nextjs-quickstart", "tutorials/astro-starter", "tutorials/sveltekit-starter"]
       },
       {
         "type": "category",
@@ -86,6 +86,7 @@
           "deployment/cloudflare",
           "deployment/docker",
           "deployment/one-click",
+          "deployment/static-export-cloudflare-pages",
           "deployment/google-cloud-vm",
           "deployment/environment-variables",
           "deployment/local-development"
