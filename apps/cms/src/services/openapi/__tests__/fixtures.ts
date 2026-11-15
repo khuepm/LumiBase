@@ -99,6 +99,8 @@ export function matrixManifest(): TypegenManifest {
           oneCollection: 'authors',
           oneField: null,
           junctionCollection: null,
+          relationType: 'm2o',
+          alias: 'author',
         },
         {
           field: 'comments',
@@ -109,6 +111,8 @@ export function matrixManifest(): TypegenManifest {
           oneCollection: 'posts',
           oneField: 'comments',
           junctionCollection: null,
+          relationType: 'o2m',
+          alias: 'comments',
         },
       ],
     },
