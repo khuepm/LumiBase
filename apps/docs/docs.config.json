@@ -87,6 +87,7 @@
           "deployment/docker",
           "deployment/one-click",
           "deployment/static-export-cloudflare-pages",
+          "deployment/kubernetes-helm",
           "deployment/google-cloud-vm",
           "deployment/environment-variables",
           "deployment/local-development"

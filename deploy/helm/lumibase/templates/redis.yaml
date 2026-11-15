@@ -1,0 +1,114 @@
+{{- if .Values.redis.enabled }}
+{{- $name := include "lumibase.redis.fullname" . -}}
+{{- $component := dict "ctx" . "component" "redis" -}}
+{{- $r := .Values.redis -}}
+{{- $passwordRef := dict "secret" (default (include "lumibase.secretName" .) $r.auth.existingSecret) "key" (ternary $r.auth.existingSecretKey "redis-password" (not (empty $r.auth.existingSecret))) -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lumibase.componentLabels" $component | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+  selector:
+    {{- include "lumibase.selectorLabels" $component | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lumibase.componentLabels" $component | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "lumibase.selectorLabels" $component | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "lumibase.selectorLabels" $component | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml $r.podSecurityContext | nindent 8 }}
+      containers:
+        - name: redis
+          image: {{ printf "%s:%s" $r.image.repository $r.image.tag }}
+          imagePullPolicy: {{ $r.image.pullPolicy }}
+          # noeviction: BullMQ jobs and locks must never be evicted under
+          # memory pressure. The password is expanded from the environment at
+          # start, so it never appears in the pod spec.
+          command:
+            - sh
+            - -c
+            - exec redis-server --dir /data --appendonly yes --maxmemory-policy noeviction --requirepass "$REDIS_PASSWORD"
+          ports:
+            - name: redis
+              containerPort: 6379
+          env:
+            {{- include "lumibase.secretEnv" (dict "env" "REDIS_PASSWORD" "secret" $passwordRef.secret "key" $passwordRef.key) | nindent 12 }}
+            {{- include "lumibase.secretEnv" (dict "env" "REDISCLI_AUTH" "secret" $passwordRef.secret "key" $passwordRef.key) | nindent 12 }}
+          securityContext:
+            {{- toYaml $r.securityContext | nindent 12 }}
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 15
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml $r.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if not $r.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+      {{- with $r.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $r.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $r.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if $r.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "lumibase.selectorLabels" $component | nindent 10 }}
+      spec:
+        accessModes:
+          {{- toYaml $r.persistence.accessModes | nindent 10 }}
+        {{- with $r.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $r.persistence.size }}
+  {{- end }}
+{{- end }}
