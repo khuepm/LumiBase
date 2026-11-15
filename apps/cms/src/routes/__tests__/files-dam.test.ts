@@ -136,7 +136,7 @@ describe('PUT /files/:id/content — replace in place (#703)', () => {
     const res = await app().request('/api/v1/files/file_a_logo/content?filename=logo-v2.jpg', {
       method: 'PUT',
       headers: { 'content-type': 'image/jpeg', 'if-match': '"v1"' },
-      body: buildJpeg({ iptc: true }),
+      body: new Uint8Array(buildJpeg({ iptc: true })),
     });
     expect(res.status).toBe(200);
     expect(res.headers.get('etag')).toBe('"v2"');

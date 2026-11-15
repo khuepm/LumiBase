@@ -815,7 +815,7 @@ export function legacyRest() {
         if (opts.expectedVersion !== undefined) headers["if-match"] = `"v${opts.expectedVersion}"`;
         return client.rawRequest<FileResource>(`/api/v1/files/${encodeURIComponent(id)}/content${q}`, {
           method: "PUT",
-          body: body as BodyInit,
+          body: body as RequestInit["body"],
           headers,
         });
       },
