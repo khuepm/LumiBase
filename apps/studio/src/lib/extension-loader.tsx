@@ -15,7 +15,7 @@ import { formatSafeError } from "@lumibase/contracts/utils";
  * Extensions are cached in memory; calling `clearCache()` forces a reload.
  */
 
-import { type ComponentType, lazy, Suspense } from 'react';
+import { type ComponentType, lazy, Suspense, useSyncExternalStore } from 'react';
 import { getApiClient } from '@/lib/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -152,7 +152,85 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
 /** Clear the extension cache (forces a reload on next call). */
 export function clearExtensionCache(): void {
   cache.clear();
+  hotImpls.clear();
   loaded = false;
+}
+
+// ─── Dev hot reload (#754) ───────────────────────────────────────────────────
+//
+// `lumibase-ext dev` pushes rebuilt UI bundles; `extension-dev-client.ts`
+// imports each one and calls `hotSwapExtension`. The registry entry's
+// `component` becomes a STABLE wrapper per extension name that renders the
+// latest implementation, so whoever already resolved the component (e.g.
+// `resolveInterface`) keeps a valid reference and simply re-renders. Only the
+// extension's own subtree remounts on a swap; host state — the form values an
+// interface edits via `value`/`onChange`, routing, query cache — is untouched.
+
+interface HotImpl {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  component: ComponentType<any>;
+  version: number;
+}
+
+const hotImpls = new Map<string, HotImpl>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const hotWrappers = new Map<string, ComponentType<any>>();
+const hotListeners = new Set<() => void>();
+
+function subscribeHot(listener: () => void): () => void {
+  hotListeners.add(listener);
+  return () => hotListeners.delete(listener);
+}
+
+/** Subscribe to dev hot-swaps (any extension). Returns an unsubscribe fn. */
+export function subscribeExtensionUpdates(listener: () => void): () => void {
+  return subscribeHot(listener);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function hotWrapperFor(name: string): ComponentType<any> {
+  const existing = hotWrappers.get(name);
+  if (existing) return existing;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function HotExtension(props: Record<string, any>) {
+    const impl = useSyncExternalStore(subscribeHot, () => hotImpls.get(name));
+    if (!impl) return null;
+    const Impl = impl.component;
+    return <Impl {...props} />;
+  }
+  HotExtension.displayName = `HotExtension(${name})`;
+  hotWrappers.set(name, HotExtension);
+  return HotExtension;
+}
+
+/** Version currently rendered for a hot-reloaded extension (dev only). */
+export function getHotExtensionVersion(name: string): number | undefined {
+  return hotImpls.get(name)?.version;
+}
+
+/**
+ * Install (or replace) the implementation of a UI extension at `version`.
+ * Out-of-order or duplicate versions are ignored. Returns true when swapped.
+ */
+export function hotSwapExtension(input: {
+  name: string;
+  slot: ExtensionSlot;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  component: ComponentType<any>;
+  version: number;
+}): boolean {
+  const prev = hotImpls.get(input.name);
+  if (prev && prev.version >= input.version) return false;
+  hotImpls.set(input.name, { component: input.component, version: input.version });
+  const entry = cache.get(input.name);
+  cache.set(input.name, {
+    name: input.name,
+    slot: input.slot,
+    component: hotWrapperFor(input.name),
+    manifest: entry?.manifest ?? {},
+  });
+  for (const listener of [...hotListeners]) listener();
+  return true;
 }
 
 /** Get a cached extension by name. Returns undefined if not loaded. */
@@ -222,12 +300,14 @@ class ExtensionErrorBoundary extends React.Component<
  * an error boundary so one bad extension cannot take down the Studio.
  */
 export function ExtensionComponent({ name, ...props }: ExtensionComponentProps) {
-  const entry = cache.get(name);
+  // Subscribed so an extension that first appears via dev hot reload renders.
+  const entry = useSyncExternalStore(subscribeHot, () => cache.get(name));
   if (!entry) return null;
 
   const Component = entry.component;
   return (
-    <ExtensionErrorBoundary name={name}>
+    // Keyed by hot version: a fixed build clears a previous render crash.
+    <ExtensionErrorBoundary key={hotImpls.get(name)?.version ?? 0} name={name}>
       <Suspense
         fallback={
           <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
