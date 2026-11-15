@@ -26,7 +26,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - **Storybook** for `@lumibase/ui` and representative Studio components (field interfaces, displays, a data table, dialogs) in a new `apps/storybook` package, published with the docs at `/storybook/`. Every story's interaction test and axe scan run in Chromium in light and dark, and an a11y violation fails CI. Every `@lumibase/ui` export must have a story. Pull requests also get a base-vs-head visual diff. Issues the gate found are fixed in Studio: the light `--muted-foreground` and both `--destructive` tokens now meet WCAG AA contrast, and the rating display, the save-bookmark dialog and the slider, colour and tags inputs now have accessible names (#755).
 
 ### Upgrade notes
-- Migration `0035_locale_generation` adds `lumibase_locale_generation_jobs` and `lumibase_translation_suggestions` (additive, no backfill) and both are added to `rls-policies.sql`.
+- Migration `0040_locale_generation` adds `lumibase_locale_generation_jobs` and `lumibase_translation_suggestions` (additive, no backfill) and both are added to `rls-policies.sql`.
 
 ### Changed
 - The extension manifest accepted by `POST/PATCH /api/v1/extensions` may now carry the structured `mcp` block; it is validated at install time. Other manifest values must still be strings.

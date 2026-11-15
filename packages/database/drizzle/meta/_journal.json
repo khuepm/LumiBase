@@ -248,10 +248,10 @@
       "breakpoints": true
     },
     {
-      "idx": 35,
+      "idx": 40,
       "version": "7",
-      "when": 1795161600000,
-      "tag": "0035_locale_generation",
+      "when": 1795593600000,
+      "tag": "0040_locale_generation",
       "breakpoints": true
     }
   ]
