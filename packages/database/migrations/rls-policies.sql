@@ -127,7 +127,10 @@ DECLARE
     'lumibase_activation_milestones',
     -- Social login provider config (#736, site-isolated; holds encrypted secrets).
     -- lumibase_user_identities is identity-global like lumibase_users: no site_id.
-    'lumibase_social_auth_providers'
+    'lumibase_social_auth_providers',
+    -- Secrets of external-action agent tools (site-isolated). A tool running
+    -- for one site can only ever decrypt that site's rows.
+    'lumibase_agent_tool_secrets'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

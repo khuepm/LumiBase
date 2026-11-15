@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 2
-lastUpdated: 2026-11-14T02:22:56.785Z
-contentHash: ef5e85d1d5f896d9
-codeVerified: 2026-11-14T02:22:56.785Z
-codeVerifiedHash: ef5e85d1d5f896d9
+version: 3
+lastUpdated: 2026-11-15T08:14:26.004Z
+contentHash: c6efa7fcfdcbaa9e
+codeVerified: 2026-11-15T08:14:26.004Z
+codeVerifiedHash: c6efa7fcfdcbaa9e
 codeVerifiedClaims: 48
 ---
 
@@ -178,7 +178,7 @@ browser.
 - Service: `apps/cms/src/modules/mfa/passkey-service.ts` (uses `@simplewebauthn/server`, Web Crypto only, runs on Workers and Node).
 - Routes: `apps/cms/src/routes/passkeys.ts`.
 - Shared factor state: `apps/cms/src/modules/mfa/tfa-state.ts`.
-- Table: `packages/database/src/schema/security.ts` (`userPasskeys`), migration `packages/database/drizzle/0030_user_passkeys.sql`. Identity-scoped like the TOTP tables (keyed by `user_id`, no `site_id`): a passkey belongs to a domain, not to a LumiBase site.
+- Table: `packages/database/src/schema/security.ts` (`userPasskeys`), migration `packages/database/drizzle/0031_user_passkeys.sql`. Identity-scoped like the TOTP tables (keyed by `user_id`, no `site_id`): a passkey belongs to a domain, not to a LumiBase site.
 - Studio: `apps/studio/src/modules/settings/passkeys-section.tsx`, `apps/studio/src/modules/auth/admin-login-page.tsx`, `apps/studio/src/lib/passkeys.ts`.
 
 ## 8. Known limits

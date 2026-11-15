@@ -1,10 +1,10 @@
 ---
-version: 17
-lastUpdated: 2026-11-14T02:32:18.606Z
+version: 18
+lastUpdated: 2026-11-15T08:14:23.698Z
 sourceLang: en
-contentHash: 474060261cdf7c7d
-codeVerified: 2026-11-14T02:32:18.606Z
-codeVerifiedHash: 474060261cdf7c7d
+contentHash: a569ee25f43387da
+codeVerified: 2026-11-15T08:14:23.698Z
+codeVerifiedHash: a569ee25f43387da
 codeVerifiedClaims: 20
 ---
 
@@ -261,7 +261,7 @@ SDK generation uses this manifest to emit base collection interfaces and `Collec
 - `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — plaintext never stored), `familyId` (rotation chain), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
 - Rotating, revocable session-renewal tokens. Reuse of a revoked row revokes the whole `familyId` (theft detection). Swept on the hourly cron once expired. See [`security/user-management.md`](./security/user-management.md) §4d.
 
-### `user_passkeys` (migration `0030`, physical `lumibase_user_passkeys`)
+### `user_passkeys` (migration `0031`, physical `lumibase_user_passkeys`)
 - `id` (nanoid), `userId`, `credentialId` (base64url, unique), `publicKey` (COSE public key), `counter`, `transports`, `aaguid`, `name`, `deviceType`, `backedUp`, `rpId`, `createdAt`, `lastUsedAt`, `updatedAt`.
 - Identity-scoped like `lumibase_user_totp_credentials`: keyed by `user_id`, no `site_id`, not under RLS — a passkey belongs to an RP ID (domain), not to a site. Nothing secret is stored. See [`security/passkeys.md`](./security/passkeys.md).
 
@@ -416,6 +416,7 @@ Turning the draft-review pilot off deletes none of these rows.
 | `constitutions` | Versioned publish-gate evaluator sets; sha256 hash identity; at most one `active` per site |
 | `site_skills` | Site Skills (`site-skills.ts`, migration 0026): playbooks injected into matching agent runs. Unique `(siteId, slug)`; `status` `draft`/`active`/`archived`; `riskClass`; scope columns `surfaces`, `tools`, `collections`, `triggers`, `requiredCapabilities`; current `body`, `version`, `hash` |
 | `site_skill_versions` | Immutable version trail of a site skill: unique `(skillId, version)`, content `snapshot`, sha256 `hash`, `source`/`sourceRef`, `changeNote`, author. Both tables are in the `site_isolation` RLS list |
+| `agent_tool_secrets` | Secrets of external-action tools (`ai.ts`, migration 0030). Unique `(siteId, name)`; `ciphertext` is a `KeyProvider` envelope bound to site and name, `keyId` the key version, `updatedBy` the administrator. Never returned by an API. In the `site_isolation` RLS set. See [external-action tools](features/external-action-tools.md) |
 
 Content OS columns on existing tables:
 
@@ -453,11 +454,11 @@ All three are `site_id`-scoped with `site_isolation` RLS. See `docs/en/features/
 - Per-site trusted external JWT issuer. **Public config only — no secrets** (signatures verify against the issuer's JWKS). `id`, `siteId` (FK sites, cascade), `issuer` (matches the `iss` claim), `jwksUri`/`discoveryUrl` (one required), `audience` (jsonb: string|string[]), `algorithms` (jsonb: asymmetric allowlist), `claimMapping` (jsonb: `{ email, roles, siteId?, externalId? }`), `roleMapping` (jsonb: `{ "<claim role>": { roleId|systemKey } }`), `defaultRoleId`, `jitProvisioning`, `clockSkewSeconds`, `enabled`, `createdAt`, `updatedAt`.
 - Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0000_lumibase_init` (consolidated). See [security/external-jwt-auth.md](./security/external-jwt-auth.md).
 
-### `user_identities` (`social-auth.ts`, migration `0031`)
+### `user_identities` (`social-auth.ts`, migration `0032`)
 - External login identities linked to an account: `id`, `userId` (FK users, cascade), `issuer`, `subject`, `emailAtLink`, `createdAt`. Unique `(issuer, subject)`; index on `user_id`.
-- **Identity-global** like `users` — no `site_id`, not under RLS; site access stays in `user_sites`. Migration `0031` backfills every `users.external_id` under issuer `urn:lumibase:external-id`. See [security/social-login.md](./security/social-login.md).
+- **Identity-global** like `users` — no `site_id`, not under RLS; site access stays in `user_sites`. Migration `0032` backfills every `users.external_id` under issuer `urn:lumibase:external-id`. See [security/social-login.md](./security/social-login.md).
 
-### `social_auth_providers` (`social-auth.ts`, migration `0031`)
+### `social_auth_providers` (`social-auth.ts`, migration `0032`)
 - Per-site Google / Apple / GitHub configuration: `id`, `siteId` (FK sites, cascade), `provider`, `enabled`, `clientId`, `clientSecretCiphertext`, `appleTeamId`, `appleKeyId`, `applePrivateKeyCiphertext`, `allowedRedirectUris` (jsonb), `createdAt`, `updatedAt`. Unique `(siteId, provider)`; RLS `site_isolation`.
 - Secrets are KeyProvider AES-GCM envelopes bound to site + provider, never plaintext and never returned by the API.
 

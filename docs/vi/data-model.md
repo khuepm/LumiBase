@@ -1,13 +1,13 @@
 ---
-version: 17
-lastUpdated: 2026-11-14T02:32:18.606Z
+version: 18
+lastUpdated: 2026-11-15T08:14:23.698Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 474060261cdf7c7d
+sourceHash: a569ee25f43387da
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T02:32:18.606Z
-codeVerifiedHash: 474060261cdf7c7d
+codeVerified: 2026-11-15T08:14:23.698Z
+codeVerifiedHash: a569ee25f43387da
 codeVerifiedClaims: 20
 ---
 
@@ -265,7 +265,7 @@ Quá trình sinh SDK dùng manifest này để phát ra interface collection cơ
 - `id`, `siteId`, `userId`, `audience` (`studio`/`frontend`), `tokenHash` (sha256, unique — không bao giờ lưu plaintext), `familyId` (chuỗi rotation), `replacedBy`, `expiresAt`, `revokedAt`, `lastIp`, `lastUserAgent`, `createdAt`.
 - Token gia hạn session, có rotation và thu hồi được. Dùng lại một row đã revoke sẽ revoke toàn bộ `familyId` (phát hiện đánh cắp). Được quét dọn bởi cron mỗi giờ sau khi hết hạn. Xem [`security/user-management.md`](./security/user-management.md) §4d.
 
-### `user_passkeys` (migration `0030`, vật lý `lumibase_user_passkeys`)
+### `user_passkeys` (migration `0031`, vật lý `lumibase_user_passkeys`)
 - `id` (nanoid), `userId`, `credentialId` (base64url, unique), `publicKey` (khóa công khai COSE), `counter`, `transports`, `aaguid`, `name`, `deviceType`, `backedUp`, `rpId`, `createdAt`, `lastUsedAt`, `updatedAt`.
 - Gắn với định danh như `lumibase_user_totp_credentials`: khóa theo `user_id`, không có `site_id`, không nằm trong RLS — passkey thuộc về một RP ID (tên miền), không thuộc site. Không lưu gì bí mật. Xem [`security/passkeys.md`](./security/passkeys.md).
 
@@ -419,6 +419,7 @@ Tắt pilot kiểm tra bản nháp không xoá dòng nào trong các bảng này
 | `constitutions` | Tập evaluator cho publish-gate, có version; định danh bằng hash sha256; mỗi site tối đa một bản `active` |
 | `site_skills` | Site Skills (`site-skills.ts`, migration 0026): playbook được chèn vào các agent run khớp. Unique `(siteId, slug)`; `status` `draft`/`active`/`archived`; `riskClass`; các cột phạm vi `surfaces`, `tools`, `collections`, `triggers`, `requiredCapabilities`; `body`, `version`, `hash` hiện tại |
 | `site_skill_versions` | Vết phiên bản bất biến của một site skill: unique `(skillId, version)`, `snapshot` nội dung, `hash` sha256, `source`/`sourceRef`, `changeNote`, tác giả. Cả hai bảng nằm trong danh sách RLS `site_isolation` |
+| `agent_tool_secrets` | Bí mật của external-action tool (`ai.ts`, migration 0030). Unique `(siteId, name)`; `ciphertext` là envelope của `KeyProvider` gắn với site và tên, `keyId` là phiên bản khoá, `updatedBy` là quản trị viên. Không API nào trả về. Nằm trong tập RLS `site_isolation`. Xem [external-action tools](features/external-action-tools.md) |
 
 Các cột Content OS thêm vào bảng có sẵn:
 
@@ -456,11 +457,11 @@ Cả ba đều scope theo `site_id` với RLS `site_isolation`. Xem `docs/vi/fea
 - Issuer JWT ngoài được tin cậy, theo từng site. **Chỉ config public — không có secret** (chữ ký được verify dựa trên JWKS của issuer). `id`, `siteId` (FK sites, cascade), `issuer` (khớp claim `iss`), `jwksUri`/`discoveryUrl` (bắt buộc một trong hai), `audience` (jsonb: string|string[]), `algorithms` (jsonb: allowlist thuật toán bất đối xứng), `claimMapping` (jsonb: `{ email, roles, siteId?, externalId? }`), `roleMapping` (jsonb: `{ "<claim role>": { roleId|systemKey } }`), `defaultRoleId`, `jitProvisioning`, `clockSkewSeconds`, `enabled`, `createdAt`, `updatedAt`.
 - Unique `(siteId, issuer)`; index `(siteId, enabled)`. Migration: `0000_lumibase_init` (đã hợp nhất). Xem [security/external-jwt-auth.md](./security/external-jwt-auth.md).
 
-### `user_identities` (`social-auth.ts`, migration `0031`)
+### `user_identities` (`social-auth.ts`, migration `0032`)
 - Danh tính đăng nhập ngoài liên kết với một tài khoản: `id`, `userId` (FK users, cascade), `issuer`, `subject`, `emailAtLink`, `createdAt`. Unique `(issuer, subject)`; index trên `user_id`.
-- **Identity-global** giống `users` — không có `site_id`, không chịu RLS; quyền truy cập site vẫn nằm ở `user_sites`. Migration `0031` backfill mọi `users.external_id` với issuer `urn:lumibase:external-id`. Xem [security/social-login.md](./security/social-login.md).
+- **Identity-global** giống `users` — không có `site_id`, không chịu RLS; quyền truy cập site vẫn nằm ở `user_sites`. Migration `0032` backfill mọi `users.external_id` với issuer `urn:lumibase:external-id`. Xem [security/social-login.md](./security/social-login.md).
 
-### `social_auth_providers` (`social-auth.ts`, migration `0031`)
+### `social_auth_providers` (`social-auth.ts`, migration `0032`)
 - Cấu hình Google / Apple / GitHub theo site: `id`, `siteId` (FK sites, cascade), `provider`, `enabled`, `clientId`, `clientSecretCiphertext`, `appleTeamId`, `appleKeyId`, `applePrivateKeyCiphertext`, `allowedRedirectUris` (jsonb), `createdAt`, `updatedAt`. Unique `(siteId, provider)`; RLS `site_isolation`.
 - Secret là envelope AES-GCM của KeyProvider, ràng buộc theo site + provider, không bao giờ lưu plaintext và không bao giờ được API trả về.
 

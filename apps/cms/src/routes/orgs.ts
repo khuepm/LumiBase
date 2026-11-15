@@ -13,6 +13,7 @@ import { systemDbFor } from '../middleware/db';
 import { isFrontendAudience, audienceValues, TOKEN_AUDIENCE } from '../services/auth/token-audience';
 import { finalizeSiteProvisioning, SiteProvisioningConflict } from '../services/site-provisioning';
 import { invalidateSiteExists } from '../services/domains/site-exists-cache';
+import { invalidateSiteOrganization } from '../services/domains/site-organization-cache';
 import { createPlaintextToken } from '../services/api-key-token';
 import { AuditLogger } from '../modules/audit/logger';
 import { auditSecurityGuardDenied } from '../middleware/security-audit';
@@ -149,6 +150,7 @@ orgsRouter.delete('/:orgId/sites/:siteId', guard('org:sites:delete'), async (c) 
   const result = await systemDbFor(c).transaction((tx) => executeOrganizationMutation(
     tx, c.req.param('orgId'), 'delete_site', { siteId }, organizationActorFromAuth(c.get('auth'))));
   await invalidateSiteExists(c.get('runtime')?.cache, siteId);
+  await invalidateSiteOrganization(c.get('runtime')?.cache, siteId).catch(() => undefined);
   return c.json({ data: result.data });
 });
 orgsRouter.post('/:orgId/sites/:siteId/transfer', guard('org:sites:transfer'), async (c) => {
@@ -156,6 +158,9 @@ orgsRouter.post('/:orgId/sites/:siteId/transfer', guard('org:sites:transfer'), a
   if (!input.success) return c.json({ errors: [{ code: 'VALIDATION' }] }, 400);
   const result = await systemDbFor(c).transaction((tx) => executeOrganizationMutation(
     tx, c.req.param('orgId'), 'transfer_site', { ...input.data, siteId: c.req.param('siteId') }, organizationActorFromAuth(c.get('auth'))));
+  // The site now belongs to another organization: drop the cached owner. After
+  // the commit, and best-effort — the entry expires on its own TTL regardless.
+  await invalidateSiteOrganization(c.get('runtime')?.cache, c.req.param('siteId')).catch(() => undefined);
   return c.json({ data: result.data });
 });
 orgsRouter.get('/:orgId/members', guard('org:read'), async (c) => c.json({ data: await c.get('db')

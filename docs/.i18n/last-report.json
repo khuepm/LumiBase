@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-13T22:21:19.192Z",
+  "generatedAt": "2026-11-15T06:46:25.465Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 166,
+    "upToDate": 168,
     "planned": 0
   },
   "actions": [
@@ -398,6 +398,18 @@
     },
     {
       "rel": "architecture/physical-collections.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "architecture/platform-extension-points.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
@@ -1196,6 +1208,18 @@
       "viLang": "vi",
       "sourceLocale": "vi",
       "targetLocale": "en",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/external-action-tools.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
       "willTranslate": false,
       "preservedTo": null,
       "missingPlaceholders": 0

@@ -1,4 +1,4 @@
--- 0030_user_passkeys — WebAuthn passkeys for staff sign-in and 2FA (#735).
+-- 0031_user_passkeys — WebAuthn passkeys for staff sign-in and 2FA (#735).
 --
 -- Additive only: one new table, no backfill. Re-runnable (IF NOT EXISTS /
 -- duplicate_object guards). Identity-scoped like lumibase_user_totp_credentials
