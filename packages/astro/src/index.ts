@@ -16,8 +16,9 @@
  *
  * The integration adds one server-only virtual module, `virtual:lumibase`,
  * exporting a configured SDK client. The token is never an integration
- * option: the module reads `import.meta.env.<tokenEnv>` (default
- * `LUMIBASE_TOKEN`) on the server, and importing it from browser code fails
+ * option: the module reads `<tokenEnv>` (default `LUMIBASE_TOKEN`) with
+ * `getSecret()` from `astro:env/server` when the server runs (never inlined at
+ * build time), and importing it from browser code fails
  * the build instead of shipping the token.
  *
  * Typed structurally against Astro's integration API (5.x–7.x), so this
@@ -90,8 +91,13 @@ export function virtualModuleSource(options: LumibaseIntegrationOptions): string
   const { url, siteId, tokenEnv } = validate(options);
   return [
     `import { createLumiClient } from "@lumibase/sdk";`,
+    // `getSecret` reads the variable when the server runs, through the
+    // adapter (Node `process.env`, Cloudflare bindings, …). `import.meta.env.X`
+    // would be replaced by Vite at build time, baking the build machine's token
+    // into `dist/server` of an SSR build.
+    `import { getSecret } from "astro:env/server";`,
     `export const config = { url: ${JSON.stringify(url)}, siteId: ${JSON.stringify(siteId)} };`,
-    `export function createClient(token = import.meta.env.${tokenEnv} ?? "") {`,
+    `export function createClient(token = getSecret(${JSON.stringify(tokenEnv)}) ?? "") {`,
     `  return createLumiClient({ ...config, token });`,
     `}`,
     `export const lumi = createClient();`,

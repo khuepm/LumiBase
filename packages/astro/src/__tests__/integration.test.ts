@@ -31,7 +31,11 @@ describe("integration", () => {
 
   it("generates a module that references the env var name, never a token value", () => {
     const src = virtualModuleSource({ ...opts, tokenEnv: "CMS_TOKEN" });
-    expect(src).toContain("import.meta.env.CMS_TOKEN");
+    expect(src).toContain('getSecret("CMS_TOKEN")');
+    expect(src).toContain('from "astro:env/server"');
+    // Vite statically replaces import.meta.env.X at build time: an SSR build
+    // would carry the build machine's token in dist/server.
+    expect(src).not.toContain("import.meta.env");
     expect(src).toContain('"https://cms.test"');
     expect(src).toContain('from "@lumibase/sdk"');
   });

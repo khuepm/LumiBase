@@ -1,11 +1,11 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-15T16:56:03.520Z
-contentHash: 407f12cc520ebf79
-codeVerified: 2026-11-15T16:56:03.520Z
-codeVerifiedHash: 407f12cc520ebf79
-codeVerifiedClaims: 16
+version: 2
+lastUpdated: 2026-11-15T18:17:20.023Z
+contentHash: 6655f6a1e5149cef
+codeVerified: 2026-11-15T18:17:20.023Z
+codeVerifiedHash: 6655f6a1e5149cef
+codeVerifiedClaims: 18
 ---
 
 # Framework adapters: Vue/Nuxt, Svelte/SvelteKit, Astro
@@ -133,7 +133,7 @@ export default defineConfig({
 });
 ```
 
-The integration adds a server-only virtual module `virtual:lumibase`. It exports `lumi` (a configured client), `createClient(token?)` and `config`. Its types are injected for Astro ≥ 5. The token is never an integration option. The module reads `import.meta.env.LUMIBASE_TOKEN` (or the variable named by `tokenEnv`) at runtime. If browser code imports the module, the build fails, so the token cannot be bundled by mistake.
+The integration adds a server-only virtual module `virtual:lumibase`. It exports `lumi` (a configured client), `createClient(token?)` and `config`. Its types are injected for Astro ≥ 5. The token is never an integration option. The module reads `LUMIBASE_TOKEN` (or the variable named by `tokenEnv`) with `getSecret()` from `astro:env/server` when the server runs, so an SSR build never carries the build machine's token in `dist/server` and a token rotation needs no rebuild. If browser code imports the module, the build fails, so the token cannot be bundled by mistake.
 
 ```astro
 ---

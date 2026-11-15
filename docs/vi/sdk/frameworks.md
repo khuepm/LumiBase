@@ -1,14 +1,14 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-15T16:56:03.520Z
+version: 2
+lastUpdated: 2026-11-15T18:17:20.023Z
 translatedFrom: en
-sourceHash: 407f12cc520ebf79
+sourceHash: 6655f6a1e5149cef
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T16:56:03.520Z
-codeVerifiedHash: 407f12cc520ebf79
-codeVerifiedClaims: 16
+codeVerified: 2026-11-15T18:17:20.023Z
+codeVerifiedHash: 6655f6a1e5149cef
+codeVerifiedClaims: 18
 ---
 
 # Adapter cho framework: Vue/Nuxt, Svelte/SvelteKit, Astro
@@ -136,7 +136,7 @@ export default defineConfig({
 });
 ```
 
-Integration thêm một virtual module chỉ dùng ở server là `virtual:lumibase`. Nó export `lumi` (client đã cấu hình), `createClient(token?)` và `config`. Type của nó được inject cho Astro ≥ 5. Token không bao giờ là option của integration. Module đọc `import.meta.env.LUMIBASE_TOKEN` (hoặc biến có tên trong `tokenEnv`) lúc chạy. Nếu mã trình duyệt import module này thì build thất bại, nên token không thể vô tình bị đóng vào bundle.
+Integration thêm một virtual module chỉ dùng ở server là `virtual:lumibase`. Nó export `lumi` (client đã cấu hình), `createClient(token?)` và `config`. Type của nó được inject cho Astro ≥ 5. Token không bao giờ là option của integration. Module đọc `LUMIBASE_TOKEN` (hoặc biến có tên trong `tokenEnv`) bằng `getSecret()` từ `astro:env/server` khi server chạy, nên bản build SSR không bao giờ mang token của máy build trong `dist/server` và đổi token không cần build lại. Nếu mã trình duyệt import module này thì build thất bại, nên token không thể vô tình bị đóng vào bundle.
 
 ```astro
 ---
