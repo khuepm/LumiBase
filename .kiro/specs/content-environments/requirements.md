@@ -13,11 +13,11 @@ Vấn đề hiện tại: một thay đổi lớn đụng **cả schema lẫn n�
 LumiBase đã có sẵn các mảnh ghép để **tái sử dụng, không phát minh mới**:
 
 - **Cô lập theo `site_id`**: mọi bảng domain có `site_id`, mọi query lọc theo nó, RLS áp theo site. Một Environment **là một site con** → thừa hưởng cô lập dữ liệu, cache key, search index, RLS mà không sửa query nào.
-- **Provisioning site**: `provisionSite()` (`apps/cms/src/services/site-provisioning.ts:25`) tạo site + role administrator/member trong transaction của caller.
+- **Provisioning site**: `provisionSite()` (`apps/cms/src/services/site-provisioning.ts:27`) tạo site + role administrator/member trong transaction của caller.
 - **Config diff/apply**: `buildConfigDiff` (`apps/cms/src/services/config-diff.ts:218`), `ConfigImportService.dryRun`/`apply` (`config-import-service.ts:79`, `:109`) với `ApplyMode` và `DiffRisk` → dùng cho Schema_Promote.
 - **Field rename/đổi kiểu có `migrationPlan`**: `FieldInput.renameFrom`/`migrationPlan` (`apps/cms/src/services/schema-service.ts:177-178`), impact `data_migration_required`.
 - **Phát hiện lệch bằng hash**: `hashData()` (`apps/cms/src/services/content-version-service.ts:30`) và cờ `mainChanged` → cùng kỹ thuật cho Base_Hash của Environment.
-- **Ghi item qua một cửa**: `ItemService.patch` (`apps/cms/src/services/item-service.ts:943`) sở hữu validation, permission, editorial gate, hooks, revision → mọi thao tác promote **ủy quyền cho `ItemService`**.
+- **Ghi item qua một cửa**: `ItemService.patch` (`apps/cms/src/services/item-service.ts:1090`) sở hữu validation, permission, editorial gate, hooks, revision → mọi thao tác promote **ủy quyền cho `ItemService`**.
 
 Phạm vi feature: tạo/liệt kê/xoá Environment, fork schema + nội dung, cô lập hệ thống phụ trợ, Schema_Promote, Content_Promote một chiều có phát hiện xung đột, Merge ba chiều theo field, kiểm tra phiên bản khi ghi item. **Ngoài phạm vi:** copy-on-write ở tầng storage (v1 copy hàng thật), merge giữa hai Environment anh em, rebase Environment theo production (ghi nhận open question), sao chép secrets/API keys, và agent tự mở/merge Environment (xem Req 13).
 

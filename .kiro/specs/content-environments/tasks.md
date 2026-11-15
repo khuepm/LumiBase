@@ -9,7 +9,7 @@ Kế hoạch triển khai **Content Environments** theo 6 phase. Mỗi phase t�
 ### Phase A — Write_Precondition (độc lập)
 
 - [ ] 1. ETag + If-Match cho item
-  - [ ] 1.1 Đọc luồng `ItemService.patch` (`item-service.ts:943`) và coalesced writes (`:2110`); chốt nguồn ETag (`updatedAt` hay cột `version` mới — design §14.7) (Req 6.1, 6.4; design §6)
+  - [ ] 1.1 Đọc luồng `ItemService.patch` (`item-service.ts:1090`) và coalesced writes (`:2110`); chốt nguồn ETag (`updatedAt` hay cột `version` mới — design §14.7) (Req 6.1, 6.4; design §6)
   - [ ] 1.2 `ItemService.patch`/`replace` nhận `expected?: { etag }`; conditional UPDATE trong cùng câu lệnh; 0 dòng → `PRECONDITION_FAILED` (Req 6.2, 6.4; design §6)
   - [ ] 1.3 Route `items.ts`: trả `ETag` ở GET detail, đọc `If-Match` ở PATCH/PUT, map 412 (Req 6.1-6.3; design §6)
   - [ ] 1.4 Test: không header → hành vi cũ; header khớp → ghi; header lệch → 412 không ghi; hai ghi đồng thời chỉ một thắng (Req 6.2-6.4)

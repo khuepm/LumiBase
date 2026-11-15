@@ -8,10 +8,10 @@ Quyết định trung tâm: **một Environment là một site con**, không ph�
 
 Tái sử dụng:
 
-- `provisionSite()` (`apps/cms/src/services/site-provisioning.ts:25`) tạo site con + roles.
+- `provisionSite()` (`apps/cms/src/services/site-provisioning.ts:27`) tạo site con + roles.
 - `ConfigExportService.export` + `buildConfigDiff` (`config-diff.ts:218`) + `ConfigImportService.dryRun/apply` (`config-import-service.ts:79`, `:109`) cho Schema_Promote.
 - `hashData()` (`content-version-service.ts:30`) cho Base_Hash.
-- `ItemService.patch` (`item-service.ts:943`) và `revertRevision` (`:1513`) cho ghi và hoàn tác.
+- `ItemService.patch` (`item-service.ts:1090`) và `revertRevision` (`:1660`) cho ghi và hoàn tác.
 - `QueueProvider` (`packages/runtime/src/interfaces/queue.ts`) cho job Fork/Merge; không import CF bindings.
 - Pattern pre-flight của `ReleaseService` (`all_or_nothing` = kiểm mọi item trước khi ghi) vì `ItemService.patch` không nhận `tx`.
 
@@ -172,7 +172,7 @@ Kiểm tra `isEnvironment(siteId)` đặt ở **điểm phát** (dispatcher củ
 - `ETag` = hash ngắn của `(item.id, updatedAt, id revision mới nhất)`.
 - `ItemService.patch` nhận thêm `expected?: { etag }`. Khi có, UPDATE thêm điều kiện `updated_at = $expected` trong cùng câu lệnh; 0 dòng bị ảnh hưởng → `PRECONDITION_FAILED` (412).
 - Route đọc `If-Match`, truyền xuống. Không có header → hành vi cũ.
-- Lưu ý coalesced writes (`flushCoalescedWrites`, `item-service.ts:2110`): ghi có precondition phải bỏ qua coalescing hoặc flush trước khi so sánh.
+- Lưu ý coalesced writes (`flushCoalescedWrites`, `item-service.ts:2259`): ghi có precondition phải bỏ qua coalescing hoặc flush trước khi so sánh.
 
 Phần này độc lập, giao được trước và có ích ngay cho Studio (hai editor cùng mở một item).
 
