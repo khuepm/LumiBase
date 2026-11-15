@@ -1,9 +1,9 @@
 ---
-version: 3
-lastUpdated: 2026-09-21T05:45:15.059Z
+version: 4
+lastUpdated: 2026-11-15T16:45:24.641Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8239e8df5e0da2f5
+sourceHash: f4d137a36eed6a52
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -19,6 +19,7 @@ Cảm ơn bạn đã quan tâm tới việc đóng góp cho LumiBase! Hướng d
 - [Hướng dẫn testing](./testing.md)
 - [Viết extension](./extension-dev.md)
 - [Chính sách versioning](./versioning-policy.md)
+- [Runtime được hỗ trợ](./supported-runtimes.md)
 - [Gửi một PR](#gửi-một-pr)
 
 ---
@@ -29,7 +30,7 @@ Cảm ơn bạn đã quan tâm tới việc đóng góp cho LumiBase! Hướng d
 
 | Tool | Version | Cài đặt |
 |------|---------|---------|
-| Node.js | ≥ 22 | [nodejs.org](https://nodejs.org) |
+| Node.js | 22.22.2+ hoặc 24.15.0+ ([runtime được hỗ trợ](./supported-runtimes.md)) | [nodejs.org](https://nodejs.org) |
 | pnpm | ≥ 9 | `npm i -g pnpm` |
 | Docker + Docker Compose | Mới nhất | [docker.com](https://docker.com) |
 | Git | ≥ 2.40 | Package manager của hệ thống |

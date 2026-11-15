@@ -23,6 +23,15 @@
  *   node scripts/smoke-scaffold.mjs --pm npm                # one package manager
  *   node scripts/smoke-scaffold.mjs --keep                  # leave the temp dir for inspection
  *
+ * Framework matrix (#760, `.github/workflows/runtime-matrix.yml`):
+ *   node scripts/smoke-scaffold.mjs --template nextjs --pm npm --next 15 --build --skip-audit
+ *     --next <major>   install `next@^<major>` instead of the template's pin, so
+ *                      CI proves the template on Next.js current and current−1
+ *     --build          also run `next build` after the typecheck (nextjs only)
+ *     --skip-audit     skip the production audit — the matrix answers "does it
+ *                      work on this framework line?", the default smoke keeps
+ *                      answering "is the shipped graph clean?"
+ *
  * Network is required. This is not part of `pnpm test` — it is a separate
  * command so the unit suite stays offline and fast.
  */
@@ -38,11 +47,27 @@ const TEMPLATES = ['default', 'cloudflare', 'nextjs'];
 const PACKAGE_MANAGERS = ['npm', 'pnpm'];
 
 function parseArgs(argv) {
-  const options = { templates: TEMPLATES, pms: PACKAGE_MANAGERS, keep: false };
+  const options = {
+    templates: TEMPLATES,
+    pms: PACKAGE_MANAGERS,
+    keep: false,
+    next: null,
+    build: false,
+    audit: true,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--keep') {
       options.keep = true;
+    } else if (arg === '--build') {
+      options.build = true;
+    } else if (arg === '--skip-audit') {
+      options.audit = false;
+    } else if (arg === '--next') {
+      const value = argv[i + 1];
+      if (!/^\d+$/.test(value ?? '')) throw new Error('--next must be a Next.js major, e.g. 16');
+      options.next = value;
+      i += 1;
     } else if (arg === '--template') {
       const value = argv[i + 1];
       if (!TEMPLATES.includes(value)) throw new Error(`--template must be one of ${TEMPLATES.join('|')}`);
@@ -93,7 +118,7 @@ function packReleaseClients(workdir) {
   return tarballs;
 }
 
-function smoke({ template, pm, workdir, tarballs }) {
+function smoke({ template, pm, workdir, tarballs, next, build, audit: runAudit }) {
   const label = `${template} × ${pm}`;
   const projectName = `smoke-${template}-${pm}`;
   const projectDir = join(workdir, projectName);
@@ -127,6 +152,7 @@ function smoke({ template, pm, workdir, tarballs }) {
     const manifestPath = join(projectDir, 'package.json');
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     manifest.dependencies.lumibase = tarballs.lumibase;
+    if (next) manifest.dependencies.next = `^${next}`;
     manifest.overrides = { ...manifest.overrides, '@lumibase/sdk': tarballs['@lumibase/sdk'] };
     manifest.pnpm = {
       ...manifest.pnpm,
@@ -143,7 +169,7 @@ function smoke({ template, pm, workdir, tarballs }) {
   // Standalone starters do not inherit the monorepo's dependency overrides.
   // Audit the installed production graph: a manifest-only test missed the
   // vulnerable PostCSS pinned by Next.js in a fresh Next.js starter.
-  if (template === 'nextjs') {
+  if (template === 'nextjs' && runAudit) {
     const audit = run(pm, ['audit', pm === 'npm' ? '--omit=dev' : '--prod', '--audit-level=moderate'], projectDir);
     if (audit.status !== 0) {
       return { label, step: `${pm} audit`, status: audit.status, output: audit.output };
@@ -153,6 +179,13 @@ function smoke({ template, pm, workdir, tarballs }) {
   const typecheck = run(pm, ['run', 'typecheck'], projectDir);
   if (typecheck.status !== 0) {
     return { label, step: `${pm} run typecheck`, status: typecheck.status, output: typecheck.output };
+  }
+
+  if (template === 'nextjs' && build) {
+    const built = run(pm, ['run', 'build'], projectDir);
+    if (built.status !== 0) {
+      return { label, step: `${pm} run build`, status: built.status, output: built.output };
+    }
   }
 
   return { label, step: 'ok', status: 0, output: '' };
@@ -177,7 +210,7 @@ function main(argv) {
     for (const template of options.templates) {
       for (const pm of options.pms) {
         process.stdout.write(`• ${template} × ${pm} … `);
-        const result = smoke({ template, pm, workdir, tarballs });
+        const result = smoke({ template, pm, workdir, tarballs, ...options });
         if (result.status === 0) {
           console.log('ok');
         } else {

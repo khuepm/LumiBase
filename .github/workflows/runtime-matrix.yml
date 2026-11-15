@@ -1,0 +1,168 @@
+name: Runtime matrix
+
+# Proves the supported-runtime policy (#760,
+# docs/en/contributing/supported-runtimes.md) instead of asserting it:
+#
+#  - `node`: install, typecheck and unit tests of the main packages on every
+#    Node.js LTS line that `engines.node` pins. ci.yml runs the full gate on
+#    `.nvmrc`'s line only, so before this workflow the floor (22) was declared
+#    but never executed — jsdom 30 and vite 8 both raised it silently.
+#  - `nextjs`: the scaffolded Next.js template (create-lumibase --template
+#    nextjs) installed, typechecked and built against Next.js current and
+#    current−1.
+#
+# Both lists are tied to `.nvmrc`, `engines.node`, the Dockerfile and the policy
+# page by `scripts/check-runtime-matrix.mjs` (in `pnpm check:all`): change a line
+# here and the guard tells you what else must move with it.
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  push:
+    branches:
+      - main
+  # Weekly, so a new Node patch or Next.js release that breaks us shows up even
+  # in a quiet week — the matrix resolves the newest release of each line.
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: Node.js ${{ matrix.node }} — install, typecheck, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        # Must equal the bounded LTS lines of root `engines.node`
+        # (`^22.22.2 || ^24.15.0 || …` → 22, 24). Enforced by check-runtime-matrix.
+        node: [22, 24]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Runtime matrix guard and CLI Node-support tests
+        run: |
+          node scripts/check-runtime-matrix.mjs
+          node --test scripts/__tests__/node-support.test.mjs scripts/__tests__/check-runtime-matrix.test.mjs
+
+      - name: Typecheck main packages
+        run: >-
+          pnpm --filter @lumibase/cms --filter @lumibase/studio --filter @lumibase/sdk
+          --filter @lumibase/runtime --filter @lumibase/database
+          --filter lumibase --filter create-lumibase typecheck
+
+      - name: Unit tests of main packages
+        run: >-
+          pnpm exec turbo run test
+          --filter=@lumibase/cms --filter=@lumibase/studio --filter=@lumibase/sdk
+          --filter=@lumibase/runtime --filter=@lumibase/database
+          --filter=lumibase --filter=create-lumibase
+
+      # The bin shims must run clean (no "not supported" warning) on every line
+      # the policy supports.
+      - name: CLI bin shim starts without a Node-support warning
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter lumibase build
+          node packages/cli/bin/lumibase.js --version 2> stderr.txt
+          if grep -q 'not supported on Node.js' stderr.txt; then
+            cat stderr.txt
+            exit 1
+          fi
+
+  nextjs:
+    name: Next.js ${{ matrix.next }} — scaffolded template install, typecheck, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        # Next.js current and current−1. The template's own pin must be one of
+        # these (check-runtime-matrix). Bump both when a new major ships.
+        next: ['15', '16']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Same reasoning as ci.yml's scaffold-smoke: this job reaches the npm
+      # registry, so on PRs it only runs when something it covers changed.
+      # Pushes to main, the weekly schedule and manual runs always run it.
+      - name: Does this change touch the template or its clients?
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch --quiet origin "$BASE_REF"
+          if git diff --name-only "origin/$BASE_REF"...HEAD \
+            | grep -qE '^(packages/(create-lumibase|cli|sdk)/|\.github/workflows/runtime-matrix\.yml$)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "template and clients untouched; skipping the Next.js matrix"
+          fi
+
+      - name: Setup Node
+        if: steps.scope.outputs.changed == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Setup pnpm
+        if: steps.scope.outputs.changed == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+          run_install: false
+
+      - name: Install dependencies
+        if: steps.scope.outputs.changed == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build create-lumibase
+        if: steps.scope.outputs.changed == 'true'
+        run: pnpm --filter create-lumibase build
+
+      - name: Scaffold, install, typecheck and build on Next.js ${{ matrix.next }}
+        if: steps.scope.outputs.changed == 'true'
+        env:
+          NEXT_MAJOR: ${{ matrix.next }}
+        run: >-
+          node packages/create-lumibase/scripts/smoke-scaffold.mjs
+          --template nextjs --pm npm --next "$NEXT_MAJOR" --build --skip-audit

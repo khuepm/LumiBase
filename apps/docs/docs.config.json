@@ -145,6 +145,11 @@
       },
       {
         "type": "category",
+        "label": "Contributing",
+        "items": ["contributing", "contributing/versioning-policy", "contributing/supported-runtimes"]
+      },
+      {
+        "type": "category",
         "label": "Roadmap",
         "items": [
           "roadmap/tasks",
