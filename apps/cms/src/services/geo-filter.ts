@@ -167,7 +167,7 @@ export function compileGeoClause(op: string, raw: unknown, coords: GeoCoordinate
   }
 
   // haversine: d <= r  ⇔  h <= sin²(r / 2R) for r <= πR (asin is monotonic),
-  // which avoids asin/sqrt in SQL. h is clamped to [0, 1] like the JS helper.
+  // which avoids asin/sqrt in SQL (so no domain clamp is needed either).
   const hMax = Math.sin(near.radius / (2 * EARTH_RADIUS_M)) ** 2;
   const haversine = sql`(power(sin(radians(${lat} - ${f8(near.lat)}) / 2), 2) + ${f8(Math.cos(toRad(near.lat)))} * cos(radians(${lat})) * power(sin(radians(${lng} - ${f8(near.lng)}) / 2), 2))`;
   return sql`(${prefilter} and ${haversine} <= ${f8(hMax)})`;
