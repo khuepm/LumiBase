@@ -1,14 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-11-14T12:31:25.001Z
+version: 2
+lastUpdated: 2026-11-15T12:16:36.578Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 7d77db293ed07b78
+sourceHash: f546435ef3f2214a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T12:31:25.001Z
-codeVerifiedHash: 7d77db293ed07b78
-codeVerifiedClaims: 18
+codeVerified: 2026-11-15T12:16:36.578Z
+codeVerifiedHash: f546435ef3f2214a
+codeVerifiedClaims: 24
 ---
 
 # External-action tools
@@ -25,7 +25,8 @@ không đăng ký external-action tool nào.
 Mã nguồn: `apps/cms/src/services/external-action-tools.ts` (bản khai, registry,
 quy tắc quyết định), `apps/cms/src/services/ai-harness.ts` (quyết định và thực
 thi), `apps/cms/src/services/tool-secret-service.ts` (bí mật),
-`apps/cms/src/services/external-action-audit.ts` (hàng audit).
+`apps/cms/src/services/external-action-audit.ts` (hàng audit),
+`apps/cms/src/services/external-action-policy.ts` (policy trước khi thực thi).
 
 ## Tool khai những gì
 
@@ -64,6 +65,7 @@ externalActionTools.register({
 | `blastRadius` | `none`, `single`, `bounded` (kèm `maxAffected`), `broad` | Một lời gọi chạm tới bao nhiêu bên ngoài |
 | `secrets` | tên khớp `^[A-Z][A-Z0-9_]{1,63}$` | Các bí mật handler cần, khai theo tham chiếu |
 | `inputSchema` | JSON Schema, `type: "object"` | Tham số; được kiểm trước khi có run hay approval |
+| `policy` | tuỳ chọn, xem [Policy trước khi thực thi](#policy-trước-khi-thực-thi) | Constitution của site có được đánh giá trước khi tool chạy hay không |
 
 Việc đăng ký từ chối một bản khai tự mâu thuẫn: tool `read_only` phải khai
 `blastRadius.scope: "none"`, tool có tác động không được khai `none`, và blast
@@ -124,6 +126,95 @@ role đang đóng băng thì từ chối.
 
 Principal nào được quyết định approval thì vẫn **từ chối** được một approval.
 
+## Policy trước khi thực thi
+
+Tool có thể khai một `policy`. Khi đó constitution của site (bộ evaluator có
+phiên bản mô tả trong tài liệu Content OS) được đánh giá trên mọi lời gọi của
+tool, trên một bản ghi phẳng mô tả lời gọi đó:
+
+```ts
+policy: {
+  constitution: 'required',               // or 'if_active'
+  constitutionHashes: ['sha256:…'],       // optional: the only versions accepted
+  record: (args, facts) => ({             // optional: default is the arguments
+    body: args.body,
+    intentRef: facts.intentId,
+  }),
+},
+```
+
+| Trường | Ý nghĩa |
+|---|---|
+| `constitution: 'required'` | Lời gọi bị từ chối trừ khi site có constitution đang active. Đóng khi lỗi (fail closed) |
+| `constitution: 'if_active'` | Được đánh giá khi site có constitution đang active; chạy bình thường khi không có |
+| `constitutionHashes` | Constitution đã ghim vào run phải có một trong các hash này. Phiên bản nào khác cũng làm lời gọi bị từ chối (`CONSTITUTION_NOT_ACCEPTED`) |
+| `record(args, facts)` | Dựng bản ghi mà evaluator đọc. Evaluator rule chỉ đọc trường cấp một, nên hãy giữ nó phẳng |
+
+Harness luôn thêm các dữ kiện của chính nó vào bản ghi, sau các trường của tool,
+nên tool hay tham số không ghi đè được: `tool`, `capability`, `risk`,
+`blastRadius` (phạm vi), `agentName`, `agentRole`, `intentId` và `runId`.
+
+Khi nào việc đánh giá diễn ra:
+
+- **Trước khi bất kỳ điều gì khác về lời gọi được quyết định.** Sau các cổng kill
+  switch, kiểm tham số, capability, tool policy và bước kiểm L0, trước khi tạo
+  approval hoặc để tool tự chạy.
+- **Một lần nữa trước khi một lời gọi đã duyệt được thực thi.** Nếu policy lúc đó
+  từ chối (constitution đã bị tắt, hoặc lời gọi nay vi phạm một quy tắc),
+  approval được trả về `pending`, giống như khi site đang đóng băng, và không có
+  gì chạy.
+
+Một run được đánh giá theo constitution đã ghim vào nó, kể cả sau khi một phiên
+bản mới hơn được kích hoạt. Policy `required` vẫn từ chối trên site không còn
+phiên bản active nào, nên tắt constitution sẽ dừng mọi lời gọi có quản trị, kể cả
+của các run đang chạy dở.
+
+Kết quả:
+
+| Kết quả | Điều gì xảy ra | Mã |
+|---|---|---|
+| mọi evaluator chặn đều đạt | quyết định tiếp tục như bảng ở trên | không có |
+| một evaluator chặn không đạt | bị từ chối, ở mọi mức autonomy | `CONSTITUTION_VIOLATION` |
+| chỉ các evaluator có `onViolation: "require_approval"` không đạt | chờ người duyệt, kể cả ở mức mà lẽ ra tool đã tự chạy; tool `read_only` cũng vậy | không có (`pending_approval`) |
+| một evaluator chặn bị lỗi (regex sai, `llm_judge` không có LLM) | bị từ chối, bất kể `onViolation` | `CONSTITUTION_VIOLATION` |
+| `required` và không có constitution active | bị từ chối; không tạo approval | `CONSTITUTION_REQUIRED` |
+| phiên bản đã ghim không nằm trong `constitutionHashes` | bị từ chối | `CONSTITUTION_NOT_ACCEPTED` |
+| `record` ném lỗi hoặc trả về thứ không phải object | bị từ chối | `POLICY_RECORD_INVALID` |
+
+`onViolation` là trường tuỳ chọn của một evaluator (`block`, mặc định, hoặc
+`require_approval`). Nó thuộc về constitution và nằm trong hash của nó. Cổng
+publish coi cả hai giá trị là chặn.
+
+Thông báo từ chối nêu tên các evaluator không đạt, không bao giờ trích nội dung
+lời gọi: lý do của một `llm_judge` có thể trích tham số, nên không được trả về.
+
+Tool không khai `policy` thì không được đánh giá và chạy y như trước.
+
+## Nạp tool từ một gói
+
+Entry của một deployment bọc CMS có thể trao tool từ một gói nằm ngoài repository
+này qua platform seam `externalActions`, thay vì để CMS import chúng:
+
+```ts
+import { registerPlatformSeams } from '@lumibase/cms/platform';
+import { myTools } from 'my-tools-package';
+
+registerPlatformSeams({
+  externalActions: { tools: () => myTools() },
+});
+```
+
+- `tools()` được gọi một lần, bên trong `registerPlatformSeams()`. Mọi định nghĩa
+  được kiểm và đăng ký vào registry dùng chung của tiến trình ngay tại đó, nên
+  harness, `tools/list` và MCP thấy cùng một bộ tool từ request đầu tiên.
+- Tất cả hoặc không gì cả: nếu một định nghĩa sai dạng hoặc một tên đã bị dùng,
+  không tool nào được đăng ký và `registerPlatformSeams()` ném lỗi. Một
+  deployment không được chạy với một nửa bộ tool.
+- Các entry dựng sẵn (`cloudflare.ts`, `serve.ts`) không bao giờ đăng ký gì: không
+  có đăng ký thì registry rỗng và danh mục skill là danh mục dựng sẵn, không đổi.
+
+Xem [Điểm mở rộng nền tảng](../architecture/platform-extension-points.md).
+
 ## Bí mật
 
 Tool nêu tên các bí mật của nó; quản trị viên lưu giá trị theo từng site:
@@ -165,7 +256,7 @@ Mỗi bước ghi một hàng `lumibase_activity` cho site:
 | `agent.external_action.proposed` | Lời gọi được đưa vào hàng chờ approval |
 | `agent.external_action.approved` | Một người dùng giải phóng nó. Được ghi **trước khi** handler chạy; nếu lần ghi này lỗi, handler không bắt đầu |
 | `agent.external_action.rejected` | Người quyết định từ chối nó |
-| `agent.external_action.refused` | Harness không chạy hoặc không giải phóng nó (L0, người quyết định không phải người, phạm vi đang đóng băng) |
+| `agent.external_action.refused` | Harness không chạy hoặc không giải phóng nó (L0, người quyết định không phải người, phạm vi đang đóng băng, policy trước khi thực thi) |
 | `agent.external_action.executed` | Handler trả về |
 | `agent.external_action.failed` | Handler ném lỗi hoặc hết thời gian |
 | `agent.tool_secret.set` / `agent.tool_secret.deleted` | Một bí mật được lưu hoặc xoá (chỉ có tên) |
@@ -173,8 +264,10 @@ Mỗi bước ghi một hàng `lumibase_activity` cho site:
 Payload chứa tên tool, bản khai của nó (`capability`, `risk`, `reversibility`,
 `blastRadius`, `secretRefs`), agent, id của run, tool call và approval, mức
 autonomy, loại người quyết định, digest `sha256` của tham số (`inputHash`) và
-hash của constitution đã ghim vào run. Nó không bao giờ chứa giá trị tham số hay
-đầu ra của handler. Bản ghi run, tool call và approval được ghi như với mọi tool
+hash của constitution đã ghim vào run. Với tool có policy, payload còn chứa
+`policy`: kết quả, mã từ chối, hash của phiên bản được đánh giá, và id, trạng thái
+cùng cờ `blocking` của từng evaluator. Nó không bao giờ chứa giá trị tham số,
+thông báo của evaluator hay đầu ra của handler. Bản ghi run, tool call và approval được ghi như với mọi tool
 call.
 
 ## MCP
@@ -217,12 +310,15 @@ audit nào xuất hiện trên site không hành động.
 
 - Trần tiền hoặc trần số lượng không thuộc cơ chế này. Tool khai blast radius;
   không có gì ở đây đếm chi tiêu hay số người nhận qua nhiều lời gọi.
-- Constitution được ghim vào run và ghi trong hàng audit. Nó không được đánh giá
-  trên một external action trước khi thực thi.
+- Policy trước khi thực thi là tuỳ chọn theo từng tool. Tool đăng ký không kèm
+  policy chỉ được quản trị bằng bản khai của nó, kể cả trên site có constitution
+  đang active.
+- Evaluator `llm_judge` cần harness có LLM đã cấu hình. Không có thì nó báo lỗi,
+  và một judge chặn khi đó từ chối mọi lời gọi (fail closed).
 - Ranh giới đóng băng là tool call: handler đang chạy không bị ngắt. Hãy viết
   tool sao cho một lời gọi làm đúng một việc có giới hạn.
-- Tool được đăng ký trong mã lúc tiến trình khởi động. Chưa có API để thêm tool
-  lúc chạy và chưa có loader cho extension.
+- Tool được đăng ký trong mã lúc tiến trình khởi động, trực tiếp hoặc qua seam
+  `externalActions`. Không có API để thêm tool lúc chạy.
 
 ## Nâng cấp
 
@@ -231,3 +327,8 @@ cài hiện có không cần thao tác; không có gì thay đổi cho tới khi
 đăng ký. `executeApproved` nhận tham số thứ tư nêu người quyết định. Bên gọi bỏ
 qua tham số này vẫn chạy với skill dựng sẵn và bị từ chối với approval chỉ dành
 cho người.
+
+Policy trước khi thực thi và seam `externalActions` không cần migration và không
+thay đổi gì với tool không khai policy hay với deployment không đăng ký seam.
+Evaluator của constitution nhận thêm trường tuỳ chọn `onViolation`; các phiên bản
+hiện có giữ nguyên hash.
