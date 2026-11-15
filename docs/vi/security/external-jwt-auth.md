@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-07-05T11:00:40.127Z
+version: 2
+lastUpdated: 2026-11-15T13:39:07.853Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8ea669829ae0efac
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: f38ed07a22ad842c
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-15T13:39:07.853Z
+codeVerifiedHash: f38ed07a22ad842c
+codeVerifiedClaims: 4
 ---
 
 # Xác thực JWT ngoài (External JWT)
@@ -31,6 +34,10 @@ xác thực (nằm giữa nhánh API-key và nhánh JWT nội bộ):
    chứa các thuật toán bất đối xứng — `RS*`/`ES*`).
 4. Xác minh chữ ký và `iss`/`aud`/`exp`/`nbf` (với độ lệch đồng hồ đã cấu hình)
    dựa trên JWKS của issuer.
+   Trên endpoint MCP (`/api/v1/mcp`, `/api/v1/mcp/sites/<siteId>`) token còn phải
+   mang resource URI của endpoint đó trong `aud`. Ở mọi nơi khác, token chỉ có
+   audience là một MCP resource bị từ chối. Cả hai kiểm tra chạy trước bước ánh xạ
+   role và JIT. Xem [Remote MCP connector (OAuth 2.1)](../agent-setup/oauth-connector.md).
 5. Thực thi cổng đa tenant: nếu issuer ánh xạ một claim `siteId`, nó phải
    bằng site của request.
 6. Ánh xạ (các) claim role của token sang các role LumiBase qua `roleMapping`
@@ -42,6 +49,13 @@ xác thực (nằm giữa nhánh API-key và nhánh JWT nội bộ):
 Một khi một issuer khớp (bước 2), **mọi** thất bại tiếp theo là một lần từ chối
 fail-closed — request không bao giờ âm thầm lùi về xác thực nội bộ.
 
+Các claim đã xác minh trở thành principal, trừ các marker mà chỉ chính LumiBase
+đặt: `dev`, `isBootstrap`, `tfaVerified`, `anonymous`, `apiKey` và `mcpOAuth` bị
+bỏ (`apps/cms/src/modules/external-auth/principal-raw.ts`). Để qua cổng 2FA của
+Studio, IdP khẳng định MFA bằng claim OIDC chuẩn `amr` (`mfa`, `otp`, `totp`,
+`webauthn`) hoặc `acr` (chứa `mfa`), hoặc bằng `mfa` / `mfaVerified`. Claim
+`tfaVerified` từ IdP bị bỏ qua.
+
 ## Mô hình đe dọa & giảm thiểu
 
 | Đe dọa | Giảm thiểu |
@@ -52,6 +66,8 @@ fail-closed — request không bao giờ âm thầm lùi về xác thực nội 
 | Nhầm lẫn thuật toán (RS256 → HS256) | Allowlist chỉ bất đối xứng; `HS*` và `none` bị từ chối; xác minh HS256 nội bộ nằm ở một nhánh riêng, không liên quan |
 | Token bị thu hồi / issuer bị gỡ | Tắt/xóa một issuer có hiệu lực trong vòng TTL cache issuer-config; các bearer JWT vẫn hợp lệ đến `exp` (dùng vòng đời token IdP ngắn) |
 | Rò rỉ thông tin | Token thô không bao giờ được ghi log; lỗi trả ra ngoài dùng mã tổng quát (`UNAUTHENTICATED`/`FORBIDDEN`); lý do cụ thể chỉ đi vào log máy chủ |
+| Issuer khẳng định các marker nội bộ của LumiBase (`dev`, `isBootstrap`, `tfaVerified`) | Các claim đó bị bỏ khỏi principal; MFA lấy từ `amr`/`acr`/`mfa` |
+| Token pass-through tới MCP / token MCP bị replay vào REST | MCP yêu cầu resource URI của chính nó trong `aud`; token chỉ dành cho MCP bị từ chối ở mọi path khác |
 
 ## Cấu hình một issuer
 

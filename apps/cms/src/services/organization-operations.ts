@@ -6,6 +6,8 @@ import { canOrg, classifyTokenPrefix, OrgKeyCreateSchema, OrgMemberUpsertSchema,
   OrgSiteCreateSchema, OrgSiteTransferSchema, type OrgAction, type OrgRole } from '@lumibase/contracts';
 import { createPlaintextToken } from './api-key-token';
 import { provisionSite } from './site-provisioning';
+import { USAGE_KINDS } from '@lumibase/contracts/platform';
+import { recordUsage } from '../platform/usage';
 import { emailLookup } from '../modules/email-identity/service';
 
 export type OrganizationActor = { type: 'user'; userId: string } | { type: 'api_key'; apiKeyId: string };
@@ -111,6 +113,7 @@ export async function executeOrganizationMutation(
     if (existing?.role === 'owner' && input.role !== 'owner') await ensureAnotherOrganizationOwner(db, orgId, userId!);
     const [saved] = await db.insert(organizationMembers).values({ userId: userId!, organizationId: orgId, role: input.role })
       .onConflictDoUpdate({ target: [organizationMembers.userId, organizationMembers.organizationId], set: { role: input.role } }).returning();
+    if (!existing) recordUsage({ kind: USAGE_KINDS.seatChange, quantity: 1, unit: 'count', siteId: null, organizationId: orgId });
     return { data: saved };
   }
   const input = parse(OrgKeyCreateSchema, args);

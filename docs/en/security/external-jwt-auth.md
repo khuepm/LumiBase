@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-07-05T11:00:40.127Z
+version: 2
+lastUpdated: 2026-11-15T13:39:07.853Z
 sourceLang: en
-contentHash: 8ea669829ae0efac
+contentHash: f38ed07a22ad842c
+codeVerified: 2026-11-15T13:39:07.853Z
+codeVerifiedHash: f38ed07a22ad842c
+codeVerifiedClaims: 4
 ---
 
 # External JWT Authentication
@@ -28,6 +31,10 @@ chain (between the API-key and internal-JWT branches):
    only contain asymmetric algorithms — `RS*`/`ES*`).
 4. Verifies the signature and `iss`/`aud`/`exp`/`nbf` (with the configured clock
    skew) against the issuer's JWKS.
+   On the MCP endpoint (`/api/v1/mcp`, `/api/v1/mcp/sites/<siteId>`) the token
+   must also carry that endpoint's resource URI in `aud`. Everywhere else, a token
+   whose only audience is an MCP resource is refused. Both checks run before role
+   mapping and JIT provisioning. See [Remote MCP connector (OAuth 2.1)](../agent-setup/oauth-connector.md).
 5. Enforces the multi-tenant gate: if the issuer maps a `siteId` claim, it must
    equal the request site.
 6. Maps the token's role claim(s) to LumiBase roles via `roleMapping`
@@ -39,6 +46,13 @@ chain (between the API-key and internal-JWT branches):
 Once an issuer matches (step 2), **every** subsequent failure is a fail-closed
 rejection — the request never silently falls back to internal auth.
 
+The verified claims become the principal, minus the markers that only LumiBase
+itself sets: `dev`, `isBootstrap`, `tfaVerified`, `anonymous`, `apiKey` and
+`mcpOAuth` are dropped (`apps/cms/src/modules/external-auth/principal-raw.ts`).
+To satisfy the Studio 2FA gate, an IdP asserts MFA with the standard OIDC
+`amr` (`mfa`, `otp`, `totp`, `webauthn`) or `acr` (containing `mfa`) claims, or
+with `mfa` / `mfaVerified`. A `tfaVerified` claim from an IdP is ignored.
+
 ## Threat model & mitigations
 
 | Threat | Mitigation |
@@ -49,6 +63,8 @@ rejection — the request never silently falls back to internal auth.
 | Algorithm confusion (RS256 → HS256) | Allowlist is asymmetric-only; `HS*` and `none` are rejected; internal HS256 verification lives in a separate, unrelated branch |
 | Revoked token / removed issuer | Disabling/deleting an issuer takes effect within the issuer-config cache TTL; bearer JWTs remain valid until `exp` (use short IdP token lifetimes) |
 | Information leak | Raw tokens are never logged; outward errors use generic codes (`UNAUTHENTICATED`/`FORBIDDEN`); the specific reason goes only to the server log |
+| Issuer asserting LumiBase-internal markers (`dev`, `isBootstrap`, `tfaVerified`) | Those claims are dropped from the principal; MFA comes from `amr`/`acr`/`mfa` |
+| Token pass-through to MCP / MCP token replayed on REST | MCP requires its own resource URI in `aud`; an MCP-only token is refused on every other path |
 
 ## Configuring an issuer
 

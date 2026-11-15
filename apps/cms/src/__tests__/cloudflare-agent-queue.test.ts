@@ -48,6 +48,8 @@ describe('Cloudflare agent queue entrypoint (B10)', () => {
       expect(processAgentRunJob).toHaveBeenCalledWith({ db: { marker: 'db' }, cache: runtime.cache,
         search: runtime.search, queue: runtime.queue, keys: runtime.keys,
         env: { LUMIBASE_ENV: 'production', ENCRYPTION_KEY: 'test-only' },
+        // The full runtime, so a queued run reports usage in its own scope.
+        runtime,
       }, job.body.data);
       expect(job.ack).toHaveBeenCalledOnce(); expect(job.retry).not.toHaveBeenCalled();
     }

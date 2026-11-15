@@ -21,6 +21,8 @@
  * matcher (backward compat with the mock parser).
  */
 
+import { USAGE_KINDS } from '@lumibase/contracts/platform';
+import { recordUsage, usageEnabled } from '../platform/usage';
 import { CORE_SKILLS } from '@lumibase/ai-skills';
 import type { AISkillDefinition } from '@lumibase/ai-skills';
 
@@ -894,6 +896,41 @@ export interface LLMProviderEnv {
  * Falls back to `EchoProvider` when no provider is configured.
  */
 export function createLLMProvider(env: LLMProviderEnv): LLMProvider {
+  return withModelUsageReporting(createWindowedLLMProvider(env), env);
+}
+
+/**
+ * Reports the tokens of every model call that returns `usage` to the usage
+ * emitter seam (`ai.tokens`, one event per direction). Only when an emitter is
+ * registered — providers are built per request or job, after registration —
+ * so a stock instance gets the provider object itself, unwrapped.
+ */
+function withModelUsageReporting(provider: LLMProvider, env: LLMProviderEnv): LLMProvider {
+  if (!usageEnabled() || provider instanceof EchoProvider) return provider;
+  const name = env.LLM_PROVIDER ?? 'echo';
+  const model = env.LLM_MODEL ?? PROVIDER_DEFAULT_MODELS[name] ?? 'default';
+  return {
+    chat: async (messages, options) => {
+      const response = await provider.chat(messages, options);
+      const usage = response.usage;
+      if (usage) {
+        for (const [direction, tokens] of [['input', usage.inputTokens], ['output', usage.outputTokens]] as const) {
+          if (tokens) {
+            recordUsage({
+              kind: USAGE_KINDS.aiTokens,
+              quantity: tokens,
+              unit: 'tokens',
+              attributes: { provider: name, model, direction },
+            });
+          }
+        }
+      }
+      return response;
+    },
+  };
+}
+
+function createWindowedLLMProvider(env: LLMProviderEnv): LLMProvider {
   const provider = createRawLLMProvider(env);
   // A missing or invalid window is refused per model call, not at construction:
   // routes build providers eagerly (MCP, agent, intents, decisions), and a throw

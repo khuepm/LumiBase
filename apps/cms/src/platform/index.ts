@@ -7,7 +7,9 @@
  * `@lumibase/contracts/platform`.
  */
 export { isPlatformSeamRegistered, platform, registerPlatformSeams, resetPlatformSeamsForTests } from './registry';
-export { defaultEntitlementResolver, unlimitedSnapshot } from './defaults';
+export { defaultEntitlementResolver, defaultUsageEmitter, unlimitedSnapshot } from './defaults';
+export { backgroundUsageSource, recordUsage, runInUsageScope, runWithUsageScope, usageEnabled } from './usage';
+export type { UsageInput, UsageScopeSource } from './usage';
 export {
   authorizeEntitlement,
   backgroundSeamContext,

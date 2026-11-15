@@ -1,14 +1,14 @@
 ---
 sourceLang: en
-version: 2
-lastUpdated: 2026-11-13T09:53:21.003Z
+version: 3
+lastUpdated: 2026-11-15T13:39:30.226Z
 translatedFrom: en
-sourceHash: 92dec3be7b891650
+sourceHash: 4ebe49716b67d489
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T09:53:21.003Z
-codeVerifiedHash: 92dec3be7b891650
-codeVerifiedClaims: 16
+codeVerified: 2026-11-15T13:39:30.226Z
+codeVerifiedHash: 4ebe49716b67d489
+codeVerifiedClaims: 18
 ---
 
 # Remote MCP connector (OAuth 2.1) — LumiBase
@@ -111,6 +111,7 @@ Scope **chỉ thu hẹp**. Capability set vẫn đến từ RBAC bundle sống c
 | `mcp:admin` | các skill control-plane, và `ai:decide` | `deleteCollection`, `createRole` |
 
 - Dùng nguyên chuỗi capability làm scope (ví dụ `items:read`) cũng được, cho các IdP mô hình hoá scope chi tiết.
+- Client *xin* scope nào thì LumiBase không kiểm soát: client MCP SDK xin `scope` trong challenge, nếu không có thì xin mọi scope trong `scopes_supported`. Hãy giới hạn những gì connector thực sự nhận được ở phía IdP (API resource cấp scope nào cho client đó, hoặc qua bước người dùng đồng ý). Sau đó LumiBase cưỡng chế đúng những gì token mang.
 - Scope được đọc từ claim `scope` (phân tách bằng khoảng trắng) hoặc `scp` (chuỗi hoặc mảng).
 - Token không có scope nào được nhận diện vẫn dùng được discovery (`initialize`, `tools/list`, `ping`) nhưng không có capability nào.
 - Một grant admin chỉ giữ nguyên là admin đầy đủ khi có đủ cả bốn scope; nếu không, nó được khai triển thành các capability tường minh của core skill rồi lọc.
@@ -136,6 +137,12 @@ Theo quy tắc token-audience của [ADR-011](../architecture/decisions/adr-011-
 API key và session JWT của chính LumiBase là credential first-party và không bị ảnh hưởng.
 
 ---
+
+## Interop test
+
+[`apps/cms/src/__tests__/mcp-oauth-hosted-client.e2e.test.ts`](../../../apps/cms/src/__tests__/mcp-oauth-hosted-client.e2e.test.ts) chạy toàn bộ luồng này trong CI, không mock gì. IdP là `oidc-provider` (một implementation đạt chứng nhận OpenID) với DCR mở, PKCE S256 bắt buộc, RFC 8707 resource indicators và access token JWT ES256. Client là MCP TypeScript SDK chính thức (`StreamableHTTPClientTransport` với một `OAuthClientProvider`). Server là toàn bộ app LumiBase qua HTTP trên PostgreSQL, và bài test gọi nó qua URL theo site.
+
+Bài test phủ challenge 401 và discovery metadata, DCR, PKCE + `resource`, `tools/list` có annotations, `tools/call`, thu hẹp theo scope với challenge step-up 403, từ chối theo audience theo cả hai chiều, và refresh. Nó không phủ giao diện của một sản phẩm host cụ thể (claude.ai, ChatGPT), nơi việc đăng ký client và màn hình đồng ý được cấu hình ở phía họ.
 
 ## Troubleshooting
 
