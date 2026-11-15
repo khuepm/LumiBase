@@ -2,6 +2,7 @@ import { collections as collectionsTable, fields, relations, scopeSite } from '@
 import { asc, eq } from 'drizzle-orm';
 import type { Database } from '@lumibase/database';
 import { compileSystemFields, type PrimaryKeyType, type RelationType } from './schema-service';
+import { relationAlias } from './item-service';
 
 export interface TypegenManifest {
   version: number;
@@ -21,6 +22,12 @@ export interface TypegenCollection {
 export interface TypegenField {
   name: string;
   type: string;
+  /**
+   * Studio interface id (`translatable-text`, `file`, `files`, …). Carried so
+   * generators can tell a per-locale map or a file reference from a plain
+   * scalar (`lumibase types` Zod / OpenAPI targets, #753).
+   */
+  interface?: string;
   required: boolean;
   nullable: boolean;
   readonly: boolean;
@@ -43,6 +50,10 @@ export interface TypegenRelation {
   oneCollection: string;
   oneField: string | null;
   junctionCollection: string | null;
+  /** The stored relation row's `type` (`kind` is relative to this collection). */
+  relationType: RelationType;
+  /** Name of the nested field the GraphQL schema exposes for this relation. */
+  alias: string;
 }
 
 export class TypegenService {
@@ -82,6 +93,7 @@ export class TypegenService {
         const field: TypegenField = {
           name: f.name,
           type: f.type,
+          interface: f.interface,
           required: f.required,
           nullable: f.nullable,
           readonly: f.readonly,
@@ -124,6 +136,7 @@ export class TypegenService {
         .map((field) => ({
           name: field.name,
           type: field.type,
+          interface: field.interface,
           required: !field.nullable,
           nullable: field.nullable,
           readonly: field.readonly,
@@ -151,6 +164,8 @@ export class TypegenService {
               oneCollection: relation.oneCollection,
               oneField: relation.oneField,
               junctionCollection: relation.junctionCollection,
+              relationType: kind,
+              alias: relationAlias(relation),
             }];
           }
 
@@ -164,6 +179,8 @@ export class TypegenService {
               oneCollection: relation.oneCollection,
               oneField: relation.oneField,
               junctionCollection: relation.junctionCollection,
+              relationType: kind,
+              alias: relationAlias(relation),
             }];
           }
 

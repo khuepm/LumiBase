@@ -22,6 +22,10 @@ interface RequestExtras {
   /** Replaces the generic 403 hint with one that names the permission this endpoint needs. */
   forbiddenHint?: string;
   timeoutMs?: number;
+  /** Extra request headers (e.g. `If-None-Match`). */
+  headers?: Record<string, string>;
+  /** Treat `304 Not Modified` as a success instead of an error. */
+  allowNotModified?: boolean;
 }
 
 async function request(
@@ -31,6 +35,17 @@ async function request(
   options: RequestOptions = {},
   init: RequestExtras = {},
 ): Promise<unknown> {
+  const response = await send(connection, path, query, options, init);
+  return response.json();
+}
+
+async function send(
+  connection: Connection,
+  path: string,
+  query: Record<string, string | undefined> = {},
+  options: RequestOptions = {},
+  init: RequestExtras = {},
+): Promise<Response> {
   const fetcher = options.fetcher ?? globalThis.fetch;
   const target = new URL(path, `${connection.url}/`);
 
@@ -54,6 +69,7 @@ async function request(
         Authorization: `Bearer ${connection.token}`,
         'X-Lumi-Site': connection.siteId,
         Accept: 'application/json',
+        ...init.headers,
         ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       },
       ...(hasBody ? { body: JSON.stringify(init.body) } : {}),
@@ -71,6 +87,8 @@ async function request(
     clearTimeout(timeout);
   }
 
+  if (init.allowNotModified && response.status === 304) return response;
+
   if (!response.ok) {
     throw new CliError(
       describeHttpError(response.status, target.href, await serverErrorMessage(response)),
@@ -78,7 +96,7 @@ async function request(
     );
   }
 
-  return response.json();
+  return response;
 }
 
 /** The first `errors[].message` of a LumiBase error envelope, when the body is one. */
@@ -119,7 +137,27 @@ export async function fetchTypegenManifest(
   filters: { include?: string[]; exclude?: string[] } = {},
   options: RequestOptions = {},
 ): Promise<TypegenManifest> {
-  const body = await request(
+  const result = await fetchTypegenManifestIfChanged(connection, filters, undefined, options);
+  if (result.status !== 'changed') throw unexpectedManifestPayload();
+  return result.manifest;
+}
+
+export type ManifestFetchResult =
+  | { status: 'not-modified' }
+  | { status: 'changed'; manifest: TypegenManifest; etag?: string };
+
+/**
+ * Conditional manifest fetch for `--watch`: sends `If-None-Match` when an
+ * ETag is known, and reports `not-modified` on a 304. Servers that predate
+ * the ETag simply answer 200 every time; the caller then compares content.
+ */
+export async function fetchTypegenManifestIfChanged(
+  connection: Connection,
+  filters: { include?: string[]; exclude?: string[] } = {},
+  etag?: string,
+  options: RequestOptions = {},
+): Promise<ManifestFetchResult> {
+  const response = await send(
     connection,
     'api/v1/typegen/schema',
     {
@@ -127,9 +165,31 @@ export async function fetchTypegenManifest(
       exclude: filters.exclude?.join(','),
     },
     options,
-    { forbiddenHint: 'The token is valid but lacks permission to read the schema.' },
+    {
+      forbiddenHint: 'The token is valid but lacks permission to read the schema.',
+      ...(etag ? { headers: { 'If-None-Match': etag }, allowNotModified: true } : {}),
+    },
   );
 
+  if (response.status === 304) return { status: 'not-modified' };
+
+  const body: unknown = await response.json();
+  return {
+    status: 'changed',
+    manifest: parseManifestEnvelope(body),
+    etag: response.headers.get('ETag') ?? undefined,
+  };
+}
+
+function unexpectedManifestPayload(): CliError {
+  return new CliError(
+    'The schema endpoint returned an unexpected payload.',
+    'Make sure the CMS is a LumiBase instance and its version supports GET /api/v1/typegen/schema.',
+  );
+}
+
+/** Accepts `{ data: manifest }` (the API envelope); throws on anything else. */
+export function parseManifestEnvelope(body: unknown): TypegenManifest {
   const manifest = (body as { data?: unknown } | null)?.data;
 
   if (
@@ -137,10 +197,7 @@ export async function fetchTypegenManifest(
     manifest === null ||
     !Array.isArray((manifest as TypegenManifest).collections)
   ) {
-    throw new CliError(
-      'The schema endpoint returned an unexpected payload.',
-      'Make sure the CMS is a LumiBase instance and its version supports GET /api/v1/typegen/schema.',
-    );
+    throw unexpectedManifestPayload();
   }
 
   return manifest as TypegenManifest;
