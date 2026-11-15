@@ -9,6 +9,8 @@ import { scopeSite, settings, transformPresets } from '@lumibase/database';
 import { and, eq } from 'drizzle-orm';
 import { type TransformDsl, transformDslSchema, transformKey, verifyTransform } from '@lumibase/contracts';
 import { etagMatches, weakEtag } from '../services/delivery-cache';
+import { USAGE_KINDS } from '@lumibase/contracts/platform';
+import { recordUsage } from '../platform/usage';
 
 type ResolvedTransform = { dsl: TransformDsl; fromPreset: boolean };
 
@@ -439,6 +441,9 @@ mediaRouter.post('/:key{.+}', async (c) => {
     const version = await contentHashOf(data);
     const metadata: Record<string, string> = { contentType, [CONTENT_HASH_METADATA]: version };
     await storage.put(scopedKey, data, metadata);
+    // Bytes written. The key is overwritten in place and the storage port has
+    // no size lookup, so a replaced object's old size is not subtracted here.
+    recordUsage({ kind: USAGE_KINDS.storageBytes, quantity: data.length, unit: 'bytes', attributes: { source: 'media', op: 'write' } });
 
     // Fire-and-forget: enqueue thumbnail generation for image uploads
     if (contentType.startsWith('image/')) {
