@@ -101,6 +101,92 @@ Kế hoạch triển khai **Content Environments** theo 6 phase. Mỗi phase t�
 
 ---
 
+## Review gates
+
+Một phase chỉ được mở PR khi đạt đủ exit criteria của nó, và chỉ được bắt đầu phase kế sau khi PR đó merge. Reviewer đối chiếu từng dòng; dòng nào không áp dụng phải ghi lý do trong mô tả PR, không bỏ trống.
+
+### G0 — Duyệt spec (trước khi viết dòng code đầu tiên)
+
+- [ ] Năm giả định ở "Implementation status" đã được kiểm chứng bằng cách đọc code; kết quả ghi lại ngay tại mục đó (đúng / sai + file:line).
+- [ ] Giả định nào sai thì `design.md` đã được sửa tương ứng (đặc biệt §3.3 nếu `revisions.delta.after` không đủ dựng Base, và §6 nếu ghi item đã có kiểm tra phiên bản).
+- [ ] Open question §14.4 (Base khi revision bị retention dọn) và §14.7 (nguồn ETag) đã chốt phương án — hai câu này quyết định data model nên không được để ngỏ sang Phase B.
+- [ ] Open question §14.1 đã chốt con số: giới hạn item mỗi lần fork, ngân sách thời gian fork, và `environments.maxPerSite` mặc định.
+- [ ] Các open question còn lại (§14.2, §14.3, §14.5, §14.6) được ghi rõ là "hoãn sau v1", có người đồng ý.
+- [ ] Phạm vi v1 được xác nhận: dừng ở Phase D (promote một chiều) hay đi hết Phase E.
+
+### Điều kiện chung cho mọi PR của feature này
+
+- [ ] `turbo run typecheck` recursive sạch (không chỉ `-F` một package).
+- [ ] Test đích của phase pass trên Postgres thật, Node 24; kết quả dán trong mô tả PR.
+- [ ] Flag `environments.enabled` OFF → toàn bộ test suite hiện có không đổi kết quả (trừ Phase A).
+- [ ] Mỗi task một commit; số migration và ID Setup Impact đã đối chiếu với mọi nhánh đang mở.
+- [ ] Mục "Implementation status" được cập nhật: phase nào xong, deviation nào so với design và vì sao.
+
+### GA — Write_Precondition
+
+- [ ] Request không có `If-Match` cho kết quả như trước (test hồi quy trên route items hiện có).
+- [ ] Test đồng thời: hai PATCH cùng ETag → đúng một cái 200, một cái 412, dữ liệu là của cái thắng.
+- [ ] Kiểm tra nằm trong cùng câu UPDATE (reviewer đọc SQL sinh ra), không phải SELECT rồi UPDATE.
+- [ ] Coalesced writes không làm precondition báo sai (có test).
+- [ ] DoD §2d: bản shell desktop/mobile lưu item bình thường, xử lý được 412.
+
+### GB — Environment, Fork, cô lập
+
+- [ ] Fork `all` trên site mẫu: số dòng mỗi bảng ở Environment khớp Origin trong phạm vi; mọi relation m2o/o2m/m2m/m2a resolve đúng trong Environment.
+- [ ] Origin không đổi sau fork: so hash toàn bộ `items.data` và `updated_at` trước/sau.
+- [ ] Giết worker giữa chừng rồi chạy lại → không dòng trùng, kết thúc `ready`.
+- [ ] Ghi item trong Environment → 0 webhook gửi, 0 flow run, 0 agent run, 0 email/push (đếm ở dispatcher).
+- [ ] Xoá file trong Environment không xoá object storage mà Origin còn dùng; xoá cả Environment xong Origin vẫn tải được mọi file.
+- [ ] Bảng loại trừ (API keys, secrets, sessions, audit, revisions, agent memory, trust ledger) có test khẳng định 0 dòng trong site con.
+- [ ] Fork ở giới hạn item đã chốt hoàn tất trong ngân sách thời gian đã chốt ở G0, trên cả runtime Docker và Workers.
+- [ ] Checklist bảo mật xuyên site (bên dưới) pass.
+
+### GC — Schema_Promote
+
+- [ ] Dry-run không ghi gì (so hash schema Origin trước/sau).
+- [ ] Rename field trong Environment được nhận là rename, không phải delete + create (dữ liệu field ở Origin còn nguyên sau apply).
+- [ ] Đổi kiểu có `migrationPlan` chuyển đổi đúng cả item tạo ở Origin **sau** thời điểm fork.
+- [ ] Hai bên cùng sửa một field → apply bị từ chối cho tới khi có resolution.
+- [ ] Thiếu `confirmRiskyChange`/`migrationPlan` cho thay đổi rủi ro → 422, không ghi.
+- [ ] UI nói rõ thao tác này không hoàn tác được trước khi cho bấm apply.
+
+### GD — Content_Promote một chiều
+
+- [ ] Item mà Origin đã lệch khỏi Base **không bao giờ** bị ghi đè (test có chủ đích sửa Origin giữa dry-run và apply).
+- [ ] Sau promote, tham chiếu trong `data` ở Origin trỏ về id Origin; không còn id của Environment nào lọt sang (quét toàn bộ data sau test).
+- [ ] Item mới tham chiếu item mới, kể cả vòng, được tạo đúng.
+- [ ] Editorial gate, permission theo collection và `pinnedFields` của Origin chặn đúng như một lần ghi thường.
+- [ ] Giết tiến trình giữa chừng rồi chạy lại → item đã áp dụng không bị ghi lần hai, không revision trùng.
+- [ ] Hai promote đồng thời trên cùng Origin → một cái `ENVIRONMENT_BUSY`.
+- [ ] Checklist bảo mật xuyên site pass.
+
+### GE — Merge ba chiều, UI, hoàn tác
+
+- [ ] Property test của `threeWay` pass với seed ngẫu nhiên, gồm field đa ngôn ngữ.
+- [ ] Còn conflict chưa giải quyết → 422, 0 item bị ghi.
+- [ ] Base không dựng được → item thành conflict toàn phần, không tự merge.
+- [ ] Hoàn tác một merge run đưa các item chưa bị sửa thêm về đúng trạng thái trước merge (so hash); item đã bị sửa thêm ra `conflict`, không bị đụng.
+- [ ] Revision tạo bởi merge mang provenance environment id + merge run id.
+- [ ] UI conflict dùng được bằng bàn phím và đúng ở cả theme sáng/tối; đã kiểm trên bản shell.
+
+### GF — Docs, Registry
+
+- [ ] Cặp docs EN/VI qua `parity` → `verify` → `stamp-pair --verified` → `detect` báo up-to-date; artifact detect đã bỏ.
+- [ ] Dòng Setup Impact đã ghi, ID không trùng nhánh đang mở.
+- [ ] CHANGELOG có ghi chú migration và hành vi mới của `ETag`/`If-Match`.
+
+### Checklist bảo mật xuyên site (áp cho GB, GD, GE)
+
+- [ ] Không endpoint nào nhận `siteId` thứ hai từ request; cặp (Origin, Environment) luôn nạp từ bảng `environments` theo `site_id` của context.
+- [ ] Gọi promote/merge với `key` của Environment thuộc Origin khác → 404, không lộ sự tồn tại.
+- [ ] Environment và Origin khác `organizationId` (dựng tay trong test) → bị từ chối ở service.
+- [ ] User có quyền ở Environment nhưng không có quyền ghi ở Origin → bị từ chối từng item, không promote được gì.
+- [ ] API key (kể cả key có `schema:write`) → bị từ chối ở mọi route `/environments*`.
+- [ ] Mọi query trong `EnvironmentService` và fork worker có lọc `site_id`; RLS bật trong test, không chạy bằng role bypass.
+- [ ] Mỗi phát hiện từ agent/sweep bảo mật được xác minh tại call site trước khi sửa.
+
+---
+
 ## Implementation status
 
 **Chưa bắt đầu.** Spec viết 2026-11-13. Chưa có code, migration hay docs nào cho feature này.
