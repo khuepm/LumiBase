@@ -9,7 +9,23 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+- **Digital asset management (epic #670).** The files module becomes an asset library. See `docs/en/features/digital-asset-management.md`.
+  - Replace in place (#703): `PUT /api/v1/files/:id/content` keeps the id, storage key, folder and every reference, bumps `version`, keeps the previous binary for `versionRetentionDays` (default 30) with `GET …/versions` + `POST …/versions/:versionId/restore`, and purges the file's edge copies plus the cache tags of every collection that references it. `GET /api/v1/files/:id/content` delivers by id (`?v=<version>` → immutable).
+  - Duplicates, where used, safe delete (#706): SHA-256 `content_hash` on registration and replace, `GET /api/v1/files/duplicates?hash=`, `GET /api/v1/files/:id/usage` (items + pages), and `DELETE` answering `409 FILE_IN_USE` with the references unless `?confirm=true` (`deletePolicy: confirm`) — or never (`block`).
+  - Embedded metadata (#705): EXIF/IPTC/XMP extracted from JPEG/PNG/WebP/TIFF into `files.metadata.embedded`, searchable through `GET /api/v1/files?search=`; optional `stripGpsOnPublic` removes GPS from delivered bytes.
+  - Folders (#701): folder tree endpoint, rename/move with cycle guard, empty-only folder delete, Studio sidebar with drag-to-move; members get folder-scoped access through `files` policy rules on `folder` / `folder_path` / `uploaded_by` / `mime`.
+  - Bulk upload (#702): Studio queue (3 concurrent, retry with backoff, per-file errors, duplicate prompt) and `POST /api/v1/files/bulk` for move + alt/caption/credit/tags.
+  - Media picker (#708): one picker for the library, `file`/`files` fields and extensions (`getStudioHost().openMediaPicker({ initiallySelected, multiple, allowedMimeTypes, folder, max })` in `@lumibase/extension-sdk`); server-side `folder`/`subfolders`/`search`/`mime`/`ids`/`limit`/`offset` filters on `GET /api/v1/files`.
+  - Malware scanning (#707), off by default: HTTP scanner adapter (`MALWARE_SCAN_URL`, `MALWARE_SCAN_TOKEN`, `MALWARE_SCAN_FIELD`), docker-compose profile `malware-scan` (ClamAV + REST front), `scanStatus` quarantine gate (`423`) on delivery, audit events `file_quarantined` / `file_scan_clean` / `file_scan_error`.
+  - SDK: `files.list(query)`, `get`, `replaceContent`, `contentUrl`, `versions`, `restoreVersion`, `usage`, `duplicates`, `bulk`, `settings`, `delete(id, { confirm })`, `folders.tree()`.
+
+### Changed
+- `/api/v1/files` is no longer site-admin only: members with a `files` policy permission are admitted, scoped per file by the permission's rule. Sites that never grant `files` see no change. Folder management, `PUT /api/v1/files/settings` and `POST /api/v1/files/:id/scan` stay site-admin only.
+- `DELETE /api/v1/files/folders/:id` refuses a non-empty folder with `409 FOLDER_NOT_EMPTY` (it used to fail on the files' foreign key).
+
+### Upgrade notes
+- Migration `0035_dam_assets` is additive and idempotent (`lumibase_files.content_hash` / `version` / `scan_status` / `updated_at`, new `lumibase_file_versions`). No backfill is required: existing files keep `scan_status = skipped` (served as before) and a NULL hash, which only means they do not show up as duplicates until replaced. If you run with `LUMIBASE_DB_RLS=enforce`, re-apply `rls-policies.sql` so the new table gets the `site_isolation` policy pair.
 
 ## [2.1.0] - 2026-11-16
 

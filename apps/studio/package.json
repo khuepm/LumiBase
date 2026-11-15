@@ -20,6 +20,7 @@
     "@hookform/resolvers": "^7.0.5",
     "@lumibase/sdk": "workspace:*",
     "@lumibase/contracts": "workspace:*",
+    "@lumibase/extension-sdk": "workspace:*",
     "@lumibase/ui": "workspace:*",
     "@monaco-editor/react": "^4.6.0",
     "@simplewebauthn/browser": "^13.3.0",

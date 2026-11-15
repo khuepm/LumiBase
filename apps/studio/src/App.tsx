@@ -7,6 +7,7 @@ import { getApiBaseUrl } from './lib/api-base';
 import { isDesktopShell } from './lib/shell';
 import { ServerConnection } from './components/server-connection';
 import { hydrateTokens } from './lib/token-store';
+import { MediaPickerProvider } from './modules/files/media-picker';
 
 /**
  * Root component. Hands off to TanStack Router; AppShell + active module
@@ -36,7 +37,10 @@ export function App() {
   return (
     <>
       <SiteThemeStyle />
-      <RouterProvider router={router} />
+      {/* One media picker for fields, the library and UI extensions (#708). */}
+      <MediaPickerProvider>
+        <RouterProvider router={router} />
+      </MediaPickerProvider>
     </>
   );
 }

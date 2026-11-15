@@ -418,6 +418,9 @@ importers:
       '@lumibase/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@lumibase/extension-sdk':
+        specifier: workspace:*
+        version: link:../../packages/extension-sdk
       '@lumibase/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
