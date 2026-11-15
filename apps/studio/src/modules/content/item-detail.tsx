@@ -14,6 +14,7 @@ import { PresenceStack } from '@/components/presence-chip';
 import { CoEditingBanner } from '@/components/co-editing-banner';
 import { useCoEditors } from '@/hooks/use-presence';
 import { resolveInterface } from './interfaces/registry';
+import { useExtensionUpdates } from '@/lib/extension-loader';
 import { GroupContainer, type GroupVariant } from './interfaces/group';
 import { RawToggle } from './interfaces/raw-toggle';
 import { ProvenanceBadge } from './provenance-badge';
@@ -870,6 +871,8 @@ export function FieldsTab({
   /** Field permission that makes a cell writable; `create` on the new-item form. */
   writeAction?: Extract<PermissionAction, 'create' | 'update'>;
 }) {
+  // resolveInterface reads the extension registry during render.
+  useExtensionUpdates();
   if (fields.length === 0) {
     return <p className="text-sm text-muted-foreground">No editable fields.</p>;
   }

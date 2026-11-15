@@ -41,6 +41,12 @@ export interface ExtensionDevReloadEvent {
   protocol: typeof EXTENSION_DEV_PROTOCOL;
   name: string;
   type: ExtensionDevServerType | ExtensionDevUiType;
+  /**
+   * Random id of the `lumibase-ext dev` run that built this bundle. `version`
+   * restarts at 1 when the CLI restarts, so clients compare versions only
+   * within one session (see `supersedesDevBuild`).
+   */
+  session: string;
   version: number;
   /** ISO timestamp of the build that produced `version`. */
   builtAt: string;
@@ -104,6 +110,7 @@ export function parseExtensionDevReloadEvent(raw: unknown): ExtensionDevReloadEv
   if (r.protocol !== EXTENSION_DEV_PROTOCOL) return null;
   if (typeof r.name !== 'string' || !/^[a-z0-9][a-z0-9-_/]*$/.test(r.name)) return null;
   if (typeof r.type !== 'string' || !ALL_TYPES.includes(r.type)) return null;
+  if (typeof r.session !== 'string' || !/^[0-9a-z]{8,64}$/i.test(r.session)) return null;
   if (typeof r.version !== 'number' || !Number.isSafeInteger(r.version) || r.version < 1) return null;
   if (typeof r.builtAt !== 'string') return null;
   if (typeof r.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(r.sha256)) return null;
@@ -113,12 +120,29 @@ export function parseExtensionDevReloadEvent(raw: unknown): ExtensionDevReloadEv
     protocol: EXTENSION_DEV_PROTOCOL,
     name: r.name,
     type: r.type as ExtensionDevReloadEvent['type'],
+    session: r.session,
     version: r.version,
     builtAt: r.builtAt,
     sha256: r.sha256,
     capabilities: [...r.capabilities],
     siteId: r.siteId as string | null,
   };
+}
+
+/**
+ * True when `next` should replace the build a client holds. Within one CLI
+ * session only a higher version wins (a `hello` replay after a reconnect
+ * repeats old events). A different session always wins: after a CLI restart
+ * the versions start again at 1, and the restarted CLI holds the current
+ * source.
+ */
+export function supersedesDevBuild(
+  held: { session: string; version: number } | undefined,
+  next: { session: string; version: number },
+): boolean {
+  if (!held) return true;
+  if (held.session !== next.session) return true;
+  return next.version > held.version;
 }
 
 /** True when the reload targets the CMS process rather than Studio. */

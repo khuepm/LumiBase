@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import {
@@ -48,6 +48,8 @@ export interface DevHub {
   /** Base URL, e.g. `http://127.0.0.1:4790`. */
   readonly url: string;
   readonly port: number;
+  /** Random id of this hub run, stamped on every reload event. */
+  readonly session: string;
   /** Store a new build and broadcast its reload event. */
   publish(input: PublishInput): ExtensionDevReloadEvent;
   /** Broadcast a build failure (clients keep the previous version). */
@@ -90,6 +92,9 @@ export async function startDevHub(options: DevHubOptions): Promise<DevHub> {
   const heartbeatMs = options.heartbeatMs ?? 15_000;
 
   const builds = new Map<string, StoredBuild[]>();
+  // Versions restart at 1 with each CLI run; the session id lets clients that
+  // reconnect after a restart tell the new v1 from the old one.
+  const session = randomBytes(8).toString('hex');
   const subscribers = new Set<ServerResponse>();
 
   const latestEvents = (): ExtensionDevReloadEvent[] =>
@@ -189,11 +194,13 @@ export async function startDevHub(options: DevHubOptions): Promise<DevHub> {
   return {
     url: `http://${urlHost}:${port}`,
     port,
+    session,
     publish(input) {
       const event: ExtensionDevReloadEvent = {
         protocol: EXTENSION_DEV_PROTOCOL,
         name: input.name,
         type: input.type,
+        session,
         version: input.version,
         builtAt: new Date().toISOString(),
         sha256: createHash('sha256').update(input.code).digest('hex'),

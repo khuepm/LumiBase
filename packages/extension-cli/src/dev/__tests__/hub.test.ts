@@ -1,6 +1,6 @@
 import { request } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
-import { isLoopbackUrl, parseExtensionDevReloadEvent } from '@lumibase/contracts/extensions';
+import { isLoopbackUrl, parseExtensionDevReloadEvent, supersedesDevBuild } from '@lumibase/contracts/extensions';
 import { startDevHub, type DevHub } from '../hub';
 import { generateSessionToken, tokensMatch, assertUsableToken, defaultTokenFilePath } from '../session';
 import { openSse } from './sse-client';
@@ -55,7 +55,7 @@ describe('wire protocol helpers', () => {
 
   it('rejects malformed reload events', () => {
     const ok = {
-      protocol: 1, name: 'a', type: 'hook', version: 1, builtAt: 'x',
+      protocol: 1, name: 'a', type: 'hook', session: '0123abcd', version: 1, builtAt: 'x',
       sha256: 'a'.repeat(64), capabilities: [], siteId: null,
     };
     expect(parseExtensionDevReloadEvent(ok)).toEqual(ok);
@@ -63,6 +63,17 @@ describe('wire protocol helpers', () => {
     expect(parseExtensionDevReloadEvent({ ...ok, version: 0 })).toBeNull();
     expect(parseExtensionDevReloadEvent({ ...ok, type: 'shell' })).toBeNull();
     expect(parseExtensionDevReloadEvent({ ...ok, protocol: 2 })).toBeNull();
+    expect(parseExtensionDevReloadEvent({ ...ok, session: undefined })).toBeNull();
+    expect(parseExtensionDevReloadEvent({ ...ok, session: 'x' })).toBeNull();
+  });
+
+  it('a restarted CLI session supersedes the old one even with a lower version', () => {
+    expect(supersedesDevBuild(undefined, { session: 'aaaa1111', version: 1 })).toBe(true);
+    expect(supersedesDevBuild({ session: 'aaaa1111', version: 3 }, { session: 'aaaa1111', version: 3 })).toBe(false);
+    expect(supersedesDevBuild({ session: 'aaaa1111', version: 3 }, { session: 'aaaa1111', version: 2 })).toBe(false);
+    expect(supersedesDevBuild({ session: 'aaaa1111', version: 3 }, { session: 'aaaa1111', version: 4 })).toBe(true);
+    // CLI restarted: its versions start at 1 again.
+    expect(supersedesDevBuild({ session: 'aaaa1111', version: 3 }, { session: 'bbbb2222', version: 1 })).toBe(true);
   });
 });
 
@@ -114,6 +125,8 @@ describe('dev hub', () => {
     const last = events.filter((e) => e.event === 'reload').pop()?.data as { version: number; sha256: string };
     expect(last.version).toBe(3);
     expect(last.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect((last as { session?: string }).session).toBe(hub.session);
+    expect(hub.session).toMatch(/^[0-9a-f]{16}$/);
     sse.close();
   });
 

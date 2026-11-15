@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { FieldResource } from '@lumibase/sdk';
 import { cn } from '@/lib/cn';
 import { resolveInterface } from './registry';
+import { useExtensionUpdates } from '@/lib/extension-loader';
 import { readOptions, type InterfaceComponent } from './types';
 
 interface RepeaterOptions {
@@ -125,6 +126,7 @@ function RepeaterRow({
   onRemove: () => void;
   onMove: (dir: -1 | 1) => void;
 }) {
+  useExtensionUpdates(); // sub-fields resolve extension interfaces during render
   const title = labelTemplate
     ? labelTemplate.replace(/\{(\w+)\}/g, (_m, key) => String(row[key] ?? '')).trim() ||
     `Item ${idx + 1}`

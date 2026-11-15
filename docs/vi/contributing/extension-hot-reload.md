@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-15T16:54:44.994Z
+version: 2
+lastUpdated: 2026-11-15T18:31:42.616Z
 translatedFrom: en
-sourceHash: e77f7c67c470a420
+sourceHash: 61292a384b662999
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T16:54:44.994Z
-codeVerifiedHash: e77f7c67c470a420
+codeVerified: 2026-11-15T18:31:42.616Z
+codeVerifiedHash: 61292a384b662999
 codeVerifiedClaims: 40
 ---
 
@@ -44,13 +44,16 @@ codeVerifiedClaims: 40
 
 - **Chỉ build thành công mới được phát.** Một build không biên dịch được sẽ được phát dưới dạng `build-error`. Studio và CMS tiếp tục chạy phiên bản trước và ghi log lỗi.
 - **Mỗi build nhận một `version` mới.** Đây là bộ đếm theo phiên, đồng thời là khóa cache-busting của URL bundle (`?v=<version>`). Client bỏ qua phiên bản cũ hơn phiên bản đang chạy, nên một sự kiện đến muộn không bao giờ quay lui.
+- **Mỗi sự kiện ghi rõ `session`.** Mỗi lần chạy `lumibase-ext dev` chọn một session id ngẫu nhiên và version bắt đầu lại từ 1. Client thấy session mới sẽ nhận build của nó bất kể version, nên khởi động lại CLI trong khi Studio và CMS vẫn chạy không làm chúng kẹt ở code cũ.
+- **Lưu kiểu atomic vẫn được nhận.** Watcher giữ một watch cho mỗi thư mục, nên file mà editor thay bằng cách rename (vim, JetBrains safe write, formatter, `sed -i`) vẫn tiếp tục reload, và thư mục con mới được theo dõi.
 
 ## Cách dùng
 
 Thư mục extension cần có `lumibase-extension.json` hợp lệ (`name`, `version`, `type`, `entry`).
 
 ```bash
-npx tsx packages/extension-cli/src/cli.ts dev --dir ./my-extension
+# từ thư mục gốc repo; `exec` chạy trong thư mục package, nên truyền --dir tuyệt đối
+pnpm -F @lumibase/extension-cli exec tsx src/cli.ts dev --dir "$PWD/my-extension"
 ```
 
 | Cờ | Mặc định | Ý nghĩa |
@@ -80,7 +83,7 @@ Bundle UI dùng **React của Studio**. Builder resolve `react`, `react/jsx-runt
 Khởi động CMS bằng entry **Node** (không phải `wrangler dev`) kèm cờ dev:
 
 ```bash
-NODE_ENV=development LUMIBASE_EXTENSION_DEV=1 npx tsx apps/cms/src/serve.ts
+NODE_ENV=development LUMIBASE_EXTENSION_DEV=1 pnpm -F @lumibase/cms exec tsx src/serve.ts
 ```
 
 | Biến | Mặc định | Ý nghĩa |

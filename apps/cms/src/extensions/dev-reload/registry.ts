@@ -20,10 +20,13 @@
  * no Node-only imports — it is part of the sandbox's import graph, which also
  * ships in the Workers bundle, where it simply stays inactive.
  */
+import { supersedesDevBuild } from '@lumibase/contracts/extensions';
 
 export interface DevExtensionBuild {
   readonly name: string;
   readonly type: string;
+  /** `lumibase-ext dev` run that built it; versions restart per session. */
+  readonly session: string;
   /** Per-session monotonically increasing build number from the CLI. */
   readonly version: number;
   readonly sha256: string;
@@ -91,8 +94,7 @@ export class DevExtensionRegistry {
    */
   swap(build: DevExtensionBuild): boolean {
     if (!this.active) throw new ExtensionDevRefusedError('extension hot reload is not active');
-    const existing = this.current.get(build.name);
-    if (existing && existing.version >= build.version) return false;
+    if (!supersedesDevBuild(this.current.get(build.name), build)) return false;
     const next = new Map(this.current);
     next.set(build.name, Object.freeze({ ...build, capabilities: Object.freeze([...build.capabilities]) }));
     this.current = next;

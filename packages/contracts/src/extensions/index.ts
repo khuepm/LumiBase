@@ -23,6 +23,7 @@ export {
   extensionDevBundlePath,
   parseExtensionDevReloadEvent,
   isExtensionDevServerType,
+  supersedesDevBuild,
   type ExtensionDevServerType,
   type ExtensionDevUiType,
   type ExtensionDevReloadEvent,

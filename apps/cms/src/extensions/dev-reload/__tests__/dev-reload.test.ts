@@ -30,6 +30,7 @@ function hookBuild(version: number, calls: string[], gate?: Promise<void>, siteI
   return {
     name: 'dev-hook',
     type: 'hook',
+    session: 'sessaaaa',
     version,
     sha256: '0'.repeat(64),
     capabilities: [],
@@ -135,6 +136,16 @@ describe('extension hot reload — hook swap atomicity', () => {
     expect(reg.snapshot().get('dev-hook')?.version).toBe(2);
   });
 
+  it('a restarted lumibase-ext dev (new session, versions from 1) replaces the stale build', () => {
+    const reg = new DevExtensionRegistry();
+    reg.activate({ NODE_ENV: 'development' });
+    expect(reg.swap(hookBuild(3, []))).toBe(true);
+    expect(reg.swap({ ...hookBuild(1, []), session: 'sessbbbb' })).toBe(true);
+    expect(reg.snapshot().get('dev-hook')).toMatchObject({ session: 'sessbbbb', version: 1 });
+    // ...and the old session's replayed builds no longer win.
+    expect(reg.swap({ ...hookBuild(1, []), session: 'sessbbbb' })).toBe(false);
+  });
+
   it('a snapshot is never mutated by a later swap (copy-on-write)', () => {
     const reg = new DevExtensionRegistry();
     reg.activate({ NODE_ENV: 'development' });
@@ -230,6 +241,7 @@ function reloadEvent(code: string, overrides: Partial<ExtensionDevReloadEvent> =
     protocol: EXTENSION_DEV_PROTOCOL,
     name: 'dev-hook',
     type: 'hook',
+    session: 'sessaaaa',
     version: 1,
     builtAt: new Date().toISOString(),
     sha256: createHash('sha256').update(code).digest('hex'),

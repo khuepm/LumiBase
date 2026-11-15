@@ -6,7 +6,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined }));
+vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined, useExtensionUpdates: () => 0 }));
 import type { FieldResource } from '@lumibase/sdk';
 import type { PermissionHelpers } from '@/lib/use-permissions';
 import { FieldsTab } from '../item-detail';

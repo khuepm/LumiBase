@@ -119,7 +119,7 @@ export function connectExtensionDevHub(options: HubConnectionOptions): () => voi
         onError(`"${event.name}" v${event.version} does not export a component`);
         return;
       }
-      if (hotSwapExtension({ name: event.name, slot: event.type as ExtensionSlot, component, version: event.version })) {
+      if (hotSwapExtension({ name: event.name, slot: event.type as ExtensionSlot, component, session: event.session, version: event.version })) {
         options.onSwapped?.(event);
       }
     } catch (err) {

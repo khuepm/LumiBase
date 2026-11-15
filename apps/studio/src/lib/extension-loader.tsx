@@ -16,6 +16,7 @@ import { formatSafeError } from "@lumibase/contracts/utils";
  */
 
 import { type ComponentType, lazy, Suspense, useSyncExternalStore } from 'react';
+import { supersedesDevBuild } from '@lumibase/contracts/extensions';
 import { getApiClient } from '@/lib/api';
 import {
   clearIntentHandlers,
@@ -175,6 +176,7 @@ export async function loadExtensions(): Promise<ExtensionEntry[]> {
   }
 
   loaded = true;
+  notifyExtensionUpdates();
   return Array.from(cache.values());
 }
 
@@ -224,6 +226,7 @@ export function loadExtensionIntentHandlers(): Promise<void> {
 interface HotImpl {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   component: ComponentType<any>;
+  session: string;
   version: number;
 }
 
@@ -231,15 +234,34 @@ const hotImpls = new Map<string, HotImpl>();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const hotWrappers = new Map<string, ComponentType<any>>();
 const hotListeners = new Set<() => void>();
+/** Bumped whenever the set of resolvable extensions changes. */
+let extensionGeneration = 0;
 
 function subscribeHot(listener: () => void): () => void {
   hotListeners.add(listener);
   return () => hotListeners.delete(listener);
 }
 
+function notifyExtensionUpdates(): void {
+  extensionGeneration += 1;
+  for (const listener of [...hotListeners]) listener();
+}
+
 /** Subscribe to dev hot-swaps (any extension). Returns an unsubscribe fn. */
 export function subscribeExtensionUpdates(listener: () => void): () => void {
   return subscribeHot(listener);
+}
+
+const getExtensionGeneration = () => extensionGeneration;
+
+/**
+ * Re-render when an extension is loaded or hot-swapped. Components that pick
+ * a component through the registry DURING render (`resolveInterface`) call
+ * this: otherwise a form drawn before the dev hub's first build arrived keeps
+ * its fallback editor until something else happens to re-render it.
+ */
+export function useExtensionUpdates(): number {
+  return useSyncExternalStore(subscribeHot, getExtensionGeneration, getExtensionGeneration);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -272,11 +294,12 @@ export function hotSwapExtension(input: {
   slot: ExtensionSlot;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   component: ComponentType<any>;
+  /** `lumibase-ext dev` run; versions restart at 1 when the CLI restarts. */
+  session: string;
   version: number;
 }): boolean {
-  const prev = hotImpls.get(input.name);
-  if (prev && prev.version >= input.version) return false;
-  hotImpls.set(input.name, { component: input.component, version: input.version });
+  if (!supersedesDevBuild(hotImpls.get(input.name), input)) return false;
+  hotImpls.set(input.name, { component: input.component, session: input.session, version: input.version });
   const entry = cache.get(input.name);
   cache.set(input.name, {
     name: input.name,
@@ -284,7 +307,7 @@ export function hotSwapExtension(input: {
     component: hotWrapperFor(input.name),
     manifest: entry?.manifest ?? {},
   });
-  for (const listener of [...hotListeners]) listener();
+  notifyExtensionUpdates();
   return true;
 }
 

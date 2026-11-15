@@ -7,6 +7,7 @@ import {
   extensionDevBundlePath,
   isExtensionDevServerType,
   parseExtensionDevReloadEvent,
+  supersedesDevBuild,
   type ExtensionDevReloadEvent,
 } from '@lumibase/contracts/extensions';
 import type { ExtensionDevConfig } from './config';
@@ -89,8 +90,7 @@ export function startExtensionDevClient(options: ExtensionDevClientOptions): Ext
 
   async function apply(event: ExtensionDevReloadEvent, token: string): Promise<void> {
     if (!isExtensionDevServerType(event.type)) return; // UI slots are Studio's job
-    const current = registry.snapshot().get(event.name);
-    if (current && current.version >= event.version) return;
+    if (!supersedesDevBuild(registry.snapshot().get(event.name), event)) return;
 
     const res = await doFetch(`${config.hubUrl}${extensionDevBundlePath(event.name, event.version)}`, {
       headers: { authorization: `Bearer ${token}` },

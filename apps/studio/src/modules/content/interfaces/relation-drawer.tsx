@@ -5,6 +5,7 @@ import type { FieldResource } from '@lumibase/sdk';
 import { getApiClient } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { resolveInterface } from './registry';
+import { useExtensionUpdates } from '@/lib/extension-loader';
 
 type Mode = 'existing' | 'new';
 
@@ -210,6 +211,7 @@ function CreateForm({
   collection: string;
   onCreated: (id: string) => void;
 }) {
+  useExtensionUpdates(); // fields resolve extension interfaces during render
   const client = getApiClient();
   const [draft, setDraft] = useState<Record<string, unknown>>({});
 

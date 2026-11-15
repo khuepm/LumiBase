@@ -63,11 +63,12 @@ class FakeEventSource {
   }
 }
 
-function reload(name: string, version: number, type = 'interface') {
+function reload(name: string, version: number, type = 'interface', session = 'sessaaaa') {
   return {
     protocol: EXTENSION_DEV_PROTOCOL,
     name,
     type,
+    session,
     version,
     builtAt: new Date().toISOString(),
     sha256: createHash('sha256').update(`${name}${version}`).digest('hex'),
@@ -155,6 +156,13 @@ describe('Studio hot swap', () => {
     });
     expect(getHotExtensionVersion('color-picker')).toBe(2);
     expect(screen.getByText('v2:red')).toBeTruthy();
+
+    // The CLI restarted: a new session restarts versions at 1 and still swaps.
+    await act(async () => {
+      FakeEventSource.last!.emit('reload', reload('color-picker', 1, 'interface', 'sessbbbb'));
+    });
+    expect(await screen.findByText('v1:red')).toBeTruthy();
+    expect(getHotExtensionVersion('color-picker')).toBe(1);
 
     stop();
     expect(FakeEventSource.last?.closed).toBe(true);

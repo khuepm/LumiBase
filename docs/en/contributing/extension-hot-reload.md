@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 1
-lastUpdated: 2026-11-15T16:54:44.994Z
-contentHash: e77f7c67c470a420
-codeVerified: 2026-11-15T16:54:44.994Z
-codeVerifiedHash: e77f7c67c470a420
+version: 2
+lastUpdated: 2026-11-15T18:31:42.616Z
+contentHash: 61292a384b662999
+codeVerified: 2026-11-15T18:31:42.616Z
+codeVerifiedHash: 61292a384b662999
 codeVerifiedClaims: 40
 ---
 
@@ -41,13 +41,16 @@ codeVerifiedClaims: 40
 
 - **Only successful builds are published.** A build that does not compile is broadcast as `build-error`. Studio and the CMS keep running the previous version and log the error.
 - **Each build gets a new `version`.** It is a per-session counter and also the cache-busting key of the bundle URL (`?v=<version>`). Clients ignore a version older than the one they run, so a late event never rolls back.
+- **Every event names its `session`.** Each `lumibase-ext dev` run picks a random session id and its versions start again at 1. A client that sees a new session takes its builds whatever their version, so restarting the CLI while Studio and the CMS stay up does not leave them on the old code.
+- **Atomic saves are seen.** The watcher keeps one watch per directory, so a file that an editor replaces through a rename (vim, JetBrains safe write, formatters, `sed -i`) keeps reloading, and new subdirectories are picked up.
 
 ## Usage
 
 The extension folder needs a valid `lumibase-extension.json` (`name`, `version`, `type`, `entry`).
 
 ```bash
-npx tsx packages/extension-cli/src/cli.ts dev --dir ./my-extension
+# from the repo root; `exec` runs in the package folder, so pass an absolute --dir
+pnpm -F @lumibase/extension-cli exec tsx src/cli.ts dev --dir "$PWD/my-extension"
 ```
 
 | Flag | Default | Meaning |
@@ -77,7 +80,7 @@ UI bundles use **Studio's React**. The builder resolves `react`, `react/jsx-runt
 Start the CMS on the **Node** entry (not `wrangler dev`) with the dev flag:
 
 ```bash
-NODE_ENV=development LUMIBASE_EXTENSION_DEV=1 npx tsx apps/cms/src/serve.ts
+NODE_ENV=development LUMIBASE_EXTENSION_DEV=1 pnpm -F @lumibase/cms exec tsx src/serve.ts
 ```
 
 | Variable | Default | Meaning |
