@@ -23,7 +23,6 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
   type AuthenticationResponseJSON,
-  type AuthenticatorTransportFuture,
   type PublicKeyCredentialCreationOptionsJSON,
   type PublicKeyCredentialRequestOptionsJSON,
   type RegistrationResponseJSON,
@@ -206,7 +205,7 @@ export async function beginPasskeyRegistration(
     timeout: CEREMONY_TIMEOUT_MS,
     excludeCredentials: existing.map((p) => ({
       id: p.credentialId,
-      transports: (p.transports ?? []) as AuthenticatorTransportFuture[],
+      transports: p.transports ?? [],
     })),
     authenticatorSelection: {
       // Discoverable credentials make passwordless sign-in possible.
@@ -315,7 +314,7 @@ export async function beginPasskeyAuthentication(
     | { kind: 'mfa'; rp: WebAuthnRp; userId: string; siteId: string; jti: string }
     | { kind: 'login'; rp: WebAuthnRp; siteId: string },
 ): Promise<{ ceremonyId: string; options: PublicKeyCredentialRequestOptionsJSON }> {
-  let allowCredentials: { id: string; transports?: AuthenticatorTransportFuture[] }[] | undefined;
+  let allowCredentials: { id: string; transports?: string[] }[] | undefined;
   if (input.kind === 'mfa') {
     const rows = (await loadUserPasskeys(db, input.userId)).filter((p) => p.rpId === input.rp.rpId);
     if (rows.length === 0) {
@@ -323,7 +322,7 @@ export async function beginPasskeyAuthentication(
     }
     allowCredentials = rows.map((p) => ({
       id: p.credentialId,
-      transports: (p.transports ?? []) as AuthenticatorTransportFuture[],
+      transports: p.transports ?? [],
     }));
   }
   const options = await generateAuthenticationOptions({
@@ -404,7 +403,7 @@ export async function verifyPasskeyAssertion(
         // The regression check is done below so it can be told apart from a
         // bad signature and audited; 0 disables the library's own check.
         counter: 0,
-        transports: (row.transports ?? []) as AuthenticatorTransportFuture[],
+        transports: row.transports ?? [],
       },
     });
   } catch {
