@@ -70,7 +70,7 @@ export function TranslationMode({
         const source = localeValue(draft[field.name], sourceLocale);
         const target = localeValue(draft[field.name], targetLocale);
         return (
-          <div key={field.id} className="rounded-lg border bg-background p-3">
+          <div key={field.id} className="rounded-lg border bg-background p-3" data-field-anchor={field.name}>
             <div className="mb-2 text-xs font-medium text-muted-foreground">
               {field.label ?? field.name}
             </div>
@@ -98,6 +98,7 @@ export function TranslationMode({
                   readOnly={readOnly}
                   onChange={(e) => setTarget(field, e.target.value, 'human')}
                   rows={2}
+                  data-field-focus
                   aria-label={`${field.name} target (${targetLocale})`}
                   className="w-full rounded-md border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
                 />

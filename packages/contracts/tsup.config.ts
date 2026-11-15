@@ -8,6 +8,7 @@ export default defineConfig({
     'schemas/index': 'src/schemas/index.ts',
     'extensions/index': 'src/extensions/index.ts',
     'platform/index': 'src/platform/index.ts',
+    'intents/index': 'src/intents/index.ts',
     version: 'src/version.ts',
     'utils/logger': 'src/utils/logger.ts',
   },

@@ -143,7 +143,11 @@ export function handleUnauthorized(): void {
   clearActiveToken();
   // On `/` this is a reload, and that is fine: the token is gone, so the
   // reloaded page's anonymous 401s stop at the early return above.
-  window.location.assign(adminBase ? `${adminBase}/login` : '/');
+  // An intent link (#759) keeps its target across the forced re-login.
+  const intentNext = /^\/intent\/(open|create|edit)\/?$/.test(rest)
+    ? `?next=${encodeURIComponent(`${rest}${window.location.search ?? ''}`)}`
+    : '';
+  window.location.assign(adminBase ? `${adminBase}/login${intentNext}` : '/');
 }
 
 function createApiClient(token: string, site: string) {

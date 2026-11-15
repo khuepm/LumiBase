@@ -3,6 +3,7 @@ import { LogIn } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { getActiveSite, hasActiveToken, setActiveToken, setActiveRefreshToken, setActiveSite } from '@/lib/api';
 import { ADMIN_PATH_REGEX } from '@/modules/setup/schemas/admin-path';
+import { sanitizeIntentReturnTo } from '@/lib/intents/paths';
 
 interface AdminLoginPageProps {
   adminPath: string;
@@ -15,6 +16,18 @@ export function AdminLoginPage({ adminPath }: AdminLoginPageProps) {
   const navigate = useNavigate();
   const normalizedAdminPath = useMemo(() => normalizeRouteAdminPath(adminPath), [adminPath]);
   const recoveryBasePath = normalizedAdminPath ? `${normalizedAdminPath}/recovery` : '/recovery';
+  // Intent link waiting behind sign-in (#759). Only an admin-relative intent
+  // path is honoured; anything else (absolute URL, `//host`, other routes)
+  // is dropped, so `next` can never become an open redirect.
+  const returnTo = useMemo(() => {
+    if (typeof window === 'undefined' || !normalizedAdminPath) return null;
+    const next = sanitizeIntentReturnTo(new URLSearchParams(window.location.search).get('next'));
+    return next ? `${normalizedAdminPath}${next}` : null;
+  }, [normalizedAdminPath]);
+  const goAfterLogin = useCallback(() => {
+    if (returnTo) navigate({ href: returnTo, replace: true });
+    else if (normalizedAdminPath) navigate({ to: normalizedAdminPath });
+  }, [navigate, normalizedAdminPath, returnTo]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [step, setStep] = useState<LoginStep>('credentials');
@@ -31,18 +44,18 @@ export function AdminLoginPage({ adminPath }: AdminLoginPageProps) {
 
   useEffect(() => {
     if (normalizedAdminPath && hasActiveToken()) {
-      navigate({ to: normalizedAdminPath });
+      goAfterLogin();
     }
-  }, [navigate, normalizedAdminPath]);
+  }, [goAfterLogin, normalizedAdminPath]);
 
   const finishLogin = useCallback(
     (token: string, refreshToken?: string) => {
       setActiveSite(getActiveSite());
       setActiveToken(token);
       if (refreshToken) setActiveRefreshToken(refreshToken);
-      navigate({ to: normalizedAdminPath });
+      goAfterLogin();
     },
-    [navigate, normalizedAdminPath],
+    [goAfterLogin],
   );
 
   const onSubmitCredentials = useCallback(

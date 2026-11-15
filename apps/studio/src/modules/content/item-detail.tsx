@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { Check, ChevronDown, ChevronLeft, Copy, Lock, Pin, Save, Share2, Star, Trash2, X } from 'lucide-react';
 import type { SaveAction } from '@lumibase/contracts/schemas';
 import { useSaveAction, saveActionLabel } from './use-save-action';
@@ -23,7 +23,15 @@ import { VersionPanel } from './version-panel';
 import { DependentRecordsDialog, type DependentGroup } from './dependent-records-dialog';
 import { TranslationMode } from './translation-mode';
 import { translatableFields, tmLearnEntries } from './translatable-fields';
-import { useSiteLocales } from './use-site-locales';
+import { useSiteLocalesState } from './use-site-locales';
+import {
+  FieldRevealContext,
+  localeNoticeMessage,
+  planIntentLocale,
+  useIntentFieldFocus,
+  type LocalePlan,
+} from './field-focus';
+import { readEditorIntentSearch } from './editor-intent-search';
 import { ItemCreate } from './item-create';
 import { EditorialActions } from './editorial-actions';
 import { DraftReviewPanel } from './draft-review-panel';
@@ -39,11 +47,34 @@ type Tab = 'fields' | 'translation' | 'revisions' | 'versions' | 'raw';
 export function ItemDetailPage() {
   // Non-strict: rendered by both `/content/...` and `/$adminPath/content/...`.
   const { collection, id } = useParams({ strict: false }) as { collection: string; id: string };
-  if (id === 'new') return <ItemCreate key={collection} collection={collection} />;
-  return <ItemEditor key={`${collection}/${id}`} collection={collection} id={id} />;
+  // `?locale=&field=` come from intent links (issue #759); validated here so a
+  // hand-edited URL can never inject anything but a locale tag / field name.
+  const intentSearch = readEditorIntentSearch(useSearch({ strict: false }));
+  if (id === 'new') {
+    return <ItemCreate key={collection} collection={collection} intentField={intentSearch.field} />;
+  }
+  return (
+    <ItemEditor
+      key={`${collection}/${id}`}
+      collection={collection}
+      id={id}
+      intentLocale={intentSearch.locale}
+      intentField={intentSearch.field}
+    />
+  );
 }
 
-function ItemEditor({ collection, id }: { collection: string; id: string }) {
+function ItemEditor({
+  collection,
+  id,
+  intentLocale,
+  intentField,
+}: {
+  collection: string;
+  id: string;
+  intentLocale?: string;
+  intentField?: string;
+}) {
   const client = getApiClient();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -61,7 +92,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
   // Translation mode (translation-memory-ui): the site's default is the source
   // locale; the user picks a target to translate into.
-  const locales = useSiteLocales();
+  const { locales, isLoaded: localesLoaded } = useSiteLocalesState();
   const [targetLocale, setTargetLocale] = useState<string | null>(null);
   // Translatable fields the user set by hand (or applied a human TM match) in
   // this session — learned into TM on save when `translations.learnTm` is on.
@@ -191,7 +222,32 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
       setTargetLocale(locales.find((l) => l !== sourceLocale) ?? sourceLocale);
     }
   }, [locales, sourceLocale, targetLocale]);
-  const hasTranslatableFields = translatableFields(editable).length > 0;
+  const translatableEditable = useMemo(() => translatableFields(editable), [editable]);
+  const hasTranslatableFields = translatableEditable.length > 0;
+
+  // Intent links (issue #759): pick the tab/locale once the editor and the
+  // site's locale setting are loaded, then reveal + focus the linked field.
+  const [localePlan, setLocalePlan] = useState<LocalePlan | null>(null);
+  const editorReady =
+    Boolean(itemQuery.data) && draft !== null && fieldsQuery.isSuccess && !perms.isLoading;
+  useEffect(() => {
+    if (!intentLocale || localePlan || !editorReady || !localesLoaded) return;
+    const plan = planIntentLocale({
+      requested: intentLocale,
+      locales,
+      translatable: translatableEditable.map((f) => f.name),
+      field: intentField,
+    });
+    if (!plan) return;
+    setLocalePlan(plan);
+    setTab(plan.tab);
+    if (plan.targetLocale) setTargetLocale(plan.targetLocale);
+  }, [intentLocale, intentField, localePlan, editorReady, localesLoaded, locales, translatableEditable]);
+  const fieldFocus = useIntentFieldFocus({
+    field: intentField,
+    fields: tab === 'translation' ? translatableEditable : editable,
+    ready: editorReady && (!intentLocale || localePlan !== null),
+  });
 
   const isDirty = useMemo(() => {
     if (!itemQuery.data || draft === null) return false;
@@ -581,7 +637,20 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
         </div>
       )}
 
+      {localePlan?.notice && intentLocale && (
+        <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+          {localeNoticeMessage(localePlan.notice, intentLocale)}
+        </div>
+      )}
+      {fieldFocus.status === 'missing' && intentField && (
+        <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+          The linked field “{intentField}” is not available here — it may be hidden, removed, or
+          outside your permissions.
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_22rem]">
+        <FieldRevealContext.Provider value={fieldFocus.reveal}>
         <section className="rounded-lg border bg-background p-4">
           {tab === 'fields' && (
             <FieldsTab
@@ -646,6 +715,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
             />
           )}
         </section>
+        </FieldRevealContext.Provider>
 
         <aside className="rounded-lg border bg-muted/20 p-3">
           <h2 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Tabs</h2>
@@ -819,7 +889,7 @@ export function FieldsTab({
       const variant = f.interface.replace('group-', '') as GroupVariant;
       const children = fields.filter((c) => c.group === f.name).sort(bySort);
       return (
-        <div key={f.id} className="col-span-1 sm:col-span-2">
+        <div key={f.id} className="col-span-1 sm:col-span-2" data-field-anchor={f.name}>
           <GroupContainer variant={variant} field={f}>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children.map(renderField)}</div>
           </GroupContainer>
@@ -836,7 +906,7 @@ export function FieldsTab({
       onChange({ ...value, [f.name]: next });
     };
     return (
-      <div key={f.id} className={widthClass(f.width)}>
+      <div key={f.id} className={widthClass(f.width)} data-field-anchor={f.name}>
         <label className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
           <span>{f.name}</span>
           {f.required && <span className="text-destructive">*</span>}

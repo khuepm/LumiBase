@@ -9,6 +9,7 @@ import {
 import { lazy, Suspense, useEffect } from 'react';
 import { AppShell } from './components/app-shell';
 import { adminBaseRewrite } from './lib/admin-base';
+import { validateEditorIntentSearch } from './modules/content/editor-intent-search';
 import { BareLayout } from './components/bare-layout';
 import { AdminReadyGate } from './modules/setup/admin-ready-gate';
 import { shouldAutoRedirectToAdmin } from './modules/setup/setup-environment';
@@ -38,6 +39,7 @@ const RolesListPage = lazy(() => import('./modules/access/roles-page').then((m) 
 const TestSandboxPage = lazy(() => import('./modules/access/test-sandbox').then((m) => ({ default: m.TestSandboxPage })));
 const ContentIndexPage = lazy(() => import('./modules/content/index-page').then((m) => ({ default: m.ContentIndexPage })));
 const ItemDetailPage = lazy(() => import('./modules/content/item-detail').then((m) => ({ default: m.ItemDetailPage })));
+const IntentPage = lazy(() => import('./modules/intents/intent-page').then((m) => ({ default: m.IntentPage })));
 const ItemsListPage = lazy(() => import('./modules/content/items-list').then((m) => ({ default: m.ItemsListPage })));
 const ReviewQueuePage = lazy(() => import('./modules/editorial/review-queue').then((m) => ({ default: m.ReviewQueuePage })));
 const CollectionsListPage = lazy(() => import('./modules/data-model/list').then((m) => ({ default: m.CollectionsListPage })));
@@ -507,7 +509,23 @@ const contentReviewsRoute = createRoute({
 const contentItemRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/content/$collection/$id',
+  validateSearch: validateEditorIntentSearch,
   component: withSuspense(ItemDetailPage),
+});
+
+// Intent links (#759): `/intent/{open|create|edit}?collection&id&locale&field&site`.
+// Under the admin layout so the auth gate runs first (and preserves the link
+// across sign-in); the page parses the raw query itself.
+const intentRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/intent/$action',
+  component: withSuspense(IntentPage),
+});
+
+const adminPathIntentRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/intent/$action',
+  component: withSuspense(IntentPage),
 });
 
 const adminPathContentCollectionRoute = createRoute({
@@ -525,6 +543,7 @@ const adminPathContentReviewsRoute = createRoute({
 const adminPathContentItemRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/content/$collection/$id',
+  validateSearch: validateEditorIntentSearch,
   component: withSuspense(ItemDetailPage),
 });
 
@@ -1320,6 +1339,7 @@ const routeTree = rootRoute.addChildren([
     contentCollectionRoute,
     contentReviewsRoute,
     contentItemRoute,
+    intentRoute,
     dataModelRoute,
     dataModelNewRoute,
     dataModelMcpSetupRoute,
@@ -1396,6 +1416,7 @@ const routeTree = rootRoute.addChildren([
     adminPathContentCollectionRoute,
     adminPathContentReviewsRoute,
     adminPathContentItemRoute,
+    adminPathIntentRoute,
     adminPathDataModelRoute,
     adminPathDataModelNewRoute,
     adminPathDataModelMcpSetupRoute,

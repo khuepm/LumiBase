@@ -5,6 +5,7 @@ export * from './schemas/index';
 export * from './realtime/protocol';
 export * from './agent-tools/index';
 export * from './platform/index';
+export * from './intents/index';
 export type ID = string;
 export type Locale = string;
 
