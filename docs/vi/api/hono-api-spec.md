@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 46
-lastUpdated: 2026-11-14T12:31:26.652Z
+version: 47
+lastUpdated: 2026-11-15T11:57:29.353Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 05c921e5657b5afa
+sourceHash: a68ec4f1c4658ca0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T12:31:26.652Z
-codeVerifiedHash: 05c921e5657b5afa
+codeVerified: 2026-11-15T11:57:29.353Z
+codeVerifiedHash: a68ec4f1c4658ca0
 codeVerifiedClaims: 518
 ---
 
@@ -116,6 +116,7 @@ Phản hồi lỗi:
 | `_json_contains` | JSONB `@>` — chứa giá trị / sub-object / phần tử mảng |
 | `_has_key` | Trường JSON object có chứa key này |
 | `_has_any_keys`, `_has_all_keys` | Trường JSON object chứa bất kỳ / tất cả các key này (mảng chuỗi) |
+| `_near`, `_within_bbox` | Trường geopoint: trong bán kính `{ lat, lng, radius }` mét / trong khung `[minLng, minLat, maxLng, maxLat]` — xem [Trường geopoint](../features/geopoint.md) |
 
 **Tìm kiếm bên trong JSON.** Một key trường lọc có thể là **đường dẫn dấu chấm** vào trường JSON/JSONB lồng nhau — ví dụ `filter={"metadata.author.country":{"_eq":"VN"}}` biên dịch thành tra cứu `data #>> '{metadata,author,country}'`. Các phân đoạn đường dẫn bị giới hạn trong `[A-Za-z0-9_]` và được bind dưới dạng tham số (an toàn trước SQL injection); độ sâu tối đa là 8. Các toán tử `_json_contains` / `_has_*` chạy trên JSONB và sử dụng index GIN hiện có. Các key cấp cao nhất và các trường cấu trúc hoạt động chính xác như trước.
 
