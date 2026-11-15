@@ -1,6 +1,7 @@
 import { and, asc, eq, gt, isNotNull, isNull, lte, ne, or } from 'drizzle-orm';
 import { collections, items, settings, scopeSite, type Database } from '@lumibase/database';
 import type { QueueProvider } from '@lumibase/runtime';
+import { nextItemVersion } from './item-etag';
 import { dispatchRevalidation, parseTargets } from './revalidation';
 import { AuditLogger } from '../modules/audit/logger';
 import { itemServiceForSystem } from './item-service-factory';
@@ -97,7 +98,7 @@ export async function sweepDuePublish(deps: SchedulerDeps, now = new Date()): Pr
   for (const row of due) {
     await deps.db
       .update(items)
-      .set({ status: 'published', editorialState: 'published', updatedAt: new Date() })
+      .set({ status: 'published', editorialState: 'published', updatedAt: new Date(), version: nextItemVersion() })
       .where(and(eq(items.id, row.id), ne(items.status, 'published')));
   }
 
@@ -150,6 +151,7 @@ export async function sweepDueUnpublish(deps: SchedulerDeps, now = new Date()): 
         status: target,
         editorialState: target === 'draft' ? 'draft' : null,
         updatedAt: new Date(),
+        version: nextItemVersion(),
       })
       .where(and(eq(items.id, row.id), eq(items.status, 'published')));
     if (!collIdsBySite.has(row.siteId)) collIdsBySite.set(row.siteId, new Set());
@@ -253,7 +255,7 @@ export async function sweepRetention(deps: SchedulerDeps, now = new Date()): Pro
         if (policy.action === 'archive') {
           const r = await deps.db
             .update(items)
-            .set({ status: 'archived', updatedAt: new Date() })
+            .set({ status: 'archived', updatedAt: new Date(), version: nextItemVersion() })
             .where(and(eq(items.id, it.id), ne(items.status, 'archived')))
             .returning({ id: items.id });
           if (r.length > 0) count += 1;

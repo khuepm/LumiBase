@@ -12,6 +12,7 @@
  */
 
 import { and, desc, eq } from 'drizzle-orm';
+import { nextItemVersion } from './item-etag';
 import {
   collections,
   contentReviews,
@@ -183,7 +184,12 @@ export class EditorialService {
     const next = applyTransition(current, action);
     await this.deps.db
       .update(items)
-      .set({ editorialState: next, status: statusForEditorialState(next), updatedAt: new Date() })
+      .set({
+        editorialState: next,
+        status: statusForEditorialState(next),
+        updatedAt: new Date(),
+        version: nextItemVersion(),
+      })
       .where(and(scopeSite(items.siteId, this.deps.siteId), eq(items.collectionId, collId), eq(items.id, itemId)));
     await this.audit(collectionName, itemId, current, next, action);
     return next;
