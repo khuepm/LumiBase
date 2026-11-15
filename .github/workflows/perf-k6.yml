@@ -130,6 +130,12 @@ jobs:
           # request in the smoke run is refused.
           LUMIBASE_DEV_AUTH: 'true'
           LUMIBASE_ENV: development
+          # k6 drives every request from one IP. The delivery limiter's default
+          # 1200 req/min/IP is an abuse guard, not a capacity limit, and the
+          # deliver mix (~40 req/s) trips it after 1200 requests: 429s then
+          # fail http_req_failed. Turn it off for this single-IP generator, as
+          # apps/cms/k6/README.md prescribes for load runs.
+          LUMIBASE_DELIVER_RATE_LIMIT: '0'
         run: |
           pnpm -F @lumibase/cms exec tsx src/serve.ts &
           for _ in $(seq 1 60); do
