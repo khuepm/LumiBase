@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-11-14T12:26:57.226Z
+version: 2
+lastUpdated: 2026-11-15T12:16:37.469Z
 sourceLang: en
-contentHash: b9b358bafbe19e63
-codeVerified: 2026-11-14T12:26:57.226Z
-codeVerifiedHash: b9b358bafbe19e63
+contentHash: f141651b66419caa
+codeVerified: 2026-11-15T12:16:37.469Z
+codeVerifiedHash: f141651b66419caa
 codeVerifiedClaims: 30
 ---
 
@@ -26,7 +26,8 @@ Three properties hold for every seam:
   throws, the CMS logs the failure and continues as if the default had answered.
 
 This page covers the registry, the composable entry points, the cached
-site-to-organization lookup, and the entitlement resolver.
+site-to-organization lookup, the entitlement resolver, and the external-action
+tool source.
 
 ## Where things live
 
@@ -261,6 +262,29 @@ Guidelines:
 - `req.tenant.organizationId` can be `null`: the site may be unknown, or the
   lookup may have failed. Decide what your implementation does in that case.
 - `ctx.requestId` is `null` outside a request (cron, queue consumers).
+
+## External-action tools
+
+The `externalActions` seam lets a deployment entry hand over agent tools that
+call systems outside the CMS, from a package this repository does not import.
+
+```ts
+registerPlatformSeams({ externalActions: { tools: () => myTools() } });
+```
+
+It differs from the other seams in two ways, both deliberate:
+
+- **It is read at registration, not per request.** `tools()` runs once inside
+  `registerPlatformSeams()`, and every definition is validated and registered
+  into the process-wide tool registry there.
+- **A failure is not absorbed.** A malformed or duplicate definition makes
+  `registerPlatformSeams()` throw and registers none of the tools. Running with a
+  tool silently missing, or with half a tool set, would change what agents may do
+  without anyone noticing.
+
+Default: no tools. The declaration format, the decision rule and the optional
+pre-execution policy are described in
+[External-action tools](../features/external-action-tools.md).
 
 ## Multi-tenancy
 
