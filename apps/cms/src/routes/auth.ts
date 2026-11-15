@@ -26,6 +26,8 @@ import {
   REFRESH_CSRF_HEADER,
   listUserSessions,
   revokeSessionById,
+  revokeOtherSessions,
+  newSessionId,
 } from '../services/auth/refresh-token';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import {
@@ -40,10 +42,11 @@ import {
 import { sendVerificationEmail } from '../modules/email/verify-email';
 import { sendPasswordResetEmail } from '../modules/email/password-reset';
 import {
-  checkRegistrationRate,
-  checkIpRateLimit,
+  checkAuthFlowRate,
   DEFAULT_REGISTRATION_RATE_LIMIT,
+  TOKEN_CONSUME_RATE_LIMIT,
 } from '../modules/auth/registration-guard';
+import { consumeEmailVerification, consumePasswordReset } from '../services/auth/single-use-consume';
 import {
   loginGuardMiddleware,
   loadLockoutPolicyFromSettings,
@@ -68,11 +71,18 @@ import { createTimeSubscore } from '../modules/anomaly/time';
 import { createDeviceSubscore } from '../modules/anomaly/device';
 import type { LoginAttemptDraft } from '../modules/anomaly/types';
 import { getSecurityNotificationDispatcher, scheduleWorkersDrain } from '../modules/notifications/security-dispatcher';
+import { detectNewDevice, scheduleNewDeviceNotice } from '../modules/security-history/new-device';
 import type { NotificationDeps } from '../modules/login-guard/hooks';
 import { AuditLogger } from '../modules/audit/logger';
 import { formatSafeError } from '@lumibase/contracts/utils';
-import { UserPreferencesUpdateSchema, PasswordSchema } from '@lumibase/contracts/schemas';
-import { isUserTotpEnabled } from '../modules/mfa/totp-service';
+import { UserPreferencesUpdateSchema, toPublicPasswordPolicy } from '@lumibase/contracts/schemas';
+import {
+  NewPasswordInputSchema,
+  checkNewPassword,
+  loadPasswordPolicy,
+  passwordPolicyErrorBody,
+} from '../services/auth/password-policy';
+import { loadSecondFactors, methodsOf } from '../modules/mfa/tfa-state';
 import { signMfaChallengeToken } from '../services/auth/mfa-challenge';
 
 /**
@@ -168,8 +178,9 @@ meRouter.get('/admin-path', async (c) => {
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
-  // Shared strength policy (min 12 + complexity) — CWE-521.
-  newPassword: PasswordSchema,
+  // Bounded string only; the configurable password policy (#733) is enforced
+  // below so a failure names each rule instead of a generic Zod message.
+  newPassword: NewPasswordInputSchema,
 });
 
 /**
@@ -209,6 +220,11 @@ meRouter.post('/change-password', async (c) => {
       401,
     );
   }
+
+  const policyFailure = await checkNewPassword(c, input.newPassword, {
+    userInputs: [user.email, auth.email],
+  });
+  if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
 
   const passwordHash = await hashPassword(input.newPassword);
   const now = new Date();
@@ -324,36 +340,110 @@ meRouter.get('/sessions', async (c) => {
   if (!auth.userId) {
     return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
   }
-  const data = await listUserSessions(c.get('db'), c.get('siteId'), auth.userId);
+  const current = currentSessionId(auth);
+  const sessions = await listUserSessions(c.get('db'), c.get('siteId'), auth.userId);
+  const data = sessions.map((s) => ({ ...s, current: current !== null && s.sessionId === current }));
   return c.json({ data });
 });
 
-/** `DELETE /api/v1/me/sessions/:id` — revoke one of the caller's own sessions. */
+/** The `sid` (session id) of the caller's access JWT, if it carries one. */
+function currentSessionId(auth: { raw?: Record<string, unknown> }): string | null {
+  const sid = auth.raw?.sid;
+  return typeof sid === 'string' && sid.length > 0 ? sid : null;
+}
+
+/** Audit a self-service session revocation (one, others, or all). */
+async function auditSessionRevocation(
+  c: Context<AppEnv>,
+  event: 'session_revoked' | 'sessions_revoked',
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  const auth = c.get('auth');
+  await new AuditLogger({ db: c.get('db'), siteId: c.get('siteId') }).write({
+    event,
+    actorEmail: auth.email ?? null,
+    ip: extractClientIp(c),
+    userAgent: c.req.header('user-agent') ?? null,
+    requestId: c.get('requestId') ?? null,
+    metadata: { userId: auth.userId, siteId: c.get('siteId'), ...metadata },
+  });
+}
+
+/**
+ * `DELETE /api/v1/me/sessions/:id` — revoke one of the caller's own
+ * sessions. `:id` is the stable `sessionId` (or, for older clients, the live
+ * row `id`). The revoked device's access token stops working immediately.
+ */
 meRouter.delete('/sessions/:id', async (c) => {
   const auth = c.get('auth');
   if (!auth.userId) {
     return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
   }
-  const removed = await revokeSessionById(
+  const revokedSessionId = await revokeSessionById(
     c.get('db'),
     c.get('siteId'),
     auth.userId,
     c.req.param('id'),
   );
-  if (!removed) {
+  if (!revokedSessionId) {
     return c.json({ errors: [{ code: 'NOT_FOUND', message: 'Session not found.' }] }, 404);
   }
-  return c.json({ data: { id: c.req.param('id'), revoked: true } });
+  const wasCurrent = revokedSessionId === currentSessionId(auth);
+  if (wasCurrent) clearRefreshCookie(c);
+  await auditSessionRevocation(c, 'session_revoked', {
+    sessionId: revokedSessionId,
+    current: wasCurrent,
+  });
+  return c.json({
+    data: { id: c.req.param('id'), sessionId: revokedSessionId, revoked: true, current: wasCurrent },
+  });
 });
 
-/** `DELETE /api/v1/me/sessions` — revoke ALL of the caller's sessions (logout everywhere). */
+/**
+ * `DELETE /api/v1/me/sessions` — revoke the caller's sessions.
+ *
+ *   - default (`?scope=all`): every session, including this one (logout
+ *     everywhere); the refresh cookie is cleared.
+ *   - `?scope=others`: every session EXCEPT the one making the request
+ *     ("sign out other devices"). Needs an access token that carries `sid`
+ *     (any login since #730); otherwise 409 `NO_CURRENT_SESSION`.
+ */
 meRouter.delete('/sessions', async (c) => {
   const auth = c.get('auth');
   if (!auth.userId) {
     return c.json({ errors: [{ code: 'UNAUTHENTICATED', message: 'No active session.' }] }, 401);
   }
+  const scope = c.req.query('scope') ?? 'all';
+  if (scope !== 'all' && scope !== 'others') {
+    return c.json(
+      { errors: [{ code: 'VALIDATION', message: 'scope must be "all" or "others".' }] },
+      400,
+    );
+  }
+
+  if (scope === 'others') {
+    const current = currentSessionId(auth);
+    if (!current) {
+      return c.json(
+        {
+          errors: [
+            {
+              code: 'NO_CURRENT_SESSION',
+              message: 'This token is not tied to a session. Sign in again, then retry.',
+            },
+          ],
+        },
+        409,
+      );
+    }
+    const revoked = await revokeOtherSessions(c.get('db'), c.get('siteId'), auth.userId, current);
+    await auditSessionRevocation(c, 'sessions_revoked', { scope: 'others', revoked });
+    return c.json({ data: { status: 'other_sessions_revoked', revoked } });
+  }
+
   await revokeAllRefreshTokens(c.get('db'), c.get('siteId'), auth.userId);
   clearRefreshCookie(c);
+  await auditSessionRevocation(c, 'sessions_revoked', { scope: 'all' });
   return c.json({ data: { status: 'all_sessions_revoked' } });
 });
 
@@ -442,9 +532,9 @@ async function signCustomJwt(
 
 const registerSchema = z.object({
   email: z.string().email(),
-  // Enforce the shared strength policy (min 12 + complexity) instead of the
-  // former weak min(6) (CWE-521).
-  password: PasswordSchema,
+  // Bounded here; the configurable password policy (#733) is enforced in the
+  // handler so the 400 names each failed rule (CWE-521).
+  password: NewPasswordInputSchema,
   firstName: z.string().optional(),
   lastName: z.string().optional(),
 });
@@ -464,10 +554,19 @@ const resendVerificationSchema = z.object({
 
 const resetPasswordSchema = z.object({
   token: z.string().min(1),
-  // Shared strength policy so the reset path can't drift below the min(12) +
-  // complexity rules the other password paths enforce (CWE-521).
-  password: PasswordSchema,
+  // Bounded here; the same password policy as every other path (#733) is
+  // enforced in the handler once the token is known to be valid (CWE-521).
+  password: NewPasswordInputSchema,
 });
+
+/** The `429` every public auth-flow brake answers with. */
+function rateLimitedResponse(c: Context<AppEnv>, retryAfterSeconds: number, message: string) {
+  return c.json(
+    { errors: [{ code: 'RATE_LIMITED', message, retryAfterSeconds }] },
+    429,
+    { 'retry-after': String(retryAfterSeconds) },
+  );
+}
 
 /**
  * Public self-service registration for FRONTEND end-users (the people who
@@ -498,7 +597,13 @@ authRouter.post('/register', async (c) => {
 
   // (3) Best-effort per-IP abuse brake. Runs before body parse / hashing
   // so a flood is cheap to reject.
-  const rate = await checkRegistrationRate(c.get('runtime').cache, siteId, ip);
+  const rate = await checkAuthFlowRate(
+    c.get('runtime'),
+    'reg-rate',
+    siteId,
+    ip,
+    DEFAULT_REGISTRATION_RATE_LIMIT,
+  );
   if (!rate.allowed) {
     return c.json(
       {
@@ -531,6 +636,13 @@ authRouter.post('/register', async (c) => {
     );
   }
   const input = parsedInput.data;
+  // Password policy (#733). Evaluated before the account lookup and
+  // independent of it, so the response cannot reveal whether the e-mail
+  // exists (anti-enumeration below still holds).
+  const policyFailure = await checkNewPassword(c, input.password, {
+    userInputs: [input.email, input.firstName, input.lastName],
+  });
+  if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
   const emailLower = normalizeEmail(input.email);
   // #794: resolve the account under the instance email identity mode
   // (`root` mode matches any +tag / Gmail-dot alias of the stored address).
@@ -651,6 +763,13 @@ authRouter.post('/verify-email', async (c) => {
   const ip = extractClientIp(c);
   const userAgent = c.req.header('user-agent') ?? null;
 
+  // Per-IP brake before any JWT work (#732): the other public auth routes
+  // had one, this one did not.
+  const rate = await checkAuthFlowRate(c.get('runtime'), 'verify-rate', siteId, ip, TOKEN_CONSUME_RATE_LIMIT);
+  if (!rate.allowed) {
+    return rateLimitedResponse(c, rate.retryAfterSeconds, 'Too many requests. Please try again later.');
+  }
+
   const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
   if (!jwtSecret) {
     return c.json(
@@ -698,10 +817,25 @@ authRouter.post('/verify-email', async (c) => {
     );
   }
 
-  await db
-    .update(users)
-    .set({ status: 'active', updatedAt: new Date() })
-    .where(eq(users.id, user.id));
+  // Single winner (#732): the `invited → active` flip is one conditional
+  // UPDATE, so of N concurrent requests with this link exactly one verifies
+  // and audits; the rest see the account already active.
+  const consumed = await consumeEmailVerification(db, user.id);
+  if (consumed === 'already_verified') {
+    return c.json({ data: { status: 'already_verified' } });
+  }
+  if (consumed === 'disabled') {
+    return c.json(
+      { errors: [{ code: 'ACCOUNT_DISABLED', message: 'This account is not active.' }] },
+      403,
+    );
+  }
+  if (consumed === 'not_found') {
+    return c.json(
+      { errors: [{ code: 'INVALID_TOKEN', message: 'Verification link is invalid or has expired.' }] },
+      400,
+    );
+  }
 
   await new AuditLogger({ db, siteId }).write({
     event: 'email_verified',
@@ -731,8 +865,8 @@ authRouter.post('/resend-verification', async (c) => {
   const ip = extractClientIp(c);
   const userAgent = c.req.header('user-agent') ?? null;
 
-  const rate = await checkIpRateLimit(
-    c.get('runtime').cache,
+  const rate = await checkAuthFlowRate(
+    c.get('runtime'),
     'resend-rate',
     siteId,
     ip,
@@ -804,6 +938,22 @@ authRouter.post('/resend-verification', async (c) => {
 });
 
 /**
+ * `GET /api/v1/auth/password-policy` — the public password rule set (#733).
+ *
+ * Unauthenticated on purpose: the reset-password, registration and invite
+ * pages need it before the user has a session, to render the live checklist
+ * and strength meter. It exposes only what a user needs to pick a compliant
+ * password (lengths, required classes, minimum strength, whether a breach
+ * check runs) — nothing secret. Cache briefly so a page load doesn't hit the
+ * settings table every keystroke-driven re-render.
+ */
+authRouter.get('/password-policy', async (c) => {
+  const policy = await loadPasswordPolicy(systemDbFor(c));
+  c.header('cache-control', 'public, max-age=60');
+  return c.json({ data: toPublicPasswordPolicy(policy) });
+});
+
+/**
  * Public "forgot password" endpoint for self-service end-users.
  *
  * Anti-enumeration: always returns the same generic `202` regardless of
@@ -818,8 +968,8 @@ authRouter.post('/forgot-password', async (c) => {
   const ip = extractClientIp(c);
   const userAgent = c.req.header('user-agent') ?? null;
 
-  const rate = await checkIpRateLimit(
-    c.get('runtime').cache,
+  const rate = await checkAuthFlowRate(
+    c.get('runtime'),
     'forgot-rate',
     siteId,
     ip,
@@ -903,6 +1053,12 @@ authRouter.post('/reset-password', async (c) => {
   const ip = extractClientIp(c);
   const userAgent = c.req.header('user-agent') ?? null;
 
+  // Per-IP brake before body parse, JWT work or PBKDF2 (#732).
+  const rate = await checkAuthFlowRate(c.get('runtime'), 'reset-rate', siteId, ip, TOKEN_CONSUME_RATE_LIMIT);
+  if (!rate.allowed) {
+    return rateLimitedResponse(c, rate.retryAfterSeconds, 'Too many requests. Please try again later.');
+  }
+
   const jwtSecret = c.env.JWT_SECRET || process.env.JWT_SECRET;
   if (!jwtSecret) {
     return c.json(
@@ -930,6 +1086,7 @@ authRouter.post('/reset-password', async (c) => {
       status: users.status,
       email: users.email,
       passwordChangedAt: users.passwordChangedAt,
+      tokenVersion: users.tokenVersion,
     })
     .from(users)
     .where(eq(users.id, claims.userId))
@@ -956,19 +1113,24 @@ authRouter.post('/reset-password', async (c) => {
     );
   }
 
+  const policyFailure = await checkNewPassword(c, input.password, { userInputs: [user.email] });
+  if (policyFailure) return c.json(passwordPolicyErrorBody(policyFailure), 400);
+
   const passwordHash = await hashPassword(input.password);
-  const now = new Date();
-  await db
-    .update(users)
-    .set({
-      passwordHash,
-      passwordChangedAt: now,
-      // Bump the session generation: every outstanding access JWT (which
-      // embeds the old tokenVersion) dies immediately (CWE-613/620).
-      tokenVersion: sql`${users.tokenVersion} + 1`,
-      updatedAt: now,
-    })
-    .where(eq(users.id, user.id));
+  // Single winner (#732): compare-and-swap on the session generation read
+  // above. A concurrent request with the same link already bumped it, so
+  // this one updates nothing and the link reads as spent.
+  const won = await consumePasswordReset(db, {
+    userId: user.id,
+    expectedTokenVersion: user.tokenVersion,
+    passwordHash,
+  });
+  if (!won) {
+    return c.json(
+      { errors: [{ code: 'INVALID_TOKEN', message: 'Reset link is invalid or has expired.' }] },
+      400,
+    );
+  }
 
   // Revoke all refresh tokens so a stolen session cannot be silently
   // renewed after the owner resets their password.
@@ -1321,9 +1483,11 @@ authRouter.post('/login', async (c) => {
     );
   }
 
+  // Second factors the user can present: TOTP and/or passkeys (#735).
+  const mfaMethods = audience === TOKEN_AUDIENCE.studio ? methodsOf(await loadSecondFactors(db, user.id)) : [];
+
   if (triggered && policy.anomalyAction === 'require_mfa') {
-    const totpEnabled = await isUserTotpEnabled(db, user.id);
-    if (totpEnabled && audience === TOKEN_AUDIENCE.studio) {
+    if (mfaMethods.length > 0) {
       await recordAnomalyBlock(db, policy, {
         userId: user.id,
         email: accountEmail,
@@ -1344,6 +1508,7 @@ authRouter.post('/login', async (c) => {
           status: 'mfa_required',
           challengeToken: challenge.token,
           expiresIn: challenge.expiresInSeconds,
+          methods: mfaMethods,
         },
       });
     }
@@ -1372,7 +1537,7 @@ authRouter.post('/login', async (c) => {
     );
   }
 
-  if (audience === TOKEN_AUDIENCE.studio && await isUserTotpEnabled(db, user.id)) {
+  if (mfaMethods.length > 0) {
     const challenge = await signMfaChallengeToken(
       { userId: user.id, siteId, loginAudience: audience },
       jwtSecret,
@@ -1382,6 +1547,9 @@ authRouter.post('/login', async (c) => {
         status: 'mfa_required',
         challengeToken: challenge.token,
         expiresIn: challenge.expiresInSeconds,
+        // Which second-factor endpoints will accept this token:
+        // `totp` → POST /auth/verify-totp, `webauthn` → /auth/passkey/*.
+        methods: mfaMethods,
       },
     });
   }
@@ -1396,6 +1564,11 @@ authRouter.post('/login', async (c) => {
   // for audit + notification. Task 9.5 threads the dispatcher in via
   // `options.notify` so the `anomaly_triggered` event reaches the
   // operator's channels when (and only when) `anomalyTriggered` is set.
+  // New-device check (#739) BEFORE the success hook folds this device into
+  // the baseline; it also fills `attempt.deviceFingerprint` when the device
+  // subscore is off so the baseline still learns the device.
+  const newDevice = await detectNewDevice(db, user.id, userAgent, acceptLanguage, attempt);
+
   await recordLoginSuccess(db, {
     userId: user.id,
     email: accountEmail,
@@ -1405,8 +1578,10 @@ authRouter.post('/login', async (c) => {
     anomalyScore: anomaly.score,
     anomalyTriggered: triggered && policy.anomalyAction === 'notify_only',
     baselineWarmup: anomaly.baselineWarmup,
+    method: 'password',
   }, { notify });
 
+  const sessionId = newSessionId();
   const token = await signCustomJwt(
     {
       userId: user.id,
@@ -1416,6 +1591,9 @@ authRouter.post('/login', async (c) => {
       // Session generation at sign time; auth rejects tokens whose value is
       // older than the stored one (revocation on password change/reset).
       tokenVersion: user.tokenVersion ?? 0,
+      // Session id (= refresh-token family). The auth middleware rejects the
+      // access token as soon as this session is revoked (#730).
+      sid: sessionId,
     },
     jwtSecret,
     audience,
@@ -1426,10 +1604,22 @@ authRouter.post('/login', async (c) => {
   // short access token above. Delivered via httpOnly cookie AND the body.
   const refresh = await issueRefreshToken(
     db,
-    { siteId, userId: user.id, audience, ip, userAgent },
+    { siteId, userId: user.id, audience, ip, userAgent, familyId: sessionId },
     c.env,
   );
   setRefreshCookie(c, refresh.token, audience);
+
+  // New-device email (#739): detached from the response, rate-limited per
+  // user, never changes this response.
+  scheduleNewDeviceNotice(c, newDevice, {
+    siteId,
+    userId: user.id,
+    email: user.email,
+    audience,
+    ip,
+    userAgent,
+    countryCode: attempt.countryCode ?? null,
+  });
 
   // Workers runtime: keep any queued notification (e.g. an
   // anomaly_triggered from the notify_only path) alive past the
@@ -1506,7 +1696,9 @@ authRouter.post('/refresh', async (c) => {
         ip,
         userAgent,
         requestId: c.get('requestId') ?? null,
-        metadata: { siteId },
+        // `userId` (the family owner) puts the event in that user's
+        // security history (#739); no token material is recorded.
+        metadata: { siteId, ...(outcome.userId ? { userId: outcome.userId } : {}) },
       });
     }
     return c.json(
@@ -1585,6 +1777,8 @@ authRouter.post('/refresh', async (c) => {
       // Session generation at sign time; auth rejects tokens whose value is
       // older than the stored one (revocation on password change/reset).
       tokenVersion: user.tokenVersion ?? 0,
+      // Same session across rotation — see the login path.
+      sid: outcome.familyId,
     },
     jwtSecret,
     audience,

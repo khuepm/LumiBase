@@ -1,15 +1,15 @@
 ---
 title: LumiBase CLI
-version: 10
-lastUpdated: 2026-11-15T16:52:34.630Z
+version: 11
+lastUpdated: 2026-11-15T18:38:14.206Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 63036947bbda2e35
+sourceHash: 7295cb0b24592431
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T16:52:34.630Z
-codeVerifiedHash: 63036947bbda2e35
-codeVerifiedClaims: 20
+codeVerified: 2026-11-15T18:38:14.206Z
+codeVerifiedHash: 7295cb0b24592431
+codeVerifiedClaims: 22
 ---
 
 # LumiBase CLI
@@ -42,7 +42,7 @@ CLI yêu cầu Node.js 22+; launcher tại `packages/cli/bin/lumibase.js` từ c
 | --- | --- |
 | `lumibase init [name]` | Tạo khung một project mới |
 | `lumibase types` | Sinh type TypeScript từ một CMS đang chạy |
-| `lumibase doctor` | Báo cáo cấu hình đã resolve và thăm dò kết nối |
+| `lumibase doctor` | Báo cáo cấu hình đã resolve và thăm dò kết nối (`--security`: rà soát cấu hình theo checklist production) |
 | `lumibase skills <list\|pull\|push\|install>` | Đồng bộ Site Skills (playbook cho agent) với một site |
 
 `lumibase help` và `lumibase version` cũng được chấp nhận, cùng với `--help` / `-h` và `--version` / `-v`.
@@ -131,6 +131,18 @@ In ra những gì đã resolve, mỗi giá trị đến từ đâu, và CMS có 
 Bước health gọi endpoint `/health` không cần xác thực (`apps/cms/src/routes/health.ts`); bước schema thực hiện đúng request có xác thực mà `lumibase types` sẽ gửi, nên `doctor` xanh nghĩa là typegen sẽ chạy được. Token được che: giữ lại một tiền tố ngắn để người vận hành biết token nào đã được nhận diện mà giá trị thật không lọt vào log CI.
 
 `doctor` thoát với mã khác 0 nếu có bất kỳ mục nào fail.
+
+### `lumibase doctor --security`
+
+`--security` thay các bước kiểm tra kết nối bằng một lượt rà soát cấu hình của dự án, chạy offline. Nó đọc `.env`, `.env.local`, `.dev.vars`, `[vars]` trong `wrangler.toml` và các mục `environment:` trong file compose. Mỗi phát hiện có mức độ (`critical`, `warning`, `info`), quy tắc được áp dụng và gợi ý cách sửa. Giá trị secret không bao giờ được in ra.
+
+| Flag | Tác dụng |
+| --- | --- |
+| `--production` | Áp dụng checklist production kể cả khi `NODE_ENV` / `LUMIBASE_ENV` không phải `production` |
+| `--env-file <a,b>` | Đọc các file dotenv này thay cho các file mặc định |
+| `--json` | In báo cáo dạng JSON (`ok`, `mode`, `runtime`, `sources`, `summary`, `findings`) |
+
+Lệnh thoát với mã `1` khi có bất kỳ phát hiện critical nào. Một bản scaffold mới từ `create-lumibase` qua được với không phát hiện critical nào. Danh sách quy tắc đầy đủ nằm ở [Mặc định an toàn](../security/secure-defaults.md).
 
 ## `lumibase skills`
 

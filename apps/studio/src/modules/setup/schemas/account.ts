@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_PASSWORD_POLICY, evaluatePasswordPolicy } from '@lumibase/contracts/schemas';
 
 /**
  * Zod schema for the "Admin Account" step of the Setup Wizard.
@@ -86,12 +87,19 @@ export type PasswordRuleId =
 export function evaluatePasswordRules(
   value: string,
 ): Record<PasswordRuleId, boolean> {
+  // Same evaluator the CMS runs on `POST /setup/complete` (#733). Setup runs
+  // before an operator can store a policy, so the default policy applies.
+  const verdict = Object.fromEntries(
+    evaluatePasswordPolicy(value, { ...DEFAULT_PASSWORD_POLICY, minStrength: 0 }).rules.map(
+      (r) => [r.rule, r.ok] as const,
+    ),
+  );
   return {
-    length: value.length >= PASSWORD_MIN_LENGTH,
-    lowercase: HAS_LOWER.test(value),
-    uppercase: HAS_UPPER.test(value),
-    digit: HAS_DIGIT.test(value),
-    special: hasSpecialChar(value),
+    length: verdict.min_length === true,
+    lowercase: verdict.lowercase === true,
+    uppercase: verdict.uppercase === true,
+    digit: verdict.digit === true,
+    special: verdict.special === true,
   };
 }
 

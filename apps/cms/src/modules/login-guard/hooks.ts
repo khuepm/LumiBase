@@ -152,6 +152,11 @@ export interface LoginSuccessContext {
    * gated on it. Defaults to `false` when omitted.
    */
   readonly baselineWarmup?: boolean;
+  /**
+   * How the user proved who they are, recorded on the `login_success` audit
+   * entry for the user's security history (#739). Omitted → not recorded.
+   */
+  readonly method?: 'password' | 'totp';
 }
 
 /**
@@ -725,6 +730,7 @@ export async function recordLoginSuccess(
       anomalyScore: roundScore(ctx.anomalyScore),
       anomalyTriggered: ctx.anomalyTriggered ?? false,
       baselineWarmup: ctx.baselineWarmup ?? false,
+      ...(ctx.method ? { method: ctx.method } : {}),
     },
   });
 

@@ -5,12 +5,13 @@ import { useId, useState } from 'react';
 import { useForm, type SubmitHandler } from 'react-hook-form';
 import { z } from 'zod';
 import { joinAdminPathLogin } from '../setup/steps/step-done';
+import type { PasswordRuleResult } from '@lumibase/contracts/schemas';
 import {
-  evaluatePasswordRules,
-  PASSWORD_MIN_LENGTH,
-  PASSWORD_SPECIAL_CHARS,
-  type PasswordRuleId,
-} from '../setup/schemas/account';
+  PasswordPolicyChecklist,
+  passwordMeetsPolicy,
+  readPasswordPolicyError,
+  usePasswordPolicy,
+} from '@/components/password-policy-checklist';
 
 /**
  * "Backup code recovery" page — PUBLIC, pre-auth recovery UI.
@@ -94,23 +95,16 @@ const backupCodeSchema = z.object({
 
 type BackupCodeFormValues = z.infer<typeof backupCodeSchema>;
 
+// Only the confirm-match lives in the schema: the password rules come from the
+// instance policy (`GET /api/v1/auth/password-policy`, #733), which is only
+// known at runtime — they gate the submit button and render as a live
+// checklist instead.
 const resetPasswordSchema = z
   .object({
-    password: z.string(),
+    password: z.string().min(1, 'Enter a new password.'),
     confirmPassword: z.string(),
   })
   .superRefine((value, ctx) => {
-    const rules = evaluatePasswordRules(value.password);
-    for (const [rule, ok] of Object.entries(rules) as Array<[PasswordRuleId, boolean]>) {
-      if (!ok) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: passwordRuleLabel(rule),
-          path: ['password'],
-          params: { rule },
-        });
-      }
-    }
     if (value.password !== value.confirmPassword) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -167,18 +161,22 @@ export class RecoverError extends Error {
 }
 
 class ResetPasswordError extends Error {
-  readonly code: 'INVALID_RECOVERY_TOKEN' | 'RATE_LIMITED' | 'VALIDATION_ERROR' | 'UNKNOWN';
+  readonly code: 'INVALID_RECOVERY_TOKEN' | 'RATE_LIMITED' | 'VALIDATION_ERROR' | 'PASSWORD_POLICY' | 'UNKNOWN';
   readonly retryAfterSeconds: number | undefined;
+  /** Per-rule verdicts when the server answered `PASSWORD_POLICY` (#733). */
+  readonly rules: PasswordRuleResult[] | null;
 
   constructor(
     code: ResetPasswordError['code'],
     message: string,
     retryAfterSeconds?: number,
+    rules: PasswordRuleResult[] | null = null,
   ) {
     super(message);
     this.name = 'ResetPasswordError';
     this.code = code;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.rules = rules;
   }
 }
 
@@ -366,6 +364,16 @@ async function postResetPassword(args: {
   }
 
   if (response.status === 400) {
+    const rules = readPasswordPolicyError(await response.json().catch(() => null));
+    if (rules) {
+      const failed = rules.filter((r) => !r.ok).map((r) => r.message);
+      throw new ResetPasswordError(
+        'PASSWORD_POLICY',
+        failed.length > 0 ? failed.join(' ') : 'Choose a stronger password.',
+        undefined,
+        rules,
+      );
+    }
     throw new ResetPasswordError(
       'VALIDATION_ERROR',
       'Choose a stronger password.',
@@ -592,9 +600,15 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
     retry: false,
   });
 
-  const passwordRules = evaluatePasswordRules(watch('password') ?? '');
+  const policy = usePasswordPolicy();
+  const passwordValue = watch('password') ?? '';
+  const meetsPolicy = passwordMeetsPolicy(passwordValue, policy);
 
   const onResetSubmit: SubmitHandler<ResetPasswordFormValues> = (values) => {
+    if (!passwordMeetsPolicy(values.password, policy)) {
+      form.setError('password', { type: 'policy', message: 'The password does not meet every requirement below.' });
+      return;
+    }
     resetMutation.mutate(values);
   };
 
@@ -690,7 +704,12 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
             </div>
           </Field>
 
-          <PasswordRules rules={passwordRules} />
+          <PasswordPolicyChecklist
+            id={`${passwordId}-policy`}
+            password={passwordValue}
+            policy={policy}
+            serverRules={resetMutation.error?.rules}
+          />
 
           <Field
             id={confirmId}
@@ -720,7 +739,7 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
 
           <button
             type="submit"
-            disabled={isSubmitting || resetMutation.isPending}
+            disabled={isSubmitting || resetMutation.isPending || !meetsPolicy}
             className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {resetMutation.isPending ? 'Updating…' : 'Set new password'}
@@ -747,37 +766,6 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
         )}
       </div>
     </div>
-  );
-}
-
-function passwordRuleLabel(rule: PasswordRuleId): string {
-  switch (rule) {
-    case 'length':
-      return `At least ${PASSWORD_MIN_LENGTH} characters.`;
-    case 'lowercase':
-      return 'Includes a lowercase letter.';
-    case 'uppercase':
-      return 'Includes an uppercase letter.';
-    case 'digit':
-      return 'Includes a digit.';
-    case 'special':
-      return `Includes a special character (${[...PASSWORD_SPECIAL_CHARS].join(' ')}).`;
-  }
-}
-
-function PasswordRules({ rules }: { rules: Record<PasswordRuleId, boolean> }) {
-  return (
-    <ul className="space-y-1 text-xs text-muted-foreground">
-      {(Object.keys(rules) as PasswordRuleId[]).map((rule) => (
-        <li
-          key={rule}
-          className={rules[rule] ? 'text-emerald-700' : 'text-muted-foreground'}
-        >
-          {rules[rule] ? 'Met: ' : 'Not met: '}
-          {passwordRuleLabel(rule)}
-        </li>
-      ))}
-    </ul>
   );
 }
 
