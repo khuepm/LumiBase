@@ -264,3 +264,58 @@ export function mcpManifest(def: ExtensionMcpDefinition): {
     resources: [...(def.resources ?? [])],
   };
 }
+
+/* ── Studio intents (issue #759) ─────────────────────────────────────────── */
+
+/**
+ * A parsed Studio intent link (`/intent/{action}?collection&id&locale&field&site`).
+ * Structurally identical to `StudioIntent` in `@lumibase/contracts/intents`
+ * (the SDK stays dependency-free); build links with `buildStudioIntentPath`
+ * from that package.
+ */
+export interface StudioIntent {
+  v: 1;
+  action: 'open' | 'create' | 'edit';
+  collection: string;
+  id?: string;
+  locale?: string;
+  field?: string;
+  site?: string;
+}
+
+export interface IntentHandleContext {
+  /** Site the intent is being resolved in (already switched if the link asked). */
+  readonly siteId: string;
+  /** Admin-relative route of the built-in handler, for "wrap and forward" handlers. */
+  readonly builtInPath: string;
+}
+
+/**
+ * What a handler does with a claimed intent. `navigate` must be an
+ * admin-relative Studio path (`/content/...`, `/settings/...`); absolute URLs,
+ * protocol-relative paths and anything outside Studio are refused and the
+ * built-in handler runs instead. `fallback` hands the intent back.
+ */
+export type IntentHandleResult = { navigate: string } | { fallback: true };
+
+/**
+ * An intent claim. The host only offers an intent to a handler when the
+ * extension's GRANTED capabilities cover it — `intents:claim:<action>:<collection>`,
+ * where either part may be `*` (e.g. `intents:claim:edit:posts`).
+ *
+ * Resolution is deterministic: among covered handlers whose `canHandle`
+ * returns a finite number > 0, the highest priority wins; ties break on
+ * extension name, then handler `id` (both ascending). The built-in handler has
+ * priority 0, so returning 0 / false / null declines. A `canHandle` or
+ * `handle` that throws, or a refused `navigate`, falls back to the built-in.
+ */
+export interface IntentHandlerDefinition {
+  /** Stable id, unique within the extension. */
+  id: string;
+  canHandle: (intent: StudioIntent) => number | false | null | undefined;
+  handle: (intent: StudioIntent, ctx: IntentHandleContext) => IntentHandleResult | Promise<IntentHandleResult>;
+}
+
+export function defineIntentHandler(def: IntentHandlerDefinition): IntentHandlerDefinition {
+  return def;
+}

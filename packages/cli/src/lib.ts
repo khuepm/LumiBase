@@ -8,3 +8,18 @@
  * Node-specific, so this entry is safe to import from browser and edge code.
  */
 export * from '@lumibase/sdk';
+export {
+  defineTypegenConfig,
+  type TypegenConfig,
+  type TypegenConfigExport,
+  type TypegenFileSource,
+  type TypegenLiveSource,
+  type TypegenSource,
+  type TypegenTarget,
+  type TypegenTargetType,
+  type TsTarget,
+  type ZodTarget,
+  type GraphQLSdlTarget,
+  type OpenApiTarget,
+  type ManifestTarget,
+} from './typegen-config.js';

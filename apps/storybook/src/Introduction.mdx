@@ -1,0 +1,18 @@
+import { Meta } from '@storybook/addon-docs/blocks';
+
+<Meta title="Introduction" />
+
+# LumiBase UI
+
+Living catalogue of the `@lumibase/ui` primitives and a representative slice of
+LumiBase Studio components: field interfaces, displays, a data table and dialogs.
+
+- **UI** — every value export of `@lumibase/ui` has a story (enforced in CI).
+- **Studio** — components rendered from Studio's own source, with fixture data
+  and no network access.
+- **Theme** — switch light / dark from the toolbar. CI runs every story's
+  interaction test and accessibility scan in both themes; an axe violation
+  fails the build.
+
+How to write stories, run the accessibility and visual checks, and add a
+justified a11y exception: see *Contributing → Storybook* in the LumiBase docs.

@@ -1,5 +1,20 @@
 import type { TypegenCollection, TypegenField, TypegenManifest, TypegenRelation } from './types';
+import { fieldShape } from './shared';
 export type { TypegenManifest, TypegenCollection, TypegenField, TypegenRelation } from './types';
+export {
+  FILE_INTERFACE,
+  FILES_INTERFACE,
+  TRANSLATABLE_INTERFACE,
+  filterManifest,
+} from './shared';
+export { generateZod, DEFAULT_ZOD_IMPORT, type GenerateZodOptions } from './zod';
+export { generateGraphQLSdl } from './graphql-sdl';
+export {
+  generateOpenApi,
+  type GenerateOpenApiOptions,
+  type OpenApiComponentsDocument,
+  type JsonSchema,
+} from './openapi';
 
 /** Default module specifier the generated file imports `ID` / `Locale` / `Brand` from. */
 export const DEFAULT_IMPORT_SOURCE = '@lumibase/sdk';
@@ -174,6 +189,17 @@ function mapFieldTypeToTs(
     return `Array<{ collection: string; item: unknown }>`;
   }
 
+  const shape = fieldShape(field);
+  if (shape.kind === 'localized' || shape.kind === 'file' || shape.kind === 'files') {
+    const wire =
+      shape.kind === 'localized'
+        ? 'Partial<Record<Locale, string>>'
+        : shape.kind === 'file'
+          ? 'string'
+          : 'string[]';
+    return nullable(field, field.encrypted ? `${wire} | '***'` : wire);
+  }
+
   if (field.enum && field.enum.length > 0) {
     return nullable(field, field.enum.map((v) => JSON.stringify(v)).join(' | '));
   }
@@ -203,11 +229,13 @@ function mapScalarFieldType(field: TypegenField, branded: boolean): string {
     integer: 'number',
     bigInteger: 'number',
     decimal: 'number',
+    float: 'number',
     boolean: 'boolean',
     json: 'unknown',
     uuid: mapPrimaryKeyType('uuid', branded, field.branded),
     date: 'string',
     datetime: 'string',
+    dateTime: 'string',
     time: 'string',
     timestamp: 'string',
     geometry: 'GeoJSON.Geometry',

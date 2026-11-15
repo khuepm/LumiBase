@@ -158,6 +158,7 @@ extensionsRouter.all('/:name/*', adminOnly, async (c) => {
     name: ext.name,
     bundleUrl: ext.bundleUrl,
     capabilities: (ext.capabilities as string[]) ?? [],
+    siteId,
     ...buildSandboxVerifyOptions(ext, db, c.env),
   });
 

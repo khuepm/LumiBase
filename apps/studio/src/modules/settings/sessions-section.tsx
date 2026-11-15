@@ -150,7 +150,7 @@ export function SessionsSection() {
                     <p className="text-sm font-medium">
                       {device.label}
                       {s.current ? (
-                        <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs font-normal">
+                        <span className="ms-2 rounded bg-muted px-1.5 py-0.5 text-xs font-normal">
                           This device
                         </span>
                       ) : null}

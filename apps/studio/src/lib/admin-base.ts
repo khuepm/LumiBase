@@ -3,7 +3,7 @@ import {
   ADMIN_PATH_REGEX,
   DEFAULT_ADMIN_PATHS_BLACKLIST,
   RESERVED_PATH_PREFIXES,
-} from '@/modules/setup/schemas/admin-path';
+} from '@/modules/setup/schemas/admin-path-rules';
 
 /**
  * Top-level Studio module segments that the router also registers under
@@ -23,6 +23,8 @@ const PREFIXABLE_SEGMENTS = new Set([
   'cdc',
   'settings',
   'recovery',
+  // Intent links (#759): `/{adminPath}/intent/edit?…`.
+  'intent',
 ]);
 
 /** Segments that are never an admin prefix (modules + root-only routes). */

@@ -215,7 +215,7 @@ export function ItemsListPage() {
                 type="button"
                 aria-pressed={viewMode === 'table'}
                 onClick={() => setViewMode('table')}
-                className={cn('inline-flex items-center gap-1 border-l px-2 py-1 text-xs', viewMode === 'table' && 'bg-accent')}
+                className={cn('inline-flex items-center gap-1 border-s px-2 py-1 text-xs', viewMode === 'table' && 'bg-accent')}
               >
                 <Table2 className="h-3.5 w-3.5" />
                 Table
@@ -242,7 +242,7 @@ export function ItemsListPage() {
           )}
           {hasGeo && <ListLayoutToggle value={layout} onChange={setLayout} />}
           {/* Live Mode Toggle */}
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground mr-2 cursor-pointer">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground me-2 cursor-pointer">
             <input
               type="checkbox"
               checked={liveMode}
@@ -380,7 +380,7 @@ export function ItemsListPage() {
         <>
           <div className={cn('overflow-hidden rounded-lg border', showMap && 'hidden')}>
             <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+              <thead className="bg-muted/40 text-start text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="w-8 px-3 py-2">
                     <input

@@ -149,7 +149,7 @@ export function PasswordPolicyChecklist({ id, password, policy, userInputs = NO_
           ))}
         </div>
         {!empty ? (
-          <span className="w-20 text-right text-xs text-muted-foreground">{STRENGTH_LABELS[evaluation.score]}</span>
+          <span className="w-20 text-end text-xs text-muted-foreground">{STRENGTH_LABELS[evaluation.score]}</span>
         ) : null}
       </div>
 

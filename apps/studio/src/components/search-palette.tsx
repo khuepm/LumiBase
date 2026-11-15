@@ -155,7 +155,7 @@ export function SearchPalette({ open, onClose }: SearchPaletteProps) {
                   onMouseEnter={() => setActiveIndex(i)}
                   onClick={() => go(hit)}
                   className={cn(
-                    'flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm',
+                    'flex w-full items-center justify-between gap-3 px-4 py-2 text-start text-sm',
                     i === activeIndex ? 'bg-accent' : 'hover:bg-accent/50',
                   )}
                 >

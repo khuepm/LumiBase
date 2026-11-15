@@ -237,7 +237,7 @@ export function ReceiptsPage() {
                 <h2 className="mb-1 inline-flex items-center gap-2 text-sm font-semibold text-destructive">
                   <AlertTriangle className="h-4 w-4" /> {data.alerts.length} threshold{data.alerts.length === 1 ? '' : 's'} crossed
                 </h2>
-                <ul className="list-disc pl-5 text-sm">
+                <ul className="list-disc ps-5 text-sm">
                   {data.alerts.map((alert) => (
                     <li key={alert.metric}>{alert.message}</li>
                   ))}
@@ -283,7 +283,7 @@ export function ReceiptsPage() {
               ) : (
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-left text-muted-foreground">
+                    <tr className="text-start text-muted-foreground">
                       <th className="py-1">Skill</th>
                       <th>Calls</th>
                       <th>Outcomes</th>

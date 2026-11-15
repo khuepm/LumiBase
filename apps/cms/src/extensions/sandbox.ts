@@ -29,6 +29,12 @@
 import type { Database } from '@lumibase/database';
 import { validateOutboundUrl } from '../services/ssrf-guard';
 import { formatSafeError } from '@lumibase/contracts/utils';
+import {
+  devBuildAppliesToSite,
+  devExtensionRegistry,
+  type DevExtensionBuild,
+  type DevExtensionSnapshot,
+} from './dev-reload/registry';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -141,6 +147,11 @@ interface SandboxLoadOptions {
    * allow the load. If required but not supplied, the load fails closed.
    */
   verify?: SandboxVerify;
+  /**
+   * Site of the request. Only used to decide whether a dev hot-reload build
+   * (`lumibase-ext dev --site`) applies; ignored outside local development.
+   */
+  siteId?: string | null;
 }
 
 interface SandboxEnv {
@@ -159,6 +170,12 @@ interface SandboxEnv {
 
 export class ExtensionSandbox {
   private readonly cache = new Map<string, ExtensionModule>();
+  /**
+   * Dev hot-reload generation pinned for this sandbox's lifetime (one request):
+   * a reload that lands mid-request never mixes versions within it. Always
+   * empty unless the guarded Node dev client activated the registry (#754).
+   */
+  private readonly devSnapshot: DevExtensionSnapshot = devExtensionRegistry.snapshot();
 
   constructor(
     private readonly env: SandboxEnv,
@@ -174,6 +191,14 @@ export class ExtensionSandbox {
   async load(opts: SandboxLoadOptions): Promise<ExtensionModule | null> {
     if (this.cache.has(opts.name)) {
       return this.cache.get(opts.name)!;
+    }
+
+    // Local-development hot reload (#754): a build pushed by `lumibase-ext dev`
+    // replaces the installed bundle. The snapshot is empty in production (the
+    // registry refuses to activate there), so this branch is dev-only.
+    const devBuild = this.devSnapshot.get(opts.name);
+    if (devBuild && devBuildAppliesToSite(devBuild, opts.siteId)) {
+      return this.loadDevBuild(opts, devBuild);
     }
 
     if (!this.isTrustedBundleUrl(opts.bundleUrl)) {
@@ -215,6 +240,32 @@ export class ExtensionSandbox {
       return extensionMod;
     } catch (err) {
       console.error(`[extension-sandbox] failed to load "${opts.name}"`, formatSafeError(err));
+      return null;
+    }
+  }
+
+  /**
+   * Hook extensions hot-reloaded for `siteId` (dev only) — lets a dispatcher
+   * run an extension under development before it is installed in the DB.
+   */
+  devHookBuilds(siteId: string | null | undefined): DevExtensionBuild[] {
+    return [...this.devSnapshot.values()].filter(
+      (b) => b.type === 'hook' && devBuildAppliesToSite(b, siteId),
+    );
+  }
+
+  private async loadDevBuild(opts: SandboxLoadOptions, build: DevExtensionBuild): Promise<ExtensionModule | null> {
+    const ctx = this.buildCtx(new Set(opts.capabilities), opts.name);
+    try {
+      const mod = build.module;
+      const extensionMod: ExtensionModule =
+        typeof mod.default === 'function'
+          ? await (mod.default as (c: typeof ctx) => ExtensionModule | Promise<ExtensionModule>)(ctx)
+          : (mod as ExtensionModule);
+      this.cache.set(opts.name, extensionMod);
+      return extensionMod;
+    } catch (err) {
+      console.error(`[extension-sandbox] dev build of "${opts.name}" v${build.version} failed to initialise`, formatSafeError(err));
       return null;
     }
   }

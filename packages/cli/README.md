@@ -81,6 +81,21 @@ Output is **deterministic** — no timestamp, host, or site id in the header —
 
 `--check` exits non-zero when the committed file is missing or stale, and never writes anything.
 
+### Several configs and output targets
+
+A `lumibase.typegen.config.ts` (or `.mts`, `.js`, `.mjs`, `.json`) exporting one config or an array of configs replaces the flags above: each config has its own source (a CMS or a saved manifest), `include` / `exclude`, and targets `ts`, `zod`, `graphql-sdl`, `openapi` or `manifest`, all written in one run. `--check` covers every output; `--watch` regenerates when the schema changes.
+
+```ts
+import { defineTypegenConfig } from 'lumibase'
+
+export default defineTypegenConfig([
+  { name: 'web', targets: [{ type: 'ts', out: 'src/lumibase-types.d.ts' }, { type: 'zod', out: 'src/lumibase-schemas.ts' }] },
+  { name: 'api', source: { manifest: './lumibase.manifest.json' }, targets: [{ type: 'openapi', out: 'openapi.json' }] },
+])
+```
+
+Full reference: [Typegen configs and output targets](https://docs.lumibase.dev/cli/typegen-config).
+
 ## `lumibase skills`
 
 Site Skills are Markdown playbooks (front matter + body) a site stores for its AI agents. Keep them in git as `skills/*.skill.md` and push from CI — the server parses and validates the documents; the CLI only moves files. Needs a token with control-plane admin access to the site — every skill read and write does.

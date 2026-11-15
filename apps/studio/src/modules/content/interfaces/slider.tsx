@@ -21,11 +21,14 @@ export const SliderInterface: InterfaceComponent<number> = ({
   const max = opts.max ?? 100;
   const step = opts.step ?? 1;
   const current = typeof value === 'number' ? value : min;
+  // Two controls for one field: each needs its own accessible name.
+  const label = typeof field.label === 'string' && field.label ? field.label : field.name;
 
   return (
     <div className="flex items-center gap-3">
       <input
         type="range"
+        aria-label={label}
         min={min}
         max={max}
         step={step}
@@ -36,13 +39,14 @@ export const SliderInterface: InterfaceComponent<number> = ({
       />
       <input
         type="number"
+        aria-label={`${label} (exact value)`}
         min={min}
         max={max}
         step={step}
         value={current}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
-        className="w-20 rounded-md border bg-background px-2 py-1 text-right text-sm disabled:opacity-50"
+        className="w-20 rounded-md border bg-background px-2 py-1 text-end text-sm disabled:opacity-50"
       />
     </div>
   );

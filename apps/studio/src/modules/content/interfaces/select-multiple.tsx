@@ -72,7 +72,7 @@ export const SelectMultipleDropdown: InterfaceComponent<string[]> = ({
                   <button
                     type="button"
                     onClick={() => toggle(c.value)}
-                    className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs hover:bg-accent"
+                    className="flex w-full items-center gap-2 px-2 py-1 text-start text-xs hover:bg-accent"
                   >
                     <span
                       className={cn(

@@ -148,6 +148,12 @@ to the SPA as a `shell://deep-link` event (`src/lib.rs`) for auth callbacks.
 `tauri-plugin-single-instance` ensures a deep-link launch focuses the running
 window instead of opening a duplicate.
 
+Studio consumes the event for **intent links** (#759): `lumibase://intent/edit?collection=…&id=…`
+(and `https://studio.lumibase.dev/intent/…` once `/intent` is added to the mobile
+`pathPrefix`) opens the same `/intent/{action}` route as the browser
+(`apps/studio/src/lib/intents/shell-deep-link.ts`). Other URLs are ignored there
+and stay with their own consumer. See `docs/en/features/studio-intent-links.md`.
+
 ## Auto-update (desktop)
 
 Desktop builds check for updates in the background on launch (`src/lib.rs`) via

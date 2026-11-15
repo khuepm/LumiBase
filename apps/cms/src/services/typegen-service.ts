@@ -3,6 +3,7 @@ import { asc, eq } from 'drizzle-orm';
 import type { Database } from '@lumibase/database';
 import { isZonedDateTimeField } from '@lumibase/contracts/field';
 import { compileSystemFields, type PrimaryKeyType, type RelationType } from './schema-service';
+import { relationAlias } from './item-service';
 import { isBlocksField, readBlocksOptions } from './blocks';
 
 export interface TypegenManifest {
@@ -25,8 +26,9 @@ export interface TypegenField {
   type: string;
   /**
    * Studio interface id (`translatable-text`, `file`, `files`, …). Carried so
-   * consumers that need the wire shape — the live OpenAPI document (#745) —
-   * can tell a per-locale map or a file reference from a plain scalar.
+   * consumers that need the wire shape can tell a per-locale map or a file
+   * reference from a plain scalar: the `lumibase types` Zod / OpenAPI targets
+   * (#753) and the live OpenAPI document (#745).
    */
   interface?: string;
   required: boolean;
@@ -55,6 +57,10 @@ export interface TypegenRelation {
   oneCollection: string;
   oneField: string | null;
   junctionCollection: string | null;
+  /** The stored relation row's `type` (`kind` is relative to this collection). */
+  relationType: RelationType;
+  /** Name of the nested field the GraphQL schema exposes for this relation. */
+  alias: string;
 }
 
 export class TypegenService {
@@ -170,6 +176,8 @@ export class TypegenService {
               oneCollection: relation.oneCollection,
               oneField: relation.oneField,
               junctionCollection: relation.junctionCollection,
+              relationType: kind,
+              alias: relationAlias(relation),
             }];
           }
 
@@ -183,6 +191,8 @@ export class TypegenService {
               oneCollection: relation.oneCollection,
               oneField: relation.oneField,
               junctionCollection: relation.junctionCollection,
+              relationType: kind,
+              alias: relationAlias(relation),
             }];
           }
 
