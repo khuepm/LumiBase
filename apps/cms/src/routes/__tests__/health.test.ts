@@ -119,4 +119,35 @@ describe('health routes', () => {
     const res = await buildApp({ system: 'down' }).request('/health/ready');
     expect(res.status).toBe(503);
   });
+
+  it('answers /health/live at once without touching any dependency', async () => {
+    // A runtime whose every dependency call throws if reached: liveness must
+    // not depend on them (a down database used to keep the container
+    // HEALTHCHECK and the Kubernetes liveness probe waiting ~3 s per probe).
+    const touched: string[] = [];
+    const trap = (name: string) => () => {
+      touched.push(name);
+      return new Promise<never>(() => {});
+    };
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('runtime', {
+        runtime: 'docker',
+        database: { getConnection: () => trap('database')(), close: async () => {} },
+        cache: { get: trap('cache'), set: trap('cache'), delete: trap('cache') },
+        search: { getIndex: trap('search') },
+        storage: { list: trap('storage') },
+        queue: { enqueue: trap('queue') },
+      } as never);
+      await next();
+    });
+    app.route('/health', healthRouter);
+
+    const started = Date.now();
+    const res = await app.request('/health/live');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: 'ok' });
+    expect(Date.now() - started).toBeLessThan(200);
+    expect(touched).toEqual([]);
+  });
 });

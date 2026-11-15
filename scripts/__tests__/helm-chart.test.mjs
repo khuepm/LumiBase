@@ -106,8 +106,10 @@ test('the port and health routes are the ones the image serves', { skip }, () =>
   const health = readFileSync(join(root, 'apps/cms/src/routes/health.ts'), 'utf8');
   assert.match(readFileSync(join(root, 'apps/cms/src/index.ts'), 'utf8'), /app\.route\('\/health', healthRouter\)/);
   assert.match(health, /healthRouter\.get\('\/ready'/);
-  assert.equal(cms.livenessProbe.httpGet.path, '/health');
-  assert.equal(cms.startupProbe.httpGet.path, '/health');
+  assert.match(health, /healthRouter\.get\('\/live'/);
+  // Liveness/startup never depend on PostgreSQL/Redis: an outage must not restart pods.
+  assert.equal(cms.livenessProbe.httpGet.path, '/health/live');
+  assert.equal(cms.startupProbe.httpGet.path, '/health/live');
   // No search and no object storage: /health/ready would answer 503 forever.
   assert.equal(cms.readinessProbe.httpGet.path, '/health');
 });
