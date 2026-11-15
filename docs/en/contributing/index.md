@@ -1,8 +1,8 @@
 ---
-version: 4
-lastUpdated: 2026-11-15T16:45:24.641Z
+version: 5
+lastUpdated: 2026-11-15T17:03:01.851Z
 sourceLang: en
-contentHash: f4d137a36eed6a52
+contentHash: 19a64dc7db3b899b
 ---
 
 # Contributing to LumiBase
@@ -14,6 +14,7 @@ Thank you for your interest in contributing to LumiBase! This guide covers how t
 - [Development setup](./index.md#development-setup)
 - [Code style](./code-style.md)
 - [Testing guide](./testing.md)
+- [Storybook: UI catalogue, a11y and visual tests](./storybook.md)
 - [Writing extensions](./extension-dev.md)
 - [Versioning policy](./versioning-policy.md)
 - [Supported runtimes](./supported-runtimes.md)

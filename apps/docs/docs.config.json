@@ -19,6 +19,7 @@
       { "label": "Tutorials", "to": "/docs/tutorials", "position": "left" },
       { "label": "API", "to": "/docs/api/hono-api-spec", "position": "left" },
       { "label": "Roadmap", "to": "/docs/roadmap/tasks", "position": "left" },
+      { "label": "Storybook", "to": "/storybook/", "position": "left" },
       { "label": "GitHub", "href": "https://github.com/khuepm/lumibase", "position": "right" }
     ]
   },
@@ -146,7 +147,15 @@
       {
         "type": "category",
         "label": "Contributing",
-        "items": ["contributing", "contributing/versioning-policy", "contributing/supported-runtimes"]
+        "items": [
+          "contributing",
+          "contributing/versioning-policy",
+          "contributing/supported-runtimes",
+          "contributing/storybook",
+          "contributing/studio-performance",
+          "contributing/extension-hot-reload",
+          "contributing/docs-self-heal"
+        ]
       },
       {
         "type": "category",
@@ -167,7 +176,8 @@
         "title": "Docs",
         "items": [
           { "label": "Getting Started", "to": "/docs/getting-started" },
-          { "label": "API Reference", "to": "/docs/api/hono-api-spec" }
+          { "label": "API Reference", "to": "/docs/api/hono-api-spec" },
+          { "label": "Storybook", "to": "/storybook/" }
         ]
       },
       {

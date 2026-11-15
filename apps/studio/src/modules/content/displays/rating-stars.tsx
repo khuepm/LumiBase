@@ -13,7 +13,7 @@ export const RatingStarsDisplay: DisplayComponent<number> = ({ value, field }) =
   const current = typeof value === 'number' ? value : 0;
   if (current === 0) return <span className="text-muted-foreground">—</span>;
   return (
-    <span className="inline-flex items-center gap-0.5" aria-label={`${current} out of ${max}`}>
+    <span role="img" className="inline-flex items-center gap-0.5" aria-label={`${current} out of ${max}`}>
       {Array.from({ length: max }, (_, i) => (
         <Star
           key={i}

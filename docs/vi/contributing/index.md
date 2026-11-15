@@ -1,9 +1,9 @@
 ---
-version: 4
-lastUpdated: 2026-11-15T16:45:24.641Z
+version: 5
+lastUpdated: 2026-11-15T17:03:01.851Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f4d137a36eed6a52
+sourceHash: 19a64dc7db3b899b
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -17,6 +17,7 @@ Cảm ơn bạn đã quan tâm tới việc đóng góp cho LumiBase! Hướng d
 - [Dựng môi trường phát triển](./index.md#dựng-môi-trường-phát-triển)
 - [Code style](./code-style.md)
 - [Hướng dẫn testing](./testing.md)
+- [Storybook: catalogue UI, a11y và visual test](./storybook.md)
 - [Viết extension](./extension-dev.md)
 - [Chính sách versioning](./versioning-policy.md)
 - [Runtime được hỗ trợ](./supported-runtimes.md)
