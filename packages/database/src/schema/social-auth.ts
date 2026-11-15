@@ -18,7 +18,7 @@ const id = () => text('id').$defaultFn(() => nanoid()).primaryKey();
  * made — evidence for an audit trail, never a lookup key (the provider may
  * change it later; the stable key is `subject`).
  *
- * Migration 0032 backfills every existing `users.external_id` here under the
+ * Migration 0033 backfills every existing `users.external_id` here under the
  * legacy issuer {@link LEGACY_EXTERNAL_ID_ISSUER}, so the table is a complete
  * list of an account's non-password login methods.
  */

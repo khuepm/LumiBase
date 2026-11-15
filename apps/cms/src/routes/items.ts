@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../env';
 import { ItemServiceError, parseDeepQueryParams, parseFilterQueryParams, bulkMaxItems } from '../services/item-service';
+import type { TreeQuery } from '../services/tree-service';
 import { itemServiceForRequest, permissionServiceForRequest } from '../services/item-service-factory';
 import { ContentVersionError, ContentVersionService } from '../services/content-version-service';
 import { DependentsError, DependentsService, type ResolveAction } from '../services/dependents-service';
@@ -38,7 +39,20 @@ const listQuerySchema = z.object({
   // Opt out of the `count(*)` total (high-load-cache-readiness Req 5).
   // Defaults to `total_count` to preserve the historical response shape.
   meta: z.enum(['total_count', 'none']).optional(),
+  // Tree navigation (#749): `?tree=children&parent=<id|null>`,
+  // `?tree=subtree&parent=<id|null>`, `?tree=ancestors&node=<id>`.
+  tree: z.enum(['children', 'subtree', 'ancestors']).optional(),
+  parent: z.string().optional(),
+  node: z.string().min(1).optional(),
 });
+
+/** Map the tree query params to the service shape; `parent` absent/`null`/empty = roots. */
+function treeQueryFrom(q: z.infer<typeof listQuerySchema>): TreeQuery | undefined | 'invalid' {
+  if (!q.tree) return q.parent !== undefined || q.node !== undefined ? 'invalid' : undefined;
+  if (q.tree === 'ancestors') return q.node ? { mode: 'ancestors', node: q.node } : 'invalid';
+  const parent = q.parent === undefined || q.parent === '' || q.parent === 'null' ? null : q.parent;
+  return { mode: q.tree, parent };
+}
 
 const scheduleSchema = {
   publishAt: z.string().datetime().nullable().optional(),
@@ -49,7 +63,14 @@ const createSchema = z.object({
   data: z.record(z.string(), z.unknown()),
   status: z.string().optional(),
   sort: z.number().int().optional(),
+  /** Tree collections (#749): parent item id; null/absent = root. */
+  parentId: z.string().min(1).nullable().optional(),
   ...scheduleSchema,
+});
+
+const moveSchema = z.object({
+  parentId: z.string().min(1).nullable(),
+  position: z.number().int().min(0).optional(),
 });
 
 const patchSchema = z.object({
@@ -92,6 +113,10 @@ itemsRouter.get('/:collection', async (c) => {
   } catch {
     return c.json({ errors: [{ code: 'VALIDATION', message: 'Invalid filter: expected JSON or filter[field][_op]=value syntax.' }] }, 400);
   }
+  const tree = treeQueryFrom(parsed.data);
+  if (tree === 'invalid') {
+    return c.json({ errors: [{ code: 'VALIDATION', message: 'Tree query: use tree=children|subtree with parent, or tree=ancestors with node.' }] }, 400);
+  }
   try {
     const fields = parsed.data.fields ? parsed.data.fields.split(',') : undefined;
     const deep = parseDeepQueryParams(searchParams);
@@ -105,6 +130,7 @@ itemsRouter.get('/:collection', async (c) => {
       offset: parsed.data.offset,
       status: parsed.data.status,
       withTotal: parsed.data.meta !== 'none',
+      tree,
     });
     return c.json(result);
   } catch (err) {
@@ -289,6 +315,26 @@ itemsRouter.patch('/:collection/:id', async (c) => {
   }
   try {
     const data = await buildService(c).patch(c.req.param('collection'), c.req.param('id'), parsed.data);
+    return c.json({ data });
+  } catch (err) {
+    const { status, body } = toError(err);
+    return c.json(body, status as 400);
+  }
+});
+
+/**
+ * POST /items/:collection/:id/move — move an item and its subtree under
+ * `parentId` (null = root), optionally at `position` among the new siblings
+ * (#749). Requires `update` on the item and `read` on the new parent; cycles
+ * and depth overflows are 409.
+ */
+itemsRouter.post('/:collection/:id/move', async (c) => {
+  const parsed = moveSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ errors: parsed.error.issues.map((i) => ({ code: 'VALIDATION', message: i.message })) }, 400);
+  }
+  try {
+    const data = await buildService(c).move(c.req.param('collection'), c.req.param('id'), parsed.data);
     return c.json({ data });
   } catch (err) {
     const { status, body } = toError(err);

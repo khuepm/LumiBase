@@ -28,5 +28,7 @@ export type InterfaceComponent<T = unknown> = React.FC<InterfaceProps<T>>;
  */
 export function readOptions<T>(field: FieldResource): T {
   const meta = (field as unknown as { meta?: Record<string, unknown> }).meta;
-  return (meta?.options as T) ?? ({} as T);
+  // The fields API returns `options` at the top level; `meta.options` is the
+  // legacy Directus-style location. Prefer meta, fall back to top level.
+  return ((meta?.options ?? field.options) as T) ?? ({} as T);
 }

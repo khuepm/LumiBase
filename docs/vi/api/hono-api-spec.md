@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 51
-lastUpdated: 2026-11-15T18:05:21.014Z
+version: 50
+lastUpdated: 2026-11-15T18:29:03.519Z
 sourceLang: en
 translatedFrom: en
-sourceHash: cde504e1f12c06a3
+sourceHash: 3d2993c6d2c70e62
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T18:05:21.014Z
-codeVerifiedHash: cde504e1f12c06a3
-codeVerifiedClaims: 576
+codeVerified: 2026-11-15T18:29:03.519Z
+codeVerifiedHash: 3d2993c6d2c70e62
+codeVerifiedClaims: 580
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -116,6 +116,7 @@ Phản hồi lỗi:
 | `_json_contains` | JSONB `@>` — chứa giá trị / sub-object / phần tử mảng |
 | `_has_key` | Trường JSON object có chứa key này |
 | `_has_any_keys`, `_has_all_keys` | Trường JSON object chứa bất kỳ / tất cả các key này (mảng chuỗi) |
+| `_near`, `_within_bbox` | Trường geopoint: trong bán kính `{ lat, lng, radius }` mét / trong khung `[minLng, minLat, maxLng, maxLat]` — xem [Trường geopoint](../features/geopoint.md) |
 
 **Tìm kiếm bên trong JSON.** Một key trường lọc có thể là **đường dẫn dấu chấm** vào trường JSON/JSONB lồng nhau — ví dụ `filter={"metadata.author.country":{"_eq":"VN"}}` biên dịch thành tra cứu `data #>> '{metadata,author,country}'`. Các phân đoạn đường dẫn bị giới hạn trong `[A-Za-z0-9_]` và được bind dưới dạng tham số (an toàn trước SQL injection); độ sâu tối đa là 8. Các toán tử `_json_contains` / `_has_*` chạy trên JSONB và sử dụng index GIN hiện có. Các key cấp cao nhất và các trường cấu trúc hoạt động chính xác như trước.
 
@@ -460,6 +461,8 @@ Mã lỗi organization bổ sung gồm `400 VALIDATION`, `400 SCOPE_NOT_ALLOWED`
 | `PUT` | `/api/v1/collections/:name/schema` | Áp dụng schema (idempotent, nhận biết diff) |
 | `POST` | `/api/v1/collections/diff` | So sánh schema bundle với hiện tại |
 | `GET` | `/api/v1/collections/:name/index-advice?path=&cast=` | Gợi ý index cho đường dẫn JSON (chỉ đọc, `schema:read`) |
+| `GET` | `/api/v1/collections/:name/form-layout` | Bố cục form item: tab, nhóm, đường phân cách, điều kiện (`schema:read`); xem [Bố cục form](../features/form-layout.md) |
+| `PUT` | `/api/v1/collections/:name/form-layout` | Thay (hoặc với `null` thì xóa) bố cục form (`schema:update`) |
 
 **Request tạo collection:**
 ```json
@@ -590,6 +593,7 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `DELETE` | `/api/v1/items/:collection/:id` | Xóa mục — **409 nếu bị chặn bởi phụ thuộc** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | Liệt kê các bản ghi tham chiếu tới mục này |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Xử lý hàng loạt các phụ thuộc của quan hệ |
+| `POST` | `/api/v1/items/:collection/:id/move` | Di chuyển một item cùng cây con của nó trong collection dạng cây; liệt kê với `?tree=children\|subtree\|ancestors` ([Collection phân cấp](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | Liệt kê các bản sửa đổi (revisions) |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Khôi phục lại một bản sửa đổi |
 | `GET` | `/api/v1/items/:collection/:id/versions` | Liệt kê các bản nháp có tên (mỗi bản có cờ `mainChanged`) |

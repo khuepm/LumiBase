@@ -1,11 +1,11 @@
 ---
-version: 52
-lastUpdated: 2026-11-15T18:05:21.014Z
+version: 51
+lastUpdated: 2026-11-15T18:29:03.519Z
 sourceLang: en
-contentHash: cde504e1f12c06a3
-codeVerified: 2026-11-15T18:05:21.014Z
-codeVerifiedHash: cde504e1f12c06a3
-codeVerifiedClaims: 576
+contentHash: 3d2993c6d2c70e62
+codeVerified: 2026-11-15T18:29:03.519Z
+codeVerifiedHash: 3d2993c6d2c70e62
+codeVerifiedClaims: 580
 ---
 
 # Hono API Specification — LumiBase
@@ -116,6 +116,7 @@ Error response:
 | `_json_contains` | JSONB `@>` — value/sub-object/array-membership containment |
 | `_has_key` | The JSON object has this key |
 | `_has_any_keys`, `_has_all_keys` | The JSON object has any / all of these keys (string array) |
+| `_near`, `_within_bbox` | geopoint fields: within `{ lat, lng, radius }` metres / inside `[minLng, minLat, maxLng, maxLat]` — see [Geopoint fields](../features/geopoint.md) |
 
 **Searching inside JSON.** A filter field key may be a **dotted path** into a
 nested JSON/JSONB field — e.g. `filter={"metadata.author.country":{"_eq":"VN"}}`
@@ -513,6 +514,8 @@ Organization errors additionally include `400 VALIDATION`, `400 SCOPE_NOT_ALLOWE
 | `PUT` | `/api/v1/collections/:name/schema` | Apply schema (idempotent, diff-aware) |
 | `POST` | `/api/v1/collections/diff` | Compare bundle schema vs current |
 | `GET` | `/api/v1/collections/:name/index-advice?path=&cast=` | JSON path index advisor (read-only, `schema:read`) |
+| `GET` | `/api/v1/collections/:name/form-layout` | Item form layout: tabs, groups, dividers, conditions (`schema:read`); see [Form layout](../features/form-layout.md) |
+| `PUT` | `/api/v1/collections/:name/form-layout` | Replace (or with `null` remove) the form layout (`schema:update`) |
 
 **Create collection request:**
 ```json
@@ -670,6 +673,7 @@ active `siteId`.
 | `DELETE` | `/api/v1/items/:collection/:id` | Delete item — **409 if blocked by dependents** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | List records that reference this item |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Batch-resolve a relation's dependents |
+| `POST` | `/api/v1/items/:collection/:id/move` | Move an item and its subtree in a tree collection; list with `?tree=children\|subtree\|ancestors` ([Hierarchical collections](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | List revisions |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Revert to revision |
 | `GET` | `/api/v1/items/:collection/:id/versions` | List named draft versions (each has a `mainChanged` flag) |

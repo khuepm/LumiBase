@@ -14,6 +14,7 @@ import { RelationM2ADisplay } from './relation-m2a';
 import { TagsPillsDisplay } from './tags-pills';
 import { TextDisplay } from './text';
 import { ComponentTemplateDisplay } from './component-template';
+import { GeopointDisplay } from './geopoint';
 import { readDisplayKey, type DisplayComponent } from './types';
 
 /**
@@ -46,6 +47,8 @@ const REGISTRY: Record<string, DisplayComponent<any>> = {
   // Aliases so the doc-canonical names resolve too.
   datetime: FormattedDateDisplay,
   'mustache-template': MustacheDisplay,
+  // geopoint (#746).
+  geopoint: GeopointDisplay,
 };
 
 const INTERFACE_TO_DISPLAY: Record<string, string> = {
@@ -65,6 +68,7 @@ const TYPE_TO_DISPLAY: Record<string, string> = {
   date: 'formatted-date',
   datetime: 'formatted-date',
   timestamp: 'formatted-date',
+  geopoint: 'geopoint',
 };
 
 export function resolveDisplay(field: FieldResource): DisplayComponent<unknown> {
@@ -97,6 +101,7 @@ export const DISPLAY_CATALOGUE: Array<{ id: string; label: string; hint: string 
   { id: 'relation-m2a', label: 'Relation (M2A)', hint: 'Summarise links across multiple collections.' },
   { id: 'mustache-template', label: 'Mustache template', hint: 'Compose a row template like `{{title}} ({{slug}})`.' },
   { id: 'component-template', label: 'Component template', hint: 'Visual block-based template (Phase F).' },
+  { id: 'geopoint', label: 'Geopoint', hint: 'Latitude, longitude with a pin.' },
 ];
 
 export const DISPLAY_NAMES = Object.keys(REGISTRY);

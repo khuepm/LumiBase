@@ -7,7 +7,7 @@ import { connectDbIntegration, hasDbIntegrationUrl } from '../../../__tests__/he
 import { appleProfile, profile } from './memory-repo';
 
 /**
- * Postgres-backed check of the Drizzle identity repository and migration 0032:
+ * Postgres-backed check of the Drizzle identity repository and migration 0033:
  * unique `(issuer, subject)`, account + membership + identity created in one
  * transaction, the Apple name kept on a returning sign-in, and the
  * last-login-method guard against real rows.
