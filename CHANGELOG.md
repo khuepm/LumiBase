@@ -60,6 +60,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ### Fixed
 - SDK: `rawRequest` no longer forces `content-type: application/json` on a `FormData` body, which broke multipart uploads.
+- Typed JSON timestamp filters (#729) accept the end-of-day time `24:00` (also `24:00:00`, `24:00:00.000`), which PostgreSQL casts to midnight of the next day. The guard rejected it while the cast accepts it; `24:01`, `24:00:01` and `24:00:00.5` stay rejected, as they are in PostgreSQL.
 
 - **Agent harness: `askUser` clarification tool (#710).** An agent that cannot continue
   without a decision it may not make asks a human instead of guessing. The run parks in
