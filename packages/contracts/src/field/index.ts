@@ -23,7 +23,9 @@ export type FieldType =
   | 'geometry'
   | 'alias'
   /** Dynamic zone (#748): ordered `{ id, type, data }` blocks; see `options.allowedBlocks`. */
-  | 'blocks';
+  | 'blocks'
+  /** `{ lat, lng }` point (#746) — see `./geopoint`. */
+  | 'geopoint';
 
 export type FieldWidth = 'half' | 'full' | 'fill';
 
@@ -61,3 +63,4 @@ export interface FieldDefinition<TOptions = unknown> {
 export * from './slug';
 // Timezone-aware datetime values (#747).
 export * from './zoned-datetime';
+export * from './geopoint';

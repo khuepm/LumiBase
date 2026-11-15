@@ -11,6 +11,7 @@ import { InputAutocompleteApiInterface } from './input-autocomplete-api';
 import { InputHashInterface } from './input-hash';
 import { JsonRawInterface } from './json-raw';
 import { MapInterface } from './map';
+import { GeopointInterface } from './geopoint';
 import { MarkdownInterface } from './markdown';
 import { NumberInterface } from './number';
 import { RelationTreeViewInterface } from './relation-o2m-tree-view';
@@ -98,6 +99,8 @@ const REGISTRY: Record<string, InterfaceComponent<any>> = {
   aio: AioInterface,
   // Dynamic zones (#748) — also resolves by the `blocks` storage type.
   blocks: BlocksInterface,
+  // `{ lat, lng }` point on a MapLibre map (#746); also resolves by field type.
+  geopoint: GeopointInterface,
 
   // Aliases by underlying type so collections without an explicit interface
   // still get a sensible editor.

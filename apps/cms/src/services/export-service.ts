@@ -449,7 +449,7 @@ export function decodeCell(text: string | null, type: string | undefined): unkno
     return Number.isFinite(n) ? n : unescapeText(text);
   }
   if (t === 'boolean') return text === 'true' ? true : text === 'false' ? false : unescapeText(text);
-  if (t === 'json' || t === 'csv' || t === 'geometry' || t === 'blocks') {
+  if (t === 'json' || t === 'csv' || t === 'geometry' || t === 'blocks' || t === 'geopoint') {
     try {
       return JSON.parse(text);
     } catch {

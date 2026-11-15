@@ -33,6 +33,7 @@ export const FIELD_TYPES = [
   'geometry',
   'alias',
   'blocks',
+  'geopoint',
 ] as const satisfies readonly FieldType[];
 
 // Adding a member to `FieldType` without covering it here fails `pnpm typecheck`.
@@ -64,6 +65,7 @@ const SCALAR: Record<(typeof FIELD_TYPES)[number], unknown> = {
     { id: 'V1StGXR8_Z5jdHi6B-myT', type: 'hero', data: { title: 'Hi' } },
     { id: 'Uakgb_J5m9g-0JDMbcJqL', type: 'cta', data: { label: 'Go', url: null } },
   ],
+  geopoint: { lat: 21.03, lng: 105.85 },
 };
 
 /** Relation and file kinds — the interfaces that store references, not scalars. */

@@ -243,6 +243,7 @@ export const INTERFACE_CATALOGUE: InterfaceCatalogueItem[] = [
     width: 'full',
   },
   { id: 'map', label: 'Map', description: 'GeoJSON point / geometry editor.', type: 'geometry', group: 'Special', defaultDisplay: 'raw' },
+  { id: 'geopoint', label: 'Geopoint', description: 'Latitude / longitude picked on a map, typed, or from your location.', type: 'geopoint', group: 'Special', defaultDisplay: 'geopoint' },
   { id: 'presentation-divider', label: 'Presentation: divider', description: 'Visual divider only.', type: 'alias', group: 'Special' },
   { id: 'presentation-notice', label: 'Presentation: notice', description: 'Inline editorial notice.', type: 'alias', group: 'Special' },
   { id: 'presentation-header', label: 'Presentation: header', description: 'Section heading with subtitle.', type: 'alias', group: 'Special' },

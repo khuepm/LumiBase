@@ -460,7 +460,16 @@ export type ItemFilterOp =
   | "_json_contains"
   | "_has_key"
   | "_has_any_keys"
-  | "_has_all_keys";
+  | "_has_all_keys"
+  // geopoint fields: `{ lat, lng, radius }` (metres) / `[minLng, minLat, maxLng, maxLat]`.
+  | "_near"
+  | "_within_bbox";
+
+/** Value of a `geopoint` field: WGS 84 degrees. */
+export interface GeoPoint {
+  lat: number;
+  lng: number;
+}
 
 export interface ItemFilter {
   _and?: ItemFilter[];

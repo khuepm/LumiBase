@@ -1,10 +1,10 @@
 ---
-version: 48
-lastUpdated: 2026-11-15T11:59:59.798Z
+version: 49
+lastUpdated: 2026-11-15T12:11:15.817Z
 sourceLang: en
-contentHash: 47bbe5ddaefb77c8
-codeVerified: 2026-11-15T11:59:59.798Z
-codeVerifiedHash: 47bbe5ddaefb77c8
+contentHash: 2c14fb8c461e7052
+codeVerified: 2026-11-15T12:11:15.817Z
+codeVerifiedHash: 2c14fb8c461e7052
 codeVerifiedClaims: 520
 ---
 
@@ -116,6 +116,7 @@ Error response:
 | `_json_contains` | JSONB `@>` — value/sub-object/array-membership containment |
 | `_has_key` | The JSON object has this key |
 | `_has_any_keys`, `_has_all_keys` | The JSON object has any / all of these keys (string array) |
+| `_near`, `_within_bbox` | geopoint fields: within `{ lat, lng, radius }` metres / inside `[minLng, minLat, maxLng, maxLat]` — see [Geopoint fields](../features/geopoint.md) |
 
 **Searching inside JSON.** A filter field key may be a **dotted path** into a
 nested JSON/JSONB field — e.g. `filter={"metadata.author.country":{"_eq":"VN"}}`

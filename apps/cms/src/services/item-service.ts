@@ -25,6 +25,15 @@ import {
   type RealtimeProvider,
 } from '@lumibase/runtime';
 import { buildSearchDocument } from './search-document';
+import {
+  GEO_OPERATORS,
+  GeoFilterError,
+  HAVERSINE_DIALECT,
+  compileGeoClause,
+  filterUsesGeo,
+  resolveGeoDialect,
+  type GeoDialect,
+} from './geo-filter';
 import { PermissionService, type CompiledPermission, type PermissionAction } from './permission-service';
 import { applyFieldMask, evaluate, type MagicContext } from './permission-dsl';
 import type { PolicyRule } from '@lumibase/contracts';
@@ -127,7 +136,10 @@ export type ItemFilterOp =
   | '_json_contains'
   | '_has_key'
   | '_has_any_keys'
-  | '_has_all_keys';
+  | '_has_all_keys'
+  // geopoint (#746): radius in metres / `[minLng, minLat, maxLng, maxLat]`.
+  | '_near'
+  | '_within_bbox';
 
 /** Recursive tree-shaped filter, e.g. `{ _and: [ { status: { _eq: 'published' } } ] }`. */
 export interface ItemFilter {
@@ -492,21 +504,55 @@ function typedComparison(key: string, op: string, input: unknown, types?: FieldT
   }
 }
 
-/** @internal Exported for unit tests. */
-export function buildFilter(filter?: ItemFilter, types?: FieldTypeMap): SQL | undefined {
+/**
+ * `_near` / `_within_bbox` on a geopoint (#746). The operand sits under the
+ * field key like every other operator, so the readable-field guard sees it.
+ * Only JSON data fields can hold a point; a top-level field whose declared type
+ * is not `geopoint` (or `json`) is refused from the schema alone — never from
+ * stored data, so the refusal reveals nothing about rows.
+ */
+function geoClause(key: string, op: string, raw: unknown, types: FieldTypeMap | undefined, geo: GeoDialect): SQL {
+  if (STRUCTURAL_FIELDS.has(key)) {
+    throw new ItemServiceError('INVALID_FILTER', `Operator "${op}" needs a geopoint field, not "${key}".`);
+  }
+  const segments = resolveFieldPath(key);
+  const declared = segments.length === 1 ? types?.get(key) : undefined;
+  if (declared !== undefined && declared !== 'geopoint' && declared !== 'json') {
+    throw new ItemServiceError('INVALID_FILTER', `Operator "${op}" needs a geopoint field; "${key}" is ${declared}.`);
+  }
+  const coords = {
+    lat: sql`${items.data}#>>${bindArrayLiteral([...segments, 'lat'])}`,
+    lng: sql`${items.data}#>>${bindArrayLiteral([...segments, 'lng'])}`,
+  };
+  try {
+    return compileGeoClause(op, raw, coords, geo);
+  } catch (err) {
+    if (err instanceof GeoFilterError) {
+      throw new ItemServiceError('INVALID_FILTER', `Operator "${op}" on "${key}": ${err.message}.`);
+    }
+    throw err;
+  }
+}
+
+/** Exported for the geo filter tests (#746); callers go through {@link ItemService.list}. */
+export function buildFilter(
+  filter?: ItemFilter,
+  types?: FieldTypeMap,
+  geo: GeoDialect = HAVERSINE_DIALECT,
+): SQL | undefined {
   if (!filter) return undefined;
   const clauses: SQL[] = [];
 
   if (filter._and?.length) {
     const sub = filter._and
-      .map((f) => buildFilter(f, types))
+      .map((f) => buildFilter(f, types, geo))
       .filter((c): c is SQL => c !== undefined);
     if (sub.length) clauses.push(sql.join(sub, sql` and `));
   }
 
   if (filter._or?.length) {
     const sub = filter._or
-      .map((f) => buildFilter(f, types))
+      .map((f) => buildFilter(f, types, geo))
       .filter((c): c is SQL => c !== undefined);
     if (sub.length) clauses.push(sql`(${sql.join(sub, sql` or `)})`);
   }
@@ -518,6 +564,10 @@ export function buildFilter(filter?: ItemFilter, types?: FieldTypeMap): SQL | un
     for (const [op, raw] of Object.entries(value as Record<string, unknown>)) {
       if (clauses.length >= MAX_FILTER_CLAUSES) {
         throw new ItemServiceError('INVALID_FILTER', 'Filter has too many clauses.');
+      }
+      if (GEO_OPERATORS.has(op)) {
+        clauses.push(geoClause(key, op, raw, types, geo));
+        continue;
       }
       const typed = typedComparison(key, op, raw, types);
       if (typed) {
@@ -910,12 +960,14 @@ export class ItemService {
     const coll = await this.resolveCollection(collectionName);
     const perm = await this.perm(collectionName, 'read');
     const permClause = this.permissions?.whereFor(perm) ?? undefined;
+    // PostGIS is probed only when a geo operator is used (#746), once per isolate.
+    const geo = filterUsesGeo(params.filter) ? await resolveGeoDialect(this.deps.db) : HAVERSINE_DIALECT;
     const where = and(
       scopeSite(items.siteId, this.deps.siteId),
       eq(items.collectionId, coll.id),
       isNull(items.deletedAt),
       params.status ? eq(items.status, params.status) : undefined,
-      buildFilter(params.filter, coll.fieldTypes),
+      buildFilter(params.filter, coll.fieldTypes, geo),
       permClause,
     );
 
@@ -2851,7 +2903,7 @@ function setNested(root: Record<string, unknown>, path: string[], value: unknown
   cur[path[path.length - 1]!] = value;
 }
 
-const ARRAY_OPERATORS = new Set(['_in', '_nin', '_between']);
+const ARRAY_OPERATORS = new Set(['_in', '_nin', '_between', '_within_bbox']);
 
 function coerceFilterValue(operator: string, raw: string): unknown {
   if (ARRAY_OPERATORS.has(operator)) {

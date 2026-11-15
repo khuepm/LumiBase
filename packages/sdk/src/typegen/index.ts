@@ -211,6 +211,7 @@ function mapScalarFieldType(field: TypegenField, branded: boolean): string {
     time: 'string',
     timestamp: 'string',
     geometry: 'GeoJSON.Geometry',
+    geopoint: '{ lat: number; lng: number }',
   };
 
   return typeMap[field.type] || 'unknown';

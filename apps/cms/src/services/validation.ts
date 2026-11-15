@@ -12,6 +12,7 @@ import {
   resolveFormVisibility,
   type FormLayout,
 } from '@lumibase/contracts/form-layout';
+import { GeoPointSchema } from '@lumibase/contracts/schemas';
 import type { CompiledField } from './schema-service';
 import {
   BLOCK_ID_PATTERN,
@@ -94,6 +95,8 @@ const TYPE_BASE: Record<string, () => ZodTypeAny> = {
   datetime: () => z.string(),
   time: () => z.string(),
   timestamp: () => z.string(),
+  // `{ lat, lng }`, finite and in range (#746).
+  geopoint: () => GeoPointSchema,
 };
 
 /**
