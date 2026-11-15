@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 3
-lastUpdated: 2026-11-15T12:16:18.940Z
-contentHash: c2dbcae84142c6bf
-codeVerified: 2026-11-15T12:16:18.940Z
-codeVerifiedHash: c2dbcae84142c6bf
+version: 4
+lastUpdated: 2026-11-15T15:29:22.118Z
+contentHash: d25424a17a2f2579
+codeVerified: 2026-11-15T15:29:22.118Z
+codeVerifiedHash: d25424a17a2f2579
 codeVerifiedClaims: 22
 ---
 
@@ -55,6 +55,13 @@ from another (create under a parent, move, a `cascade`/`reparent` delete) runs
 in one transaction that holds a per-collection advisory lock, so concurrent
 moves are serialised and cannot corrupt the tree. Item rows returned by the
 items API carry `parentId` and `path`.
+
+A parent is always an item of the same site and the same collection. There is
+no database foreign key on `parent_id`: every tree read and write looks items
+up by `site_id`, `collection_id` and `id` together, never by id alone, so the
+tree stays correct whether item ids are unique per instance or only per site.
+An id that belongs to another site answers `404`, exactly like an id that does
+not exist.
 
 ## API
 
