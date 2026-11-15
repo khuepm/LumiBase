@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 46
-lastUpdated: 2026-11-14T12:31:26.652Z
+version: 47
+lastUpdated: 2026-11-15T08:38:10.697Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 05c921e5657b5afa
+sourceHash: f161aa937b42dbe6
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T12:31:26.652Z
-codeVerifiedHash: 05c921e5657b5afa
-codeVerifiedClaims: 518
+codeVerified: 2026-11-15T08:38:10.697Z
+codeVerifiedHash: f161aa937b42dbe6
+codeVerifiedClaims: 532
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -798,9 +798,13 @@ Authorization: Bearer <token>
 ## 7c. Deployments
 
 Deployment target theo site (Vercel / Netlify), kích hoạt deploy thủ công,
-trạng thái build và log (spec `deployment-integrations`). Mọi route trừ inbound
-webhook đều yêu cầu site admin (`requireSiteAdmin`): `400 TENANT_REQUIRED` khi
-không resolve được site, `403 FORBIDDEN` khi không có quyền admin. Token của
+trạng thái build và log (spec `deployment-integrations`), cùng môi trường, promote
+và phê duyệt deploy (#743, xem `docs/en/features/deployment-environments.md`). Mọi
+route trừ inbound webhook cần site admin hoặc một capability `deploy:*`
+(permission row `lumibase_deploy:<scope>`): `400 TENANT_REQUIRED` khi không
+resolve được site, `403 FORBIDDEN` khi không có cả hai. Tạo/sửa/xoá target,
+`PUT /environments` và `GET /:id/logs` vẫn chỉ dành cho site admin (`requireSiteAdmin`).
+Token của
 Provider được mã hoá khi ghi và không bao giờ được trả về. Body được xác thực bằng
 `DeploymentTargetCreateSchema` / `DeploymentTargetUpdateSchema` /
 `DeployTriggerSchema` (`@lumibase/contracts`); parse lỗi trả về
@@ -814,11 +818,18 @@ Provider không được đăng ký trong deployment này (chỉ có `vercel` v�
 | `POST` | `/api/v1/deployments/targets` | Tạo `{ provider (vercel\|netlify), name, projectId, token, defaultBranch?, productionUrl? }` → `201`. Token được kiểm với Provider trước khi lưu bất cứ thứ gì: `400 TOKEN_INVALID` |
 | `PATCH` | `/api/v1/deployments/targets/:id` | Cập nhật `{ name?, projectId?, token?, defaultBranch?, productionUrl?, status? (active\|inactive) }`. Có `token` thì token được kiểm lại và mã hoá lại (rotation). `404 NOT_FOUND`, `400 TOKEN_INVALID`, `400 UNKNOWN_PROVIDER` (chỉ khi có gửi `token`) |
 | `DELETE` | `/api/v1/deployments/targets/:id` | Xoá target (các deployment của nó bị xoá theo cascade) → `{ data: null }`. `404 NOT_FOUND` |
-| `POST` | `/api/v1/deployments/targets/:id/deploy` | Kích hoạt build `{ branch?, reason? }` → `201` kèm dòng deployment mới (`triggerSource: "manual"`). `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `400 UNKNOWN_PROVIDER`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (gọi Provider thất bại; vẫn ghi một dòng `error`) |
+| `POST` | `/api/v1/deployments/targets/:id/deploy` | Kích hoạt build `{ branch?, reason? }` → `201` kèm dòng deployment mới (`triggerSource: "manual"`). Cần `deploy:trigger:<targetId>`, `deploy:trigger:<env>` của một môi trường chứa nó, hoặc `deploy:trigger:*`; khi một trong các môi trường đó có `requiresApproval` thì response là `202 { data: { status: "pending_approval", environment, approval } }` và không có gì được dispatch. `403 FORBIDDEN`, `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `400 UNKNOWN_PROVIDER`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (gọi Provider thất bại; vẫn ghi một dòng `error`) |
 | `GET` | `/api/v1/deployments` | Liệt kê deployment, mới nhất trước (`createdAt` giảm dần, `id` giảm dần để phân định khi trùng). Lọc `?targetId=&status=&limit=`. `limit` phải là số nguyên không âm: mặc định 50 khi vắng hoặc rỗng, `0` trả danh sách rỗng, giá trị trên 200 bị giới hạn ở 200. Mọi giá trị khác (`abc`, `-5`, `1.5`) trả `400 VALIDATION`. Không có `meta` |
 | `GET` | `/api/v1/deployments/:id` | Lấy một deployment. `404 NOT_FOUND` |
 | `GET` | `/api/v1/deployments/:id/logs` | Lấy build log từ Provider, đã che secret → `{ data: { log } }`. `404 NOT_FOUND` khi deployment không tồn tại hoặc chưa có id phía Provider, `400 UNKNOWN_PROVIDER` khi target hoặc Provider của nó không khả dụng |
 | `POST` | `/api/v1/deployments/:id/refresh` | Ép đồng bộ trạng thái từ Provider (không làm gì khi trạng thái đã là terminal). `404 NOT_FOUND` khi deployment không tồn tại. Khi chưa có id phía Provider, hoặc target hay Provider không khả dụng, dòng được trả về nguyên trạng (`200`, không bao giờ `UNKNOWN_PROVIDER`) |
+| `GET` | `/api/v1/deployments/access` | `{ admin, capabilities, humanDecider, environments: [{ key, canTrigger, canApprove }] }` của người gọi |
+| `GET` | `/api/v1/deployments/environments` | Bản đồ môi trường (settings key `deployment.environments`, mặc định `preview` / `staging` → `production` / `production` có `requiresApproval`). `500 ENVIRONMENTS_INVALID` khi bản đồ đã lưu không hợp lệ |
+| `PUT` | `/api/v1/deployments/environments` | Site admin. Thay bản đồ `{ environments: [{ key, name, targetIds, requiresApproval, promotesTo }] }` (`DeploymentEnvironmentsUpdateSchema`). `400 VALIDATION` (trùng key, `promotesTo` không tồn tại), `400 UNKNOWN_TARGET` |
+| `POST` | `/api/v1/deployments/environments/:key/deploy` | Deploy mọi target của môi trường `{ branch?, reason? }`. Cần `deploy:trigger:<key>` (hoặc trên mọi target, hoặc `*`). `201 { data: { status: "dispatched", environment, results: [{ targetId, ok, deployment, error? }] } }`, hoặc `202 { data: { status: "pending_approval", environment, approval } }` khi `requiresApproval`. `403 FORBIDDEN`, `404 ENVIRONMENT_NOT_FOUND`, `409 NO_TARGETS` |
+| `POST` | `/api/v1/deployments/environments/:key/promote` | Promote deployment `ready` mới nhất của môi trường (hoặc `{ deploymentId }`) vào môi trường `promotesTo` của nó `{ deploymentId?, reason? }`; dùng đúng bản build khi Provider hỗ trợ promote, nếu không thì kích hoạt lại cùng commit. Cần quyền trigger trên môi trường đích. `201` / `202` như trên. `404 NOT_FOUND` (deployment không thuộc môi trường), `409 NO_PROMOTION_TARGET`, `409 SOURCE_NOT_READY` |
+| `GET` | `/api/v1/deployments/approvals` | Các approval deploy, mới nhất trước, mặc định `?status=pending` (`status=all` cho mọi trạng thái), mỗi cái kèm `canDecide` cho người gọi |
+| `POST` | `/api/v1/deployments/approvals/:id/decide` | `{ decision: "approved" \| "rejected", reason? }` (`DeployApprovalDecisionSchema`). Phê duyệt cần một người đã đăng nhập, không phải người yêu cầu, có `deploy:approve:<env>` hoặc `deploy:approve:*`; người yêu cầu được từ chối (rút lại) yêu cầu của mình. `403 HUMAN_APPROVER_REQUIRED` / `SELF_APPROVAL_FORBIDDEN` / `FORBIDDEN`, `404 NOT_FOUND`, `409 APPROVAL_ALREADY_DECIDED` / `APPROVAL_EXPIRED` / `REQUESTER_REVOKED` / `PLAN_STALE` |
 
 Công khai (không có phiên; xác thực bằng chữ ký):
 
