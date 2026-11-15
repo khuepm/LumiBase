@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-15T22:10:22.259Z",
+  "generatedAt": "2026-11-15T23:02:14.126Z",
   "mode": "preserve-only",
   "effectiveMode": "preserve-only",
   "engine": "claude",
@@ -8,7 +8,7 @@
     "translated": 0,
     "preserved": 0,
     "conflicts": 0,
-    "upToDate": 202,
+    "upToDate": 203,
     "planned": 0
   },
   "actions": [
@@ -1310,6 +1310,18 @@
     },
     {
       "rel": "features/dynamic-zones.md",
+      "type": "up-to-date",
+      "reason": "in sync",
+      "enLang": "en",
+      "viLang": "vi",
+      "sourceLocale": "en",
+      "targetLocale": "vi",
+      "willTranslate": false,
+      "preservedTo": null,
+      "missingPlaceholders": 0
+    },
+    {
+      "rel": "features/editorial-ux.md",
       "type": "up-to-date",
       "reason": "in sync",
       "enLang": "en",
