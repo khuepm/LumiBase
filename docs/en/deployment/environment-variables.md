@@ -1,10 +1,10 @@
 ---
-version: 20
-lastUpdated: 2026-11-13T15:31:04.103Z
+version: 21
+lastUpdated: 2026-11-15T13:39:08.090Z
 sourceLang: en
-contentHash: a5f4809eb95a93bc
-codeVerified: 2026-11-13T15:32:52.559Z
-codeVerifiedHash: a5f4809eb95a93bc
+contentHash: f35b53b95cb4ea81
+codeVerified: 2026-11-15T13:39:08.090Z
+codeVerifiedHash: f35b53b95cb4ea81
 codeVerifiedClaims: 96
 ---
 
@@ -25,7 +25,7 @@ This page documents every environment variable and Cloudflare binding used by Lu
 | `LUMIBASE_ENV` | ✓ | — | Environment label: `development`, `staging`, `production` |
 | `LUMIBASE_RUNTIME` | Docker only | `cloudflare` | `docker` for Node.js/Docker; Cloudflare Workers infers from bindings |
 | `CORS_ALLOWED_ORIGINS` | ✓ in production | — | Comma-separated browser origins allowed to call the API; `*` is rejected in production. On Docker, when unset, the image entrypoint uses this deployment's own origin (`LUMIBASE_PUBLIC_URL`, then the platform's public URL) — the Studio is served from that origin. A value with no host, such as `https://`, counts as unset |
-| `LUMIBASE_PUBLIC_URL` | ✗ (Docker only) | — | Public origin of this deployment, e.g. `https://cms.example.com`. Read by the image entrypoint to default `CORS_ALLOWED_ORIGINS` and to print the setup wizard URL. Without it the entrypoint uses `RENDER_EXTERNAL_URL`, `RAILWAY_PUBLIC_DOMAIN` or `FLY_APP_NAME` when the platform sets them. See [One-click deploys](./one-click.md) |
+| `LUMIBASE_PUBLIC_URL` | ✗ | — | Public origin of this deployment, e.g. `https://cms.example.com`. Read by the image entrypoint to default `CORS_ALLOWED_ORIGINS` and to print the setup wizard URL. Without it the entrypoint uses `RENDER_EXTERNAL_URL`, `RAILWAY_PUBLIC_DOMAIN` or `FLY_APP_NAME` when the platform sets them. See [One-click deploys](./one-click.md). The server also uses it to build the MCP OAuth resource URI (`<origin>/api/v1/mcp…`) that a token's `aud` must match. Without it that origin comes from the request (upgraded to `https` by `X-Forwarded-Proto`), so **set it behind a TLS-terminating proxy** when you use the [remote MCP connector](../agent-setup/oauth-connector.md) |
 | `JWT_SECRET` | ✓ | — | Secret for signing/verifying application JWTs. Min 32 chars. **For Cloudflare production, set with `wrangler secret put JWT_SECRET --env production`; never commit or place in `[env.production.vars]`.** |
 | `LUMIBASE_DEV_AUTH` | Local dev only | `false` | Set to `true` to bypass Logto auth in local dev. **Never enable in production; `pnpm release:check` fails if production resolves to `true`.** |
 | `LUMIBASE_ALLOW_ORG_SIGNUP` | Optional | unset | Set to `true` to allow authenticated Studio users to create organizations. Bootstrap instance operators may create organizations without this flag. Site creation and deletion use the organization API; the legacy admin site-management routes and their test-only flag have been removed. |
