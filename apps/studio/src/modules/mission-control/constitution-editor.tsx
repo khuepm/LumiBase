@@ -160,7 +160,7 @@ function VersionList({
                 <strong>v{version.version}</strong>
                 <span
                   className={cn(
-                    'ml-2 rounded-full px-2 py-0.5 text-xs',
+                    'ms-2 rounded-full px-2 py-0.5 text-xs',
                     version.id === activeId
                       ? 'bg-emerald-100 text-emerald-800'
                       : version.status === 'draft'
@@ -170,7 +170,7 @@ function VersionList({
                 >
                   {version.id === activeId ? 'active' : version.status}
                 </span>
-                <code className="ml-2 text-[10px] text-muted-foreground">{version.hash.slice(0, 18)}…</code>
+                <code className="ms-2 text-[10px] text-muted-foreground">{version.hash.slice(0, 18)}…</code>
               </span>
               <span className="flex gap-2">
                 <button

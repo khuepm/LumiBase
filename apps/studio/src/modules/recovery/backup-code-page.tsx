@@ -679,7 +679,7 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="new-password"
                 aria-invalid={errors.password ? 'true' : 'false'}
-                className={`${inputClass(Boolean(errors.password))} pr-10`}
+                className={`${inputClass(Boolean(errors.password))} pe-10`}
                 {...register('password')}
               />
               <PasswordVisibilityButton
@@ -703,7 +703,7 @@ function RecoverySuccessPanel({ result }: RecoverySuccessPanelProps) {
                 type={showConfirmPassword ? 'text' : 'password'}
                 autoComplete="new-password"
                 aria-invalid={errors.confirmPassword ? 'true' : 'false'}
-                className={`${inputClass(Boolean(errors.confirmPassword))} pr-10`}
+                className={`${inputClass(Boolean(errors.confirmPassword))} pe-10`}
                 {...register('confirmPassword')}
               />
               <PasswordVisibilityButton
@@ -810,7 +810,7 @@ function PasswordVisibilityButton({
       aria-label={label}
       aria-pressed={pressed}
       onClick={onClick}
-      className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+      className="absolute end-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
     >
       <Icon className="h-4 w-4" aria-hidden="true" />
     </button>

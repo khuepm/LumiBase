@@ -120,7 +120,7 @@ export function McpStarterPrompts({
               </div>
               <pre className="whitespace-pre-wrap rounded bg-muted/30 p-2 text-xs" lang={language}><code>{text.prompt}</code></pre>
               <p className="text-[11px] text-muted-foreground">
-                Tools: {p.tools.map((t) => <code key={t} className="mr-1">{t}</code>)}
+                Tools: {p.tools.map((t) => <code key={t} className="me-1">{t}</code>)}
               </p>
               {needsAdmin && <p className="text-xs text-destructive">The selected role has no admin access, so this prompt will be refused.</p>}
             </li>

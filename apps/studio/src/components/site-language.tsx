@@ -2,12 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getApiClient, hasActiveToken } from '@/lib/api';
-import { resolveUiLanguage } from '@/lib/ui-language';
+import { applyDocumentLanguage } from '@/lib/text-direction';
+import { resolveUiLanguage, storeUiLanguage } from '@/lib/ui-language';
 
 /**
  * Switches the Studio's i18next language to the signed-in user's preference,
- * else the site's default language, else English (backlog B112). Renders
- * nothing. Mounted inside the admin layout, so it runs once a session exists.
+ * else the site's default language, else English (backlog B112), and sets
+ * `<html lang dir>` from it (RTL, #761). Renders nothing. Mounted inside the admin layout, so it runs once a session exists.
  *
  * Both reads go through `getApiClient()` (API base + bearer from the token
  * store, shell contracts C1/C2) and reuse the query keys other Studio code
@@ -39,8 +40,11 @@ export function SiteLanguageSync() {
     if (!enabled || !settled || !i18n?.changeLanguage) return;
     const lang = resolveUiLanguage({ preference, siteDefault });
     if (i18n.language !== lang) void i18n.changeLanguage(lang);
-    // Screen readers pick the pronunciation from the document language.
-    if (typeof document !== 'undefined') document.documentElement.lang = lang;
+    // Screen readers pick the pronunciation from the document language, and
+    // `dir` mirrors the layout for RTL languages (#761). Also remembered so the
+    // next cold start (and the login page) opens in the same direction.
+    applyDocumentLanguage(lang);
+    storeUiLanguage(lang);
   }, [enabled, settled, preference, siteDefault, i18n]);
 
   return null;

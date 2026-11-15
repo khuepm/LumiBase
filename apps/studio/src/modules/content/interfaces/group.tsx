@@ -40,7 +40,7 @@ export function GroupContainer({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium"
+          className="flex w-full items-center gap-2 px-3 py-2 text-start text-sm font-medium"
         >
           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           {title}

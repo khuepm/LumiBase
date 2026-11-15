@@ -74,12 +74,12 @@ export function StagedDiff({ veto }: { veto: StagedVeto }) {
 
       {itemQuery.isError && (
         <p className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
-          <AlertTriangle className="mr-1 inline h-3 w-3" />
+          <AlertTriangle className="me-1 inline h-3 w-3" />
           Could not load the current item — showing the staged values only.
         </p>
       )}
 
-      <div className="max-h-[55vh] overflow-y-auto pr-1">
+      <div className="max-h-[55vh] overflow-y-auto pe-1">
         <RevisionsDiff before={before} after={after} />
       </div>
     </div>

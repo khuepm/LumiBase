@@ -157,13 +157,13 @@ export function DeploymentsPage() {
         )}
         <div className="overflow-hidden rounded-lg border">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+            <thead className="bg-muted/50 text-start text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-2">Target</th>
                 <th className="px-4 py-2">Status</th>
                 <th className="px-4 py-2">Branch / commit</th>
                 <th className="px-4 py-2">URL</th>
-                <th className="px-4 py-2 text-right">Actions</th>
+                <th className="px-4 py-2 text-end">Actions</th>
               </tr>
             </thead>
             <tbody>

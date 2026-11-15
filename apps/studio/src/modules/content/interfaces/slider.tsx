@@ -42,7 +42,7 @@ export const SliderInterface: InterfaceComponent<number> = ({
         value={current}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
-        className="w-20 rounded-md border bg-background px-2 py-1 text-right text-sm disabled:opacity-50"
+        className="w-20 rounded-md border bg-background px-2 py-1 text-end text-sm disabled:opacity-50"
       />
     </div>
   );

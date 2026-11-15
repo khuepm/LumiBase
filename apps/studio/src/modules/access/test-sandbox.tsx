@@ -130,7 +130,7 @@ export function TestSandboxPage() {
           <span>Include item payload (evaluates row-level rule)</span>
         </label>
         {includeItem && (
-          <div className="overflow-hidden rounded-md border">
+          <div className="overflow-hidden rounded-md border" dir="ltr">
             <Editor
               height="160px"
               defaultLanguage="json"

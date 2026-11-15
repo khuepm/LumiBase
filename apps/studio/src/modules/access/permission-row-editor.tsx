@@ -83,7 +83,7 @@ export function PermissionRowEditor({ policyId, row, onChange }: PermissionRowEd
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex flex-1 items-center gap-2 text-left text-sm"
+          className="flex flex-1 items-center gap-2 text-start text-sm"
         >
           {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           <span
@@ -151,7 +151,7 @@ export function PermissionRowEditor({ policyId, row, onChange }: PermissionRowEd
 
             {mode === 'json' && (
               <div className="space-y-1">
-                <div className="overflow-hidden rounded-md border">
+                <div className="overflow-hidden rounded-md border" dir="ltr">
                   <Editor
                     height="180px"
                     defaultLanguage="json"
@@ -305,7 +305,7 @@ function JsonBlock({
     <div>
       <h4 className="mb-1 text-xs font-semibold uppercase text-muted-foreground">{label}</h4>
       <p className="mb-1 text-[11px] text-muted-foreground">{hint}</p>
-      <div className="overflow-hidden rounded-md border">
+      <div className="overflow-hidden rounded-md border" dir="ltr">
         <Editor
           height="120px"
           defaultLanguage="json"

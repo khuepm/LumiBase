@@ -387,7 +387,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
               disabled={!isDirty || saveMutation.isPending || !canUpdate}
               title={canUpdate ? saveActionLabel(saveAction.effective) : 'You do not have update permission on this collection.'}
               className={cn(
-                'inline-flex items-center gap-1 rounded-l-md px-3 py-1 text-xs font-medium',
+                'inline-flex items-center gap-1 rounded-s-md px-3 py-1 text-xs font-medium',
                 isDirty && canUpdate
                   ? 'bg-primary text-primary-foreground hover:opacity-90'
                   : 'bg-muted text-muted-foreground',
@@ -406,7 +406,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
               onClick={() => setSaveMenuOpen((v) => !v)}
               disabled={saveMutation.isPending || !canUpdate}
               className={cn(
-                'inline-flex items-center rounded-r-md border-l border-primary-foreground/20 px-1.5 py-1',
+                'inline-flex items-center rounded-e-md border-s border-primary-foreground/20 px-1.5 py-1',
                 canUpdate ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-muted text-muted-foreground',
               )}
             >
@@ -414,7 +414,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
             </button>
             {saveMenuOpen && (
               <div
-                className="absolute right-0 top-full z-20 mt-1 w-52 rounded-md border border-border bg-background py-1 text-xs shadow-md"
+                className="absolute end-0 top-full z-20 mt-1 w-52 rounded-md border border-border bg-background py-1 text-xs shadow-md"
                 onMouseLeave={() => setSaveMenuOpen(false)}
               >
                 {(['stay', 'return', 'create_new'] as const).map((a) => (
@@ -427,7 +427,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
                       setPendingAction(a);
                       saveMutation.mutate();
                     }}
-                    className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-muted disabled:opacity-50"
+                    className="flex w-full items-center justify-between px-3 py-1.5 text-start hover:bg-muted disabled:opacity-50"
                   >
                     {saveActionLabel(a)}
                     {saveAction.effective === a && <Check className="h-3 w-3" />}
@@ -441,7 +441,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
                     setSaveMenuOpen(false);
                     saveAction.setDefault(saveAction.effective);
                   }}
-                  className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-muted-foreground hover:bg-muted"
+                  className="flex w-full items-center gap-1.5 px-3 py-1.5 text-start text-muted-foreground hover:bg-muted"
                 >
                   <Star className="h-3 w-3" />
                   Set “{saveActionLabel(saveAction.effective)}” as default
@@ -750,7 +750,7 @@ function TabButton({
         type="button"
         onClick={() => onClick(value)}
         className={cn(
-          'w-full rounded-md px-2 py-1 text-left',
+          'w-full rounded-md px-2 py-1 text-start',
           current === value ? 'bg-background font-medium shadow-sm' : 'hover:bg-background/60',
         )}
       >
@@ -851,7 +851,7 @@ export function FieldsTab({
                 <button
                   type="button"
                   onClick={() => onReleasePin(f.name)}
-                  className="ml-0.5 rounded-full px-1 hover:bg-sky-100"
+                  className="ms-0.5 rounded-full px-1 hover:bg-sky-100"
                   aria-label={`Release pin on ${f.name}`}
                   title="Release pin — allow agents to write this field again."
                 >
@@ -861,7 +861,7 @@ export function FieldsTab({
             </span>
           )}
           {!writable && (
-            <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
+            <span className="ms-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
               <Lock className="h-3 w-3" /> read-only
             </span>
           )}

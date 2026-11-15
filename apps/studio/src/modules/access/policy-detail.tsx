@@ -276,7 +276,7 @@ function GuardsSection({
       )}
 
       {mode === 'json' && (
-        <div className="overflow-hidden rounded-md border">
+        <div className="overflow-hidden rounded-md border" dir="ltr">
           <Editor
             height="180px"
             defaultLanguage="json"
