@@ -1,11 +1,11 @@
 ---
-version: 55
-lastUpdated: 2026-11-15T23:23:35.860Z
+version: 56
+lastUpdated: 2026-11-15T23:40:56.423Z
 sourceLang: en
-contentHash: 26e8aeaa1894b496
-codeVerified: 2026-11-15T23:23:35.860Z
-codeVerifiedHash: 26e8aeaa1894b496
-codeVerifiedClaims: 622
+contentHash: fb7e23a8ff3b4d56
+codeVerified: 2026-11-15T23:40:56.423Z
+codeVerifiedHash: fb7e23a8ff3b4d56
+codeVerifiedClaims: 636
 ---
 
 # Hono API Specification — LumiBase
@@ -1343,6 +1343,15 @@ All routes mount under the authenticated chain; the token's roles are the capabi
 | `GET/POST/PATCH/DELETE` | `/api/v1/agent/roles[/:name]` | Agent role library CRUD (admin) — seeded with Planner, Writer, … |
 | `GET` | `/api/v1/agent/autonomy` | Trust ledger: grants + open incidents |
 | `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Promotion proposals; `POST :id/decide` is the only path to a higher level (admin) |
+| `GET` | `/api/v1/agent/receipts` | Agent receipts (#713): read-only aggregation of runs (by status/agent, failure rate), tool calls by skill × outcome with p50 latency, approvals (status, approver, latency p50/p90/avg), vetoes, `askUser` questions, human overrides, token/USD cost, drift, incidents, autonomy grants and promotions, a daily series and the alert thresholds crossed. `?since&until` (ISO, default the last 30 days, at most 180 days; `400 VALIDATION` / `WINDOW_TOO_WIDE`). Admin (control plane). See [agent receipts](../features/agent-receipts.md) |
+| `GET` | `/api/v1/agent/receipts/export` | CSV (`text/csv`) of `?kind=runs` (default) \| `tool_calls` \| `approvals` over the same window, at most 10,000 rows (`X-Export-Rows`, `X-Export-Truncated`). Tool inputs/outputs are never exported; text cells that start with `= + - @` are prefixed with `'` |
+| `GET/PUT` | `/api/v1/agent/receipts/alerts` | Alert thresholds (`maxRunFailureRate`, `maxVetoRate`, `maxOverrideRate`, `maxApprovalLatencyP90Minutes`, `maxCostUsd`, `maxTokens`, `maxOpenDrift`, `maxIncidents`); an absent key is not checked. Stored in the `agent.receipts.alerts` setting; unknown keys or rates outside 0–1 → `400 VALIDATION` |
+| `POST` | `/api/v1/locale-generation/jobs` | One-shot translation generator for a new locale (#714). Body `{ locale, sourceLocale? = 'en', collections, includeUi? = true, provider? }`; adds the locale to the `locales` setting and queues a job that translates missing `translatable-text` values and `ui` strings (translation memory → glossary → MT) into the review queue. `202` with the job; `400` `VALIDATION` / `NO_TRANSLATABLE_FIELDS` / `PROVIDER_UNAVAILABLE`; `409 JOB_ACTIVE`. Control plane (site administrators). See [locale generator](../features/locale-generator.md) |
+| `GET` | `/api/v1/locale-generation/jobs[/:id]` | Jobs with `status`, `cursor`, `counters`; one job adds `review` (suggestions by state) |
+| `POST` | `/api/v1/locale-generation/jobs/:id/cancel` \| `/resume` | Cancel a queued/running job between chunks; re-queue a failed/cancelled job at its cursor (`409` otherwise) |
+| `GET` | `/api/v1/locale-generation/suggestions` | Review queue, `?locale&status&jobId&collection&limit&offset`, `{ data, meta: { total, limit, offset } }` |
+| `POST` | `/api/v1/locale-generation/suggestions/:id/decide` | `{ decision: 'approve', text? }` \| `{ decision: 'reject' }`. Approval writes through the reviewer's item service (RBAC, validation, revision); `{ status: 'stale' }` when the source changed or the locale was already written; `409 ALREADY_DECIDED`; `422` when the write is refused (the suggestion stays pending) |
+| `POST` | `/api/v1/locale-generation/suggestions/decide-bulk` | `{ decision, locale, ids?, jobId?, collection?, limit? ≤ 200 }` → `{ approved, rejected, stale, failed, processed, failures }` |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Veto window: pending stagings enriched with `approvalId/collection/itemId/patch/agentRole` from the staging revision (null fields when the staging is gone); `POST :id/veto` discards a staging |
 | `GET` | `/api/v1/agent/approvals` | Approval inbox (`status` filter; defaults to `pending`) |
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Human decision on a parked action. Body `{ decision: 'approved' \| 'rejected', reason? }`; needs `approvals:decide` (403 otherwise), `404` for an unknown or other-tenant id, `409` when the approval already left `pending`. On `approved` the harness owns the state transition, so execution and the status write happen once. Execution re-resolves **the requester's** current rights and runs with `requester ∩ decider`: an approval whose requester was since revoked, demoted or removed is denied, and one with no recorded requester (parked before provenance existed) is denied with `APPROVAL_PROVENANCE_MISSING`. An approval stored with `approvalPolicy: human_required` (every [external-action tool](../features/external-action-tools.md)) is released only by a signed-in user: an API key, a connector token or an agent gets `409 EXECUTION_FAILED` carrying `HUMAN_APPROVAL_REQUIRED`, and the approval stays `pending` |
