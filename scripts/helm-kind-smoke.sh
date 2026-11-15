@@ -70,6 +70,19 @@ fail() {
   exit 1
 }
 
+# Block until no pod of the release in namespace $1 is still terminating.
+# `helm upgrade --wait` returns once the new pods are Ready, while the old
+# ones may still be draining; a `helm test` started in that window can have
+# its in-flight request land on a pod that is being killed and time out.
+wait_old_pods_gone() {
+  local namespace="$1" pods
+  pods="$(kc -n "$namespace" get pods -l "app.kubernetes.io/instance=$release" -o json \
+    | jq -r '.items[] | select(.metadata.deletionTimestamp != null) | "pod/" + .metadata.name')"
+  [ -z "$pods" ] && return 0
+  # shellcheck disable=SC2086 # one argument per pod
+  kc -n "$namespace" wait --for=delete $pods --timeout 5m
+}
+
 if ! kind get clusters | grep -qx "$cluster"; then
   kind create cluster --name "$cluster" --wait 120s
   created=1
@@ -106,6 +119,8 @@ scenario_install() {
     "${values[@]}" --set cms.podAnnotations.smoke=upgraded --wait --timeout 10m
   after="$(secret_of)"
   [ "$before" = "$after" ] || fail "ENCRYPTION_KEY changed across helm upgrade"
+  kc -n "$ns" rollout status "deployment/$release" --timeout 10m
+  wait_old_pods_gone "$ns"
   helm test "$release" --kube-context "$kube_context" -n "$ns" --logs --timeout 5m
 
   echo "Helm chart installed, passed its health checks and kept its secrets across an upgrade."
@@ -142,6 +157,7 @@ live_pods() {
 wait_rollouts() {
   kc -n "$ns_upgrade" rollout status "deployment/$release" --timeout 10m
   kc -n "$ns_upgrade" rollout status "deployment/$release-worker" --timeout 10m
+  wait_old_pods_gone "$ns_upgrade"
   local pod ready
   for pod in $(live_pods cms) $(live_pods worker); do
     ready="$(kc -n "$ns_upgrade" get pod "$pod" -o json \
