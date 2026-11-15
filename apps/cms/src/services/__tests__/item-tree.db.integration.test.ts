@@ -302,6 +302,102 @@ describe.skipIf(!hasDbIntegrationUrl)('#749 hierarchical collections — DB inte
     }
   });
 
+  /**
+   * PR #811 makes the items key `(site_id, id)`, so two sites may hold items
+   * with the same id. Tree reads and writes must find items by site +
+   * collection + id, never by id alone. With the site-scoped key both sites
+   * get identical ids; on the instance-wide `(id)` key that is impossible, so
+   * the second site's ids carry a suffix and the test still pins that one
+   * site's tree writes leave the other site's rows untouched.
+   */
+  it('two sites with the same item ids: tree ops never see or touch the other site', async () => {
+    await seedCollection(db, { enabled: true, onDelete: 'cascade' });
+    const OTHER = `${SITE}_ids`;
+    await db.delete(sites).where(eq(sites.id, OTHER));
+    await db.insert(sites).values({
+      organizationId: sql`(SELECT id FROM lumibase_organizations WHERE slug = 'default')`,
+      id: OTHER,
+      name: '749 tree same ids',
+    });
+    try {
+      const pk = await db.execute<{ cols: string[] }>(sql`
+        SELECT array_agg(a.attname::text ORDER BY k.ord) AS cols
+        FROM pg_constraint c
+        CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+        WHERE c.conrelid = 'lumibase_items'::regclass AND c.contype = 'p'`);
+      const pkRows = (Array.isArray(pk) ? pk : (pk as { rows: Array<{ cols: string[] }> }).rows) as Array<{ cols: string[] }>;
+      const siteScopedKey = (pkRows[0]?.cols ?? []).join(',') === 'site_id,id';
+      const idB = (id: string) => (siteScopedKey ? id : `${id}-b`);
+
+      const [collA] = await db
+        .select({ id: collections.id })
+        .from(collections)
+        .where(and(eq(collections.siteId, SITE), eq(collections.name, COLL)));
+      const [collB] = await db
+        .insert(collections)
+        .values({ siteId: OTHER, name: COLL, label: 'Folders', meta: { tree: { enabled: true, onDelete: 'cascade' } } })
+        .returning({ id: collections.id });
+      const seedTree = async (siteId: string, collectionId: string, id: (s: string) => string, tag: string) => {
+        const r = id('t-r');
+        const c = id('t-c');
+        const g = id('t-g');
+        await db.insert(items).values([
+          { id: r, siteId, collectionId, data: { title: `${tag} r` }, sort: 0, parentId: null, path: `/${r}/` },
+          { id: c, siteId, collectionId, data: { title: `${tag} c` }, sort: 0, parentId: r, path: `/${r}/${c}/` },
+          { id: g, siteId, collectionId, data: { title: `${tag} g` }, sort: 0, parentId: c, path: `/${r}/${c}/${g}/` },
+        ]);
+      };
+      await seedTree(SITE, collA!.id, (s) => s, 'A');
+      await seedTree(OTHER, collB!.id, idB, 'B');
+      await db.insert(items).values({
+        id: 't-b-only', siteId: OTHER, collectionId: collB!.id, data: { title: 'B only' }, parentId: null, path: '/t-b-only/',
+      });
+
+      const snapshotB = async () =>
+        db
+          .select({ id: items.id, parentId: items.parentId, path: items.path, sort: items.sort, deletedAt: items.deletedAt })
+          .from(items)
+          .where(eq(items.siteId, OTHER))
+          .orderBy(items.id);
+      const before = await snapshotB();
+      const titles = (res: { data: unknown[] }) =>
+        res.data.map((r) => ((r as { data: { title: string } }).data ?? (r as { title: string })) as { title: string } | string)
+          .map((v) => (typeof v === 'string' ? v : v.title));
+
+      // Reads only ever return site A's rows, even where ids are shared.
+      expect(titles(await svc.list(COLL, { tree: { mode: 'children', parent: 't-r' } }))).toEqual(['A c']);
+      expect(titles(await svc.list(COLL, { tree: { mode: 'subtree', parent: 't-r' } }))).toEqual(['A c', 'A g']);
+      expect(titles(await svc.list(COLL, { tree: { mode: 'ancestors', node: 't-g' } }))).toEqual(['A r', 'A c']);
+      expect(titles(await svc.list(COLL, { tree: { mode: 'children', parent: null } }))).toEqual(['A r']);
+      // Another site's id is a 404 / PARENT_NOT_FOUND, exactly like a missing id.
+      await expect(svc.list(COLL, { tree: { mode: 'children', parent: 't-b-only' } })).rejects.toMatchObject({ status: 404 });
+      await expect(create('x', 't-b-only')).rejects.toMatchObject({ code: 'PARENT_NOT_FOUND' });
+      await expect(svc.move(COLL, 't-g', { parentId: 't-b-only' })).rejects.toMatchObject({ code: 'PARENT_NOT_FOUND' });
+      await expect(svc.move(COLL, 't-b-only', { parentId: null })).rejects.toMatchObject({ status: 404 });
+      await expect(svc.softDelete(COLL, 't-b-only')).rejects.toMatchObject({ status: 404 });
+
+      // Writes in site A: create under a shared id, move + reorder, cascade delete.
+      const child = await create('A new', 't-c');
+      expect(child.path).toBe('/t-r/t-c/' + child.id + '/');
+      await svc.move(COLL, 't-g', { parentId: null, position: 0 });
+      await svc.softDelete(COLL, 't-r');
+      const a = new Map((await rows(db)).map((x) => [x.id, x]));
+      expect(a.get('t-g')!.path).toBe('/t-g/');
+      expect(a.get('t-g')!.deletedAt).toBeNull();
+      for (const id of ['t-r', 't-c', child.id]) expect(a.get(id)!.deletedAt, id).not.toBeNull();
+      await assertTreeConsistent(db);
+
+      // Site B is byte-for-byte unchanged and still reads as a full tree.
+      expect(await snapshotB()).toEqual(before);
+      const svcB = new ItemService({ db, siteId: OTHER });
+      expect(titles(await svcB.list(COLL, { tree: { mode: 'subtree', parent: idB('t-r') } }))).toEqual(['B c', 'B g']);
+      expect(titles(await svcB.list(COLL, { tree: { mode: 'ancestors', node: idB('t-g') } }))).toEqual(['B r', 'B c']);
+    } finally {
+      await db.delete(sites).where(eq(sites.id, OTHER));
+    }
+  });
+
   it('rejects tree operations on a flat collection', async () => {
     await seedCollection(db, { enabled: false });
     const flat = await create('flat');

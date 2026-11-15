@@ -1,13 +1,13 @@
 ---
 sourceLang: en
 version: 4
-lastUpdated: 2026-11-15T16:45:26.667Z
+lastUpdated: 2026-11-15T15:29:22.118Z
 translatedFrom: en
-sourceHash: b14726cc689e1d7d
+sourceHash: d25424a17a2f2579
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T17:12:06.787Z
-codeVerifiedHash: b14726cc689e1d7d
+codeVerified: 2026-11-15T17:20:35.468Z
+codeVerifiedHash: d25424a17a2f2579
 codeVerifiedClaims: 22
 ---
 
@@ -59,6 +59,12 @@ một cha, di chuyển, xóa kiểu `cascade`/`reparent`) chạy trong một tra
 advisory lock theo từng collection, nên các thao tác di chuyển đồng thời được tuần
 tự hóa và không thể làm hỏng cây. Các dòng item do API items trả về có thêm
 `parentId` và `path`.
+
+Item cha luôn là một item cùng site và cùng collection. Cột `parent_id` không có
+foreign key ở database: mọi thao tác đọc và ghi cây đều tìm item theo cả
+`site_id`, `collection_id` và `id`, không bao giờ chỉ theo id, nên cây vẫn đúng
+dù id item là duy nhất trên toàn instance hay chỉ duy nhất trong một site. Một id
+thuộc site khác trả về `404`, giống hệt một id không tồn tại.
 
 ## API
 
