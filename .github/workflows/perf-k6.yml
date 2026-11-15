@@ -124,6 +124,12 @@ jobs:
           LUMIBASE_PROCESS_ROLE: web
           JWT_SECRET: ci-perf-k6-secret
           PORT: '1989'
+          # The k6 scripts authenticate with a `dev:` bearer token. auth.ts
+          # accepts it only with LUMIBASE_DEV_AUTH=true AND an explicit
+          # development runtime, so without these every authenticated
+          # request in the smoke run is refused.
+          LUMIBASE_DEV_AUTH: 'true'
+          LUMIBASE_ENV: development
         run: |
           pnpm -F @lumibase/cms exec tsx src/serve.ts &
           for _ in $(seq 1 60); do
@@ -157,7 +163,7 @@ jobs:
         env:
           BASE_URL: http://127.0.0.1:1989
           SITE_ID: loadtest-main-00000001
-          TOKEN: dev:admin@lumibase.dev:admin
+          TOKEN: dev:loadtest-admin@lumibase.dev:admin
         run: k6 run apps/cms/k6/smoke.js
 
       # PAGE_COUNT must match PAGES_PER_SITE above: the Zipf pool indexes
@@ -167,7 +173,7 @@ jobs:
         env:
           BASE_URL: http://127.0.0.1:1989
           SITE_ID: loadtest-main-00000001
-          TOKEN: dev:admin@lumibase.dev:admin
+          TOKEN: dev:loadtest-admin@lumibase.dev:admin
           COLLECTION: loadtest_collection_01
           DURATION: 30s
           VUS: 5

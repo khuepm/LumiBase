@@ -94,9 +94,12 @@ async function main() {
       ON CONFLICT (id) DO UPDATE SET state = 'initialized', admin_path = '/loadtest-admin'
     `);
     await sql.unsafe(`
-      INSERT INTO lumibase_users (id, email, status, is_bootstrap)
-      VALUES ('loadtest-user-00000001', 'loadtest-admin@lumibase.dev', 'active', true)
-      ON CONFLICT (id) DO UPDATE SET is_bootstrap = true, status = 'active'
+      INSERT INTO lumibase_users (id, external_id, email, status, is_bootstrap)
+      -- external_id matches the principal auth.ts builds for the k6 scripts'
+      -- \`dev:<email>:admin\` token (externalId = \`dev_<email>\`), so
+      -- site membership resolves to this user.
+      VALUES ('loadtest-user-00000001', 'dev_loadtest-admin@lumibase.dev', 'loadtest-admin@lumibase.dev', 'active', true)
+      ON CONFLICT (id) DO UPDATE SET is_bootstrap = true, status = 'active', external_id = EXCLUDED.external_id
     `);
     await sql.unsafe(`
       INSERT INTO lumibase_roles (id, site_id, key, system_key, name, admin_access, app_access)
