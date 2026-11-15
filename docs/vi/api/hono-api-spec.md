@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 51
-lastUpdated: 2026-11-15T19:48:29.207Z
+version: 52
+lastUpdated: 2026-11-15T22:10:29.536Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 381baef6750eadbc
+sourceHash: bd99a908b2210d9f
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T19:48:29.207Z
-codeVerifiedHash: 381baef6750eadbc
-codeVerifiedClaims: 596
+codeVerified: 2026-11-15T22:10:29.536Z
+codeVerifiedHash: bd99a908b2210d9f
+codeVerifiedClaims: 598
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -587,9 +587,9 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `GET` | `/api/v1/items/:collection` | Liệt kê các mục (có phân trang, bộ lọc) |
 | `POST` | `/api/v1/items/:collection` | Tạo mục (hoặc mảng cho hàng loạt) |
 | `GET` | `/api/v1/items/:collection/export` | Xuất collection dạng CSV hoặc JSON theo luồng ([Data export](../features/data-export.md)) |
-| `GET` | `/api/v1/items/:collection/:id` | Lấy một mục duy nhất |
-| `PATCH` | `/api/v1/items/:collection/:id` | Cập nhật một phần |
-| `PUT` | `/api/v1/items/:collection/:id` | Thay thế hoàn toàn |
+| `GET` | `/api/v1/items/:collection/:id` | Lấy một mục duy nhất; trả `ETag` |
+| `PATCH` | `/api/v1/items/:collection/:id` | Cập nhật một phần; tôn trọng `If-Match` |
+| `PUT` | `/api/v1/items/:collection/:id` | Thay thế hoàn toàn; tôn trọng `If-Match` |
 | `DELETE` | `/api/v1/items/:collection/:id` | Xóa mục — **409 nếu bị chặn bởi phụ thuộc** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | Liệt kê các bản ghi tham chiếu tới mục này |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Xử lý hàng loạt các phụ thuộc của quan hệ |
@@ -603,6 +603,19 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `DELETE` | `/api/v1/items/:collection/:id/versions/:key` | Xóa một bản nháp |
 | `GET` | `/api/v1/items/:collection/:id/versions/:key/compare` | Diff các trường với main → `{ main, version, changes }` |
 | `POST` | `/api/v1/items/:collection/:id/versions/:key/promote` | Áp dụng bản nháp vào main (ghi một revision); `meta.mainDiverged` |
+
+**Sửa đồng thời (`ETag` / `If-Match`).** Mỗi item có bộ đếm `version`, tăng lên
+sau mỗi lần ghi làm đổi nội dung item. `GET /items/:collection/:id` trả nó dưới
+dạng `ETag` mạnh (`"3"`), và cũng có trong body response dưới tên `version`. Gửi
+lại nó qua `If-Match: "3"` khi `PATCH` hoặc `PUT` để lần ghi có điều kiện: nếu
+người khác đã sửa item trước, lần ghi thất bại với **412 `PRECONDITION_FAILED`**
+và không có gì được ghi. Phép kiểm tra nằm trong cùng câu `UPDATE`, nên hai bên
+ghi cầm cùng một tag không thể cùng thành công. Không có `If-Match` thì lần ghi
+ghi đè vô điều kiện, như trước. `*` chấp nhận mọi version; tag yếu (`W/"3"`)
+không bao giờ khớp. Response `PATCH`/`PUT` thành công mang `ETag` mới. Client
+khác origin gửi được `If-Match` và đọc được `ETag` (cả hai đã có trong danh sách
+allow/expose của CORS). SDK nhận tag qua
+`items(name).patch(id, input, { ifMatch: row.version })`.
 
 **Các bản ghi phụ thuộc (Dependent records).** Vì các tham chiếu item nằm trong JSONB (không phải cột FK vật lý), `onDelete` của một quan hệ được thực thi ở lớp ứng dụng. Khi `DELETE`, nếu một quan hệ khai báo `restrict` vẫn còn bản ghi trỏ tới item, lệnh xóa sẽ bị chặn với **409 `DEPENDENT_RECORDS_EXIST`** và một mảng `dependents`. (`set null`/`cascade` **không** tự động áp dụng khi xóa mềm — điều đó sẽ làm hỏng khả năng phục hồi của xóa mềm; trình biên tập phải xóa chúng một cách tường minh.) `GET …/dependents` trả về `{ data: { blocking, dependents: [{ relation, collection, field, onDelete, count, sample }] } }`. `POST …/resolve-dependents` nhận `{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` và chạy trong một transaction (lệnh delete ủy quyền cho đường dẫn xóa item thông thường). Lỗi: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null trên trường bắt buộc), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
 
