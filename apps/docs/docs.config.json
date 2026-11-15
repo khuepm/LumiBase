@@ -19,6 +19,7 @@
       { "label": "Tutorials", "to": "/docs/tutorials", "position": "left" },
       { "label": "API", "to": "/docs/api/hono-api-spec", "position": "left" },
       { "label": "Roadmap", "to": "/docs/roadmap/tasks", "position": "left" },
+      { "label": "Storybook", "to": "/storybook/", "position": "left" },
       { "label": "GitHub", "href": "https://github.com/khuepm/lumibase", "position": "right" }
     ]
   },
@@ -43,7 +44,7 @@
       {
         "type": "category",
         "label": "CLI & SDK",
-        "items": ["cli", "sdk", "sdk/javascript", "sdk/typegen"]
+        "items": ["cli", "cli/typegen-config", "sdk", "sdk/javascript", "sdk/typegen", "sdk/frameworks"]
       },
       {
         "type": "category",
@@ -67,6 +68,7 @@
           "features/site-skills",
           "features/external-action-tools",
           "features/draft-review",
+          "features/studio-rtl-layout",
           "features/jev-benchmark",
           "features/jev-draft-review-pilot",
           "features/jev-automation",
@@ -157,6 +159,19 @@
       },
       {
         "type": "category",
+        "label": "Contributing",
+        "items": [
+          "contributing",
+          "contributing/versioning-policy",
+          "contributing/supported-runtimes",
+          "contributing/storybook",
+          "contributing/studio-performance",
+          "contributing/extension-hot-reload",
+          "contributing/docs-self-heal"
+        ]
+      },
+      {
+        "type": "category",
         "label": "Roadmap",
         "items": [
           "roadmap/tasks",
@@ -174,7 +189,8 @@
         "title": "Docs",
         "items": [
           { "label": "Getting Started", "to": "/docs/getting-started" },
-          { "label": "API Reference", "to": "/docs/api/hono-api-spec" }
+          { "label": "API Reference", "to": "/docs/api/hono-api-spec" },
+          { "label": "Storybook", "to": "/storybook/" }
         ]
       },
       {

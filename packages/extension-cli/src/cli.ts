@@ -1,14 +1,16 @@
 #!/usr/bin/env node
+import { dev } from './commands/dev';
 import { keygen } from './commands/keygen';
 import { sign } from './commands/sign';
 import { verify } from './commands/verify';
 
 /**
- * `lumibase-ext` — extension signing toolchain.
+ * `lumibase-ext` — extension signing + local development toolchain.
  *
  *   lumibase-ext keygen --key-id <id> [--out ./keys] [--official]
  *   lumibase-ext sign   --bundle <path> --key <path> --key-id <id>
  *   lumibase-ext verify --bundle <path> --pub <path>
+ *   lumibase-ext dev    [--dir .] [--port 4790] [--site <id>]   (hot reload; local dev only)
  */
 
 /** Parse `--flag value` / `--bool` argv into a map. */
@@ -43,9 +45,12 @@ async function main(): Promise<void> {
     case 'verify':
       await verify(args);
       break;
+    case 'dev':
+      await dev(args);
+      break;
     default:
       process.stderr.write(
-        'Usage: lumibase-ext <keygen|sign|verify> [--flags]\n',
+        'Usage: lumibase-ext <keygen|sign|verify|dev> [--flags]\n',
       );
       process.exitCode = 1;
   }

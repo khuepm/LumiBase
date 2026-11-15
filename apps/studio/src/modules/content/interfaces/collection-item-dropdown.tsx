@@ -138,10 +138,10 @@ export const CollectionItemDropdownInterface: InterfaceComponent<CollectionItemV
                         onChange({ collection, id: row.id });
                         setOpen(false);
                       }}
-                      className="w-full px-2 py-1 text-left text-xs hover:bg-accent"
+                      className="w-full px-2 py-1 text-start text-xs hover:bg-accent"
                     >
                       <span className="font-mono text-muted-foreground">{row.id.slice(0, 6)}…</span>
-                      <span className="ml-2">{String(row.data?.[displayField] ?? '—')}</span>
+                      <span className="ms-2">{String(row.data?.[displayField] ?? '—')}</span>
                     </button>
                   </li>
                 ))}

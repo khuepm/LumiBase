@@ -7,22 +7,12 @@ import {
   normalizeSiteUrl,
   type ProjectConfigurationFormValues,
 } from '../schemas/project';
+import { getProjectDraft, setProjectDraft } from '../setup-drafts';
 import { useSetupStore } from '../setup-store';
 import { defaultSiteUrl } from '../default-site-url';
 
-let projectDraft: ProjectConfigurationFormValues | null = null;
-
-export function getProjectDraft(): ProjectConfigurationFormValues | null {
-  return projectDraft;
-}
-
-export function clearProjectDraft(): void {
-  projectDraft = null;
-}
-
-export function setProjectDraft(value: ProjectConfigurationFormValues): void {
-  projectDraft = value;
-}
+// In-memory project draft: lives in `../setup-drafts` (#757). Re-exported here.
+export { clearProjectDraft, getProjectDraft, setProjectDraft } from '../setup-drafts';
 
 interface ProjectFormFields {
   defaultLanguage: string;
@@ -49,7 +39,7 @@ export function StepProject({ onSubmitted }: StepProjectProps) {
     mode: 'onBlur',
     reValidateMode: 'onChange',
     shouldUnregister: false,
-    defaultValues: projectDraft ?? {
+    defaultValues: getProjectDraft() ?? {
       defaultLanguage: 'en',
       siteUrl: defaultSiteUrl(),
       displayTitle: 'LumiBase',

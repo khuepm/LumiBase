@@ -124,7 +124,7 @@ export function LayoutGroup({ node, ctx }: { node: LayoutGroupNode; ctx: LayoutR
           aria-expanded={open}
           aria-controls={regionId}
           onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium"
+          className="flex w-full items-center gap-2 px-3 py-2 text-start text-sm font-medium"
         >
           {open ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
           <span>{title || node.id}</span>
@@ -158,7 +158,7 @@ export function LayoutGroup({ node, ctx }: { node: LayoutGroupNode; ctx: LayoutR
 function ErrorBadge({ count }: { count: number }) {
   return (
     <span
-      className="ml-1 inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground"
+      className="ms-1 inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground"
       aria-label={`${count} ${count === 1 ? 'error' : 'errors'}`}
       data-testid="tab-error-badge"
     >

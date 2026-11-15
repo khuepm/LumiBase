@@ -1,8 +1,8 @@
 ---
-version: 3
-lastUpdated: 2026-09-21T05:45:15.059Z
+version: 5
+lastUpdated: 2026-11-15T17:03:01.851Z
 sourceLang: en
-contentHash: 8239e8df5e0da2f5
+contentHash: 19a64dc7db3b899b
 ---
 
 # Contributing to LumiBase
@@ -14,8 +14,10 @@ Thank you for your interest in contributing to LumiBase! This guide covers how t
 - [Development setup](./index.md#development-setup)
 - [Code style](./code-style.md)
 - [Testing guide](./testing.md)
+- [Storybook: UI catalogue, a11y and visual tests](./storybook.md)
 - [Writing extensions](./extension-dev.md)
 - [Versioning policy](./versioning-policy.md)
+- [Supported runtimes](./supported-runtimes.md)
 - [Submitting a PR](#submitting-a-pr)
 
 ---
@@ -26,7 +28,7 @@ Thank you for your interest in contributing to LumiBase! This guide covers how t
 
 | Tool | Version | Install |
 |------|---------|---------|
-| Node.js | ≥ 22 | [nodejs.org](https://nodejs.org) |
+| Node.js | 22.22.2+ or 24.15.0+ ([supported runtimes](./supported-runtimes.md)) | [nodejs.org](https://nodejs.org) |
 | pnpm | ≥ 9 | `npm i -g pnpm` |
 | Docker + Docker Compose | Latest | [docker.com](https://docker.com) |
 | Git | ≥ 2.40 | System package manager |

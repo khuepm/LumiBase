@@ -64,11 +64,11 @@ export function SkillVersions({
               <span>
                 <strong>v{version.version}</strong>
                 {version.version === skill.version && (
-                  <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
+                  <span className="ms-2 rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
                     current
                   </span>
                 )}
-                <code className="ml-2 text-[10px] text-muted-foreground">
+                <code className="ms-2 text-[10px] text-muted-foreground">
                   {version.hash.slice(0, 12)}
                 </code>
               </span>

@@ -1,0 +1,162 @@
+name: Storybook
+
+# Storybook for @lumibase/ui and Studio components (#755).
+#
+#   stories — build the static Storybook, then run every story in Chromium
+#             (vitest browser mode + Playwright) in light AND dark: the play
+#             function must pass and the axe scan must report no violation.
+#             Also runs the node guards (every @lumibase/ui export has a story,
+#             a11y exceptions are justified).
+#   visual  — pull requests only. Screenshots every story × theme for the PR
+#             base and head ON THE SAME RUNNER and pixel-diffs them. Same
+#             machine, same fonts, same Chromium: no committed PNG baselines to
+#             churn and no cross-OS rendering noise. Diffs (plus both captures)
+#             are uploaded as the `storybook-visual-diff` artifact. A visual
+#             change fails the job until a maintainer adds the
+#             `visual-change-approved` label to the PR.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - "apps/storybook/**"
+      - "apps/studio/src/**"
+      - "apps/studio/tailwind.config.ts"
+      - "packages/ui/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/storybook.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/storybook/**"
+      - "apps/studio/src/**"
+      - "packages/ui/**"
+      - ".github/workflows/storybook.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: storybook-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24
+
+jobs:
+  stories:
+    name: Build, interaction + a11y tests (light & dark)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium for Playwright
+        run: pnpm --filter @lumibase/storybook exec playwright install --with-deps chromium
+
+      - name: Typecheck
+        run: pnpm --filter @lumibase/storybook typecheck
+
+      - name: Guards (story coverage, a11y exceptions, visual helpers)
+        run: pnpm --filter @lumibase/storybook test
+
+      - name: Build static Storybook
+        run: pnpm storybook:build
+
+      - name: Story tests — interactions + axe, light and dark
+        run: pnpm storybook:test
+
+      - name: Upload static Storybook
+        uses: actions/upload-artifact@v7
+        with:
+          name: storybook-static
+          path: apps/storybook/storybook-static
+          retention-days: 7
+
+  visual:
+    name: Visual regression (base vs head)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout head
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+          run_install: false
+
+      - name: Install dependencies (head)
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium for Playwright
+        run: pnpm --filter @lumibase/storybook exec playwright install --with-deps chromium
+
+      - name: Capture head
+        run: |
+          pnpm storybook:build
+          node apps/storybook/scripts/visual-snapshots.mjs capture \
+            --static apps/storybook/storybook-static --out "$RUNNER_TEMP/visual/head"
+
+      - name: Capture base
+        id: base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
+          if [ ! -f "$RUNNER_TEMP/base/apps/storybook/package.json" ]; then
+            echo "::notice::Base has no Storybook yet — nothing to compare against."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          (cd "$RUNNER_TEMP/base" && pnpm install --frozen-lockfile && pnpm storybook:build)
+          # The HEAD capture script renders the base build, so both sides are
+          # screenshotted with identical settings.
+          node apps/storybook/scripts/visual-snapshots.mjs capture \
+            --static "$RUNNER_TEMP/base/apps/storybook/storybook-static" --out "$RUNNER_TEMP/visual/base"
+          echo "present=true" >> "$GITHUB_OUTPUT"
+
+      - name: Compare
+        id: compare
+        if: steps.base.outputs.present == 'true'
+        continue-on-error: ${{ contains(github.event.pull_request.labels.*.name, 'visual-change-approved') }}
+        run: |
+          node apps/storybook/scripts/visual-snapshots.mjs compare \
+            --base "$RUNNER_TEMP/visual/base" --head "$RUNNER_TEMP/visual/head" \
+            --out "$RUNNER_TEMP/visual/diff" --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload visual diff
+        if: always() && steps.base.outputs.present == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: storybook-visual-diff
+          path: ${{ runner.temp }}/visual
+          retention-days: 14

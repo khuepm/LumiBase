@@ -39,7 +39,7 @@ function FormattedDate({ value, field }: Parameters<DisplayComponent<unknown>>[0
     return (
       <span title={`${formatInZone(date, displayTz, { dateStyle: 'full', timeStyle: 'long' })}${hint ? ` — originally ${hint}` : ''}`}>
         {main}
-        {hint && <span className="ml-1 text-xs text-muted-foreground">({hint})</span>}
+        {hint && <span className="ms-1 text-xs text-muted-foreground">({hint})</span>}
       </span>
     );
   }

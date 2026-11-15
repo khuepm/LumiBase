@@ -62,7 +62,7 @@ function BarChart({ series }: { series: { label: string; value: number }[] }) {
           <span className="h-3 flex-1 overflow-hidden rounded bg-muted">
             <span className="block h-full rounded bg-primary" style={{ width: `${(s.value / max) * 100}%` }} />
           </span>
-          <span className="w-12 text-right tabular-nums">{formatNumber(s.value)}</span>
+          <span className="w-12 text-end tabular-nums">{formatNumber(s.value)}</span>
         </div>
       ))}
     </div>
@@ -79,7 +79,7 @@ function PieList({ series }: { series: { label: string; value: number }[] }) {
           <span className={cn('h-3 w-3 rounded-sm', palette[i % palette.length])} />
           <span className="flex-1 truncate" title={s.label}>{s.label}</span>
           <span className="tabular-nums text-muted-foreground">{Math.round((s.value / total) * 100)}%</span>
-          <span className="w-12 text-right tabular-nums">{formatNumber(s.value)}</span>
+          <span className="w-12 text-end tabular-nums">{formatNumber(s.value)}</span>
         </li>
       ))}
     </ul>
@@ -91,7 +91,7 @@ function TableView({ rows }: { rows: Record<string, unknown>[] }) {
   return (
     <table className="w-full text-xs">
       <thead>
-        <tr className="border-b text-left uppercase text-muted-foreground">
+        <tr className="border-b text-start uppercase text-muted-foreground">
           {cols.map((col) => (
             <th key={col} className="py-1">{col}</th>
           ))}
