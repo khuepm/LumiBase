@@ -24,8 +24,9 @@ export interface TypegenField {
   type: string;
   /**
    * Studio interface id (`translatable-text`, `file`, `files`, …). Carried so
-   * generators can tell a per-locale map or a file reference from a plain
-   * scalar (`lumibase types` Zod / OpenAPI targets, #753).
+   * consumers that need the wire shape can tell a per-locale map or a file
+   * reference from a plain scalar: the `lumibase types` Zod / OpenAPI targets
+   * (#753) and the live OpenAPI document (#745).
    */
   interface?: string;
   required: boolean;

@@ -1,0 +1,48 @@
+{{- $publicUrl := include "lumibase.publicUrl" . -}}
+{{- $env := dict
+  "LUMIBASE_ENV" .Values.environment
+  "LUMIBASE_RUNTIME" "docker"
+  "PORT" "1989"
+  "LUMIBASE_REQUIRE_SETUP_TOKEN" (ternary "true" "false" .Values.setup.requireToken)
+  "LUMIBASE_SERVE_STUDIO" (ternary "true" "false" .Values.studio.enabled)
+  "LUMIBASE_DB_RLS" .Values.database.rls
+-}}
+{{- if include "lumibase.isProduction" . -}}
+{{- $_ := set $env "NODE_ENV" "production" -}}
+{{- end -}}
+{{- if $publicUrl -}}
+{{- $_ := set $env "LUMIBASE_PUBLIC_URL" $publicUrl -}}
+{{- end -}}
+{{- /* The entrypoint would derive this from LUMIBASE_PUBLIC_URL too; setting it keeps the value visible here. */ -}}
+{{- with (default $publicUrl .Values.corsAllowedOrigins) -}}
+{{- $_ := set $env "CORS_ALLOWED_ORIGINS" . -}}
+{{- end -}}
+{{- if .Values.postgresql.enabled -}}
+{{- $_ := set $env "DATABASE_SSL_MODE" "disable" -}}
+{{- else if .Values.database.sslMode -}}
+{{- $_ := set $env "DATABASE_SSL_MODE" .Values.database.sslMode -}}
+{{- end -}}
+{{- if .Values.meilisearch.enabled -}}
+{{- $_ := set $env "MEILISEARCH_HOST" (printf "http://%s:7700" (include "lumibase.meilisearch.fullname" .)) -}}
+{{- else if .Values.meilisearch.external.host -}}
+{{- $_ := set $env "MEILISEARCH_HOST" .Values.meilisearch.external.host -}}
+{{- end -}}
+{{- if .Values.s3.endpoint -}}
+{{- $_ := set $env "S3_ENDPOINT" .Values.s3.endpoint -}}
+{{- $_ := set $env "S3_BUCKET" .Values.s3.bucket -}}
+{{- end -}}
+{{- /* `config` wins over the chart's own keys. */ -}}
+{{- range $key, $value := .Values.config -}}
+{{- $_ := set $env $key ($value | toString) -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "lumibase.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lumibase.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := $env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}

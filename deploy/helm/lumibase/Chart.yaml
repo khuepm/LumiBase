@@ -1,0 +1,21 @@
+apiVersion: v2
+name: lumibase
+description: >-
+  LumiBase Content OS: the CMS API and the Studio admin UI from the published
+  image, with optional bundled PostgreSQL, Redis and Meilisearch.
+type: application
+# Chart and app version follow the root package.json (`pnpm version:sync`
+# rewrites both lines). The release workflow packages the chart with the tag's
+# version, so `--version X` of the OCI chart deploys image X by default.
+version: 2.0.0
+appVersion: "2.0.0"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/khuepm/lumibase
+sources:
+  - https://github.com/khuepm/lumibase/tree/main/deploy/helm/lumibase
+keywords:
+  - cms
+  - headless-cms
+  - lumibase
+annotations:
+  artifacthub.io/license: Apache-2.0

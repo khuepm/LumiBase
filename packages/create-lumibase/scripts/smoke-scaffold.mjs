@@ -18,10 +18,18 @@
  * "peer thoả tình cờ không tính là thoả".
  *
  * Usage:
- *   node scripts/smoke-scaffold.mjs                        # all three templates × npm + pnpm
+ *   node scripts/smoke-scaffold.mjs                        # every template × npm + pnpm
  *   node scripts/smoke-scaffold.mjs --template cloudflare   # one template
  *   node scripts/smoke-scaffold.mjs --pm npm                # one package manager
  *   node scripts/smoke-scaffold.mjs --keep                  # leave the temp dir for inspection
+ *   node scripts/smoke-scaffold.mjs --workdir ./out         # scaffold into ./out and keep it
+ *                                                           # (CI deploys the built Astro site from there)
+ *
+ * The site templates (`astro`, `sveltekit`) are also BUILT, not only
+ * typechecked: a static export that typechecks but cannot `astro build` is not
+ * deployable, and #744's acceptance is "the starter builds and deploys to
+ * Pages". The build runs with no CMS configured, which is the first-deploy
+ * path both starters support (a "connect your CMS" page).
  *
  * Framework matrix (#760, `.github/workflows/runtime-matrix.yml`):
  *   node scripts/smoke-scaffold.mjs --template nextjs --pm npm --next 15 --build --skip-audit
@@ -35,7 +43,7 @@
  * Network is required. This is not part of `pnpm test` — it is a separate
  * command so the unit suite stays offline and fast.
  */
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,7 +51,19 @@ import { spawnSync } from 'node:child_process';
 
 const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-const TEMPLATES = ['default', 'cloudflare', 'nextjs'];
+const TEMPLATES = ['default', 'cloudflare', 'nextjs', 'astro', 'sveltekit'];
+
+/** Templates whose generated manifest depends on the `lumibase` client. */
+const CLIENT_TEMPLATES = new Set(['nextjs', 'astro', 'sveltekit']);
+
+/**
+ * Templates that are built as well as typechecked, and the file a successful
+ * build must leave behind — the thing `wrangler pages deploy` uploads.
+ */
+const BUILD_OUTPUT = {
+  astro: 'dist/index.html',
+  sveltekit: '.svelte-kit/cloudflare/_worker.js',
+};
 const PACKAGE_MANAGERS = ['npm', 'pnpm'];
 
 function parseArgs(argv) {
@@ -51,13 +71,17 @@ function parseArgs(argv) {
     templates: TEMPLATES,
     pms: PACKAGE_MANAGERS,
     keep: false,
+    workdir: null,
     next: null,
     build: false,
     audit: true,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === '--keep') {
+    if (arg === '--') {
+      // `pnpm smoke -- --workdir x` forwards the separator; it is not an option.
+      continue;
+    } else if (arg === '--keep') {
       options.keep = true;
     } else if (arg === '--build') {
       options.build = true;
@@ -67,6 +91,12 @@ function parseArgs(argv) {
       const value = argv[i + 1];
       if (!/^\d+$/.test(value ?? '')) throw new Error('--next must be a Next.js major, e.g. 16');
       options.next = value;
+      i += 1;
+    } else if (arg === '--workdir') {
+      const value = argv[i + 1];
+      if (!value) throw new Error('--workdir needs a directory');
+      options.workdir = resolve(value);
+      options.keep = true;
       i += 1;
     } else if (arg === '--template') {
       const value = argv[i + 1];
@@ -148,11 +178,11 @@ function smoke({ template, pm, workdir, tarballs, next, build, audit: runAudit }
 
   // Exercise the release clients before their version exists on npm.
   // Pack real publish artifacts so exports and declaration files are checked too.
-  if (template === 'nextjs') {
+  if (CLIENT_TEMPLATES.has(template)) {
     const manifestPath = join(projectDir, 'package.json');
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     manifest.dependencies.lumibase = tarballs.lumibase;
-    if (next) manifest.dependencies.next = `^${next}`;
+    if (next && template === 'nextjs') manifest.dependencies.next = `^${next}`;
     manifest.overrides = { ...manifest.overrides, '@lumibase/sdk': tarballs['@lumibase/sdk'] };
     manifest.pnpm = {
       ...manifest.pnpm,
@@ -168,8 +198,9 @@ function smoke({ template, pm, workdir, tarballs, next, build, audit: runAudit }
 
   // Standalone starters do not inherit the monorepo's dependency overrides.
   // Audit the installed production graph: a manifest-only test missed the
-  // vulnerable PostCSS pinned by Next.js in a fresh Next.js starter.
-  if (template === 'nextjs' && runAudit) {
+  // vulnerable PostCSS pinned by Next.js in a fresh Next.js starter. The
+  // Astro and SvelteKit starters get the same check (#744).
+  if (CLIENT_TEMPLATES.has(template) && runAudit) {
     const audit = run(pm, ['audit', pm === 'npm' ? '--omit=dev' : '--prod', '--audit-level=moderate'], projectDir);
     if (audit.status !== 0) {
       return { label, step: `${pm} audit`, status: audit.status, output: audit.output };
@@ -188,6 +219,22 @@ function smoke({ template, pm, workdir, tarballs, next, build, audit: runAudit }
     }
   }
 
+  const expectedOutput = BUILD_OUTPUT[template];
+  if (expectedOutput) {
+    const built = run(pm, ['run', 'build'], projectDir);
+    if (built.status !== 0) {
+      return { label, step: `${pm} run build`, status: built.status, output: built.output };
+    }
+    if (!existsSync(join(projectDir, expectedOutput))) {
+      return {
+        label,
+        step: `${pm} run build`,
+        status: 1,
+        output: `build exited 0 but left no ${expectedOutput}\n${built.output}`,
+      };
+    }
+  }
+
   return { label, step: 'ok', status: 0, output: '' };
 }
 
@@ -201,16 +248,24 @@ function main(argv) {
     return 1;
   }
 
-  const workdir = mkdtempSync(join(tmpdir(), 'lumibase-scaffold-smoke-'));
+  let workdir;
+  if (options.workdir) {
+    mkdirSync(options.workdir, { recursive: true });
+    workdir = options.workdir;
+  } else {
+    workdir = mkdtempSync(join(tmpdir(), 'lumibase-scaffold-smoke-'));
+  }
   console.log(`workdir: ${workdir}`);
 
   const failures = [];
   try {
-    const tarballs = options.templates.includes('nextjs') ? packReleaseClients(workdir) : {};
+    const tarballs = options.templates.some((t) => CLIENT_TEMPLATES.has(t))
+      ? packReleaseClients(workdir)
+      : {};
     for (const template of options.templates) {
       for (const pm of options.pms) {
         process.stdout.write(`• ${template} × ${pm} … `);
-        const result = smoke({ template, pm, workdir, tarballs, ...options });
+        const result = smoke({ ...options, template, pm, workdir, tarballs });
         if (result.status === 0) {
           console.log('ok');
         } else {

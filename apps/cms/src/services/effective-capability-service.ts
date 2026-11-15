@@ -139,6 +139,34 @@ export function satisfiesCapability(
 export const DECISION_PERMISSION_COLLECTION = 'lumibase_ai_decisions';
 export const DECISION_CAPABILITY = 'ai:decide';
 
+/**
+ * Deployment permissions (#743) ride the permission language the same way
+ * `ai:decide` does: a policy row on the reserved pseudo-collection
+ * `lumibase_deploy:<scope>` where `<scope>` is an environment key, a
+ * deployment-target id, or `*`.
+ *
+ *   `create` → `deploy:trigger:<scope>`   (trigger / promote into it)
+ *   `update` → `deploy:approve:<scope>`   (decide a pending deploy approval)
+ *
+ * Exact collection keys only: no wildcard policy row can mint these, and they
+ * never mint an item capability.
+ */
+export const DEPLOY_PERMISSION_COLLECTION_PREFIX = 'lumibase_deploy:';
+const DEPLOY_SCOPE_PATTERN = /^(?:\*|[A-Za-z0-9_-]{1,64})$/;
+const DEPLOY_CAPABILITY_BY_ACTION: Readonly<Record<string, string>> = {
+  create: 'deploy:trigger:',
+  update: 'deploy:approve:',
+};
+
+/** `deploy:*` capability for a `lumibase_deploy:<scope>` permission row, or null. */
+export function deployCapabilityForPermission(collection: string, action: string): string | null {
+  if (!collection.startsWith(DEPLOY_PERMISSION_COLLECTION_PREFIX)) return null;
+  const scope = collection.slice(DEPLOY_PERMISSION_COLLECTION_PREFIX.length);
+  const prefix = DEPLOY_CAPABILITY_BY_ACTION[action];
+  if (!prefix || !DEPLOY_SCOPE_PATTERN.test(scope)) return null;
+  return `${prefix}${scope}`;
+}
+
 const ITEM_CAPABILITIES_BY_ACTION: Readonly<Record<string, readonly string[]>> = {
   read: ['items:read'],
   create: ['items:create', 'items:write'],
@@ -168,6 +196,12 @@ export function capabilitiesFromPermissionBundle(bundle: PermissionBundle): stri
     if (permission.collection === DECISION_PERMISSION_COLLECTION) {
       // Never an item grant: `create` here must not mint items:write.
       if (action === 'create') capabilities.add(DECISION_CAPABILITY);
+      continue;
+    }
+    if (permission.collection.startsWith(DEPLOY_PERMISSION_COLLECTION_PREFIX)) {
+      // Never an item grant either (#743).
+      const deploy = deployCapabilityForPermission(permission.collection, action);
+      if (deploy) capabilities.add(deploy);
       continue;
     }
 

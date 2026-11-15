@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { resolve, relative, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Handlebars from 'handlebars';
@@ -6,10 +6,15 @@ import pc from 'picocolors';
 import { createSpinner } from './utils/spinner.js';
 import type { ProjectConfig } from './index.js';
 
-const TEMPLATES_DIR = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  'templates',
-);
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * `dist/templates` in the published package (postbuild copies them there);
+ * `../templates` when running from `src/` (tests), where no copy exists.
+ */
+const TEMPLATES_DIR =
+  [resolve(HERE, 'templates'), resolve(HERE, '../templates')].find((dir) => existsSync(dir)) ??
+  resolve(HERE, 'templates');
 
 /**
  * The version of this scaffolder, read from its own manifest.
@@ -65,6 +70,8 @@ function buildTemplateContext(config: ProjectConfig): Record<string, unknown> {
     isCloudflare: config.template === 'cloudflare',
     isDefault: config.template === 'default',
     isNextjs: config.template === 'nextjs',
+    isAstro: config.template === 'astro',
+    isSveltekit: config.template === 'sveltekit',
     lumibaseVersion: readScaffolderVersion(),
     year: new Date().getFullYear(),
   };
