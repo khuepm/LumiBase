@@ -7,7 +7,7 @@ import { itemsRouter } from '../routes/items';
 import { connectDbIntegration, hasDbIntegrationUrl } from './helpers/db-harness';
 
 /**
- * Item ids are unique per site, not per instance (migration 0029).
+ * Item ids are unique per site, not per instance (migration 0032).
  *
  * Before: `lumibase_items` had PRIMARY KEY (id) while ItemService only checked
  * the caller's site and collection, so a string id another site already used

@@ -188,7 +188,7 @@ export const items = pgTable(
   {
     /**
      * Item id, unique within its site (primary key `(site_id, id)`, migration
-     * 0029). String primary keys are caller-chosen, so the same id may exist in
+     * 0032). String primary keys are caller-chosen, so the same id may exist in
      * two sites; every lookup by id must also filter by `site_id`.
      */
     id: text('id').$defaultFn(() => nanoid()).notNull(),
@@ -294,7 +294,7 @@ export const revisions = pgTable(
     createdAt: createdAt(),
   },
   (t) => ({
-    /** Same-site item (composite FK, migration 0029). */
+    /** Same-site item (composite FK, migration 0032). */
     itemFk: foreignKey({
       name: 'lumibase_revisions_item_fk',
       columns: [t.siteId, t.itemId],
@@ -636,7 +636,7 @@ export const releaseItems = pgTable(
     createdAt: createdAt(),
   },
   (t) => ({
-    /** Same-site item (composite FK, migration 0029). */
+    /** Same-site item (composite FK, migration 0032). */
     itemFk: foreignKey({
       name: 'lumibase_release_items_item_fk',
       columns: [t.siteId, t.itemId],
