@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 3
-lastUpdated: 2026-11-15T08:52:54.637Z
+version: 4
+lastUpdated: 2026-11-15T11:58:12.013Z
 translatedFrom: en
-sourceHash: 4c6c95f828adf398
+sourceHash: 4746964dae05d4e2
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T08:52:54.637Z
-codeVerifiedHash: 4c6c95f828adf398
+codeVerified: 2026-11-15T11:58:12.013Z
+codeVerifiedHash: 4746964dae05d4e2
 codeVerifiedClaims: 36
 ---
 
@@ -28,6 +28,7 @@ managed khi lên production; Meilisearch là tuỳ chọn.
 | StatefulSet + Service cho PostgreSQL / Redis | `postgresql.enabled` / `redis.enabled` (mặc định bật) |
 | StatefulSet + Service cho Meilisearch | `meilisearch.enabled` |
 | Deployment `<release>-lumibase-worker` (role `worker`) | `worker.enabled` |
+| Job `<release>-lumibase-migrate-<hash>` | `migrations.mode=job` |
 | Ingress (TLS tuỳ chọn) | `ingress.enabled` |
 | HorizontalPodAutoscaler, PodDisruptionBudget, NetworkPolicy | `autoscaling.enabled`, `podDisruptionBudget.enabled`, `networkPolicy.enabled` |
 | Pod `helm test` | `tests.enabled` (mặc định bật) |
@@ -199,32 +200,86 @@ các key của chính chart), `extraEnv` hoặc `extraEnvFrom`.
 | `cms.role`, `worker.enabled` | `LUMIBASE_PROCESS_ROLE` |
 | `worker.healthPort` | `LUMIBASE_WORKER_HEALTH_PORT` |
 | `migrations.mode` | `SKIP_MIGRATIONS`, `MIGRATION_MODE` (init container) |
+| `migrations.target` | `MIGRATE_TARGET` (các runner migration và gate) |
 
 Chart luôn đặt `LUMIBASE_RUNTIME=docker` và `PORT=1989`.
 `values.schema.json` từ chối values sai dạng trước khi bất cứ thứ gì được render.
 
 ## Migration
 
-`migrations.mode` chọn ai chạy migration:
+Hai thành phần của runner migration trong image (`dist/migrate.cjs`) sắp thứ
+tự cho mọi mode:
+
+- **Lock.** `migrate.cjs apply` giữ một advisory lock PostgreSQL cấp session
+  trong suốt quá trình apply. Key cố định: `5509430018010346341`, chính là các
+  byte ASCII của `LumiBase` (`pg_locks` hiển thị là `classid = 1282764137`,
+  `objid = 1113682789`). Các runner khởi động cùng lúc (nhiều web replica, pod
+  surge, HPA scale-out, entrypoint trên hai replica) xếp hàng trên lock này:
+  runner đầu tiên apply, mỗi runner sau đó không còn gì pending, ghi log
+  `Nothing to apply` và thoát với mã 0. Postgres nhả lock khi kết nối của
+  runner đóng, nên pod bị kill không bao giờ bỏ lại lock. Một runner chờ tối đa
+  `MIGRATION_LOCK_TIMEOUT` giây (mặc định 900) rồi báo lỗi, và Kubernetes chạy
+  lại nó.
+- **Gate.** `migrate.cjs wait --timeout <seconds>` chỉ đọc: thoát với mã 0 khi
+  database không còn migration nào pending so với journal đóng gói trong
+  image, poll với backoff (1 giây, nhân đôi đến 10 giây), và thoát với mã 1 khi
+  hết thời gian (`migrations.waitTimeoutSeconds`, mặc định 600), sau đó
+  Kubernetes khởi động lại init container.
+
+`migrations.mode` chọn ai apply migration:
 
 - `initContainer` (mặc định): mỗi web pod trước tiên chạy entrypoint của image
   với `MIGRATION_MODE=preflight` — chờ database bằng chính cơ chế retry và
   backoff của entrypoint và in ra phiên bản schema — rồi chạy
-  `node /app/dist/migrate.cjs apply`. Container server khởi động với
+  `node /app/dist/migrate.cjs apply` dưới lock. Container server khởi động với
   `SKIP_MIGRATIONS=true`. Migration lỗi sẽ giữ pod ngoài vòng phục vụ thay vì
-  phục vụ trên schema mới migrate một nửa, và rolling update dừng tại đó. Khi
-  nhiều pod khởi động cùng lúc, mỗi lần chạy là một transaction; pod thua cuộc
-  đua sẽ lỗi và được Kubernetes chạy lại.
-- `entrypoint`: không có init container; image tự migrate mỗi lần khởi động,
-  giống trên Docker và các nền tảng one-click.
-- `none`: `SKIP_MIGRATIONS=true` ở mọi nơi; bạn tự chạy migration từ pipeline
-  của mình trước khi rollout.
+  phục vụ trên schema mới migrate một nửa, và rolling update dừng tại đó.
+- `job`: một Job, `<release>-lumibase-migrate-<hash>`, chạy cùng preflight và
+  `apply`; web pod chỉ chạy gate. Hash lấy từ pod spec của Job, thứ mà
+  Kubernetes không cho sửa: image hoặc thiết lập database mới tạo ra Job mới
+  (Helm xoá Job trước đó), còn áp lại values không đổi — `helm upgrade`, hay
+  một lần Argo CD sync output của `helm template` — để nguyên Job đã chạy xong.
+  Với `networkPolicy.enabled`, các dịch vụ kèm sẵn cũng nhận pod của Job.
+- `entrypoint`: web pod không có init container; image tự migrate mỗi lần khởi
+  động dưới cùng lock đó, giống trên Docker và các nền tảng one-click.
+- `none`: `SKIP_MIGRATIONS=true` ở mọi nơi và không có gate; bạn tự chạy
+  migration từ pipeline của mình trước khi rollout.
 
-Cố ý không dùng Helm hook: hook pre-install chạy trước khi PostgreSQL kèm sẵn và
-Secret của chart tồn tại, nên không thể kết nối database.
+Worker pod không bao giờ migrate. Ở mọi mode trừ `none`, worker Deployment
+khởi động với init container `migrations-ready` chạy gate, cùng image và cùng
+hardening với migrator của web, nên queue consumer và scheduler không khởi
+động trên schema cũ hơn schema mà image của chúng được build cho, dù là lần
+cài mới hay khi nâng cấp.
 
-Worker pod không bao giờ migrate. Đọc [Nâng cấp](../operations/upgrades.md)
-trước khi đổi `image.tag` qua một bản major.
+Cố ý không dùng Helm hook: hook pre-install hay pre-upgrade chạy trước khi
+PostgreSQL kèm sẵn và Secret của chart tồn tại, nên ở lần cài đầu tiên không
+thể kết nối database; hook post-install dưới `helm install --wait` sẽ chờ các
+web pod mà chính chúng đang chờ migration. Hook cũng không phải resource của
+release, nên rollback không theo dõi chúng.
+
+`migrations.target` (nâng cao) dừng lịch sử migration tại một tag, ví dụ
+`0029_activation_milestones`, cho cả runner lẫn gate. Nó dành cho nâng cấp theo
+từng bước và cho test nâng cấp trong CI; hãy để trống.
+
+### Nâng cấp khi có nhiều replica
+
+Khi `helm upgrade` lên một image có migration mới, ở mode `initContainer`:
+
+1. Các web pod mới khởi động (nhiều nhất cùng lúc theo `cms.strategy` cho phép;
+   HPA có thể thêm nữa). Mỗi pod chạy migrator của nó; lock chỉ cho đúng một
+   pod apply, các pod khác chờ pod đó rồi không còn gì để apply.
+2. Gate của worker pod mới thấy migration đang pending và chờ; container worker
+   chỉ khởi động sau khi lần apply đã commit.
+3. Web pod và worker pod cũ tiếp tục phục vụ đến khi pod thay thế Ready, nên
+   trong suốt quá trình rollout code cũ chạy trên schema mới. Giữ migration
+   tương thích ngược với release trước (expand, rồi contract ở release sau),
+   như các migration đóng gói sẵn.
+
+Migration lỗi sẽ rollback transaction của nó, nhả lock và giữ các pod mới ở
+`Init`: rollout dừng lại, và pod cũ tiếp tục phục vụ.
+
+Đọc [Nâng cấp](../operations/upgrades.md) trước khi đổi `image.tag` qua một bản
+major.
 
 ## Health check
 
@@ -271,7 +326,8 @@ và setup vẫn hoàn tất, nhưng upload không hoạt động.
 Với `networkPolicy.enabled`, web pod chỉ nhận traffic trên cổng HTTP (từ
 `networkPolicy.ingressFrom` nếu có đặt), worker không nhận gì (traffic từ chính
 node của pod, nơi kubelet gửi probe, luôn được phép), còn PostgreSQL, Redis và Meilisearch kèm sẵn
-chỉ nhận web pod và worker pod của release. Egress không bị giới hạn: CMS gọi
+chỉ nhận web pod và worker pod của release (và pod của Job migration khi
+`migrations.mode=job`). Egress không bị giới hạn: CMS gọi
 object storage, nhà cung cấp LLM và webhook.
 
 ## Kiểm tra
@@ -285,7 +341,11 @@ Pod test dùng chính Node của image release để kiểm tra, qua Service, r�
 Studio. Trong CI, `.github/workflows/helm.yml` lint chart, chạy
 `scripts/__tests__/helm-chart.test.mjs` (test render), và
 `scripts/helm-kind-smoke.sh` cài chart lên kind với image build từ cùng commit,
-chạy `helm test`, upgrade, rồi kiểm tra `ENCRYPTION_KEY` không đổi.
+chạy `helm test`, upgrade, rồi kiểm tra `ENCRYPTION_KEY` không đổi. Sau đó nó
+cài một worker và hai web replica thiếu một migration so với journal của image
+rồi nâng cấp lên toàn bộ journal, kiểm tra rằng bảng migration chứa mỗi
+migration đúng một lần, đúng một web pod đã apply nó, và worker chỉ khởi động
+sau khi gate của nó qua; cuối cùng chuyển release sang `migrations.mode=job`.
 
 ## Nâng cấp và gỡ cài đặt
 

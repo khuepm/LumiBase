@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 3
-lastUpdated: 2026-11-15T08:52:54.637Z
-contentHash: 4c6c95f828adf398
-codeVerified: 2026-11-15T08:52:54.637Z
-codeVerifiedHash: 4c6c95f828adf398
+version: 4
+lastUpdated: 2026-11-15T11:58:12.013Z
+contentHash: 4746964dae05d4e2
+codeVerified: 2026-11-15T11:58:12.013Z
+codeVerifiedHash: 4746964dae05d4e2
 codeVerifiedClaims: 36
 ---
 
@@ -25,6 +25,7 @@ production; Meilisearch is optional.
 | StatefulSet + Service for PostgreSQL / Redis | `postgresql.enabled` / `redis.enabled` (default on) |
 | StatefulSet + Service for Meilisearch | `meilisearch.enabled` |
 | Deployment `<release>-lumibase-worker` (role `worker`) | `worker.enabled` |
+| Job `<release>-lumibase-migrate-<hash>` | `migrations.mode=job` |
 | Ingress (TLS optional) | `ingress.enabled` |
 | HorizontalPodAutoscaler, PodDisruptionBudget, NetworkPolicy | `autoscaling.enabled`, `podDisruptionBudget.enabled`, `networkPolicy.enabled` |
 | `helm test` pod | `tests.enabled` (default on) |
@@ -199,32 +200,88 @@ wins over the chart's own keys), `extraEnv` or `extraEnvFrom`.
 | `cms.role`, `worker.enabled` | `LUMIBASE_PROCESS_ROLE` |
 | `worker.healthPort` | `LUMIBASE_WORKER_HEALTH_PORT` |
 | `migrations.mode` | `SKIP_MIGRATIONS`, `MIGRATION_MODE` (init container) |
+| `migrations.target` | `MIGRATE_TARGET` (migration runners and gates) |
 
 The chart always sets `LUMIBASE_RUNTIME=docker` and `PORT=1989`.
 `values.schema.json` rejects malformed values before anything is rendered.
 
 ## Migrations
 
-`migrations.mode` picks who runs them:
+Two pieces of the image's migration runner (`dist/migrate.cjs`) sequence every
+mode:
+
+- **Lock.** `migrate.cjs apply` holds a session-level PostgreSQL advisory lock
+  for the whole apply. The key is fixed: `5509430018010346341`, the ASCII bytes
+  of `LumiBase` (`pg_locks` shows it as `classid = 1282764137`,
+  `objid = 1113682789`). Runners that start together (several web replicas, a
+  surge pod, an HPA scale-out, the entrypoint on two replicas) queue on it: the
+  first applies, each later one then finds nothing pending, logs
+  `Nothing to apply`, and exits 0. Postgres releases the lock when the
+  runner's connection closes, so a killed pod never leaves it behind. A runner
+  waits up to `MIGRATION_LOCK_TIMEOUT` seconds (default 900) and then fails,
+  and Kubernetes retries it.
+- **Gate.** `migrate.cjs wait --timeout <seconds>` is read-only: it exits 0
+  once the database has no migration pending for the journal bundled in the
+  image, polling with backoff (1 s doubling to 10 s), and exits 1 at the
+  timeout (`migrations.waitTimeoutSeconds`, default 600), after which
+  Kubernetes restarts the init container.
+
+`migrations.mode` picks who applies them:
 
 - `initContainer` (default): each web pod first runs the image entrypoint with
   `MIGRATION_MODE=preflight` — which waits for the database with the
   entrypoint's own retry and backoff and prints the schema version — then
-  `node /app/dist/migrate.cjs apply`. The server container starts with
-  `SKIP_MIGRATIONS=true`. A failed migration keeps the pod out of service
-  instead of serving on a half-migrated schema, and the rolling update stops
-  there. When several pods start at once, each run is one transaction; a pod
-  that loses the race fails and is retried by Kubernetes.
-- `entrypoint`: no init containers; the image migrates on every start, as on
-  Docker and the one-click platforms.
-- `none`: `SKIP_MIGRATIONS=true` everywhere; run migrations from your own
-  pipeline before rolling out.
+  `node /app/dist/migrate.cjs apply` under the lock. The server container
+  starts with `SKIP_MIGRATIONS=true`. A failed migration keeps the pod out of
+  service instead of serving on a half-migrated schema, and the rolling update
+  stops there.
+- `job`: one Job, `<release>-lumibase-migrate-<hash>`, runs the same preflight
+  and `apply`; web pods run only the gate. The hash is taken from the Job's
+  pod spec, which Kubernetes does not let you change: a new image or database
+  setting creates a new Job (Helm deletes the previous one), and re-applying
+  unchanged values — `helm upgrade`, or an Argo CD sync of `helm template`
+  output — leaves the finished Job alone. With `networkPolicy.enabled` the
+  bundled services also admit the Job's pods.
+- `entrypoint`: no init containers on web pods; the image migrates on every
+  start under the same lock, as on Docker and the one-click platforms.
+- `none`: `SKIP_MIGRATIONS=true` everywhere and no gate; run migrations from
+  your own pipeline before rolling out.
 
-Not a Helm hook on purpose: a pre-install hook runs before the bundled
-PostgreSQL and the chart's Secret exist, so it could not reach the database.
+Worker pods never migrate. In every mode but `none`, the worker Deployment
+starts with a `migrations-ready` init container that runs the gate, with the
+same image and hardening as the web migrator, so queue consumers and the
+scheduler do not start on an older schema than the one their image was built
+for, on a fresh install or on an upgrade.
 
-Worker pods never migrate. Read [Upgrades](../operations/upgrades.md) before
-moving `image.tag` across a major release.
+Not a Helm hook on purpose: a pre-install or pre-upgrade hook runs before the
+bundled PostgreSQL and the chart's Secret exist, so on a first install it could
+not reach the database; a post-install hook under `helm install --wait` would
+wait for web pods that are themselves waiting for the migration. Hooks are also
+not release resources, so a rollback would not track them.
+
+`migrations.target` (advanced) stops the history at one migration tag, for
+example `0029_activation_milestones`, for runners and gates alike. It exists
+for staged upgrades and for the CI upgrade test; leave it empty.
+
+### Upgrades with several replicas
+
+On `helm upgrade` to an image with new migrations, with `initContainer` mode:
+
+1. New web pods start (as many at once as `cms.strategy` allows; an HPA may add
+   more). Each runs its migrator; the lock lets exactly one apply, the others
+   wait for it and find nothing to apply.
+2. The new worker pod's gate sees the pending migrations and waits; its worker
+   container starts only after the apply has committed.
+3. Old web and worker pods keep serving until their replacements are Ready, so
+   for the length of the rollout old code runs against the new schema. Keep
+   migrations backward-compatible with the previous release (expand, then
+   contract one release later), as the bundled ones are.
+
+A failed migration rolls back its transaction, releases the lock and keeps the
+new pods in `Init`: the rollout stops, and the old pods keep serving.
+
+Read [Upgrades](../operations/upgrades.md) before moving `image.tag` across a
+major release.
 
 ## Health checks
 
@@ -273,7 +330,8 @@ setup completes, but uploads do not work.
 With `networkPolicy.enabled` the web pods accept traffic only on their HTTP port
 (from `networkPolicy.ingressFrom` when set), the worker accepts none (traffic from
 the pod's own node, which carries the kubelet probes, is always allowed), and the bundled PostgreSQL, Redis and
-Meilisearch accept only the release's web and worker pods. Egress is not
+Meilisearch accept only the release's web and worker pods (and the migration
+Job's pods in `migrations.mode=job`). Egress is not
 restricted: the CMS calls object storage, LLM providers and webhooks.
 
 ## Verify
@@ -288,7 +346,11 @@ serves the Studio shell. In CI, `.github/workflows/helm.yml` lints the chart,
 runs `scripts/__tests__/helm-chart.test.mjs` (render tests), and
 `scripts/helm-kind-smoke.sh` installs the chart on kind with the image built
 from the same commit, runs `helm test`, upgrades, and checks that
-`ENCRYPTION_KEY` did not change.
+`ENCRYPTION_KEY` did not change. It then installs a worker and two web replicas
+one migration short of the image's journal and upgrades them to the full
+journal, checking that the migrations table holds each migration exactly once,
+that exactly one web pod applied it, and that the worker started only after its
+gate passed; finally it switches the release to `migrations.mode=job`.
 
 ## Upgrade and uninstall
 

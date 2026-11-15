@@ -36,6 +36,14 @@ spec:
       securityContext:
         {{- toYaml .Values.cms.podSecurityContext | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.cms.terminationGracePeriodSeconds }}
+      {{- if ne .Values.migrations.mode "none" }}
+      initContainers:
+        # Queue consumers and the scheduler must not run on an older schema:
+        # wait (read-only) until whoever migrates (the web pods' init
+        # containers, the migration Job or the web entrypoint) has applied
+        # every migration this image bundles.
+        {{- include "lumibase.migrationsReadyContainer" . | nindent 8 }}
+      {{- end }}
       containers:
         - name: worker
           image: {{ include "lumibase.image" . }}
@@ -56,7 +64,7 @@ spec:
               value: worker
             - name: LUMIBASE_WORKER_HEALTH_PORT
               value: {{ .Values.worker.healthPort | quote }}
-            # The web pods own migrations; a worker never races them.
+            # A worker never migrates; its init container waits for the schema.
             - name: SKIP_MIGRATIONS
               value: "true"
             {{- with .Values.extraEnv }}

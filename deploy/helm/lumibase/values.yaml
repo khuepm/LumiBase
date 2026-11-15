@@ -180,15 +180,35 @@ worker:
 
 # --- Migrations ---------------------------------------------------------------
 migrations:
+  # Every runner (`migrate.cjs apply`) holds a Postgres advisory lock for the
+  # whole apply, so runners started together queue: the first applies, the
+  # rest find nothing to apply and exit 0. Worker pods never migrate; in every
+  # mode but `none` they first run the read-only gate `migrate.cjs wait`,
+  # which exits once no migration this image bundles is pending.
+  #
   # initContainer: each web pod first runs the image's migration preflight
   #   (the entrypoint's own retry/backoff, MIGRATION_MODE=preflight), then
   #   `migrate.cjs apply`; the server then starts with SKIP_MIGRATIONS=true.
   #   A failed migration keeps the pod out of service instead of serving on a
   #   half-migrated schema.
-  # entrypoint: no init containers; the image migrates on every start (the
-  #   Docker/one-click behaviour).
-  # none: SKIP_MIGRATIONS=true everywhere; you run migrations yourself.
+  # job: one Job per release change (named by a hash of its pod spec) runs
+  #   the preflight and `migrate.cjs apply`; web and worker pods wait for it
+  #   with the gate. Not a Helm hook: see the docs (Migrations).
+  # entrypoint: no init containers on web pods; the image migrates on every
+  #   start (the Docker/one-click behaviour), under the same lock.
+  # none: SKIP_MIGRATIONS=true everywhere and no gate; you run migrations
+  #   yourself before rolling out.
   mode: initContainer
+  # Seconds the gate waits before failing its init container (Kubernetes then
+  # restarts it with backoff).
+  waitTimeoutSeconds: 600
+  # Advanced: stop the migration history at this tag (MIGRATE_TARGET), e.g.
+  # 0029_activation_milestones, for runners and gates alike. For staged
+  # upgrades and the CI upgrade test; empty applies everything the image bundles.
+  target: ""
+  job:
+    # Retries of the migration Job (mode: job) before it is marked failed.
+    backoffLimit: 6
   resources:
     requests:
       cpu: 100m

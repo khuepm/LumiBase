@@ -126,8 +126,8 @@ Render-time checks for the variables the server refuses to start without in
 production, so `helm install` fails with a message instead of a crash loop.
 */}}
 {{- define "lumibase.validate" -}}
-{{- if not (has .Values.migrations.mode (list "initContainer" "entrypoint" "none")) -}}
-{{- fail "migrations.mode must be one of initContainer, entrypoint, none" -}}
+{{- if not (has .Values.migrations.mode (list "initContainer" "job" "entrypoint" "none")) -}}
+{{- fail "migrations.mode must be one of initContainer, job, entrypoint, none" -}}
 {{- end -}}
 {{- if and (not .Values.postgresql.enabled) (not .Values.database.external.url) (not .Values.database.external.existingSecret) -}}
 {{- fail "PostgreSQL is required: set postgresql.enabled=true, or database.external.url / database.external.existingSecret" -}}
@@ -192,6 +192,76 @@ a password in it is stored anywhere.
 {{- end }}
 {{- end -}}
 
+{{/* DATABASE_URL plus MIGRATE_TARGET: the env of every migration runner and gate. */}}
+{{- define "lumibase.migrationEnv" -}}
+{{ include "lumibase.databaseEnv" . | trim }}
+{{- with .Values.migrations.target }}
+- name: MIGRATE_TARGET
+  value: {{ . | quote }}
+{{- end }}
+{{- end -}}
+
+{{/*
+Read-only migration gate: `migrate.cjs wait` exits 0 once the database has no
+migration pending for this image's journal, polling with backoff. Runs first
+in every pod that must not start on an older schema (the worker always; the
+web pods too in job mode). Same image and hardening as the migrator.
+*/}}
+{{- define "lumibase.migrationsReadyContainer" -}}
+- name: migrations-ready
+  image: {{ include "lumibase.image" . }}
+  imagePullPolicy: {{ .Values.image.pullPolicy }}
+  command: ["/nodejs/bin/node", "/app/dist/migrate.cjs", "wait", "--timeout", {{ .Values.migrations.waitTimeoutSeconds | int | toString | quote }}]
+  env:
+    {{- include "lumibase.migrationEnv" . | trim | nindent 4 }}
+  securityContext:
+    {{- toYaml .Values.cms.securityContext | nindent 4 }}
+  resources:
+    {{- toYaml .Values.migrations.resources | nindent 4 }}
+  volumeMounts:
+    - name: tmp
+      mountPath: /tmp
+{{- end -}}
+
+{{/*
+The migration runners: the image entrypoint's preflight (waits for the
+database with retry/backoff and prints the schema version), then
+`migrate.cjs apply`, which holds a Postgres advisory lock for the whole apply
+so concurrent runners serialise and the later ones find nothing to apply.
+*/}}
+{{- define "lumibase.migratePreflightContainer" -}}
+- name: migrate-preflight
+  image: {{ include "lumibase.image" . }}
+  imagePullPolicy: {{ .Values.image.pullPolicy }}
+  env:
+    {{- include "lumibase.migrationEnv" . | trim | nindent 4 }}
+    - name: MIGRATION_MODE
+      value: preflight
+  securityContext:
+    {{- toYaml .Values.cms.securityContext | nindent 4 }}
+  resources:
+    {{- toYaml .Values.migrations.resources | nindent 4 }}
+  volumeMounts:
+    - name: tmp
+      mountPath: /tmp
+{{- end -}}
+
+{{- define "lumibase.migrateContainer" -}}
+- name: migrate
+  image: {{ include "lumibase.image" . }}
+  imagePullPolicy: {{ .Values.image.pullPolicy }}
+  command: ["/nodejs/bin/node", "/app/dist/migrate.cjs", "apply"]
+  env:
+    {{- include "lumibase.migrationEnv" . | trim | nindent 4 }}
+  securityContext:
+    {{- toYaml .Values.cms.securityContext | nindent 4 }}
+  resources:
+    {{- toYaml .Values.migrations.resources | nindent 4 }}
+  volumeMounts:
+    - name: tmp
+      mountPath: /tmp
+{{- end -}}
+
 {{- define "lumibase.cmsSecretEnv" -}}
 {{- $secret := include "lumibase.secretName" . -}}
 {{- $appSecret := default $secret .Values.secrets.existingSecret -}}
@@ -243,7 +313,7 @@ a password in it is stored anywhere.
 {{- toJson $in | sha256sum -}}
 {{- end -}}
 
-{{/* Clients of the bundled data services: the web and worker pods only. */}}
+{{/* Clients of the bundled data services: the web and worker pods, and the migration Job. */}}
 {{- define "lumibase.dataClients" -}}
 - podSelector:
     matchLabels:
@@ -253,4 +323,10 @@ a password in it is stored anywhere.
     matchLabels:
       app.kubernetes.io/instance: {{ .Release.Name }}
       app.kubernetes.io/component: worker
+{{- if eq .Values.migrations.mode "job" }}
+- podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: migrate
+{{- end }}
 {{- end -}}

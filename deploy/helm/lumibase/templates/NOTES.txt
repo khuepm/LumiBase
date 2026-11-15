@@ -2,9 +2,16 @@ LumiBase {{ .Chart.AppVersion }} is installed as release "{{ .Release.Name }}" i
 {{- $fullname := include "lumibase.fullname" . }}
 {{- $publicUrl := include "lumibase.publicUrl" . }}
 
-1. Wait for the CMS to become ready ({{ if eq .Values.migrations.mode "initContainer" }}migrations run first, in init containers{{ else if eq .Values.migrations.mode "entrypoint" }}migrations run first, inside the server container{{ else }}migrations.mode=none: run them yourself before the first start{{ end }}):
+1. Wait for the CMS to become ready ({{ if eq .Values.migrations.mode "initContainer" }}migrations run first, in the web pods' init containers, one runner at a time under a database lock{{ else if eq .Values.migrations.mode "job" }}migrations run first, in the release's migration Job; web pods wait for it{{ else if eq .Values.migrations.mode "entrypoint" }}migrations run first, inside the server container, one runner at a time under a database lock{{ else }}migrations.mode=none: run them yourself before the first start{{ end }}):
 
    kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ $fullname }}
+{{- if eq .Values.migrations.mode "job" }}
+   kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=migrate --all-containers --prefix
+{{- end }}
+{{- if and .Values.worker.enabled (ne .Values.migrations.mode "none") }}
+   kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "lumibase.worker.fullname" . }}
+   (the worker's `migrations-ready` init container holds it until every bundled migration is applied)
+{{- end }}
 
 2. Open LumiBase:
 {{- if .Values.ingress.enabled }}

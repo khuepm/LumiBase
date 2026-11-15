@@ -126,7 +126,15 @@
     "migrations": {
       "type": "object",
       "properties": {
-        "mode": { "type": "string", "enum": ["initContainer", "entrypoint", "none"] },
+        "mode": { "type": "string", "enum": ["initContainer", "job", "entrypoint", "none"] },
+        "waitTimeoutSeconds": { "type": "integer", "minimum": 1 },
+        "target": { "type": "string", "pattern": "^([0-9]{4}_[A-Za-z0-9_]+)?$" },
+        "job": {
+          "type": "object",
+          "properties": {
+            "backoffLimit": { "type": "integer", "minimum": 0 }
+          }
+        },
         "resources": { "type": "object" }
       }
     },

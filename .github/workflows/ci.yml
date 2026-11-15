@@ -316,6 +316,12 @@ jobs:
       - name: Organization backfill and RLS regression gate
         run: pnpm --filter @lumibase/database exec vitest --run src/__tests__/organizations-migration.integration.test.ts
 
+      # Two real migrator processes on a fresh database (and an N-1 → N
+      # upgrade with the read-only `wait` gate): the advisory lock must make
+      # them apply once and both exit 0. Each case creates its own database.
+      - name: Concurrent migration runners (advisory lock, wait gate)
+        run: pnpm --filter @lumibase/database exec vitest --run src/__tests__/migrate-concurrency.integration.test.ts
+
       # Fail loudly if the filter stops matching. A rename that made this
       # select zero files would otherwise reproduce exactly the silence this
       # job exists to end.

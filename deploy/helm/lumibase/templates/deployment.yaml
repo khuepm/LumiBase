@@ -47,38 +47,16 @@ spec:
       terminationGracePeriodSeconds: {{ .Values.cms.terminationGracePeriodSeconds }}
       {{- if eq .Values.migrations.mode "initContainer" }}
       initContainers:
-        # Waits for the database and reports the schema version with the
-        # image's own entrypoint (retry with backoff; MIGRATION_MODE=preflight
-        # exits after the check and needs only DATABASE_URL).
-        - name: migrate-preflight
-          image: {{ include "lumibase.image" . }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          env:
-            {{- include "lumibase.databaseEnv" . | trim | nindent 12 }}
-            - name: MIGRATION_MODE
-              value: preflight
-          securityContext:
-            {{- toYaml .Values.cms.securityContext | nindent 12 }}
-          resources:
-            {{- toYaml .Values.migrations.resources | nindent 12 }}
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-        # Applies pending migrations. Concurrent pods are safe: each run is one
-        # transaction, and a pod that loses the race fails and is retried.
-        - name: migrate
-          image: {{ include "lumibase.image" . }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["/nodejs/bin/node", "/app/dist/migrate.cjs", "apply"]
-          env:
-            {{- include "lumibase.databaseEnv" . | trim | nindent 12 }}
-          securityContext:
-            {{- toYaml .Values.cms.securityContext | nindent 12 }}
-          resources:
-            {{- toYaml .Values.migrations.resources | nindent 12 }}
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
+        # Every web pod runs the migrator before its server starts. Several
+        # pods (replicas, a surge, an HPA scale-out) may start together: the
+        # runner takes a Postgres advisory lock for the whole apply, so they
+        # queue, the first applies and the rest find nothing to apply.
+        {{- include "lumibase.migratePreflightContainer" . | nindent 8 }}
+        {{- include "lumibase.migrateContainer" . | nindent 8 }}
+      {{- else if eq .Values.migrations.mode "job" }}
+      initContainers:
+        # The release's migration Job applies; web pods only wait for it.
+        {{- include "lumibase.migrationsReadyContainer" . | nindent 8 }}
       {{- end }}
       containers:
         - name: cms
@@ -101,6 +79,9 @@ spec:
             {{- if ne .Values.migrations.mode "entrypoint" }}
             - name: SKIP_MIGRATIONS
               value: "true"
+            {{- else if .Values.migrations.target }}
+            - name: MIGRATE_TARGET
+              value: {{ .Values.migrations.target | quote }}
             {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}

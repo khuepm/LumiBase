@@ -175,6 +175,116 @@ test('initContainer migrations: preflight via the entrypoint, then migrate.cjs a
   for (const c of [preflight, migrate]) assert.ok(envNames(c).includes('DATABASE_URL'), c.name);
   const cms = container(deploy, 'cms');
   assert.equal(envOf(cms, 'SKIP_MIGRATIONS').value, 'true');
+  // No Job in this mode, and nothing stops the history early by default.
+  assert.equal(find(docs, 'Job'), undefined);
+  for (const c of [preflight, migrate]) assert.equal(envOf(c, 'MIGRATE_TARGET'), undefined, c.name);
+});
+
+// The image's migrator is what makes concurrent web pods safe: it must take
+// the advisory lock around the apply and offer the read-only `wait` gate the
+// chart calls.
+test('the bundled migrator locks the apply and implements the wait gate', () => {
+  const cli = readFileSync(join(root, 'packages/database/scripts/migrate.ts'), 'utf8');
+  const runner = readFileSync(join(root, 'packages/database/src/migration-runner.ts'), 'utf8');
+  assert.match(cli, /await withMigrationLock\(\s*client,/);
+  assert.match(cli, /case 'wait':/);
+  assert.match(cli, /--timeout/);
+  assert.match(cli, /process\.env\.MIGRATE_TARGET/);
+  assert.match(runner, /pg_try_advisory_lock\(\$1::bigint\)/);
+  assert.match(runner, /pg_advisory_unlock\(\$1::bigint\)/);
+});
+
+const gateOf = (deploy) => (deploy.spec.template.spec.initContainers ?? []).find((c) => c.name === 'migrations-ready');
+
+test('the worker waits for the schema in every mode but none; web pods keep the migrator', { skip }, () => {
+  for (const mode of ['initContainer', 'job', 'entrypoint']) {
+    const docs = mustRender([...BASE, '--set', 'worker.enabled=true', '--set', `migrations.mode=${mode}`]);
+    const worker = find(docs, 'Deployment', 'lb-lumibase-worker');
+    const [gate, ...rest] = worker.spec.template.spec.initContainers;
+    assert.equal(rest.length, 0, `${mode}: the worker never runs a migrator`);
+    assert.equal(gate.name, 'migrations-ready', mode);
+    assert.deepEqual(gate.command, ['/nodejs/bin/node', '/app/dist/migrate.cjs', 'wait', '--timeout', '600'], mode);
+    assert.ok(envNames(gate).includes('DATABASE_URL'), mode);
+    // Same image and hardening as the web migrator.
+    const web = find(docs, 'Deployment', 'lb-lumibase');
+    assert.equal(gate.image, container(web, 'cms').image, mode);
+    assert.equal(gate.securityContext.readOnlyRootFilesystem, true, mode);
+    assert.equal(gate.securityContext.allowPrivilegeEscalation, false, mode);
+    assert.deepEqual(gate.securityContext.capabilities.drop, ['ALL'], mode);
+    assert.ok(gate.volumeMounts.some((m) => m.mountPath === '/tmp'), mode);
+    assert.equal(envOf(container(worker, 'worker'), 'SKIP_MIGRATIONS').value, 'true', mode);
+  }
+  const init = find(mustRender([...BASE, '--set', 'worker.enabled=true']), 'Deployment', 'lb-lumibase');
+  assert.deepEqual(init.spec.template.spec.initContainers.map((c) => c.name), ['migrate-preflight', 'migrate']);
+
+  const none = find(mustRender([...BASE, '--set', 'worker.enabled=true', '--set', 'migrations.mode=none']), 'Deployment', 'lb-lumibase-worker');
+  assert.equal(none.spec.template.spec.initContainers, undefined);
+  const timeout = find(
+    mustRender([...BASE, '--set', 'worker.enabled=true', '--set', 'migrations.waitTimeoutSeconds=1200']),
+    'Deployment',
+    'lb-lumibase-worker',
+  );
+  assert.equal(gateOf(timeout).command.at(-1), '1200');
+});
+
+test('migrations.mode=job: one hardened Job applies, web and worker pods wait', { skip }, () => {
+  const args = [...BASE, '--set', 'worker.enabled=true', '--set', 'migrations.mode=job', '--set', 'networkPolicy.enabled=true'];
+  const docs = mustRender(args);
+  const jobs = all(docs, 'Job');
+  assert.equal(jobs.length, 1);
+  const [job] = jobs;
+  assert.match(job.metadata.name, /^lb-lumibase-migrate-[0-9a-f]{10}$/);
+  // An ordinary release resource, not a hook (see the template comment).
+  assert.equal(job.metadata.annotations?.['helm.sh/hook'], undefined);
+  assert.equal(job.metadata.labels['app.kubernetes.io/component'], 'migrate');
+  const pod = job.spec.template.spec;
+  assert.equal(pod.restartPolicy, 'Never');
+  assert.equal(pod.securityContext.runAsNonRoot, true);
+  assert.equal(pod.automountServiceAccountToken, false);
+  assert.deepEqual(pod.initContainers.map((c) => c.name), ['migrate-preflight']);
+  assert.deepEqual(pod.containers[0].command, ['/nodejs/bin/node', '/app/dist/migrate.cjs', 'apply']);
+  for (const c of [...pod.initContainers, ...pod.containers]) {
+    assert.equal(c.securityContext.readOnlyRootFilesystem, true, c.name);
+    assert.ok(envNames(c).includes('DATABASE_URL'), c.name);
+  }
+  // Web pods only wait; the server still skips migrations.
+  const web = find(docs, 'Deployment', 'lb-lumibase');
+  assert.deepEqual(web.spec.template.spec.initContainers.map((c) => c.name), ['migrations-ready']);
+  assert.equal(envOf(container(web, 'cms'), 'SKIP_MIGRATIONS').value, 'true');
+  // The Job's pods may reach the bundled database.
+  const pg = find(docs, 'NetworkPolicy', 'lb-lumibase-postgresql');
+  const components = pg.spec.ingress[0].from.map((f) => f.podSelector.matchLabels['app.kubernetes.io/component']);
+  assert.deepEqual(components, ['cms', 'worker', 'migrate']);
+
+  // The name follows the pod spec: same values → same Job (a re-sync leaves
+  // the finished Job alone), new image → new Job (pod templates are immutable).
+  assert.equal(find(mustRender(args), 'Job').metadata.name, job.metadata.name);
+  const bumped = find(mustRender([...args, '--set', 'image.tag=9.9.9']), 'Job');
+  assert.notEqual(bumped.metadata.name, job.metadata.name);
+  const longName = find(mustRender([...args, '--set', `fullnameOverride=${'x'.repeat(63)}`]), 'Job');
+  assert.ok(longName.metadata.name.length <= 63);
+  assert.match(longName.metadata.name, /-[0-9a-f]{10}$/);
+});
+
+test('migrations.target reaches every runner and gate, and only them', { skip }, () => {
+  const docs = mustRender([
+    ...BASE,
+    '--set', 'worker.enabled=true',
+    '--set', 'migrations.target=0029_activation_milestones',
+  ]);
+  const web = find(docs, 'Deployment', 'lb-lumibase');
+  const worker = find(docs, 'Deployment', 'lb-lumibase-worker');
+  for (const c of [...web.spec.template.spec.initContainers, gateOf(worker)]) {
+    assert.equal(envOf(c, 'MIGRATE_TARGET').value, '0029_activation_milestones', c.name);
+  }
+  assert.equal(envOf(container(worker, 'worker'), 'MIGRATE_TARGET'), undefined);
+  const entry = find(
+    mustRender([...BASE, '--set', 'migrations.mode=entrypoint', '--set', 'migrations.target=0029_activation_milestones']),
+    'Deployment',
+    'lb-lumibase',
+  );
+  assert.equal(envOf(container(entry, 'cms'), 'MIGRATE_TARGET').value, '0029_activation_milestones');
+  assert.equal(render([...BASE, '--set', 'migrations.target=latest; DROP TABLE x']).ok, false);
 });
 
 test('migrations.mode=entrypoint lets the image migrate; none skips everywhere', { skip }, () => {
@@ -184,7 +294,7 @@ test('migrations.mode=entrypoint lets the image migrate; none skips everywhere',
   const none = find(mustRender([...BASE, '--set', 'migrations.mode=none']), 'Deployment', 'lb-lumibase');
   assert.equal(none.spec.template.spec.initContainers, undefined);
   assert.equal(envOf(container(none, 'cms'), 'SKIP_MIGRATIONS').value, 'true');
-  assert.equal(render([...BASE, '--set', 'migrations.mode=job']).ok, false);
+  assert.equal(render([...BASE, '--set', 'migrations.mode=hook']).ok, false);
 });
 
 test('bundled service URLs are assembled from the password, never stored', { skip }, () => {
@@ -302,7 +412,7 @@ test('ingress with TLS derives the https public origin and CORS from the host', 
   assert.equal(find(plain, 'ConfigMap').data.LUMIBASE_PUBLIC_URL, 'http://cms.acme.test');
 });
 
-test('worker.enabled splits web and worker roles; workers never migrate', { skip }, () => {
+test('worker.enabled splits web and worker roles; workers never apply migrations', { skip }, () => {
   const docs = mustRender([...BASE, '--set', 'worker.enabled=true']);
   const web = container(find(docs, 'Deployment', 'lb-lumibase'), 'cms');
   assert.equal(envOf(web, 'LUMIBASE_PROCESS_ROLE').value, 'web');

@@ -16,7 +16,8 @@ chart fails the render instead.
 
 Full guide, both locales: `docs/en/deployment/kubernetes-helm.md`,
 `docs/vi/deployment/kubernetes-helm.md` — install, setup token, secrets and
-GitOps, production values, the value-to-variable table, migration modes, health
+GitOps, production values, the value-to-variable table, migration modes and
+how web, worker and several replicas are sequenced during an upgrade, health
 probes, scaling (and the realtime limitation with several web replicas),
 bundled services, NetworkPolicy, `helm test`, upgrade and uninstall.
 
@@ -31,7 +32,7 @@ bundled services, NetworkPolicy, `helm test`, upgrade and uninstall.
 | `redis.enabled` / `redis.external.*` | `true` | Redis is required (cache, queues, locks). |
 | `meilisearch.enabled` / `meilisearch.external.*` | `false` | Optional search. |
 | `s3.*` | unset | S3-compatible media storage (not bundled). |
-| `migrations.mode` | `initContainer` | `initContainer`, `entrypoint` or `none`. |
+| `migrations.mode` | `initContainer` | `initContainer`, `job`, `entrypoint` or `none`. Runners hold a Postgres advisory lock, so concurrent web pods apply once; worker pods (and web pods in `job` mode) wait in a read-only `migrations-ready` init container until nothing is pending. |
 | `worker.enabled` | `false` | Separate worker Deployment; web pods run as `web`. |
 | `ingress.*`, `autoscaling.*`, `podDisruptionBudget.*`, `networkPolicy.*` | off | Optional. |
 
