@@ -224,6 +224,13 @@ jobs:
       - name: Run upgrade-path E2E (0.x → 1.0 RBAC backfill)
         run: pnpm --filter @lumibase/cms exec vitest --run src/__tests__/upgrade-path.e2e.test.ts
 
+      # MCP OAuth 2.1 interop (#346, #798): a real IdP (`oidc-provider`, with DCR,
+      # PKCE and RFC 8707 resource indicators) and the official MCP SDK client
+      # against the full app over real HTTP. Its own step because it needs a
+      # completed setup (bootstrap user), which the golden path resets.
+      - name: Run MCP OAuth hosted-client E2E (real IdP)
+        run: pnpm --filter @lumibase/cms exec vitest --run src/__tests__/mcp-oauth-hosted-client.e2e.test.ts
+
   db-integration:
     name: DB integration suites
     runs-on: ubuntu-latest
