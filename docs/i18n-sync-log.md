@@ -2,6 +2,14 @@
 
 Append-only history of automated EN ⇄ VI documentation syncs. Each run records language detection, preserved content and translation actions so no source content is silently lost.
 
+## 2026-11-15T06:46:25.465Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 168
+
+Summary — up-to-date: 168, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
 ## 2026-11-15T06:36:57.736Z — mode `preserve-only` (effective `preserve-only`)
 
 Engine: `claude` · API key: absent · files scanned: 167
