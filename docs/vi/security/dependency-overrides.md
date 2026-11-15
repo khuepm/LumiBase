@@ -1,13 +1,13 @@
 ---
-version: 12
-lastUpdated: 2026-10-29T08:18:32.171Z
+version: 13
+lastUpdated: 2026-11-15T22:13:05.473Z
 sourceLang: en
 translatedFrom: en
-sourceHash: f9f3dd816843f1b1
+sourceHash: 2836abfde5e3025a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-10-29T08:18:32.171Z
-codeVerifiedHash: f9f3dd816843f1b1
+codeVerified: 2026-11-15T22:13:05.473Z
+codeVerifiedHash: 2836abfde5e3025a
 codeVerifiedClaims: 6
 ---
 
@@ -51,7 +51,7 @@ resolution / patch hash mới, rồi `pnpm settings:check` để xác nhận hai
 
 | Package | Pin tới | Lý do | Gỡ khi |
 | --- | --- | --- | --- |
-| `js-yaml` | `^4.3.2` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — DoS độ phức tạp bậc hai (quadratic) trong xử lý merge-key của YAML (moderate), [GHSA-mxjm-jjmh-r63x](https://github.com/advisories/GHSA-mxjm-jjmh-r63x) — tiêu thụ CPU bậc hai khi resolve `!!omap`, chưa vá ở dưới `4.3.1` (high), và [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh) — `maxTotalMergeKeys` không giới hạn CPU cho merge source rỗng, chưa vá ở dưới `4.3.2` (high). Được kéo vào gián tiếp bởi `gray-matter@4.0.3`, vốn hard-pin js-yaml 3.x. Xem ghi chú patch bên dưới. | `gray-matter` (hoặc thứ tiêu thụ nó) phụ thuộc js-yaml `>=4.2.0` trực tiếp, **và** không dependency nào khác tái introduce range 3.x. Xác minh bằng `pnpm why js-yaml`. |
+| `js-yaml@<4.3.2` | `^4.3.2` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — DoS độ phức tạp bậc hai (quadratic) trong xử lý merge-key của YAML (moderate), [GHSA-mxjm-jjmh-r63x](https://github.com/advisories/GHSA-mxjm-jjmh-r63x) — tiêu thụ CPU bậc hai khi resolve `!!omap`, chưa vá ở dưới `4.3.1` (high), và [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh) — `maxTotalMergeKeys` không giới hạn CPU cho merge source rỗng, chưa vá ở dưới `4.3.2` (high). Được kéo vào gián tiếp bởi `gray-matter@4.0.3`, vốn hard-pin js-yaml 3.x. Xem ghi chú patch bên dưới. Selector giới hạn theo range (`<4.3.2`) nên chỉ *nâng* các bản dính lỗ hổng: dev dependency js-yaml 5 ở root được giữ nguyên, còn các consumer viết theo API 4.x (`gray-matter`, `@redocly/openapi-core` — đọc `types.merge`) vẫn ở 4.x thay vì bị ép lên 5. | `gray-matter` (hoặc thứ tiêu thụ nó) phụ thuộc js-yaml `>=4.2.0` trực tiếp, **và** không dependency nào khác tái introduce range 3.x. Xác minh bằng `pnpm why js-yaml`. |
 | `dompurify` | `^3.4.17` | Advisory bảo mật (đã xử lý qua Dependabot), sau đó nâng thêm vì [GHSA-8v5p-ggcr-6q56](https://github.com/advisories/GHSA-8v5p-ggcr-6q56) — việc gỡ hook `IN_PLACE` để lại một subtree bị tách rời, cho phép bypass sanitizer ở `<=3.4.12` (moderate), nâng tiếp vì [GHSA-p98j-92pf-mc4p](https://github.com/advisories/GHSA-p98j-92pf-mc4p) / [GHSA-6688-9rhm-gjv2](https://github.com/advisories/GHSA-6688-9rhm-gjv2), chưa vá dưới `3.4.16` (low), và nâng tiếp vì [GHSA-cg2g-xh64-v4q7](https://github.com/advisories/GHSA-cg2g-xh64-v4q7) (critical), [GHSA-mrv2-3pqr-j5jr](https://github.com/advisories/GHSA-mrv2-3pqr-j5jr) (high) và [GHSA-c6gr-qvv4-5v3f](https://github.com/advisories/GHSA-c6gr-qvv4-5v3f) (low), chưa vá dưới `3.4.17`. Nâng cùng lúc với manifest của `apps/docs` và `apps/studio`; vẫn cần vì `monaco-editor@0.55.1` (qua `@monaco-editor/react`) pin `3.2.7`. | Một consumer trực tiếp/gián tiếp tự yêu cầu `>=3.4.17`. |
 | `esbuild` | `^0.28.2` | Advisory RCE qua request tới dev-server của esbuild (`<=0.24.2`). | Mọi consumer (vite, tsx, v.v.) yêu cầu `>=0.28.2`. |
 | `form-data` | `^4.0.6` | Advisory bảo mật (random boundary không an toàn). | Mọi consumer yêu cầu `>=4.0.6`. |
@@ -166,7 +166,7 @@ Kiểm bằng `cargo tree -i glib` sau khi bump `tauri`.
 **Vì sao cần:** `gray-matter@4.0.3` là bản phát hành mới nhất và thực chất đã ngừng bảo trì.
 Nó hard-pin `js-yaml@^3.13.1` và gọi `safeLoad`/`safeDump`. Các hàm đó đã bị **gỡ bỏ** trong
 js-yaml 4.x (nơi `load`/`dump` an toàn mặc định — và `safeLoad` là stub *ném lỗi*). Vì
-override `js-yaml: ^4.3.2` (ở trên) nâng js-yaml toàn cây để vá
+override `js-yaml@<4.3.2: ^4.3.2` (ở trên) nâng js-yaml toàn cây để vá
 [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68), gray-matter sẽ crash
 lúc parse nếu không có patch này. gray-matter chỉ được dùng ở thời điểm build/dev trong
 [`apps/docs`](../../../apps/docs/src/plugins/vite-plugin-docs-loader.ts) để parse front
