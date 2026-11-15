@@ -1775,10 +1775,62 @@ export interface DeploymentResource {
   commitMessage: string | null;
   url: string | null;
   triggeredBy: string | null;
-  triggerSource: "manual" | "auto" | "agent";
+  triggerSource: "manual" | "auto" | "agent" | "promote";
   errorMessage: string | null;
   logExcerpt: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+}
+
+/** Deployment environment (#743): preview / staging / production or any site-defined slug. */
+export interface DeploymentEnvironmentResource {
+  key: string;
+  name: string;
+  targetIds: string[];
+  requiresApproval: boolean;
+  promotesTo: string | null;
+}
+
+/** A parked deploy/promotion waiting for a human approver (#743). */
+export interface DeploymentApprovalResource {
+  id: string;
+  kind: "trigger" | "promote";
+  scope: "environment" | "target";
+  environment: string;
+  sourceEnvironment: string | null;
+  sourceDeploymentId: string | null;
+  targetIds: string[];
+  branch: string | null;
+  reason: string | null;
+  status: "pending" | "deciding" | "approved" | "rejected" | "expired" | "failed";
+  requestedBy: { type: string; id: string | null } | null;
+  createdAt: string;
+  expiresAt: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  result: unknown;
+  /** Present on list responses: whether the caller may decide it. */
+  canDecide?: boolean;
+}
+
+export interface DeploymentDispatchResult {
+  targetId: string;
+  ok: boolean;
+  deployment: DeploymentResource | null;
+  mode?: "native" | "retrigger";
+  error?: { code: string; message: string };
+}
+
+/** Outcome of an environment deploy / promotion request. */
+export type DeploymentRequestOutcome =
+  | { status: "dispatched"; environment: string | null; results: DeploymentDispatchResult[] }
+  | { status: "pending_approval"; environment: string; approval: DeploymentApprovalResource };
+
+/** What the caller may do on the deployments page. */
+export interface DeploymentAccessResource {
+  admin: boolean;
+  capabilities: string[];
+  humanDecider: boolean;
+  environments: Array<{ key: string; canTrigger: boolean; canApprove: boolean }>;
 }

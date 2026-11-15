@@ -23,6 +23,12 @@ export interface TypegenCollection {
 export interface TypegenField {
   name: string;
   type: string;
+  /**
+   * Studio interface id (`translatable-text`, `file`, `files`, …). Carried so
+   * consumers that need the wire shape — the live OpenAPI document (#745) —
+   * can tell a per-locale map or a file reference from a plain scalar.
+   */
+  interface?: string;
   required: boolean;
   nullable: boolean;
   readonly: boolean;
@@ -88,6 +94,7 @@ export class TypegenService {
         const field: TypegenField = {
           name: f.name,
           type: f.type,
+          interface: f.interface,
           required: f.required,
           nullable: f.nullable,
           readonly: f.readonly,
@@ -135,6 +142,7 @@ export class TypegenService {
         .map((field) => ({
           name: field.name,
           type: field.type,
+          interface: field.interface,
           required: !field.nullable,
           nullable: field.nullable,
           readonly: field.readonly,

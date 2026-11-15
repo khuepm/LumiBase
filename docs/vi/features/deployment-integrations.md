@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-11-09T15:37:46.751Z
+version: 5
+lastUpdated: 2026-11-15T08:38:33.808Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 93188f6a9c32d75d
+sourceHash: 5e2ec23fbbecaadb
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-09T15:37:46.751Z
-codeVerifiedHash: 93188f6a9c32d75d
+codeVerified: 2026-11-15T08:38:33.808Z
+codeVerifiedHash: 5e2ec23fbbecaadb
 codeVerifiedClaims: 38
 ---
 
@@ -71,7 +71,7 @@ SDK (`@lumibase/sdk`): `client.deployments.targets.{list,create,update,delete,de
 
 ### 5a. Rate limit khi trigger
 
-Mỗi trigger được nhận đều khởi động một build do provider tính phí, nên `POST /targets/:id/deploy` bị giới hạn **theo từng target**, nằm trên gate admin (`apps/cms/src/services/deployment/trigger-rate-limit.ts`):
+Mỗi trigger được nhận đều khởi động một build do provider tính phí, nên `POST /targets/:id/deploy` bị giới hạn **theo từng target**, nằm trên gate phân quyền deploy (`apps/cms/src/services/deployment/trigger-rate-limit.ts`):
 
 | Tầng | Ngưỡng |
 |---|---|
@@ -81,7 +81,7 @@ Mỗi trigger được nhận đều khởi động một build do provider tín
 - **Phạm vi** — khoá budget mang cả `site_id` và target id (`rl:deploy:<tier>:<siteId>:<targetId>`), nên hai target không bao giờ dùng chung budget và một site không thể làm cạn budget của site khác.
 - **Áp cho mọi nguồn trigger** — manual, flow (`auto`) và agent đều tiêu cùng một budget theo target, vì giới hạn này bảo vệ tài khoản provider của tenant bất kể ai gọi. Auto-deploy từ flow thường nằm rất xa ngưỡng nhờ `coalesceWindowMs`; một trigger bị coalesce sẽ tái dùng build có sẵn và **không** tiêu budget (kiểm tra chạy ngay trước lời gọi provider ra ngoài).
 - **Vượt ngưỡng** — request bị từ chối với `429` và `{ "errors": [{ "code": "RATE_LIMITED", "retryAfterSeconds": <n> }] }` kèm header `Retry-After`. Không có dòng `deployments` nào được tạo cho trigger bị từ chối; lần thử được audit là `deployment.trigger.rate_limited`.
-- **Fail-open** — nếu backend rate limiter không truy cập được thì trigger vẫn được cho qua; sự cố limiter không được làm sập đường deploy. Gate admin và kiểm tra target `status='active'` vẫn áp dụng.
+- **Fail-open** — nếu backend rate limiter không truy cập được thì trigger vẫn được cho qua; sự cố limiter không được làm sập đường deploy. Gate phân quyền deploy và kiểm tra target `status='active'` vẫn áp dụng.
 
 ## 6. Auto-deploy qua Flows
 
@@ -109,7 +109,7 @@ Giống các flow operation ở trên, cả bốn skill đều bind vào runtime
 
 ## 8. Studio
 
-Một trang **Settings → Deployments** (`apps/studio/src/modules/settings/deployments-page.tsx`) liệt kê các target và các deployment gần đây, kèm điều khiển để thêm target, kích hoạt deploy, refresh trạng thái và xem log. Nó nằm ở `/settings/deployments` (và `/<adminPath>/settings/deployments` trên các instance có admin path tuỳ chỉnh), truy cập từ nhóm **Integrations** của sidebar settings.
+Một trang **Settings → Deployments** (`apps/studio/src/modules/settings/deployments-page.tsx`) liệt kê các target và các deployment gần đây, kèm điều khiển để thêm target, kích hoạt deploy, refresh trạng thái và xem log. Nó nằm ở `/settings/deployments` (và `/<adminPath>/settings/deployments` trên các instance có admin path tuỳ chỉnh), truy cập từ nhóm **Integrations** của sidebar settings. Ai được kích hoạt target nào, môi trường, promote và cổng phê duyệt production được mô tả trong [Deployment environments](./deployment-environments.md).
 
 ## 9. Ghi chú thiết lập
 

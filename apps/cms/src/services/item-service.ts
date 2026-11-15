@@ -34,6 +34,14 @@ import {
   resolveGeoDialect,
   type GeoDialect,
 } from './geo-filter';
+import { containsPattern, endsWithPattern, startsWithPattern } from './like-pattern';
+import {
+  FIELD_FORBIDDEN_CODE,
+  MAX_FILTER_DEPTH,
+  findUnreadableQueryField,
+  isFieldReadable,
+  readableFieldSet,
+} from './filter-guard';
 import { PermissionService, type CompiledPermission, type PermissionAction } from './permission-service';
 import { applyFieldMask, evaluate, type MagicContext } from './permission-dsl';
 import type { PolicyRule } from '@lumibase/contracts';
@@ -558,25 +566,34 @@ function geoClause(key: string, op: string, raw: unknown, types: FieldTypeMap | 
   }
 }
 
-/** Exported for the geo filter tests (#746); callers go through {@link ItemService.list}. */
+/**
+ * Compile a filter tree to SQL. Exported for the sanitisation (#738) and geo
+ * filter (#746) tests; callers go through {@link ItemService.list}, which runs
+ * the readable-field guard first. `depth` counts `_and` / `_or` nesting and is
+ * capped at `MAX_FILTER_DEPTH`.
+ */
 export function buildFilter(
   filter?: ItemFilter,
   types?: FieldTypeMap,
   geo: GeoDialect = HAVERSINE_DIALECT,
+  depth = 0,
 ): SQL | undefined {
   if (!filter) return undefined;
+  if (depth > MAX_FILTER_DEPTH) {
+    throw new ItemServiceError('INVALID_FILTER', 'Filter is nested too deeply.');
+  }
   const clauses: SQL[] = [];
 
   if (filter._and?.length) {
     const sub = filter._and
-      .map((f) => buildFilter(f, types, geo))
+      .map((f) => buildFilter(f, types, geo, depth + 1))
       .filter((c): c is SQL => c !== undefined);
     if (sub.length) clauses.push(sql.join(sub, sql` and `));
   }
 
   if (filter._or?.length) {
     const sub = filter._or
-      .map((f) => buildFilter(f, types, geo))
+      .map((f) => buildFilter(f, types, geo, depth + 1))
       .filter((c): c is SQL => c !== undefined);
     if (sub.length) clauses.push(sql`(${sql.join(sub, sql` or `)})`);
   }
@@ -639,14 +656,16 @@ export function buildFilter(
         case '_lte':
           clauses.push(sql`${expr} <= ${raw}`);
           break;
+        // `%` / `_` / `\` in the value are literals (#738): the operators
+        // promise substring / prefix / suffix semantics, not a LIKE pattern.
         case '_contains':
-          clauses.push(sql`${expr} ilike ${'%' + String(raw) + '%'}`);
+          clauses.push(sql`${expr} ilike ${containsPattern(raw)}`);
           break;
         case '_starts_with':
-          clauses.push(sql`${expr} ilike ${String(raw) + '%'}`);
+          clauses.push(sql`${expr} ilike ${startsWithPattern(raw)}`);
           break;
         case '_ends_with':
-          clauses.push(sql`${expr} ilike ${'%' + String(raw)}`);
+          clauses.push(sql`${expr} ilike ${endsWithPattern(raw)}`);
           break;
         case '_null':
           clauses.push(raw ? sql`${expr} is null` : sql`${expr} is not null`);
@@ -664,7 +683,7 @@ export function buildFilter(
   return sql.join(clauses, sql` and `);
 }
 
-/** @internal Exported for unit tests. */
+/** Compile sort tokens to ORDER BY expressions (exported for #738 tests). */
 export function buildSort(sort?: string[], types?: FieldTypeMap): SQL[] {
   if (!sort?.length) return [desc(items.updatedAt)];
   return sort.map((token) => {
@@ -983,6 +1002,24 @@ export class ItemService {
   async list(collectionName: string, params: ListItemsParams = {}) {
     const coll = await this.resolveCollection(collectionName);
     const perm = await this.perm(collectionName, 'read');
+    const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
+    // Readable-field guard (#738): a filter / sort may only name fields the
+    // caller can read. Checked before any query runs, from the permission and
+    // the query alone, so the refusal cannot depend on (or leak) stored data.
+    const unreadable = findUnreadableQueryField({
+      perm,
+      knownFields,
+      structuralFields: STRUCTURAL_FIELDS,
+      filter: params.filter,
+      sort: params.sort,
+    });
+    if (unreadable !== null) {
+      throw new ItemServiceError(
+        FIELD_FORBIDDEN_CODE,
+        `Field "${unreadable}" cannot be used in a filter or sort.`,
+        403,
+      );
+    }
     const permClause = this.permissions?.whereFor(perm) ?? undefined;
     // PostGIS is probed only when a geo operator is used (#746), once per isolate.
     const geo = filterUsesGeo(params.filter) ? await resolveGeoDialect(this.deps.db) : HAVERSINE_DIALECT;
@@ -1022,7 +1059,6 @@ export class ItemService {
       total = totals[0]?.count ?? 0;
     }
 
-    const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
     const masked = perm && this.permissions
       ? rows.map((r) => this.permissions!.maskItem(perm, r as ItemRow, knownFields))
       : rows;
@@ -2295,6 +2331,13 @@ export class ItemService {
     }
     const relatedCollection = await this.resolveCollection(rel.manyCollection);
     const relatedPerm = await this.perm(rel.manyCollection, 'read');
+    // Grouping children by their foreign key reveals that key. When the caller
+    // cannot read the FK field on the child collection, expanding would be a
+    // relational oracle on a hidden field (#738) — expand to nothing instead.
+    if (!(await this.canReadField(rel.manyCollection, relatedPerm, rel.manyField))) {
+      assignRelation(rows, alias, () => []);
+      return;
+    }
     const relatedRows = await this.loadRowsByJsonField(
       relatedCollection.id,
       rel.manyField,
@@ -2330,10 +2373,28 @@ export class ItemService {
       return;
     }
     const junctionCollection = await this.resolveCollection(rel.junctionCollection);
+    // The junction rows are read like any other collection (#738): the caller
+    // needs `read` on the junction, its row rule applies, and both link fields
+    // must be readable — otherwise the expansion would reveal links the caller
+    // cannot see through the items API. Fail closed to an empty expansion.
+    let junctionClause: SQL | undefined;
+    if (this.permissions) {
+      const junctionPerm = await this.permissions.canAccess(rel.junctionCollection, 'read');
+      const readable =
+        junctionPerm !== null &&
+        (await this.canReadField(rel.junctionCollection, junctionPerm, rel.junctionManyField)) &&
+        (await this.canReadField(rel.junctionCollection, junctionPerm, rel.junctionOneField));
+      if (!readable) {
+        assignRelation(rows, alias, () => []);
+        return;
+      }
+      junctionClause = this.permissions.whereFor(junctionPerm);
+    }
     const junctionRows = await this.loadRowsByJsonField(
       junctionCollection.id,
       rel.junctionManyField,
       sourceIds,
+      junctionClause,
     );
     const targetIds = uniqueStrings(junctionRows.map((row) => row.data?.[rel.junctionOneField!]));
     const targetById = targetIds.length > 0
@@ -2351,6 +2412,17 @@ export class ItemService {
       bySource.set(sourceId, list);
     }
     assignRelation(rows, alias, (row) => limitArray(bySource.get(row.id) ?? [], selected.limit));
+  }
+
+  /** Whether `field` on `collectionName` is readable under `perm` (#738). */
+  private async canReadField(
+    collectionName: string,
+    perm: CompiledPermission | null,
+    field: string,
+  ): Promise<boolean> {
+    if (STRUCTURAL_FIELDS.has(field)) return true;
+    const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
+    return isFieldReadable(readableFieldSet(perm, knownFields), field);
   }
 
   private async loadRowsByJsonField(

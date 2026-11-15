@@ -1,0 +1,10 @@
+# Patterns to ignore when packaging the chart.
+.DS_Store
+*.swp
+*.bak
+*.tmp
+*.orig
+.idea/
+.vscode/
+# CI-only value files (kind smoke test) stay out of the published package.
+ci/

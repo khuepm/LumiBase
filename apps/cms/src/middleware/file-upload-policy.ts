@@ -5,9 +5,16 @@ import {
   normalizeMimeType,
   resolveMaxBytes,
   resolveMimeAllowlist,
+  validateUploadFilename,
 } from '@lumibase/contracts/schemas';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { resolveUploadPolicy } from '../services/upload-policy-service';
+import {
+  compareDeclaredMime,
+  detectPolyglot,
+  imageHasEmbeddedActivePayload,
+} from '../services/upload-security/content-sniff';
+import { svgSanitizerFindsActiveContent } from '../services/upload-security/svg-sanitizer';
 import { auditSecurityGuardDenied } from './security-audit';
 
 /**
@@ -107,7 +114,32 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
   }
 
   const normalizedMime = normalizeMime(mime);
-  const fileName = metadata?.filenameDownload ?? metadata?.filenameDisk ?? (isRawUpload ? path.split('/').pop() : undefined);
+
+  // Filename hygiene (#740): NUL / control bytes, RTL-override spoofing, path
+  // traversal and dangerous inner extensions (`shell.php.png`) are refused
+  // before the extension ↔ MIME comparison, which only sees the last suffix.
+  const candidateNames = isMetadataCreate
+    ? [metadata?.filenameDownload, metadata?.filenameDisk].filter((v): v is string => typeof v === 'string')
+    : isRawUpload
+      ? [decodePathSegment(path.split('/').pop() ?? '')]
+      : [];
+  for (const candidate of candidateNames) {
+    const issue = validateUploadFilename(candidate);
+    if (issue) {
+      await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
+        path,
+        method,
+        reason: 'unsafe_filename',
+        issue,
+      });
+      return c.json(
+        { errors: [{ code: 'UPLOAD_UNSAFE_FILENAME', message: `File name is not allowed (${issue}).` }] },
+        400,
+      );
+    }
+  }
+
+  const fileName = metadata?.filenameDownload ?? metadata?.filenameDisk ?? (isRawUpload ? candidateNames[0] : undefined);
   if (fileName && !isFileExtensionCompatibleWithMime(fileName, normalizedMime)) {
     await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
       path,
@@ -123,7 +155,10 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
   }
 
   // Raw-byte surfaces are the only place the actual file is present, so the
-  // deepest checks (true size + content sniffing) live here.
+  // deepest checks (true size + content sniffing + polyglot scan) live here.
+  // The signed `PUT /files/upload/:key` path is the presigned upload: its bytes
+  // still stream through the CMS, so it is validated here too — nothing
+  // reaches storage without passing this block.
   if (isRawUpload) {
     const bytes = new Uint8Array(
       await (c.req.raw.clone() as Request).arrayBuffer(),
@@ -153,13 +188,14 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
       // Give unsafe SVGs (script / event-handler / external-entity payloads) a
       // distinct code so operators can tell "image with a shell in it" apart
       // from a plain type mismatch.
-      const unsafeSvg =
-        normalizedMime === 'image/svg+xml' && looksLikeSvg(bytes) && svgHasActiveContent(bytes);
+      const verdict = compareDeclaredMime(bytes, normalizedMime);
+      const unsafeSvg = normalizedMime === 'image/svg+xml' && verdict.kind === 'svg';
       await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
         path,
         method,
-        reason: unsafeSvg ? 'unsafe_svg' : 'content_mime_mismatch',
+        reason: unsafeSvg ? 'unsafe_svg' : verdict.ok ? 'content_mime_mismatch' : verdict.reason,
         mime: normalizedMime,
+        sniffed: verdict.kind,
       });
       return c.json(
         {
@@ -173,29 +209,28 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
       );
     }
 
-    // Polyglot defense: a file can have valid image magic bytes AND carry an
-    // executable/script payload appended or embedded (the classic "image with a
-    // shell in it"). The prefix magic-byte check above cannot see that. Scan the
-    // full bytes of raster images for high-signal script/PHP/HTML openings and
-    // reject. This runs synchronously before the storage write (no async
-    // window) on both runtimes. The stronger, false-positive-free fix is to
-    // re-encode the image to strip everything but the pixels — tracked as a
-    // follow-up that depends on the image adapter from image-transform-dsl (see
-    // .kiro/specs/upload-file-controls/tasks.md).
-    if (RASTER_IMAGE_MIMES.has(normalizedMime ?? '') && imageHasEmbeddedActivePayload(bytes)) {
+    // Polyglot defense: a file can have valid magic bytes AND carry a second
+    // format — an appended JAR/ZIP (GIFAR), an HTML/PHP opening, a PDF header,
+    // trailing data after PNG IEND, or a PDF with JavaScript/launch actions.
+    // The prefix magic-byte check above cannot see that. Runs before the
+    // storage write on both runtimes.
+    const polyglot = normalizedMime ? await detectPolyglot(bytes, normalizedMime) : null;
+    if (polyglot) {
       await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
         path,
         method,
-        reason: 'embedded_payload',
+        reason: polyglot === 'embedded_payload' ? 'embedded_payload' : `polyglot_${polyglot}`,
         mime: normalizedMime,
       });
       return c.json(
         {
           errors: [
-            {
-              code: 'UPLOAD_EMBEDDED_PAYLOAD',
-              message: 'Image contains an embedded script or executable payload and is not allowed.',
-            },
+            polyglot === 'pdf_active_content'
+              ? { code: 'UPLOAD_ACTIVE_PDF', message: 'PDF contains JavaScript or launch actions and is not allowed.' }
+              : {
+                  code: 'UPLOAD_EMBEDDED_PAYLOAD',
+                  message: 'File contains an embedded script, archive or second file format and is not allowed.',
+                },
           ],
         },
         415,
@@ -206,21 +241,13 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
   return next();
 };
 
-/** Raster image types whose bytes are opaque binary — no markup should appear. */
-const RASTER_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
-
-// Openings that turn a valid image into a functional polyglot: a PHP shell,
-// an HTML/JS document, or an inline script. None legitimately occur as literal
-// ASCII in a raster image, so their presence anywhere in the bytes is treated
-// as an embedded payload. (SVG/text are handled by their own checks.)
-const EMBEDDED_PAYLOAD_MARKERS = ['<?php', '<script', '<html', '<!doctype html'] as const;
-
-/**
- * Scan raw image bytes for an embedded script/executable payload (polyglot).
- * Case-insensitive byte search — no full-string allocation.
- */
-export function imageHasEmbeddedActivePayload(bytes: Uint8Array): boolean {
-  return EMBEDDED_PAYLOAD_MARKERS.some((marker) => bytesContainAsciiCI(bytes, marker));
+/** Decode one percent-encoded path segment; on malformed escapes keep it raw. */
+function decodePathSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
 }
 
 /**
@@ -282,39 +309,18 @@ export async function isFileContentCompatibleWithMime(request: Request, mime: st
  * an executable signature, and rejects SVGs that embed script / active content
  * (the classic "image that is really a shell/XSS payload"). This is a
  * best-effort structural check at the edge — it is NOT a malware scanner and
- * does not re-encode the file; see the serving hardening in `routes/media.ts`
- * (Content-Disposition: attachment) and the global CSP for the layers that
- * contain anything this misses.
+ * does not re-encode the file; see `services/upload-security/serve-policy.ts`
+ * (inline allow-list, `nosniff`, sandbox CSP) and `routes/media.ts` (SVG
+ * re-sanitised on the way out) for the layers that contain anything this
+ * misses. Polyglot checks (`detectPolyglot`) run separately in the guard.
  */
 export function isFileContentCompatibleWithBytes(bytes: Uint8Array, mime: string | undefined): boolean {
-  if (!mime) return false;
-  if (bytes.length === 0) return false;
-
-  if (hasExecutableSignature(bytes)) return false;
-
-  switch (mime) {
-    case 'image/png':
-      return startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    case 'image/jpeg':
-      return startsWith(bytes, [0xff, 0xd8, 0xff]);
-    case 'image/gif':
-      return startsWithAscii(bytes, 'GIF87a') || startsWithAscii(bytes, 'GIF89a');
-    case 'image/webp':
-      return startsWithAscii(bytes, 'RIFF') && asciiAt(bytes, 8, 'WEBP');
-    case 'image/avif':
-      return asciiAt(bytes, 4, 'ftyp') && (asciiAt(bytes, 8, 'avif') || asciiAt(bytes, 8, 'avis'));
-    case 'application/pdf':
-      return startsWithAscii(bytes, '%PDF-');
-    case 'image/svg+xml':
-      // An SVG must look like an SVG AND carry no active content. This is the
-      // check that stops an "image" from smuggling a script payload.
-      return looksLikeSvg(bytes) && !svgHasActiveContent(bytes);
-    case 'text/csv':
-    case 'text/plain':
-      return looksLikeText(bytes);
-    default:
-      return true;
-  }
+  const verdict = compareDeclaredMime(bytes, mime);
+  if (!verdict.ok) return false;
+  // An SVG must look like an SVG AND carry no active content. This is the
+  // check that stops an "image" from smuggling a script payload.
+  if (mime === 'image/svg+xml') return !svgHasActiveContent(bytes);
+  return true;
 }
 
 function safeGetAuth(c: Parameters<MiddlewareHandler<AppEnv>>[0]): AuthPrincipal | undefined {
@@ -357,43 +363,22 @@ function normalizeMime(mime: string | undefined): string | undefined {
   return normalizeMimeType(mime);
 }
 
-function startsWith(bytes: Uint8Array, signature: number[]): boolean {
-  return signature.every((byte, index) => bytes[index] === byte);
-}
-
-function startsWithAscii(bytes: Uint8Array, signature: string): boolean {
-  return asciiAt(bytes, 0, signature);
-}
-
-function asciiAt(bytes: Uint8Array, offset: number, signature: string): boolean {
-  if (bytes.length < offset + signature.length) return false;
-  for (let i = 0; i < signature.length; i++) {
-    if (bytes[offset + i] !== signature.charCodeAt(i)) return false;
-  }
-  return true;
-}
-
-function hasExecutableSignature(bytes: Uint8Array): boolean {
-  return startsWithAscii(bytes, 'MZ') || startsWith(bytes, [0x7f, 0x45, 0x4c, 0x46]) || startsWith(bytes, [0xca, 0xfe, 0xba, 0xbe]);
-}
-
-function looksLikeSvg(bytes: Uint8Array): boolean {
-  const text = decodeAsciiPrefix(bytes, 512).trimStart().toLowerCase();
-  return text.startsWith('<svg') || (text.startsWith('<?xml') && text.includes('<svg'));
-}
-
 /**
  * Detect script / active content in an SVG. SVG is XML and browsers will
  * execute `<script>`, inline `on*=` event handlers, `javascript:` URLs, and
  * nested browsing contexts when an SVG is rendered as a top-level document —
- * so an attacker can dress a script payload up as an "image". We reject on the
- * clear-danger tokens. The full (already size-capped) document is scanned so a
- * payload cannot hide past a fixed prefix. Intentionally conservative: a false
- * positive rejects an unusual-but-benign SVG rather than let an executable one
- * through.
+ * so an attacker can dress a script payload up as an "image". Two layers, OR'd:
+ * the clear-danger token scan below, and the structural sanitiser
+ * (`services/upload-security/svg-sanitizer.ts`), which also catches
+ * entity-obfuscated `javascript:` values, XHTML-namespace content, `<set>`
+ * retargeting `href`, and `<?xml-stylesheet?>`. The full (already size-capped)
+ * document is scanned so a payload cannot hide past a fixed prefix.
+ * Intentionally conservative: a false positive rejects an unusual-but-benign
+ * SVG rather than let an executable one through.
  */
 export function svgHasActiveContent(bytes: Uint8Array): boolean {
-  const text = decodeUtf8(bytes).toLowerCase();
+  const source = decodeUtf8(bytes);
+  const text = source.toLowerCase();
   return (
     text.includes('<script') ||
     text.includes('javascript:') ||
@@ -402,28 +387,9 @@ export function svgHasActiveContent(bytes: Uint8Array): boolean {
     text.includes('<embed') ||
     text.includes('<!entity') || // XXE via entity declarations
     text.includes('<!doctype') || // DOCTYPE is what enables entity declarations
-    /\son[a-z]+\s*=/.test(text) // inline event handlers: onload=, onclick=, ...
+    /\son[a-z]+\s*=/.test(text) || // inline event handlers: onload=, onclick=, ...
+    svgSanitizerFindsActiveContent(source)
   );
-}
-
-function looksLikeText(bytes: Uint8Array): boolean {
-  const limit = Math.min(bytes.length, 1024);
-  for (let i = 0; i < limit; i++) {
-    const byte = bytes[i]!;
-    if (byte === 0) return false;
-    if (byte < 0x09) return false;
-    if (byte > 0x0d && byte < 0x20) return false;
-  }
-  return true;
-}
-
-function decodeAsciiPrefix(bytes: Uint8Array, maxBytes: number): string {
-  let output = '';
-  const limit = Math.min(bytes.length, maxBytes);
-  for (let i = 0; i < limit; i++) {
-    output += String.fromCharCode(bytes[i]!);
-  }
-  return output;
 }
 
 function decodeUtf8(bytes: Uint8Array): string {
@@ -431,34 +397,4 @@ function decodeUtf8(bytes: Uint8Array): string {
   return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
 }
 
-/**
- * Case-insensitive search for an ASCII substring inside raw bytes, comparing
- * byte-by-byte (no full-buffer string allocation). `needle` must be lowercase
- * ASCII. Used to detect embedded markup in otherwise-binary image payloads.
- */
-function bytesContainAsciiCI(bytes: Uint8Array, needle: string): boolean {
-  const n = needle.length;
-  if (n === 0 || bytes.length < n) return false;
-  const first = needle.charCodeAt(0);
-  const firstUpper = toUpperAsciiCode(first);
-  for (let i = 0; i <= bytes.length - n; i++) {
-    const b = bytes[i]!;
-    if (b !== first && b !== firstUpper) continue;
-    let matched = true;
-    for (let j = 1; j < n; j++) {
-      const nc = needle.charCodeAt(j);
-      const bc = bytes[i + j]!;
-      if (bc !== nc && bc !== toUpperAsciiCode(nc)) {
-        matched = false;
-        break;
-      }
-    }
-    if (matched) return true;
-  }
-  return false;
-}
-
-function toUpperAsciiCode(code: number): number {
-  // Only lowercase a–z map to an uppercase counterpart.
-  return code >= 0x61 && code <= 0x7a ? code - 0x20 : code;
-}
+export { imageHasEmbeddedActivePayload };

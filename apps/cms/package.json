@@ -50,6 +50,7 @@
     "@lumibase/runtime": "workspace:*",
     "@lumibase/sdk": "workspace:*",
     "@sentry/cloudflare": "^11.11.0",
+    "@simplewebauthn/server": "^13.3.3",
     "drizzle-orm": "^0.45.4",
     "graphql": "^17.1.0",
     "graphql-yoga": "^6.0.1",
@@ -68,6 +69,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261110.1",
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "@seriousme/openapi-schema-validator": "2.11.0",
     "@types/node": "^26.6.6",
     "@types/nodemailer": "8.0.2",
     "@types/oidc-provider": "9.13.1",
@@ -75,6 +77,7 @@
     "esbuild": "^0.28.0",
     "fast-check": "^4.10.2",
     "oidc-provider": "9.13.3",
+    "openapi-typescript": "7.13.0",
     "tsx": "^4.23.15",
     "typescript": "^5.6.2",
     "vitest": "^5.1.0",

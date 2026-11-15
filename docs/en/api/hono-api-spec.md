@@ -1,11 +1,11 @@
 ---
-version: 50
-lastUpdated: 2026-11-15T12:16:16.647Z
+version: 51
+lastUpdated: 2026-11-15T18:29:03.519Z
 sourceLang: en
-contentHash: d94a0fe4072a178b
-codeVerified: 2026-11-15T17:11:33.894Z
-codeVerifiedHash: d94a0fe4072a178b
-codeVerifiedClaims: 522
+contentHash: 3d2993c6d2c70e62
+codeVerified: 2026-11-15T18:29:03.519Z
+codeVerifiedHash: 3d2993c6d2c70e62
+codeVerifiedClaims: 580
 ---
 
 # Hono API Specification — LumiBase
@@ -204,10 +204,30 @@ GET /api/v1/items/articles?filter={"status":{"_eq":"published"}}
 | `POST` | `/api/v1/me/tfa/confirm` | bearer | Confirm enrollment with a live code → single-use recovery codes |
 | `POST` | `/api/v1/me/tfa/recovery-codes` | bearer | Regenerate recovery codes (password + TOTP code) |
 | `DELETE` | `/api/v1/me/tfa` | bearer | Disable TOTP (password + either a TOTP code or a recovery code); revokes sessions and bumps `tokenVersion` |
+| `POST` | `/api/v1/auth/passkey/options` | public | Passkey authentication options: with `challengeToken` = second factor, without = passwordless staff sign-in → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/auth/passkey/verify` | public | Finish a passkey ceremony → same session payload as login (`amr` contains `webauthn`, `tfaVerified`) |
+| `GET` | `/api/v1/me/passkeys` | bearer | The caller's passkeys + `recoveryCodesRemaining`, `totpEnabled`, `available` |
+| `POST` | `/api/v1/me/passkeys/registration-options` | bearer | Begin passkey registration (password step-up) → `{ ceremonyId, options }` |
+| `POST` | `/api/v1/me/passkeys` | bearer | Finish registration → `{ passkey, recoveryCodes }` (codes only for a first factor) |
+| `PATCH` | `/api/v1/me/passkeys/:id` | bearer | Rename a passkey |
+| `DELETE` | `/api/v1/me/passkeys/:id` | bearer | Remove a passkey (password); the last second factor revokes sessions and bumps `tokenVersion` |
+| `POST` | `/api/v1/me/passkeys/recovery-codes` | bearer | Regenerate recovery codes (password + a passkey-opened session) |
 | `POST` | `/api/v1/me/change-password` | bearer | Verify current password, set new hash, revoke refresh tokens + bump `tokenVersion` |
 | `GET` | `/api/v1/me/sessions` | bearer | List the caller's active sessions (live refresh tokens, redacted) |
 | `DELETE` | `/api/v1/me/sessions/:id` | bearer | Revoke one of the caller's sessions |
-| `DELETE` | `/api/v1/me/sessions` | bearer | Revoke all of the caller's sessions |
+| `DELETE` | `/api/v1/me/sessions` | bearer | Revoke all of the caller's sessions; `?scope=others` keeps the current session |
+| `GET` | `/api/v1/me/security-history` | bearer | The caller's own security events (sign-ins, new devices, password/MFA changes, revocations), redacted; `?cursor=&limit=&scope=site\|account` — see [Security history](../security/security-history.md) |
+| `GET` | `/api/v1/me/security-history/export` | bearer | Download the same history; `?format=json\|csv&scope=` (max 5,000 rows, 10 exports / 15 min) |
+| `GET` | `/api/v1/auth/social/providers` | public | Social login providers enabled for the site |
+| `POST` | `/api/v1/auth/social/:provider/start` | public | Begin Google / Apple / GitHub sign-in (PKCE) → `authorizationUrl` |
+| `GET`/`POST` | `/api/v1/auth/social/callback/:siteId/:provider` | provider | Provider callback (`POST` = Apple `form_post`); redirects to the allow-listed URI with a one-time code |
+| `POST` | `/api/v1/auth/social/exchange` | public | Redeem the one-time code with the client `codeVerifier` → session (`aud: frontend`) |
+| `GET` | `/api/v1/me/identities` | bearer | Linked login identities + `hasPassword` |
+| `POST` | `/api/v1/me/identities/:provider/link` | bearer | Begin linking a provider to the signed-in account |
+| `POST` | `/api/v1/me/identities/complete` | bearer | Finish linking (one-time code + `codeVerifier`) |
+| `DELETE` | `/api/v1/me/identities/:id` | bearer | Unlink a provider (never the last login method) |
+| `GET` | `/api/v1/admin/social-providers` | site-admin | Per-site social provider configuration (secrets write-only) |
+| `PUT`/`DELETE` | `/api/v1/admin/social-providers/:provider` | site-admin | Configure / remove a provider — see [Social login](../security/social-login.md) |
 | `POST` | `/api/v1/users/subscriber-access` | site-admin | Grant subscribers `read` on a collection (Policy DSL) |
 | `GET`/`DELETE` | `/api/v1/users/subscriber-access[/:collection]` | site-admin | List / revoke subscriber read grants |
 | `GET` | `/api/v1/me/preferences` | bearer | Current user's preferences blob (identity-global) |
@@ -269,6 +289,13 @@ that particular seed is no longer configured. In the latter case `DELETE
 /me/tfa` accepts a **recovery code** in place of a TOTP code, so the user can
 remove an enrollment whose seed can no longer be decrypted. See
 [Encryption key operations](../operations/encryption-keys.md).
+
+**Passkeys (WebAuthn).** When the user also (or only) has passkeys, the
+`mfa_required` response adds `methods` (`["totp"]`, `["webauthn"]` or both),
+and the challenge can be finished with `POST /auth/passkey/options` +
+`POST /auth/passkey/verify` instead of `verify-totp`. The same two endpoints
+without a `challengeToken` give a passwordless staff sign-in. See
+[Passkeys](../security/passkeys.md).
 
 **Consent management** (`:type` ∈ `marketing` · `analytics` · `personalization` · `functional` · `sale_share`):
 
@@ -940,9 +967,13 @@ Authorization: Bearer <token>
 ## 7c. Deployments
 
 Per-site deployment targets (Vercel / Netlify), manual deploy triggers, build
-status and logs (spec `deployment-integrations`). Every route except the inbound
-webhook requires site admin (`requireSiteAdmin`): `400 TENANT_REQUIRED` without a
-resolved site, `403 FORBIDDEN` without admin access. Provider tokens are encrypted
+status and logs (spec `deployment-integrations`), plus environments, promotion and
+deploy approvals (#743, see `docs/en/features/deployment-environments.md`). Every
+route except the inbound webhook needs a site admin or a `deploy:*` capability
+(`lumibase_deploy:<scope>` permission rows): `400 TENANT_REQUIRED` without a
+resolved site, `403 FORBIDDEN` without either. Target create/update/delete,
+`PUT /environments` and `GET /:id/logs` stay site-admin only (`requireSiteAdmin`).
+Provider tokens are encrypted
 on write and never returned. Bodies are validated with
 `DeploymentTargetCreateSchema` / `DeploymentTargetUpdateSchema` /
 `DeployTriggerSchema` (`@lumibase/contracts`); a failed parse returns
@@ -956,11 +987,18 @@ are).
 | `POST` | `/api/v1/deployments/targets` | Create `{ provider (vercel\|netlify), name, projectId, token, defaultBranch?, productionUrl? }` → `201`. The token is verified against the provider before anything is stored: `400 TOKEN_INVALID` |
 | `PATCH` | `/api/v1/deployments/targets/:id` | Update `{ name?, projectId?, token?, defaultBranch?, productionUrl?, status? (active\|inactive) }`. A `token` is re-verified and re-encrypted (rotation). `404 NOT_FOUND`, `400 TOKEN_INVALID`, `400 UNKNOWN_PROVIDER` (only when a `token` is sent) |
 | `DELETE` | `/api/v1/deployments/targets/:id` | Delete a target (its deployments cascade) → `{ data: null }`. `404 NOT_FOUND` |
-| `POST` | `/api/v1/deployments/targets/:id/deploy` | Trigger a build `{ branch?, reason? }` → `201` with the new deployment row (`triggerSource: "manual"`). `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `400 UNKNOWN_PROVIDER`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (provider call failed; an `error` row is still recorded) |
+| `POST` | `/api/v1/deployments/targets/:id/deploy` | Trigger a build `{ branch?, reason? }` → `201` with the new deployment row (`triggerSource: "manual"`). Needs `deploy:trigger:<targetId>`, `deploy:trigger:<env>` of an environment containing it, or `deploy:trigger:*`; when one of those environments has `requiresApproval` the response is `202 { data: { status: "pending_approval", environment, approval } }` and nothing is dispatched. `403 FORBIDDEN`, `404 NOT_FOUND`, `400 TARGET_INACTIVE`, `400 UNKNOWN_PROVIDER`, `429 RATE_LIMITED`, `502 TRIGGER_FAILED` (provider call failed; an `error` row is still recorded) |
 | `GET` | `/api/v1/deployments` | List deployments, newest first (`createdAt` descending, `id` descending as tie-breaker). Filter `?targetId=&status=&limit=`. `limit` must be a non-negative integer: it defaults to 50 when absent or empty, `0` returns an empty list, and values above 200 are capped at 200. Any other value (`abc`, `-5`, `1.5`) returns `400 VALIDATION`. No `meta` |
 | `GET` | `/api/v1/deployments/:id` | Get one deployment. `404 NOT_FOUND` |
 | `GET` | `/api/v1/deployments/:id/logs` | Fetch the build log from the provider, secrets masked → `{ data: { log } }`. `404 NOT_FOUND` when the deployment does not exist or has no provider id yet, `400 UNKNOWN_PROVIDER` when its target or provider is unavailable |
 | `POST` | `/api/v1/deployments/:id/refresh` | Force a status sync from the provider (no-op once the status is terminal). `404 NOT_FOUND` when the deployment does not exist. With no provider id yet, or with an unavailable target or provider, the row is returned unchanged (`200`, never `UNKNOWN_PROVIDER`) |
+| `GET` | `/api/v1/deployments/access` | The caller's `{ admin, capabilities, humanDecider, environments: [{ key, canTrigger, canApprove }] }` |
+| `GET` | `/api/v1/deployments/environments` | The environment map (settings key `deployment.environments`, defaults `preview` / `staging` → `production` / `production` with `requiresApproval`). `500 ENVIRONMENTS_INVALID` when the stored map does not validate |
+| `PUT` | `/api/v1/deployments/environments` | Site admin. Replace the map `{ environments: [{ key, name, targetIds, requiresApproval, promotesTo }] }` (`DeploymentEnvironmentsUpdateSchema`). `400 VALIDATION` (duplicate key, unknown `promotesTo`), `400 UNKNOWN_TARGET` |
+| `POST` | `/api/v1/deployments/environments/:key/deploy` | Deploy every target of the environment `{ branch?, reason? }`. Needs `deploy:trigger:<key>` (or on every target, or `*`). `201 { data: { status: "dispatched", environment, results: [{ targetId, ok, deployment, error? }] } }`, or `202 { data: { status: "pending_approval", environment, approval } }` when `requiresApproval`. `403 FORBIDDEN`, `404 ENVIRONMENT_NOT_FOUND`, `409 NO_TARGETS` |
+| `POST` | `/api/v1/deployments/environments/:key/promote` | Promote the environment's newest `ready` deployment (or `{ deploymentId }`) into its `promotesTo` environment `{ deploymentId?, reason? }`; same build where the provider can promote, else the same commit re-triggered. Needs the trigger grant on the destination. `201` / `202` as above. `404 NOT_FOUND` (deployment not in the environment), `409 NO_PROMOTION_TARGET`, `409 SOURCE_NOT_READY` |
+| `GET` | `/api/v1/deployments/approvals` | Deploy approvals, newest first, default `?status=pending` (`status=all` for every status), each with `canDecide` for the caller |
+| `POST` | `/api/v1/deployments/approvals/:id/decide` | `{ decision: "approved" \| "rejected", reason? }` (`DeployApprovalDecisionSchema`). Approve needs a signed-in person, not the requester, holding `deploy:approve:<env>` or `deploy:approve:*`; the requester may reject (withdraw) their own. `403 HUMAN_APPROVER_REQUIRED` / `SELF_APPROVAL_FORBIDDEN` / `FORBIDDEN`, `404 NOT_FOUND`, `409 APPROVAL_ALREADY_DECIDED` / `APPROVAL_EXPIRED` / `REQUESTER_REVOKED` / `PLAN_STALE` |
 
 Public (no session; signature-verified):
 
@@ -1632,6 +1670,11 @@ tombstones), `LUMIBASE_DELIVER_RATE_LIMIT` (req/min/IP, default `1200`,
 | `POST` | `/api/v1/utils/render-template` | Render a display template server-side |
 | `POST` | `/api/v1/utils/jsonata/test` | Evaluate JSONata expression |
 | `GET` | `/api/v1/metrics` | Prometheus metrics (Docker mode only) |
+| `GET` | `/api/v1/openapi.json` | Live OpenAPI 3.1 document for the caller's site and permissions — `404` until enabled |
+| `GET` | `/api/v1/openapi/config` | Read the live OpenAPI switch (site admin) |
+| `PUT` | `/api/v1/openapi/config` | `{ enabled, realms }` — enable it and choose realms (site admin, audited) |
+
+The live OpenAPI document is described in [Live OpenAPI document](live-openapi.md).
 
 **Health response:**
 ```json

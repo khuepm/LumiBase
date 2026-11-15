@@ -70,6 +70,23 @@ describe('access system collection grouping', () => {
     }
   });
 
+  it('lists deploy grants in a Deployments group after AI usage (#743)', () => {
+    const groups = buildAccessCollectionGroups(['lumibase_deploy:tgt_custom'], false);
+    const ids = groups.map((group) => group.id);
+    const deploy = groups.find((group) => group.id === 'deploy');
+    expect(deploy?.options.map((option) => option.name)).toEqual([
+      'lumibase_deploy:*',
+      'lumibase_deploy:preview',
+      'lumibase_deploy:production',
+      'lumibase_deploy:staging',
+      'lumibase_deploy:tgt_custom',
+    ]);
+    expect(deploy?.options.find((o) => o.name === 'lumibase_deploy:production')?.label).toBe('Deploy: production');
+    expect(ids.indexOf('deploy')).toBeGreaterThan(ids.indexOf('ai'));
+    // Never offered as a content collection.
+    expect(groups.find((g) => g.id === 'content')?.options.some((o) => o.name.startsWith('lumibase_deploy:'))).toBeFalsy();
+  });
+
   it('keeps the collection name as the label when there is no system label', () => {
     const content = buildAccessCollectionGroups(['posts'], false).find((group) => group.id === 'content');
     expect(content?.options[0]).toMatchObject({ name: 'posts', label: 'posts' });

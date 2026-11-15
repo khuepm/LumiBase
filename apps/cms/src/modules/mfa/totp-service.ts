@@ -19,6 +19,7 @@ import {
   normalizeRecoveryCode,
   verifyTotpCode,
 } from '../../services/auth/totp';
+import { loadSecondFactors, syncUserTfaState } from './tfa-state';
 
 const PENDING_SETUP_TTL = 600;
 const CHALLENGE_CONSUMED_TTL = 600;
@@ -180,19 +181,10 @@ export async function confirmTotpSetup(
     for (const item of codes) {
       await tx.insert(userTotpRecoveryCodes).values({ userId, codeHash: item.hash });
     }
-    await tx
-      .update(users)
-      .set({
-        tfa: {
-          enabled: true,
-          method: 'totp',
-          enrolledAt: now.toISOString(),
-          recoveryCodesRemaining: codes.length,
-        },
-        updatedAt: now,
-      })
-      .where(eq(users.id, userId));
   });
+  // `users.tfa` covers every method (TOTP + passkeys, #735), so it is
+  // recomputed from the factor tables rather than overwritten with TOTP-only state.
+  await syncUserTfaState(db, userId);
 
   await cache.delete(pendingSetupKey(userId));
   return { recoveryCodes: codes.map((c) => c.plain) };
@@ -254,35 +246,23 @@ export async function verifyUserRecoveryCode(
       .returning({ id: userTotpRecoveryCodes.id });
     if (updated.length === 0) return false;
 
-    const [remaining] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(userTotpRecoveryCodes)
-      .where(and(eq(userTotpRecoveryCodes.userId, userId), isNull(userTotpRecoveryCodes.usedAt)));
-    await db
-      .update(users)
-      .set({
-        tfa: {
-          enabled: true,
-          method: 'totp',
-          recoveryCodesRemaining: remaining?.count ?? 0,
-        },
-        updatedAt: now,
-      })
-      .where(eq(users.id, userId));
+    await syncUserTfaState(db, userId);
     return true;
   }
   return false;
 }
 
 export async function disableUserTotp(db: Db, userId: string): Promise<void> {
+  // Recovery codes are shared with passkeys (#735): they go only when no
+  // other second factor is left, or a passkey-only user would be stranded.
+  const factors = await loadSecondFactors(db, userId);
   await db.transaction(async (tx) => {
-    await tx.delete(userTotpRecoveryCodes).where(eq(userTotpRecoveryCodes.userId, userId));
+    if (factors.passkeys === 0) {
+      await tx.delete(userTotpRecoveryCodes).where(eq(userTotpRecoveryCodes.userId, userId));
+    }
     await tx.delete(userTotpCredentials).where(eq(userTotpCredentials.userId, userId));
-    await tx
-      .update(users)
-      .set({ tfa: {}, updatedAt: new Date() })
-      .where(eq(users.id, userId));
   });
+  await syncUserTfaState(db, userId);
 }
 
 export async function regenerateRecoveryCodes(db: Db, userId: string): Promise<string[]> {
@@ -290,26 +270,23 @@ export async function regenerateRecoveryCodes(db: Db, userId: string): Promise<s
   if (!cred?.verifiedAt) {
     throw new TotpError('TFA_NOT_ENABLED', 'Two-factor authentication is not enabled.');
   }
+  return replaceRecoveryCodes(db, userId);
+}
 
+/**
+ * Replace the user's recovery codes without checking which factor they hold.
+ * Callers gate it: TOTP regeneration on a live code, passkey regeneration on a
+ * passkey-verified session (#735).
+ */
+export async function replaceRecoveryCodes(db: Db, userId: string): Promise<string[]> {
   const codes = await mintRecoveryCodes(8);
-  const now = new Date();
   await db.transaction(async (tx) => {
     await tx.delete(userTotpRecoveryCodes).where(eq(userTotpRecoveryCodes.userId, userId));
     for (const item of codes) {
       await tx.insert(userTotpRecoveryCodes).values({ userId, codeHash: item.hash });
     }
-    await tx
-      .update(users)
-      .set({
-        tfa: {
-          enabled: true,
-          method: 'totp',
-          recoveryCodesRemaining: codes.length,
-        },
-        updatedAt: now,
-      })
-      .where(eq(users.id, userId));
   });
+  await syncUserTfaState(db, userId);
   return codes.map((c) => c.plain);
 }
 

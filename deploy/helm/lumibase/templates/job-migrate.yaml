@@ -1,0 +1,57 @@
+{{- if eq .Values.migrations.mode "job" }}
+{{- /*
+One migration run per release change, as an ordinary release resource (not a
+Helm hook: a pre-install/pre-upgrade hook runs before the bundled PostgreSQL
+and the chart Secret exist, and a post-install hook under `--wait` would wait
+for web pods that are themselves waiting for the migration).
+
+A Job's pod template is immutable, so the name carries a hash of it: a new
+image or database setting gets a new Job (Helm deletes the previous one),
+and re-applying the same release (helm upgrade, Argo CD sync of `helm
+template` output) leaves the finished Job alone.
+*/ -}}
+{{- $component := dict "ctx" . "component" "migrate" -}}
+{{- $pod := include "lumibase.migrateJobPod" . -}}
+{{- $suffix := printf "-%s" (sha256sum $pod | trunc 10) -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-migrate" (include "lumibase.fullname" .) | trunc (int (sub 63 (len $suffix))) | trimSuffix "-" }}{{ $suffix }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lumibase.componentLabels" $component | nindent 4 }}
+spec:
+  backoffLimit: {{ .Values.migrations.job.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "lumibase.selectorLabels" $component | nindent 8 }}
+    {{- $pod | nindent 4 }}
+{{- end }}
+
+{{- define "lumibase.migrateJobPod" -}}
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ include "lumibase.serviceAccountName" . }}
+  automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  securityContext:
+    {{- toYaml .Values.cms.podSecurityContext | nindent 4 }}
+  initContainers:
+    {{- include "lumibase.migratePreflightContainer" . | nindent 4 }}
+  containers:
+    {{- include "lumibase.migrateContainer" . | nindent 4 }}
+  volumes:
+    {{- include "lumibase.tmpVolume" . | nindent 4 }}
+  {{- with .Values.cms.nodeSelector }}
+  nodeSelector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.cms.tolerations }}
+  tolerations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end -}}

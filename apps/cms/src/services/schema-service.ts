@@ -22,6 +22,7 @@ import {
 } from '@lumibase/contracts/form-layout';
 import { invalidateDeliverTag } from './content-invalidation';
 import { blocksFieldConfigProblems } from './blocks';
+import { bumpSchemaVersion } from './schema-version';
 import { AuditLogger } from '../modules/audit/logger';
 import { OutboxWriter, type OutboxActor } from '../modules/cdc/change-feed';
 import { CDC_DISPATCH_QUEUE } from '../modules/cdc/change-feed/dispatcher';
@@ -1321,6 +1322,8 @@ export class SchemaService {
   async invalidate(collectionName: string) {
     if (this.deps.cache) {
       await this.deps.cache.delete(cacheKey(this.deps.siteId, collectionName));
+      // Whole-schema artefacts (live OpenAPI document, #745) key on this.
+      await bumpSchemaVersion(this.deps.cache, this.deps.siteId);
     }
   }
 

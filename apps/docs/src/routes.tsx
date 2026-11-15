@@ -2,6 +2,7 @@ import { Navigate, type RouteObject } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { LegacyRedirect } from './components/LegacyRedirect';
 import { LocaleGuard } from './components/LocaleGuard';
+import { ApiExplorerPage } from './pages/ApiExplorerPage';
 import { DocPage } from './pages/DocPage';
 import { LandingPage } from './pages/LandingPage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -51,6 +52,8 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, element: <LandingPage /> },
       { path: 'docs/*', element: <DocPage /> },
+      // Live OpenAPI viewer (#745) — client-only, loads a URL the reader types.
+      { path: 'api-explorer', element: <ApiExplorerPage /> },
     ],
   },
 

@@ -162,7 +162,9 @@ describe('file upload policy middleware', () => {
     const res = await app.request('/api/v1/files', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ filenameDisk: 'payload.exe', filenameDownload: 'payload.exe', mime: 'image/png' }),
+      // A harmless-but-wrong extension. (`payload.exe` is now refused one step
+      // earlier as UPLOAD_UNSAFE_FILENAME — see file-upload-polyglot-corpus.test.ts.)
+      body: JSON.stringify({ filenameDisk: 'payload.gif', filenameDownload: 'payload.gif', mime: 'image/png' }),
     });
 
     expect(res.status).toBe(415);

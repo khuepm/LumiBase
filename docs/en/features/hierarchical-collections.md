@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 4
-lastUpdated: 2026-11-15T15:29:22.118Z
-contentHash: d25424a17a2f2579
-codeVerified: 2026-11-15T17:20:35.468Z
-codeVerifiedHash: d25424a17a2f2579
+version: 5
+lastUpdated: 2026-11-15T18:29:07.510Z
+contentHash: 44b7566359a299e3
+codeVerified: 2026-11-15T18:29:07.510Z
+codeVerifiedHash: 44b7566359a299e3
 codeVerifiedClaims: 22
 ---
 
@@ -43,7 +43,7 @@ create) have no parent and read as roots. Nothing is backfilled.
 ## How the tree is stored
 
 Each item row in `lumibase_items` gets two columns (migration
-`packages/database/drizzle/0032_item_tree.sql`):
+`packages/database/drizzle/0034_item_tree.sql`):
 
 - `parent_id` — the parent item's id, `NULL` for a root;
 - `path` — the materialised chain of ids from the root down to the item itself,

@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 4
-lastUpdated: 2026-11-15T15:29:22.118Z
+version: 5
+lastUpdated: 2026-11-15T18:29:07.510Z
 translatedFrom: en
-sourceHash: d25424a17a2f2579
+sourceHash: 44b7566359a299e3
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T17:20:35.468Z
-codeVerifiedHash: d25424a17a2f2579
+codeVerified: 2026-11-15T18:29:07.510Z
+codeVerifiedHash: 44b7566359a299e3
 codeVerifiedClaims: 22
 ---
 
@@ -47,7 +47,7 @@ cha và được đọc như item gốc. Không có bước backfill nào.
 ## Cách lưu cây
 
 Mỗi dòng item trong `lumibase_items` có thêm hai cột (migration
-`packages/database/drizzle/0032_item_tree.sql`):
+`packages/database/drizzle/0034_item_tree.sql`):
 
 - `parent_id` — id của item cha, `NULL` với item gốc;
 - `path` — chuỗi id được vật chất hóa từ gốc xuống tới chính item đó, ví dụ

@@ -3,6 +3,10 @@ import { useId, useState } from 'react';
 import { Loader2, Shield } from 'lucide-react';
 import { getActiveSite, getActiveToken } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/api-base';
+import { SESSIONS_QUERY_KEY, SessionsSection } from './sessions-section';
+import { ChangePasswordSection } from './change-password-section';
+import { SECURITY_HISTORY_QUERY_KEY, SecurityHistorySection } from './security-history-section';
+import { PasskeysSection } from './passkeys-section';
 
 interface TotpStatus {
   enabled: boolean;
@@ -88,6 +92,9 @@ export function SecuritySettingsPage() {
       setOtpauthUrl(null);
       setCode('');
       void qc.invalidateQueries({ queryKey: ['me-tfa'] });
+      // Enrolment signs out every other session server-side (#730).
+      void qc.invalidateQueries({ queryKey: SESSIONS_QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: SECURITY_HISTORY_QUERY_KEY });
     },
     onError: (err: Error) => setMessage(err.message),
   });
@@ -114,6 +121,7 @@ export function SecuritySettingsPage() {
       setDisableWithRecovery(false);
       setRecoveryCodes(null);
       void qc.invalidateQueries({ queryKey: ['me-tfa'] });
+      void qc.invalidateQueries({ queryKey: SECURITY_HISTORY_QUERY_KEY });
     },
     onError: (err: Error) => setMessage(err.message),
   });
@@ -126,7 +134,7 @@ export function SecuritySettingsPage() {
           Security
         </h1>
         <p className="text-sm text-muted-foreground">
-          Manage two-factor authentication for your account.
+          Manage two-factor authentication, your password and the devices signed in to your account, and review your security history.
         </p>
       </header>
 
@@ -271,6 +279,13 @@ export function SecuritySettingsPage() {
           </div>
         ) : null}
       </section>
+
+      <ChangePasswordSection />
+      <PasskeysSection />
+
+      <SessionsSection />
+
+      <SecurityHistorySection />
     </div>
   );
 }

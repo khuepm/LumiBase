@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-11-11T03:00:33.353Z
+version: 5
+lastUpdated: 2026-11-15T08:51:17.806Z
 sourceLang: en
-contentHash: 1bcc93cac3b51c59
-codeVerified: 2026-11-11T03:00:33.353Z
-codeVerifiedHash: 1bcc93cac3b51c59
+contentHash: 4ceb3ca031f5fcc3
+codeVerified: 2026-11-15T08:51:17.806Z
+codeVerifiedHash: 4ceb3ca031f5fcc3
 codeVerifiedClaims: 10
 ---
 
@@ -22,6 +22,10 @@ LLM provider, while keeping the CMS's long-lived background jobs working.
 To get a running CMS and Studio on Render, Railway or Fly.io with PostgreSQL,
 Redis and generated secrets, see [One-click deploys](./one-click.md); it also
 explains why Cloudflare has no deploy button yet.
+
+To run the same image on Kubernetes, see [Kubernetes (Helm chart)](./kubernetes-helm.md):
+the official chart with bundled or external PostgreSQL and Redis, optional
+Meilisearch, ingress, autoscaling and generated secrets kept across upgrades.
 
 The public documentation site is a static Vite app deployed separately to **Cloudflare Pages**.
 The public Marketplace site is also deployed to **Cloudflare Pages** and reads the CMS marketplace catalog at build/runtime revalidation.

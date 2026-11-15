@@ -1,0 +1,28 @@
+# Values for the kind smoke test (.github/workflows/helm.yml). Not packaged
+# (.helmignore). The image is the one built from the same commit and loaded
+# into kind, so the chart is tested against the code it ships with.
+image:
+  repository: lumibase-cms
+  tag: ci
+  pullPolicy: Never
+
+# Reached through `kubectl port-forward` on this origin.
+publicUrl: http://localhost:1989
+
+# Exercise every optional piece that can run without an external account.
+meilisearch:
+  enabled: true
+worker:
+  enabled: true
+networkPolicy:
+  enabled: true
+podDisruptionBudget:
+  enabled: true
+
+cms:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi

@@ -252,4 +252,21 @@ describe('buildSiteSchema nested relations', () => {
     expect(result.data?.authors_by_id).toEqual({ name: 'Ada', posts: [{ title: 'P1' }] });
     expect(list).toHaveBeenCalledWith('posts', expect.objectContaining({ filter: { author_id: { _eq: 'a1' } } }));
   });
+
+  it('resolves o2m to [] (no error) when the caller cannot read the FK field (#738)', async () => {
+    const schema = await buildSiteSchema(fakeSchemaService([authors, posts], relations));
+    const detail = vi.fn(async () => row({ id: 'a1', data: { name: 'Ada' } }));
+    const list = vi.fn(async () => {
+      throw new ItemServiceError('FIELD_FORBIDDEN', 'Field "author_id" cannot be used in a filter or sort.', 403);
+    });
+
+    const result = await graphql({
+      schema,
+      source: `query { authors_by_id(id: "a1") { name posts { title } } }`,
+      contextValue: ctxWith({ detail, list }),
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.authors_by_id).toEqual({ name: 'Ada', posts: [] });
+  });
 });

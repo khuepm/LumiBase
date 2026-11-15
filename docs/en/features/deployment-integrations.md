@@ -1,11 +1,11 @@
 ---
-version: 5
-lastUpdated: 2026-11-09T15:37:46.751Z
+version: 6
+lastUpdated: 2026-11-15T08:38:33.808Z
 sourceLang: en
 syncStatus: source
-contentHash: 93188f6a9c32d75d
-codeVerified: 2026-11-09T15:37:46.751Z
-codeVerifiedHash: 93188f6a9c32d75d
+contentHash: 5e2ec23fbbecaadb
+codeVerified: 2026-11-15T08:38:33.808Z
+codeVerifiedHash: 5e2ec23fbbecaadb
 codeVerifiedClaims: 38
 ---
 
@@ -69,7 +69,7 @@ SDK (`@lumibase/sdk`): `client.deployments.targets.{list,create,update,delete,de
 
 ### 5a. Trigger rate limit
 
-Every accepted trigger starts a provider-billed build, so `POST /targets/:id/deploy` is capped **per target** on top of the admin gate (`apps/cms/src/services/deployment/trigger-rate-limit.ts`):
+Every accepted trigger starts a provider-billed build, so `POST /targets/:id/deploy` is capped **per target** on top of the deploy permission gate (`apps/cms/src/services/deployment/trigger-rate-limit.ts`):
 
 | Tier | Budget |
 |---|---|
@@ -79,7 +79,7 @@ Every accepted trigger starts a provider-billed build, so `POST /targets/:id/dep
 - **Scope** — budget keys carry both `site_id` and the target id (`rl:deploy:<tier>:<siteId>:<targetId>`), so two targets never share a budget and one site can never exhaust another's.
 - **Applies to every trigger source** — manual, flow (`auto`) and agent triggers all consume the same per-target budget, because the limit protects the tenant's provider account regardless of who asked. Flow auto-deploys normally stay far below it thanks to `coalesceWindowMs`; a coalesced trigger reuses an existing build and does **not** spend budget (the check runs just before the outbound provider call).
 - **Exceeded** — the request is rejected with `429` and `{ "errors": [{ "code": "RATE_LIMITED", "retryAfterSeconds": <n> }] }` plus a `Retry-After` header. No `deployments` row is created for a rejected trigger; the attempt is audited as `deployment.trigger.rate_limited`.
-- **Fail-open** — if the rate limiter backend is unreachable the trigger is allowed; a limiter outage must not take deploys down. The admin gate and the `status='active'` target check still apply.
+- **Fail-open** — if the rate limiter backend is unreachable the trigger is allowed; a limiter outage must not take deploys down. The deploy permission gate and the `status='active'` target check still apply.
 
 ## 6. Auto-deploy via Flows
 
@@ -107,7 +107,7 @@ Like the flow operations above, all four skills are runtime-bound: their handler
 
 ## 8. Studio
 
-A **Settings → Deployments** page (`apps/studio/src/modules/settings/deployments-page.tsx`) lists targets and recent deployments, with controls to add a target, trigger a deploy, refresh status, and view logs. It lives at `/settings/deployments` (and `/<adminPath>/settings/deployments` on instances with a custom admin path), reachable from the **Integrations** group of the settings sidebar.
+A **Settings → Deployments** page (`apps/studio/src/modules/settings/deployments-page.tsx`) lists targets and recent deployments, with controls to add a target, trigger a deploy, refresh status, and view logs. It lives at `/settings/deployments` (and `/<adminPath>/settings/deployments` on instances with a custom admin path), reachable from the **Integrations** group of the settings sidebar. Who may trigger which target, environments, promotion and the production approval gate are described in [Deployment environments](./deployment-environments.md).
 
 ## 9. Setup notes
 

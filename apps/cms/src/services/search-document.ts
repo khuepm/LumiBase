@@ -20,7 +20,7 @@ const TITLE_FIELD_CANDIDATES = ['title', 'name', 'label', 'heading', 'slug'] as 
  * Derive a display title from an item's data. Prefers well-known field names;
  * otherwise falls back to the first non-empty string field, then the id.
  */
-function deriveTitle(id: string, data: Record<string, unknown>): string {
+export function deriveTitle(id: string, data: Record<string, unknown>): string {
   for (const key of TITLE_FIELD_CANDIDATES) {
     const v = data[key];
     if (typeof v === 'string' && v.trim()) return v;
