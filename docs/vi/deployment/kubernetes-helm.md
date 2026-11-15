@@ -1,13 +1,13 @@
 ---
 sourceLang: en
-version: 4
-lastUpdated: 2026-11-15T11:58:12.013Z
+version: 5
+lastUpdated: 2026-11-15T19:31:37.541Z
 translatedFrom: en
-sourceHash: 4746964dae05d4e2
+sourceHash: 9490b1c95961333c
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T11:58:12.013Z
-codeVerifiedHash: 4746964dae05d4e2
+codeVerified: 2026-11-15T19:31:37.541Z
+codeVerifiedHash: 9490b1c95961333c
 codeVerifiedClaims: 36
 ---
 
@@ -285,7 +285,7 @@ major.
 
 | Probe | Path | Lý do |
 |-------|------|-------|
-| startup, liveness | `/health` | Trả 200 bất cứ khi nào process phục vụ HTTP, nên sự cố database không làm restart mọi pod. |
+| startup, liveness | `/health/live` | Trả 200 ngay khi process phục vụ HTTP và không probe dependency nào, nên sự cố database không làm restart mọi pod. Không dùng `/health` ở đây: khi một dependency down, nó chờ probe tới 3 giây, bằng đúng timeout của probe. |
 | readiness | `/health/ready` hoặc `/health` | `/health/ready` trả 503 khi bất kỳ database, cache, search, storage hay queue nào không khoẻ. |
 
 `cms.readinessPath` để trống (mặc định) chỉ chọn `/health/ready` khi search

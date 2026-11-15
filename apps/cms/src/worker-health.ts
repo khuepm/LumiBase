@@ -15,6 +15,7 @@ export function startWorkerHealthServer(port: number): HttpServer {
       service: 'lumibase-cms',
     }),
   );
+  app.get('/health/live', (c) => c.json({ status: 'ok', role: 'worker', service: 'lumibase-cms' }));
   app.get('/health/ready', (c) =>
     c.json({
       status: 'ok',

@@ -9,7 +9,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Fixed
+- Liveness no longer depends on PostgreSQL, Redis, S3 or search. New `GET /health/live` answers `200` in milliseconds without probing anything; the Docker image `HEALTHCHECK` (`docker/scripts/healthcheck.mjs`) and the Helm chart's startup and liveness probes now use it. `/health` waits up to 3 s on a down dependency, longer than those probes' timeouts, so a database outage restarted (Kubernetes) or marked unhealthy (Docker) a CMS that was serving fine, and the v2.1.0 release smoke test failed with the container stuck in `starting`. Readiness (`/health/ready`) still reports dependency state.
 
 ## [2.1.0] - 2026-11-16
 

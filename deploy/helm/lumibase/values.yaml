@@ -126,16 +126,20 @@ cms:
   # 503 while any of database, cache, search, storage or queue is unhealthy,
   # so on an install without Meilisearch or S3 it would never turn ready.
   readinessPath: ""
+  # Startup and liveness use /health/live, which probes no dependency: a
+  # database or Redis outage must not restart healthy pods (readiness takes
+  # them out of the Service instead). /health waits up to 3 s on a down
+  # dependency, the same as timeoutSeconds below.
   startupProbe:
     httpGet:
-      path: /health
+      path: /health/live
       port: http
     periodSeconds: 5
     timeoutSeconds: 3
     failureThreshold: 60
   livenessProbe:
     httpGet:
-      path: /health
+      path: /health/live
       port: http
     periodSeconds: 15
     timeoutSeconds: 3
