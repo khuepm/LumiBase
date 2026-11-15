@@ -9,8 +9,7 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 
 ## [Unreleased]
 
-### Added
-- Live preview & visual editing (epic #667). Site-scoped preview tokens (`POST /api/v1/preview/token`, HS256 signed with a per-site key derived from `JWT_SECRET`, revocable and rotatable, rate-limited; table `lumibase_preview_secrets`, migration `0039_preview_secrets`) and public preview reads under `/api/v1/deliver/preview/:site_id` that return one `401` for every token failure. A token can target an item, a content version (related items resolve to the same branch) or a release, plus a locale. Studio: a resizable live preview pane beside the item form (field-level patches, reload on save, click-to-focus), Settings → Preview (allowed origins, TTL, revoke, rotate) and a Preview URL field per collection. New package `@lumibase/visual-editing` (click-to-edit overlay, origin-validated `postMessage` bridge, ≤ 15 kB gzip). Studio HTML now carries `frame-src` (tighten with `LUMIBASE_STUDIO_FRAME_SRC`). Threat model: [ADR-014](docs/en/architecture/decisions/adr-014-preview-bridge-threat-model.md); guide: [Live preview & visual editing](docs/en/features/visual-editing.md) (#679, #680, #681, #683; #682 API only).
+_No unreleased changes yet._
 
 ## [2.1.0] - 2026-11-16
 
