@@ -94,7 +94,7 @@ export const InputAutocompleteApiInterface: InterfaceComponent<string> = ({
                     setSearch(row.value);
                     setOpen(false);
                   }}
-                  className="w-full px-2 py-1 text-left text-xs hover:bg-accent"
+                  className="w-full px-2 py-1 text-start text-xs hover:bg-accent"
                 >
                   {row.text}
                 </button>

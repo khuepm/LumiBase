@@ -42,7 +42,7 @@ export function BookmarkSwitcher({
   const label = active?.bookmark ?? 'Default view';
 
   return (
-    <div className="relative inline-block text-left">
+    <div className="relative inline-block text-start">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}

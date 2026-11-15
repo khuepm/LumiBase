@@ -236,7 +236,11 @@ describe("TypegenService", () => {
         oneCollection: "authors",
         oneField: "posts",
         junctionCollection: null,
+        relationType: "m2o",
+        alias: "author",
       },
     ]);
+    expect(posts.fields.find((field) => field.name === "title")?.interface).toBe("input");
+    expect(posts.fields.find((field) => field.name === "id")?.interface).toBe("input");
   });
 });

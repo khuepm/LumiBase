@@ -1,0 +1,85 @@
+name: Studio RTL layout
+
+# #761: renders key Studio screens (login, item list, item editor, settings)
+# in Arabic at desktop and mobile widths, asserts no horizontal overflow or
+# overlapping controls, and uploads the screenshots. The Studio is served by
+# Vite with every /api call answered from fixtures, so no CMS, database or
+# secrets are needed.
+
+on:
+  pull_request:
+    paths:
+      - 'apps/studio/**'
+      - 'packages/ui/**'
+      - 'scripts/check-logical-css.mjs'
+      - '.github/workflows/studio-rtl-e2e.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/studio/**'
+      - 'packages/ui/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: studio-rtl-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24
+  PLAYWRIGHT_VERSION: 1.63.0
+
+jobs:
+  rtl-layout:
+    name: Studio RTL layout (ar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.12.0
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Logical-CSS guard
+        run: pnpm logical-css:check
+
+      # Playwright is not a workspace dependency; the e2e script resolves it
+      # with require(), so a global install on NODE_PATH is enough.
+      - name: Install Playwright + Chromium
+        run: |
+          npm install --global "playwright@${PLAYWRIGHT_VERSION}"
+          npx --yes "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium
+          echo "NODE_PATH=$(npm root --global)" >> "$GITHUB_ENV"
+
+      - name: RTL layout e2e (Arabic)
+        working-directory: apps/studio
+        env:
+          RTL_E2E_LANG: ar
+        run: node e2e/rtl-layout.e2e.mjs
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: studio-rtl-screenshots
+          path: apps/studio/e2e/artifacts/
+          if-no-files-found: warn
+          retention-days: 14

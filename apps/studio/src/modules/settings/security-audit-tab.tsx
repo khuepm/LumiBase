@@ -619,7 +619,7 @@ export function SecurityAuditTab() {
       {/* ── Results table ─────────────────────────────────────────── */}
       <div className="overflow-hidden rounded-lg border bg-background shadow-sm">
         <table className="w-full text-sm">
-          <thead className="border-b bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+          <thead className="border-b bg-muted/40 text-start text-xs uppercase text-muted-foreground">
             <tr>
               <th className="px-4 py-3">Timestamp</th>
               <th className="px-4 py-3">Event</th>

@@ -188,7 +188,7 @@ export function AccessImportDialog({
                 const file = event.target.files?.[0];
                 if (file) void readManifest(file);
               }}
-              className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-foreground"
+              className="block w-full text-sm file:me-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-foreground"
             />
             {fileName && <span className="mt-2 block text-xs text-muted-foreground">{fileName}</span>}
           </label>

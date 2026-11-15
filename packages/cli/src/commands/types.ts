@@ -7,6 +7,9 @@ import { requireConnection, resolveConfig } from '../config.js';
 import { CliError } from '../errors.js';
 import { boolFlag, stringFlag, type ParsedArgs } from '../utils/args.js';
 import { log } from '../utils/log.js';
+import { findTypegenConfigFile, loadTypegenConfig } from '../typegen/load-config.js';
+import { planTypegen, runTypegen, watchTypegen, type PlannedConfig } from '../typegen/run.js';
+import type { TypegenConfig } from '../typegen-config.js';
 
 export const DEFAULT_OUT = 'lumibase-types.d.ts';
 
@@ -59,7 +62,34 @@ export async function typesCommand(
   options: TypesCommandOptions = {},
 ): Promise<number> {
   const cwd = options.cwd ?? process.cwd();
-  const config = resolveConfig(args, { cwd, env: options.env });
+  const env = options.env ?? process.env;
+  const config = resolveConfig(args, { cwd, env });
+
+  const configFlag = stringFlag(args, 'config');
+  const typegenConfigPath = configFlag ? resolve(cwd, configFlag) : findTypegenConfigFile(cwd);
+  if (typegenConfigPath) {
+    return typegenConfigRun(args, typegenConfigPath, config, { ...options, cwd, env });
+  }
+
+  if (boolFlag(args, 'watch')) {
+    // No config file: watch the single TS output the flags describe.
+    const single: TypegenConfig = {
+      include: splitList(stringFlag(args, 'include')) ?? config.typegen.include,
+      exclude: splitList(stringFlag(args, 'exclude')) ?? config.typegen.exclude,
+      targets: [
+        {
+          type: 'ts',
+          out: stringFlag(args, 'out') ?? config.typegen.out ?? DEFAULT_OUT,
+          branded: boolFlag(args, 'no-branded') ? false : (config.typegen.branded ?? true),
+          importFrom: stringFlag(args, 'import-from') ?? config.typegen.importFrom ?? DEFAULT_IMPORT_FROM,
+        },
+      ],
+    };
+    const plan = planTypegen([single], { dir: cwd, env, fallback: config, request: options.request });
+    await watchUntilInterrupted(plan, args, cwd);
+    return 0;
+  }
+
   requireConnection(config);
 
   const check = boolFlag(args, 'check');
@@ -122,4 +152,58 @@ export async function typesCommand(
   log.dim(`  Generated types import from ${importFrom} — install it in this project.`);
 
   return 0;
+}
+
+/** Flags that describe the single legacy output; with a config file they would be silently ignored. */
+const SINGLE_OUTPUT_FLAGS = ['out', 'include', 'exclude', 'no-branded', 'import-from', 'stdout'];
+
+async function typegenConfigRun(
+  args: ParsedArgs,
+  path: string,
+  fallback: ReturnType<typeof resolveConfig>,
+  options: TypesCommandOptions & { cwd: string; env: NodeJS.ProcessEnv },
+): Promise<number> {
+  const conflicting = SINGLE_OUTPUT_FLAGS.filter((flag) => args[flag] !== undefined);
+  if (conflicting.length > 0) {
+    throw new CliError(
+      `${conflicting.map((flag) => `--${flag}`).join(', ')} cannot be combined with ${relative(options.cwd, path) || path}.`,
+      'Set outputs and collection filters in the typegen config file instead.',
+    );
+  }
+
+  const loaded = await loadTypegenConfig(path);
+  const plan = planTypegen(loaded.configs, {
+    dir: loaded.dir,
+    env: options.env,
+    fallback,
+    request: options.request,
+  });
+  log.dim(`Using ${relative(options.cwd, loaded.path) || loaded.path} — ${plan.length} config(s).`);
+
+  if (boolFlag(args, 'watch')) {
+    if (boolFlag(args, 'check')) throw new CliError('--watch and --check cannot be combined.');
+    await watchUntilInterrupted(plan, args, options.cwd);
+    return 0;
+  }
+
+  await runTypegen(plan, { cwd: options.cwd, check: boolFlag(args, 'check') });
+  return 0;
+}
+
+async function watchUntilInterrupted(plan: PlannedConfig[], args: ParsedArgs, cwd: string): Promise<void> {
+  const rawInterval = stringFlag(args, 'interval');
+  const intervalMs = rawInterval === undefined ? undefined : Number(rawInterval);
+  if (intervalMs !== undefined && (!Number.isFinite(intervalMs) || intervalMs < 250)) {
+    throw new CliError('--interval must be a number of milliseconds (at least 250).');
+  }
+  const controller = new AbortController();
+  const stop = (): void => controller.abort();
+  process.once('SIGINT', stop);
+  process.once('SIGTERM', stop);
+  try {
+    await watchTypegen(plan, { cwd, intervalMs, signal: controller.signal });
+  } finally {
+    process.off('SIGINT', stop);
+    process.off('SIGTERM', stop);
+  }
 }

@@ -279,7 +279,7 @@ function ApproachStep(props: ApproachStepProps) {
             />
             <span>{CONNECTOR_LABELS[type]}</span>
             {props.recommendationType === type && (
-              <span className="ml-auto rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">
+              <span className="ms-auto rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">
                 recommended
               </span>
             )}

@@ -130,7 +130,7 @@ export function FilesPage() {
               onClick={() => setCurrentFolder(null)} 
               className="hover:text-foreground"
             >
-              <HardDrive className="h-4 w-4 inline mr-1" /> Root
+              <HardDrive className="h-4 w-4 inline me-1" /> Root
             </button>
             {breadcrumbs.map(b => (
               <span key={b.id} className="flex items-center gap-2">
@@ -173,7 +173,7 @@ export function FilesPage() {
                   e.stopPropagation();
                   if (confirm('Delete folder?')) deleteFolderMutation.mutate(folder.id);
                 }}
-                className="absolute top-2 right-2 hidden text-muted-foreground hover:text-destructive group-hover:block"
+                className="absolute top-2 end-2 hidden text-muted-foreground hover:text-destructive group-hover:block"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -189,7 +189,7 @@ export function FilesPage() {
               <span className="text-sm font-medium truncate w-full text-center">{file.filenameDownload}</span>
               <span className="text-xs text-muted-foreground">{(file.filesize / 1024).toFixed(1)} KB</span>
               
-              <div className="absolute top-2 right-2 hidden items-center gap-1 group-hover:flex">
+              <div className="absolute top-2 end-2 hidden items-center gap-1 group-hover:flex">
                 <button
                   onClick={() => {
                     if (confirm('Delete file?')) deleteFileMutation.mutate(file.id);

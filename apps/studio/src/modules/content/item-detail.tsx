@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { Check, ChevronDown, ChevronLeft, Copy, Lock, Pin, Save, Share2, Star, Trash2, X } from 'lucide-react';
 import type { SaveAction } from '@lumibase/contracts/schemas';
 import { useSaveAction, saveActionLabel } from './use-save-action';
@@ -14,6 +14,7 @@ import { PresenceStack } from '@/components/presence-chip';
 import { CoEditingBanner } from '@/components/co-editing-banner';
 import { useCoEditors } from '@/hooks/use-presence';
 import { resolveInterface } from './interfaces/registry';
+import { useExtensionUpdates } from '@/lib/extension-loader';
 import { GroupContainer, type GroupVariant } from './interfaces/group';
 import { placedFields, resolveFormVisibility, type FormLayout } from '@lumibase/contracts/form-layout';
 import { LayoutNodes } from './form-layout-renderer';
@@ -26,7 +27,15 @@ import { VersionPanel } from './version-panel';
 import { DependentRecordsDialog, type DependentGroup } from './dependent-records-dialog';
 import { TranslationMode } from './translation-mode';
 import { translatableFields, tmLearnEntries } from './translatable-fields';
-import { useSiteLocales } from './use-site-locales';
+import { useSiteLocalesState } from './use-site-locales';
+import {
+  FieldRevealContext,
+  localeNoticeMessage,
+  planIntentLocale,
+  useIntentFieldFocus,
+  type LocalePlan,
+} from './field-focus';
+import { readEditorIntentSearch } from './editor-intent-search';
 import { ItemCreate } from './item-create';
 import { EditorialActions } from './editorial-actions';
 import { DraftReviewPanel } from './draft-review-panel';
@@ -42,11 +51,34 @@ type Tab = 'fields' | 'translation' | 'revisions' | 'versions' | 'raw';
 export function ItemDetailPage() {
   // Non-strict: rendered by both `/content/...` and `/$adminPath/content/...`.
   const { collection, id } = useParams({ strict: false }) as { collection: string; id: string };
-  if (id === 'new') return <ItemCreate key={collection} collection={collection} />;
-  return <ItemEditor key={`${collection}/${id}`} collection={collection} id={id} />;
+  // `?locale=&field=` come from intent links (issue #759); validated here so a
+  // hand-edited URL can never inject anything but a locale tag / field name.
+  const intentSearch = readEditorIntentSearch(useSearch({ strict: false }));
+  if (id === 'new') {
+    return <ItemCreate key={collection} collection={collection} intentField={intentSearch.field} />;
+  }
+  return (
+    <ItemEditor
+      key={`${collection}/${id}`}
+      collection={collection}
+      id={id}
+      intentLocale={intentSearch.locale}
+      intentField={intentSearch.field}
+    />
+  );
 }
 
-function ItemEditor({ collection, id }: { collection: string; id: string }) {
+function ItemEditor({
+  collection,
+  id,
+  intentLocale,
+  intentField,
+}: {
+  collection: string;
+  id: string;
+  intentLocale?: string;
+  intentField?: string;
+}) {
   const client = getApiClient();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -64,7 +96,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
   // Translation mode (translation-memory-ui): the site's default is the source
   // locale; the user picks a target to translate into.
-  const locales = useSiteLocales();
+  const { locales, isLoaded: localesLoaded } = useSiteLocalesState();
   const [targetLocale, setTargetLocale] = useState<string | null>(null);
   // Translatable fields the user set by hand (or applied a human TM match) in
   // this session — learned into TM on save when `translations.learnTm` is on.
@@ -197,7 +229,32 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
       setTargetLocale(locales.find((l) => l !== sourceLocale) ?? sourceLocale);
     }
   }, [locales, sourceLocale, targetLocale]);
-  const hasTranslatableFields = translatableFields(editable).length > 0;
+  const translatableEditable = useMemo(() => translatableFields(editable), [editable]);
+  const hasTranslatableFields = translatableEditable.length > 0;
+
+  // Intent links (issue #759): pick the tab/locale once the editor and the
+  // site's locale setting are loaded, then reveal + focus the linked field.
+  const [localePlan, setLocalePlan] = useState<LocalePlan | null>(null);
+  const editorReady =
+    Boolean(itemQuery.data) && draft !== null && fieldsQuery.isSuccess && !perms.isLoading;
+  useEffect(() => {
+    if (!intentLocale || localePlan || !editorReady || !localesLoaded) return;
+    const plan = planIntentLocale({
+      requested: intentLocale,
+      locales,
+      translatable: translatableEditable.map((f) => f.name),
+      field: intentField,
+    });
+    if (!plan) return;
+    setLocalePlan(plan);
+    setTab(plan.tab);
+    if (plan.targetLocale) setTargetLocale(plan.targetLocale);
+  }, [intentLocale, intentField, localePlan, editorReady, localesLoaded, locales, translatableEditable]);
+  const fieldFocus = useIntentFieldFocus({
+    field: intentField,
+    fields: tab === 'translation' ? translatableEditable : editable,
+    ready: editorReady && (!intentLocale || localePlan !== null),
+  });
 
   const isDirty = useMemo(() => {
     if (!itemQuery.data || draft === null) return false;
@@ -399,7 +456,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
               disabled={!isDirty || saveMutation.isPending || !canUpdate}
               title={canUpdate ? saveActionLabel(saveAction.effective) : 'You do not have update permission on this collection.'}
               className={cn(
-                'inline-flex items-center gap-1 rounded-l-md px-3 py-1 text-xs font-medium',
+                'inline-flex items-center gap-1 rounded-s-md px-3 py-1 text-xs font-medium',
                 isDirty && canUpdate
                   ? 'bg-primary text-primary-foreground hover:opacity-90'
                   : 'bg-muted text-muted-foreground',
@@ -418,7 +475,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
               onClick={() => setSaveMenuOpen((v) => !v)}
               disabled={saveMutation.isPending || !canUpdate}
               className={cn(
-                'inline-flex items-center rounded-r-md border-l border-primary-foreground/20 px-1.5 py-1',
+                'inline-flex items-center rounded-e-md border-s border-primary-foreground/20 px-1.5 py-1',
                 canUpdate ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-muted text-muted-foreground',
               )}
             >
@@ -426,7 +483,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
             </button>
             {saveMenuOpen && (
               <div
-                className="absolute right-0 top-full z-20 mt-1 w-52 rounded-md border border-border bg-background py-1 text-xs shadow-md"
+                className="absolute end-0 top-full z-20 mt-1 w-52 rounded-md border border-border bg-background py-1 text-xs shadow-md"
                 onMouseLeave={() => setSaveMenuOpen(false)}
               >
                 {(['stay', 'return', 'create_new'] as const).map((a) => (
@@ -439,7 +496,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
                       setPendingAction(a);
                       saveMutation.mutate();
                     }}
-                    className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-muted disabled:opacity-50"
+                    className="flex w-full items-center justify-between px-3 py-1.5 text-start hover:bg-muted disabled:opacity-50"
                   >
                     {saveActionLabel(a)}
                     {saveAction.effective === a && <Check className="h-3 w-3" />}
@@ -453,7 +510,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
                     setSaveMenuOpen(false);
                     saveAction.setDefault(saveAction.effective);
                   }}
-                  className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-muted-foreground hover:bg-muted"
+                  className="flex w-full items-center gap-1.5 px-3 py-1.5 text-start text-muted-foreground hover:bg-muted"
                 >
                   <Star className="h-3 w-3" />
                   Set “{saveActionLabel(saveAction.effective)}” as default
@@ -593,7 +650,20 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
         </div>
       )}
 
+      {localePlan?.notice && intentLocale && (
+        <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+          {localeNoticeMessage(localePlan.notice, intentLocale)}
+        </div>
+      )}
+      {fieldFocus.status === 'missing' && intentField && (
+        <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+          The linked field “{intentField}” is not available here — it may be hidden, removed, or
+          outside your permissions.
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_22rem]">
+        <FieldRevealContext.Provider value={fieldFocus.reveal}>
         <section className="rounded-lg border bg-background p-4">
           {tab === 'fields' && (
             <FieldsTab
@@ -660,6 +730,7 @@ function ItemEditor({ collection, id }: { collection: string; id: string }) {
             />
           )}
         </section>
+        </FieldRevealContext.Provider>
 
         <aside className="rounded-lg border bg-muted/20 p-3">
           <h2 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Tabs</h2>
@@ -772,7 +843,7 @@ function TabButton({
         type="button"
         onClick={() => onClick(value)}
         className={cn(
-          'w-full rounded-md px-2 py-1 text-left',
+          'w-full rounded-md px-2 py-1 text-start',
           current === value ? 'bg-background font-medium shadow-sm' : 'hover:bg-background/60',
         )}
       >
@@ -828,6 +899,8 @@ export function FieldsTab({
   /** Field key → validation message (inline + tab error badges). */
   errors?: Readonly<Record<string, string>>;
 }) {
+  // resolveInterface reads the extension registry during render.
+  useExtensionUpdates();
   if (fields.length === 0) {
     return <p className="text-sm text-muted-foreground">No editable fields.</p>;
   }
@@ -850,7 +923,7 @@ export function FieldsTab({
       const variant = f.interface.replace('group-', '') as GroupVariant;
       const children = fields.filter((c) => c.group === f.name && !placed.has(c.name)).sort(bySort);
       return (
-        <div key={f.id} className="col-span-1 sm:col-span-2">
+        <div key={f.id} className="col-span-1 sm:col-span-2" data-field-anchor={f.name}>
           <GroupContainer variant={variant} field={f}>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children.map(renderField)}</div>
           </GroupContainer>
@@ -873,6 +946,7 @@ export function FieldsTab({
         key={f.id}
         className={widthClass(f.width)}
         data-field={f.name}
+        data-field-anchor={f.name}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}
       >
@@ -890,7 +964,7 @@ export function FieldsTab({
                 <button
                   type="button"
                   onClick={() => onReleasePin(f.name)}
-                  className="ml-0.5 rounded-full px-1 hover:bg-sky-100"
+                  className="ms-0.5 rounded-full px-1 hover:bg-sky-100"
                   aria-label={`Release pin on ${f.name}`}
                   title="Release pin — allow agents to write this field again."
                 >
@@ -900,7 +974,7 @@ export function FieldsTab({
             </span>
           )}
           {!writable && (
-            <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
+            <span className="ms-auto inline-flex items-center gap-1 text-[10px] text-amber-700">
               <Lock className="h-3 w-3" /> read-only
             </span>
           )}

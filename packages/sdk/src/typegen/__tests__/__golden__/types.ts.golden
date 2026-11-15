@@ -1,0 +1,56 @@
+import type { ID, Locale } from '@lumibase/sdk';
+import type { Brand } from '@lumibase/sdk';
+
+export interface Authors {
+  readonly id: Brand<'AuthorsId', string>;
+  readonly created_at: string;
+  name: string;
+  email?: string | '***' | null;
+}
+
+export type AuthorsExpanded = Omit<Authors, "posts"> & {
+  posts?: Array<Blog_posts | Blog_postsExpanded>;
+};
+
+export interface Blog_posts {
+  readonly id: Brand<'Blog_postsId', string>;
+  status: string;
+  readonly updated_at: string;
+  title: string;
+  body?: string | null;
+  views: number;
+  rating?: number | null;
+  price?: number | null;
+  big_count?: number | null;
+  featured: boolean;
+  published_on?: string | null;
+  published_at?: string | null;
+  kind: "news" | "guide" | "review";
+  metadata?: unknown | null;
+  location?: GeoJSON.Geometry | null;
+  cover?: string | null;
+  gallery?: string[] | null;
+  headline: Partial<Record<Locale, string>>;
+  author_id?: Brand<'AuthorsId', string> | null;
+  tags?: Tags[];
+}
+
+export type Blog_postsExpanded = Omit<Blog_posts, "author_id" | "tags"> & {
+  author_id?: Authors | AuthorsExpanded | null;
+  tags?: Array<Tags | TagsExpanded>;
+};
+
+export interface Tags {
+  readonly id: number;
+  label: string;
+}
+
+export type TagsExpanded = Tags;
+
+export interface LumibaseCollections {
+  authors: Authors;
+  blog_posts: Blog_posts;
+  tags: Tags;
+}
+
+export type LumibaseSchema = LumibaseCollections;

@@ -101,7 +101,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 const list = vi.fn();
 vi.mock('@/lib/api', () => ({ getApiClient: () => ({ items: () => ({ list }) }) }));
-vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined }));
+vi.mock('@/lib/extension-loader', () => ({ getExtension: () => undefined, useExtensionUpdates: () => 0 }));
 
 import { GeopointInterface } from '../interfaces/geopoint';
 import { GeopointDisplay } from '../displays/geopoint';

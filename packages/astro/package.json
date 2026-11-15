@@ -1,0 +1,76 @@
+{
+  "name": "@lumibase/astro",
+  "version": "2.1.0",
+  "description": "Astro integration, content-layer loader and client realtime helper for LumiBase — a thin, typed layer over @lumibase/sdk.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khuepm/lumibase.git",
+    "directory": "packages/astro"
+  },
+  "homepage": "https://docs.lumibase.dev",
+  "bugs": {
+    "url": "https://github.com/khuepm/lumibase/issues"
+  },
+  "keywords": [
+    "lumibase",
+    "cms",
+    "headless-cms",
+    "astro",
+    "astro-integration",
+    "astro-loader",
+    "withastro"
+  ],
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./loader": "./src/loader.ts",
+    "./client": "./src/client.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./loader": {
+        "types": "./dist/loader.d.ts",
+        "import": "./dist/loader.js"
+      },
+      "./client": {
+        "types": "./dist/client.d.ts",
+        "import": "./dist/client.js"
+      }
+    }
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .turbo dist"
+  },
+  "dependencies": {
+    "@lumibase/sdk": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "astro": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.0",
+    "tsup": "^9.0.0",
+    "typescript": "^5.6.2",
+    "vitest": "^5.1.0"
+  },
+  "files": [
+    "dist"
+  ]
+}

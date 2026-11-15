@@ -345,7 +345,7 @@ function OrganizationSettings({
               key={site.id}
               className="flex flex-wrap items-center gap-3 rounded-lg border p-4"
             >
-              <div className="mr-auto">
+              <div className="me-auto">
                 <p className="font-medium">{site.name}</p>
                 <p className="text-xs text-muted-foreground">
                   {site.id}
@@ -451,7 +451,7 @@ function OrganizationSettings({
               key={member.userId}
               className="flex flex-wrap items-center gap-3 rounded-lg border p-3"
             >
-              <span className="mr-auto">{member.email}</span>
+              <span className="me-auto">{member.email}</span>
               <label className="sr-only" htmlFor={`role-${member.userId}`}>
                 Role for {member.email}
               </label>
@@ -537,7 +537,7 @@ function OrganizationSettings({
               key={key.id}
               className="flex flex-wrap items-center gap-3 rounded-lg border p-3"
             >
-              <div className="mr-auto">
+              <div className="me-auto">
                 <p>{key.name}</p>
                 <p className="text-xs text-muted-foreground">
                   {key.prefix}…{key.revokedAt ? ' · Revoked' : ''}
