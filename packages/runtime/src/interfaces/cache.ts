@@ -77,6 +77,44 @@ export interface UniqueCounterProvider {
   countUnique(key: string): Promise<number>;
 }
 
+/**
+ * Optional capability: a bounded set of string members that many writers can
+ * add to concurrently without losing each other's members (#864).
+ *
+ * The plain `get`/`set` pair cannot do this — appending to a JSON list stored
+ * under one key is a read-modify-write, and two concurrent writers each drop
+ * the other's member. Implementations use a primitive whose adds commute
+ * instead: a Redis sorted set (`ZADD`), one Workers KV key per member, or a
+ * synchronous in-process map.
+ *
+ * Callers feature-detect with {@link hasMemberSet}. The set lives in its own
+ * key namespace, so `get(key)` / `delete(key)` never see it.
+ */
+export interface MemberSetProvider {
+  /**
+   * Add `member` to the set at `key`. Re-adding an existing member refreshes
+   * it rather than duplicating it.
+   *
+   * @param opts.ttl    seconds; the set (Redis) or the member (KV) expires
+   *                    after this long without another add.
+   * @param opts.limit  keep at most this many members, dropping the oldest.
+   *                    Enforced on write where the backend can trim
+   *                    atomically (Redis, memory) and on read otherwise (KV).
+   */
+  addMember(key: string, member: string, opts?: { ttl?: number; limit?: number }): Promise<void>;
+  /**
+   * Remove the set at `key` and return its members, oldest first — at most
+   * the newest `opts.limit` of them when a limit is given.
+   */
+  drainMembers(key: string, opts?: { limit?: number }): Promise<string[]>;
+}
+
+/** True when `cache` implements {@link MemberSetProvider}. */
+export function hasMemberSet<T extends object>(cache: T): cache is T & MemberSetProvider {
+  const candidate = cache as Partial<MemberSetProvider>;
+  return typeof candidate.addMember === 'function' && typeof candidate.drainMembers === 'function';
+}
+
 /** Thrown when an atomic-counter backend is not wired for the active runtime. */
 export class CounterUnavailableError extends Error {
   constructor(message = 'atomic counter backend unavailable') {

@@ -3,6 +3,7 @@ import type {
   CacheEvent,
   CacheProvider,
   CacheSetOptions,
+  MemberSetProvider,
 } from './interfaces/cache';
 import { classifyCacheValue, negativeCacheWireValue } from './cache-entry';
 
@@ -11,12 +12,20 @@ interface MemoryEntry {
   expiresAt: number | null;
 }
 
+interface MemorySet {
+  /** Insertion order is age order: the first member is the oldest. */
+  members: Set<string>;
+  expiresAt: number | null;
+}
+
 /**
  * In-process CacheProvider with LRU eviction, TTL, tag indexing, and
  * negative-cache support (high-load-cache-readiness Req 7.6 / 19.4).
  */
-export class MemoryCacheProvider implements CacheProvider {
+export class MemoryCacheProvider implements CacheProvider, MemberSetProvider {
   private readonly store = new Map<string, MemoryEntry>();
+  /** Member sets live apart from `store`, so `get`/`delete` never see them. */
+  private readonly sets = new Map<string, MemorySet>();
   private readonly tagIndex = new Map<string, Set<string>>();
 
   onEvent?: (e: CacheEvent) => void;
@@ -136,5 +145,33 @@ export class MemoryCacheProvider implements CacheProvider {
     const next = (Number.isFinite(current) ? current : 0) + by;
     await this.set(key, JSON.stringify(next), raw ? undefined : opts);
     return next;
+  }
+
+  // Synchronous between the awaits, so concurrent adds cannot interleave.
+  async addMember(key: string, member: string, opts?: { ttl?: number; limit?: number }): Promise<void> {
+    const now = Date.now();
+    let set = this.sets.get(key);
+    if (!set || (set.expiresAt !== null && set.expiresAt <= now)) {
+      set = { members: new Set(), expiresAt: null };
+      this.sets.set(key, set);
+    }
+    set.members.delete(member);
+    set.members.add(member);
+    if (opts?.limit !== undefined) {
+      for (const oldest of set.members) {
+        if (set.members.size <= opts.limit) break;
+        set.members.delete(oldest);
+      }
+    }
+    if (opts?.ttl) set.expiresAt = now + opts.ttl * 1000;
+  }
+
+  async drainMembers(key: string, opts?: { limit?: number }): Promise<string[]> {
+    const set = this.sets.get(key);
+    this.sets.delete(key);
+    if (!set || (set.expiresAt !== null && set.expiresAt <= Date.now())) return [];
+    const members = [...set.members];
+    if (opts?.limit === undefined) return members;
+    return opts.limit > 0 ? members.slice(-opts.limit) : [];
   }
 }

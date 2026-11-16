@@ -4,11 +4,13 @@ export type {
   CacheEvent,
   CacheProvider,
   CacheSetOptions,
+  MemberSetProvider,
   NegativeCacheEnvelope,
   UniqueCounterProvider,
 } from './cache';
 export {
   CounterUnavailableError,
+  hasMemberSet,
   isNegativeCacheEnvelope,
   NEGATIVE_CACHE_ENVELOPE,
 } from './cache';

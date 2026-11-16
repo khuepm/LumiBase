@@ -14,7 +14,21 @@ const mockRedis = {
   expire: vi.fn(),
   quit: vi.fn(),
   pipeline: vi.fn(),
+  multi: vi.fn(),
 };
+
+function mockMulti(results: Array<[Error | null, unknown]> = []) {
+  const chain = {
+    zadd: vi.fn().mockReturnThis(),
+    zremrangebyrank: vi.fn().mockReturnThis(),
+    expire: vi.fn().mockReturnThis(),
+    zrange: vi.fn().mockReturnThis(),
+    del: vi.fn().mockReturnThis(),
+    exec: vi.fn().mockResolvedValue(results),
+  };
+  mockRedis.multi.mockReturnValue(chain);
+  return chain;
+}
 
 function mockPipeline() {
   const chain = {
@@ -240,6 +254,40 @@ describe('RedisCacheProvider', () => {
       await provider.delete('key-to-delete');
 
       expect(mockRedis.del).toHaveBeenCalledWith('key-to-delete');
+    });
+  });
+
+  // #864 — the edge URL index needs adds that commute, not get + set.
+  describe('member sets', () => {
+    it('adds with ZADD, trims to the newest `limit` and refreshes the TTL in one MULTI', async () => {
+      const tx = mockMulti([[null, 1], [null, 0], [null, 1]]);
+
+      await provider.addMember('edgeurls:deliver:site-a', 'https://acme.test/a', { ttl: 300, limit: 200 });
+
+      expect(mockRedis.multi).toHaveBeenCalledTimes(1);
+      expect(tx.zadd).toHaveBeenCalledWith('lumi:set:edgeurls:deliver:site-a', expect.any(Number), 'https://acme.test/a');
+      expect(tx.zremrangebyrank).toHaveBeenCalledWith('lumi:set:edgeurls:deliver:site-a', 0, -201);
+      expect(tx.expire).toHaveBeenCalledWith('lumi:set:edgeurls:deliver:site-a', 300);
+      expect(tx.exec).toHaveBeenCalledTimes(1);
+      // No read of the old value: nothing to race against.
+      expect(mockRedis.get).not.toHaveBeenCalled();
+      expect(mockRedis.set).not.toHaveBeenCalled();
+    });
+
+    it('rejects when a command inside the MULTI fails', async () => {
+      mockMulti([[new Error('WRONGTYPE'), null]]);
+
+      await expect(provider.addMember('k', 'm')).rejects.toThrow('WRONGTYPE');
+    });
+
+    it('drains the newest `limit` members and deletes the set in one MULTI', async () => {
+      const tx = mockMulti([[null, ['https://acme.test/b', 'https://acme.test/c']], [null, 1]]);
+
+      const members = await provider.drainMembers('edgeurls:deliver:site-a', { limit: 2 });
+
+      expect(members).toEqual(['https://acme.test/b', 'https://acme.test/c']);
+      expect(tx.zrange).toHaveBeenCalledWith('lumi:set:edgeurls:deliver:site-a', -2, '-1');
+      expect(tx.del).toHaveBeenCalledWith('lumi:set:edgeurls:deliver:site-a');
     });
   });
 

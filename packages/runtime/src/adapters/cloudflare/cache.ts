@@ -1,5 +1,12 @@
 import { classifyCacheValue, negativeCacheWireValue } from '../../cache-entry';
-import type { CacheEvent, CacheEntry, CacheProvider, CacheSetOptions, UniqueCounterProvider } from '../../interfaces';
+import type {
+  CacheEvent,
+  CacheEntry,
+  CacheProvider,
+  CacheSetOptions,
+  MemberSetProvider,
+  UniqueCounterProvider,
+} from '../../interfaces';
 import { CounterUnavailableError } from '../../interfaces';
 import type { DurableObjectNamespaceLike } from './realtime';
 
@@ -10,8 +17,42 @@ import type { DurableObjectNamespaceLike } from './realtime';
 export interface KVNamespace {
   get(key: string, type: 'json'): Promise<unknown>;
   get(key: string, type?: 'text'): Promise<string | null>;
-  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
+  put(key: string, value: string, options?: { expirationTtl?: number; metadata?: unknown }): Promise<void>;
   delete(key: string): Promise<void>;
+  /**
+   * Present on every real Workers KV binding; optional here only so test
+   * doubles that never touch member sets need not implement it.
+   */
+  list?(options?: { prefix?: string; limit?: number; cursor?: string }): Promise<KVListResult>;
+}
+
+export interface KVListResult {
+  keys: Array<{ name: string; expiration?: number; metadata?: unknown }>;
+  list_complete: boolean;
+  cursor?: string;
+}
+
+/** Namespace for {@link MemberSetProvider} keys: `lumi:set:{key}:{sha256(member)}`. */
+const SET_KEY_PREFIX = 'lumi:set:';
+/** Workers KV rejects an `expirationTtl` below 60 seconds. */
+const KV_MIN_TTL_SECONDS = 60;
+/** Upper bound on keys one drain scans, to stay inside per-invocation KV limits. */
+const SET_DRAIN_SCAN_LIMIT = 1000;
+
+interface MemberMetadata {
+  m: string;
+  t: number;
+}
+
+function isMemberMetadata(value: unknown): value is MemberMetadata {
+  if (value === null || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.m === 'string' && typeof record.t === 'number';
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -41,7 +82,7 @@ export interface KVNamespace {
 /** Matches `pv:` (views) and `pvu:` (uniques); the DO drains with `LIKE prefix%`. */
 const PAGEVIEW_DRAIN_PREFIX = 'pv';
 
-export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProvider {
+export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProvider, MemberSetProvider {
   onEvent?: (e: CacheEvent) => void;
 
   constructor(
@@ -153,6 +194,57 @@ export class CloudflareCacheProvider implements CacheProvider, UniqueCounterProv
     } catch {
       this.emit({ op: 'invalidateByTag', result: 'error', backend: 'kv' });
     }
+  }
+
+  /**
+   * Member sets (#864). KV has no atomic append, so each member is its own key
+   * — `lumi:set:{key}:{sha256(member)}` — carrying the member and its write
+   * time in list metadata. Concurrent adds of different members write
+   * different keys and cannot overwrite each other; re-adding a member
+   * rewrites its own key, which deduplicates and refreshes it.
+   *
+   * `limit` cannot be enforced on write without a read-modify-write, so it is
+   * enforced on read: {@link drainMembers} returns the newest `limit`. Members
+   * beyond the bound expire through `ttl`.
+   */
+  async addMember(key: string, member: string, opts?: { ttl?: number; limit?: number }): Promise<void> {
+    const memberKey = `${SET_KEY_PREFIX}${key}:${await sha256Hex(member)}`;
+    const metadata: MemberMetadata = { m: member, t: Date.now() };
+    await this.kv.put(memberKey, member, {
+      metadata,
+      ...(opts?.ttl ? { expirationTtl: Math.max(opts.ttl, KV_MIN_TTL_SECONDS) } : {}),
+    });
+  }
+
+  /**
+   * List the members, return the newest `limit`, and delete the keys of the
+   * members returned. KV `list` is eventually consistent, so a member added
+   * moments before the drain may not be listed yet; it stays in the set for
+   * the next drain rather than being lost. Members past `limit` are left to
+   * expire on their TTL, keeping the delete fan-out bounded.
+   */
+  async drainMembers(key: string, opts?: { limit?: number }): Promise<string[]> {
+    if (!this.kv.list) throw new Error('KV binding does not support list()');
+    const prefix = `${SET_KEY_PREFIX}${key}:`;
+    const entries: Array<{ name: string; member: string; t: number }> = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.kv.list({
+        prefix,
+        limit: SET_DRAIN_SCAN_LIMIT - entries.length,
+        ...(cursor ? { cursor } : {}),
+      });
+      for (const k of page.keys) {
+        if (isMemberMetadata(k.metadata)) entries.push({ name: k.name, member: k.metadata.m, t: k.metadata.t });
+      }
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor && entries.length < SET_DRAIN_SCAN_LIMIT);
+
+    entries.sort((a, b) => a.t - b.t);
+    const limit = opts?.limit;
+    const drained = limit === undefined ? entries : limit > 0 ? entries.slice(-limit) : [];
+    await Promise.all(drained.map((e) => this.kv.delete(e.name)));
+    return drained.map((e) => e.member);
   }
 
   /**
