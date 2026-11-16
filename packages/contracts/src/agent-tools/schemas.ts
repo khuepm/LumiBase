@@ -35,6 +35,21 @@ const id = z.string().min(1);
 const record = z.record(z.string(), z.unknown());
 
 /**
+ * Content migration input (#728): the content model part of a
+ * `contentful space export` (content types + locales). Entries and assets are
+ * not sent to the agent; they are imported by `lumibase migrate --apply`.
+ */
+const contentMigrationInput = z
+  .object({
+    source: z.literal('contentful'),
+    contentTypes: z.array(record).min(1).max(200),
+    locales: z.array(record).max(100).optional(),
+    collectionPrefix: z.string().regex(/^[a-z][a-z0-9_]{0,20}$/).optional(),
+    localeMap: z.record(z.string(), z.string()).optional(),
+  })
+  .strict();
+
+/**
  * Outbound webhook fields, mirroring `webhookSchema` in `apps/cms/src/routes/webhooks.ts`.
  *
  * The route's `.default()`s are written as `.optional()` here on purpose: the
@@ -196,6 +211,8 @@ export const AgentToolSchemas = {
     .strict(),
 
   // ── schema ───────────────────────────────────────────────────────────────
+  planContentMigration: contentMigrationInput,
+  applyContentMigrationSchema: contentMigrationInput,
   createCollection: z.object({ name: slug, singleton: z.boolean().optional() }).strict(),
   deleteCollection: z.object({ name: slug }).strict(),
   createField: z

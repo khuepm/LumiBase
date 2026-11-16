@@ -404,6 +404,64 @@ export const CORE_SKILLS: Record<string, AISkillDefinition> = {
     requiredCapabilities: ['schema:read', 'items:read'],
   },
 
+  planContentMigration: {
+    name: 'planContentMigration',
+    description:
+      'Plan a migration from another CMS (Contentful): map its content types to LumiBase collections and fields and compare with the current schema. Read-only; returns the plan and a dry-run report.',
+    parameters: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', enum: ['contentful'], description: 'Source CMS. Only contentful today.' },
+        contentTypes: {
+          type: 'array',
+          items: { type: 'object' },
+          description: 'The `contentTypes` array of a `contentful space export` file.',
+        },
+        locales: {
+          type: 'array',
+          items: { type: 'object' },
+          description: 'The `locales` array of the export (default locale first if unsure).',
+        },
+        collectionPrefix: { type: 'string', description: 'Optional prefix for new collection names, e.g. cf_.' },
+        localeMap: {
+          type: 'object',
+          description: 'Source locale → LumiBase locale, e.g. { "en-US": "en" }.',
+        },
+      },
+      required: ['source', 'contentTypes'],
+    },
+    requiredCapabilities: ['schema:read'],
+  },
+
+  applyContentMigrationSchema: {
+    name: 'applyContentMigrationSchema',
+    description:
+      'Create the collections, fields and relations a content migration plan needs. Additive only: existing fields are never changed. Requires human approval. Import the entries afterwards with `lumibase migrate --apply`.',
+    parameters: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', enum: ['contentful'], description: 'Source CMS. Only contentful today.' },
+        contentTypes: {
+          type: 'array',
+          items: { type: 'object' },
+          description: 'The `contentTypes` array of a `contentful space export` file.',
+        },
+        locales: {
+          type: 'array',
+          items: { type: 'object' },
+          description: 'The `locales` array of the export (default locale first if unsure).',
+        },
+        collectionPrefix: { type: 'string', description: 'Optional prefix for new collection names, e.g. cf_.' },
+        localeMap: {
+          type: 'object',
+          description: 'Source locale → LumiBase locale, e.g. { "en-US": "en" }.',
+        },
+      },
+      required: ['source', 'contentTypes'],
+    },
+    requiredCapabilities: ['schema:create', 'schema:update'],
+  },
+
   generateApiDocs: {
     name: 'generateApiDocs',
     description: 'Generate an OpenAPI documentation artifact from the schema and permissions.',
