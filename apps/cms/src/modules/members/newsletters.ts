@@ -207,8 +207,21 @@ const EVENT_ATTR_RE = /\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi;
 const JS_URL_RE = /(href|src)\s*=\s*(["'])\s*javascript:[^"']*\2/gi;
 
 /** Remove active content from item HTML: email clients run none, but some webmail previews do. */
+const DANGEROUS_OPENER_RE = /<(?=\s*\/?\s*(?:script|style|iframe|object|embed|form|link|meta|base)\b)/gi;
+const LEFTOVER_EVENT_RE = /(\s)(on[a-z]+\s*=)/gi;
+
 export function sanitizeEmailHtml(html: string): string {
-  return html.replace(DROP_BLOCK_RE, '').replace(DROP_VOID_RE, '').replace(EVENT_ATTR_RE, '').replace(JS_URL_RE, '$1=$2#$2');
+  // One pass is not enough: removing a match can splice a new one together
+  // (`<scr<script></script>ipt>`, `oonclicknclick=`). Repeat until stable.
+  let out = html;
+  for (let i = 0; i < 50; i += 1) {
+    const next = out.replace(DROP_BLOCK_RE, '').replace(DROP_VOID_RE, '').replace(EVENT_ATTR_RE, '').replace(JS_URL_RE, '$1=$2#$2');
+    if (next === out) break;
+    out = next;
+  }
+  // Belt and braces: whatever survives can no longer open an element or an
+  // event handler — the opener is escaped to text.
+  return out.replace(DANGEROUS_OPENER_RE, '&lt;').replace(LEFTOVER_EVENT_RE, '$1data-removed-$2');
 }
 
 function escapeHtml(s: string): string {

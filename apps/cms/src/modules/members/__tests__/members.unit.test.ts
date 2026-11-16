@@ -99,6 +99,20 @@ describe('newsletter compose', () => {
     expect(out).toContain('<p>Hi</p>');
   });
 
+  it('is not bypassed by nested or spliced payloads', () => {
+    for (const payload of [
+      '<scr<script></script>ipt>alert(1)</script>',
+      '<<script>script>alert(1)<</script>/script>',
+      '<p oonclick=x()nclick="alert(1)">x</p>',
+      '<ifr<iframe></iframe>ame src=//e></iframe>',
+      '<SCRIPT >alert(1)</SCRIPT >',
+    ]) {
+      const out = sanitizeEmailHtml(payload);
+      expect(out).not.toMatch(/<\s*\/?\s*(script|iframe)/i);
+      expect(out).not.toMatch(/\son[a-z]+\s*=/i);
+    }
+  });
+
   it('composes from strings, translatable maps and rich text documents', () => {
     expect(pickText({ en: 'Hello', vi: 'Xin chào' }, 'vi')).toBe('Xin chào');
     const plain = composeFromItem({ id: 'p1', data: { title: 'T <b>', content: 'one\n\ntwo' } }, { subjectField: 'title', bodyField: 'content' });
