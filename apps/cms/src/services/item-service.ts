@@ -33,6 +33,7 @@ import {
   type RealtimeProvider,
 } from '@lumibase/runtime';
 import { buildSearchDocument } from './search-document';
+import { searchSnapshotHash, type SearchIndexJob } from './content-indexing-worker';
 import {
   GEO_OPERATORS,
   GeoFilterError,
@@ -1346,8 +1347,9 @@ export class ItemService {
     }).catch((err: unknown) => {
       throw itemIdConflict(err, recordId) ?? err;
     });
+    const storedData = row.data;
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
-    await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
+    await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>, storedData);
     await this.publishRealtimeEvent(collectionName, 'create', row.id);
     await this.dispatchFirebaseSync(collectionName, 'create', row.id, row.data as Record<string, unknown>);
     await this.dispatchFlowEvent(collectionName, 'create', row.id, row.data as Record<string, unknown>);
@@ -1581,8 +1583,9 @@ export class ItemService {
     });
 
     if (!row) throw new ItemServiceError('UPDATE_FAILED', 'Failed to update item.');
+    const storedData = row.data;
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
-    await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
+    await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>, storedData);
     await this.publishRealtimeEvent(collectionName, 'update', row.id);
     await this.dispatchFirebaseSync(collectionName, 'update', row.id, row.data as Record<string, unknown>);
     await this.dispatchFlowEvent(collectionName, 'update', row.id, row.data as Record<string, unknown>);
@@ -2316,6 +2319,7 @@ export class ItemService {
     });
 
     for (const row of rows) {
+      const storedData = row.data;
       const decrypted = await this.processCrypto(
         collectionName,
         row.data as Record<string, unknown>,
@@ -2325,7 +2329,7 @@ export class ItemService {
         false,
       );
       row.data = decrypted;
-      await this.indexItem(collectionName, row.id, decrypted);
+      await this.indexItem(collectionName, row.id, decrypted, storedData);
       await this.publishRealtimeEvent(collectionName, 'create', row.id);
       await this.dispatchFirebaseSync(collectionName, 'create', row.id, decrypted);
       await this.dispatchFlowEvent(collectionName, 'create', row.id, decrypted);
@@ -2643,16 +2647,26 @@ export class ItemService {
    *
    * The queue payload carries `siteId` so the worker can scope the physical
    * index name (`{siteId}__{collection}`); the direct fallback scopes it here.
+   * It also carries `dataHash`, the fingerprint of the row's stored `data`
+   * (`storedData`, before decryption), so the worker can drop the snapshot when
+   * a retry arrives after the item was changed or deleted (#857).
    */
-  private async indexItem(collectionName: string, id: string, data: Record<string, unknown>): Promise<void> {
+  private async indexItem(
+    collectionName: string,
+    id: string,
+    data: Record<string, unknown>,
+    storedData: unknown,
+  ): Promise<void> {
     try {
       if (queueAccepts(this.deps.queue, 'content-indexing')) {
-        await this.deps.queue.enqueue('content-indexing', 'search:index', {
+        const job: SearchIndexJob = {
           siteId: this.deps.siteId,
           collection: collectionName,
           id,
           data,
-        });
+          dataHash: await searchSnapshotHash(storedData),
+        };
+        await this.deps.queue.enqueue('content-indexing', 'search:index', job);
       } else if (this.deps.search) {
         await this.deps.search.index(searchIndexName(this.deps.siteId, collectionName), [
           buildSearchDocument(collectionName, id, data),

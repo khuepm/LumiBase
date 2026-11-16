@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Database } from '@lumibase/database';
 import type { QueueProvider, SearchProvider } from '@lumibase/runtime';
+import { searchSnapshotHash } from '../content-indexing-worker';
 import { dispatchItemRevalidation } from '../content-invalidation';
 import { ItemService } from '../item-service';
 import { dispatchRevalidation } from '../revalidation';
@@ -55,7 +56,7 @@ describe('ItemService search indexing without a content-indexing binding (B131)'
     };
     const svc = new ItemService({ siteId: 'site_a', queue, search } as unknown as ConstructorParameters<typeof ItemService>[0]);
     const internals = svc as unknown as {
-      indexItem(collection: string, id: string, data: Record<string, unknown>): Promise<void>;
+      indexItem(collection: string, id: string, data: Record<string, unknown>, storedData?: unknown): Promise<void>;
       deindexItem(collection: string, id: string): Promise<void>;
     };
     return { internals, search };
@@ -71,12 +72,14 @@ describe('ItemService search indexing without a content-indexing binding (B131)'
     expect(search.delete).toHaveBeenCalledWith('site_a__posts', ['p2']);
   });
 
-  it('enqueues when the binding exists', async () => {
+  it('enqueues when the binding exists, fingerprinting the stored (not decrypted) data (#857)', async () => {
     const queue = queueWithout('other-queue');
     const { internals, search } = service(queue);
-    await internals.indexItem('posts', 'p1', { title: 'Hello' });
+    const stored = { title: 'Hello', secret: { ciphertext: 'abc' } };
+    await internals.indexItem('posts', 'p1', { title: 'Hello', secret: 'plain' }, stored);
     expect(queue.enqueue).toHaveBeenCalledWith('content-indexing', 'search:index', {
-      siteId: 'site_a', collection: 'posts', id: 'p1', data: { title: 'Hello' },
+      siteId: 'site_a', collection: 'posts', id: 'p1', data: { title: 'Hello', secret: 'plain' },
+      dataHash: await searchSnapshotHash(stored),
     });
     expect(search.index).not.toHaveBeenCalled();
   });

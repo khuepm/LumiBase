@@ -77,6 +77,8 @@ const REVALIDATION = 'lumibase-revalidation-dispatch-production';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Drop queued one-shot failures a test left unconsumed.
+  for (const fn of [search.configureIndex, search.index, search.delete]) fn.mockReset().mockImplementation(async () => {});
   vi.mocked(createDb).mockImplementation(() => fakeDb() as never);
   fake.settingsRows = [];
   fake.itemRows = [];
