@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-11-12T21:04:27.226Z
+version: 5
+lastUpdated: 2026-11-16T20:34:21.315Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5644257d82b75cbc
+sourceHash: 31a90e7ae6a0231a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T21:04:27.226Z
-codeVerifiedHash: 5644257d82b75cbc
+codeVerified: 2026-11-16T20:34:21.315Z
+codeVerifiedHash: 31a90e7ae6a0231a
 codeVerifiedClaims: 12
 ---
 
@@ -83,6 +83,13 @@ POST /api/v1/imports?collection={collection}&format=csv|json&mode=create|upsert
 - **Quyền:** được kiểm tra ngay từ đầu (`create`, cộng `update` với `upsert`) và
   kiểm tra lại ở từng dòng, dưới danh nghĩa user hoặc API key đã upload file.
   Nếu principal đó mất quyền trong lúc job chạy, job dừng với trạng thái `failed`.
+- **Kích thước:** file lớn hơn `IMPORT_MAX_BYTES` nhận `413 PAYLOAD_TOO_LARGE`.
+  Giới hạn được đếm trong lúc body đang tới, nên một upload dạng chunked không có
+  `Content-Length` cũng bị cắt ở giới hạn đó.
+- **Hạn mức theo site:** mỗi site có tối đa `IMPORT_MAX_PENDING_JOBS` job và
+  `IMPORT_MAX_PENDING_BYTES` dung lượng file đã upload ở trạng thái `queued` hoặc
+  `running` cùng lúc. Vượt một trong hai, upload nhận `429 LIMIT_EXCEEDED`; hãy
+  thử lại khi có job xong.
 
 Phản hồi là job:
 
@@ -125,7 +132,9 @@ realtime `import.progress` cho người đã upload.
 
 **Cách job chạy.** Request upload khởi động job và xử lý nó trong khoảng
 20 giây. Sau đó một cron mỗi phút (Cron Trigger trên Workers, hoặc scheduler của
-Node trên Docker) chạy tiếp. Mỗi phần là một transaction của database: các dòng và
+Node trên Docker) chạy tiếp. File được parse một lần khi tạo job, và các dòng
+được lưu theo từng phần; mỗi bước chỉ đọc phần kế tiếp. Mỗi phần là một
+transaction của database: các dòng và
 bộ đếm tiến độ được commit cùng nhau, nên một worker chết giữa chừng không để lại
 gì, và phần đó được chạy lại từ dòng đã commit cuối cùng, không tạo bản trùng.
 Transaction khoá job, nên worker thứ hai phải chờ thay vì ghi trùng các dòng đó,

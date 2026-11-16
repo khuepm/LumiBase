@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-11-12T21:04:27.226Z
+version: 5
+lastUpdated: 2026-11-16T20:34:21.315Z
 sourceLang: en
-contentHash: 5644257d82b75cbc
-codeVerified: 2026-11-12T21:04:27.226Z
-codeVerifiedHash: 5644257d82b75cbc
+contentHash: 31a90e7ae6a0231a
+codeVerified: 2026-11-16T20:34:21.315Z
+codeVerifiedHash: 31a90e7ae6a0231a
 codeVerifiedClaims: 12
 ---
 
@@ -81,6 +81,13 @@ POST /api/v1/imports?collection={collection}&format=csv|json&mode=create|upsert
 - **Permissions:** checked up front (`create`, plus `update` for `upsert`) and
   again on every row, as the user or API key that uploaded the file. If that
   principal loses access while the job runs, the job stops as `failed`.
+- **Size:** a file over `IMPORT_MAX_BYTES` gets `413 PAYLOAD_TOO_LARGE`. The
+  limit is counted while the body arrives, so a chunked upload without a
+  `Content-Length` is cut off at the limit too.
+- **Per-site budget:** a site may have at most `IMPORT_MAX_PENDING_JOBS` jobs
+  and `IMPORT_MAX_PENDING_BYTES` of uploaded files `queued` or `running` at
+  once. Past either, the upload gets `429 LIMIT_EXCEEDED`; retry when a job
+  finishes.
 
 The response is the job:
 
@@ -123,7 +130,9 @@ receives an `import.progress` realtime event for the uploader.
 
 **How it runs.** The upload request starts the job and works on it for up to
 about 20 seconds. After that, a one-minute cron (Workers Cron Trigger, or the
-Node scheduler on Docker) resumes it. Each chunk is one database transaction:
+Node scheduler on Docker) resumes it. The file is parsed once, when the job is
+created, and its rows are stored in chunks; each step reads only the next
+chunk. Each chunk is one database transaction:
 the rows and the progress counter commit together, so a worker that dies
 mid-chunk leaves nothing behind and the chunk is replayed from the last
 committed row, with no duplicates. The transaction locks the job, so a second
