@@ -100,8 +100,8 @@ describe('newsletter compose', () => {
   });
 
   it('keeps safe formatting and links, drops unsafe URLs and attributes', () => {
-    const out = sanitizeEmailHtml('<h2 class="t">T</h2><p>a <a href="https://x.test/a?b=1&amp;c=2" onclick="x">link</a> &amp; <strong>b</strong></p><img src="javascript:alert(1)" alt="i"><img src="https://x.test/i.png">1 < 2');
-    expect(out).toBe('<h2 class="t">T</h2><p>a <a href="https://x.test/a?b=1&amp;c=2">link</a> &amp; <strong>b</strong></p><img alt="i" /><img src="https://x.test/i.png" />1 &lt; 2');
+    const out = sanitizeEmailHtml('<h2 class="t">T</h2><p>a <a href="https://x.test/a?b=1&amp;c=2" onclick="x">link</a> &amp; <strong>b</strong></p><img src="javascript:alert(1)" alt="i"><img src="https://x.test/i.png"><img src="http://x.test/plain.png">1 < 2');
+    expect(out).toBe('<h2 class="t">T</h2><p>a <a href="https://x.test/a?b=1&amp;c=2">link</a> &amp; <strong>b</strong></p><img alt="i" /><img src="https://x.test/i.png" /><img />1 &lt; 2');
   });
 
   it('is not bypassed by nested or spliced payloads', () => {
@@ -111,11 +111,24 @@ describe('newsletter compose', () => {
       '<p oonclick=x()nclick="alert(1)">x</p>',
       '<ifr<iframe></iframe>ame src=//e></iframe>',
       '<SCRIPT >alert(1)</SCRIPT >',
+      '<ScRiPt>alert(1)</sCrIpT>',
+      '<IMG SRC=x OnErRoR=alert(1)>',
+      '<a href="&#106;avascript:alert(1)">x</a>',
+      '<a href="JaVaScRiPt:alert(1)">x</a>',
+      '<a href=" data:text/html,<script>alert(1)</script>">x</a>',
+      '&lt;svg onload=alert(1)&gt;',
+      '&lt;scr&lt;script&gt;ipt&gt;alert(1)&lt;/script&gt;',
+      '<svg onload=alert(1)><circle/></svg>',
+      '<p style="background:url(javascript:alert(1))">x</p>',
     ]) {
       const out = sanitizeEmailHtml(payload);
       expect(out).not.toMatch(/<\s*\/?\s*(script|iframe)/i);
-      expect(out).not.toMatch(/\son[a-z]+\s*=/i);
+      expect(out).not.toMatch(/<[^>]*\son[a-z]+\s*=/i);
+      expect(out).not.toMatch(/<[a-z][^>]*(javascript|data):/i);
+      expect(out).not.toMatch(/<(svg|img[^>]*onerror)|style=/i);
     }
+    // Entity-encoded markup stays inert text.
+    expect(sanitizeEmailHtml('&lt;svg onload&gt;')).toBe('&lt;svg onload&gt;');
   });
 
   it('composes from strings, translatable maps and rich text documents', () => {

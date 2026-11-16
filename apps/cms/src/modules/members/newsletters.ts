@@ -220,10 +220,11 @@ const URL_ATTRS = new Set(['href', 'src']);
 const TAG_RE = /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^\s"'>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?)*)\s*(\/?)>/g;
 const ATTR_RE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
 
-function safeUrl(value: string): string | null {
+/** href: http(s) / mailto only; src: https only. Anything else (incl. entity-encoded `javascript:`) is dropped. */
+function safeUrl(attr: string, value: string): string | null {
   const v = value.trim();
-  if (/^(https?:|mailto:|tel:)/i.test(v) || v.startsWith('#') || v.startsWith('/')) return v;
-  return null;
+  if (attr === 'src') return /^https:\/\//i.test(v) ? v : null;
+  return /^(https?:\/\/|mailto:)/i.test(v) ? v : null;
 }
 
 function escapeText(s: string): string {
@@ -237,7 +238,7 @@ function rebuildAttrs(raw: string): string {
     if (!ALLOWED_ATTRS.has(name)) continue;
     let value = m[2] ?? m[3] ?? m[4] ?? '';
     if (URL_ATTRS.has(name)) {
-      const url = safeUrl(value);
+      const url = safeUrl(name, value);
       if (url === null) continue;
       value = url;
     }
