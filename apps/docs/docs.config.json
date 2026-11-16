@@ -69,6 +69,7 @@
           "features/site-skills",
           "features/agent-receipts",
           "features/locale-generator",
+          "features/memberships",
           "features/visual-editing",
           "features/external-action-tools",
           "features/draft-review",

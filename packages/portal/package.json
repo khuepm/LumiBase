@@ -1,0 +1,79 @@
+{
+  "name": "@lumibase/portal",
+  "version": "2.1.0",
+  "description": "Embeddable member Portal for LumiBase: signup / sign-in by magic link, account, newsletter toggles and tier switch. Script tag, custom element or React.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khuepm/lumibase.git",
+    "directory": "packages/portal"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "sideEffects": [
+    "./src/auto.ts",
+    "./dist/portal.min.js"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./react": "./src/react.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "require": "./dist/index.cjs"
+      },
+      "./react": {
+        "types": "./dist/react.d.ts",
+        "import": "./dist/react.js",
+        "require": "./dist/react.cjs"
+      },
+      "./portal.min.js": "./dist/portal.min.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .turbo dist"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@lumibase/contracts": "workspace:*",
+    "@types/react": "^19.3.0",
+    "jsdom": "^31.0.0",
+    "react": "^19.3.1",
+    "tsup": "^9.0.0",
+    "typescript": "^5.6.2",
+    "vitest": "^5.1.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "homepage": "https://docs.lumibase.dev",
+  "bugs": {
+    "url": "https://github.com/khuepm/lumibase/issues"
+  },
+  "keywords": [
+    "lumibase",
+    "cms",
+    "headless-cms",
+    "memberships",
+    "newsletter",
+    "portal"
+  ]
+}

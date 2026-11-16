@@ -1,10 +1,10 @@
 ---
-version: 24
-lastUpdated: 2026-11-15T23:40:59.736Z
+version: 25
+lastUpdated: 2026-11-16T02:41:51.899Z
 sourceLang: en
-contentHash: ef6fd16483d977a5
-codeVerified: 2026-11-15T23:40:59.736Z
-codeVerifiedHash: ef6fd16483d977a5
+contentHash: 77a653c55ad1e5e8
+codeVerified: 2026-11-16T02:41:51.899Z
+codeVerifiedHash: 77a653c55ad1e5e8
 codeVerifiedClaims: 22
 ---
 
@@ -37,6 +37,7 @@ Schema files are split by domain:
 | `social-auth.ts` | `lumibase_user_identities`, `lumibase_social_auth_providers` |
 | `imports.ts` | `lumibase_import_jobs` |
 | `locale-generation.ts` | `lumibase_locale_generation_jobs`, `lumibase_translation_suggestions` |
+| `members.ts` | `lumibase_member_settings`, `lumibase_member_tiers`, `lumibase_members`, `lumibase_member_newsletters`, `lumibase_member_login_tokens`, `lumibase_member_segments`, `lumibase_newsletters`, `lumibase_newsletter_sends`, `lumibase_newsletter_deliveries`, `lumibase_email_sequences`, `lumibase_sequence_enrollments`, `lumibase_sending_domains` |
 | `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
@@ -588,6 +589,25 @@ ephemeral preview environments, and commit↔content provenance. All tables carr
 
 Tokens + webhook secrets are encrypted at rest via `CryptoService` (AES-GCM,
 AAD-bound to `{ siteId, integrationId, field }`); plaintext is never stored.
+
+## 11e. Memberships & newsletters (`members.ts`, epic #672)
+
+Migration `0041_members`, additive. Every table has `site_id` and is in the RLS list. Guide: [features/memberships.md](./features/memberships.md).
+
+| Table | Purpose |
+|---|---|
+| `lumibase_member_settings` | One row per site: Portal switch, self-signup, magic-link `redirect_uris`, default newsletters, `signup_copy` per locale |
+| `lumibase_member_tiers` | Tiers (`kind` `free`/`paid`, prices, `external_ids` for a payment provider); `policy_id` → the tier's `member-tier:<key>` policy |
+| `lumibase_members` | Member profile: `email_lower` unique per site, `status` `free`/`paid`/`comped`, `tier_id`, `tier_expires_at`, `labels`, `user_id` (subscriber account, set on first Portal sign-in), mail counters |
+| `lumibase_member_newsletters` | Per-member newsletter toggles, PK `(member_id, newsletter_id)` |
+| `lumibase_member_login_tokens` | Magic links: SHA-256 `token_hash` only, `expires_at`, single-use `consumed_at` |
+| `lumibase_member_segments` | Saved segment filters (evaluated live, never materialised) |
+| `lumibase_newsletters` | Newsletters: sender, `audience`, tracking opt-in, layout |
+| `lumibase_newsletter_sends` | One issue per (newsletter, collection, item): frozen `segment_filter`, rendered body, `link_base`, keyset `cursor`, lease, `counters` |
+| `lumibase_newsletter_deliveries` | One row per recipient, PK `(send_id, member_id)`: exactly-once claim, `opened_at` / `clicked_at` |
+| `lumibase_email_sequences` | Sequence definition: `trigger`, `trigger_options`, `steps` |
+| `lumibase_sequence_enrollments` | Per-member position: `step_index`, `next_run_at`, lease, `status` / `stopped_reason`; unique `(sequence_id, member_id)` |
+| `lumibase_sending_domains` | Domain, DKIM selector + public key + sealed private key, next/previous keys for rotation, `checks`, `status` |
 
 ## 12. Indexing & RLS
 
