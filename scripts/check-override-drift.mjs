@@ -27,7 +27,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 // ── range handling ─────────────────────────────────────────────────────────
 //
 // Only the forms this repo actually uses in overrides and manifests: exact,
-// `^`, `~`, `>=`/`>`, `*`, and `||` alternatives. Anything unrecognised is
+// `^`, `~`, `>=`/`>`, `<=`/`<` (override selectors such as `js-yaml@<4.3.2`),
+// `*`, and `||` alternatives. Anything unrecognised is
 // treated as "cannot reason about it" and skipped rather than guessed at — a
 // guard that invents a verdict is worse than one that admits ignorance.
 
@@ -54,7 +55,7 @@ export function parseSimpleRange(raw) {
   const text = raw.trim();
   if (text === '' || text === '*' || text === 'x') return { floor: [0, 0, 0], ceil: null };
 
-  const op = /^(\^|~|>=|>|=)?\s*v?(.+)$/.exec(text);
+  const op = /^(\^|~|>=|>|<=|<|=)?\s*v?(.+)$/.exec(text);
   if (!op) return null;
   const [, operator = '', rest] = op;
   const version = parseVersion(rest);
@@ -73,6 +74,10 @@ export function parseSimpleRange(raw) {
       return { floor: version, ceil: null };
     case '>':
       return { floor: [version[0], version[1], version[2] + 1], ceil: null };
+    case '<':
+      return { floor: [0, 0, 0], ceil: version };
+    case '<=':
+      return { floor: [0, 0, 0], ceil: [version[0], version[1], version[2] + 1] };
     case '=':
     case '': {
       if (version.specified === 1) return { floor: version, ceil: [maj + 1, 0, 0] };

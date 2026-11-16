@@ -1,10 +1,10 @@
 ---
-version: 12
-lastUpdated: 2026-10-29T08:18:32.171Z
+version: 13
+lastUpdated: 2026-11-15T22:13:05.473Z
 sourceLang: en
-contentHash: f9f3dd816843f1b1
-codeVerified: 2026-10-29T08:18:32.171Z
-codeVerifiedHash: f9f3dd816843f1b1
+contentHash: 2836abfde5e3025a
+codeVerified: 2026-11-15T22:13:05.473Z
+codeVerifiedHash: 2836abfde5e3025a
 codeVerifiedClaims: 6
 ---
 
@@ -50,7 +50,7 @@ still agree.
 
 | Package | Pinned to | Reason | Remove when |
 | --- | --- | --- | --- |
-| `js-yaml` | `^4.3.2` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — quadratic-complexity DoS in YAML merge-key handling (moderate), [GHSA-mxjm-jjmh-r63x](https://github.com/advisories/GHSA-mxjm-jjmh-r63x) — quadratic CPU consumption resolving `!!omap`, unpatched below `4.3.1` (high), and [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh) — `maxTotalMergeKeys` does not bound CPU for empty merge sources, unpatched below `4.3.2` (high). Pulled in transitively by `gray-matter@4.0.3`, which hard-pins js-yaml 3.x. See the patch note below. | `gray-matter` (or whatever consumes it) depends on js-yaml `>=4.2.0` directly, **and** no other dependency reintroduces a 3.x range. Verify with `pnpm why js-yaml`. |
+| `js-yaml@<4.3.2` | `^4.3.2` | [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68) — quadratic-complexity DoS in YAML merge-key handling (moderate), [GHSA-mxjm-jjmh-r63x](https://github.com/advisories/GHSA-mxjm-jjmh-r63x) — quadratic CPU consumption resolving `!!omap`, unpatched below `4.3.1` (high), and [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh) — `maxTotalMergeKeys` does not bound CPU for empty merge sources, unpatched below `4.3.2` (high). Pulled in transitively by `gray-matter@4.0.3`, which hard-pins js-yaml 3.x. See the patch note below. The selector is range-scoped (`<4.3.2`) so it only *raises* vulnerable copies: the root dev dependency on js-yaml 5 is left alone, and consumers written against the 4.x API (`gray-matter`, `@redocly/openapi-core`, which reads `types.merge`) stay on 4.x instead of being forced onto 5. | `gray-matter` (or whatever consumes it) depends on js-yaml `>=4.2.0` directly, **and** no other dependency reintroduces a 3.x range. Verify with `pnpm why js-yaml`. |
 | `dompurify` | `^3.4.17` | Security advisory (resolved via Dependabot), then raised for [GHSA-8v5p-ggcr-6q56](https://github.com/advisories/GHSA-8v5p-ggcr-6q56) — an `IN_PLACE` hook removal leaves a detached subtree, allowing sanitizer bypass at `<=3.4.12` (moderate), again for [GHSA-p98j-92pf-mc4p](https://github.com/advisories/GHSA-p98j-92pf-mc4p) / [GHSA-6688-9rhm-gjv2](https://github.com/advisories/GHSA-6688-9rhm-gjv2), unpatched below `3.4.16` (low), and again for [GHSA-cg2g-xh64-v4q7](https://github.com/advisories/GHSA-cg2g-xh64-v4q7) (critical), [GHSA-mrv2-3pqr-j5jr](https://github.com/advisories/GHSA-mrv2-3pqr-j5jr) (high) and [GHSA-c6gr-qvv4-5v3f](https://github.com/advisories/GHSA-c6gr-qvv4-5v3f) (low), unpatched below `3.4.17`. Raised together with the `apps/docs` and `apps/studio` manifests; still needed because `monaco-editor@0.55.1` (via `@monaco-editor/react`) pins `3.2.7`. | A direct/transitive consumer requires `>=3.4.17` on its own. |
 | `esbuild` | `^0.28.2` | esbuild dev-server request RCE advisory (`<=0.24.2`). | All consumers (vite, tsx, etc.) require `>=0.28.2`. |
 | `form-data` | `^4.0.6` | Security advisory (unsafe random boundary). | All consumers require `>=4.0.6`. |
@@ -166,7 +166,7 @@ Check with `cargo tree -i glib` after a `tauri` bump.
 **Why it's needed:** `gray-matter@4.0.3` is the latest published release and is effectively
 unmaintained. It hard-pins `js-yaml@^3.13.1` and calls `safeLoad`/`safeDump`. Those
 functions were **removed** in js-yaml 4.x (where `load`/`dump` are safe by default — and
-where `safeLoad` is a stub that *throws*). Because the `js-yaml: ^4.3.2` override (above)
+where `safeLoad` is a stub that *throws*). Because the `js-yaml@<4.3.2: ^4.3.2` override (above)
 upgrades js-yaml tree-wide to fix [CVE-2026-53550](https://github.com/advisories/GHSA-h67p-54hq-rp68),
 gray-matter would crash at parse time without this patch. gray-matter is used only at
 build/dev time in [`apps/docs`](../../../apps/docs/src/plugins/vite-plugin-docs-loader.ts)

@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import yaml from 'js-yaml';
+import { load as yamlLoad, loadAll as yamlLoadAll } from 'js-yaml';
 import { REQUIRED_PRODUCTION_VARS, encryptionKeyProblem } from '../../docker/scripts/entrypoint-lib.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -32,7 +32,7 @@ function render(args = BASE, { release = 'lb', namespace = 'ns' } = {}) {
     encoding: 'utf8',
   });
   if (res.status !== 0) return { ok: false, docs: [], stderr: res.stderr };
-  const docs = yaml.loadAll(res.stdout).filter(Boolean);
+  const docs = yamlLoadAll(res.stdout).filter(Boolean);
   return { ok: true, docs, stderr: res.stderr };
 }
 
@@ -52,7 +52,7 @@ const dockerfile = readFileSync(join(root, 'docker/Dockerfile'), 'utf8');
 
 test('chart and app version follow the root package.json', () => {
   const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-  const chartYaml = yaml.load(readFileSync(join(chart, 'Chart.yaml'), 'utf8'));
+  const chartYaml = yamlLoad(readFileSync(join(chart, 'Chart.yaml'), 'utf8'));
   assert.equal(chartYaml.version, version);
   assert.equal(chartYaml.appVersion, version);
 });
