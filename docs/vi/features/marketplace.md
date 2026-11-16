@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-11-16T15:01:08.350Z
+version: 3
+lastUpdated: 2026-11-16T15:01:18.909Z
 sourceLang: vi
-contentHash: ef9a504c2dc19ada
-codeVerified: 2026-11-16T15:01:08.350Z
-codeVerifiedHash: ef9a504c2dc19ada
+contentHash: c4ac58c71d04ec38
+codeVerified: 2026-11-16T15:01:18.909Z
+codeVerifiedHash: c4ac58c71d04ec38
 codeVerifiedClaims: 30
 ---
 
@@ -121,7 +121,7 @@ Khi `POST /install`:
 - Signature + `publisherKeyId`.
 - Slug duy nhất + `publisher` info.
 
-Chỉ admin (capability `marketplace:publish`) được phép.
+Chỉ moderator có permission `extensions:configure` được phép — cùng guard với `/submissions/:id/review`, vì publish ghi vào catalog global dùng chung cho mọi tenant.
 
 ## Roadmap
 

@@ -1,13 +1,13 @@
 ---
-version: 2
-lastUpdated: 2026-11-16T15:01:08.350Z
+version: 3
+lastUpdated: 2026-11-16T15:01:18.909Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: ef9a504c2dc19ada
+sourceHash: c4ac58c71d04ec38
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T15:01:08.350Z
-codeVerifiedHash: ef9a504c2dc19ada
+codeVerified: 2026-11-16T15:01:18.909Z
+codeVerifiedHash: c4ac58c71d04ec38
 codeVerifiedClaims: 30
 ---
 
@@ -124,7 +124,7 @@ On `POST /install`:
 - A signature + `publisherKeyId`.
 - A unique slug + `publisher` info.
 
-Only an admin (capability `marketplace:publish`) is allowed.
+Only a moderator with the `extensions:configure` permission is allowed — the same gate as `/submissions/:id/review`, since publishing writes the shared global catalog every tenant reads.
 
 ## Roadmap
 
