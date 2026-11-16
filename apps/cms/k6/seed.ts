@@ -78,9 +78,15 @@ async function main() {
   try {
     console.log(`[seed-load] sites=${SITE_IDS.join(',')} collections=${COLLECTION_COUNT} items/collection=${ITEMS_PER_COLLECTION} pages/site=${PAGES_PER_SITE}`);
 
-    await insertBatch(sql, 'lumibase_sites', 'id,name,domain,display_title,site_url', [
-      [PRIMARY_SITE_ID, 'High-load primary', 'loadtest-main.local', 'High-load primary', 'http://loadtest-main.local'],
-      [SECONDARY_SITE_ID, 'High-load secondary', 'loadtest-side.local', 'High-load secondary', 'http://loadtest-side.local'],
+    // Every site belongs to an organization (migration 0024). The migrations
+    // create the `default` organization, so the load-test sites join it.
+    const [org] = await sql<{ id: string }[]>`
+      SELECT id FROM lumibase_organizations WHERE slug = 'default' LIMIT 1
+    `;
+    if (!org) throw new Error("no 'default' organization: run the migrations first (pnpm db:migrate)");
+    await insertBatch(sql, 'lumibase_sites', 'id,name,domain,display_title,site_url,organization_id', [
+      [PRIMARY_SITE_ID, 'High-load primary', 'loadtest-main.local', 'High-load primary', 'http://loadtest-main.local', org.id],
+      [SECONDARY_SITE_ID, 'High-load secondary', 'loadtest-side.local', 'High-load secondary', 'http://loadtest-side.local', org.id],
     ]);
     await sql.unsafe(`
       INSERT INTO lumibase_system_state (id, state, admin_path, initialized_at)
@@ -88,9 +94,12 @@ async function main() {
       ON CONFLICT (id) DO UPDATE SET state = 'initialized', admin_path = '/loadtest-admin'
     `);
     await sql.unsafe(`
-      INSERT INTO lumibase_users (id, email, status, is_bootstrap)
-      VALUES ('loadtest-user-00000001', 'loadtest-admin@lumibase.dev', 'active', true)
-      ON CONFLICT (id) DO UPDATE SET is_bootstrap = true, status = 'active'
+      INSERT INTO lumibase_users (id, external_id, email, status, is_bootstrap)
+      -- external_id matches the principal auth.ts builds for the k6 scripts'
+      -- \`dev:<email>:admin\` token (externalId = \`dev_<email>\`), so
+      -- site membership resolves to this user.
+      VALUES ('loadtest-user-00000001', 'dev_loadtest-admin@lumibase.dev', 'loadtest-admin@lumibase.dev', 'active', true)
+      ON CONFLICT (id) DO UPDATE SET is_bootstrap = true, status = 'active', external_id = EXCLUDED.external_id
     `);
     await sql.unsafe(`
       INSERT INTO lumibase_roles (id, site_id, key, system_key, name, admin_access, app_access)
