@@ -38,6 +38,9 @@ export interface SearchRemoveJob {
 export interface ContentIndexingWorkerDeps {
   search?: SearchProvider;
   queue?: QueueProvider;
+}
+
+export interface ContentIndexingWorkerOptions {
   /**
    * Index names already configured. Pass a long-lived set when this function
    * runs more than once per process: the Workers consumer registers per batch,
@@ -98,11 +101,14 @@ export async function processSearchRemoveJob(
  * Registers the content-indexing consumer on a long-lived runtime (Docker/Node).
  * No-op when there is no queue or no search provider configured.
  */
-export function registerContentIndexingWorker(deps: ContentIndexingWorkerDeps): void {
+export function registerContentIndexingWorker(
+  deps: ContentIndexingWorkerDeps,
+  options: ContentIndexingWorkerOptions = {},
+): void {
   const { queue, search } = deps;
   if (!queue || !search) return;
 
-  const configured = deps.configured ?? makeConfiguredSet();
+  const configured = options.configured ?? makeConfiguredSet();
 
   queue.process<SearchIndexJob | SearchRemoveJob>(CONTENT_INDEXING_QUEUE, async (job) => {
     try {

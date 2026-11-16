@@ -105,11 +105,13 @@ export async function processCloudflareContentIndexingQueue(
   const queue = runtime.queue;
   // Infra misconfiguration: throw before claiming anything so Cloudflare retries the batch.
   if (!canHandleMessages(queue)) throw new Error('Content indexing queue requires the Cloudflare queue provider.');
-  registerContentIndexingWorker({
-    search: runtime.search,
-    queue,
-    configured: configuredIndexes,
-  });
+  registerContentIndexingWorker(
+    {
+      search: runtime.search,
+      queue,
+    },
+    { configured: configuredIndexes },
+  );
   await drain(batch, messages, queue, CONTENT_INDEXING_QUEUE, contentIndexingMessage, 'content-indexing-queue');
 }
 
