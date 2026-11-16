@@ -22,6 +22,19 @@
       "collection"
     ]
   },
+  "applyContentMigrationSchema": {
+    "properties": [
+      "collectionPrefix",
+      "contentTypes",
+      "localeMap",
+      "locales",
+      "source"
+    ],
+    "required": [
+      "contentTypes",
+      "source"
+    ]
+  },
   "askUser": {
     "properties": [
       "allowFreeText",
@@ -384,6 +397,19 @@
     ],
     "required": [
       "email"
+    ]
+  },
+  "planContentMigration": {
+    "properties": [
+      "collectionPrefix",
+      "contentTypes",
+      "localeMap",
+      "locales",
+      "source"
+    ],
+    "required": [
+      "contentTypes",
+      "source"
     ]
   },
   "promoteVersion": {

@@ -1,10 +1,10 @@
 ---
-version: 3
-lastUpdated: 2026-11-15T12:00:38.269Z
+version: 4
+lastUpdated: 2026-11-15T21:57:22.542Z
 sourceLang: en
-contentHash: 82da3bfdf8cecb92
-codeVerified: 2026-11-15T17:12:02.319Z
-codeVerifiedHash: 82da3bfdf8cecb92
+contentHash: 2a7cd82af0d95f46
+codeVerified: 2026-11-15T21:57:22.542Z
+codeVerifiedHash: 2a7cd82af0d95f46
 codeVerifiedClaims: 6
 ---
 
@@ -119,7 +119,7 @@ Current Studio interfaces (Directus-parity set) include:
 - **Boolean / Date**: `toggle`, `datetime`.
 - **Relation**: `relation-m2o`, `relation-o2m`, `relation-m2m`, `relation-o2m-tree-view`, `relation-m2a` (the **Builder** — links across multiple collections), `collection-item-dropdown`, `file`, `files`.
 - **Presentation / Group**: `presentation-divider`, `presentation-notice`, `presentation-header`, `presentation-links`, `group-raw`, `group-detail`, `group-accordion`.
-- **Special**: `json-raw`, `repeater`, `map` (GeoJSON), `seo`, `aio`, `translatable-text`.
+- **Special**: `json-raw`, `repeater`, `map` (GeoJSON), `seo`, `aio`, `translatable-text`, `richtext` (portable rich-text JSON, see [Content migration](./content-migration.md#rich-text)).
 
 Relational multi-item interfaces (`relation-o2m`, `relation-m2m`, `relation-m2a`) expose **Create new** and **Add existing** actions via the shared `RelationDrawer` (`apps/studio/src/modules/content/interfaces/relation-drawer.tsx`) and support drag-to-reorder. The M2A Builder (`relation-m2a`) is an **experimental Studio JSON helper** that stores `Array<{ collection, id }>` inside a `json` field and lets the editor pick the target collection per linked record; backend M2A relations (`POST /api/v1/relations` with `type: 'm2a'`) return `501 RELATION_TYPE_NOT_IMPLEMENTED` and remain reserved outside the `1.0` relational surface ([`contributing/versioning-policy.md`](../contributing/versioning-policy.md)). The form honors `field.width` (`half`/`full`/`fill`) and nests fields under `group-*` containers via `field.group`. The implementation source of truth is `apps/studio/src/modules/content/interfaces/registry.tsx`.
 
