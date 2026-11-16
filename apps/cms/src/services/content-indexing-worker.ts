@@ -38,6 +38,13 @@ export interface SearchRemoveJob {
 export interface ContentIndexingWorkerDeps {
   search?: SearchProvider;
   queue?: QueueProvider;
+  /**
+   * Index names already configured. Pass a long-lived set when this function
+   * runs more than once per process: the Workers consumer registers per batch,
+   * and a fresh set each time re-applied the settings on every batch (#863).
+   * Defaults to a new set, which is right for a register-once runtime.
+   */
+  configured?: Set<string>;
 }
 
 /**
@@ -46,7 +53,7 @@ export interface ContentIndexingWorkerDeps {
  * every document. `configureIndex` is idempotent, so a missed entry only costs
  * a redundant settings call.
  */
-function makeConfiguredSet(): Set<string> {
+export function makeConfiguredSet(): Set<string> {
   return new Set<string>();
 }
 
@@ -95,7 +102,7 @@ export function registerContentIndexingWorker(deps: ContentIndexingWorkerDeps): 
   const { queue, search } = deps;
   if (!queue || !search) return;
 
-  const configured = makeConfiguredSet();
+  const configured = deps.configured ?? makeConfiguredSet();
 
   queue.process<SearchIndexJob | SearchRemoveJob>(CONTENT_INDEXING_QUEUE, async (job) => {
     try {
