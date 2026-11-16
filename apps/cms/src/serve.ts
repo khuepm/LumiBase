@@ -194,10 +194,12 @@ async function main() {
   let questionSweepTask: ScheduledTask | undefined;
   let schedulerTask: ScheduledTask | undefined;
   let retentionTask: ScheduledTask | undefined;
+  let revisionRetentionTask: ScheduledTask | undefined;
   let deploymentPollTask: ScheduledTask | undefined;
   let flowScheduleTask: ScheduledTask | undefined;
   let goalDispatchTask: ScheduledTask | undefined;
   let importTask: ScheduledTask | undefined;
+  let localeJobTask: ScheduledTask | undefined;
   let loadGuardTimer: ReturnType<typeof setInterval> | undefined;
 
   if (runWorkers) {
@@ -582,6 +584,21 @@ async function main() {
       lockOpts,
     ),
   );
+  // Revision retention (#693): prunes revisions per `meta.revisionRetention`.
+  const { sweepRevisionRetention } = await import('./services/revision-retention');
+  revisionRetentionTask = cron.schedule(
+    '23 * * * *',
+    leaderLockedCallback(
+      'revision-retention',
+      3_300_000,
+      async () => {
+        await sweepRevisionRetention({ db: rotatorDb }).catch((err) => {
+          console.error('[revision-retention] failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
 
   // ── Reconciler goal dispatch (#455) ─────────────────────────────────────
   //
@@ -625,6 +642,25 @@ async function main() {
       async () => {
         await runImportTick(importDeps, { budgetMs: 50_000 }).catch((err) => {
           console.error('[import] tick failed', formatSafeError(err));
+        });
+      },
+      lockOpts,
+    ),
+  );
+
+  // ── Locale generator (#714) ─────────────────────────────────────────────
+  // Same shape as imports: the creating request drives the first chunk; this
+  // tick resumes jobs whose lease expired.
+  const { runLocaleJobTick } = await import('./services/locale-generation-service');
+  const { localeJobDeps } = await import('./routes/locale-generation');
+  localeJobTask = cron.schedule(
+    '* * * * *',
+    leaderLockedCallback(
+      'locale-generation-resume',
+      55_000,
+      async () => {
+        await runLocaleJobTick(localeJobDeps(rotatorDb, process.env as unknown as Bindings), { budgetMs: 50_000 }).catch((err) => {
+          console.error('[locale-generation] tick failed', formatSafeError(err));
         });
       },
       lockOpts,
@@ -740,10 +776,12 @@ async function main() {
     questionSweepTask?.stop();
     schedulerTask?.stop();
     retentionTask?.stop();
+    revisionRetentionTask?.stop();
     deploymentPollTask?.stop();
     flowScheduleTask?.stop();
     goalDispatchTask?.stop();
     importTask?.stop();
+    localeJobTask?.stop();
     extensionDevClient?.stop();
     if (runHttp) {
       pressureLimiter.stop();

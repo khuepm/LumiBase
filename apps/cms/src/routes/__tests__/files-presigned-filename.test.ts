@@ -2,9 +2,13 @@ import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
 import type { AppEnv } from '../../env';
 
-// Site-admin gating is covered elsewhere; this suite is about the filename.
-vi.mock('../../middleware/site-admin', () => ({
-  requireSiteAdmin: () => async (_c: unknown, next: () => Promise<void>) => next(),
+// Access gating is covered elsewhere (files-dam.test.ts); this suite is about
+// the filename, so the caller is granted `files:create`.
+vi.mock('../../services/files/files-context', () => ({
+  resolveFilesAccess: async () => ({ admin: true, rule: null, ctx: {} }),
+  filesContext: async () => {
+    throw new Error('not used by presigned-url');
+  },
 }));
 
 const { filesRouter } = await import('../files');

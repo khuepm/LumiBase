@@ -8,6 +8,7 @@ import { PermissionService, type PermissionAction } from './permission-service';
 import { ExtensionVerifierService } from './extension-verifier';
 import { ExtensionSandbox } from '../extensions/sandbox';
 import { patchSchema } from '../utils/patch-schema';
+import { extensionMcpManifestSchema } from '@lumibase/contracts/extensions';
 
 export interface ExtensionsServiceDeps {
   db: Database;
@@ -64,7 +65,26 @@ export const extensionSchema = z.object({
   type: z.enum(EXTENSION_TYPES),
   enabled: z.boolean().default(false),
   bundleUrl: bundleUrlSchema,
-  manifest: z.record(z.string(), z.string()).default({}),
+  // Free-form string metadata, plus the structured `mcp` block (#715), which
+  // is validated here so a malformed declaration is refused at install time
+  // instead of being skipped silently at request time.
+  manifest: z
+    .record(z.string(), z.unknown())
+    .default({})
+    .superRefine((manifest, ctx) => {
+      for (const [key, value] of Object.entries(manifest)) {
+        if (key === 'mcp') {
+          const parsed = extensionMcpManifestSchema.safeParse(value);
+          if (!parsed.success) {
+            for (const issue of parsed.error.issues) {
+              ctx.addIssue({ code: 'custom', path: ['mcp', ...issue.path.map(String)], message: issue.message });
+            }
+          }
+        } else if (typeof value !== 'string') {
+          ctx.addIssue({ code: 'custom', path: [key], message: 'manifest values must be strings (except "mcp")' });
+        }
+      }
+    }),
   capabilities: z.array(z.string()).default([]),
 });
 

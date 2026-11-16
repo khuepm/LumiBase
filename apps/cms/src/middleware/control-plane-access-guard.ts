@@ -22,6 +22,8 @@ const CONTROL_PLANE_PATHS = [
   // mounted on the top-level app BEFORE the `api` sub-app, so they never reach
   // this guard; only the authenticated management surface is gated here.
   '/api/v1/integrations/git',
+  // Locale generator (#714): spends MT budget and queues content changes.
+  '/api/v1/locale-generation',
   '/api/v1/materialize',
   // Live OpenAPI switch (#745). `/api/v1/openapi.json` is not under this
   // prefix, so the document itself is governed by its own config gate.

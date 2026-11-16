@@ -4,6 +4,7 @@ import type { ItemService } from '../services/item-service';
 import { itemServiceForRequest } from '../services/item-service-factory';
 import { resolveNegativeTtl } from '../services/negative-cache';
 import { SchemaService } from '../services/schema-service';
+import type { PublicationState } from '../services/publication-state';
 
 /**
  * Per-request GraphQL context. Carries an `ItemService` (which already
@@ -19,6 +20,11 @@ export interface GraphQLContext {
   siteId: string;
   userId: string | null;
   items: ItemService;
+  /**
+   * An ItemService reading a publication cohort (#688). Anonymous callers are
+   * clamped to `live` by the factory, whatever they ask for.
+   */
+  itemsFor?: (publicationState: PublicationState | undefined) => ItemService;
   schema: SchemaService;
   /** SiteRoom DO namespace for subscriptions (Cloudflare only). */
   realtimeNamespace?: DurableObjectNamespace;
@@ -45,6 +51,8 @@ export function buildGraphQLContext(c: Context<AppEnv>): GraphQLContext {
     siteId,
     userId: c.get('auth')?.userId ?? null,
     items: buildItemService(c),
+    itemsFor: (publicationState) =>
+      publicationState === undefined ? buildItemService(c) : itemServiceForRequest(c, { publicationState }),
     schema: new SchemaService({
       db: c.get('db'),
       siteId,

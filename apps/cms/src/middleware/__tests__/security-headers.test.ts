@@ -1,7 +1,12 @@
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import type { AppEnv } from '../../env';
-import { serializeContentSecurityPolicy, withSecurityHeaders } from '../security-headers';
+import {
+  DEFAULT_STUDIO_FRAME_SRC,
+  resolveStudioFrameSrc,
+  serializeContentSecurityPolicy,
+  withSecurityHeaders,
+} from '../security-headers';
 
 describe('security headers middleware', () => {
   it('serializes Content Security Policy directives', () => {
@@ -55,5 +60,48 @@ describe('security headers middleware', () => {
     const csp = (await app.request('/x')).headers.get('content-security-policy') ?? '';
     expect(csp).not.toContain('sandbox');
     expect(csp.split(', ').length).toBe(1);
+  });
+
+  describe('Studio frame-src for the live preview pane (#667, ADR-014)', () => {
+    const htmlApp = (env: Record<string, string> = {}) => {
+      const app = new Hono<AppEnv>();
+      app.use('*', async (c, next) => {
+        (c as unknown as { env: Record<string, string> }).env = env;
+        await next();
+      });
+      app.use('*', withSecurityHeaders());
+      app.get('/', (c) => c.html('<!doctype html><div id="root"></div>'));
+      app.get('/api', (c) => c.json({ ok: true }));
+      app.get('/media/x', () =>
+        new Response('<p>x</p>', { headers: { 'Content-Type': 'text/html', 'Content-Security-Policy': "default-src 'none'; sandbox" } }),
+      );
+      return app;
+    };
+
+    it('lets Studio HTML frame previews, but not JSON or sandboxed user content', async () => {
+      const app = htmlApp();
+      const studio = (await app.request('/')).headers.get('content-security-policy') ?? '';
+      expect(studio).toContain(`frame-src ${DEFAULT_STUDIO_FRAME_SRC.join(' ')}`);
+      // Studio itself still may not be framed.
+      expect(studio).toContain("frame-ancestors 'none'");
+      expect((await app.request('/api')).headers.get('content-security-policy')).not.toContain('frame-src');
+      expect((await app.request('/media/x')).headers.get('content-security-policy')).not.toContain('frame-src');
+    });
+
+    it('never allows unsafe-eval or unsafe-inline scripts', async () => {
+      const csp = (await htmlApp().request('/')).headers.get('content-security-policy') ?? '';
+      expect(csp).not.toContain('unsafe-eval');
+      expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
+    });
+
+    it('honours LUMIBASE_STUDIO_FRAME_SRC and drops junk', async () => {
+      const csp = (await htmlApp({ LUMIBASE_STUDIO_FRAME_SRC: 'https://www.example.com, http://localhost:3000' }).request('/'))
+        .headers.get('content-security-policy');
+      expect(csp).toMatch(/frame-src https:\/\/www\.example\.com http:\/\/localhost:3000(;|$)/);
+      expect(resolveStudioFrameSrc("'none'")).toEqual(["'none'"]);
+      expect(resolveStudioFrameSrc("javascript: 'unsafe-inline' *")).toEqual(["'none'"]);
+      expect(resolveStudioFrameSrc('https://*.example.com data:')).toEqual(['https://*.example.com']);
+      expect(resolveStudioFrameSrc(undefined)).toEqual(DEFAULT_STUDIO_FRAME_SRC);
+    });
   });
 });

@@ -34,6 +34,7 @@ import {
   TypegenSchemaFilters,
   ListItemsParams,
   ExportItemsParams,
+  DuplicateItemOptions,
   ImportJob,
   ImportJobStatus,
   ImportRowError,
@@ -69,6 +70,10 @@ import {
   ShareCreateInput,
   ShareResource,
   ShareSecretResult,
+  PreviewSettingsResource,
+  PreviewTokenMintInput,
+  PreviewTokenResource,
+  PreviewTokenSecretResult,
   PresetResource,
   TranslationResource,
   ContentVersion,
@@ -86,6 +91,11 @@ import {
   TeamMemberResource,
   FolderResource,
   FileResource,
+  FileVersionResource,
+  FileReferenceResource,
+  FolderTreeNodeResource,
+  FileListQuery,
+  DamSettingsResource,
   UploadConfigResource,
   WebhookResource,
   ActivityResource,
@@ -298,6 +308,8 @@ export function legacyRest() {
         if (params.offset !== undefined)
           qs.set("offset", String(params.offset));
         if (params.status) qs.set("status", params.status);
+        if (params.publicationState) qs.set("publicationState", params.publicationState);
+        if (params.modifiedSincePublish) qs.set("modifiedSincePublish", "true");
         const s = qs.toString();
         return s ? `?${s}` : "";
       }
@@ -382,6 +394,33 @@ export function legacyRest() {
           client.rawRequest<Row[]>(`${base}/bulk`, {
             method: "POST",
             body: JSON.stringify({ op, items: payload }),
+          }),
+        /**
+         * Save-as-copy (#689): a draft copy with unique fields suffixed
+         * (`-copy`, `-copy-2`, …). Goes through the normal create path.
+         */
+        duplicate: (id: string, options: DuplicateItemOptions = {}) =>
+          client.rawRequest<Row>(`${base}/${encodeURIComponent(id)}/duplicate`, {
+            method: "POST",
+            body: JSON.stringify(options),
+          }),
+        /**
+         * Manual ordering (#690) on a `meta.manualSort` collection: place `id`
+         * right after `after` (null = first) or right before `before`.
+         */
+        reorder: (id: string, target: { after: string | null } | { before: string }) =>
+          client.rawRequest<Row>(`${base}/${encodeURIComponent(id)}/reorder`, {
+            method: "POST",
+            body: JSON.stringify(target),
+          }),
+        /**
+         * Patch without recording a revision (#693) — for autosave and
+         * machine writes. Agent-authored writes keep their revision anyway.
+         */
+        patchWithoutRevision: (id: string, input: { data?: Partial<Row["data"]> }) =>
+          client.rawRequest<Row>(`${base}/${id}?saveRevision=false`, {
+            method: "PATCH",
+            body: JSON.stringify(input),
           }),
         /**
          * Hierarchical collections (#749) on a `meta.tree.enabled` collection.
@@ -794,10 +833,79 @@ export function legacyRest() {
           body: JSON.stringify(patch),
         }),
       delete: (id: string) => client.rawRequest<null>(`/api/v1/files/folders/${id}`, { method: "DELETE" }),
+      /** Nested folder tree with id paths (`/a/b/`) and name paths (#701). */
+      tree: () => client.rawRequest<FolderTreeNodeResource[]>("/api/v1/files/folders/tree"),
     };
 
     const files = {
-      list: () => client.rawRequest<FileResource[]>("/api/v1/files"),
+      /**
+       * List / filter the library. Without a query: the first 1000 files,
+       * newest first. `meta` carries `{ total, limit, offset }`.
+       */
+      list: (query?: FileListQuery) => {
+        const q = new URLSearchParams();
+        if (query?.folder !== undefined) q.set("folder", query.folder);
+        if (query?.subfolders) q.set("subfolders", "true");
+        if (query?.search) q.set("search", query.search);
+        if (query?.mime?.length) q.set("mime", query.mime.join(","));
+        if (query?.ids?.length) q.set("ids", query.ids.join(","));
+        if (query?.limit !== undefined) q.set("limit", String(query.limit));
+        if (query?.offset !== undefined) q.set("offset", String(query.offset));
+        const qs = q.toString();
+        return client.rawRequest<FileResource[]>(`/api/v1/files${qs ? `?${qs}` : ""}`);
+      },
+      get: (id: string) => client.rawRequest<FileResource>(`/api/v1/files/${encodeURIComponent(id)}`),
+      /**
+       * Replace the bytes behind a file in place (#703): same id, key, folder
+       * and references; `version` bumps. Pass `expectedVersion` to refuse
+       * (409) when someone replaced it since you loaded it.
+       */
+      replaceContent: (
+        id: string,
+        body: Blob | ArrayBuffer | Uint8Array,
+        opts: { mime: string; filename?: string; expectedVersion?: number },
+      ) => {
+        const q = opts.filename ? `?filename=${encodeURIComponent(opts.filename)}` : "";
+        const headers: Record<string, string> = { "content-type": opts.mime };
+        if (opts.expectedVersion !== undefined) headers["if-match"] = `"v${opts.expectedVersion}"`;
+        return client.rawRequest<FileResource>(`/api/v1/files/${encodeURIComponent(id)}/content${q}`, {
+          method: "PUT",
+          body: body as RequestInit["body"],
+          headers,
+        });
+      },
+      /** URL that serves the current bytes; pass `version` for an immutable, cacheable URL. */
+      contentUrl: (id: string, version?: number) =>
+        `${client.url.replace(/\/$/, "")}/api/v1/files/${encodeURIComponent(id)}/content${version !== undefined ? `?v=${version}` : ""}`,
+      versions: (id: string) => client.rawRequest<FileVersionResource[]>(`/api/v1/files/${encodeURIComponent(id)}/versions`),
+      restoreVersion: (id: string, versionId: string) =>
+        client.rawRequest<FileResource>(
+          `/api/v1/files/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/restore`,
+          { method: "POST" },
+        ),
+      /** Items and pages that reference the file (#706). */
+      usage: (id: string) => client.rawRequest<FileReferenceResource[]>(`/api/v1/files/${encodeURIComponent(id)}/usage`),
+      /** Files with the same content hash (lowercase hex SHA-256). */
+      duplicates: (hash: string) =>
+        client.rawRequest<FileResource[]>(`/api/v1/files/duplicates?hash=${encodeURIComponent(hash)}`),
+      /** Bulk move and/or merge editorial metadata (alt, title, caption, credit, tags). */
+      bulk: (input: {
+        ids: string[];
+        folder?: string | null;
+        metadata?: { alt?: string; title?: string; caption?: string; credit?: string; tags?: string[] };
+      }) =>
+        client.rawRequest<FileResource[]>("/api/v1/files/bulk", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      settings: {
+        get: () => client.rawRequest<DamSettingsResource>("/api/v1/files/settings"),
+        update: (patch: Partial<DamSettingsResource>) =>
+          client.rawRequest<DamSettingsResource>("/api/v1/files/settings", {
+            method: "PUT",
+            body: JSON.stringify(patch),
+          }),
+      },
       create: (input: Record<string, unknown>) =>
         client.rawRequest<FileResource>("/api/v1/files", {
           method: "POST",
@@ -808,7 +916,13 @@ export function legacyRest() {
           method: "PATCH",
           body: JSON.stringify(patch),
         }),
-      delete: (id: string) => client.rawRequest<null>(`/api/v1/files/${id}`, { method: "DELETE" }),
+      /**
+       * Safe delete (#706): a referenced file answers 409 `FILE_IN_USE` with the
+       * references in `errors[0].details.usage`; repeat with `{ confirm: true }`
+       * to delete anyway (unless the site's policy is `block`).
+       */
+      delete: (id: string, opts?: { confirm?: boolean }) =>
+        client.rawRequest<null>(`/api/v1/files/${id}${opts?.confirm ? "?confirm=true" : ""}`, { method: "DELETE" }),
       getPresignedUrl: (filename: string) =>
         client.rawRequest<{ url: string; method: string; key: string }>("/api/v1/files/presigned-url", {
           method: "POST",
@@ -977,6 +1091,29 @@ export function legacyRest() {
         }),
     };
 
+    /** Live preview tokens + settings (epic #667). User principals only. */
+    const preview = {
+      mintToken: (input: PreviewTokenMintInput) =>
+        client.rawRequest<PreviewTokenSecretResult>("/api/v1/preview/token", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      listTokens: () => client.rawRequest<PreviewTokenResource[]>("/api/v1/preview/tokens"),
+      revokeToken: (id: string) =>
+        client.rawRequest<PreviewTokenResource>(`/api/v1/preview/tokens/${encodeURIComponent(id)}/revoke`, {
+          method: "POST",
+        }),
+      /** Rotation: revoke every live preview token of the site (site admin). */
+      revokeAll: () =>
+        client.rawRequest<{ revoked: number }>("/api/v1/preview/tokens/revoke-all", { method: "POST" }),
+      getSettings: () => client.rawRequest<PreviewSettingsResource>("/api/v1/preview/settings"),
+      updateSettings: (input: PreviewSettingsResource) =>
+        client.rawRequest<PreviewSettingsResource>("/api/v1/preview/settings", {
+          method: "PUT",
+          body: JSON.stringify(input),
+        }),
+    };
+
     const shares = {
       create: (input: ShareCreateInput) =>
         client.rawRequest<ShareSecretResult>("/api/v1/shares", {
@@ -1128,6 +1265,7 @@ export function legacyRest() {
       access,
       apiKeys,
       shares,
+      preview,
       me,
       permissions,
       presets,
