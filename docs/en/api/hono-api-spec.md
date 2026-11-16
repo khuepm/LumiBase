@@ -1,11 +1,11 @@
 ---
-version: 56
-lastUpdated: 2026-11-15T23:40:56.423Z
+version: 57
+lastUpdated: 2026-11-16T15:45:53.964Z
 sourceLang: en
-contentHash: fb7e23a8ff3b4d56
-codeVerified: 2026-11-15T23:40:56.423Z
-codeVerifiedHash: fb7e23a8ff3b4d56
-codeVerifiedClaims: 636
+contentHash: 601030269d8d9532
+codeVerified: 2026-11-16T15:45:53.964Z
+codeVerifiedHash: 601030269d8d9532
+codeVerifiedClaims: 640
 ---
 
 # Hono API Specification — LumiBase
@@ -394,8 +394,16 @@ Every applied change writes an audit event (`email_identity_mode_changed` /
 - `POST /api/v1/users/invite` looks the account up case-insensitively (and by
   root mailbox under `root`) and returns public fields only. Inviting an alias
   of an existing member of a strict site answers `409 EMAIL_IDENTITY_CONFLICT`.
-- SCIM (`/scim/v2/Users`) answers `409` with `scimType: "uniqueness"` when the
-  address resolves to an existing account or collides on a strict site.
+- SCIM `POST /scim/v2/Users` answers `409` with `scimType: "uniqueness"` only
+  when the address resolves to an account that is already a member of the
+  token's site, or collides with a member on a strict site. An account that
+  belongs only to other sites is linked to this site and answered as a create
+  (`201`), so the response does not reveal accounts outside the site.
+  `userName` is trimmed; a value that is not a single `local@domain` token
+  answers `400` with `scimType: "invalidValue"`.
+- `POST /api/v1/admin/security/unlock-user`, `/admin/security/recover` and
+  `/admin/security/forgot-path` resolve the account under the instance mode in
+  the same way as login.
 
 ### External JWT authentication
 

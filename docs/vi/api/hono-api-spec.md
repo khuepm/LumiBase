@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 55
-lastUpdated: 2026-11-15T23:40:56.423Z
+version: 56
+lastUpdated: 2026-11-16T15:45:53.964Z
 sourceLang: en
 translatedFrom: en
-sourceHash: fb7e23a8ff3b4d56
+sourceHash: 601030269d8d9532
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T23:40:56.423Z
-codeVerifiedHash: fb7e23a8ff3b4d56
-codeVerifiedClaims: 636
+codeVerified: 2026-11-16T15:45:53.964Z
+codeVerifiedHash: 601030269d8d9532
+codeVerifiedClaims: 640
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -357,8 +357,16 @@ Mỗi thay đổi được áp dụng đều ghi một audit event (`email_ident
 - `POST /api/v1/users/invite` tra tài khoản không phân biệt hoa/thường (và theo
   hộp thư gốc dưới `root`) và chỉ trả các trường công khai. Mời một alias của
   thành viên hiện có trên site strict trả `409 EMAIL_IDENTITY_CONFLICT`.
-- SCIM (`/scim/v2/Users`) trả `409` với `scimType: "uniqueness"` khi địa chỉ
-  resolve về một tài khoản đã có hoặc xung đột trên site strict.
+- SCIM `POST /scim/v2/Users` chỉ trả `409` với `scimType: "uniqueness"` khi
+  địa chỉ resolve về một tài khoản đã là thành viên của site của token, hoặc
+  xung đột với một thành viên trên site strict. Tài khoản chỉ thuộc các site
+  khác được liên kết vào site này và được trả như một lần tạo mới (`201`), nên
+  response không tiết lộ tài khoản bên ngoài site.
+  `userName` được trim; giá trị không phải một token `local@domain` duy nhất
+  trả `400` với `scimType: "invalidValue"`.
+- `POST /api/v1/admin/security/unlock-user`, `/admin/security/recover` và
+  `/admin/security/forgot-path` resolve tài khoản theo mode của instance giống
+  như login.
 
 ### Xác thực External JWT
 
