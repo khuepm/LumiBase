@@ -99,6 +99,11 @@ describe('newsletter compose', () => {
     expect(out).toContain('<p>Hi</p>');
   });
 
+  it('keeps safe formatting and links, drops unsafe URLs and attributes', () => {
+    const out = sanitizeEmailHtml('<h2 class="t">T</h2><p>a <a href="https://x.test/a?b=1&amp;c=2" onclick="x">link</a> &amp; <strong>b</strong></p><img src="javascript:alert(1)" alt="i"><img src="https://x.test/i.png">1 < 2');
+    expect(out).toBe('<h2 class="t">T</h2><p>a <a href="https://x.test/a?b=1&amp;c=2">link</a> &amp; <strong>b</strong></p><img alt="i" /><img src="https://x.test/i.png" />1 &lt; 2');
+  });
+
   it('is not bypassed by nested or spliced payloads', () => {
     for (const payload of [
       '<scr<script></script>ipt>alert(1)</script>',

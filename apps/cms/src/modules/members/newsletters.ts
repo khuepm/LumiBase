@@ -201,27 +201,81 @@ export const composeOptionsSchema = z.object({
 });
 export type ComposeOptions = z.output<typeof composeOptionsSchema>;
 
-const DROP_BLOCK_RE = /<(script|style|iframe|object|embed|form)\b[\s\S]*?<\/\1\s*>/gi;
-const DROP_VOID_RE = /<(script|iframe|object|embed|link|meta|base)\b[^>]*>/gi;
-const EVENT_ATTR_RE = /\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi;
-const JS_URL_RE = /(href|src)\s*=\s*(["'])\s*javascript:[^"']*\2/gi;
+/**
+ * Allowlist sanitizer for item HTML going into email. It does not remove
+ * patterns from the input (removal can splice a new tag together); it walks
+ * the tags and REBUILDS the output: allowed tags are re-emitted with only
+ * allowed attributes and escaped values, anything else is escaped to text.
+ * Contents of `<script>`/`<style>` and similar are dropped with their tags.
+ */
+const ALLOWED_TAGS = new Set([
+  'a', 'abbr', 'b', 'blockquote', 'br', 'caption', 'code', 'col', 'colgroup', 'dd', 'del', 'div', 'dl', 'dt', 'em',
+  'figcaption', 'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'ins', 'kbd', 'li', 'mark', 'ol', 'p',
+  'pre', 'q', 's', 'small', 'span', 'strong', 'sub', 'sup', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'u', 'ul',
+]);
+const VOID_TAGS = new Set(['br', 'hr', 'img', 'col']);
+const DROP_WITH_CONTENT = new Set(['script', 'style', 'iframe', 'object', 'embed', 'noscript', 'template', 'svg', 'math', 'textarea', 'select', 'form']);
+const ALLOWED_ATTRS = new Set(['href', 'src', 'alt', 'title', 'width', 'height', 'colspan', 'rowspan', 'align', 'class', 'id', 'name', 'target', 'rel', 'lang', 'dir']);
+const URL_ATTRS = new Set(['href', 'src']);
+const TAG_RE = /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^\s"'>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?)*)\s*(\/?)>/g;
+const ATTR_RE = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
 
-/** Remove active content from item HTML: email clients run none, but some webmail previews do. */
-const DANGEROUS_OPENER_RE = /<(?=\s*\/?\s*(?:script|style|iframe|object|embed|form|link|meta|base)\b)/gi;
-const LEFTOVER_EVENT_RE = /(\s)(on[a-z]+\s*=)/gi;
+function safeUrl(value: string): string | null {
+  const v = value.trim();
+  if (/^(https?:|mailto:|tel:)/i.test(v) || v.startsWith('#') || v.startsWith('/')) return v;
+  return null;
+}
+
+function escapeText(s: string): string {
+  return s.replace(/&(?![a-zA-Z0-9#]+;)/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function rebuildAttrs(raw: string): string {
+  let out = '';
+  for (const m of raw.matchAll(ATTR_RE)) {
+    const name = m[1]!.toLowerCase();
+    if (!ALLOWED_ATTRS.has(name)) continue;
+    let value = m[2] ?? m[3] ?? m[4] ?? '';
+    if (URL_ATTRS.has(name)) {
+      const url = safeUrl(value);
+      if (url === null) continue;
+      value = url;
+    }
+    out += ` ${name}="${value.replace(/&(?![a-zA-Z0-9#]+;)/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}"`;
+  }
+  return out;
+}
 
 export function sanitizeEmailHtml(html: string): string {
-  // One pass is not enough: removing a match can splice a new one together
-  // (`<scr<script></script>ipt>`, `oonclicknclick=`). Repeat until stable.
-  let out = html;
-  for (let i = 0; i < 50; i += 1) {
-    const next = out.replace(DROP_BLOCK_RE, '').replace(DROP_VOID_RE, '').replace(EVENT_ATTR_RE, '').replace(JS_URL_RE, '$1=$2#$2');
-    if (next === out) break;
-    out = next;
+  let out = '';
+  let last = 0;
+  let dropUntil: string | null = null;
+  for (const m of html.matchAll(TAG_RE)) {
+    const index = m.index ?? 0;
+    const closing = m[1] === '/';
+    const tag = m[2]!.toLowerCase();
+    if (dropUntil) {
+      if (closing && tag === dropUntil) {
+        dropUntil = null;
+        last = index + m[0].length;
+      }
+      continue;
+    }
+    out += escapeText(html.slice(last, index));
+    last = index + m[0].length;
+    if (DROP_WITH_CONTENT.has(tag)) {
+      if (!closing && m[4] !== '/') dropUntil = tag;
+      continue;
+    }
+    if (!ALLOWED_TAGS.has(tag)) continue;
+    if (closing) {
+      if (!VOID_TAGS.has(tag)) out += `</${tag}>`;
+    } else {
+      out += `<${tag}${rebuildAttrs(m[3] ?? '')}${VOID_TAGS.has(tag) ? ' /' : ''}>`;
+    }
   }
-  // Belt and braces: whatever survives can no longer open an element or an
-  // event handler — the opener is escaped to text.
-  return out.replace(DANGEROUS_OPENER_RE, '&lt;').replace(LEFTOVER_EVENT_RE, '$1data-removed-$2');
+  if (!dropUntil) out += escapeText(html.slice(last));
+  return out;
 }
 
 function escapeHtml(s: string): string {
