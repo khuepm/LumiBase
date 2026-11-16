@@ -1,10 +1,10 @@
 ---
-version: 13
-lastUpdated: 2026-11-14T02:32:19.524Z
+version: 14
+lastUpdated: 2026-11-16T15:45:18.238Z
 sourceLang: en
-contentHash: 5fc1233101995b59
-codeVerified: 2026-11-14T02:32:19.524Z
-codeVerifiedHash: 5fc1233101995b59
+contentHash: b8df189d0eddde1f
+codeVerified: 2026-11-16T15:45:18.238Z
+codeVerifiedHash: b8df189d0eddde1f
 codeVerifiedClaims: 122
 ---
 
@@ -140,6 +140,25 @@ succeeds. Both accept `dryRun: true`, and every applied change is audit-logged.
   `202` whether the address, one of its aliases, or a strict-site alias already
   exists; the account and its membership commit in one transaction, so a
   refused membership never leaves an orphan account.
+- **A refused membership is an error, never a silent success.** Every
+  `user_sites` writer names `(user_id, site_id)` as its conflict target, so
+  "already a member" stays a no-op while an alias of an existing member of a
+  strict site surfaces: SCIM `POST /Groups` answers `409` with
+  `scimType: "uniqueness"` and creates nothing, and setup answers
+  `409 EMAIL_IDENTITY_CONFLICT`.
+- **SSO JIT never links by email.** An external-JWT login whose email claim
+  collides with another account (an alias under `root`, or an alias of a member
+  of a strict site) is rejected with `403` — the server log and the
+  `external_auth_denied` audit row carry `EMAIL_IDENTITY_CONFLICT` — instead of
+  failing with a 500. The existing account is not linked: an IdP email claim is
+  not proof of control of that mailbox. The JIT account and its membership
+  commit in one transaction.
+- **Strict covers organization-inherited access.** An organization owner or
+  admin reaches the organization's sites without a `user_sites` row. On a
+  strict site that inherited role is dropped when another alias of the same
+  root mailbox holds the site's seat: the alias that is a site member or, when
+  none is, the earliest-created alias with an owner/admin role in the
+  organization.
 
 Several external identities can be linked to one account through the
 `lumibase_user_identities` table (one row per `(issuer, subject)`). Members use
