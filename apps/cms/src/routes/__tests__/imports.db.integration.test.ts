@@ -7,6 +7,9 @@ import {
   fields,
   importJobs,
   items,
+  permissions,
+  policies,
+  rolePolicies,
   roles,
   sites,
   userSites,
@@ -426,6 +429,31 @@ describe.skipIf(!hasDbIntegrationUrl)('background imports — DB integration', (
 
       principal = ADMIN;
       expect(((await (await app.request('/api/v1/imports')).json()) as { data: unknown[] }).data).toHaveLength(1);
+    });
+
+    it('403s up front when the principal can write but not read the collection (#860)', async () => {
+      // EDITOR gets create + update on products, but no read.
+      const viewerRole = (await db.select({ roleId: userSites.roleId }).from(userSites).where(and(eq(userSites.userId, EDITOR), eq(userSites.siteId, SITE))))[0]!.roleId!;
+      const policyId = (await db.insert(policies).values({ siteId: SITE, name: 'Write only', appAccess: true }).returning({ id: policies.id }))[0]!.id;
+      await db.insert(permissions).values([
+        { siteId: SITE, policyId, collection: 'products', action: 'create', fields: ['*'] },
+        { siteId: SITE, policyId, collection: 'products', action: 'update', fields: ['*'] },
+      ]);
+      await db.insert(rolePolicies).values({ roleId: viewerRole, policyId, priority: 0 });
+
+      principal = EDITOR;
+      for (const mode of ['create', 'upsert']) {
+        const res = await app.request(`/api/v1/imports?collection=products&mode=${mode}`, {
+          method: 'POST',
+          headers: { 'content-type': 'text/csv' },
+          body: csv([{ price: 1 }]),
+        });
+        expect(res.status).toBe(403);
+        const body = (await res.json()) as { errors: Array<{ code: string; message: string }> };
+        expect(body.errors[0]).toMatchObject({ code: 'FORBIDDEN' });
+        expect(body.errors[0]!.message).toMatch(/"read"/);
+      }
+      expect(await db.select().from(importJobs).where(eq(importJobs.siteId, SITE))).toHaveLength(0);
     });
   });
 });
