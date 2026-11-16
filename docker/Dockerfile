@@ -57,7 +57,7 @@ RUN pnpm --filter @lumibase/studio build
 #   PostgreSQL/Redis), so `docker run --read-only` works. /tmp is the only
 #   path worth mounting as tmpfs, for third-party code that asks os.tmpdir().
 #   See docs/en/deployment/docker.md "Hardened image".
-FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:34985bab6fd6981259f18ab7555995a911ca3bee4b0d38bacdc63932df1dc6cb AS runtime
+FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:39c66687298417dbf3ff2fb8b6012c20554494e16414ef7afd07b9abbb45b501 AS runtime
 ARG LUMIBASE_GIT_SHA
 LABEL org.opencontainers.image.title="lumibase-cms" \
       org.opencontainers.image.description="LumiBase CMS API + Studio (Node/Docker runtime)" \
