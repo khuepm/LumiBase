@@ -132,6 +132,13 @@ services:
       # #564: refused-decision audit dedup window (s) and /api/v1/ai/* per-IP limit (req/min).
       DECISION_REFUSAL_AUDIT_WINDOW_SECONDS: ${DECISION_REFUSAL_AUDIT_WINDOW_SECONDS:-}
       LUMIBASE_AI_IP_RATE_LIMIT: ${LUMIBASE_AI_IP_RATE_LIMIT:-}
+      # Malware scanning for uploads (#707). Unset = no scanner; a site that
+      # enables scanning then keeps new files quarantined (fail closed). With
+      # the `malware-scan` profile below:
+      #   MALWARE_SCAN_URL=http://clamav-rest:3000/api/v1/scan MALWARE_SCAN_FIELD=FILES
+      MALWARE_SCAN_URL: ${MALWARE_SCAN_URL:-}
+      MALWARE_SCAN_TOKEN: ${MALWARE_SCAN_TOKEN:-}
+      MALWARE_SCAN_FIELD: ${MALWARE_SCAN_FIELD:-}
     ports:
       - "${CMS_PORT:-1989}:1989"
     volumes:
@@ -169,6 +176,36 @@ services:
       LUMIBASE_WORKER_HEALTH_PORT: "1988"
     ports: !reset
       - "${CMS_WORKER_HEALTH_PORT:-1988}:1988"
+
+  # Optional malware scanning (#707): clamd + a REST front the CMS calls.
+  # Usage: docker compose --profile malware-scan up -d clamav clamav-rest
+  # then set MALWARE_SCAN_URL / MALWARE_SCAN_FIELD (see the cms service) and
+  # enable `scan.enabled` in the site's files settings.
+  clamav:
+    profiles: ["malware-scan"]
+    image: clamav/clamav:1.4
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  clamav-rest:
+    profiles: ["malware-scan"]
+    image: benzino77/clamav-rest-api:latest
+    environment:
+      NODE_ENV: production
+      CLAMD_IP: clamav
+      CLAMD_PORT: "3310"
+      APP_FORM_KEY: FILES
+      APP_PORT: "3000"
+      APP_MAX_FILE_SIZE: "104857600"
+    ports:
+      - "${CLAMAV_REST_PORT:-3002}:3000"
+    depends_on:
+      clamav:
+        condition: service_healthy
 
   bull-board:
     image: deadly0/bull-board:latest

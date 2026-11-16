@@ -1,11 +1,14 @@
 ---
-version: 2
-lastUpdated: 2026-08-02T19:22:34.503Z
+version: 3
+lastUpdated: 2026-11-15T19:31:38.009Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 3a4ed673b2da93ce
+sourceHash: 7a98f61c28cbf540
 mtEngine: manual
 syncStatus: human-translated
+codeVerified: 2026-11-15T19:31:38.009Z
+codeVerifiedHash: 7a98f61c28cbf540
+codeVerifiedClaims: 12
 ---
 
 # Observability — Metrics, Logs, Dashboards, Tracing
@@ -14,7 +17,8 @@ syncStatus: human-translated
 
 | Endpoint | Purpose | Auth | HTTP status |
 |----------|----------|------|-------------|
-| `/health` | Liveness + dependency summary for operators | None | Always `200`; body is `healthy` or `degraded` |
+| `/health/live` | Liveness probe (no dependency probes) | None | Always `200` `{ "status": "ok" }`, in milliseconds |
+| `/health` | Dependency summary for operators | None | Always `200`; body is `healthy` or `degraded` |
 | `/health/ready` | Readiness probe for orchestrators | None | `200` when all probes healthy, `503` when degraded |
 | `/metrics` | Prometheus exposition format | None | `200` |
 
@@ -180,7 +184,7 @@ Config: `docker/prometheus/prometheus.yml`, `docker/grafana/provisioning/`, `doc
 }
 ```
 
-`GET /health` always returns `200` so it is safe as a liveness/diagnostic endpoint. `GET /health/ready` returns `503` when any dependency probe is unhealthy, so orchestrators can use it for readiness.
+`GET /health/live` returns `200` without probing any dependency, so use it for liveness (the Docker image HEALTHCHECK and the Helm chart's liveness/startup probes). `GET /health` always returns `200` but waits on the dependency probes: with the database or queue down it takes up to 3 s, so keep it for diagnostics. `GET /health/ready` returns `503` when any dependency probe is unhealthy, so orchestrators can use it for readiness.
 
 Probe timeout: 750ms per dependency.
 

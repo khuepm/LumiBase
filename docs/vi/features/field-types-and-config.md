@@ -1,14 +1,14 @@
 ---
 <!-- check-parity: allow inline-code -->
-version: 3
-lastUpdated: 2026-11-15T12:00:38.269Z
+version: 4
+lastUpdated: 2026-11-15T21:57:22.542Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 82da3bfdf8cecb92
+sourceHash: 2a7cd82af0d95f46
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T17:12:02.319Z
-codeVerifiedHash: 82da3bfdf8cecb92
+codeVerified: 2026-11-15T21:57:22.542Z
+codeVerifiedHash: 2a7cd82af0d95f46
 codeVerifiedClaims: 6
 ---
 
@@ -125,7 +125,7 @@ Bộ interface hiện tại của Studio (tương đương Directus) gồm:
 - **Boolean / Date**: `toggle`, `datetime`.
 - **Relation**: `relation-m2o`, `relation-o2m`, `relation-m2m`, `relation-o2m-tree-view`, `relation-m2a` (**Builder** — liên kết qua nhiều collection), `collection-item-dropdown`, `file`, `files`.
 - **Presentation / Group**: `presentation-divider`, `presentation-notice`, `presentation-header`, `presentation-links`, `group-raw`, `group-detail`, `group-accordion`.
-- **Special**: `json-raw`, `repeater`, `map` (GeoJSON), `seo`, `aio`, `translatable-text`.
+- **Special**: `json-raw`, `repeater`, `map` (GeoJSON), `seo`, `aio`, `translatable-text`, `richtext` (JSON rich-text portable, xem [Content migration](./content-migration.md#rich-text)).
 
 Các interface quan hệ nhiều phần tử (`relation-o2m`, `relation-m2m`, `relation-m2a`) cung cấp thao tác **Create new** và **Add existing** qua `RelationDrawer` dùng chung (`apps/studio/src/modules/content/interfaces/relation-drawer.tsx`) và hỗ trợ kéo-thả sắp xếp. M2A Builder (`relation-m2a`) là **JSON helper thử nghiệm của Studio**, lưu `Array<{ collection, id }>` trong một field `json` và cho phép biên tập viên chọn collection đích cho từng bản ghi liên kết; quan hệ M2A ở backend (`POST /api/v1/relations` với `type: 'm2a'`) trả về `501 RELATION_TYPE_NOT_IMPLEMENTED` và vẫn được reserve ngoài relational surface `1.0` ([`contributing/versioning-policy.md`](../contributing/versioning-policy.md)). Form tôn trọng `field.width` (`half`/`full`/`fill`) và lồng các field dưới các khung `group-*` qua `field.group`. Nguồn chuẩn cài đặt là `apps/studio/src/modules/content/interfaces/registry.tsx`.
 

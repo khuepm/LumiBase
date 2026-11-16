@@ -52,6 +52,7 @@ export const INTERFACE_CATALOGUE: InterfaceCatalogueItem[] = [
     width: 'full',
   },
   { id: 'wysiwyg', label: 'WYSIWYG', description: 'Rich HTML editor.', type: 'text', group: 'Text' },
+  { id: 'richtext', label: 'Rich text document', description: 'Portable rich-text JSON (e.g. migrated content): preview and raw JSON.', type: 'json', group: 'Text' },
   { id: 'markdown', label: 'Markdown', description: 'Markdown editor.', type: 'text', group: 'Text' },
   { id: 'code', label: 'Code', description: 'Monospace code editor.', type: 'text', group: 'Text' },
   { id: 'input-hash', label: 'Hash', description: 'Secret input hashed on save.', type: 'string', group: 'Text', defaultSpecial: ['hash'] },

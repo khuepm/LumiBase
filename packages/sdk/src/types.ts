@@ -517,6 +517,26 @@ export interface ListItemsParams {
    * for a cheaper list (e.g. infinite scroll) and omits `meta.total`.
    */
   meta?: 'total_count' | 'none';
+  /**
+   * Publication cohort (#688): `live` (published, inside its window),
+   * `preview` (draft + published) or `all`. Anonymous callers always get `live`.
+   */
+  publicationState?: PublicationState;
+  /** Only items edited since their last publish (#687). */
+  modifiedSincePublish?: boolean;
+}
+
+export type PublicationState = 'live' | 'preview' | 'all';
+
+/** Options for `items(name).duplicate()` — `POST /items/:collection/:id/duplicate` (#689). */
+export interface DuplicateItemOptions {
+  /** `reference` (default) copies m2m links; `deep` also copies o2m children; `none` copies the item alone. */
+  relations?: 'none' | 'reference' | 'deep';
+  /** `false` keeps only `locale` of translatable fields. Default `true`. */
+  translations?: boolean;
+  locale?: string;
+  /** Field values to set on the copy. */
+  overrides?: Record<string, unknown>;
 }
 
 /** Options for `items(name).export()` — `GET /items/:collection/export` (#727). */
@@ -614,11 +634,24 @@ export interface ItemRow<
   status: string;
   data: TData;
   sort: number;
+  /**
+   * Optimistic-concurrency counter, also sent as the `ETag` of the detail
+   * response. Pass it back as `ifMatch` on `patch`/`replace` to make the write
+   * fail with 412 if someone else changed the item first. Absent on servers
+   * older than this field.
+   */
+  version?: number;
   /** Content scheduling window (Publish_Window); null when not scheduled. */
   publishAt?: string | null;
   unpublishAt?: string | null;
   /** Editorial workflow state; null when the workflow is not in use. */
   editorialState?: string | null;
+  /** First publish; set once, never moves (#687). */
+  firstPublishedAt?: string | null;
+  /** Most recent publish; kept on unpublish (#687). */
+  publishedAt?: string | null;
+  /** Data edited since the last publish (#687). */
+  hasUnpublishedChanges?: boolean;
   /** Tree collections (#749): parent item id (null = root) and materialised path `/root/…/self/`. */
   parentId?: string | null;
   path?: string | null;
@@ -1060,6 +1093,45 @@ export interface ShareCreateInput {
 export interface ShareSecretResult extends ShareResource {
   token: string;
   url: string;
+}
+
+/** `POST /api/v1/preview/token` body (epic #667). Item (+ version) or release. */
+export interface PreviewTokenMintInput {
+  collection?: string;
+  itemId?: string;
+  versionKey?: string;
+  releaseId?: string;
+  locale?: string;
+  ttlSeconds?: number;
+}
+
+/** A preview secret row (never includes the token hash). */
+export interface PreviewTokenResource {
+  id: string;
+  siteId: string;
+  collection: string | null;
+  itemId: string | null;
+  versionKey: string | null;
+  releaseId: string | null;
+  locale: string | null;
+  createdBy: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  revokedBy: string | null;
+  useCount: number;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+/** Mint result: the token (shown once) and the URL built from the collection's `meta.previewUrl`. */
+export interface PreviewTokenSecretResult extends PreviewTokenResource {
+  token: string;
+  url: string | null;
+}
+
+export interface PreviewSettingsResource {
+  allowedOrigins: string[];
+  ttlSeconds: number;
 }
 
 export interface PresetResource {
@@ -1505,7 +1577,68 @@ export interface FileResource {
   folder: string | null;
   metadata: Record<string, unknown>;
   uploadedBy: string | null;
+  /** Full SHA-256 (hex) of the current binary; null until known (#706). */
+  contentHash?: string | null;
+  /** Binary revision; bumped by every in-place replace (#703). */
+  version?: number;
+  /** Malware scan state (#707): `skipped` | `pending` | `clean` | `infected` | `error`. */
+  scanStatus?: string;
   createdAt: string;
+  updatedAt?: string;
+}
+
+/** A previous binary of a file, kept for undo after a replace (#703). */
+export interface FileVersionResource {
+  id: string;
+  siteId: string;
+  fileId: string;
+  version: number;
+  filenameDisk: string;
+  filenameDownload: string;
+  mime: string;
+  filesize: number;
+  width: number | null;
+  height: number | null;
+  contentHash: string | null;
+  metadata: Record<string, unknown>;
+  replacedBy: string | null;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** Where a file is used (#706). */
+export type FileReferenceResource =
+  | { kind: "item"; collection: string; id: string; status: string; fields: string[] }
+  | { kind: "page"; id: string; slug: string; title: string };
+
+export interface FolderTreeNodeResource extends Omit<FolderResource, "siteId" | "createdAt"> {
+  path: string;
+  namePath: string;
+  depth: number;
+  children: FolderTreeNodeResource[];
+}
+
+/** Query for `files.list` — every key optional (media picker backend, #708). */
+export interface FileListQuery {
+  /** Folder id, or `"root"` for files outside any folder. */
+  folder?: string;
+  /** Widen `folder` to its whole subtree. */
+  subfolders?: boolean;
+  search?: string;
+  /** Exact MIME types or `type/*` prefixes. */
+  mime?: string[];
+  ids?: string[];
+  limit?: number;
+  offset?: number;
+}
+
+/** Per-site DAM settings (`files.dam`). */
+export interface DamSettingsResource {
+  deletePolicy: "confirm" | "block";
+  versionRetentionDays: number;
+  stripGpsOnPublic: boolean;
+  extractMetadata: boolean;
+  scan: { enabled: boolean; provider: "http"; onError: "quarantine" | "allow" };
 }
 
 export interface UploadTypeCatalogueEntry {

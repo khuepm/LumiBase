@@ -1,14 +1,14 @@
 ---
-version: 3
-lastUpdated: 2026-08-02T19:24:22.964Z
+version: 4
+lastUpdated: 2026-11-15T19:28:29.361Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: ffe9ae1d87df7293
+sourceHash: 70cc0629da389101
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T03:13:31.351Z
-codeVerifiedHash: ffe9ae1d87df7293
-codeVerifiedClaims: 2
+codeVerified: 2026-11-15T19:28:29.361Z
+codeVerifiedHash: 70cc0629da389101
+codeVerifiedClaims: 6
 ---
 
 # Extension System
@@ -263,3 +263,58 @@ Before exposing observability as marketplace extensions, add an explicit operati
 - Treat provider/endpoint changes as restart-required until a safe hot-reload design exists.
 
 This keeps the current edge-safe extension sandbox intact while leaving a migration path from the built-in SkyWalking POC to a more general plugin architecture.
+
+## 10. MCP tools, prompts and resources (#715)
+
+A server-side extension (`hook`, `endpoint`) can add tools, prompts and resources to the site's MCP server. What is listed comes from the `mcp` block of the **manifest**, not from the bundle: listing runs no extension code, and the admin reviews exactly what will be offered.
+
+```json
+{
+  "capabilities": ["items:write:notes", "mcp:tools", "mcp:prompts", "mcp:resources"],
+  "mcp": {
+    "tools": [
+      {
+        "name": "appendNote",
+        "description": "Append an editorial note to an item.",
+        "capability": "items:write",
+        "riskClass": "low",
+        "inputSchema": { "type": "object", "properties": { "text": { "type": "string" } }, "required": ["text"] }
+      }
+    ],
+    "prompts": [{ "name": "note-style", "text": "Notes are one sentence." }],
+    "resources": [{ "name": "notes-guide", "mimeType": "text/markdown", "text": "# Notes" }]
+  }
+}
+```
+
+The bundle only supplies handlers, matched by name:
+
+```ts
+import { defineMcp, defineTool, mcpManifest } from '@lumibase/extension-sdk';
+
+const appendNote = defineTool({ name: 'appendNote', capability: 'items:write', riskClass: 'low', /* … */
+  handler: async ({ text }, { siteId, runId }) => ({ ok: true }) });
+export default (ctx) => ({ mcp: defineMcp({ tools: [appendNote] }) });
+// mcpManifest({ tools: [appendNote] }) generates the manifest's `mcp` block at build time.
+```
+
+**Grants.** Each block is offered only when the installed extension row was granted the matching capability: `mcp:tools`, `mcp:prompts`, `mcp:resources`. A malformed `mcp` block is refused at install time (`400`); an older malformed row is skipped at request time and does not take the site's MCP endpoint down.
+
+**Tools go through the governed harness.** A tool is advertised as `ext_<extension key>__<tool>` (it cannot shadow a core skill) and registered as an external-action tool: kill switch, argument validation against the declared `inputSchema`, the caller's capability, the autonomy gradient, human-only approval, run / tool-call audit — there is no extension-specific decision code.
+
+| `riskClass` | Runs without a human when… |
+|---|---|
+| `read_only` | the caller holds `capability` (no autonomy check) |
+| `low` | the agent's autonomy grant is L2 or higher |
+| `medium` | the agent's autonomy grant is L4 |
+| `high` | never — every call waits for a signed-in human |
+
+HITL rule: a tool whose `capability` is `schema:write`, or whose name starts with `delete`, is always `high` whatever it declares; `reversible: false` also always needs a human. A handler has a 10-second budget and reaches items through the sandbox with the calling principal's permissions.
+
+**Both transports.** `POST /api/v1/mcp` lists a tool to callers holding its capability; `@lumibase/mcp-server` (stdio) discovers the `ext_*` tools from the governed endpoint's `tools/list` at startup and forwards every call there — there is no REST fallback. Not offered in read-only mode or when `contentOs.mcp` is off. `GET /api/v1/agent/tools` lists them with their `external` metadata.
+
+**Prompts and resources** are static text in the manifest, offered to callers holding the entry's `capability` (default `items:read`). A prompt is named `ext:<key>:<name>` and carries `_meta['lumibase/extension']` (key + version); a resource has the URI `lumibase-ext://<key>/<name>` via `resources/list` / `resources/read`.
+
+**Multi-tenancy.** Extension rows are read by the request's `site_id`; another site's tools, prompts and resources are never listed or callable. An extension tool's approval lives in the site's `agent_approvals`. Verified by `mcp-extension-tools.db.integration.test.ts` (real PostgreSQL, two sites).
+
+Full example: `examples/extension-mcp-notes`.

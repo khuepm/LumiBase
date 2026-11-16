@@ -20,6 +20,7 @@ import { AgentMemoryService } from '../services/agent-memory-service';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
 import { safeRequestId, maskSecrets, AgentRunService, type RetryRunRefusalCode } from '../services/agent-run-service';
 import { skillCatalog } from '../services/ai-harness';
+import { siteExternalToolRegistry } from '../extensions/mcp-extension-tools';
 import {
   AgentQuestionService,
   QUESTION_KIND,
@@ -696,10 +697,78 @@ agentRouter.post('/runs/:id/retry', async (c) => {
   return c.json({ data: result.retry }, 201);
 });
 
+/**
+ * Agent receipts (#713): read-only aggregation of runs, tool calls, approvals,
+ * vetoes, overrides, cost, drift, incidents and autonomy over a window. Under
+ * the `/api/v1/agent` control-plane guard (admin only), like the trust ledger.
+ */
+async function receiptsWindowOrError(c: Context<AppEnv>) {
+  const { agentReceiptsQuerySchema } = await import('@lumibase/contracts');
+  const { resolveReceiptsWindow, AgentReceiptsError } = await import('../services/agent-receipts-service');
+  const parsed = agentReceiptsQuerySchema.safeParse({ since: c.req.query('since'), until: c.req.query('until') });
+  if (!parsed.success) return { error: validationError(c, parsed.error) };
+  try {
+    return { window: resolveReceiptsWindow(parsed.data) };
+  } catch (err) {
+    if (err instanceof AgentReceiptsError) {
+      return { error: c.json({ errors: [{ code: err.code, message: err.message }] }, 400) };
+    }
+    throw err;
+  }
+}
+
+agentRouter.get('/receipts', async (c) => {
+  const resolved = await receiptsWindowOrError(c);
+  if ('error' in resolved) return resolved.error;
+  const { AgentReceiptsService } = await import('../services/agent-receipts-service');
+  const report = await new AgentReceiptsService({ db: c.get('db'), siteId: c.get('siteId') }).report(resolved.window);
+  return c.json({ data: report });
+});
+
+agentRouter.get('/receipts/export', async (c) => {
+  const { AGENT_RECEIPTS_EXPORT_KINDS } = await import('@lumibase/contracts');
+  const kind = c.req.query('kind') ?? 'runs';
+  if (!(AGENT_RECEIPTS_EXPORT_KINDS as readonly string[]).includes(kind)) {
+    return c.json({ errors: [{ code: 'VALIDATION', message: `kind must be one of ${AGENT_RECEIPTS_EXPORT_KINDS.join(', ')}` }] }, 400);
+  }
+  const resolved = await receiptsWindowOrError(c);
+  if ('error' in resolved) return resolved.error;
+  const { AgentReceiptsService } = await import('../services/agent-receipts-service');
+  const result = await new AgentReceiptsService({ db: c.get('db'), siteId: c.get('siteId') }).exportCsv(
+    kind as (typeof AGENT_RECEIPTS_EXPORT_KINDS)[number],
+    resolved.window,
+  );
+  c.header('Content-Type', 'text/csv; charset=utf-8');
+  c.header('Content-Disposition', `attachment; filename="agent-receipts-${kind}-${resolved.window.since.toISOString().slice(0, 10)}.csv"`);
+  c.header('X-Export-Rows', String(result.rows));
+  c.header('X-Export-Truncated', result.truncated ? 'true' : 'false');
+  return c.body(result.csv, 200);
+});
+
+agentRouter.get('/receipts/alerts', async (c) => {
+  const { AgentReceiptsService } = await import('../services/agent-receipts-service');
+  return c.json({ data: await new AgentReceiptsService({ db: c.get('db'), siteId: c.get('siteId') }).getThresholds() });
+});
+
+agentRouter.put('/receipts/alerts', async (c) => {
+  const { AgentReceiptsService, AgentReceiptsError } = await import('../services/agent-receipts-service');
+  try {
+    const saved = await new AgentReceiptsService({ db: c.get('db'), siteId: c.get('siteId') }).setThresholds(
+      await c.req.json().catch(() => null),
+    );
+    return c.json({ data: saved });
+  } catch (err) {
+    if (err instanceof AgentReceiptsError) return c.json({ errors: [{ code: err.code, message: err.message }] }, 400);
+    throw err;
+  }
+});
+
 agentRouter.get('/tools', async (c) => {
   // Includes registered external-action tools, with their declared risk
   // metadata under `external`.
-  const service = new ToolRegistryService(c.get('db'), c.get('siteId'), skillCatalog());
+  // Extension tools (#715) are listed with the same `external` metadata.
+  const externalTools = await siteExternalToolRegistry({ db: c.get('db'), siteId: c.get('siteId'), env: c.env });
+  const service = new ToolRegistryService(c.get('db'), c.get('siteId'), skillCatalog(externalTools));
   const tools = await service.listTools();
   return c.json({
     data: tools.map(({ handler: _handler, ...tool }) => tool),
@@ -976,7 +1045,7 @@ agentRouter.post('/approvals/:id/agent-decide', async (c) => {
       if (!legacyApprovalId) {
         return { executed: false, message: 'Approval has no stored action to execute.' };
       }
-      const result = await buildAuthorizedHarness(c).executeApproved(
+      const result = await (await buildAuthorizedHarness(c)).executeApproved(
         legacyApprovalId,
         auth.userId ?? auth.externalId ?? 'agent-reviewer',
         deciderCapabilities,
@@ -1104,7 +1173,7 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
     // this comment claimed execution used the decider's grant alone — it did, and
     // that was the defect: an action parked by a user who was since demoted still
     // ran, with the approver's reach.
-    const result = await buildAuthorizedHarness(c).executeApproved(
+    const result = await (await buildAuthorizedHarness(c)).executeApproved(
       existing.legacyApprovalId,
       auth.userId ?? auth.externalId ?? 'unknown',
       (await resolveRequestCapabilities(c)).capabilities,
@@ -1152,7 +1221,7 @@ agentRouter.post('/approvals/:id/decide', async (c) => {
   // `/ai/approvals/:id/decide`.
   if (existing.legacyApprovalId) {
     const { buildAuthorizedHarness } = await import('./ai');
-    const rejected = await buildAuthorizedHarness(c).rejectApproval(
+    const rejected = await (await buildAuthorizedHarness(c)).rejectApproval(
       existing.legacyApprovalId,
       auth.userId ?? auth.externalId ?? 'unknown',
       approvalDeciderFromAuth(auth),

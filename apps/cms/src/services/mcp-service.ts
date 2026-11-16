@@ -103,11 +103,35 @@ export interface McpPromptSummary {
 /** A playbook body returned by MCP `prompts/get`. */
 export interface McpPromptContent extends McpPromptSummary {
   text: string;
-  version: number;
-  hash: string;
+  /** Site playbook provenance (#712). */
+  version?: number;
+  hash?: string;
+  /** Extension provenance (#715): which extension version shipped the prompt. */
+  extension?: { key: string; version: string };
+}
+
+/** A static resource projected into MCP `resources/list` (#715). */
+export interface McpResourceSummary {
+  uri: string;
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+}
+
+/** A resource body returned by MCP `resources/read`. */
+export interface McpResourceContent extends McpResourceSummary {
+  text: string;
 }
 
 export interface McpHarnessPort {
+  /**
+   * Static resources contributed by granted extensions (#715). Optional: a
+   * port without them does not advertise the `resources` capability.
+   */
+  listResources?(capabilities: string[]): Promise<McpResourceSummary[]>;
+  /** `null` when the resource does not exist or is not offered to this caller. */
+  readResource?(uri: string, capabilities: string[]): Promise<McpResourceContent | null>;
   /**
    * Site playbooks offered as MCP prompts. Optional: a port without them (the
    * organization plane) does not advertise the `prompts` capability, and
@@ -259,6 +283,7 @@ export class McpService {
           capabilities: {
             tools: { listChanged: false },
             ...(this.port.listPrompts ? { prompts: { listChanged: false } } : {}),
+            ...(this.port.listResources ? { resources: { listChanged: false } } : {}),
           },
           serverInfo: MCP_SERVER_INFO,
         };
@@ -340,7 +365,43 @@ export class McpService {
           ...(prompt.description ? { description: prompt.description } : {}),
           messages: [{ role: 'user', content: { type: 'text', text: prompt.text } }],
           // Provenance: which version of the playbook the client was handed.
-          _meta: { 'lumibase/siteSkill': { slug: prompt.name, version: prompt.version, hash: prompt.hash } },
+          _meta: prompt.extension
+            ? { 'lumibase/extension': { key: prompt.extension.key, version: prompt.extension.version } }
+            : { 'lumibase/siteSkill': { slug: prompt.name, version: prompt.version, hash: prompt.hash } },
+        };
+      }
+      case 'resources/list': {
+        if (!this.port.listResources) {
+          throw new McpProtocolError(METHOD_NOT_FOUND, `Method not supported: ${request.method}`);
+        }
+        const resources = await this.port.listResources(capabilities);
+        return {
+          resources: resources.map((resource) => ({
+            uri: resource.uri,
+            name: resource.name,
+            ...(resource.title ? { title: resource.title } : {}),
+            ...(resource.description ? { description: resource.description } : {}),
+            ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+          })),
+        };
+      }
+      case 'resources/read': {
+        if (!this.port.readResource) {
+          throw new McpProtocolError(METHOD_NOT_FOUND, `Method not supported: ${request.method}`);
+        }
+        const uri = request.params?.uri;
+        if (typeof uri !== 'string' || uri.length === 0) {
+          throw new McpProtocolError(INVALID_PARAMS, 'params.uri is required');
+        }
+        const resource = await this.port.readResource(uri, capabilities);
+        if (!resource) {
+          // Same answer for "missing" and "not offered to you" (cf. prompts/get).
+          throw new McpProtocolError(INVALID_PARAMS, `Unknown resource: ${uri}`);
+        }
+        return {
+          contents: [
+            { uri: resource.uri, ...(resource.mimeType ? { mimeType: resource.mimeType } : {}), text: resource.text },
+          ],
         };
       }
       default:

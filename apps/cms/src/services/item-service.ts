@@ -11,9 +11,17 @@ import {
 } from '@lumibase/database';
 import { refreshPhysicalTable, type MaterializeConfig } from './materialize-service';
 import { dispatchItemEvent } from './flow-dispatch';
+import { nextItemVersion } from './item-etag';
+import { isManualSort, manualSortOrder, nextManualSort } from './item-reorder';
+import {
+  publicationStamps,
+  publicationStateClause,
+  sameItemData,
+  type PublicationState,
+} from './publication-state';
 import { and, asc, desc, eq, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { SchemaService } from './schema-service';
-import { validateItem } from './validation';
+import { validateItem, type ValidationIssue } from './validation';
 import { applyHiddenValuePolicy, parseFormLayout } from '@lumibase/contracts/form-layout';
 import { hasBlocksFields, resolveBlockTemplates } from './blocks';
 import {
@@ -145,6 +153,11 @@ export interface ListItemsParams {
    * returned, and the anchor node must itself be readable.
    */
   tree?: TreeQuery;
+  /**
+   * "Modified since publish" (#687): only items that have been published and
+   * whose data was edited after their last publish.
+   */
+  modifiedSincePublish?: boolean;
 }
 
 export type ItemFilterOp =
@@ -187,14 +200,36 @@ export interface ItemRow {
   status: string;
   data: Record<string, unknown>;
   sort: number;
+  /** Optimistic-concurrency counter; the item's strong ETag. */
+  version?: number;
   /** Tree collections only (#749). */
   parentId?: string | null;
   path?: string | null;
+  /** Publication state (#687). */
+  firstPublishedAt?: Date | null;
+  publishedAt?: Date | null;
+  hasUnpublishedChanges?: boolean;
   userCreated: string | null;
   userUpdated: string | null;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+}
+
+/** Write precondition for `patch`/`replace` (content-environments Req 6). */
+export interface ItemWriteOptions {
+  /**
+   * When set, the write proceeds only if the item's current `version` is one
+   * of these, checked atomically in the UPDATE; otherwise it fails with
+   * `PRECONDITION_FAILED` (412) and writes nothing. An empty list always
+   * fails. Omit for the legacy last-write-wins behaviour.
+   */
+  expectedVersions?: number[];
+}
+
+/** Out-parameter for `detail`: values the caller needs that projection may drop. */
+export interface ItemDetailMeta {
+  version?: number;
 }
 
 export interface DeepRelationOptions {
@@ -229,6 +264,14 @@ export class ItemServiceError extends Error {
     super(message);
     this.name = 'ItemServiceError';
   }
+}
+
+function preconditionFailed(id: string): ItemServiceError {
+  return new ItemServiceError(
+    'PRECONDITION_FAILED',
+    `Item "${id}" was changed by another write. Reload it and apply your change again.`,
+    412,
+  );
 }
 
 interface PrimaryKeyStrategyInput {
@@ -322,6 +365,19 @@ export interface ItemServiceDeps {
    * user, otherwise system.
    */
   cdcActor?: OutboxActor;
+  /**
+   * Publication cohort for reads (#688): `live` | `preview` | `all`. Applies
+   * to list, detail and nested relation expansion. `undefined` = no cohort
+   * filter (historical behaviour). The request factory clamps anonymous
+   * callers to `live`.
+   */
+  publicationState?: PublicationState;
+  /**
+   * `false` skips the revision row on `patch` (#693, `?saveRevision=false`)
+   * for autosave / machine writes. Ignored for agent-authored writes — their
+   * revision is the provenance record and is always kept.
+   */
+  saveRevision?: boolean;
 }
 
 const STRUCTURAL_FIELDS = new Set([
@@ -966,6 +1022,15 @@ export class ItemService {
     }
   }
 
+  /**
+   * The same actor-scoped item access extension hooks get, for other sandbox
+   * entry points (extension MCP tools, #715): row/field/action permissions are
+   * those of this service's principal.
+   */
+  extensionDataAccess(): ExtensionActorDataAccess {
+    return this.actorDataAccess();
+  }
+
   private actorDataAccess(): ExtensionActorDataAccess {
     const buildService = () =>
       new ItemService({
@@ -1031,9 +1096,11 @@ export class ItemService {
       eq(items.collectionId, coll.id),
       isNull(items.deletedAt),
       params.status ? eq(items.status, params.status) : undefined,
+      params.modifiedSincePublish ? eq(items.hasUnpublishedChanges, true) : undefined,
       buildFilter(params.filter, coll.fieldTypes, geo),
       treeScope?.where,
       permClause,
+      publicationStateClause(this.deps.publicationState),
     );
 
     const limit = Math.min(params.limit ?? 25, 200);
@@ -1043,7 +1110,13 @@ export class ItemService {
       .select()
       .from(items)
       .where(where)
-      .orderBy(...(treeScope && !params.sort?.length ? treeScope.order : buildSort(params.sort, coll.fieldTypes)))
+      .orderBy(
+        ...(treeScope && !params.sort?.length
+          ? treeScope.order
+          : !params.sort?.length && isManualSort(coll.meta)
+            ? manualSortOrder()
+            : buildSort(params.sort, coll.fieldTypes)),
+      )
       .limit(limit)
       .offset(offset);
 
@@ -1089,7 +1162,13 @@ export class ItemService {
     };
   }
 
-  async detail(collectionName: string, id: string, fields?: string[], deep?: DeepQuery) {
+  async detail(
+    collectionName: string,
+    id: string,
+    fields?: string[],
+    deep?: DeepQuery,
+    meta?: ItemDetailMeta,
+  ) {
     const perm = await this.perm(collectionName, 'read');
     const permClause = this.permissions?.whereFor(perm) ?? undefined;
     const coll = await this.resolveCollection(collectionName);
@@ -1103,10 +1182,12 @@ export class ItemService {
           eq(items.id, id),
           isNull(items.deletedAt),
           permClause,
+          publicationStateClause(this.deps.publicationState),
         ),
       )
       .limit(1);
     if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+    if (meta) meta.version = row.version;
     const knownFields = (await this.schemaService.getCompiled(collectionName))?.fields.map((f) => f.name) ?? [];
     const masked = perm && this.permissions ? this.permissions.maskItem(perm, row as ItemRow, knownFields) : row;
     masked.data = await this.processCrypto(collectionName, masked.data as Record<string, unknown>, 'decrypt', (masked as ItemRow).id, false, false, undefined, { dekWrapped: (masked as Record<string, unknown>).dekWrapped as string | null });
@@ -1166,7 +1247,10 @@ export class ItemService {
         409,
       );
     }
-    const sort = payload.sort ?? 0;
+    // Manual-sort collections (#690) append new items at the end.
+    const sort = payload.sort ?? (isManualSort(coll.meta) && !tree
+      ? await nextManualSort(this.deps.db, this.deps.siteId, coll.id)
+      : 0);
     const createSnapshot = buildPermissionSnapshot({
       data: withPresets,
       status,
@@ -1207,7 +1291,7 @@ export class ItemService {
     const cryptoOut: CryptoRecordOpts = {};
     const encryptedData = await this.processCrypto(collectionName, data, 'encrypt', recordId, true, false, undefined, cryptoOut);
     if (primaryKey.id) {
-      await this.assertItemIdAvailable(coll.id, primaryKey.id);
+      await this.assertItemIdAvailable(primaryKey.id);
     }
     const row = await runSiteTransaction(this.deps.db, this.deps.siteId, async (tx) => {
       const placement = tree
@@ -1230,6 +1314,7 @@ export class ItemService {
           path: placement?.path,
           publishAt,
           unpublishAt,
+          ...publicationStamps(null, { status, dataChanged: true }),
           dekWrapped: cryptoOut.wrappedDek ?? null,
           userCreated: this.deps.userId ?? null,
           userUpdated: this.deps.userId ?? null,
@@ -1258,6 +1343,8 @@ export class ItemService {
         payload: { data: payload.data },
       });
       return inserted;
+    }).catch((err: unknown) => {
+      throw itemIdConflict(err, recordId) ?? err;
     });
     row.data = await this.processCrypto(collectionName, row.data as Record<string, unknown>, 'decrypt', row.id, false, false, undefined, { dekWrapped: cryptoOut.wrappedDek ?? null });
     await this.indexItem(collectionName, row.id, row.data as Record<string, unknown>);
@@ -1286,7 +1373,9 @@ export class ItemService {
       publishAt: string | Date | null;
       unpublishAt: string | Date | null;
     }>,
+    opts: ItemWriteOptions = {},
   ) {
+    const expectedVersions = opts.expectedVersions;
     const coll = await this.resolveCollection(collectionName);
     const perm = await this.perm(collectionName, 'update');
     const permClause = this.permissions?.whereFor(perm) ?? undefined;
@@ -1310,6 +1399,12 @@ export class ItemService {
       )
       .limit(1);
     if (!rawRow) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
+    // Fail fast before hooks and validation run; the UPDATE below re-checks
+    // atomically, so a write that lands between this read and the UPDATE is
+    // still caught.
+    if (expectedVersions && !expectedVersions.includes(rawRow.version)) {
+      throw preconditionFailed(id);
+    }
 
     // Law Zero: agents never overwrite fields a human pinned.
     const pinnedFields = Array.isArray(rawRow.pinnedFields)
@@ -1421,12 +1516,18 @@ export class ItemService {
           status: finalStatus,
           sort: finalSort,
           pinnedFields: nextPinned,
+          ...publicationStamps(rawRow, {
+            status: finalStatus,
+            dataChanged: !sameItemData(finalData, currentData),
+            publishRequested: patch.status === 'published',
+          }),
           dekWrapped: cryptoOut.wrappedDek ?? null,
           ...(effectiveWindow
             ? { publishAt: effectiveWindow.publishAt, unpublishAt: effectiveWindow.unpublishAt }
             : {}),
           userUpdated: this.deps.userId ?? null,
           updatedAt: new Date(),
+          version: nextItemVersion(),
         })
         .where(
           and(
@@ -1435,11 +1536,16 @@ export class ItemService {
             eq(items.id, id),
             isNull(items.deletedAt),
             permClause,
+            expectedVersions ? eq(items.version, rawRow.version) : undefined,
           ),
         )
         .returning();
-      if (!updated) throw new ItemServiceError('UPDATE_FAILED', 'Failed to update item.');
-      await tx.insert(revisions).values({
+      if (!updated) {
+        throw expectedVersions
+          ? preconditionFailed(id)
+          : new ItemServiceError('UPDATE_FAILED', 'Failed to update item.');
+      }
+      if (this.shouldSaveRevision()) await tx.insert(revisions).values({
         siteId: this.deps.siteId,
         collectionId: coll.id,
         itemId: id,
@@ -1538,8 +1644,13 @@ export class ItemService {
     return applyHiddenValuePolicy(compiled.fields, data, layout).data;
   }
 
-  async replace(collectionName: string, id: string, body: { data: Record<string, unknown>; status?: string; sort?: number }) {
-    return this.patch(collectionName, id, { data: body.data, status: body.status, sort: body.sort });
+  async replace(
+    collectionName: string,
+    id: string,
+    body: { data: Record<string, unknown>; status?: string; sort?: number },
+    opts: ItemWriteOptions = {},
+  ) {
+    return this.patch(collectionName, id, { data: body.data, status: body.status, sort: body.sort }, opts);
   }
 
   async softDelete(collectionName: string, id: string) {
@@ -1578,7 +1689,7 @@ export class ItemService {
     } else {
       const [row] = await this.deps.db
         .update(items)
-        .set({ deletedAt: new Date(), userUpdated: this.deps.userId ?? null })
+        .set({ deletedAt: new Date(), userUpdated: this.deps.userId ?? null, version: nextItemVersion() })
         .where(
           and(
             scopeSite(items.siteId, this.deps.siteId),
@@ -1854,6 +1965,11 @@ export class ItemService {
           sort,
           userUpdated: this.deps.userId ?? null,
           updatedAt: new Date(),
+          // The moved item itself changed; descendants' path rebase and
+          // siblings' sort renumbering above are structural side effects and
+          // keep their versions, so an edit elsewhere in the tree does not
+          // fail an unrelated If-Match.
+          version: nextItemVersion(),
         })
         .where(and(scope, eq(items.id, id)))
         .returning({ id: items.id, parentId: items.parentId, sort: items.sort });
@@ -1932,7 +2048,7 @@ export class ItemService {
           }
           await tx
             .update(items)
-            .set({ deletedAt: now, userUpdated })
+            .set({ deletedAt: now, userUpdated, version: nextItemVersion() })
             .where(and(scope, inArray(items.id, cascaded)));
         } else {
           const upPath = parentPathOf(nodePath);
@@ -1948,7 +2064,7 @@ export class ItemService {
       }
       const [row] = await tx
         .update(items)
-        .set({ deletedAt: now, userUpdated })
+        .set({ deletedAt: now, userUpdated, version: nextItemVersion() })
         .where(and(scope, eq(items.id, id), isNull(items.deletedAt), deleteClause))
         .returning({ id: items.id });
       if (!row) throw new ItemServiceError('NOT_FOUND', `Item "${id}" not found.`, 404);
@@ -2040,7 +2156,7 @@ export class ItemService {
     const coll = await this.resolveCollection(collectionName);
     const updated = await this.deps.db
       .update(items)
-      .set({ dekWrapped: null, updatedAt: new Date() })
+      .set({ dekWrapped: null, updatedAt: new Date(), version: nextItemVersion() })
       .where(and(scopeSite(items.siteId, this.deps.siteId), eq(items.collectionId, coll.id), eq(items.id, id)))
       .returning({ id: items.id });
     return updated.length > 0;
@@ -2130,7 +2246,7 @@ export class ItemService {
         cryptoOut,
       );
       if (primaryKey.id) {
-        await this.assertItemIdAvailable(coll.id, primaryKey.id);
+        await this.assertItemIdAvailable(primaryKey.id);
       }
       prepared.push({
         recordId,
@@ -2195,6 +2311,8 @@ export class ItemService {
         );
       }
       return inserted;
+    }).catch((err: unknown) => {
+      throw itemIdConflict(err, null) ?? err;
     });
 
     for (const row of rows) {
@@ -2342,7 +2460,10 @@ export class ItemService {
       relatedCollection.id,
       rel.manyField,
       parentIds,
-      this.permissions?.whereFor(relatedPerm) ?? undefined,
+      and(
+        this.permissions?.whereFor(relatedPerm) ?? undefined,
+        publicationStateClause(this.deps.publicationState),
+      ),
     );
     const projected = await this.projectRelatedRows(rel.manyCollection, relatedRows, relatedPerm, selected.fields);
     const byParent = new Map<string, Record<string, unknown>[]>();
@@ -2464,6 +2585,7 @@ export class ItemService {
           inArray(items.id, ids),
           isNull(items.deletedAt),
           relatedPermClause,
+          publicationStateClause(this.deps.publicationState),
         ),
       );
     return this.projectRelatedRows(collectionName, relatedRows as ItemRow[], relatedPerm, fields);
@@ -2487,17 +2609,16 @@ export class ItemService {
     return byId;
   }
 
-  private async assertItemIdAvailable(collectionId: string, id: string): Promise<void> {
+  /**
+   * Item ids are unique per site (primary key `(site_id, id)`), across all of
+   * the site's collections. Check the whole site so an id used by another
+   * collection is a clean 409, not a key violation. Other sites never collide.
+   */
+  private async assertItemIdAvailable(id: string): Promise<void> {
     const [existing] = await this.deps.db
       .select({ id: items.id })
       .from(items)
-      .where(
-        and(
-          scopeSite(items.siteId, this.deps.siteId),
-          eq(items.collectionId, collectionId),
-          eq(items.id, id),
-        ),
-      )
+      .where(and(scopeSite(items.siteId, this.deps.siteId), eq(items.id, id)))
       .limit(1);
     if (existing) {
       assertPrimaryKeyAvailable(id, true);
@@ -2965,6 +3086,29 @@ export class ItemService {
   }
 
   /** Lists pinned fields for an item. */
+  /**
+   * Full validation of an item as it would be published (#692): its stored
+   * data — or `data`, e.g. a release's pinned snapshot — against the
+   * collection schema, required fields and form-layout conditions included.
+   * The item must be readable by the caller. Returns the issues; `[]` = valid.
+   */
+  async validateForPublish(
+    collectionName: string,
+    id: string,
+    data?: Record<string, unknown>,
+  ): Promise<ValidationIssue[]> {
+    const row = (await this.detail(collectionName, id)) as ItemRow;
+    const subject = data ?? row.data ?? {};
+    const compiled = await this.schemaService.getCompiled(collectionName);
+    if (!compiled) return [];
+    const layout = parseFormLayout(compiled.meta?.formLayout);
+    const blockTemplates = hasBlocksFields(compiled.fields)
+      ? await resolveBlockTemplates(compiled.fields, (name) => this.schemaService.getCompiled(name))
+      : undefined;
+    const result = validateItem(compiled.fields, subject, { partial: false, layout, context: subject, blockTemplates });
+    return result.ok ? [] : result.issues;
+  }
+
   async listPins(collectionName: string, id: string): Promise<{ pinnedFields: string[] }> {
     const coll = await this.resolveCollection(collectionName);
     await this.perm(collectionName, 'read');
@@ -2998,7 +3142,7 @@ export class ItemService {
     const next = pinnedFields.filter((f) => f !== field);
     await this.deps.db
       .update(items)
-      .set({ pinnedFields: next, updatedAt: new Date() })
+      .set({ pinnedFields: next, updatedAt: new Date(), version: nextItemVersion() })
       .where(
         and(
           scopeSite(items.siteId, this.deps.siteId),
@@ -3009,6 +3153,15 @@ export class ItemService {
       );
     await this.writeActivity('pin.release', coll.name, id, { field });
     return { pinnedFields: next };
+  }
+
+  /**
+   * Whether a `patch` records a revision (#693). Callers may opt out with
+   * `saveRevision: false` (autosave, machine writes); agent writes always
+   * keep theirs because the revision carries their provenance.
+   */
+  private shouldSaveRevision(): boolean {
+    return this.deps.saveRevision !== false || this.provenance.authorType === 'agent';
   }
 
   private async writeRevision(
@@ -3166,6 +3319,24 @@ export function resolvePrimaryKey(
   }
 
   return { field, type, storageMode, id: undefined };
+}
+
+/**
+ * Maps a unique violation on the items primary key `(site_id, id)` — a race
+ * with another create, or a bulk payload that repeats an id — to the same
+ * `409 ITEM_ID_EXISTS` the pre-insert check returns. Anything else: `null`.
+ */
+export function itemIdConflict(err: unknown, id: string | null): ItemServiceError | null {
+  let code: unknown;
+  let constraint: unknown;
+  for (let e: unknown = err, depth = 0; e && typeof e === 'object' && depth < 4; depth += 1) {
+    const rec = e as Record<string, unknown>;
+    code ??= rec.code;
+    constraint ??= rec.constraint_name ?? rec.constraint;
+    e = rec.cause;
+  }
+  if (code !== '23505' || constraint !== 'lumibase_items_pkey') return null;
+  return new ItemServiceError('ITEM_ID_EXISTS', id ? `Item "${id}" already exists.` : 'An item id in the payload already exists.', 409);
 }
 
 export function assertPrimaryKeyAvailable(id: string, exists: boolean): void {

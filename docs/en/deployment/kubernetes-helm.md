@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 4
-lastUpdated: 2026-11-15T11:58:12.013Z
-contentHash: 4746964dae05d4e2
-codeVerified: 2026-11-15T11:58:12.013Z
-codeVerifiedHash: 4746964dae05d4e2
+version: 5
+lastUpdated: 2026-11-15T19:31:37.541Z
+contentHash: 9490b1c95961333c
+codeVerified: 2026-11-15T19:31:37.541Z
+codeVerifiedHash: 9490b1c95961333c
 codeVerifiedClaims: 36
 ---
 
@@ -287,7 +287,7 @@ major release.
 
 | Probe | Path | Why |
 |-------|------|-----|
-| startup, liveness | `/health` | Answers 200 whenever the process serves HTTP, so a database outage does not restart every pod. |
+| startup, liveness | `/health/live` | Answers 200 as soon as the process serves HTTP and probes no dependency, so a database outage does not restart every pod. `/health` is not used here: with a dependency down it waits up to 3 s on its probes, as long as the probe timeout. |
 | readiness | `/health/ready` or `/health` | `/health/ready` answers 503 while any of database, cache, search, storage or queue is unhealthy. |
 
 `cms.readinessPath` empty (the default) picks `/health/ready` only when search
