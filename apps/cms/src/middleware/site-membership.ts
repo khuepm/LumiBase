@@ -64,7 +64,25 @@ export const withSiteMembership = (): MiddlewareHandler<AppEnv> => async (c, nex
   // Dev auth is explicitly local-only and historically allowed operators to
   // exercise any tenant. Keep that behaviour for local development while the
   // production paths below require a persisted user/site relationship.
+  //
+  // The early return used to skip user resolution entirely, so `auth.userId`
+  // stayed null and every `PermissionService` check (schema:read, item reads)
+  // compiled an empty bundle and answered 403 even when the dev identity maps
+  // to a seeded user with an admin role on the site. Bind the principal to its
+  // `users` row (by `dev_<email>` external id) when one exists, so permission
+  // checks see that user's real roles; a dev identity with no row keeps the
+  // old unbound behaviour.
   if (auth.raw?.dev === true && auth.roles?.includes('admin')) {
+    const devUser = await resolveUser(c.get('db'), auth);
+    if (devUser) {
+      if (!getRequestContext(c).user) mergeRequestContext(c, { user: devUser });
+      c.set('auth', {
+        ...auth,
+        userId: devUser.id,
+        email: auth.email ?? devUser.email,
+        raw: { ...auth.raw, isBootstrap: devUser.isBootstrap },
+      });
+    }
     return next();
   }
 
