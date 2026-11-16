@@ -46,6 +46,8 @@ Source: [github.com/khuepm/lumibase](https://github.com/khuepm/lumibase) · Webs
 - `DELETE /api/v1/files/folders/:id` refuses a non-empty folder with `409 FOLDER_NOT_EMPTY` (it used to fail on the files' foreign key).
 
 ### Fixed
+- Schema: a risky field change (rename or type change on a populated field) is no longer confirmed by an empty `migrationPlan` such as `{}`; the plan must name a non-empty string `strategy`, or the request must send `confirmRiskyChange: true`. Otherwise `409 FIELD_MIGRATION_REQUIRED`. Applies to REST and the MCP `upsert_field` / `apply_schema` tools (#865).
+- GraphQL: fields of the canonical type `datetime` are typed `DateTime`, like `dateTime`; they were `String`. Values are unchanged, but generated clients see the new type (#865).
 - Liveness no longer depends on PostgreSQL, Redis, S3 or search. New `GET /health/live` answers `200` in milliseconds without probing anything; the Docker image `HEALTHCHECK` (`docker/scripts/healthcheck.mjs`) and the Helm chart's startup and liveness probes now use it. `/health` waits up to 3 s on a down dependency, longer than those probes' timeouts, so a database outage restarted (Kubernetes) or marked unhealthy (Docker) a CMS that was serving fine, and the v2.1.0 release smoke test failed with the container stuck in `starting`. Readiness (`/health/ready`) still reports dependency state; the chart's readiness probe gets `timeoutSeconds: 5` so a down dependency yields a 503 rather than a probe timeout. The release smoke test now also asserts `/health/live` 200 and `/health/ready` 503 with every dependency down, and that a `LUMIBASE_PROCESS_ROLE=worker` container turns healthy.
 
 ### Upgrade notes
