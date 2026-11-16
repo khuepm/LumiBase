@@ -1,11 +1,14 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T12:59:56.000Z
+version: 2
+lastUpdated: 2026-11-16T15:01:08.350Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: f47ac6b8c1d63092
-mtEngine: claude
-syncStatus: machine-translated
+sourceHash: ef9a504c2dc19ada
+mtEngine: manual
+syncStatus: human-translated
+codeVerified: 2026-11-16T15:01:08.350Z
+codeVerifiedHash: ef9a504c2dc19ada
+codeVerifiedClaims: 30
 ---
 
 # Marketplace for Extensions
@@ -68,10 +71,12 @@ POST   /api/v1/marketplace/submissions/:id/review  Approve / reject a submission
 Implementation: `apps/cms/src/routes/marketplace.ts`.
 
 The catalog projection adds three derived fields on top of the stable public
-fields: `verified` (true when the listing carries a signature + registered
-publisher key + integrity hash — drives the "Verified" badge and the trusted
-install path), `voteCount`, and `hasVoted` (for the authenticated caller).
-`totalDownloads` now reflects `downloadCount`.
+fields: `verified` (true when the listing has `verifiedAt` — set only after a real
+signature check at publish/install — or `isOfficial`; rows published before that
+step was recorded fall back to carrying a signature + publisher key id + integrity
+hash — drives the "Verified" badge and the trusted install path), `voteCount`, and
+`hasVoted` (for the authenticated caller). `totalDownloads` now reflects
+`downloadCount`.
 
 ## Download
 

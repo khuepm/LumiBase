@@ -1,8 +1,11 @@
 ---
-version: 1
-lastUpdated: 2026-06-23T12:59:56.000Z
+version: 2
+lastUpdated: 2026-11-16T15:01:08.350Z
 sourceLang: vi
-contentHash: f47ac6b8c1d63092
+contentHash: ef9a504c2dc19ada
+codeVerified: 2026-11-16T15:01:08.350Z
+codeVerifiedHash: ef9a504c2dc19ada
+codeVerifiedClaims: 30
 ---
 
 # Marketplace cho Extensions
@@ -22,6 +25,17 @@ LumiBase Marketplace cho phép publish và install extension đã được **ký
 | `marketplaceSlug` | Slug để build public detail URL |
 | `publishedAt` | Null khi chưa publish |
 | `bundleSha256` | SHA-256 hex của bundle để verify integrity |
+| `downloadCount` | Tổng số lượt tải package (tăng qua `/download`) |
+| `submissionStatus` | Trạng thái community submission: `pending` / `approved` / `rejected` (null = không phải submission) |
+| `submittedBy` | User đã gửi extension qua luồng community |
+
+`extension_votes` ghi lại lượt upvote trên marketplace — mỗi `(userId, marketplaceSlug)` một dòng, được đảm bảo bằng unique index nên vote là idempotent. Vote được khoá theo slug nên vẫn giữ nguyên khi lên version.
+
+| Column | Mục đích |
+|--------|----------|
+| `marketplaceSlug` | Listing được vote |
+| `userId` | Người vote (FK → `users`, cascade delete) |
+| `createdAt` | Thời điểm vote |
 
 ## Public keys registry
 
@@ -39,13 +53,53 @@ Loaded một lần khi router init, không cache lâu dài (có thể rotate qua
 ## API endpoints
 
 ```
-GET  /api/v1/marketplace/extensions             List published extensions
-GET  /api/v1/marketplace/extensions/:slug       Detail (kèm signature)
-POST /api/v1/marketplace/extensions/:slug/install   Install vào site hiện tại
-POST /api/v1/marketplace/publish                Publish một extension đã upload
+GET    /api/v1/marketplace/extensions              List published extensions
+GET    /api/v1/marketplace/extensions/:slug        Detail (kèm signature)
+GET    /api/v1/marketplace/extensions/:slug/download   Tải package (302 → bundle; ?redirect=0 → JSON)
+POST   /api/v1/marketplace/extensions/:slug/install    Install vào site hiện tại
+POST   /api/v1/marketplace/extensions/:slug/vote       Upvote (cần auth; idempotent)
+DELETE /api/v1/marketplace/extensions/:slug/vote       Bỏ upvote (cần auth)
+POST   /api/v1/marketplace/publish                 Publish một extension đã upload (đã ký)
+POST   /api/v1/marketplace/submit                  Gửi extension từ cộng đồng để duyệt (cần auth)
+GET    /api/v1/marketplace/submissions?status=     Danh sách submission để kiểm duyệt (extensions:configure)
+POST   /api/v1/marketplace/submissions/:id/review  Duyệt / từ chối một submission (extensions:configure)
 ```
 
 Implementation: `apps/cms/src/routes/marketplace.ts`.
+
+Catalog projection thêm ba field suy ra bên cạnh các field public ổn định:
+`verified` (true khi listing có `verifiedAt` — chỉ được ghi sau khi verify chữ ký
+thật lúc publish/install — hoặc `isOfficial`; với các dòng cũ publish trước khi có
+bước ghi nhận này thì fallback về việc có đủ signature + publisher key id + hash
+integrity — field này điều khiển badge "Verified" và đường install tin cậy),
+`voteCount`, và `hasVoted` (cho caller đã xác thực). `totalDownloads` giờ phản ánh
+`downloadCount`.
+
+## Download
+
+`GET /extensions/:slug/download` tăng `downloadCount` trên version publish mới nhất
+và mặc định trả `302` redirect tới `bundleUrl` đã ký, để bundle lớn không bao giờ đi
+qua Worker. Client lập trình truyền `?redirect=0` để nhận metadata của bundle (URL,
+hash, signature, key id, số lượt mới) dưới dạng JSON.
+
+## Voting
+
+Mọi user đã xác thực đều có thể upvote một listing. `POST …/vote` insert một dòng với
+`ON CONFLICT DO NOTHING` dựa trên unique index `(userId, marketplaceSlug)`, nên vote
+lặp lại không có tác dụng; `DELETE …/vote` rút lại vote. Cả hai đều trả về
+`{ voteCount, hasVoted }` mới nhất.
+
+## Community submissions
+
+`POST /submit` cho phép mọi user đã xác thực đề xuất một extension cho catalog công
+khai. Endpoint validate payload (name, `version` theo SemVer, `type`, slug, bundle
+URL, description/publisher/repo/capabilities tùy chọn), từ chối slug đã đang live
+trong catalog (`409 SLUG_TAKEN`), và tạo một dòng **global, chưa publish**
+(`siteId = null`, `publishedAt = null`) với `submissionStatus = 'pending'` và
+`submittedBy = <user>`. Vì chưa publish nên nó không bao giờ xuất hiện trong catalog
+công khai cho tới khi moderator duyệt (`/submissions/:id/review`) **và** một bundle
+đã ký được publish qua `/publish`. Các endpoint kiểm duyệt yêu cầu permission
+`extensions:configure`.
 
 ## Verification flow
 
