@@ -21,10 +21,11 @@ import { auditSecurityGuardDenied } from './security-audit';
  * Enforce storage safety at the upload boundary. Every path that can create
  * file metadata or push raw object bytes into storage is checked here BEFORE
  * the route handler runs, so the guarantee holds no matter what the route
- * handler does. Three surfaces are covered:
+ * handler does. Four surfaces are covered:
  *
  *   - `POST /api/v1/files`            — metadata creation (JSON body)
  *   - `PUT  /api/v1/files/upload/:key`— signed raw-byte upload (JWT-authorized)
+ *   - `PUT  /api/v1/files/:id/content`— in-place replace of a file's bytes (#703)
  *   - `POST /api/v1/media/:key`       — raw-byte media upload (RBAC-authorized)
  *
  * Adding a new byte-accepting upload route without wiring it in here is caught
@@ -37,9 +38,9 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
   const surface = classifyUploadSurface(path, method);
   if (!surface) return next();
 
-  const { isMetadataCreate, isSignedUpload, isMediaUpload } = surface;
+  const { isMetadataCreate, isSignedUpload, isMediaUpload, isReplaceUpload } = surface;
   // Raw-byte surfaces carry the file itself in the request body.
-  const isRawUpload = isSignedUpload || isMediaUpload;
+  const isRawUpload = isSignedUpload || isMediaUpload || isReplaceUpload;
 
   const auth = safeGetAuth(c);
   // Public callers may never create upload metadata nor push raw media bytes.
@@ -47,11 +48,11 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
   // `/api/v1/files/upload/*`, so `auth` is undefined by design there and
   // authorization is proven by the signed JWT the route handler verifies —
   // applying the public block would reject every legitimate signed upload.
-  if ((isMetadataCreate || isMediaUpload) && isPublicUploadPrincipal(auth)) {
+  if ((isMetadataCreate || isMediaUpload || isReplaceUpload) && isPublicUploadPrincipal(auth)) {
     await auditSecurityGuardDenied(c, 'file_upload_policy_denied', {
       path,
       method,
-      reason: isMediaUpload ? 'public_media_upload' : 'public_metadata_create',
+      reason: isMediaUpload ? 'public_media_upload' : isReplaceUpload ? 'public_replace_upload' : 'public_metadata_create',
       roles: auth?.roles ?? [],
       principalType: auth?.type ?? 'user',
     });
@@ -118,11 +119,17 @@ export const withFileUploadPolicy = (): MiddlewareHandler<AppEnv> => async (c, n
   // Filename hygiene (#740): NUL / control bytes, RTL-override spoofing, path
   // traversal and dangerous inner extensions (`shell.php.png`) are refused
   // before the extension ↔ MIME comparison, which only sees the last suffix.
+  // The replace surface's last path segment is the literal `content`, so its
+  // name comes from the optional `?filename=` (the new download name). Without
+  // one there is no name to check; the content sniffing below still runs.
+  const replaceName = isReplaceUpload ? c.req.query('filename') : undefined;
   const candidateNames = isMetadataCreate
     ? [metadata?.filenameDownload, metadata?.filenameDisk].filter((v): v is string => typeof v === 'string')
-    : isRawUpload
-      ? [decodePathSegment(path.split('/').pop() ?? '')]
-      : [];
+    : isReplaceUpload
+      ? (replaceName ? [replaceName] : [])
+      : isRawUpload
+        ? [decodePathSegment(path.split('/').pop() ?? '')]
+        : [];
   for (const candidate of candidateNames) {
     const issue = validateUploadFilename(candidate);
     if (issue) {
@@ -259,13 +266,16 @@ function decodePathSegment(segment: string): string {
 export function classifyUploadSurface(
   path: string,
   method: string,
-): { isMetadataCreate: boolean; isSignedUpload: boolean; isMediaUpload: boolean } | null {
+): { isMetadataCreate: boolean; isSignedUpload: boolean; isMediaUpload: boolean; isReplaceUpload: boolean } | null {
   const upper = method.toUpperCase();
   const isMetadataCreate = path === '/api/v1/files' && upper === 'POST';
   const isSignedUpload = path.startsWith('/api/v1/files/upload/') && upper === 'PUT';
   const isMediaUpload = path.startsWith('/api/v1/media/') && upper === 'POST';
-  if (!isMetadataCreate && !isSignedUpload && !isMediaUpload) return null;
-  return { isMetadataCreate, isSignedUpload, isMediaUpload };
+  // `upload` is the signed-upload prefix, never a file id.
+  const isReplaceUpload =
+    !isSignedUpload && /^\/api\/v1\/files\/[^/]+\/content\/?$/.test(path) && upper === 'PUT';
+  if (!isMetadataCreate && !isSignedUpload && !isMediaUpload && !isReplaceUpload) return null;
+  return { isMetadataCreate, isSignedUpload, isMediaUpload, isReplaceUpload };
 }
 
 export function isPublicUploadPrincipal(auth: AuthPrincipal | undefined): boolean {

@@ -1,11 +1,11 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-11-14T02:15:35.179Z
-contentHash: 762fa056a7df59c7
-codeVerified: 2026-11-14T02:15:35.179Z
-codeVerifiedHash: 762fa056a7df59c7
-codeVerifiedClaims: 14
+lastUpdated: 2026-11-15T19:51:31.763Z
+contentHash: 0cecb3b0be52686a
+codeVerified: 2026-11-15T19:51:31.763Z
+codeVerifiedHash: 0cecb3b0be52686a
+codeVerifiedClaims: 16
 ---
 
 # Upload security: MIME sniffing, SVG sanitising and polyglots
@@ -37,6 +37,7 @@ surfaces are:
 | `POST /api/v1/files` | file metadata (JSON) | public block, MIME allowlist, filename hygiene, extension ↔ MIME |
 | `PUT /api/v1/files/upload/:key` | raw bytes, presigned (JWT) | MIME allowlist, filename, true size, sniffing, polyglot scan |
 | `POST /api/v1/media/:key` | raw bytes (RBAC) | public block + everything above |
+| `PUT /api/v1/files/:id/content` | raw bytes, in-place replace (RBAC `files:update`) | public block, MIME allowlist, `?filename=` hygiene, true size, sniffing, polyglot scan |
 
 The presigned upload is **not** direct-to-storage: the bytes still stream
 through the CMS receiver, so the guard sees the whole file before
@@ -153,8 +154,11 @@ polyglot checks then apply to them like any other type.
 
 ## What this is not
 
-- Not a malware/AV scanner. Pair it with an external scanner for regulated
-  tenants (`.kiro/specs/upload-file-controls/` task F2).
+- Not a malware/AV scanner by itself. Optional scanning (F2, #707) runs
+  **after** the upload through a deployment-configured HTTP scanner (ClamAV
+  sidecar on Docker); while a site has it on, files stay unserved until the
+  scan says `clean`. See
+  [Digital Asset Management](../features/digital-asset-management.md#malware-scanning-d07).
 - Not a re-encoder. Re-encoding images to strip everything but pixels is the
   false-positive-free polyglot defence; it is still planned (task F1).
 - Headers only protect bytes served **through the CMS**. If you expose a storage

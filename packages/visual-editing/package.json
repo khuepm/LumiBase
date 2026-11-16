@@ -1,0 +1,71 @@
+{
+  "name": "@lumibase/visual-editing",
+  "version": "2.1.0",
+  "description": "Click-to-edit overlay and origin-validated postMessage bridge between a LumiBase Studio preview pane and your frontend.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khuepm/lumibase.git",
+    "directory": "packages/visual-editing"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "require": "./dist/index.cjs"
+      },
+      "./protocol": {
+        "types": "./dist/protocol.d.ts",
+        "import": "./dist/protocol.js",
+        "require": "./dist/protocol.cjs"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/protocol.ts --format cjs,esm --dts --clean",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .turbo dist",
+    "e2e": "node e2e/bridge.e2e.mjs"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "fast-check": "^4.10.2",
+    "jsdom": "^31.0.0",
+    "tsup": "^9.0.0",
+    "typescript": "^5.6.2",
+    "vitest": "^5.1.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "homepage": "https://docs.lumibase.dev",
+  "bugs": {
+    "url": "https://github.com/khuepm/lumibase/issues"
+  },
+  "keywords": [
+    "lumibase",
+    "cms",
+    "headless-cms",
+    "visual-editing",
+    "live-preview",
+    "postMessage"
+  ]
+}

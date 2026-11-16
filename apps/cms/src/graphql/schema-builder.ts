@@ -1,5 +1,6 @@
 import {
   GraphQLBoolean,
+  GraphQLEnumType,
   GraphQLID,
   GraphQLInt,
   GraphQLList,
@@ -18,6 +19,7 @@ import type { GraphQLContext } from './context';
 import { ItemServiceError, relationAlias } from '../services/item-service';
 import { FIELD_FORBIDDEN_CODE } from '../services/filter-guard';
 import { createSiteEventSource } from './realtime-source';
+import { isPublicationState } from '../services/publication-state';
 import type { SchemaService, CompiledCollection, CompiledField } from '../services/schema-service';
 import { isBlocksField, readBlocksOptions } from '../services/blocks';
 
@@ -42,9 +44,43 @@ const RESERVED = new Set([
   'user_created',
   'user_updated',
   '_data',
+  '_firstPublishedAt',
+  '_publishedAt',
+  '_hasUnpublishedChanges',
 ]);
 
 const GRAPHQL_NAME = /^[_A-Za-z][_0-9A-Za-z]*$/;
+
+/** `publicationState` argument (#688): `live` | `preview` | `all`. */
+const PublicationStateEnum = new GraphQLEnumType({
+  name: 'PublicationState',
+  values: { live: { value: 'live' }, preview: { value: 'preview' }, all: { value: 'all' } },
+});
+
+/** The context's ItemService for a cohort; the default service when none is asked. */
+function itemsForCohort(ctx: GraphQLContext, state: unknown): GraphQLContext['items'] {
+  if (!isPublicationState(state) || !ctx.itemsFor) return ctx.items;
+  return ctx.itemsFor(state);
+}
+
+/**
+ * Nested relations follow the cohort of the root field that loaded their
+ * parent (#688). Rows are tagged with the service that read them; relation
+ * resolvers read through the parent's service and tag what they return.
+ */
+const ROW_SERVICE = new WeakMap<object, GraphQLContext['items']>();
+
+function tagRows<T>(value: T, svc: GraphQLContext['items']): T {
+  const rows = Array.isArray(value) ? value : [value];
+  for (const row of rows) {
+    if (row && typeof row === 'object') ROW_SERVICE.set(row as object, svc);
+  }
+  return value;
+}
+
+function serviceForRow(src: object, ctx: GraphQLContext): GraphQLContext['items'] {
+  return ROW_SERVICE.get(src) ?? ctx.items;
+}
 
 /** `articles` → `Articles`, `blog_posts` → `BlogPosts`. */
 function pascalCase(name: string): string {
@@ -86,6 +122,11 @@ function buildItemType(
         userUpdated: { type: GraphQLString, resolve: (src) => src.userUpdated },
         // Escape hatch: the full (permission-masked) data blob.
         _data: { type: JSONScalar, resolve: (src) => src.data ?? {} },
+        // Publication state (#687). Underscore-prefixed so a content field
+        // named `publishedAt` keeps its name.
+        _firstPublishedAt: { type: DateTimeScalar, resolve: (src) => src.firstPublishedAt ?? null },
+        _publishedAt: { type: DateTimeScalar, resolve: (src) => src.publishedAt ?? null },
+        _hasUnpublishedChanges: { type: GraphQLBoolean, resolve: (src) => src.hasUnpublishedChanges === true },
       };
 
       for (const field of coll.fields) {
@@ -270,7 +311,8 @@ function addRelationFields(
           const fk = (src.data ?? {})[rel.manyField];
           if (typeof fk !== 'string' || !fk) return null;
           try {
-            return await ctx.items.detail(rel.oneCollection, fk);
+            const svc = serviceForRow(src, ctx);
+            return tagRows(await svc.detail(rel.oneCollection, fk), svc);
           } catch (err) {
             if (err instanceof ItemServiceError && err.code === 'NOT_FOUND') return null;
             throw toGraphQLError(err);
@@ -292,12 +334,13 @@ function addRelationFields(
         resolve: async (src, args, ctx) => {
           if (typeof src.id !== 'string') return [];
           try {
-            const res = await ctx.items.list(rel.manyCollection, {
+            const svc = serviceForRow(src, ctx);
+            const res = await svc.list(rel.manyCollection, {
               filter: { [rel.manyField]: { _eq: src.id } },
               limit: args.limit,
               offset: args.offset,
             });
-            return res.data;
+            return tagRows(res.data, svc);
           } catch (err) {
             // The child lookup filters on the FK field. A caller who cannot
             // read that field would learn the hidden link through this field,
@@ -379,17 +422,21 @@ export async function buildSiteSchema(schemaService: SchemaService): Promise<Gra
         limit: { type: GraphQLInt },
         offset: { type: GraphQLInt },
         status: { type: GraphQLString },
+        publicationState: { type: PublicationStateEnum },
+        modifiedSincePublish: { type: GraphQLBoolean },
       },
       resolve: async (_src, args, ctx) => {
         try {
-          const res = await ctx.items.list(name, {
+          const svc = itemsForCohort(ctx, args.publicationState);
+          const res = await svc.list(name, {
             filter: args.filter,
             sort: args.sort,
             limit: args.limit,
             offset: args.offset,
             status: args.status,
+            modifiedSincePublish: args.modifiedSincePublish === true,
           });
-          return res.data;
+          return tagRows(res.data, svc);
         } catch (err) {
           throw toGraphQLError(err);
         }
@@ -399,10 +446,11 @@ export async function buildSiteSchema(schemaService: SchemaService): Promise<Gra
     // Query.<collection>_by_id — single item.
     queryFields[`${name}_by_id`] = {
       type: itemType,
-      args: { id: { type: new GraphQLNonNull(GraphQLID) } },
+      args: { id: { type: new GraphQLNonNull(GraphQLID) }, publicationState: { type: PublicationStateEnum } },
       resolve: async (_src, args, ctx) => {
         try {
-          return await ctx.items.detail(name, args.id);
+          const svc = itemsForCohort(ctx, args.publicationState);
+          return tagRows(await svc.detail(name, args.id), svc);
         } catch (err) {
           throw toGraphQLError(err);
         }

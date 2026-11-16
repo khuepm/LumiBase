@@ -4,6 +4,16 @@ import type { MagicContext } from './permission-dsl';
 import { ItemService, type ItemServiceDeps } from './item-service';
 import { resolveNegativeTtl } from './negative-cache';
 import { PermissionService } from './permission-service';
+import { effectivePublicationState } from './publication-state';
+
+/** No user and no API key: the public realm. */
+export function isAnonymousPrincipal(auth: AuthPrincipal | undefined): boolean {
+  if (!auth) return true;
+  if (auth.type === 'anonymous') return true;
+  // Frontend-realm end users are site visitors, not staff: same cohort as anonymous.
+  if (auth.isFrontendUser) return true;
+  return !auth.userId && !auth.apiKeyId && !auth.apiKey;
+}
 
 /**
  * ItemService construction helpers that make the RBAC posture *explicit*.
@@ -123,7 +133,9 @@ export function itemServiceForRequest(
       c.env.ENCRYPTION_KEY || (typeof process !== 'undefined' ? process.env.ENCRYPTION_KEY : undefined),
     ...overrides,
     // siteId + permissionCtx applied last so overrides can never cross tenants
-    // or drop the enforcement context.
+    // or drop the enforcement context. The publication cohort is clamped here
+    // too: an anonymous caller only ever reads the `live` cohort (#688).
+    publicationState: effectivePublicationState(overrides.publicationState, isAnonymousPrincipal(auth)),
     siteId,
     permissionCtx: buildRequestPermissionContext({
       auth,

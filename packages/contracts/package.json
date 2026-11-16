@@ -35,7 +35,9 @@
     "./intents": "./src/intents/index.ts",
     "./form-layout": "./src/form-layout/index.ts",
     "./version": "./src/version.ts",
-    "./utils": "./src/utils/logger.ts"
+    "./utils": "./src/utils/logger.ts",
+    "./richtext": "./src/richtext/index.ts",
+    "./migrate": "./src/migrate/index.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -92,6 +94,16 @@
         "types": "./dist/utils/logger.d.ts",
         "import": "./dist/utils/logger.js",
         "require": "./dist/utils/logger.cjs"
+      },
+      "./richtext": {
+        "types": "./dist/richtext/index.d.ts",
+        "import": "./dist/richtext/index.js",
+        "require": "./dist/richtext/index.cjs"
+      },
+      "./migrate": {
+        "types": "./dist/migrate/index.d.ts",
+        "import": "./dist/migrate/index.js",
+        "require": "./dist/migrate/index.cjs"
       }
     }
   },
