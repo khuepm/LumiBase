@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryCacheProvider } from '../memory-cache';
+import { CloudflareCacheProvider, type KVNamespace } from '../adapters/cloudflare/cache';
 import {
   EDGE_URL_INDEX_LIMIT,
   edgeUrlIndexKey,
   purgeEdgeByTag,
   recordEdgeUrl,
 } from '../edge-url-index';
+import type { CacheProvider } from '../interfaces/cache';
 import type { EdgeCacheProvider } from '../interfaces/edge-cache';
 
 function fakeEdge(): EdgeCacheProvider & { purged: string[][] } {
@@ -24,6 +26,77 @@ function fakeEdge(): EdgeCacheProvider & { purged: string[][] } {
     },
   };
 }
+
+/**
+ * In-memory Workers KV stand-in that implements `list` with metadata, like the
+ * real binding. Every call yields to the event loop, so concurrent callers
+ * interleave the way they do against the real (remote) KV.
+ */
+function createListableKv(): KVNamespace {
+  const store = new Map<string, { value: string; metadata?: unknown }>();
+  const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+  async function get(key: string, type?: 'text' | 'json'): Promise<unknown> {
+    await tick();
+    const raw = store.get(key)?.value;
+    if (raw === undefined) return null;
+    if (type === 'json') {
+      try {
+        return JSON.parse(raw) as unknown;
+      } catch {
+        return raw;
+      }
+    }
+    return raw;
+  }
+  return {
+    get: get as KVNamespace['get'],
+    async put(key: string, value: string, options?: { expirationTtl?: number; metadata?: unknown }) {
+      await tick();
+      store.set(key, { value, metadata: options?.metadata });
+    },
+    async delete(key: string) {
+      await tick();
+      store.delete(key);
+    },
+    async list(options?: { prefix?: string; limit?: number; cursor?: string }) {
+      await tick();
+      const names = [...store.keys()].filter((k) => k.startsWith(options?.prefix ?? '')).sort();
+      const start = options?.cursor ? Number(options.cursor) : 0;
+      const end = start + (options?.limit ?? 1000);
+      const page = names.slice(start, end);
+      return {
+        keys: page.map((name) => ({ name, metadata: store.get(name)?.metadata })),
+        list_complete: end >= names.length,
+        ...(end < names.length ? { cursor: String(end) } : {}),
+      };
+    },
+  } as KVNamespace;
+}
+
+/**
+ * #864 — recording a URL must not be a read-modify-write of one shared list:
+ * two cache misses for different URLs under the same tag would each read the
+ * old list and the slower write would drop the other URL from the index.
+ */
+describe('edge URL index — concurrent writers (#864)', () => {
+  const providers: Array<[string, () => CacheProvider]> = [
+    ['MemoryCacheProvider', () => new MemoryCacheProvider()],
+    ['CloudflareCacheProvider (listable KV)', () => new CloudflareCacheProvider(createListableKv())],
+  ];
+
+  for (const [name, factory] of providers) {
+    it(`keeps every URL recorded concurrently under one tag — ${name}`, async () => {
+      const cache = factory();
+      const edge = fakeEdge();
+      const urls = Array.from({ length: 8 }, (_, i) => `https://acme.test/api/v1/deliver/page/site-a/p${i}`);
+
+      await Promise.all(urls.map((url) => recordEdgeUrl(cache, ['deliver:site-a'], url, { ttl: 300 })));
+
+      expect(await purgeEdgeByTag(cache, edge, 'deliver:site-a')).toBe(urls.length);
+      expect([...(edge.purged[0] ?? [])].sort()).toEqual([...urls].sort());
+    });
+  }
+});
 
 /**
  * #392 — LumiBase keeps its own tag→URL index so edge invalidation works even
