@@ -1,10 +1,10 @@
 ---
-version: 57
-lastUpdated: 2026-11-16T02:41:49.099Z
+version: 58
+lastUpdated: 2026-11-16T06:46:09.741Z
 sourceLang: en
-contentHash: 8f11dce36caac2e3
-codeVerified: 2026-11-16T02:41:49.099Z
-codeVerifiedHash: 8f11dce36caac2e3
+contentHash: 4408f3efbb381813
+codeVerified: 2026-11-16T06:46:09.741Z
+codeVerifiedHash: 4408f3efbb381813
 codeVerifiedClaims: 668
 ---
 
@@ -1634,7 +1634,7 @@ Member Portal (`404 PORTAL_DISABLED` until enabled):
 | `POST` | `/api/v1/portal/magic-link/verify` | public | `{ token }` → `frontend` session (same shape as `/auth/login`); `400 MAGIC_LINK_INVALID`, `409 PASSWORD_LOGIN_REQUIRED` for a staff account |
 | `GET/PATCH/DELETE` | `/api/v1/portal/me` | member | Profile; `{ name?, newsletters?: { [id]: boolean }, unsubscribeAll? }`; leave |
 | `POST` | `/api/v1/portal/me/tier` | member | `{ tier, interval?, returnUrl? }` → `{ status: 'switched' }` (free tier) or `{ status: 'checkout', checkoutUrl }`; `402 PAYMENT_PROVIDER_NOT_CONFIGURED` |
-| `GET/POST` | `/api/v1/portal/email/unsubscribe?token=` | public | Member unsubscribe: confirmation page / RFC 8058 one-click |
+| `GET/POST` | `/api/v1/portal/email/unsubscribe?token=` | public | Member unsubscribe. `GET` only renders a confirmation form and changes nothing (mail scanners prefetch links); `POST` is the only mutation: RFC 8058 one-click (`List-Unsubscribe=One-Click` → `200`, empty) or the form (→ confirmation page) |
 | `GET` | `/api/v1/portal/email/o?t=` | public | Open pixel (opt-in tracking) |
 | `GET` | `/api/v1/portal/email/c?t=` | public | Click redirect to the signed URL only |
 

@@ -6,8 +6,11 @@
  * `X-Lumi-Site` header. The signed token names the site, and the handler
  * scopes its DB handle to that site (`scopedDbFor`, B130).
  *
- *   GET  /unsubscribe?token=  human click → confirmation page
- *   POST /unsubscribe?token=  RFC 8058 one-click (List-Unsubscribe-Post) → 200, no body
+ *   GET  /unsubscribe?token=  human click → confirmation FORM only (no side effect:
+ *                             mail scanners and link prefetchers issue GETs)
+ *   POST /unsubscribe?token=  the only mutation: RFC 8058 one-click
+ *                             (`List-Unsubscribe=One-Click` → 200, no body) or the
+ *                             confirmation form (→ confirmation page)
  *   GET  /o?t=                open pixel (1×1 GIF, no-store) — opt-in per newsletter
  *   GET  /c?t=                click redirect to the SIGNED destination only
  */
@@ -64,16 +67,37 @@ async function unsubscribe(c: Context<AppEnv>, token: string | undefined): Promi
   return true;
 }
 
+function escapeAttr(v: string): string {
+  return v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// GET never mutates: it checks the token and renders a form that POSTs back.
 memberEmailPublicRouter.get('/unsubscribe', async (c) => {
-  const ok = await unsubscribe(c, c.req.query('token'));
-  return ok
-    ? page('You have been unsubscribed', 'You will no longer receive these emails. You can re-subscribe from your account at any time.', 200)
-    : page('Unsubscribe link invalid', 'This link is invalid. Please use the link from a recent email.', 400);
+  const token = c.req.query('token');
+  const secret = secretOf(c);
+  const valid = !!token && !!secret && !!(await verifyUnsubscribeToken(token, secret));
+  if (!valid) return page('Unsubscribe link invalid', 'This link is invalid. Please use the link from a recent email.', 400);
+  const action = `?token=${encodeURIComponent(token!)}`;
+  return page(
+    'Unsubscribe?',
+    'Confirm that you no longer want to receive these emails.' +
+      `<form method="post" action="${escapeAttr(action)}" style="margin-top:1rem">` +
+      '<input type="hidden" name="confirm" value="1">' +
+      '<button type="submit" style="padding:.5rem 1rem">Unsubscribe</button></form>',
+    200,
+  );
 });
 
 memberEmailPublicRouter.post('/unsubscribe', async (c) => {
+  const body = await c.req.text().catch(() => '');
+  const oneClick = /(^|&)List-Unsubscribe=One-Click(&|$)/.test(body.trim());
   const ok = await unsubscribe(c, c.req.query('token'));
-  return ok ? c.body(null, 200) : c.json({ errors: [{ code: 'INVALID_TOKEN', message: 'Invalid unsubscribe token.' }] }, 400);
+  if (oneClick) {
+    return ok ? c.body(null, 200) : c.json({ errors: [{ code: 'INVALID_TOKEN', message: 'Invalid unsubscribe token.' }] }, 400);
+  }
+  return ok
+    ? page('You have been unsubscribed', 'You will no longer receive these emails. You can re-subscribe from your account at any time.', 200)
+    : page('Unsubscribe link invalid', 'This link is invalid. Please use the link from a recent email.', 400);
 });
 
 memberEmailPublicRouter.get('/o', async (c) => {

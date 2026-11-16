@@ -1,14 +1,14 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 56
-lastUpdated: 2026-11-16T02:41:49.099Z
+version: 57
+lastUpdated: 2026-11-16T06:46:09.741Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 8f11dce36caac2e3
+sourceHash: 4408f3efbb381813
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T02:41:49.099Z
-codeVerifiedHash: 8f11dce36caac2e3
+codeVerified: 2026-11-16T06:46:09.741Z
+codeVerifiedHash: 4408f3efbb381813
 codeVerifiedClaims: 668
 ---
 
@@ -1441,7 +1441,7 @@ Member Portal (`404 PORTAL_DISABLED` cho tới khi bật):
 | `POST` | `/api/v1/portal/magic-link/verify` | public | `{ token }` → session `frontend` (cùng hình dạng với `/auth/login`); `400 MAGIC_LINK_INVALID`, `409 PASSWORD_LOGIN_REQUIRED` với tài khoản staff |
 | `GET/PATCH/DELETE` | `/api/v1/portal/me` | member | Hồ sơ; `{ name?, newsletters?: { [id]: boolean }, unsubscribeAll? }`; rời đi |
 | `POST` | `/api/v1/portal/me/tier` | member | `{ tier, interval?, returnUrl? }` → `{ status: 'switched' }` (free tier) hoặc `{ status: 'checkout', checkoutUrl }`; `402 PAYMENT_PROVIDER_NOT_CONFIGURED` |
-| `GET/POST` | `/api/v1/portal/email/unsubscribe?token=` | public | Huỷ đăng ký của member: trang xác nhận / one-click RFC 8058 |
+| `GET/POST` | `/api/v1/portal/email/unsubscribe?token=` | public | Huỷ đăng ký của member. `GET` chỉ hiển thị form xác nhận và không thay đổi gì (trình quét email tải trước link); `POST` là thao tác thay đổi duy nhất: one-click RFC 8058 (`List-Unsubscribe=One-Click` → `200`, rỗng) hoặc form (→ trang xác nhận) |
 | `GET` | `/api/v1/portal/email/o?t=` | public | Pixel mở thư (theo dõi phải bật) |
 | `GET` | `/api/v1/portal/email/c?t=` | public | Redirect click chỉ tới URL đã ký |
 

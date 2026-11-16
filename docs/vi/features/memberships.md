@@ -1,13 +1,13 @@
 ---
-version: 1
-lastUpdated: 2026-11-16T02:41:48.792Z
+version: 2
+lastUpdated: 2026-11-16T06:46:05.816Z
 sourceLang: en
 translatedFrom: en
-sourceHash: e70a9cab59a3f86a
+sourceHash: b29eea0dc869cc91
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T02:41:48.792Z
-codeVerifiedHash: e70a9cab59a3f86a
+codeVerified: 2026-11-16T06:46:05.816Z
+codeVerifiedHash: b29eea0dc869cc91
 codeVerifiedClaims: 28
 ---
 
@@ -114,7 +114,7 @@ POST /api/v1/members/newsletters/:id/sends
 - Cùng một item không gửi được hai lần với cùng newsletter (`409 ALREADY_SENT`).
 - Audience là người đăng ký newsletter, thu hẹp theo segment được đóng băng lúc tạo. Member huỷ đăng ký giữa chừng sẽ bị bỏ qua.
 - Gửi theo lô: request trả `202` và chạy những lô đầu; members tick tiếp tục phần còn lại dưới một lease, 100 member mỗi lô. Mỗi người nhận có một dòng `newsletter_deliveries` trước khi email được gửi đi, nên một lần thử lại không bao giờ gửi hai lần cho member đã nhận.
-- Mỗi thư mang link huỷ đăng ký riêng của member trong body và các header `List-Unsubscribe` + `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058). Danh sách suppression của site được tôn trọng.
+- Mỗi thư mang link huỷ đăng ký riêng của member trong body và các header `List-Unsubscribe` + `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058). Mở link (`GET`) chỉ hiện một nút xác nhận, nên trình quét email và tính năng tải trước link không thể huỷ đăng ký ai; thay đổi chỉ xảy ra ở `POST` (nút bấm, hoặc one-click của nhà cung cấp hộp thư). Danh sách suppression của site được tôn trọng.
 - Khi bật theo dõi, một pixel mở và redirect click có chữ ký ghi lại lần mở và lần click đầu tiên của mỗi member (`GET /api/v1/portal/email/o`, `/c`). Redirect click chỉ đi tới URL mà CMS đã ký — nó không phải open redirect.
 - Địa chỉ người gửi phải nằm trên một sending domain đã xác minh (`409 SENDER_DOMAIN_UNVERIFIED`).
 

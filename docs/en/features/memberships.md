@@ -1,10 +1,10 @@
 ---
-version: 1
-lastUpdated: 2026-11-16T02:41:48.792Z
+version: 2
+lastUpdated: 2026-11-16T06:46:05.816Z
 sourceLang: en
-contentHash: e70a9cab59a3f86a
-codeVerified: 2026-11-16T02:41:48.792Z
-codeVerifiedHash: e70a9cab59a3f86a
+contentHash: b29eea0dc869cc91
+codeVerified: 2026-11-16T06:46:05.816Z
+codeVerifiedHash: b29eea0dc869cc91
 codeVerifiedClaims: 28
 ---
 
@@ -169,7 +169,9 @@ POST /api/v1/members/newsletters/:id/sends
   who already received it.
 - Every message carries a per-member unsubscribe link in the body and the
   `List-Unsubscribe` + `List-Unsubscribe-Post: List-Unsubscribe=One-Click` headers (RFC 8058).
-  The site suppression list is honoured.
+  Opening the link (`GET`) only shows a confirmation button, so mail scanners and link
+  prefetchers cannot unsubscribe anyone; the change happens on `POST` (the button, or the
+  mailbox provider's one-click). The site suppression list is honoured.
 - With tracking on, an open pixel and signed click redirects record the first open and click per
   member (`GET /api/v1/portal/email/o`, `/c`). The click redirect only follows URLs the CMS
   signed — it is not an open redirect.

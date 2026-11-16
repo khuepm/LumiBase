@@ -143,22 +143,45 @@ describe.skipIf(!hasDbIntegrationUrl)('members routes — DB integration', () =>
     expect((await app(A).request('/api/v1/portal/me')).status).toBe(401);
   });
 
-  it('one-click unsubscribe (RFC 8058) removes the newsletter on the token’s site only', async () => {
+  it('GET never unsubscribes; POST unsubscribes only the token’s site, member and newsletter', async () => {
     const weekly = await createNewsletter(db, A, { key: 'weekly', name: 'Weekly', status: 'active', audience: 'members', subscribeOnSignup: true, trackOpens: false, trackClicks: false, sortOrder: 0 });
+    const daily = await createNewsletter(db, A, { key: 'daily', name: 'Daily', status: 'active', audience: 'members', subscribeOnSignup: true, trackOpens: false, trackClicks: false, sortOrder: 1 });
+    await createNewsletter(db, B, { key: 'weekly', name: 'Weekly B', status: 'active', audience: 'members', subscribeOnSignup: true, trackOpens: false, trackClicks: false, sortOrder: 0 });
     const member = await new MemberService({ db, siteId: A }).create({ email: `unsub@${DOMAIN}`, status: 'free', labels: [] });
-    const token = await signUnsubscribeToken({ siteId: A, memberId: member.id, newsletterId: weekly.id }, SECRET);
+    const other = await new MemberService({ db, siteId: A }).create({ email: `other@${DOMAIN}`, status: 'free', labels: [] });
+    const onB = await new MemberService({ db, siteId: B }).create({ email: `unsub@${DOMAIN}`, status: 'free', labels: [] });
+    const subsOf = async (siteId: string, memberId: string) =>
+      (await db.select().from(memberNewsletters).where(and(eq(memberNewsletters.siteId, siteId), eq(memberNewsletters.memberId, memberId)))).map((r) => r.newsletterId).sort();
+    const before = { member: await subsOf(A, member.id), other: await subsOf(A, other.id), onB: await subsOf(B, onB.id) };
+    expect(before.member).toEqual([daily.id, weekly.id].sort());
 
-    // The request arrives on site B's host: the token, not the request, names the site.
-    const res = await app(B).request(`/api/v1/portal/email/unsubscribe?token=${encodeURIComponent(token)}`, { method: 'POST', body: 'List-Unsubscribe=One-Click' });
+    const token = await signUnsubscribeToken({ siteId: A, memberId: member.id, newsletterId: weekly.id }, SECRET);
+    const url = `/api/v1/portal/email/unsubscribe?token=${encodeURIComponent(token)}`;
+
+    // A scanner / prefetcher GET (repeated) changes nothing and only renders a form.
+    for (let i = 0; i < 3; i += 1) {
+      const res = await app(A).request(url);
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('<form method="post"');
+      expect(html).not.toContain('You have been unsubscribed');
+    }
+    expect(await subsOf(A, member.id)).toEqual(before.member);
+    expect((await app(A).request('/api/v1/portal/email/unsubscribe?token=forged')).status).toBe(400);
+
+    // RFC 8058 one-click POST — arriving on site B's host: the token, not the request, names the site.
+    const res = await app(B).request(url, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'List-Unsubscribe=One-Click' });
     expect(res.status).toBe(200);
-    const subs = await db.select().from(memberNewsletters).where(and(eq(memberNewsletters.siteId, A), eq(memberNewsletters.memberId, member.id)));
-    expect(subs).toHaveLength(0);
+    expect(await subsOf(A, member.id)).toEqual([daily.id]);
+    expect(await subsOf(A, other.id)).toEqual(before.other);
+    expect(await subsOf(B, onB.id)).toEqual(before.onB);
     expect(await db.select().from(members).where(eq(members.id, member.id))).toHaveLength(1);
 
-    expect((await app(A).request('/api/v1/portal/email/unsubscribe?token=forged', { method: 'POST' })).status).toBe(400);
-    const page = await app(A).request(`/api/v1/portal/email/unsubscribe?token=${encodeURIComponent(token)}`);
-    expect(page.status).toBe(200);
-    expect(await page.text()).toContain('unsubscribed');
+    // The confirmation form's POST answers with a page.
+    const confirmed = await app(A).request(url, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'confirm=1' });
+    expect(confirmed.status).toBe(200);
+    expect(await confirmed.text()).toContain('You have been unsubscribed');
+    expect((await app(A).request('/api/v1/portal/email/unsubscribe?token=forged', { method: 'POST', body: 'List-Unsubscribe=One-Click' })).status).toBe(400);
 
     // Pixel never breaks, click needs a signed URL.
     const pixel = await app(A).request('/api/v1/portal/email/o?t=garbage');
