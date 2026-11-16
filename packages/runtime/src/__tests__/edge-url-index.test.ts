@@ -96,6 +96,58 @@ describe('edge URL index — concurrent writers (#864)', () => {
       expect([...(edge.purged[0] ?? [])].sort()).toEqual([...urls].sort());
     });
   }
+
+  it('Cloudflare: drain returns the newest `limit` members, oldest first, and deletes them', async () => {
+    const kv = createListableKv();
+    const cache = new CloudflareCacheProvider(kv);
+    let now = 1_000;
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      for (const m of ['a', 'b', 'c', 'b']) {
+        now += 1;
+        await cache.addMember('edgeurls:deliver:site-a', m, { ttl: 30 });
+      }
+    } finally {
+      spy.mockRestore();
+    }
+
+    // `b` was re-added last, so it is the newest; the duplicate is one key.
+    expect(await cache.drainMembers('edgeurls:deliver:site-a', { limit: 2 })).toEqual(['c', 'b']);
+    // `a` fell outside the bound and is left to expire on its TTL.
+    expect(await cache.drainMembers('edgeurls:deliver:site-a')).toEqual(['a']);
+    expect(await cache.drainMembers('edgeurls:deliver:site-a')).toEqual([]);
+  });
+
+  it('Cloudflare: clamps the member TTL to the KV minimum of 60 seconds', async () => {
+    const kv = createListableKv();
+    const put = vi.spyOn(kv, 'put');
+    await new CloudflareCacheProvider(kv).addMember('k', 'm', { ttl: 30 });
+    expect(put.mock.calls[0]?.[2]).toMatchObject({ expirationTtl: 60, metadata: { m: 'm' } });
+  });
+
+  it('purges URLs a pre-upgrade JSON list recorded, alongside the member set', async () => {
+    const cache = new MemoryCacheProvider();
+    const edge = fakeEdge();
+    await cache.set(edgeUrlIndexKey('deliver:site-a'), JSON.stringify(['https://acme.test/old']));
+    await recordEdgeUrl(cache, ['deliver:site-a'], 'https://acme.test/new');
+
+    await purgeEdgeByTag(cache, edge, 'deliver:site-a');
+
+    expect(edge.purged[0]).toEqual(['https://acme.test/old', 'https://acme.test/new']);
+    expect(await cache.get(edgeUrlIndexKey('deliver:site-a'))).toBeNull();
+  });
+
+  it('Memory: honours the member-set TTL', async () => {
+    vi.useFakeTimers();
+    try {
+      const cache = new MemoryCacheProvider();
+      await cache.addMember('k', 'm', { ttl: 1 });
+      vi.advanceTimersByTime(1_100);
+      expect(await cache.drainMembers('k')).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 /**
