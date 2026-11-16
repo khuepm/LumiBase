@@ -1,10 +1,10 @@
 ---
 sourceLang: en
-version: 2
-lastUpdated: 2026-11-13T06:07:20.634Z
-contentHash: aba9a12e52557a17
-codeVerified: 2026-11-13T06:07:20.634Z
-codeVerifiedHash: aba9a12e52557a17
+version: 3
+lastUpdated: 2026-11-16T02:07:14.841Z
+contentHash: 984176c07a81ebac
+codeVerified: 2026-11-16T02:07:14.841Z
+codeVerifiedHash: 984176c07a81ebac
 codeVerifiedClaims: 2
 ---
 
@@ -181,9 +181,6 @@ finds the schema already in place.
   items get new ids and links to them do not resolve.
 - Collections with an editorial workflow refuse `published` on create; migrate
   into collections without one, or publish through the workflow afterwards.
-- Item ids are unique per LumiBase instance, not per site: migrating the same
-  space into two sites of one instance fails on the second site's entries.
-  Assets and schema are not affected.
 - Entries are written one request at a time. For very large spaces, expect the
   API rate limit (`LUMIBASE_API_RATE_LIMIT`, 600 requests/min by default) to set
   the pace.
