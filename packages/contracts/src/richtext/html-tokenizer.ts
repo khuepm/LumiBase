@@ -74,6 +74,21 @@ export function decodeEntities(s: string): string {
 
 const NAME_CHAR = /[^\s/>]/;
 
+/**
+ * Index just past a comment whose body starts at `from` (after `<!--`), per
+ * the HTML spec: `<!-->` and `<!--->` close at once, and both `-->` and
+ * `--!>` end a comment. An unterminated comment runs to the end.
+ */
+function commentEnd(html: string, from: number): number {
+  if (html[from] === '>') return from + 1;
+  if (html.startsWith('->', from)) return from + 2;
+  const a = html.indexOf('-->', from);
+  const b = html.indexOf('--!>', from);
+  if (a === -1 && b === -1) return html.length;
+  if (b === -1 || (a !== -1 && a < b)) return a + 3;
+  return b + 4;
+}
+
 /** Tokenize an HTML string. Comments, doctypes, CDATA and processing instructions are dropped. */
 export function tokenizeHtml(html: string): HtmlToken[] {
   const tokens: HtmlToken[] = [];
@@ -99,8 +114,7 @@ export function tokenizeHtml(html: string): HtmlToken[] {
     if (next === '!') {
       flush();
       if (html.startsWith('<!--', i)) {
-        const end = html.indexOf('-->', i + 4);
-        i = end === -1 ? len : end + 3;
+        i = commentEnd(html, i + 4);
       } else {
         const end = html.indexOf('>', i + 2);
         i = end === -1 ? len : end + 1;

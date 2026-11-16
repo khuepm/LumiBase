@@ -31,6 +31,16 @@ function escapeLineStart(line: string): string {
     .replace(/^(\s*\d{1,9})([.)])/, '$1\\$2');
 }
 
+/** `[leading whitespace, rest, trailing whitespace]` in one linear pass (no backtracking regex). */
+function splitEdgeSpace(text: string): [string, string, string] {
+  const ws = (c: string | undefined) => c !== undefined && /\s/.test(c);
+  let start = 0;
+  while (start < text.length && ws(text[start])) start++;
+  let end = text.length;
+  while (end > start && ws(text[end - 1])) end--;
+  return [text.slice(0, start), text.slice(start, end), text.slice(end)];
+}
+
 function fenceFor(text: string, char: '`' | '~' = '`'): string {
   let longest = 0;
   const re = char === '`' ? /`+/g : /~+/g;
@@ -78,9 +88,8 @@ class MarkdownRenderer {
         const marks = n.marks ?? [];
         let body = marks.includes('code') ? codeSpan(n.text) : escapeMarkdown(n.text);
         // Delimiters must hug non-space text: move edge spaces outside them.
-        const lead = marks.includes('code') ? '' : (/^\s+/.exec(body)?.[0] ?? '');
-        const trail = marks.includes('code') ? '' : (/\s+$/.exec(body.slice(lead.length))?.[0] ?? '');
-        body = body.slice(lead.length, body.length - trail.length);
+        const [lead, core, trail] = marks.includes('code') ? ['', body, ''] : splitEdgeSpace(body);
+        body = core;
         if (body === '') return lead + trail;
         for (const mark of marks) {
           const wrap = MD_MARK[mark];

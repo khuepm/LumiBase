@@ -59,6 +59,9 @@ const XSS_CORPUS: string[] = [
   '<base href="javascript:/">',
   '<link rel="stylesheet" href="https://evil.example/x.css">',
   '<!--><script>alert(1)</script>-->',
+  '<!---><script>alert(1)</script>',
+  '<!-- x --!><script>alert(1)</script>',
+  '<!-- x --!><img src=x onerror=alert(1)>',
   '<!--[if gte IE 4]><script>alert(1)</script><![endif]-->',
   '<noscript><p title="</noscript><img src=x onerror=alert(1)>"></noscript>',
   '<<script>script>alert(1)<</script>/script>',
@@ -136,6 +139,13 @@ describe('sanitizeHtml — XSS corpus', () => {
     );
     expect(sanitizeHtml('<th scope="evil">x</th>')).toBe('<th>x</th>');
     expect(sanitizeHtml('<custom-el>kept text</custom-el>')).toBe('kept text');
+  });
+
+  it('ends comments where a browser does (`-->`, `--!>`, `<!-->`)', () => {
+    expect(sanitizeHtml('<p>a<!-- c --!>b</p>')).toBe('<p>ab</p>');
+    expect(sanitizeHtml('<p>a<!-->b</p>')).toBe('<p>ab</p>');
+    expect(sanitizeHtml('<p>a<!--->b</p>')).toBe('<p>ab</p>');
+    expect(sanitizeHtml('<p>a<!-- unterminated')).toBe('<p>a</p>');
   });
 
   it('drops the content of script-like elements, keeps the text of unknown ones', () => {

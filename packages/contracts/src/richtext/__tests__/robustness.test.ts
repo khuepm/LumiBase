@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { htmlToRichText, isRichTextDocument, markdownToRichText, richTextToHtml, sanitizeHtml } from '../index';
+import { htmlToRichText, isRichTextDocument, markdownToRichText, richTextToHtml, richTextToMarkdown, sanitizeHtml } from '../index';
 
 /** Hostile shapes that make naive parsers quadratic or blow the stack. */
 const PATHOLOGICAL: Record<string, string> = {
@@ -16,6 +16,9 @@ const PATHOLOGICAL: Record<string, string> = {
   'nested links': '['.repeat(5_000) + 'a' + '](b)'.repeat(5_000),
   'long table': '|a|\n|-|\n' + '|x|\n'.repeat(20_000),
   'many entities': '&#'.repeat(20_000),
+  'tabs before a mark': `*a${'\t'.repeat(50_000)}x*`,
+  'spaces mid-line': `a${' '.repeat(100_000)}b\nc`,
+  'spaces mid-paragraph html': `<p>a${' '.repeat(100_000)}<b>b</b></p>`,
 };
 
 describe('robustness', () => {
@@ -27,13 +30,22 @@ describe('robustness', () => {
     expect(Date.now() - started).toBeLessThan(3_000);
   });
 
+  it('exports text with long whitespace runs inside marks in linear time', () => {
+    const text = `a${'\t'.repeat(200_000)}x${' '.repeat(200_000)}`;
+    const started = Date.now();
+    const md = richTextToMarkdown({ type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text, marks: ['bold'] }] }] });
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(md.startsWith('**a')).toBe(true);
+    expect(md.trimEnd().endsWith('x**')).toBe(true);
+  });
+
   it('survives random markup-ish noise (seeded fuzz)', () => {
     let seed = 0x5eed;
     const rand = () => {
       seed = (seed * 1103515245 + 12345) & 0x7fffffff;
       return seed / 0x7fffffff;
     };
-    const atoms = ['<', '>', '/', '"', "'", '=', ' ', 'a', 'p', 'img', 'script', 'on', 'error', 'href', 'src', 'javascript', ':', '&', '#', ';', '*', '_', '[', ']', '(', ')', '`', '|', '-', '\n', '!', '\\', 'style', 'svg', '<!--', '-->'];
+    const atoms = ['<', '>', '/', '"', "'", '=', ' ', 'a', 'p', 'img', 'script', 'on', 'error', 'href', 'src', 'javascript', ':', '&', '#', ';', '*', '_', '[', ']', '(', ')', '`', '|', '-', '\n', '!', '\\', 'style', 'svg', '<!--', '-->', '--!>', '\t'];
     for (let n = 0; n < 400; n++) {
       let s = '';
       const len = 5 + Math.floor(rand() * 60);

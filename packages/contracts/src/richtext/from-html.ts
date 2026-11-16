@@ -11,6 +11,7 @@ import {
 import { tokenizeHtml } from './html-tokenizer';
 import { sanitizeRichTextDocument } from './sanitize';
 import { safeHref } from './url';
+import { trimEndChars } from './trim';
 
 /**
  * HTML → document (#700 / #696): the paste path (Word, Google Docs, web
@@ -293,7 +294,7 @@ function tidy(nodes: RichTextInline[], pre: boolean): RichTextInline[] {
   for (let i = out.length - 1; i >= 0; i--) {
     const n = out[i]!;
     const next = out[i + 1];
-    if (n.type === 'text' && (next === undefined || next.type === 'break')) n.text = n.text.replace(/ +$/, '');
+    if (n.type === 'text' && (next === undefined || next.type === 'break')) n.text = trimEndChars(n.text, ' ');
   }
   return out;
 }

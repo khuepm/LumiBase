@@ -14,6 +14,7 @@ import { sanitizeRichTextDocument } from './sanitize';
 import { validateRichTextDocument } from './validate';
 import { RICHTEXT_MD_CUSTOM_FENCE } from './to-markdown';
 import { safeHref } from './url';
+import { countTrailing, trimEndChars } from './trim';
 
 /**
  * Markdown → document (#698): CommonMark blocks and inlines plus the GFM
@@ -244,7 +245,7 @@ class BlockParser {
         i++;
       }
       const text = para.join('\n');
-      const content = parseInline(text.replace(/[ \t]+$/, ''));
+      const content = parseInline(trimEndChars(text, ' \t'));
       if (setext) out.push({ type: 'heading', level: setext, content });
       else out.push(paragraphOrEmbed(content));
     }
@@ -652,12 +653,12 @@ function parseInlineAt(src: string, marks: RichTextMark[]): RichTextInline[] {
 
     if (ch === '\n') {
       // Two trailing spaces = hard break; otherwise keep the soft line break.
-      if (/ {2,}$/.test(text)) {
-        text = text.replace(/ +$/, '');
+      if (countTrailing(text, ' ') >= 2) {
+        text = trimEndChars(text, ' ');
         flush();
         out.push({ type: 'break' });
       } else {
-        text = text.replace(/ +$/, '') + '\n';
+        text = trimEndChars(text, ' ') + '\n';
       }
       i++;
       while (src[i] === ' ') i++;
