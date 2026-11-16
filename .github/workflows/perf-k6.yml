@@ -36,10 +36,20 @@ jobs:
 
       - name: Install k6
         run: |
-          sudo gpg -k
-          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
-            --keyserver hkp://keyserver.ubuntu.com:80 \
-            --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          # dl.k6.io started signing with the C780D0BDB1A69C86 signing subkey on
+          # 2026-11-13; keyserver.ubuntu.com still serves the key without it, so
+          # apt rejected the repo. Take the key from k6 itself and pin the
+          # primary fingerprint so a swapped key still fails closed.
+          # The key is checked before it reaches the keyring apt trusts: on a
+          # mismatch the step fails and no keyring is written.
+          k6_key="$(mktemp)"
+          curl -fsSL https://dl.k6.io/key.gpg | gpg --dearmor --yes -o "$k6_key"
+          if ! gpg --show-keys --with-colons "$k6_key" \
+            | grep -q '^fpr:::::::::C5AD17C747E3415A3642D57D77C6C491D6AC1D69:$'; then
+            echo "::error::dl.k6.io/key.gpg primary fingerprint is not C5AD17C747E3415A3642D57D77C6C491D6AC1D69"
+            exit 1
+          fi
+          sudo install -m 0644 "$k6_key" /usr/share/keyrings/k6-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | \
             sudo tee /etc/apt/sources.list.d/k6.list
           sudo apt-get update
@@ -102,7 +112,9 @@ jobs:
           ITEMS_PER_COLLECTION: 200
           PAGES_PER_SITE: 20
           COLLECTION_COUNT: 2
-        run: pnpm exec tsx apps/cms/k6/seed.ts
+        # tsx is a dependency of @lumibase/cms, not of the workspace root, so a
+        # root-level `pnpm exec tsx` fails with "Command tsx not found".
+        run: pnpm -F @lumibase/cms exec tsx k6/seed.ts
 
       - name: Start CMS (web role)
         env:
@@ -112,6 +124,18 @@ jobs:
           LUMIBASE_PROCESS_ROLE: web
           JWT_SECRET: ci-perf-k6-secret
           PORT: '1989'
+          # The k6 scripts authenticate with a `dev:` bearer token. auth.ts
+          # accepts it only with LUMIBASE_DEV_AUTH=true AND an explicit
+          # development runtime, so without these every authenticated
+          # request in the smoke run is refused.
+          LUMIBASE_DEV_AUTH: 'true'
+          LUMIBASE_ENV: development
+          # k6 drives every request from one IP. The delivery limiter's default
+          # 1200 req/min/IP is an abuse guard, not a capacity limit, and the
+          # deliver mix (~40 req/s) trips it after 1200 requests: 429s then
+          # fail http_req_failed. Turn it off for this single-IP generator, as
+          # apps/cms/k6/README.md prescribes for load runs.
+          LUMIBASE_DELIVER_RATE_LIMIT: '0'
         run: |
           pnpm -F @lumibase/cms exec tsx src/serve.ts &
           for _ in $(seq 1 60); do
@@ -122,9 +146,20 @@ jobs:
 
       - name: Install k6
         run: |
-          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
-            --keyserver hkp://keyserver.ubuntu.com:80 \
-            --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          # dl.k6.io started signing with the C780D0BDB1A69C86 signing subkey on
+          # 2026-11-13; keyserver.ubuntu.com still serves the key without it, so
+          # apt rejected the repo. Take the key from k6 itself and pin the
+          # primary fingerprint so a swapped key still fails closed.
+          # The key is checked before it reaches the keyring apt trusts: on a
+          # mismatch the step fails and no keyring is written.
+          k6_key="$(mktemp)"
+          curl -fsSL https://dl.k6.io/key.gpg | gpg --dearmor --yes -o "$k6_key"
+          if ! gpg --show-keys --with-colons "$k6_key" \
+            | grep -q '^fpr:::::::::C5AD17C747E3415A3642D57D77C6C491D6AC1D69:$'; then
+            echo "::error::dl.k6.io/key.gpg primary fingerprint is not C5AD17C747E3415A3642D57D77C6C491D6AC1D69"
+            exit 1
+          fi
+          sudo install -m 0644 "$k6_key" /usr/share/keyrings/k6-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | \
             sudo tee /etc/apt/sources.list.d/k6.list
           sudo apt-get update
@@ -134,7 +169,7 @@ jobs:
         env:
           BASE_URL: http://127.0.0.1:1989
           SITE_ID: loadtest-main-00000001
-          TOKEN: dev:admin@lumibase.dev:admin
+          TOKEN: dev:loadtest-admin@lumibase.dev:admin
         run: k6 run apps/cms/k6/smoke.js
 
       # PAGE_COUNT must match PAGES_PER_SITE above: the Zipf pool indexes
@@ -144,7 +179,7 @@ jobs:
         env:
           BASE_URL: http://127.0.0.1:1989
           SITE_ID: loadtest-main-00000001
-          TOKEN: dev:admin@lumibase.dev:admin
+          TOKEN: dev:loadtest-admin@lumibase.dev:admin
           COLLECTION: loadtest_collection_01
           DURATION: 30s
           VUS: 5
