@@ -1,13 +1,13 @@
 ---
-version: 4
-lastUpdated: 2026-11-12T21:04:27.226Z
+version: 5
+lastUpdated: 2026-11-16T15:45:42.765Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5644257d82b75cbc
+sourceHash: efc39789582f82ad
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-12T21:04:27.226Z
-codeVerifiedHash: 5644257d82b75cbc
+codeVerified: 2026-11-16T15:45:42.765Z
+codeVerifiedHash: efc39789582f82ad
 codeVerifiedClaims: 12
 ---
 
@@ -80,8 +80,9 @@ POST /api/v1/imports?collection={collection}&format=csv|json&mode=create|upsert
   từ chối với `400` trước khi ghi bất kỳ dòng nào.
 - **Mode:** `create` (mặc định) luôn tạo item mới. `upsert` cập nhật item có
   `id` khớp và tạo phần còn lại; cần thêm quyền `update`.
-- **Quyền:** được kiểm tra ngay từ đầu (`create`, cộng `update` với `upsert`) và
-  kiểm tra lại ở từng dòng, dưới danh nghĩa user hoặc API key đã upload file.
+- **Quyền:** được kiểm tra ngay từ đầu (`read` và `create`, cộng `update` với
+  `upsert`; cần `read` vì job đọc schema của collection) và kiểm tra lại ở từng
+  dòng, dưới danh nghĩa user hoặc API key đã upload file.
   Nếu principal đó mất quyền trong lúc job chạy, job dừng với trạng thái `failed`.
 
 Phản hồi là job:
@@ -129,7 +130,11 @@ Node trên Docker) chạy tiếp. Mỗi phần là một transaction của datab
 bộ đếm tiến độ được commit cùng nhau, nên một worker chết giữa chừng không để lại
 gì, và phần đó được chạy lại từ dòng đã commit cuối cùng, không tạo bản trùng.
 Transaction khoá job, nên worker thứ hai phải chờ thay vì ghi trùng các dòng đó,
-và tiếp quản khi lease của worker đầu hết hạn. Đo trên máy local với Postgres 16,
+và tiếp quản khi lease của worker đầu hết hạn. Cron chia thời gian giữa các job,
+mỗi lần một phần, và chọn job cũ nhất của mỗi site trước job thứ hai của bất kỳ
+site nào, nên một import lớn không chặn các job khác. `IMPORT_MAX_CONCURRENCY` là
+giới hạn cứng theo site: một job chỉ bắt đầu khi số job đang chạy của site đó còn
+dưới giới hạn. Đo trên máy local với Postgres 16,
 mỗi dòng đi qua toàn bộ pipeline item (validation, revision, change feed) với tốc
 độ khoảng 90 dòng mỗi giây cho mỗi job, nên một file 100k dòng mất khoảng 20 phút.
 Giới hạn và kích thước mỗi phần được đặt bằng [các biến `IMPORT_*`](../deployment/environment-variables.md#imports).
