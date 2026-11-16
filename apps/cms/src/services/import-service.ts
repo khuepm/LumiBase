@@ -231,6 +231,11 @@ async function defaultItemServiceFor(
     );
 }
 
+/** Transaction-scoped advisory lock serialising job starts within one site. */
+function importSiteLock(siteId: string) {
+  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${`lumibase_import:${siteId}`}, 0))`;
+}
+
 /** Thrown inside the chunk transaction when another worker owns the job. */
 class LeaseLostError extends Error {}
 
@@ -298,32 +303,50 @@ export async function runImportStep(deps: ImportStepDeps, jobId: string): Promis
   if (!current) return 'done';
   if (TERMINAL_STATUSES.includes(current.status as ImportStatus)) return 'done';
 
-  if (current.status === 'queued') {
-    const [{ running }] = (await deps.db
-      .select({ running: sql<number>`count(*)::int` })
-      .from(importJobs)
-      .where(and(eq(importJobs.siteId, current.siteId), eq(importJobs.status, 'running')))) as [{ running: number }];
-    if (running >= deps.config.maxConcurrency && current.cancelRequestedAt === null) return 'waiting';
-  }
-
   // Claim: only when nobody holds a live lease.
-  const [job] = await deps.db
-    .update(importJobs)
-    .set({
-      leaseOwner: owner,
-      leaseUntil,
-      status: sql`case when ${importJobs.status} = 'queued' then 'running' else ${importJobs.status} end`,
-      startedAt: sql`coalesce(${importJobs.startedAt}, ${now.toISOString()}::timestamp)`,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(importJobs.id, jobId),
-        inArray(importJobs.status, ['queued', 'running']),
-        or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
-      ),
-    )
-    .returning();
+  const claim = async (db: Database): Promise<ImportJobRow | undefined> => {
+    const [row] = await db
+      .update(importJobs)
+      .set({
+        leaseOwner: owner,
+        leaseUntil,
+        status: sql`case when ${importJobs.status} = 'queued' then 'running' else ${importJobs.status} end`,
+        startedAt: sql`coalesce(${importJobs.startedAt}, ${now.toISOString()}::timestamp)`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(importJobs.id, jobId),
+          inArray(importJobs.status, ['queued', 'running']),
+          or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
+        ),
+      )
+      .returning();
+    return row;
+  };
+
+  let job: ImportJobRow | undefined;
+  if (current.status === 'queued' && current.cancelRequestedAt === null) {
+    // Starting a job counts against the per-site limit. The count and the
+    // claim must be one atomic decision, or parallel steps for different
+    // queued jobs all read a count below the limit and all claim (#860). A
+    // per-site transaction-scoped advisory lock serialises those decisions;
+    // under READ COMMITTED each statement after the lock sees every claim the
+    // previous holder committed.
+    const decision = await deps.db.transaction(async (tx) => {
+      await tx.execute(importSiteLock(current.siteId));
+      const [{ running }] = (await tx
+        .select({ running: sql<number>`count(*)::int` })
+        .from(importJobs)
+        .where(and(eq(importJobs.siteId, current.siteId), eq(importJobs.status, 'running')))) as [{ running: number }];
+      if (running >= deps.config.maxConcurrency) return 'waiting' as const;
+      return claim(tx as unknown as Database);
+    });
+    if (decision === 'waiting') return 'waiting';
+    job = decision;
+  } else {
+    job = await claim(deps.db);
+  }
   if (!job) return 'busy';
 
   if (job.cancelRequestedAt) {

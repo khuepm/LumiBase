@@ -336,6 +336,20 @@ describe.skipIf(!hasDbIntegrationUrl)('background imports — DB integration', (
     expect((await reload(b.id)).status).toBe('succeeded');
   });
 
+  it('concurrent claims never push a site past IMPORT_MAX_CONCURRENCY (#860)', async () => {
+    const queued = await Promise.all(Array.from({ length: 6 }, () => job(csv(Array.from({ length: 120 }, (_, i) => ({ price: i }))))));
+    const one = config({ maxConcurrency: 1 });
+    // Every step reads the running count at the same time, before anyone claims.
+    const outcomes = await Promise.all(queued.map((q) => runImportStep({ db, config: one }, q.id)));
+    expect(outcomes.filter((o) => o === 'progressed')).toHaveLength(1);
+    expect(outcomes.filter((o) => o === 'waiting')).toHaveLength(5);
+    const running = await db
+      .select({ id: importJobs.id })
+      .from(importJobs)
+      .where(and(eq(importJobs.siteId, SITE), eq(importJobs.status, 'running')));
+    expect(running).toHaveLength(1);
+  });
+
   it('fails the job when the principal loses access mid-way', async () => {
     const j = await job(csv(Array.from({ length: 120 }, (_, i) => ({ price: i }))));
     await runImportStep({ db, config: config() }, j.id);
