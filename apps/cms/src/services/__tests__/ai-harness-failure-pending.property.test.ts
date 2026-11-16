@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import * as fc from 'fast-check';
 import { AISecureHarness, CORE_SKILLS } from '../ai-harness';
+import { runErrorMessage } from '../agent-run-service';
 import type { SkillDefinition } from '../ai-harness';
 import type { Database } from '@lumibase/database';
 import { validArgsFor } from '../../test-utils/agent-tool-args';
@@ -271,14 +272,52 @@ describe('Feature: ai-first-cms-engine, Property 7: Execution failure preserves 
           // Assert: status is 'denied'
           expect(result.status).toBe('denied');
 
-          // Assert: the error message from the handler is propagated
-          expect(result.message).toBe(errorMsg);
+          // Assert: the handler's error reaches the caller through the same
+          // redaction every tool error gets (`runErrorMessage` →
+          // `redactTraceText`), not verbatim: an arbitrary string can be
+          // email- or token-shaped (fast-check found `+@-.AA`), and those are
+          // masked on purpose. Comparing against the raw string made this
+          // property fail on whichever seed generated such a value.
+          expect(result.message).toBe(runErrorMessage(new Error(errorMsg)));
 
           // Assert: db.update() is NOT called — approval stays 'pending'
           expect(updateFn).not.toHaveBeenCalled();
         },
       ),
-      { numRuns: 100 },
+      {
+        numRuns: 100,
+        // Pin the counterexample from seed 1125324672 so the redacted case is
+        // exercised on every run, not only when the seed happens to hit it.
+        examples: [['listCollections', '+@-.AA', 'approval-0001', 'user-0001', 'site-0001']],
+      },
     );
+  });
+
+  it('masks an email-shaped handler error but passes a plain one through unchanged', async () => {
+    const skillName = 'listCollections';
+    const cases: Array<[thrown: string, expected: string]> = [
+      ['+@-.AA', '[masked]'],
+      ['contact ops@example.com for access', 'contact [masked] for access'],
+      ['collection "posts" is locked', 'collection "posts" is locked'],
+    ];
+    for (const [thrown, expected] of cases) {
+      CORE_SKILLS[skillName]!.handler = async () => {
+        throw new Error(thrown);
+      };
+      const { db, updateFn } = createMockDbWithPendingApproval(
+        'approval-0001',
+        'site-0001',
+        skillName,
+        validArgsFor(skillName),
+      );
+      const result = await new AISecureHarness({ db, siteId: 'site-0001' }).executeApproved(
+        'approval-0001',
+        'user-0001',
+        ['*'],
+      );
+      expect(result.status).toBe('denied');
+      expect(result.message).toBe(expected);
+      expect(updateFn).not.toHaveBeenCalled();
+    }
   });
 });
