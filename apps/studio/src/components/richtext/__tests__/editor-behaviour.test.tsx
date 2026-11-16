@@ -212,6 +212,23 @@ describe('<RichTextEditor />', () => {
     expect(last.content[0]).toEqual({ type: 'paragraph', content: [{ type: 'link', href: 'https://example.com', content: [{ type: 'text', text: 'x' }] }] });
   });
 
+  it('edits a selected custom block\'s data as a JSON object (#697)', () => {
+    const onChange = vi.fn();
+    const { container } = render(<RichTextEditor value={doc({ type: 'custom', name: 'callout', data: { tone: 'info' } })} onChange={onChange} label="Body" />);
+    const e = editorOf(container);
+    act(() => {
+      e.commands.setNodeSelection(0);
+    });
+    const area = screen.getByLabelText('Block data: callout (JSON)');
+    fireEvent.change(area, { target: { value: '[1]' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Apply' })[0]!);
+    expect(screen.getByRole('alert').textContent).toMatch(/JSON object/);
+    fireEvent.change(screen.getByLabelText('Block data: callout (JSON)'), { target: { value: '{"tone":"warn"}' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Apply' })[0]!);
+    const last = onChange.mock.calls.at(-1)?.[0] as RichTextDocument;
+    expect(last.content[0]).toEqual({ type: 'custom', name: 'callout', data: { tone: 'warn' } });
+  });
+
   it('exposes an accessible toolbar and editing area', async () => {
     const { container } = render(<RichTextEditor value={doc(p('x'))} onChange={vi.fn()} label="Body" />);
     const toolbar = screen.getByRole('toolbar', { name: 'Body formatting' });

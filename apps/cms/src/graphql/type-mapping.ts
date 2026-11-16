@@ -17,8 +17,12 @@ import {
   richTextToMarkdown,
   richTextToPlainText,
   type RichTextDocument,
+  type RichTextPlugin,
   type RichTextRef,
 } from '@lumibase/contracts/richtext';
+import type { GraphQLSchema } from 'graphql';
+import { renderTemplate } from '../services/template';
+import type { CompiledCollection } from '../services/schema-service';
 
 /**
  * Value of a timezone-aware datetime field (#747). A legacy bare-string value
@@ -70,6 +74,31 @@ export function deliveryRefUrl(ref: RichTextRef): string | null {
   return ref.kind === 'file' ? `/api/v1/files/${encodeURIComponent(ref.id)}/content` : null;
 }
 
+/** Rich-text plugins in effect for a built site schema (resolvers read them via `info.schema`). */
+const schemaPlugins = new WeakMap<GraphQLSchema, RichTextPlugin[]>();
+
+export function registerRichTextPlugins(schema: GraphQLSchema, plugins: RichTextPlugin[]): void {
+  schemaPlugins.set(schema, plugins);
+}
+
+/**
+ * Block templates as rich-text blocks (#697): a custom block whose `name` is a
+ * collection with a display template renders that template over the block's
+ * `data`. The result is escaped text — a display template cannot emit markup.
+ */
+export function blockTemplatePlugin(collections: readonly Pick<CompiledCollection, 'name' | 'displayTemplate'>[]): RichTextPlugin {
+  const blocks: NonNullable<RichTextPlugin['blocks']> = {};
+  for (const c of collections) {
+    const template = c.displayTemplate;
+    if (!template) continue;
+    blocks[c.name] = {
+      toHtml: (data, ctx) => `<p>${ctx.escape(renderTemplate(template, data))}</p>`,
+      toText: (data) => renderTemplate(template, data),
+    };
+  }
+  return { name: 'block-templates', blocks };
+}
+
 /**
  * `richtext` value (#695): the portable JSON document plus server-rendered
  * HTML (allowlist-sanitised, #700), Markdown and plain text. Renderings are
@@ -83,10 +112,14 @@ export const RichTextType = new GraphQLObjectType<RichTextDocument>({
     html: {
       type: GraphQLString,
       description: 'Sanitised HTML: semantic tables, safe URL schemes only.',
-      resolve: (doc) => richTextToHtml(doc, { resolveRef: deliveryRefUrl }),
+      resolve: (doc, _args, _ctx, info) => richTextToHtml(doc, { resolveRef: deliveryRefUrl, plugins: schemaPlugins.get(info.schema) }),
     },
     markdown: { type: GraphQLString, description: 'CommonMark + GFM.', resolve: (doc) => richTextToMarkdown(doc, { resolveRef: deliveryRefUrl }) },
-    text: { type: GraphQLString, description: 'Plain text, one block per line.', resolve: (doc) => richTextToPlainText(doc) },
+    text: {
+      type: GraphQLString,
+      description: 'Plain text, one block per line.',
+      resolve: (doc, _args, _ctx, info) => richTextToPlainText(doc, { plugins: schemaPlugins.get(info.schema) }),
+    },
   },
 });
 

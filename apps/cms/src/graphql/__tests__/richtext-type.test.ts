@@ -133,4 +133,27 @@ describe('richtext in GraphQL', () => {
     expect(body.text).toContain('Hi <there>');
     expect(body.markdown).toContain('## Hi \\<there\\>');
   });
+
+  it('renders custom blocks named after a collection through its display template, escaped (#697)', async () => {
+    const callout = { ...collection('callout', [field('title', 'string')]), displayTemplate: 'Note: {{title}}' };
+    const withBlock = {
+      type: 'doc',
+      version: 1,
+      content: [
+        { type: 'custom', name: 'callout', data: { title: '<b>Hi</b>' } },
+        { type: 'custom', name: 'unknown', data: { title: 'x' } },
+      ],
+    };
+    const list = vi.fn(async () => ({ data: [{ id: 'a', status: 'published', data: { title: 'A', body: withBlock } }], meta: { total: 1 } }));
+    const schema = await buildSiteSchema(fakeSchemaService([posts, callout]));
+    const result = await graphql({
+      schema,
+      source: 'query { posts { body { html text } } }',
+      contextValue: { siteId: 's', items: { list }, schema: {} } as unknown as GraphQLContext,
+    });
+    expect(result.errors).toBeUndefined();
+    const body = (result.data?.posts as Array<{ body: { html: string; text: string } }>)[0]!.body;
+    expect(body.html).toBe('<div data-block="callout"><p>Note: &lt;b&gt;Hi&lt;/b&gt;</p></div><div data-block="unknown"></div>');
+    expect(body.text).toBe('Note: <b>Hi</b>');
+  });
 });

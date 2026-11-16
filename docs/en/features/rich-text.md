@@ -1,10 +1,10 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-11-16T02:39:03.210Z
-contentHash: 1034281889f93e30
-codeVerified: 2026-11-16T02:39:03.210Z
-codeVerifiedHash: 1034281889f93e30
+lastUpdated: 2026-11-16T02:48:05.145Z
+contentHash: bd436a08b0a8e84a
+codeVerified: 2026-11-16T02:48:05.145Z
+codeVerifiedHash: bd436a08b0a8e84a
 codeVerifiedClaims: 12
 ---
 
@@ -66,7 +66,8 @@ In Studio, add a field with the **Rich text (blocks)** interface (field type
 `richtext`). Its options decide what editors can use — the toolbar and slash
 menu only show allowed features, and the API rejects a write that uses
 anything else (`richtext_not_allowed`), so the toolbar is not the security
-boundary.
+boundary. The field inspector edits them with checkboxes under **Rich text
+editor**; the raw options JSON stays available.
 
 | Option | Default | Effect |
 |--------|---------|--------|
@@ -93,7 +94,9 @@ add to the Studio's initial bundle.
   quote, code block, divider, table, image or file (the media picker),
   footnote, undo/redo, Markdown import and export. A table gets its own bar:
   add/delete rows and columns, toggle header row / header column, caption.
-  A selected image gets an alt-text field.
+  A selected image gets an alt-text field; a selected custom block gets a
+  JSON editor for its data. **Link to item** takes a collection and an id,
+  or **Browse…** opens the relation picker.
 - **Slash menu**: type `/` at the start of a paragraph and filter, e.g.
   `/tab` → Table. Arrow keys choose, `Enter` inserts, `Esc` closes. Custom
   blocks registered by extensions appear here.
@@ -159,6 +162,11 @@ query {
   }
 }
 ```
+
+A custom block whose `name` is a collection with a display template (a
+block template) renders that template over the block's `data` in GraphQL
+`html` and `text`, as escaped text — `{{title}}` in the template, for
+example. Other custom blocks need a plugin renderer.
 
 In HTML, file embeds resolve to `/api/v1/files/{id}/content`; item references
 keep `data-ref-kind` / `data-ref-collection` / `data-ref-id` attributes and no
@@ -257,10 +265,8 @@ site-scoped query of the media library.
 
 ## Not yet included
 
-- A relation picker for item references (the editor asks for collection and
-  id) and a visual preview of embedded items in the editor canvas.
+- A visual preview of embedded files and items in the editor canvas (they
+  show as labelled cards).
 - Item references in rich text do not block deleting the referenced item;
   the reference then renders as an inert element.
-- Block templates are not yet rendered through their display templates in
-  delivery HTML: register a plugin renderer for each custom block you deliver.
 - Extension-defined marks (only blocks can be added today).

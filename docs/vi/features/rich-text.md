@@ -1,13 +1,13 @@
 ---
-version: 2
+version: 3
 sourceLang: en
-lastUpdated: 2026-11-16T02:39:03.210Z
+lastUpdated: 2026-11-16T02:48:05.145Z
 translatedFrom: en
-sourceHash: 1034281889f93e30
+sourceHash: bd436a08b0a8e84a
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-16T02:39:03.210Z
-codeVerifiedHash: 1034281889f93e30
+codeVerified: 2026-11-16T02:48:05.145Z
+codeVerifiedHash: bd436a08b0a8e84a
 codeVerifiedClaims: 12
 ---
 
@@ -70,7 +70,8 @@ OpenAPI và GraphQL cũng phủ trường này.
 Trong Studio, thêm trường với interface **Rich text (blocks)** (field type
 `richtext`). Option của trường quyết định người soạn được dùng gì — thanh công
 cụ và menu slash chỉ hiện tính năng được phép, còn API từ chối lần ghi dùng thứ
-khác (`richtext_not_allowed`), nên thanh công cụ không phải ranh giới bảo mật.
+khác (`richtext_not_allowed`), nên thanh công cụ không phải ranh giới bảo mật. Field inspector chỉnh các option này bằng checkbox trong
+mục **Rich text editor**; JSON option thô vẫn dùng được.
 
 | Option | Mặc định | Tác dụng |
 |--------|----------|----------|
@@ -97,7 +98,9 @@ tăng bundle ban đầu của Studio.
   danh sách, trích dẫn, khối code, đường phân cách, bảng, ảnh hoặc file (media
   picker), chú thích cuối trang, hoàn tác/làm lại, nhập và xuất Markdown. Bảng
   có thanh riêng: thêm/xoá hàng và cột, bật/tắt hàng tiêu đề / cột tiêu đề,
-  chú thích bảng (caption). Ảnh đang chọn có ô nhập alt text.
+  chú thích bảng (caption). Ảnh đang chọn có ô nhập alt text; custom block
+  đang chọn có ô soạn JSON cho dữ liệu của nó. **Link to item** nhận collection
+  và id, hoặc **Browse…** mở bộ chọn quan hệ.
 - **Menu slash**: gõ `/` ở đầu đoạn rồi lọc, ví dụ `/tab` → Table. Phím
   mũi tên để chọn, `Enter` để chèn, `Esc` để đóng. Custom block do extension
   đăng ký xuất hiện ở đây.
@@ -163,6 +166,11 @@ query {
   }
 }
 ```
+
+Custom block có `name` là một collection có display template (block
+template) được dựng bằng template đó trên `data` của khối trong `html` và
+`text` của GraphQL, dưới dạng văn bản đã escape — ví dụ `{{title}}` trong
+template. Custom block khác cần renderer plugin.
 
 Trong HTML, file nhúng trỏ tới `/api/v1/files/{id}/content`; tham chiếu item
 giữ các thuộc tính `data-ref-kind` / `data-ref-collection` / `data-ref-id` và
@@ -261,10 +269,8 @@ của media library.
 
 ## Chưa có
 
-- Bộ chọn quan hệ cho tham chiếu item (trình soạn thảo hỏi collection và id)
-  và bản xem trước trực quan của item nhúng trong vùng soạn thảo.
+- Bản xem trước trực quan của file và item nhúng trong vùng soạn thảo (hiện
+  là thẻ có nhãn).
 - Tham chiếu item trong rich text không chặn việc xoá item được tham chiếu;
   khi đó tham chiếu được dựng thành một phần tử trơ.
-- Block template chưa được dựng qua display template trong HTML phân phối: hãy
-  đăng ký renderer plugin cho từng custom block bạn phân phối.
 - Mark do extension định nghĩa (hiện chỉ thêm được khối).

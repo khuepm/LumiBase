@@ -13,7 +13,7 @@ import {
   type GraphQLOutputType,
 } from 'graphql';
 import { JSONScalar, DateTimeScalar } from './scalars';
-import { mapFieldType, resolveFieldValue } from './type-mapping';
+import { blockTemplatePlugin, mapFieldType, registerRichTextPlugins, resolveFieldValue } from './type-mapping';
 import { toGraphQLError } from './errors';
 import type { GraphQLContext } from './context';
 import { ItemServiceError, relationAlias } from '../services/item-service';
@@ -517,7 +517,7 @@ export async function buildSiteSchema(schemaService: SchemaService): Promise<Gra
     };
   }
 
-  return new GraphQLSchema({
+  const schema = new GraphQLSchema({
     query: new GraphQLObjectType({ name: 'Query', fields: queryFields }),
     // Mutation/Subscription types must be non-empty; omit on a collection-less site.
     mutation:
@@ -529,4 +529,7 @@ export async function buildSiteSchema(schemaService: SchemaService): Promise<Gra
         ? new GraphQLObjectType({ name: 'Subscription', fields: subscriptionFields })
         : undefined,
   });
+  // Custom rich-text blocks named after a collection render through its display template (#697).
+  registerRichTextPlugins(schema, [blockTemplatePlugin(compiled)]);
+  return schema;
 }

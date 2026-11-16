@@ -44,6 +44,7 @@ import {
 } from '@lumibase/contracts/richtext';
 import { cn } from '@/lib/cn';
 import { useMediaPicker } from '@/modules/files/media-picker';
+import { RelationDrawer } from '@/modules/content/interfaces/relation-drawer';
 import { blockCommands, filterCommands, resolveFeatures, type CommandHost, type EditorCommand } from './commands';
 import { editorJsonToRichText, richTextToEditorJson, type PmNode } from './convert';
 import { LbCustom, LbEmbed, LbFootnote, LbFootnoteRef, LbInlineEmbed, LbRef, LbTable } from './extensions';
@@ -233,6 +234,9 @@ export default function RichTextEditor({ value, onChange, options = {}, disabled
   const [refDraft, setRefDraft] = useState({ collection: '', id: '' });
   const [markdownDraft, setMarkdownDraft] = useState('');
   const [panelError, setPanelError] = useState<string | null>(null);
+  const [pickingItem, setPickingItem] = useState(false);
+  const [blockDataDraft, setBlockDataDraft] = useState<{ key: string; text: string } | null>(null);
+  const [blockDataError, setBlockDataError] = useState<string | null>(null);
 
   const emit = useCallback(
     (editor: Editor) => {
@@ -357,6 +361,7 @@ export default function RichTextEditor({ value, onChange, options = {}, disabled
       inTable: e?.isActive('table') ?? false,
       tableAttrs: (e?.getAttributes('table') ?? {}) as { caption?: string; headerColumn?: boolean },
       embedAttrs: e?.isActive('lbEmbed') || e?.isActive('lbInlineEmbed') ? ((e.isActive('lbEmbed') ? e.getAttributes('lbEmbed') : e.getAttributes('lbInlineEmbed')) as { alt?: string; kind?: string }) : null,
+      custom: e?.isActive('lbCustom') ? (e.getAttributes('lbCustom') as { name?: string; data?: Record<string, unknown> }) : null,
       headingLevel: ([1, 2, 3, 4, 5, 6] as const).find((l) => e?.isActive('heading', { level: l })) ?? 0,
       canUndo: e?.can().undo() ?? false,
       canRedo: e?.can().redo() ?? false,
@@ -635,6 +640,28 @@ export default function RichTextEditor({ value, onChange, options = {}, disabled
         </div>
       )}
 
+      {!disabled && state?.custom && (
+        <CustomBlockPanel
+          key={`${state.custom.name ?? ''}:${JSON.stringify(state.custom.data ?? {})}`}
+          name={String(state.custom.name ?? '')}
+          data={state.custom.data ?? {}}
+          draft={blockDataDraft}
+          error={blockDataError}
+          onDraft={(text) => setBlockDataDraft({ key: String(state.custom?.name ?? ''), text })}
+          onApply={(text) => {
+            try {
+              const data: unknown = JSON.parse(text);
+              if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('not an object');
+              editor.chain().focus().updateAttributes('lbCustom', { data }).run();
+              setBlockDataDraft(null);
+              setBlockDataError(null);
+            } catch {
+              setBlockDataError('Block data must be a JSON object.');
+            }
+          }}
+        />
+      )}
+
       {panel === 'link' && (
         <div className="flex flex-wrap items-center gap-2 border-b px-2 py-1 text-xs">
           <label className="flex flex-1 items-center gap-1">
@@ -674,6 +701,20 @@ export default function RichTextEditor({ value, onChange, options = {}, disabled
             <span>Item id</span>
             <input className="h-7 w-40 rounded border bg-background px-1" value={refDraft.id} onChange={(e) => setRefDraft((d) => ({ ...d, id: e.target.value }))} />
           </label>
+          <button type="button" className="rounded border px-2 py-0.5" disabled={!refDraft.collection.trim()} onClick={() => setPickingItem(true)}>
+            Browse…
+          </button>
+          {pickingItem && refDraft.collection.trim() && (
+            <RelationDrawer
+              collection={refDraft.collection.trim()}
+              multiple={false}
+              onClose={() => setPickingItem(false)}
+              onSelect={(ids) => {
+                if (ids[0]) setRefDraft((d) => ({ ...d, id: ids[0]! }));
+                setPickingItem(false);
+              }}
+            />
+          )}
           <button type="button" className="rounded border px-2 py-0.5" onClick={applyRef}>
             Insert
           </button>
@@ -715,6 +756,36 @@ export default function RichTextEditor({ value, onChange, options = {}, disabled
           <SlashMenu editor={editor} slash={slash} items={slashList} onPick={runCommand} />
         )}
       </div>
+    </div>
+  );
+}
+
+function CustomBlockPanel({
+  name,
+  data,
+  draft,
+  error,
+  onDraft,
+  onApply,
+}: {
+  name: string;
+  data: Record<string, unknown>;
+  draft: { key: string; text: string } | null;
+  error: string | null;
+  onDraft: (text: string) => void;
+  onApply: (text: string) => void;
+}) {
+  const text = draft && draft.key === name ? draft.text : JSON.stringify(data, null, 2);
+  return (
+    <div className="space-y-1 border-b bg-muted/40 px-2 py-1 text-xs">
+      <label className="block">
+        <span className="mb-1 block">Block data: {name} (JSON)</span>
+        <textarea className="h-24 w-full rounded border bg-background p-1 font-mono" value={text} onChange={(e) => onDraft(e.target.value)} />
+      </label>
+      <button type="button" className="rounded border px-2 py-0.5" onClick={() => onApply(text)}>
+        Apply
+      </button>
+      {error && <p role="alert" className="text-destructive">{error}</p>}
     </div>
   );
 }
