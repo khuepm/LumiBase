@@ -1,10 +1,10 @@
 ---
 version: 4
-lastUpdated: 2026-11-16T15:30:00.304Z
+lastUpdated: 2026-11-16T15:30:00.700Z
 sourceLang: vi
-contentHash: 4f705a5d0187a513
-codeVerified: 2026-11-16T15:30:00.304Z
-codeVerifiedHash: 4f705a5d0187a513
+contentHash: 291ea9be1c38e004
+codeVerified: 2026-11-16T15:30:00.700Z
+codeVerifiedHash: 291ea9be1c38e004
 codeVerifiedClaims: 32
 ---
 
@@ -134,43 +134,43 @@ Chỉ moderator có permission `extensions:configure` được phép — cùng g
 
 ## Roadmap
 
-- [x] Studio UI marketplace browser (browse + 1-click install).
-- [x] Versioning + auto-update notifications.
-- [x] Public marketplace site (apps/marketplace) backed by the real catalog API.
-- [x] Revenue sharing for commercial extensions: launch is **Free-first**; checkout/payout work is tracked as a separate commercial backlog.
+- [x] Trình duyệt marketplace trong Studio UI (duyệt + cài 1-click).
+- [x] Versioning + thông báo auto-update.
+- [x] Trang marketplace công khai (apps/marketplace) dùng catalog API thật.
+- [x] Chia sẻ doanh thu cho extension thương mại: ra mắt theo hướng **Free-first**; phần checkout/payout được theo dõi trong một backlog thương mại riêng.
 
 ## Public marketplace launch
 
-`apps/marketplace` is a Next.js static export deployed to Cloudflare Pages. It reads catalog data from CMS through:
+`apps/marketplace` là một Next.js static export deploy lên Cloudflare Pages. Nó đọc dữ liệu catalog từ CMS qua:
 
 ```
 GET /api/v1/marketplace/extensions?q=&category=&tags=&page=&perPage=&sort=
 GET /api/v1/marketplace/extensions/:slug
 ```
 
-The public catalog response is projected from `extensions.manifest.marketplace` first, then falls back to the existing `extensions` row. Stable public fields include `slug`, `name`, `description`, `readme`, `category`, `tags`, `publisherName`, `latestVersion`, `publishedAt`, `updatedAt`, `licenseType`, `repositoryUrl`, and `documentationUrl`. Existing fields (`marketplaceSlug`, `publisher`, `version`, `type`) remain for Studio compatibility.
+Response của catalog công khai được projection từ `extensions.manifest.marketplace` trước, rồi fallback về dòng `extensions` hiện có. Các field public ổn định gồm `slug`, `name`, `description`, `readme`, `category`, `tags`, `publisherName`, `latestVersion`, `publishedAt`, `updatedAt`, `licenseType`, `repositoryUrl` và `documentationUrl`. Các field cũ (`marketplaceSlug`, `publisher`, `version`, `type`) được giữ lại để tương thích với Studio.
 
-Launch checklist:
+Checklist ra mắt:
 
-- Set `NEXT_PUBLIC_USE_REAL_API=true`.
-- Set `NEXT_PUBLIC_CMS_API_URL` to the production CMS URL.
-- Build with `pnpm marketplace:build`.
-- Deploy with `pnpm marketplace:deploy` or Cloudflare Pages using `apps/marketplace/out`.
-- Smoke test `/`, `/extensions/`, `/categories/seo/`, and `/extensions/<slug>/`.
-- Seed listing metadata in `manifest.marketplace` if production rows are missing description/category/tags/license/link data.
+- Đặt `NEXT_PUBLIC_USE_REAL_API=true`.
+- Đặt `NEXT_PUBLIC_CMS_API_URL` là URL CMS production.
+- Build bằng `pnpm marketplace:build`.
+- Deploy bằng `pnpm marketplace:deploy` hoặc Cloudflare Pages với `apps/marketplace/out`.
+- Smoke test `/`, `/extensions/`, `/categories/seo/` và `/extensions/<slug>/`.
+- Seed metadata của listing trong `manifest.marketplace` nếu các dòng production thiếu dữ liệu description/category/tags/license/link.
 
 ## Revenue sharing status
 
-The launch marketplace is free-first. LumiBase does not process paid extension checkout, license entitlement, payout, refund, or tax handling in this phase.
+Marketplace lúc ra mắt theo hướng free-first. Ở giai đoạn này LumiBase không xử lý checkout cho extension trả phí, license entitlement, payout, hoàn tiền hay thuế.
 
-Commercial extensions backlog:
+Backlog cho extension thương mại:
 
-- Pricing fields for extension listings.
-- Publisher accounts and payout profile.
-- Default percentage-based platform commission.
-- License entitlement for paid extension installs.
-- Checkout provider integration.
-- Revenue ledger, payout lifecycle, and refund lifecycle.
+- Các field giá cho listing extension.
+- Tài khoản publisher và hồ sơ payout.
+- Commission mặc định của nền tảng theo phần trăm.
+- License entitlement khi cài extension trả phí.
+- Tích hợp nhà cung cấp checkout.
+- Revenue ledger, vòng đời payout và vòng đời hoàn tiền.
 
 ## Cấu trúc Phiên bản & Thông báo Cập nhật (Versioning & Auto-update)
 
