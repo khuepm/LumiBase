@@ -357,3 +357,20 @@ describe('plain text and refs', () => {
     ).toEqual([{ kind: 'file', id: 'g1' }]);
   });
 });
+
+describe('Markdown import hooks are untrusted', () => {
+  it('ignores a hook that returns an invalid document or throws', () => {
+    const bad = markdownToRichText('hello', {
+      plugins: [
+        { name: 'bad', transformMarkdownImport: () => [{ type: 'script' } as unknown as RichTextBlock] },
+        {
+          name: 'throws',
+          transformMarkdownImport: () => {
+            throw new Error('boom');
+          },
+        },
+      ],
+    });
+    expect(bad.content).toEqual([p('hello')]);
+  });
+});

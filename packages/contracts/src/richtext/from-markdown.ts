@@ -11,6 +11,7 @@ import {
 import { decodeEntities } from './html-tokenizer';
 import type { RichTextPlugin } from './plugins';
 import { sanitizeRichTextDocument } from './sanitize';
+import { validateRichTextDocument } from './validate';
 import { RICHTEXT_MD_CUSTOM_FENCE } from './to-markdown';
 import { safeHref } from './url';
 
@@ -819,6 +820,15 @@ export function markdownToRichText(markdown: string, opts: MarkdownImportOptions
   } finally {
     scanCaches = null;
   }
-  for (const p of opts.plugins ?? []) if (p.transformMarkdownImport) content = p.transformMarkdownImport(content);
+  for (const p of opts.plugins ?? []) {
+    if (!p.transformMarkdownImport) continue;
+    // A hook is untrusted: its output is used only if it is a valid document.
+    try {
+      const next = p.transformMarkdownImport(content);
+      if (validateRichTextDocument({ type: 'doc', version: RICHTEXT_VERSION, content: next }) === null) content = next;
+    } catch {
+      /* keep the content from before the failing hook */
+    }
+  }
   return sanitizeRichTextDocument({ type: 'doc', version: RICHTEXT_VERSION, content }).doc;
 }

@@ -251,6 +251,10 @@ function inlines(nodes: Node[], ctx: InlineCtx): RichTextInline[] {
         break;
       }
       case 'sup': {
+        if (n.attrs['data-footnote']) {
+          out.push({ type: 'footnote', label: n.attrs['data-footnote'] });
+          continue;
+        }
         // `<sup><a class="footnote-ref">` — the sup is the footnote's wrapper, not a mark.
         const only = n.children.filter((c) => isEl(c) || c.text.trim() !== '');
         if (only.length === 1 && isEl(only[0]!) && only[0].name === 'a' && only[0].attrs.class?.split(/\s+/).includes('footnote-ref')) {
@@ -508,7 +512,12 @@ function blocks(nodes: Node[]): RichTextBlock[] {
       continue;
     }
     if (n.name === 'div' && n.attrs['data-block']) {
-      out.push({ type: 'custom', name: n.attrs['data-block'], data: {} });
+      out.push({ type: 'custom', name: n.attrs['data-block'], data: customData(n.attrs['data-lb-data']) });
+      continue;
+    }
+    // The Studio editor's footnote definition (`<aside data-footnote>`).
+    if (n.name === 'aside' && n.attrs['data-footnote']) {
+      out.push({ type: 'footnote', label: n.attrs['data-footnote'], content: blocks(n.children) });
       continue;
     }
     switch (n.name) {
@@ -563,6 +572,17 @@ function blocks(nodes: Node[]): RichTextBlock[] {
 
 function hasBlockDescendant(el: El): boolean {
   return el.children.some((c) => isEl(c) && (BLOCK.has(c.name) || wordListInfo(c) !== null || hasBlockDescendant(c)));
+}
+
+/** Custom block data carried in `data-lb-data` (editor copy/paste); anything but a JSON object is `{}`. */
+function customData(raw: string | undefined): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    const v: unknown = JSON.parse(raw);
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
 /** A paragraph holding only an embed is a block embed. */

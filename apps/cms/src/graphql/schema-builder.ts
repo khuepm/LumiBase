@@ -280,7 +280,7 @@ class BlockTypeFactory {
           fields[field.name] = {
             type: mapFieldType(field),
             description: field.note ?? undefined,
-            resolve: (src) => src.data[field.name],
+            resolve: (src) => resolveFieldValue(field, src.data[field.name]),
           };
         }
         return fields;
