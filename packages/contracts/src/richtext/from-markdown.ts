@@ -47,7 +47,13 @@ const RE_TABLE_DELIM = /^ {0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?
 const RE_SETEXT = /^ {0,3}(=+|-+)[ \t]*$/;
 const RE_CAPTION = /^ {0,3}Table:[ \t]*(.*?)[ \t]*$/;
 
-const isBlank = (l: string) => /^[ \t]*$/.test(l);
+function isBlank(l: string): boolean {
+  for (let k = 0; k < l.length; k++) {
+    const c = l.charCodeAt(k);
+    if (c !== 32 && c !== 9) return false;
+  }
+  return true;
+}
 
 /** Remove up to `n` columns of leading indentation (tabs count as 4). */
 function dedent(line: string, n: number): string {
@@ -60,6 +66,18 @@ function dedent(line: string, n: number): string {
     i++;
   }
   return line.slice(i);
+}
+
+/** Whether `line` starts with at least `n` columns of indentation (tabs count as 4); reads at most `n` characters. */
+function indentedBy(line: string, n: number): boolean {
+  let col = 0;
+  for (let k = 0; k < line.length && col < n; k++) {
+    const c = line.charCodeAt(k);
+    if (c === 32) col += 1;
+    else if (c === 9) col += 4;
+    else return false;
+  }
+  return col >= n;
 }
 
 function indentOf(line: string): number {
@@ -107,7 +125,7 @@ function splitRow(line: string): string[] {
 }
 
 /** Container nesting past this is read as plain paragraphs (stack safety). */
-const MAX_NESTING = 48;
+const MAX_NESTING = 32;
 
 class BlockParser {
   constructor(
@@ -286,18 +304,26 @@ class BlockParser {
       i++;
       while (i < L.length) {
         const l = L[i]!;
+        // Only the first `pad` columns decide membership; scanning the whole
+        // indentation made deeply nested lists O(depth × input size) in scans.
+        // An indented blank line joins the body: it yields no block, and a
+        // following unindented line still ends the item (no lazy continuation
+        // after a blank line).
+        if (indentedBy(l, pad)) {
+          body.push(dedent(l, pad));
+          i++;
+          continue;
+        }
         if (isBlank(l)) {
           let j = i;
           while (j < L.length && isBlank(L[j]!)) j++;
-          if (j < L.length && indentOf(L[j]!) >= pad) {
+          if (j < L.length && indentedBy(L[j]!, pad)) {
             for (; i < j; i++) body.push('');
             continue;
           }
           break;
         }
-        if (indentOf(l) >= pad) {
-          body.push(dedent(l, pad));
-        } else if (!startsBlock(l) && !RE_ITEM.test(l) && !isBlank(body[body.length - 1]!)) {
+        if (!startsBlock(l) && !RE_ITEM.test(l) && !isBlank(body[body.length - 1]!)) {
           body.push(l); // lazy continuation of the item's paragraph
         } else {
           break;
@@ -410,11 +436,13 @@ interface ScanCache {
   brackets: Map<number, number> | null;
   dest: Map<number, { url: string; end: number } | null>;
   closerFail: Map<string, number>;
+  /** Inline HTML tag → smallest start index from which no matching close tag exists. */
+  htmlCloseFail: Map<string, number>;
 }
 let scanCaches: Map<string, ScanCache> | null = null;
 
 function cacheFor(s: string): ScanCache {
-  const fresh = (): ScanCache => ({ codeFail: new Map(), brackets: null, dest: new Map(), closerFail: new Map() });
+  const fresh = (): ScanCache => ({ codeFail: new Map(), brackets: null, dest: new Map(), closerFail: new Map(), htmlCloseFail: new Map() });
   if (!scanCaches) return fresh();
   let c = scanCaches.get(s);
   if (!c) {
@@ -424,7 +452,7 @@ function cacheFor(s: string): ScanCache {
   return c;
 }
 
-const MAX_DEST = 4096;
+const MAX_DEST = 2048;
 
 /** The code span opening at `i`: its text and the index just past it, or null. */
 function codeSpanEnd(s: string, i: number): { end: number; text: string } | null {
@@ -493,34 +521,39 @@ function parseDest(s: string, i: number): { url: string; end: number } | null {
   const limit = Math.min(s.length, i + MAX_DEST);
   let j = i + 1;
   while (s[j] === ' ') j++;
-  let url = '';
+  // Scan indices only and slice once: building the URL char by char made
+  // thousands of unclosed `(` quadratic in string concatenation.
+  let raw: string;
   if (s[j] === '<') {
-    j++;
+    const start = ++j;
     while (j < limit && s[j] !== '>') {
-      if (s[j] === '\n' || s[j] === '<') return null;
-      if (s[j] === '\\' && j + 1 < s.length && PUNCT.test(s[j + 1]!)) j++;
-      url += s[j];
-      j++;
+      const c = s.charCodeAt(j);
+      if (c === 10 || c === 60) return null; // newline, `<`
+      j += c === 92 && j + 1 < s.length ? 2 : 1; // backslash escape
     }
     if (s[j] !== '>') return null;
+    raw = s.slice(start, j);
     j++;
   } else {
+    const start = j;
     let depth = 0;
-    while (j < limit && !/\s/.test(s[j]!)) {
-      if (s[j] === '\\' && j + 1 < s.length && PUNCT.test(s[j + 1]!)) {
-        url += s[j + 1];
+    while (j < limit) {
+      const c = s.charCodeAt(j);
+      if (c <= 32) break; // ASCII whitespace / controls end a bare destination
+      if (c === 92 && j + 1 < s.length) {
         j += 2;
         continue;
       }
-      if (s[j] === '(') depth++;
-      if (s[j] === ')') {
+      if (c === 40) depth++;
+      else if (c === 41) {
         if (depth === 0) break;
         depth--;
       }
-      url += s[j];
       j++;
     }
+    raw = s.slice(start, j);
   }
+  const url = raw.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g, '$1');
   while (s[j] === ' ') j++;
   // Optional title: "…", '…' or (…) — parsed and discarded (the model has no link titles).
   if (s[j] === '"' || s[j] === "'" || (s[j] === '(' && url !== '')) {
@@ -587,6 +620,16 @@ function findCloser(s: string, from: number, ch: string, n: number): number {
 const INLINE_TAG = /^<(\/?)([a-z]+)\s*(\/?)>/i;
 
 function findHtmlClose(s: string, from: number, tag: string): number {
+  // No close tag after `from` means none after any later start either.
+  const cache = cacheFor(s);
+  const failed = cache.htmlCloseFail.get(tag);
+  if (failed !== undefined && failed <= from) return -1;
+  const found = scanHtmlClose(s, from, tag);
+  if (found === -1) cache.htmlCloseFail.set(tag, Math.min(from, failed ?? from));
+  return found;
+}
+
+function scanHtmlClose(s: string, from: number, tag: string): number {
   const open = new RegExp(`<${tag}\\s*>`, 'gi');
   const close = new RegExp(`</${tag}\\s*>`, 'gi');
   let depth = 1;
