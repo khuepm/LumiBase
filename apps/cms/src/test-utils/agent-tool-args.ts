@@ -47,6 +47,8 @@ const CANDIDATES: unknown[] = [
   'interface',
   // ISO datetime (`replayCdcSubscription.occurredAfter`, #585).
   '2026-01-01T00:00:00.000Z',
+  // Migration source (`planContentMigration.source`, #728).
+  'contentful',
 ];
 
 /**

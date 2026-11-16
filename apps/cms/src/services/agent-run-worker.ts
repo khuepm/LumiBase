@@ -1,6 +1,7 @@
 import type { Database } from '@lumibase/database';
 import type { CacheProvider, KeyProvider, QueueProvider, RuntimeContext, SearchProvider } from '@lumibase/runtime';
 import { backgroundUsageSource, runWithUsageScope } from '../platform/usage';
+import { siteExternalToolRegistry } from '../extensions/mcp-extension-tools';
 import { AISecureHarness } from './ai-harness';
 import { ExtensionsService } from './extensions-service';
 import { AgentRunService, runErrorMessage } from './agent-run-service';
@@ -328,11 +329,19 @@ async function executeAgentRunJob(
     : itemServiceForSystem(itemDeps, 'background-worker');
 
   const notifications: Array<Promise<void>> = [];
+  // A queued run can call an extension tool (#715) exactly as a request can.
+  const externalTools = await siteExternalToolRegistry({
+    db: deps.db,
+    siteId: payload.siteId,
+    env: deps.env as Record<string, unknown> | undefined,
+    dataAccess: itemService.extensionDataAccess(),
+  });
   const harness = new AISecureHarness({
     db: deps.db,
     siteId: payload.siteId,
     schemaService,
     itemService,
+    externalTools,
     extensionsService: new ExtensionsService({
       db: deps.db, siteId: payload.siteId, userId: payload.userId,
       permissionCtx: capabilities.permissionContext, cache: deps.cache,

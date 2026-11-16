@@ -1,0 +1,1117 @@
+{
+  "contentTypes": [
+    {
+      "sys": {
+        "id": "author",
+        "type": "ContentType"
+      },
+      "name": "Author",
+      "displayField": "name",
+      "fields": [
+        {
+          "id": "name",
+          "name": "Name",
+          "type": "Symbol",
+          "localized": false,
+          "required": true,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        },
+        {
+          "id": "bio",
+          "name": "Bio",
+          "type": "Text",
+          "localized": true,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        },
+        {
+          "id": "avatar",
+          "name": "Avatar",
+          "type": "Link",
+          "localized": false,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false,
+          "linkType": "Asset"
+        }
+      ]
+    },
+    {
+      "sys": {
+        "id": "category",
+        "type": "ContentType"
+      },
+      "name": "Category",
+      "displayField": "title",
+      "fields": [
+        {
+          "id": "title",
+          "name": "Title",
+          "type": "Symbol",
+          "localized": true,
+          "required": true,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        },
+        {
+          "id": "slug",
+          "name": "Slug",
+          "type": "Symbol",
+          "localized": false,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        }
+      ]
+    },
+    {
+      "sys": {
+        "id": "blogPost",
+        "type": "ContentType"
+      },
+      "name": "Blog post",
+      "displayField": "title",
+      "fields": [
+        {
+          "id": "title",
+          "name": "Title",
+          "type": "Symbol",
+          "localized": true,
+          "required": true,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        },
+        {
+          "id": "slug",
+          "name": "Slug",
+          "type": "Symbol",
+          "localized": false,
+          "required": true,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        },
+        {
+          "id": "body",
+          "name": "Body",
+          "type": "RichText",
+          "localized": true,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        },
+        {
+          "id": "author",
+          "name": "Author",
+          "type": "Link",
+          "localized": false,
+          "required": false,
+          "validations": [
+            {
+              "linkContentType": [
+                "author"
+              ]
+            }
+          ],
+          "disabled": false,
+          "omitted": false,
+          "linkType": "Entry"
+        },
+        {
+          "id": "categories",
+          "name": "Categories",
+          "type": "Array",
+          "localized": false,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false,
+          "items": {
+            "type": "Link",
+            "linkType": "Entry",
+            "validations": [
+              {
+                "linkContentType": [
+                  "category"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "tags",
+          "name": "Tags",
+          "type": "Array",
+          "localized": false,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false,
+          "items": {
+            "type": "Symbol",
+            "validations": []
+          }
+        },
+        {
+          "id": "heroImage",
+          "name": "Hero image",
+          "type": "Link",
+          "localized": false,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false,
+          "linkType": "Asset"
+        },
+        {
+          "id": "publishDate",
+          "name": "Publish date",
+          "type": "Date",
+          "localized": false,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        },
+        {
+          "id": "featured",
+          "name": "Featured",
+          "type": "Boolean",
+          "localized": false,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        },
+        {
+          "id": "status",
+          "name": "Status",
+          "type": "Symbol",
+          "localized": false,
+          "required": false,
+          "validations": [
+            {
+              "in": [
+                "news",
+                "guide"
+              ]
+            }
+          ],
+          "disabled": false,
+          "omitted": false
+        }
+      ],
+      "description": "Articles"
+    },
+    {
+      "sys": {
+        "id": "product",
+        "type": "ContentType"
+      },
+      "name": "Product",
+      "displayField": "name",
+      "fields": [
+        {
+          "id": "name",
+          "name": "Name",
+          "type": "Symbol",
+          "localized": true,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        },
+        {
+          "id": "price",
+          "name": "Price",
+          "type": "Number",
+          "localized": false,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        },
+        {
+          "id": "stock",
+          "name": "Stock",
+          "type": "Integer",
+          "localized": false,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        },
+        {
+          "id": "gallery",
+          "name": "Gallery",
+          "type": "Array",
+          "localized": false,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false,
+          "items": {
+            "type": "Link",
+            "linkType": "Asset"
+          }
+        },
+        {
+          "id": "specs",
+          "name": "Specs",
+          "type": "Object",
+          "localized": false,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        },
+        {
+          "id": "related",
+          "name": "Related",
+          "type": "Array",
+          "localized": false,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false,
+          "items": {
+            "type": "Link",
+            "linkType": "Entry",
+            "validations": []
+          }
+        }
+      ]
+    },
+    {
+      "sys": {
+        "id": "page",
+        "type": "ContentType"
+      },
+      "name": "Page",
+      "displayField": "title",
+      "fields": [
+        {
+          "id": "title",
+          "name": "Title",
+          "type": "Symbol",
+          "localized": false,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        },
+        {
+          "id": "location",
+          "name": "Store location",
+          "type": "Location",
+          "localized": false,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        },
+        {
+          "id": "featuredItem",
+          "name": "Featured",
+          "type": "Link",
+          "localized": false,
+          "required": false,
+          "validations": [
+            {
+              "linkContentType": [
+                "blogPost",
+                "product"
+              ]
+            }
+          ],
+          "disabled": false,
+          "omitted": false,
+          "linkType": "Entry"
+        },
+        {
+          "id": "seoScore",
+          "name": "SEO score",
+          "type": "Integer",
+          "localized": true,
+          "required": false,
+          "validations": [],
+          "disabled": false,
+          "omitted": false
+        }
+      ]
+    }
+  ],
+  "entries": [
+    {
+      "sys": {
+        "id": "author-lan",
+        "type": "Entry",
+        "version": 2,
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-02T00:00:00.000Z",
+        "contentType": {
+          "sys": {
+            "type": "Link",
+            "linkType": "ContentType",
+            "id": "author"
+          }
+        },
+        "publishedVersion": 1
+      },
+      "fields": {
+        "name": {
+          "en-US": "Lan"
+        },
+        "bio": {
+          "en-US": "Barista",
+          "vi": "Pha chế"
+        },
+        "avatar": {
+          "en-US": {
+            "sys": {
+              "type": "Link",
+              "linkType": "Asset",
+              "id": "asset-avatar"
+            }
+          }
+        }
+      }
+    },
+    {
+      "sys": {
+        "id": "cat-guides",
+        "type": "Entry",
+        "version": 2,
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-02T00:00:00.000Z",
+        "contentType": {
+          "sys": {
+            "type": "Link",
+            "linkType": "ContentType",
+            "id": "category"
+          }
+        },
+        "publishedVersion": 1
+      },
+      "fields": {
+        "title": {
+          "en-US": "Guides",
+          "vi": "Hướng dẫn"
+        },
+        "slug": {
+          "en-US": "guides"
+        }
+      }
+    },
+    {
+      "sys": {
+        "id": "cat-news",
+        "type": "Entry",
+        "version": 1,
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-02T00:00:00.000Z",
+        "contentType": {
+          "sys": {
+            "type": "Link",
+            "linkType": "ContentType",
+            "id": "category"
+          }
+        }
+      },
+      "fields": {
+        "title": {
+          "en-US": "News"
+        },
+        "slug": {
+          "en-US": "news"
+        }
+      }
+    },
+    {
+      "sys": {
+        "id": "post-brew",
+        "type": "Entry",
+        "version": 4,
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-02T00:00:00.000Z",
+        "contentType": {
+          "sys": {
+            "type": "Link",
+            "linkType": "ContentType",
+            "id": "blogPost"
+          }
+        },
+        "publishedVersion": 3
+      },
+      "fields": {
+        "title": {
+          "en-US": "How to brew",
+          "vi": "Cách pha"
+        },
+        "slug": {
+          "en-US": "how-to-brew"
+        },
+        "body": {
+          "en-US": {
+            "nodeType": "document",
+            "content": [
+              {
+                "nodeType": "heading-2",
+                "content": [
+                  {
+                    "nodeType": "text",
+                    "value": "Brewing guide",
+                    "marks": [],
+                    "data": {}
+                  }
+                ],
+                "data": {}
+              },
+              {
+                "nodeType": "paragraph",
+                "content": [
+                  {
+                    "nodeType": "text",
+                    "value": "Use ",
+                    "marks": [],
+                    "data": {}
+                  },
+                  {
+                    "nodeType": "text",
+                    "value": "fresh",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ],
+                    "data": {}
+                  },
+                  {
+                    "nodeType": "text",
+                    "value": " beans and ",
+                    "marks": [],
+                    "data": {}
+                  },
+                  {
+                    "nodeType": "text",
+                    "value": "filtered",
+                    "marks": [
+                      {
+                        "type": "italic"
+                      },
+                      {
+                        "type": "underline"
+                      }
+                    ],
+                    "data": {}
+                  },
+                  {
+                    "nodeType": "text",
+                    "value": " water.\nThen wait.",
+                    "marks": [],
+                    "data": {}
+                  }
+                ],
+                "data": {}
+              },
+              {
+                "nodeType": "paragraph",
+                "content": [
+                  {
+                    "nodeType": "hyperlink",
+                    "content": [
+                      {
+                        "nodeType": "text",
+                        "value": "Read more",
+                        "marks": [],
+                        "data": {}
+                      }
+                    ],
+                    "data": {
+                      "uri": "https://example.com/brew"
+                    }
+                  },
+                  {
+                    "nodeType": "text",
+                    "value": " or see ",
+                    "marks": [],
+                    "data": {}
+                  },
+                  {
+                    "nodeType": "entry-hyperlink",
+                    "content": [
+                      {
+                        "nodeType": "text",
+                        "value": "Lan",
+                        "marks": [],
+                        "data": {}
+                      }
+                    ],
+                    "data": {
+                      "target": {
+                        "sys": {
+                          "type": "Link",
+                          "linkType": "Entry",
+                          "id": "author-lan"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "nodeType": "text",
+                    "value": ".",
+                    "marks": [],
+                    "data": {}
+                  }
+                ],
+                "data": {}
+              },
+              {
+                "nodeType": "unordered-list",
+                "content": [
+                  {
+                    "nodeType": "list-item",
+                    "content": [
+                      {
+                        "nodeType": "paragraph",
+                        "content": [
+                          {
+                            "nodeType": "text",
+                            "value": "Grind",
+                            "marks": [],
+                            "data": {}
+                          }
+                        ],
+                        "data": {}
+                      }
+                    ],
+                    "data": {}
+                  },
+                  {
+                    "nodeType": "list-item",
+                    "content": [
+                      {
+                        "nodeType": "paragraph",
+                        "content": [
+                          {
+                            "nodeType": "text",
+                            "value": "Brew",
+                            "marks": [],
+                            "data": {}
+                          }
+                        ],
+                        "data": {}
+                      },
+                      {
+                        "nodeType": "ordered-list",
+                        "content": [
+                          {
+                            "nodeType": "list-item",
+                            "content": [
+                              {
+                                "nodeType": "paragraph",
+                                "content": [
+                                  {
+                                    "nodeType": "text",
+                                    "value": "4 minutes",
+                                    "marks": [],
+                                    "data": {}
+                                  }
+                                ],
+                                "data": {}
+                              }
+                            ],
+                            "data": {}
+                          }
+                        ],
+                        "data": {}
+                      }
+                    ],
+                    "data": {}
+                  }
+                ],
+                "data": {}
+              },
+              {
+                "nodeType": "blockquote",
+                "content": [
+                  {
+                    "nodeType": "paragraph",
+                    "content": [
+                      {
+                        "nodeType": "text",
+                        "value": "Coffee is a language.",
+                        "marks": [],
+                        "data": {}
+                      }
+                    ],
+                    "data": {}
+                  }
+                ],
+                "data": {}
+              },
+              {
+                "nodeType": "embedded-asset-block",
+                "content": [],
+                "data": {
+                  "target": {
+                    "sys": {
+                      "type": "Link",
+                      "linkType": "Asset",
+                      "id": "asset-hero"
+                    }
+                  }
+                }
+              },
+              {
+                "nodeType": "embedded-entry-block",
+                "content": [],
+                "data": {
+                  "target": {
+                    "sys": {
+                      "type": "Link",
+                      "linkType": "Entry",
+                      "id": "product-beans"
+                    }
+                  }
+                }
+              },
+              {
+                "nodeType": "table",
+                "content": [
+                  {
+                    "nodeType": "table-row",
+                    "content": [
+                      {
+                        "nodeType": "table-header-cell",
+                        "content": [
+                          {
+                            "nodeType": "paragraph",
+                            "content": [
+                              {
+                                "nodeType": "text",
+                                "value": "Grind",
+                                "marks": [],
+                                "data": {}
+                              }
+                            ],
+                            "data": {}
+                          }
+                        ],
+                        "data": {}
+                      },
+                      {
+                        "nodeType": "table-header-cell",
+                        "content": [
+                          {
+                            "nodeType": "paragraph",
+                            "content": [
+                              {
+                                "nodeType": "text",
+                                "value": "Time",
+                                "marks": [],
+                                "data": {}
+                              }
+                            ],
+                            "data": {}
+                          }
+                        ],
+                        "data": {}
+                      }
+                    ],
+                    "data": {}
+                  },
+                  {
+                    "nodeType": "table-row",
+                    "content": [
+                      {
+                        "nodeType": "table-cell",
+                        "content": [
+                          {
+                            "nodeType": "paragraph",
+                            "content": [
+                              {
+                                "nodeType": "text",
+                                "value": "Coarse",
+                                "marks": [],
+                                "data": {}
+                              }
+                            ],
+                            "data": {}
+                          }
+                        ],
+                        "data": {}
+                      },
+                      {
+                        "nodeType": "table-cell",
+                        "content": [
+                          {
+                            "nodeType": "paragraph",
+                            "content": [
+                              {
+                                "nodeType": "text",
+                                "value": "4 min",
+                                "marks": [],
+                                "data": {}
+                              }
+                            ],
+                            "data": {}
+                          }
+                        ],
+                        "data": {}
+                      }
+                    ],
+                    "data": {}
+                  }
+                ],
+                "data": {}
+              },
+              {
+                "nodeType": "hr",
+                "content": [],
+                "data": {}
+              },
+              {
+                "nodeType": "paragraph",
+                "content": [
+                  {
+                    "nodeType": "text",
+                    "value": "Code: ",
+                    "marks": [],
+                    "data": {}
+                  },
+                  {
+                    "nodeType": "text",
+                    "value": "tamp()",
+                    "marks": [
+                      {
+                        "type": "code"
+                      }
+                    ],
+                    "data": {}
+                  },
+                  {
+                    "nodeType": "text",
+                    "value": " and ",
+                    "marks": [],
+                    "data": {}
+                  },
+                  {
+                    "nodeType": "embedded-entry-inline",
+                    "content": [],
+                    "data": {
+                      "target": {
+                        "sys": {
+                          "type": "Link",
+                          "linkType": "Entry",
+                          "id": "missing-entry"
+                        }
+                      }
+                    }
+                  }
+                ],
+                "data": {}
+              }
+            ],
+            "data": {}
+          },
+          "vi": {
+            "nodeType": "document",
+            "content": [
+              {
+                "nodeType": "paragraph",
+                "content": [
+                  {
+                    "nodeType": "text",
+                    "value": "Xin chào",
+                    "marks": [],
+                    "data": {}
+                  }
+                ],
+                "data": {}
+              }
+            ],
+            "data": {}
+          }
+        },
+        "author": {
+          "en-US": {
+            "sys": {
+              "type": "Link",
+              "linkType": "Entry",
+              "id": "author-lan"
+            }
+          }
+        },
+        "categories": {
+          "en-US": [
+            {
+              "sys": {
+                "type": "Link",
+                "linkType": "Entry",
+                "id": "cat-guides"
+              }
+            },
+            {
+              "sys": {
+                "type": "Link",
+                "linkType": "Entry",
+                "id": "cat-news"
+              }
+            }
+          ]
+        },
+        "tags": {
+          "en-US": [
+            "coffee",
+            "howto"
+          ]
+        },
+        "heroImage": {
+          "en-US": {
+            "sys": {
+              "type": "Link",
+              "linkType": "Asset",
+              "id": "asset-hero"
+            }
+          }
+        },
+        "publishDate": {
+          "en-US": "2026-03-01T09:00:00.000Z"
+        },
+        "featured": {
+          "en-US": true
+        },
+        "status": {
+          "en-US": "guide"
+        }
+      }
+    },
+    {
+      "sys": {
+        "id": "post-old",
+        "type": "Entry",
+        "version": 3,
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-02T00:00:00.000Z",
+        "contentType": {
+          "sys": {
+            "type": "Link",
+            "linkType": "ContentType",
+            "id": "blogPost"
+          }
+        },
+        "archivedVersion": 2
+      },
+      "fields": {
+        "title": {
+          "en-US": "Old news"
+        },
+        "slug": {
+          "en-US": "old-news"
+        }
+      }
+    },
+    {
+      "sys": {
+        "id": "product-beans",
+        "type": "Entry",
+        "version": 2,
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-02T00:00:00.000Z",
+        "contentType": {
+          "sys": {
+            "type": "Link",
+            "linkType": "ContentType",
+            "id": "product"
+          }
+        },
+        "publishedVersion": 1
+      },
+      "fields": {
+        "name": {
+          "en-US": "Beans",
+          "vi": "Hạt cà phê"
+        },
+        "price": {
+          "en-US": 12.5
+        },
+        "stock": {
+          "en-US": 40
+        },
+        "gallery": {
+          "en-US": [
+            {
+              "sys": {
+                "type": "Link",
+                "linkType": "Asset",
+                "id": "asset-hero"
+              }
+            },
+            {
+              "sys": {
+                "type": "Link",
+                "linkType": "Asset",
+                "id": "asset-avatar"
+              }
+            }
+          ]
+        },
+        "specs": {
+          "en-US": {
+            "origin": "Đà Lạt",
+            "roast": "medium"
+          }
+        },
+        "related": {
+          "en-US": [
+            {
+              "sys": {
+                "type": "Link",
+                "linkType": "Entry",
+                "id": "post-brew"
+              }
+            },
+            {
+              "sys": {
+                "type": "Link",
+                "linkType": "Entry",
+                "id": "author-lan"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "sys": {
+        "id": "page-home",
+        "type": "Entry",
+        "version": 2,
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-02T00:00:00.000Z",
+        "contentType": {
+          "sys": {
+            "type": "Link",
+            "linkType": "ContentType",
+            "id": "page"
+          }
+        },
+        "publishedVersion": 1
+      },
+      "fields": {
+        "title": {
+          "en-US": "Home"
+        },
+        "location": {
+          "en-US": {
+            "lat": 10.7769,
+            "lon": 106.7009
+          }
+        },
+        "featuredItem": {
+          "en-US": {
+            "sys": {
+              "type": "Link",
+              "linkType": "Entry",
+              "id": "post-brew"
+            }
+          }
+        },
+        "seoScore": {
+          "en-US": 90,
+          "vi": 85
+        }
+      }
+    }
+  ],
+  "assets": [
+    {
+      "sys": {
+        "id": "asset-hero",
+        "type": "Asset",
+        "version": 2,
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-02T00:00:00.000Z",
+        "publishedVersion": 1
+      },
+      "fields": {
+        "title": {
+          "en-US": "Hero"
+        },
+        "description": {
+          "en-US": "A cup"
+        },
+        "file": {
+          "en-US": {
+            "url": "//images.ctfassets.net/space/asset-hero/hero.jpg",
+            "fileName": "hero.jpg",
+            "contentType": "image/jpeg",
+            "details": {
+              "size": 1234,
+              "image": {
+                "width": 1200,
+                "height": 800
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "sys": {
+        "id": "asset-avatar",
+        "type": "Asset",
+        "version": 2,
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-02T00:00:00.000Z",
+        "publishedVersion": 1
+      },
+      "fields": {
+        "title": {
+          "en-US": "Avatar"
+        },
+        "file": {
+          "en-US": {
+            "url": "//images.ctfassets.net/space/asset-avatar/lan.png",
+            "fileName": "lan.png",
+            "contentType": "image/png",
+            "details": {
+              "size": 456,
+              "image": {
+                "width": 64,
+                "height": 64
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "locales": [
+    {
+      "code": "en-US",
+      "name": "English (United States)",
+      "default": true,
+      "fallbackCode": null
+    },
+    {
+      "code": "vi",
+      "name": "Vietnamese",
+      "default": false,
+      "fallbackCode": "en-US"
+    }
+  ],
+  "editorInterfaces": [],
+  "webhooks": [],
+  "roles": []
+}

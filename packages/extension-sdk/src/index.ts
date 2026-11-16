@@ -20,6 +20,8 @@ export interface ExtensionManifest {
   /** Declared capabilities (e.g. `items:read:posts`, `http:fetch:api.example.com`). */
   capabilities: string[];
   config?: Array<{ key: string; type: 'string' | 'integer' | 'boolean' | 'json'; default?: unknown }>;
+  /** MCP tools, prompts and resources the extension adds (#715); see {@link mcpManifest}. */
+  mcp?: ReturnType<typeof mcpManifest>;
   /** Auto-install during setup/reconcile (verified official `lumibase-*` only). */
   autoInstall?: boolean;
   /** Whether an auto-installed extension starts enabled. */
@@ -151,6 +153,116 @@ export function defineCdcSubscriber<TData = Record<string, unknown>>(
   def: CdcSubscriberDefinition<TData>,
 ): CdcSubscriberDefinition<TData> {
   return def;
+}
+
+/* ── MCP tools, prompts and resources (#715) ─────────────────────────────── */
+
+/**
+ * How bad a wrong call is. The host turns this into governance:
+ *
+ * | riskClass   | runs without a human when…                         |
+ * |-------------|----------------------------------------------------|
+ * | `read_only` | the caller holds `capability` (no autonomy check)  |
+ * | `low`       | the agent's autonomy grant is L2 or higher          |
+ * | `medium`    | the agent's autonomy grant is L4                    |
+ * | `high`      | never — a signed-in human approves every call      |
+ *
+ * A tool whose `capability` is `schema:write`, or whose name starts with
+ * `delete`, is always treated as `high`, whatever it declares.
+ */
+export type ExtensionToolRiskClass = 'read_only' | 'low' | 'medium' | 'high';
+
+/** Context the host hands a tool handler. */
+export interface ExtensionToolContext {
+  readonly siteId: string;
+  /** The governed run this call belongs to. */
+  readonly runId: string | null;
+}
+
+export interface ExtensionToolDefinition<TArgs extends Record<string, unknown> = Record<string, unknown>> {
+  /** `[a-z][a-zA-Z0-9_]{2,40}`. Advertised as `ext_<extension key>__<name>`. */
+  name: string;
+  description: string;
+  /** The one capability a caller must hold, e.g. `items:write`. */
+  capability: string;
+  riskClass: ExtensionToolRiskClass;
+  /** Whether the effect can be undone. Default true. `false` forces human approval. */
+  reversible?: boolean;
+  /** JSON Schema of `type: "object"`; arguments are validated before the handler runs. */
+  inputSchema: Record<string, unknown> & { type: 'object' };
+  /**
+   * Runs only after the harness allowed the call (capability, autonomy,
+   * approval). Use the sandbox context your module factory received for data
+   * access; it is capability-checked against what the admin granted.
+   */
+  handler: (args: TArgs, ctx: ExtensionToolContext) => Promise<unknown>;
+}
+
+export function defineTool<TArgs extends Record<string, unknown> = Record<string, unknown>>(
+  def: ExtensionToolDefinition<TArgs>,
+): ExtensionToolDefinition<TArgs> {
+  return def;
+}
+
+/** A static prompt shipped in the manifest (`mcp.prompts`). */
+export interface ExtensionPromptDefinition {
+  name: string;
+  title?: string;
+  description?: string;
+  /** Capability a caller must hold to see it. Default `items:read`. */
+  capability?: string;
+  text: string;
+}
+
+export function definePrompt(def: ExtensionPromptDefinition): ExtensionPromptDefinition {
+  return def;
+}
+
+/** A static resource shipped in the manifest (`mcp.resources`). */
+export interface ExtensionResourceDefinition {
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType?: 'text/plain' | 'text/markdown' | 'application/json';
+  /** Capability a caller must hold to see and read it. Default `items:read`. */
+  capability?: string;
+  text: string;
+}
+
+export function defineResource(def: ExtensionResourceDefinition): ExtensionResourceDefinition {
+  return def;
+}
+
+export interface ExtensionMcpDefinition {
+  tools?: ExtensionToolDefinition[];
+  prompts?: ExtensionPromptDefinition[];
+  resources?: ExtensionResourceDefinition[];
+}
+
+/**
+ * The `mcp` export of a bundle. The host reads only `tools[].handler` from the
+ * bundle; everything that is listed comes from the manifest, so generate the
+ * manifest block from the same definitions with {@link mcpManifest}.
+ */
+export function defineMcp(def: ExtensionMcpDefinition): ExtensionMcpDefinition {
+  return def;
+}
+
+/**
+ * The manifest `mcp` block for a definition — tool handlers stripped. Write it
+ * into `lumibase-extension.json` at build time so the declaration an admin
+ * reviews is exactly the one the bundle implements.
+ */
+export function mcpManifest(def: ExtensionMcpDefinition): {
+  tools: Array<Omit<ExtensionToolDefinition, 'handler'>>;
+  prompts: ExtensionPromptDefinition[];
+  resources: ExtensionResourceDefinition[];
+} {
+  return {
+    tools: (def.tools ?? []).map(({ handler: _handler, ...declaration }) => declaration),
+    prompts: [...(def.prompts ?? [])],
+    resources: [...(def.resources ?? [])],
+  };
 }
 
 /* ── Studio host services (media picker, #708) ─────────────────────────────── */

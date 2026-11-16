@@ -36,6 +36,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'translations', label: 'Translations', to: '/settings/translations' },
       { id: 'translation-memory', label: 'Translation memory', to: '/settings/translation-memory' },
+      { id: 'locale-generator', label: 'Add a locale', to: '/settings/locale-generator' },
     ],
   },
   {

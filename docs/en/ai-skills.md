@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-11-14T12:31:26.094Z
+version: 5
+lastUpdated: 2026-11-15T13:42:40.951Z
 sourceLang: en
-contentHash: 363ed1c0ef550112
-codeVerified: 2026-11-14T12:31:26.094Z
-codeVerifiedHash: 363ed1c0ef550112
+contentHash: 8221209427f28e25
+codeVerified: 2026-11-15T13:42:40.951Z
+codeVerifiedHash: 8221209427f28e25
 codeVerifiedClaims: 6
 ---
 
@@ -88,6 +88,7 @@ Skills run through the **governed endpoint** `POST /api/v1/mcp` (gated by the pe
 | `aiSuggestField` · `aiContentAssist` · `generate*` | `schema:read` / `items:*` | safe |
 | `listRelations` | `schema:read` | safe |
 | `createRelation` / `deleteRelation` | `schema:create` / `schema:delete` | dangerous · (delete) irreversible |
+| `planContentMigration` / `applyContentMigrationSchema` | `schema:read` / `schema:create` + `schema:update` | safe / dangerous (approval) — see [Content migration](./features/content-migration.md) |
 | `listRoles` / `listPolicies` | `access:read` | safe |
 | `createRole` / `createPolicy` | `access:create` | dangerous |
 | `deleteRole` / `deletePolicy` | `access:delete` | dangerous · irreversible |
