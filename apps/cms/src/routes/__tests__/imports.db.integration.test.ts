@@ -5,6 +5,7 @@ import {
   auditLog,
   collections,
   fields,
+  importChunks,
   importJobs,
   items,
   roles,
@@ -17,6 +18,7 @@ import type { AppEnv } from '../../env';
 import { ItemService } from '../../services/item-service';
 import {
   DEFAULT_IMPORT_CONFIG,
+  ImportError,
   createImportJob,
   driveImportJob,
   runImportStep,
@@ -343,6 +345,64 @@ describe.skipIf(!hasDbIntegrationUrl)('background imports — DB integration', (
     expect(row.createdRows).toBe(50);
   });
 
+  const chunksOf = async (jobId: string) =>
+    (await db.select({ startRow: importChunks.startRow, rowCount: importChunks.rowCount }).from(importChunks).where(eq(importChunks.jobId, jobId)).orderBy(importChunks.startRow));
+
+  it('parses the file once at create: stages chunks, stores no source, and each step consumes one chunk (#859)', async () => {
+    const j = await job(csv(Array.from({ length: 120 }, (_, i) => ({ price: i }))));
+    expect((await reload(j.id)).source).toBe('');
+    expect(await chunksOf(j.id)).toEqual([
+      { startRow: 0, rowCount: 50 },
+      { startRow: 50, rowCount: 50 },
+      { startRow: 100, rowCount: 20 },
+    ]);
+
+    expect(await runImportStep({ db, config: config() }, j.id)).toBe('progressed');
+    expect((await chunksOf(j.id)).map((c) => c.startRow)).toEqual([50, 100]);
+
+    // A different chunk size at run time does not matter: the staged chunks are the job.
+    expect(await driveImportJob({ db, config: config({ chunkSize: 7 }) }, j.id, 60_000)).toBe('done');
+    expect(await reload(j.id)).toMatchObject({ status: 'succeeded', cursor: 120, createdRows: 120 });
+    expect(await chunksOf(j.id)).toEqual([]);
+    expect(await countItems()).toBe(120);
+  });
+
+  it('stages a job queued before staging existed from its stored source, once (#859)', async () => {
+    const body = csv(Array.from({ length: 120 }, (_, i) => ({ price: i })));
+    const j = await job(body);
+    // Pre-migration shape: the raw file in `source`, nothing staged.
+    await db.delete(importChunks).where(eq(importChunks.jobId, j.id));
+    await db.update(importJobs).set({ source: body }).where(eq(importJobs.id, j.id));
+
+    expect(await runImportStep({ db, config: config() }, j.id)).toBe('progressed');
+    expect((await reload(j.id)).source).toBe('');
+    expect((await chunksOf(j.id)).map((c) => c.startRow)).toEqual([50, 100]);
+    expect(await driveImportJob({ db, config: config() }, j.id, 60_000)).toBe('done');
+    expect(await reload(j.id)).toMatchObject({ status: 'succeeded', createdRows: 120 });
+  });
+
+  it('fails a job whose staged rows are gone instead of looping', async () => {
+    const j = await job(csv([{ price: 1 }]));
+    await db.delete(importChunks).where(eq(importChunks.jobId, j.id));
+    expect(await runImportStep({ db, config: config() }, j.id)).toBe('done');
+    expect(await reload(j.id)).toMatchObject({ status: 'failed', message: 'The staged rows of this import are missing.' });
+  });
+
+  it('cancelling a queued job drops its staged rows', async () => {
+    const j = await job(csv([{ price: 1 }]));
+    await app.request(`/api/v1/imports/${j.id}/cancel`, { method: 'POST' });
+    expect(await chunksOf(j.id)).toEqual([]);
+  });
+
+  it('caps queued/running jobs and stored bytes per site (#859)', async () => {
+    const body = csv([{ price: 1 }]);
+    await job(body, { cfg: config({ maxPendingJobs: 1 }) });
+    await expect(job(body, { cfg: config({ maxPendingJobs: 1 }) })).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED', status: 429 });
+    const bytes = new TextEncoder().encode(body).byteLength;
+    await expect(job(body, { cfg: config({ maxPendingBytes: bytes + 1 }) })).rejects.toBeInstanceOf(ImportError);
+    expect(await job(body, { cfg: config({ maxPendingBytes: bytes * 2 }) })).toMatchObject({ status: 'queued' });
+  });
+
   describe('HTTP', () => {
     it('accepts a raw CSV body, runs it, and reports progress and errors', async () => {
       const res = await app.request('/api/v1/imports?collection=products', {
@@ -407,6 +467,38 @@ describe.skipIf(!hasDbIntegrationUrl)('background imports — DB integration', (
       expect((await post('collection=products', 'nope', 'application/octet-stream')).status).toBe(400);
       expect((await post('collection=products', 'x'.repeat(200_001))).status).toBe(413);
       expect(await db.select().from(importJobs).where(eq(importJobs.siteId, SITE))).toHaveLength(0);
+    });
+
+    it('413s a chunked upload over IMPORT_MAX_BYTES without a Content-Length (#859)', async () => {
+      let pulled = 0;
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (pulled++ >= 400) return controller.close();
+          controller.enqueue(new TextEncoder().encode('x'.repeat(1024)));
+        },
+      });
+      const res = await app.request('/api/v1/imports?collection=products', {
+        method: 'POST',
+        headers: { 'content-type': 'text/csv' },
+        body,
+        duplex: 'half',
+      } as RequestInit);
+      expect(res.status).toBe(413);
+      expect(((await res.json()) as { errors: Array<{ code: string }> }).errors[0]!.code).toBe('PAYLOAD_TOO_LARGE');
+      expect(pulled).toBeLessThan(400);
+      expect(await db.select().from(importJobs).where(eq(importJobs.siteId, SITE))).toHaveLength(0);
+    });
+
+    it('poll and list responses never carry the stored source', async () => {
+      const res = await app.request('/api/v1/imports?collection=products', {
+        method: 'POST',
+        headers: { 'content-type': 'text/csv' },
+        body: csv([{ price: 1 }]),
+      });
+      const { data } = (await res.json()) as { data: { id: string } };
+      const poll = await (await app.request(`/api/v1/imports/${data.id}`)).text();
+      const list = await (await app.request('/api/v1/imports')).text();
+      for (const text of [poll, list]) expect(text).not.toMatch(/"source"/);
     });
 
     it('403s without create permission; jobs are visible to their creator and admins only', async () => {
