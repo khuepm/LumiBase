@@ -8,8 +8,8 @@
  *   runImportStep     claim → check cancel/timeout → re-resolve principal →
  *                     write the next chunk → record counters/errors → release
  *   driveImportJob    loop steps within a time budget (request `waitUntil`)
- *   runImportTick     cron: resume jobs whose lease expired, honouring the
- *                     per-site concurrency limit
+ *   runImportTick     cron: resume jobs whose lease expired, round-robin and
+ *                     fair per site, honouring the per-site concurrency limit
  *
  * Every row goes through `ItemService` bound to the job's principal, so
  * validation, permissions, hooks, revisions and CDC behave exactly as for a
@@ -491,13 +491,27 @@ export async function driveImportJob(deps: ImportStepDeps, jobId: string, budget
 }
 
 /**
- * Cron entry: resume unfinished jobs whose lease is free, oldest first. Uses
- * the system connection (crosses sites). Returns how many jobs it touched.
+ * Cron entry: resume unfinished jobs whose lease is free. Uses the system
+ * connection (crosses sites). Returns how many jobs it stepped.
+ *
+ * Fair across sites and jobs (#860):
+ *  - selection ranks due jobs within their site (oldest first) and takes the
+ *    first job of every site before the second of any, so one site's backlog
+ *    cannot fill the whole `limit`;
+ *  - the budget is shared round-robin, one chunk per job per round, so a large
+ *    import cannot hold the tick until it finishes while other jobs wait (and
+ *    run into their own timeout).
  */
 export async function runImportTick(deps: ImportStepDeps, opts: { budgetMs?: number; limit?: number } = {}): Promise<number> {
   const now = deps.now?.() ?? new Date();
-  const due = await deps.db
-    .select({ id: importJobs.id })
+  const ranked = deps.db
+    .select({
+      id: importJobs.id,
+      createdAt: importJobs.createdAt,
+      siteRank: sql<number>`row_number() over (partition by ${importJobs.siteId} order by ${importJobs.createdAt}, ${importJobs.id})`.as(
+        'site_rank',
+      ),
+    })
     .from(importJobs)
     .where(
       and(
@@ -505,22 +519,32 @@ export async function runImportTick(deps: ImportStepDeps, opts: { budgetMs?: num
         or(isNull(importJobs.leaseUntil), lt(importJobs.leaseUntil, now)),
       ),
     )
-    .orderBy(asc(importJobs.createdAt))
+    .as('ranked');
+  const due = await deps.db
+    .select({ id: ranked.id })
+    .from(ranked)
+    .orderBy(asc(ranked.siteRank), asc(ranked.createdAt), asc(ranked.id))
     .limit(opts.limit ?? 10);
+
   const budget = opts.budgetMs ?? 45_000;
   const started = Date.now();
-  let touched = 0;
-  for (const { id } of due) {
-    const left = budget - (Date.now() - started);
-    if (left <= 0) break;
-    try {
-      await driveImportJob(deps, id, left);
-      touched++;
-    } catch (err) {
-      console.error('[import] tick step failed', { jobId: id, err: err instanceof Error ? err.message : String(err) });
+  const stepped = new Set<string>();
+  let active = due.map((d) => d.id);
+  while (active.length > 0) {
+    const next: string[] = [];
+    for (const id of active) {
+      if (Date.now() - started >= budget) return stepped.size;
+      try {
+        const outcome = await runImportStep(deps, id);
+        stepped.add(id);
+        if (outcome === 'progressed') next.push(id);
+      } catch (err) {
+        console.error('[import] tick step failed', { jobId: id, err: err instanceof Error ? err.message : String(err) });
+      }
     }
+    active = next;
   }
-  return touched;
+  return stepped.size;
 }
 
 // ── Cancel / read ─────────────────────────────────────────────────────────────
