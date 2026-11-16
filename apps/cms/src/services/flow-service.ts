@@ -89,6 +89,14 @@ const OPERATION_DOCS: Record<string, { description: string; options?: Record<str
     options: { targetId: 'string — deployment target id', coalesceWindowMs: 'number — reuse a deploy created within this window' },
   },
   'deploy:status': { description: 'Fetch latest deployment status', options: { targetId: 'string — deployment target id' } },
+  'members:enroll': {
+    description:
+      'Enrol a member into an active email sequence (welcome / onboarding / win-back). Idempotent: a member is enrolled once per sequence.',
+    options: {
+      sequenceKey: 'string — key of an active sequence on this site',
+      memberId: 'string — member id (defaults to input.event.itemId, i.e. the member that fired a lumibase_members event)',
+    },
+  },
   'ai:decision': {
     description:
       "Governed AI decision on one item with a pinned review profile version; branches 'true' | 'false' | 'unknown' | 'error' (or a choice key). Needs aiDecisions.flows and ai:decide.",
@@ -377,6 +385,24 @@ registerHandler('deploy:status', async (ctx, options) => {
   });
   const row = await service.syncDeployment(deploymentId);
   return { deploymentId, status: row?.status ?? 'unknown' };
+});
+
+registerHandler('members:enroll', async (ctx, options) => {
+  // Epic #672 N04: a flow triggered by a member event (collection
+  // `lumibase_members`) branches first, then enrols into a sequence; the
+  // members tick sends the steps over days.
+  const db = ctx.env['db'];
+  const siteId = ctx.env['siteId'];
+  if (!db || typeof siteId !== 'string') throw new Error('members:enroll requires env.db and env.siteId');
+  const sequenceKey = String(options['sequenceKey'] ?? '');
+  const event = ctx.input['event'] as { collection?: unknown; itemId?: unknown } | undefined;
+  const fromEvent = event && event.collection === 'lumibase_members' && typeof event.itemId === 'string' ? event.itemId : '';
+  const memberId = String(options['memberId'] ?? ctx.input['memberId'] ?? fromEvent);
+  if (!sequenceKey || !memberId) throw new Error('members:enroll requires a sequenceKey option and a member id');
+  const { enrollMemberByKey } = await import('../modules/members/sequences');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const enrolled = await enrollMemberByKey(db as any, siteId, sequenceKey, memberId);
+  return { enrolled, sequenceKey, memberId };
 });
 
 registerHandler('ai:decision', async (ctx, options, node) => {

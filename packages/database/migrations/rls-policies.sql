@@ -125,6 +125,14 @@ DECLARE
     -- Locale generator (#714): jobs + review queue. Requests read/write their
     -- own site; the resume tick claims jobs across sites on the system connection.
     'lumibase_locale_generation_jobs', 'lumibase_translation_suggestions',
+    -- Memberships & newsletters (epic #672). Requests read/write their own
+    -- site; the members tick (newsletter batches, sequence steps, DKIM
+    -- rotation) claims work across sites on the system connection.
+    'lumibase_member_settings', 'lumibase_member_tiers', 'lumibase_members',
+    'lumibase_member_newsletters', 'lumibase_member_login_tokens',
+    'lumibase_member_segments', 'lumibase_newsletters', 'lumibase_newsletter_sends',
+    'lumibase_newsletter_deliveries', 'lumibase_email_sequences',
+    'lumibase_sequence_enrollments', 'lumibase_sending_domains',
     -- Activation milestones (site-isolated). Requests read/write their own
     -- site; the telemetry tick reads across sites on the system connection.
     'lumibase_activation_milestones',

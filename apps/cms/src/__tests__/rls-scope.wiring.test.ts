@@ -239,6 +239,11 @@ const ROUTER_DB_CLASS: Record<string, { class: RouterClass; file?: string; note?
   '/.well-known/oauth-protected-resource': { class: 'request-scoped', note: 'MCP OAuth metadata (#346): public, tenant-resolved issuer list' },
   '/api/v1/shares': { class: 'self-scoped', file: 'routes/shares.ts' },
   '/api/v1/email': { class: 'self-scoped', file: 'routes/email-public.ts' },
+  '/api/v1/portal/email': {
+    class: 'self-scoped',
+    file: 'modules/members/email-public-routes.ts',
+    note: 'member mail links (#672): the signed token names the site; scopedDbFor per handler',
+  },
   '/api/v1/deliver': { class: 'self-scoped', file: 'routes/deliver.ts' },
   '/api/v1/deliver/preview': { class: 'self-scoped', file: 'routes/preview-delivery.ts' },
   '/api/v1/pageviews': { class: 'self-scoped', file: 'modules/pageviews/routes.ts' },

@@ -37,6 +37,8 @@ const STUDIO_ACCESS_PATH_PREFIXES = [
   '/api/v1/collections',
   '/api/v1/domains',
   '/api/v1/extensions',
+  // Members admin (epic #672); the member-facing Portal is `/api/v1/portal`.
+  '/api/v1/members',
   // Admin switch for the live OpenAPI document (#745). Prefix-matched on
   // `/openapi/…` only — `/api/v1/openapi.json` is NOT under it, so the
   // document itself stays reachable by the realms the site allows.

@@ -14,6 +14,7 @@ export default defineConfig({
     'utils/logger': 'src/utils/logger.ts',
     'richtext/index': 'src/richtext/index.ts',
     'migrate/index': 'src/migrate/index.ts',
+    'members/index': 'src/members/index.ts',
   },
   format: ['cjs', 'esm'],
   dts: true,

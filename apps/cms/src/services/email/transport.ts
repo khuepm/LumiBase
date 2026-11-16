@@ -41,6 +41,39 @@ export interface EmailMessage {
   readonly subject: string;
   readonly html?: string;
   readonly text?: string;
+  /**
+   * Extra headers (e.g. `List-Unsubscribe` / `List-Unsubscribe-Post` for
+   * RFC 8058 one-click). Names are validated by {@link safeHeaders}.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** Sign with a custom sending domain's DKIM key (epic #672 N06). */
+  readonly dkim?: DkimSigningKey;
+}
+
+/** A DKIM key the transport signs with; the private key is PKCS#8 PEM. */
+export interface DkimSigningKey {
+  readonly domainName: string;
+  readonly keySelector: string;
+  readonly privateKey: string;
+}
+
+const HEADER_NAME_RE = /^[A-Za-z0-9-]{1,64}$/;
+/** Headers a caller may not set: the transport owns them. */
+const RESERVED_HEADERS = new Set(['from', 'to', 'cc', 'bcc', 'subject', 'reply-to', 'dkim-signature', 'content-type', 'mime-version']);
+
+/**
+ * Drop malformed or reserved header names and any value carrying a line
+ * break, so a header can never inject another header (CWE-93).
+ */
+export function safeHeaders(headers: Readonly<Record<string, string>> | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!headers) return out;
+  for (const [name, value] of Object.entries(headers)) {
+    if (!HEADER_NAME_RE.test(name) || RESERVED_HEADERS.has(name.toLowerCase())) continue;
+    if (typeof value !== 'string' || /[\r\n]/.test(value)) continue;
+    out[name] = value;
+  }
+  return out;
 }
 
 /**
@@ -63,6 +96,8 @@ type NodemailerTransportHandle = {
     subject: string;
     text?: string;
     html?: string;
+    headers?: Record<string, string>;
+    dkim?: { domainName: string; keySelector: string; privateKey: string };
   }): Promise<unknown>;
 };
 
@@ -98,6 +133,8 @@ export class NodemailerTransport implements EmailTransport {
       return { ok: false, error: 'no-recipients', retryable: false };
     }
     const cc = message.cc ? dedupeAddresses(message.cc) : [];
+    const headers = safeHeaders(message.headers);
+    const hasHeaders = Object.keys(headers).length > 0;
 
     // SMTP servers commonly reject multi-recipient sends; loop one `to` at a
     // time so a single bad address can't poison the others. `ok: true` only
@@ -112,6 +149,16 @@ export class NodemailerTransport implements EmailTransport {
           subject: message.subject,
           text: message.text,
           html: message.html,
+          ...(hasHeaders ? { headers } : {}),
+          ...(message.dkim
+            ? {
+                dkim: {
+                  domainName: message.dkim.domainName,
+                  keySelector: message.dkim.keySelector,
+                  privateKey: message.dkim.privateKey,
+                },
+              }
+            : {}),
         });
       } catch (err) {
         return { ok: false, error: errorMessage(err), retryable: true };
@@ -192,9 +239,17 @@ export class MailchannelsTransport implements EmailTransport {
       to: recipients.map((email) => ({ email })),
     };
     if (cc.length > 0) personalization.cc = cc.map((email) => ({ email }));
+    if (message.dkim) {
+      // MailChannels signs per personalization with the caller's key.
+      personalization.dkim_domain = message.dkim.domainName;
+      personalization.dkim_selector = message.dkim.keySelector;
+      personalization.dkim_private_key = pemToBase64Der(message.dkim.privateKey);
+    }
+    const headers = safeHeaders(message.headers);
 
     const body = JSON.stringify({
       personalizations: [personalization],
+      ...(Object.keys(headers).length > 0 ? { headers } : {}),
       from: { email: message.from },
       ...(message.replyTo ? { reply_to: { email: message.replyTo } } : {}),
       subject: message.subject,
@@ -234,6 +289,11 @@ export class MailchannelsTransport implements EmailTransport {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
+
+/** MailChannels wants the private key as bare base64 DER, not PEM. */
+export function pemToBase64Der(pem: string): string {
+  return pem.replace(/-----(BEGIN|END) [A-Z ]+-----/g, '').replace(/\s+/g, '');
+}
 
 /**
  * Trim, drop blanks, de-duplicate (case-insensitive) while preserving the
