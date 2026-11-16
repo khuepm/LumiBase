@@ -31,8 +31,8 @@ export function generateGraphQLSdl(manifest: TypegenManifest): string {
     const name = collection.name;
     const type = typeNames.get(name) as string;
     query.push(
-      `${name}(filter: JSON, sort: [String!], limit: Int, offset: Int, status: String): [${type}!]!`,
-      `${name}_by_id(id: ID!): ${type}`,
+      `${name}(filter: JSON, sort: [String!], limit: Int, offset: Int, status: String, publicationState: PublicationState, modifiedSincePublish: Boolean): [${type}!]!`,
+      `${name}_by_id(id: ID!, publicationState: PublicationState): ${type}`,
     );
     mutation.push(
       `create_${name}(data: JSON!, status: String, sort: Int): ${type}!`,
@@ -43,6 +43,8 @@ export function generateGraphQLSdl(manifest: TypegenManifest): string {
   }
 
   blocks.push(objectType('Query', query));
+  // Publication cohort argument (#688); only referenced when a collection exists.
+  if (collections.length > 0) blocks.push('enum PublicationState {\n  live\n  preview\n  all\n}');
   // The server omits Mutation / Subscription on a collection-less site.
   if (mutation.length > 0) blocks.push(objectType('Mutation', mutation));
   if (subscription.length > 0) {
@@ -70,6 +72,10 @@ const STRUCTURAL: ReadonlyArray<[string, string]> = [
   ['userCreated', 'String'],
   ['userUpdated', 'String'],
   ['_data', 'JSON'],
+  // Publication state (#687), underscored so a content field keeps its name.
+  ['_firstPublishedAt', 'DateTime'],
+  ['_publishedAt', 'DateTime'],
+  ['_hasUnpublishedChanges', 'Boolean'],
 ];
 
 /** Content fields colliding with these names are skipped (the column wins). */
@@ -86,6 +92,9 @@ const RESERVED: ReadonlySet<string> = new Set([
   'user_created',
   'user_updated',
   '_data',
+  '_firstPublishedAt',
+  '_publishedAt',
+  '_hasUnpublishedChanges',
 ]);
 
 const GRAPHQL_NAME = /^[_A-Za-z][_0-9A-Za-z]*$/;

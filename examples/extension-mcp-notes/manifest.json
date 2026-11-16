@@ -1,0 +1,63 @@
+{
+  "name": "mcp-notes",
+  "version": "1.0.0",
+  "type": "hook",
+  "entry": "./dist/index.js",
+  "description": "Adds governed MCP tools, a prompt and a resource for an editorial `notes` collection.",
+  "capabilities": ["items:read:notes", "items:write:notes", "mcp:tools", "mcp:prompts", "mcp:resources"],
+  "mcp": {
+    "tools": [
+      {
+        "name": "countNotes",
+        "description": "Count the notes on an item.",
+        "capability": "items:read",
+        "riskClass": "read_only",
+        "inputSchema": {
+          "type": "object",
+          "properties": { "itemId": { "type": "string", "maxLength": 64 } },
+          "required": ["itemId"]
+        }
+      },
+      {
+        "name": "appendNote",
+        "description": "Append an editorial note to an item.",
+        "capability": "items:write",
+        "riskClass": "low",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "itemId": { "type": "string", "maxLength": 64 },
+            "text": { "type": "string", "maxLength": 2000 }
+          },
+          "required": ["itemId", "text"]
+        }
+      },
+      {
+        "name": "addNotesField",
+        "description": "Add a field to the notes collection. Always needs a human approval (schema:write).",
+        "capability": "schema:write",
+        "riskClass": "medium",
+        "inputSchema": {
+          "type": "object",
+          "properties": { "field": { "type": "string", "maxLength": 64 } },
+          "required": ["field"]
+        }
+      }
+    ],
+    "prompts": [
+      {
+        "name": "note-style",
+        "title": "Editorial note style",
+        "text": "Notes are one sentence, imperative mood, and name the field they concern."
+      }
+    ],
+    "resources": [
+      {
+        "name": "notes-guide",
+        "title": "How editors use notes",
+        "mimeType": "text/markdown",
+        "text": "# Notes\n\nA note is a short instruction from an editor to the author of an item."
+      }
+    ]
+  }
+}

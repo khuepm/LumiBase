@@ -1,13 +1,13 @@
 ---
-version: 19
-lastUpdated: 2026-11-13T09:53:20.768Z
+version: 20
+lastUpdated: 2026-11-15T19:28:47.967Z
 sourceLang: vi
 translatedFrom: vi
-sourceHash: 05a10f3351c9af51
+sourceHash: 0d43631475d2ecb0
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-13T09:53:20.768Z
-codeVerifiedHash: 05a10f3351c9af51
+codeVerified: 2026-11-15T19:28:47.967Z
+codeVerifiedHash: 0d43631475d2ecb0
 codeVerifiedClaims: 40
 ---
 
@@ -39,6 +39,7 @@ Source: [`apps/cms/src/routes/mcp.ts`](../../../apps/cms/src/routes/mcp.ts), [`a
   - `tools/list` — lists the **currently enabled** tools from `ToolRegistryService`; the inputSchema is derived from the canonical schemas in `@lumibase/contracts` (only a skill with no schema still falls back to `{ type: 'object' }`). Each tool also carries a `title` (human-readable name) and `annotations` (`readOnlyHint`, `destructiveHint`) derived from the registry (`toolAnnotations` in `apps/cms/src/services/mcp-service.ts`): read-only only when the tool is `safe` and every capability is `:read`; destructive when its `riskPolicy` is `dangerous`. These are client hints (#346), never an authorization input.
   - `tools/call` — runs through `AISecureHarness.execute(skillName, args, capabilities, contextMessage)`. The result is wrapped as `{ content, structuredContent, isError }`.
   - `prompts/list`, `prompts/get` — the site's `active` [Site Skills](../features/site-skills.md); `name` is the slug and the body comes back as a single user message. Served only to callers that can read skills over REST, i.e. a principal that resolves to a control-plane admin for the site (`grant.allowed && grant.controlPlaneAdmin` in `routes/mcp.ts`): a non-admin member or a site API key gets an empty `prompts/list`. For an admin, each skill's `surfaces`/`requiredCapabilities` still filter further. A prompt that does not exist and one the caller may not see answer identically.
+  - Extensions (#715): an enabled extension granted `mcp:prompts` adds static prompts named `ext:<key>:<name>` (offered to callers holding the prompt's capability, default `items:read`, no admin needed; `_meta['lumibase/extension']` replaces the site-skill provenance); one granted `mcp:resources` makes `initialize` also return `resources: { listChanged: false }` and serves `resources/list`, `resources/read` (URI `lumibase-ext://<key>/<name>`). Extension tools (`ext_<key>__<tool>`, need `mcp:tools`) go through the harness as external-action tools. See [Extension System §10](../features/extensions-system.md).
   - `notifications/initialized`, `notifications/cancelled` → return `null` ⇒ HTTP `202 Accepted` with no body.
 - **Mapping decision → tool result** (an important invariant):
   - `executed` → `isError: false`, data in `structuredContent`.

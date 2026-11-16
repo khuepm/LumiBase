@@ -1,14 +1,14 @@
 ---
-version: 2
+version: 3
 sourceLang: en
 translatedFrom: en
 mtEngine: manual
 syncStatus: human-translated
-lastUpdated: 2026-11-14T02:15:35.179Z
-sourceHash: 762fa056a7df59c7
-codeVerified: 2026-11-14T02:15:35.179Z
-codeVerifiedHash: 762fa056a7df59c7
-codeVerifiedClaims: 14
+lastUpdated: 2026-11-15T19:51:31.763Z
+sourceHash: 0cecb3b0be52686a
+codeVerified: 2026-11-15T19:51:31.763Z
+codeVerifiedHash: 0cecb3b0be52686a
+codeVerifiedClaims: 16
 ---
 
 # Bảo mật upload: dò MIME, làm sạch SVG và polyglot
@@ -40,6 +40,7 @@ bề mặt được bảo vệ:
 | `POST /api/v1/files` | metadata của file (JSON) | chặn public, allowlist MIME, vệ sinh tên file, đuôi ↔ MIME |
 | `PUT /api/v1/files/upload/:key` | bytes thô, presigned (JWT) | allowlist MIME, tên file, kích thước thật, dò nội dung, quét polyglot |
 | `POST /api/v1/media/:key` | bytes thô (RBAC) | chặn public + toàn bộ phía trên |
+| `PUT /api/v1/files/:id/content` | bytes thô, thay tại chỗ (RBAC `files:update`) | chặn public, allowlist MIME, vệ sinh `?filename=`, kích thước thật, dò nội dung, quét polyglot |
 
 Upload presigned **không** đi thẳng vào storage: bytes vẫn chảy qua bộ nhận của
 CMS, nên guard thấy trọn file trước `storage.put`.
@@ -156,8 +157,11 @@ tra dò nội dung và polyglot áp dụng cho chúng như mọi loại khác.
 
 ## Những gì cơ chế này không phải
 
-- Không phải trình quét malware/AV. Hãy kết hợp với trình quét ngoài cho tenant
-  chịu quản lý (`.kiro/specs/upload-file-controls/` task F2).
+- Tự nó không phải trình quét malware/AV. Quét tuỳ chọn (F2, #707) chạy
+  **sau** khi upload qua một HTTP scanner do deployment cấu hình (sidecar
+  ClamAV trên Docker); khi một site bật nó, file không được phục vụ cho tới khi
+  kết quả quét là `clean`. Xem
+  [Quản lý tài sản số](../features/digital-asset-management.md#quét-mã-độc-d07).
 - Không phải bộ re-encode. Re-encode ảnh để bỏ mọi thứ trừ pixel là cách chống
   polyglot không có dương tính giả; việc này vẫn đang lên kế hoạch (task F1).
 - Header chỉ bảo vệ bytes được phục vụ **qua CMS**. Nếu bạn mở bucket storage

@@ -2,6 +2,70 @@
 
 Append-only history of automated EN ⇄ VI documentation syncs. Each run records language detection, preserved content and translation actions so no source content is silently lost.
 
+## 2026-11-16T00:09:22.894Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 209
+
+Summary — up-to-date: 209, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-15T23:53:46.590Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 208
+
+Summary — up-to-date: 208, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-15T23:36:47.012Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 206
+
+Summary — up-to-date: 206, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-15T23:22:46.544Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 204
+
+Summary — up-to-date: 204, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-15T23:02:14.126Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 203
+
+Summary — up-to-date: 203, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-15T22:10:22.259Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 202
+
+Summary — up-to-date: 202, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-15T21:53:02.775Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 202
+
+Summary — up-to-date: 202, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
+## 2026-11-15T21:48:11.067Z — mode `preserve-only` (effective `preserve-only`)
+
+Engine: `claude` · API key: absent · files scanned: 202
+
+Summary — up-to-date: 202, translated: 0, preserved: 0, conflicts: 0, planned: 0
+
+---
+
 ## 2026-11-15T21:34:05.631Z — mode `preserve-only` (effective `preserve-only`)
 
 Engine: `claude` · API key: absent · files scanned: 202

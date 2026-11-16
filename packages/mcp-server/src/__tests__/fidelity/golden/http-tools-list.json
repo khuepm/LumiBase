@@ -63,6 +63,60 @@
       }
     },
     {
+      "name": "applyContentMigrationSchema",
+      "description": "Create the collections, fields and relations a content migration needs. Additive only; existing fields are never changed. Entries are imported with `lumibase migrate --apply`.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "const": "contentful"
+          },
+          "contentTypes": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "locales": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "collectionPrefix": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,20}$"
+          },
+          "localeMap": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "source",
+          "contentTypes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "askUser",
       "description": "Ask a human a clarifying question and pause the run until it is answered, times out or is cancelled. Returns status \"waiting_user\" with a questionId.",
       "inputSchema": {
@@ -1371,6 +1425,60 @@
       "description": "List outbound webhooks for the current site.",
       "inputSchema": {
         "type": "object"
+      }
+    },
+    {
+      "name": "planContentMigration",
+      "description": "Plan a migration from another CMS (Contentful): map its content types to collections and fields, compared with the current schema. Read-only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "const": "contentful"
+          },
+          "contentTypes": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "locales": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "collectionPrefix": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,20}$"
+          },
+          "localeMap": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "source",
+          "contentTypes"
+        ],
+        "additionalProperties": false
       }
     },
     {

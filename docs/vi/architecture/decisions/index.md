@@ -1,9 +1,9 @@
 ---
-version: 2
-lastUpdated: 2026-11-09T10:47:36.155Z
+version: 3
+lastUpdated: 2026-11-15T19:48:31.851Z
 sourceLang: en
 translatedFrom: en
-sourceHash: aa2693756b301230
+sourceHash: e613099bcc5af049
 mtEngine: manual
 syncStatus: human-translated
 ---
@@ -29,6 +29,7 @@ LumiBase tuân theo [mẫu ADR](https://adr.github.io/) để ghi lại các quy
 | [ADR-011](./adr-011-user-management-realms.md) | User Management Realms (kho lưu trữ đơn, realm theo phạm vi role, token audience) | Accepted |
 | [ADR-012](./adr-012-remove-cdc-cache-invalidator.md) | Loại bỏ CDC CacheInvalidator (thay thế bằng xả tag tại đường dẫn ghi API) | Accepted |
 | [ADR-013](./adr-013-organization-plane.md) | Organization plane (phân cấp tenant và credential phân loại theo phạm vi) | Proposed |
+| [ADR-014](./adr-014-preview-bridge-threat-model.md) | Cầu nối live preview — preview token, nhúng frame và threat model của postMessage | Accepted |
 
 ## Template
 

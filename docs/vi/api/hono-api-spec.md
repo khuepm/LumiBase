@@ -1,15 +1,15 @@
 ---
 title: Đặc tả Hono API — LumiBase
-version: 50
-lastUpdated: 2026-11-15T18:29:03.519Z
+version: 55
+lastUpdated: 2026-11-15T23:40:56.423Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 3d2993c6d2c70e62
+sourceHash: fb7e23a8ff3b4d56
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-15T18:29:03.519Z
-codeVerifiedHash: 3d2993c6d2c70e62
-codeVerifiedClaims: 580
+codeVerified: 2026-11-15T23:40:56.423Z
+codeVerifiedHash: fb7e23a8ff3b4d56
+codeVerifiedClaims: 636
 ---
 
 <!-- check-parity: allow inline-code -->
@@ -587,12 +587,14 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `GET` | `/api/v1/items/:collection` | Liệt kê các mục (có phân trang, bộ lọc) |
 | `POST` | `/api/v1/items/:collection` | Tạo mục (hoặc mảng cho hàng loạt) |
 | `GET` | `/api/v1/items/:collection/export` | Xuất collection dạng CSV hoặc JSON theo luồng ([Data export](../features/data-export.md)) |
-| `GET` | `/api/v1/items/:collection/:id` | Lấy một mục duy nhất |
-| `PATCH` | `/api/v1/items/:collection/:id` | Cập nhật một phần |
-| `PUT` | `/api/v1/items/:collection/:id` | Thay thế hoàn toàn |
+| `GET` | `/api/v1/items/:collection/:id` | Lấy một mục duy nhất; trả `ETag` |
+| `PATCH` | `/api/v1/items/:collection/:id` | Cập nhật một phần; tôn trọng `If-Match` |
+| `PUT` | `/api/v1/items/:collection/:id` | Thay thế hoàn toàn; tôn trọng `If-Match` |
 | `DELETE` | `/api/v1/items/:collection/:id` | Xóa mục — **409 nếu bị chặn bởi phụ thuộc** |
 | `GET` | `/api/v1/items/:collection/:id/dependents` | Liệt kê các bản ghi tham chiếu tới mục này |
 | `POST` | `/api/v1/items/:collection/:id/resolve-dependents` | Xử lý hàng loạt các phụ thuộc của quan hệ |
+| `POST` | `/api/v1/items/:collection/:id/reorder` | Sắp xếp thủ công trên collection có `meta.manualSort`: `{ after: id \| null }` hoặc `{ before: id }` ([Editorial UX](../features/editorial-ux.md#sắp-xếp-thủ-công)) |
+| `POST` | `/api/v1/items/:collection/:id/duplicate` | Lưu thành bản sao: một bản sao `draft` với trường duy nhất được thêm hậu tố (`relations` trong body; xem bên dưới) |
 | `POST` | `/api/v1/items/:collection/:id/move` | Di chuyển một item cùng cây con của nó trong collection dạng cây; liệt kê với `?tree=children\|subtree\|ancestors` ([Collection phân cấp](../features/hierarchical-collections.md)) |
 | `GET` | `/api/v1/items/:collection/:id/revisions` | Liệt kê các bản sửa đổi (revisions) |
 | `POST` | `/api/v1/items/:collection/:id/revert` | Khôi phục lại một bản sửa đổi |
@@ -603,6 +605,19 @@ Admin cache purge (control-plane): `POST /api/v1/utils/cache/purge` với `{ tag
 | `DELETE` | `/api/v1/items/:collection/:id/versions/:key` | Xóa một bản nháp |
 | `GET` | `/api/v1/items/:collection/:id/versions/:key/compare` | Diff các trường với main → `{ main, version, changes }` |
 | `POST` | `/api/v1/items/:collection/:id/versions/:key/promote` | Áp dụng bản nháp vào main (ghi một revision); `meta.mainDiverged` |
+
+**Sửa đồng thời (`ETag` / `If-Match`).** Mỗi item có bộ đếm `version`, tăng lên
+sau mỗi lần ghi làm đổi nội dung item. `GET /items/:collection/:id` trả nó dưới
+dạng `ETag` mạnh (`"3"`), và cũng có trong body response dưới tên `version`. Gửi
+lại nó qua `If-Match: "3"` khi `PATCH` hoặc `PUT` để lần ghi có điều kiện: nếu
+người khác đã sửa item trước, lần ghi thất bại với **412 `PRECONDITION_FAILED`**
+và không có gì được ghi. Phép kiểm tra nằm trong cùng câu `UPDATE`, nên hai bên
+ghi cầm cùng một tag không thể cùng thành công. Không có `If-Match` thì lần ghi
+ghi đè vô điều kiện, như trước. `*` chấp nhận mọi version; tag yếu (`W/"3"`)
+không bao giờ khớp. Response `PATCH`/`PUT` thành công mang `ETag` mới. Client
+khác origin gửi được `If-Match` và đọc được `ETag` (cả hai đã có trong danh sách
+allow/expose của CORS). SDK nhận tag qua
+`items(name).patch(id, input, { ifMatch: row.version })`.
 
 **Các bản ghi phụ thuộc (Dependent records).** Vì các tham chiếu item nằm trong JSONB (không phải cột FK vật lý), `onDelete` của một quan hệ được thực thi ở lớp ứng dụng. Khi `DELETE`, nếu một quan hệ khai báo `restrict` vẫn còn bản ghi trỏ tới item, lệnh xóa sẽ bị chặn với **409 `DEPENDENT_RECORDS_EXIST`** và một mảng `dependents`. (`set null`/`cascade` **không** tự động áp dụng khi xóa mềm — điều đó sẽ làm hỏng khả năng phục hồi của xóa mềm; trình biên tập phải xóa chúng một cách tường minh.) `GET …/dependents` trả về `{ data: { blocking, dependents: [{ relation, collection, field, onDelete, count, sample }] } }`. `POST …/resolve-dependents` nhận `{ action: "set_null"|"delete"|"reassign", relation, newTargetId?, hard? }` và chạy trong một transaction (lệnh delete ủy quyền cho đường dẫn xóa item thông thường). Lỗi: `DEPENDENT_RECORDS_EXIST` (409), `FIELD_REQUIRED` (409, set_null trên trường bắt buộc), `INVALID_TARGET` (422, reassign), `NOT_FOUND` (404).
 
@@ -626,6 +641,44 @@ File không hợp lệ bị từ chối với `400 VALIDATION` / `413 PAYLOAD_TO
 - `meta=none` — bỏ qua câu lệnh aggregate `count(*)` để truy vấn rẻ hơn; phản hồi là `{ data, meta: { limit, offset } }` (không có `total`). Dùng cho dạng cuộn vô tận (infinite-scroll) / bảng tin không bao giờ hiển thị tổng số trang.
 
 Mặc định không đổi, nên các client hiện tại tiếp tục nhận `meta.total`. `@lumibase/sdk` `readItems` chấp nhận tùy chọn `meta` tương tự.
+
+**Trạng thái xuất bản, nhóm (cohort) và bản sao (epic #668).**
+
+- **Dấu thời gian xuất bản (#687).** Mỗi item mang `firstPublishedAt` (gán
+  ở lần xuất bản đầu tiên, không bao giờ đổi), `publishedAt` (lần xuất bản gần
+  nhất, giữ nguyên khi gỡ xuất bản) và `hasUnpublishedChanges`. Một lần ghi là
+  *xuất bản* khi item chuyển sang `published`, hoặc khi body gửi rõ
+  `status: "published"` (xuất bản lại). Sửa dữ liệu của item đã từng được xuất
+  bản sẽ đặt `hasUnpublishedChanges: true`; lần xuất bản kế tiếp xoá cờ này.
+  Lưu mà không đổi gì thì không đổi gì. `GET /items/:collection?modifiedSincePublish=true`
+  chỉ liệt kê item đã bị sửa. GraphQL trả các giá trị này qua `_firstPublishedAt`,
+  `_publishedAt` và `_hasUnpublishedChanges`.
+- **Cohort (#688).** `GET /items/:collection` và `GET /items/:collection/:id`
+  nhận `publicationState=live|preview|all`: `live` = `published` và nằm trong
+  khung xuất bản, `preview` = `draft` + `published`, `all` = không lọc theo
+  cohort. Phần mở rộng quan hệ lồng nhau (`fields=rel.*`, `deep`) theo cùng
+  cohort. Người gọi ẩn danh và người dùng realm frontend luôn nhận `live`, bất
+  kể yêu cầu gì. Không truyền tham số thì hành vi không đổi (chỉ RBAC quyết
+  định). Giá trị lạ trả `400 VALIDATION`. Trường danh sách và `_by_id` của
+  GraphQL nhận cùng đối số `publicationState`; quan hệ lồng nhau đi theo nó.
+- **Nhân bản (#689).** `POST /items/:collection/:id/duplicate` với body tuỳ
+  chọn `{ relations?: "reference"|"deep"|"none", translations?: boolean,
+  locale?: string, overrides?: object }` tạo một bản sao `draft` qua đường tạo
+  item thông thường (cần `read` trên bản gốc và `create` trên collection).
+  Trường chuỗi duy nhất (và `slug`) được thêm hậu tố `-copy`, `-copy-2`, …;
+  giá trị duy nhất khác bị bỏ. `reference` (mặc định) sao chép liên kết m2m,
+  `deep` sao chép thêm một tầng item con o2m, `none` chỉ sao chép item.
+  `translations: false` chỉ giữ `locale` (mặc định: locale mặc định của site)
+  của các trường `translatable-text`. Phản hồi `201 { data, meta: { sourceId,
+  related } }`; một mục audit `item_duplicated` ghi lại bản gốc.
+- **Bỏ qua revision (#693).** `PATCH`/`PUT ?saveRevision=false` ghi item mà
+  không tạo dòng revision (autosave, ghi bằng máy). Lần ghi do agent thực hiện
+  luôn ghi revision (provenance). Collection có thể giới hạn lịch sử bằng
+  `meta.revisionRetention: { maxRevisions?, maxAgeDays? }`; một lượt quét mỗi
+  giờ xoá revision cũ nhưng luôn giữ revision mới nhất của mỗi item, revision
+  đang staged, revision được release ghim và revision của agent.
+
+Xem [Editorial UX](../features/editorial-ux.md).
 
 **Header tùy chọn:**
 - `X-Lumi-Draft: true` — lấy phiên bản nháp
@@ -656,6 +709,7 @@ Một **Release** gom các bản sửa đổi mục cụ thể trên nhiều col
 | `GET` | `/api/v1/releases` | Liệt kê các release (`?status=&page=&limit=`) |
 | `GET` | `/api/v1/releases/:id` | Chi tiết release + các mục của nó |
 | `PATCH` | `/api/v1/releases/:id` | Cập nhật meta, `addItems`/`removeItems`, đặt `publishAt` |
+| `GET` | `/api/v1/releases/:id/validate` | Tóm tắt kiểm tra hợp lệ trước khi xuất bản (#692) |
 | `POST` | `/api/v1/releases/:id/publish` | Xuất bản ngay (thủ công) |
 | `DELETE` | `/api/v1/releases/:id` | Xóa release (xóa nối tiếp các mục) |
 
@@ -678,7 +732,54 @@ Một **Release** gom các bản sửa đổi mục cụ thể trên nhiều col
 
 **Mã lỗi:** `EMPTY_RELEASE` (422), `ALREADY_PUBLISHED` (409), `RELEASE_IMMUTABLE` (409, chỉnh sửa các mục của release đã xuất bản), `ITEM_NOT_FOUND` (404), `REVISION_STAGED` (409, ghim bản sửa đổi chưa commit), `VALIDATION_FAILED` (422, bao gồm `publishAt` trong quá khứ). Các yếu tố chặn xuất bản từng mục xuất hiện dưới dạng lý do outcome `EDITORIAL_GATE_REQUIRED` / `ITEM_DELETED`.
 
+**Tóm tắt kiểm tra hợp lệ (#692).** `GET /releases/:id/validate` kiểm tra đầy đủ
+(gồm cả trường bắt buộc và điều kiện form-layout) mọi item mà release sẽ xuất
+bản — dùng snapshot của revision được ghim nếu có. Phản hồi:
+`{ data: { valid, checked, items: [{ collection, itemId, issues: [{ field, code, message }] }] } }`;
+`items` chỉ liệt kê item có vấn đề, và `field` là đường dẫn dạng dấu chấm tới
+trường lỗi. Khi xuất bản, cùng phép kiểm tra này chạy trước: item không hợp lệ
+không bao giờ được xuất bản và nhận lý do outcome `VALIDATION_FAILED` kèm
+`issues`. Ở chế độ `all_or_nothing` điều đó làm cả release thất bại; ở
+`best_effort` các item hợp lệ vẫn được xuất bản. Trang **Releases** của Studio
+hiển thị bản tóm tắt với liên kết mở trình soạn item ngay tại trường lỗi
+(`#field=<name>`).
+
 Các release lên lịch được xuất bản qua nhịp `content-scheduler` dùng chung (`sweepDueReleases`) — idempotent và nhận biết `maintenanceWindow`.
+
+---
+
+## 3c. Live preview (epic #667)
+
+Preview token cho phép frontend đọc nội dung draft trong thời gian ngắn. Mô hình
+bảo mật: [ADR-014](../architecture/decisions/adr-014-preview-bridge-threat-model.md);
+hướng dẫn: [Live preview & visual editing](../features/visual-editing.md).
+
+| Method | Path | Mô tả |
+|--------|------|-------|
+| `POST` | `/api/v1/preview/token` | Mint token (chỉ user principal; 30/phút/user → `429`) |
+| `GET` | `/api/v1/preview/tokens` | Token còn sống (site admin: tất cả; người khác: của mình) |
+| `POST` | `/api/v1/preview/tokens/:id/revoke` | Thu hồi một token (site admin: bất kỳ; người khác: của mình) |
+| `POST` | `/api/v1/preview/tokens/revoke-all` | Xoay vòng — thu hồi mọi token còn sống của site (site admin) |
+| `GET` | `/api/v1/preview/settings` | `{ allowedOrigins, ttlSeconds }` |
+| `PUT` | `/api/v1/preview/settings` | Cập nhật (site admin; chỉ origin chính xác) |
+| `GET` | `/api/v1/deliver/preview/:site_id` | Public: token nhắm tới gì (+ item / thành viên release) |
+| `GET` | `/api/v1/deliver/preview/:site_id/items/:collection` | Public: item đang live + overlay của token (`?limit=&offset=`, tối đa 100) |
+| `GET` | `/api/v1/deliver/preview/:site_id/items/:collection/:id` | Public: một item qua overlay |
+
+**Body khi mint** — một item (+ `versionKey` tuỳ chọn) hoặc một release:
+```json
+{ "collection": "posts", "itemId": "itm_1", "versionKey": "redesign", "locale": "vi", "ttlSeconds": 900 }
+```
+`201 { data: { id, token, expiresAt, url, … } }` — `token` chỉ hiện một lần;
+`url` dựng từ `meta.previewUrl` của collection (hoặc `null`).
+
+**Lần đọc public** nhận token ở header `x-lumibase-preview` hoặc `?__preview=`.
+Mọi lỗi (sai định dạng, site khác, hết hạn, bị thu hồi, người tạo mất quyền) đều
+là `401 { errors: [{ code: "PREVIEW_UNAUTHORIZED" }] }` với body giống hệt nhau.
+Response: `Cache-Control: private, no-store`, `X-Robots-Tag: noindex, nofollow`,
+`Referrer-Policy: no-referrer`. Sự kiện audit: `preview.token_minted`,
+`preview.read`, `preview.token_rejected`, `preview.token_revoked`,
+`preview.tokens_rotated`, `preview.settings_updated`.
 
 ---
 
@@ -724,11 +825,22 @@ Các release lên lịch được xuất bản qua nhịp `content-scheduler` d�
 | Phương thức | Đường dẫn | Mô tả |
 |--------|------|-------------|
 | `POST` | `/api/v1/files/presigned-url` | Lấy URL PUT presigned của R2/S3 |
-| `POST` | `/api/v1/files` | Đăng ký metadata file sau khi upload |
-| `GET` | `/api/v1/files` | Liệt kê các file (có bộ lọc) |
+| `POST` | `/api/v1/files` | Đăng ký metadata file sau khi upload; điền `contentHash` + metadata nhúng, trả `meta.duplicates` |
+| `GET` | `/api/v1/files` | Liệt kê file: `?folder=<id\|root>&subfolders=true&search=&mime=image/*,application/pdf&ids=&limit=&offset=` → `meta.total` |
 | `GET` | `/api/v1/files/:id` | Metadata file |
-| `PATCH` | `/api/v1/files/:id` | Cập nhật metadata (tiêu đề, tag, thư mục) |
-| `DELETE` | `/api/v1/files/:id` | Xóa file |
+| `PATCH` | `/api/v1/files/:id` | Đổi tên (`filenameDownload`), di chuyển (`folder`), `metadata` biên tập; id và storage key không bao giờ đổi |
+| `DELETE` | `/api/v1/files/:id` | Xoá an toàn: `409 FILE_IN_USE` kèm tham chiếu trừ khi `?confirm=true` (policy `confirm`); không bao giờ xoá với policy `block` |
+| `PUT` | `/api/v1/files/:id/content` | Thay byte tại chỗ (cùng id/key/tham chiếu, `version`+1, bản cũ được giữ để hoàn tác); `If-Match: "v<n>"`, `?filename=` |
+| `GET` | `/api/v1/files/:id/content` | Phân phối byte hiện tại; `?v=<version>` → immutable; `423` khi quét mã độc đang chờ/thất bại |
+| `GET` | `/api/v1/files/:id/versions` | Các binary trước đó trong thời gian lưu giữ |
+| `POST` | `/api/v1/files/:id/versions/:versionId/restore` | Khôi phục một binary trước đó (bản thân nó là một lần thay) |
+| `GET` | `/api/v1/files/:id/usage` | Item và page tham chiếu file |
+| `POST` | `/api/v1/files/:id/scan` | Chạy lại quét mã độc (site admin) |
+| `GET` | `/api/v1/files/duplicates?hash=` | File cùng nội dung (SHA-256 hex); cũng có `POST` với `{ hash }` |
+| `POST` | `/api/v1/files/bulk` | `{ ids, folder?, metadata? }` di chuyển / metadata biên tập hàng loạt; `meta.skipped` |
+| `GET/PUT` | `/api/v1/files/settings` | Thiết lập DAM (`files.dam`); `PUT` cần site admin |
+| `GET` | `/api/v1/files/folders` · `/folders/tree` | Thư mục (dạng phẳng / lồng nhau kèm `path`) |
+| `POST/PATCH/DELETE` | `/api/v1/files/folders[/:id]` | Tạo / đổi tên+di chuyển (`409 FOLDER_CYCLE`) / xoá thư mục rỗng (`409 FOLDER_NOT_EMPTY`); site admin |
 | `GET` | `/api/v1/assets/:id` | Phục vụ/biến đổi hình ảnh (tham số query bên dưới) |
 | `POST` | `/api/v1/media/:key` | Upload bytes media thô (RBAC `media:create`; bảo vệ upload áp dụng) |
 | `GET` | `/api/v1/media/:key` | Tải về media (phục vụ dạng `attachment` + `nosniff`); kèm tham số biến đổi → 302 tới file biến đổi |
@@ -747,7 +859,9 @@ Các release lên lịch được xuất bản qua nhịp `content-scheduler` d�
 ```
 Tại `/media/:key`, các tham số biến đổi được xác thực đối với `transformDslSchema` (`@lumibase/contracts`; `MAX_DIM=5000`) và request chuyển hướng 302 tới URL hình ảnh runtime (CF Image Resizing / Imgproxy). Không có tham số → bytes gốc. `?preset=<key>` giải quyết một hàng `transform_presets` đã lưu cho site. Xem `.kiro/specs/image-transform-dsl`.
 
-**Chính sách upload (`/api/v1/uploads/config`).** Được thực thi bởi bộ bảo vệ `file-upload-policy` trên mọi bề mặt upload (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`, `POST /api/v1/media/:key`): role public không thể upload; body bị giới hạn dung lượng trên độ dài byte thực tế; MIME được khai báo phải nằm trong danh sách cho phép và khớp với đuôi file; bytes thô được kiểm tra nội dung (magic bytes) và các file thực thi / SVG nội dung hoạt động bị từ chối; hình ảnh raster được quét payload script/executable chèn vào (polyglot) và bị từ chối. Danh sách cho phép + giới hạn giải quyết `per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*) → default`. Xem spec tính năng `.kiro/specs/upload-file-controls/` và `docs/en/security/runtime-security-guards-plan.md` §3 để biết các đảm bảo đầy đủ.
+**Quyền truy cập `/api/v1/files`.** Site admin có toàn quyền; thành viên khác cần một policy permission `files` mà rule của nó được đánh giá trên từng file theo `folder`, `folder_path`, `uploaded_by`, `mime` và `id` (phân quyền theo thư mục). Xem `docs/en/features/digital-asset-management.md` (epic #670).
+
+**Chính sách upload (`/api/v1/uploads/config`).** Được thực thi bởi bộ bảo vệ `file-upload-policy` trên mọi bề mặt upload (`POST /api/v1/files`, `PUT /api/v1/files/upload/:key`, `PUT /api/v1/files/:id/content`, `POST /api/v1/media/:key`): role public không thể upload; body bị giới hạn dung lượng trên độ dài byte thực tế; MIME được khai báo phải nằm trong danh sách cho phép và khớp với đuôi file; bytes thô được kiểm tra nội dung (magic bytes) và các file thực thi / SVG nội dung hoạt động bị từ chối; hình ảnh raster được quét payload script/executable chèn vào (polyglot) và bị từ chối. Danh sách cho phép + giới hạn giải quyết `per-site DB (settings key upload_policy) → env (FILE_UPLOAD_*) → default`. Xem spec tính năng `.kiro/specs/upload-file-controls/` và `docs/en/security/runtime-security-guards-plan.md` §3 để biết các đảm bảo đầy đủ.
 
 ```
 GET  /api/v1/uploads/config
@@ -1088,6 +1202,15 @@ Tất cả các tuyến được gắn dưới chuỗi đã xác thực; các ro
 | `GET/POST/PATCH/DELETE` | `/api/v1/agent/roles[/:name]` | CRUD thư viện vai trò Agent (admin) — khởi tạo sẵn với Planner, Writer, … |
 | `GET` | `/api/v1/agent/autonomy` | Sổ bộ tin cậy: quyền hạn + sự cố đang mở |
 | `GET/POST` | `/api/v1/agent/autonomy/promotions[...]` | Đề xuất thăng cấp; `POST :id/decide` là con đường duy nhất lên cấp cao hơn (admin) |
+| `GET` | `/api/v1/agent/receipts` | Agent receipts (#713): tổng hợp chỉ-đọc về run (theo status/agent, tỉ lệ lỗi), tool call theo skill × kết cục kèm latency p50, approval (status, người duyệt, latency p50/p90/trung bình), veto, câu hỏi `askUser`, lần con người bác bỏ, chi phí token/USD, drift, incident, autonomy grant và thăng cấp, chuỗi theo ngày và các ngưỡng cảnh báo bị vượt. `?since&until` (ISO, mặc định 30 ngày gần nhất, tối đa 180 ngày; `400 VALIDATION` / `WINDOW_TOO_WIDE`). Admin (control plane). Xem [agent receipts](../features/agent-receipts.md) |
+| `GET` | `/api/v1/agent/receipts/export` | CSV (`text/csv`) của `?kind=runs` (mặc định) \| `tool_calls` \| `approvals` trong cùng cửa sổ, tối đa 10.000 dòng (`X-Export-Rows`, `X-Export-Truncated`). Không bao giờ xuất input/output của tool; ô văn bản bắt đầu bằng `= + - @` được thêm tiền tố `'` |
+| `GET/PUT` | `/api/v1/agent/receipts/alerts` | Ngưỡng cảnh báo (`maxRunFailureRate`, `maxVetoRate`, `maxOverrideRate`, `maxApprovalLatencyP90Minutes`, `maxCostUsd`, `maxTokens`, `maxOpenDrift`, `maxIncidents`); khoá vắng thì không kiểm. Lưu ở setting `agent.receipts.alerts`; khoá lạ hoặc tỉ lệ ngoài 0–1 → `400 VALIDATION` |
+| `POST` | `/api/v1/locale-generation/jobs` | Trình tạo bản dịch một lần cho locale mới (#714). Body `{ locale, sourceLocale? = 'en', collections, includeUi? = true, provider? }`; thêm locale vào setting `locales` và xếp hàng một job dịch các giá trị `translatable-text` và UI string `ui` còn thiếu (translation memory → glossary → MT) vào hàng đợi review. `202` kèm job; `400` `VALIDATION` / `NO_TRANSLATABLE_FIELDS` / `PROVIDER_UNAVAILABLE`; `409 JOB_ACTIVE`. Control plane (site administrator). Xem [locale generator](../features/locale-generator.md) |
+| `GET` | `/api/v1/locale-generation/jobs[/:id]` | Danh sách job với `status`, `cursor`, `counters`; một job có thêm `review` (suggestion theo trạng thái) |
+| `POST` | `/api/v1/locale-generation/jobs/:id/cancel` \| `/resume` | Huỷ job queued/running giữa hai chunk; đưa job failed/cancelled trở lại hàng đợi tại cursor (`409` nếu không) |
+| `GET` | `/api/v1/locale-generation/suggestions` | Hàng đợi review, `?locale&status&jobId&collection&limit&offset`, `{ data, meta: { total, limit, offset } }` |
+| `POST` | `/api/v1/locale-generation/suggestions/:id/decide` | `{ decision: 'approve', text? }` \| `{ decision: 'reject' }`. Duyệt ghi qua item service của reviewer (RBAC, validation, revision); `{ status: 'stale' }` khi nguồn đã đổi hoặc locale đã được ghi; `409 ALREADY_DECIDED`; `422` khi lần ghi bị từ chối (suggestion vẫn pending) |
+| `POST` | `/api/v1/locale-generation/suggestions/decide-bulk` | `{ decision, locale, ids?, jobId?, collection?, limit? ≤ 200 }` → `{ approved, rejected, stale, failed, processed, failures }` |
 | `GET/POST` | `/api/v1/agent/staged[...]` | Cửa sổ veto: các bản staging đang chờ bổ sung `approvalId/collection/itemId/patch/agentRole` từ bản sửa đổi staging (trường null khi staging không còn); `POST :id/veto` loại bỏ một staging |
 | `GET` | `/api/v1/agent/approvals` | Hộp thư approval (bộ lọc `status`; mặc định `pending`) |
 | `POST` | `/api/v1/agent/approvals/:id/decide` | Quyết định của con người cho một hành động đang bị giữ. Body `{ decision: 'approved' \| 'rejected', reason? }`; cần `approvals:decide` (nếu không thì 403), `404` cho id không tồn tại hoặc thuộc tenant khác, `409` khi approval đã rời `pending`. Với `approved`, harness là nơi duy nhất đổi trạng thái, nên việc thực thi và việc ghi status xảy ra đúng một lần. Lúc thực thi, quyền của **người yêu cầu** được resolve lại và hành động chạy với `requester ∩ decider`: approval mà người yêu cầu đã bị thu hồi, hạ quyền hay rời site sẽ bị từ chối, và approval không có thông tin người yêu cầu (bị giữ từ trước khi có cột provenance) bị từ chối với `APPROVAL_PROVENANCE_MISSING`. Approval lưu với `approvalPolicy: human_required` (mọi [external-action tool](../features/external-action-tools.md)) chỉ được giải phóng bởi một người dùng đã đăng nhập: API key, connector token hoặc agent nhận `409 EXECUTION_FAILED` kèm `HUMAN_APPROVAL_REQUIRED`, và approval vẫn ở `pending` |

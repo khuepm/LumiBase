@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { LumiBaseClient, configFromEnv } from './client.js';
 import { registerAllTools } from './tools/index.js';
+import { registerExtensionTools } from './tools/extension-tools.js';
 
 async function main() {
   const config = configFromEnv();
@@ -13,6 +14,9 @@ async function main() {
   });
 
   registerAllTools(server, client, config);
+  // Extension tools are per site and installed at runtime (#715): discovered
+  // from the governed endpoint, every call forwarded to the harness.
+  if (!config.opsOnly) await registerExtensionTools(server, client);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

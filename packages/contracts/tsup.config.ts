@@ -12,6 +12,8 @@ export default defineConfig({
     'form-layout/index': 'src/form-layout/index.ts',
     version: 'src/version.ts',
     'utils/logger': 'src/utils/logger.ts',
+    'richtext/index': 'src/richtext/index.ts',
+    'migrate/index': 'src/migrate/index.ts',
   },
   format: ['cjs', 'esm'],
   dts: true,

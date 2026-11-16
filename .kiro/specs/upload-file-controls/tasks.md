@@ -73,8 +73,11 @@ Mỗi task ref `(Rx; design §…)`. Nguồn chân lý chi tiết: xem bảng �
   giảm nhẹ bởi serve attachment+nosniff). Khía cạnh bảo mật ghi ở
   `docs/en/security/runtime-security-guards-plan.md` §3 (mục "Planned"). Khi làm:
   cross-ref hai chiều giữa spec này ↔ image-transform-dsl ↔ security-guards-plan.
-- [ ] F2. (Tuỳ chọn) Hook quét virus/ClamAV ngoài cho tenant regulated — tham
-  chiếu `.kiro/specs/regulated-content-readiness/` nếu triển khai.
+- [x] F2. (Tuỳ chọn) Hook quét virus/ClamAV ngoài cho tenant regulated — tham
+  chiếu `.kiro/specs/regulated-content-readiness/` nếu triển khai. **Xong (#707,
+  epic #670):** `apps/cms/src/modules/malware-scan/` (HTTP scanner, tắt mặc định,
+  quét sau upload, `scanStatus` chặn phân phối), profile docker-compose
+  `malware-scan`; xem `.kiro/specs/digital-asset-management/`.
 - [ ] F3. (Tuỳ chọn) UI per-field `accept` trong field builder đọc từ catalogue
   chung (hiện `file` interface đã hỗ trợ `opts.accept` per-field, chưa có UI chọn).
 
