@@ -42,6 +42,7 @@ const ItemDetailPage = lazy(() => import('./modules/content/item-detail').then((
 const IntentPage = lazy(() => import('./modules/intents/intent-page').then((m) => ({ default: m.IntentPage })));
 const ItemsListPage = lazy(() => import('./modules/content/items-list').then((m) => ({ default: m.ItemsListPage })));
 const ReviewQueuePage = lazy(() => import('./modules/editorial/review-queue').then((m) => ({ default: m.ReviewQueuePage })));
+const ReleasesPage = lazy(() => import('./modules/editorial/releases-page').then((m) => ({ default: m.ReleasesPage })));
 const CollectionsListPage = lazy(() => import('./modules/data-model/list').then((m) => ({ default: m.CollectionsListPage })));
 const McpSetupPage = lazy(() => import('./modules/data-model/mcp-setup').then((m) => ({ default: m.McpSetupPage })));
 const CollectionDetailPage = lazy(() => import('./modules/data-model/detail').then((m) => ({ default: m.CollectionDetailPage })));
@@ -57,11 +58,13 @@ const EmailSettingsPage = lazy(() => import('./modules/settings/email-page').the
 const NotificationsSettingsPage = lazy(() => import('./modules/settings/notifications-page').then((m) => ({ default: m.NotificationsSettingsPage })));
 const SiteSettingsPage = lazy(() => import('./modules/settings/site-page').then((m) => ({ default: m.SiteSettingsPage })));
 const DomainsSettingsPage = lazy(() => import('./modules/settings/domains-page').then((m) => ({ default: m.DomainsSettingsPage })));
+const PreviewSettingsPage = lazy(() => import('./modules/settings/preview-page').then((m) => ({ default: m.PreviewSettingsPage })));
 const SocialLoginSettingsPage = lazy(() => import('./modules/settings/social-login-page').then((m) => ({ default: m.SocialLoginSettingsPage })));
 const KeyboardSettingsPage = lazy(() => import('./modules/settings/keyboard-page').then((m) => ({ default: m.KeyboardSettingsPage })));
 const DateTimeSettingsPage = lazy(() => import('./modules/settings/date-time-page').then((m) => ({ default: m.DateTimeSettingsPage })));
 const MaterializePage = lazy(() => import('./modules/settings/materialize-page').then((m) => ({ default: m.MaterializePage })));
 const TranslationMemoryPage = lazy(() => import('./modules/translations/tm-page').then((m) => ({ default: m.TranslationMemoryPage })));
+const LocaleGeneratorPage = lazy(() => import('./modules/translations/locale-generator-page').then((m) => ({ default: m.LocaleGeneratorPage })));
 const ActivityPage = lazy(() => import('./modules/settings/activity-page').then((m) => ({ default: m.ActivityPage })));
 const EncryptionSettingsPage = lazy(() => import('./modules/settings/encryption-page').then((m) => ({ default: m.EncryptionSettingsPage })));
 const SecuritySettingsPage = lazy(() => import('./modules/settings/security-page').then((m) => ({ default: m.SecuritySettingsPage })));
@@ -78,6 +81,7 @@ const MissionControlIntentDetailPage = lazy(() => import('./modules/mission-cont
 const MissionControlGoalsPage = lazy(() => import('./modules/mission-control/goals-page').then((m) => ({ default: m.GoalsPage })));
 const MissionControlAgentsPage = lazy(() => import('./modules/mission-control/agents-page').then((m) => ({ default: m.AgentsPage })));
 const MissionControlTrustPage = lazy(() => import('./modules/mission-control/trust-page').then((m) => ({ default: m.TrustPage })));
+const MissionControlReceiptsPage = lazy(() => import('./modules/mission-control/receipts-page').then((m) => ({ default: m.ReceiptsPage })));
 const MissionControlConstitutionPage = lazy(() => import('./modules/mission-control/constitution-page').then((m) => ({ default: m.ConstitutionPage })));
 const MissionControlSkillsPage = lazy(() => import('./modules/mission-control/skills-page').then((m) => ({ default: m.SkillsPage })));
 const InsightsListPage = lazy(() => import('./modules/insights/list-page').then((m) => ({ default: m.InsightsListPage })));
@@ -508,6 +512,19 @@ const contentReviewsRoute = createRoute({
   component: withSuspense(ReviewQueuePage),
 });
 
+// Content releases with the pre-publish validation summary (#692).
+const releasesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/releases',
+  component: withSuspense(ReleasesPage),
+});
+
+const adminPathReleasesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/releases',
+  component: withSuspense(ReleasesPage),
+});
+
 const contentItemRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/content/$collection/$id',
@@ -699,6 +716,12 @@ const domainsSettingsRoute = createRoute({
   component: withSuspense(DomainsSettingsPage),
 });
 
+const previewSettingsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'preview',
+  component: withSuspense(PreviewSettingsPage),
+});
+
 const socialLoginSettingsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'social-login',
@@ -727,6 +750,13 @@ const translationMemoryRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'translation-memory',
   component: withSuspense(TranslationMemoryPage),
+});
+
+// One-shot translation generator for a new locale (#714).
+const localeGeneratorRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'locale-generator',
+  component: withSuspense(LocaleGeneratorPage),
 });
 
 const activityRoute = createRoute({
@@ -867,6 +897,12 @@ const adminPathDomainsSettingsRoute = createRoute({
   component: withSuspense(DomainsSettingsPage),
 });
 
+const adminPathPreviewSettingsRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'preview',
+  component: withSuspense(PreviewSettingsPage),
+});
+
 const adminPathSocialLoginSettingsRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'social-login',
@@ -895,6 +931,12 @@ const adminPathTranslationMemoryRoute = createRoute({
   getParentRoute: () => adminPathSettingsRoute,
   path: 'translation-memory',
   component: withSuspense(TranslationMemoryPage),
+});
+
+const adminPathLocaleGeneratorRoute = createRoute({
+  getParentRoute: () => adminPathSettingsRoute,
+  path: 'locale-generator',
+  component: withSuspense(LocaleGeneratorPage),
 });
 
 const adminPathActivityRoute = createRoute({
@@ -1039,6 +1081,13 @@ const missionControlTrustRoute = createRoute({
   component: withSuspense(MissionControlTrustPage),
 });
 
+// Agent receipts — runs, approvals, overrides, cost, drift (#713).
+const missionControlReceiptsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/mission-control/receipts',
+  component: withSuspense(MissionControlReceiptsPage),
+});
+
 const missionControlConstitutionRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/mission-control/constitution',
@@ -1093,6 +1142,12 @@ const adminPathMissionControlTrustRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: '/$adminPath/mission-control/trust',
   component: withSuspense(MissionControlTrustPage),
+});
+
+const adminPathMissionControlReceiptsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: '/$adminPath/mission-control/receipts',
+  component: withSuspense(MissionControlReceiptsPage),
 });
 
 const adminPathMissionControlConstitutionRoute = createRoute({
@@ -1364,6 +1419,7 @@ const routeTree = rootRoute.addChildren([
     indexRoute,
     contentCollectionRoute,
     contentReviewsRoute,
+    releasesRoute,
     contentItemRoute,
     intentRoute,
     dataModelRoute,
@@ -1378,6 +1434,7 @@ const routeTree = rootRoute.addChildren([
       siteSettingsRoute,
       organizationSettingsRoute,
       domainsSettingsRoute,
+      previewSettingsRoute,
       socialLoginSettingsRoute,
       keyboardSettingsRoute,
       dateTimeSettingsRoute,
@@ -1389,6 +1446,7 @@ const routeTree = rootRoute.addChildren([
       notificationsSettingsRoute,
       materializeSettingsRoute,
       translationMemoryRoute,
+      localeGeneratorRoute,
       activityRoute,
       encryptionSettingsRoute,
       securitySettingsRoute,
@@ -1409,6 +1467,7 @@ const routeTree = rootRoute.addChildren([
     missionControlGoalsRoute,
     missionControlAgentsRoute,
     missionControlTrustRoute,
+    missionControlReceiptsRoute,
     missionControlConstitutionRoute,
     missionControlSkillsRoute,
     adminPathMissionControlRoute,
@@ -1418,6 +1477,7 @@ const routeTree = rootRoute.addChildren([
     adminPathMissionControlGoalsRoute,
     adminPathMissionControlAgentsRoute,
     adminPathMissionControlTrustRoute,
+    adminPathMissionControlReceiptsRoute,
     adminPathMissionControlConstitutionRoute,
     adminPathMissionControlSkillsRoute,
     insightsRoute,
@@ -1443,6 +1503,7 @@ const routeTree = rootRoute.addChildren([
     adminPathIndexRoute,
     adminPathContentCollectionRoute,
     adminPathContentReviewsRoute,
+    adminPathReleasesRoute,
     adminPathContentItemRoute,
     adminPathIntentRoute,
     adminPathDataModelRoute,
@@ -1457,6 +1518,7 @@ const routeTree = rootRoute.addChildren([
       adminPathSiteSettingsRoute,
       adminPathOrganizationSettingsRoute,
       adminPathDomainsSettingsRoute,
+      adminPathPreviewSettingsRoute,
       adminPathSocialLoginSettingsRoute,
       adminPathKeyboardSettingsRoute,
       adminPathDateTimeSettingsRoute,
@@ -1468,6 +1530,7 @@ const routeTree = rootRoute.addChildren([
       adminPathNotificationsSettingsRoute,
       adminPathMaterializeSettingsRoute,
       adminPathTranslationMemoryRoute,
+      adminPathLocaleGeneratorRoute,
       adminPathActivityRoute,
       adminPathEncryptionSettingsRoute,
       adminPathSecuritySettingsRoute,

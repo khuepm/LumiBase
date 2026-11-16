@@ -91,6 +91,9 @@ describe('file upload policy helpers', () => {
     expect(classifyUploadSurface('/api/v1/files', 'POST')).toMatchObject({ isMetadataCreate: true });
     expect(classifyUploadSurface('/api/v1/files/upload/key.png', 'PUT')).toMatchObject({ isSignedUpload: true });
     expect(classifyUploadSurface('/api/v1/media/key.png', 'POST')).toMatchObject({ isMediaUpload: true });
+    expect(classifyUploadSurface('/api/v1/files/abc123/content', 'PUT')).toMatchObject({ isReplaceUpload: true });
+    expect(classifyUploadSurface('/api/v1/files/abc123/content', 'GET')).toBeNull();
+    expect(classifyUploadSurface('/api/v1/files/upload/content', 'PUT')).toMatchObject({ isSignedUpload: true, isReplaceUpload: false });
     // Non-upload traffic is left untouched.
     expect(classifyUploadSurface('/api/v1/media/key.png', 'GET')).toBeNull();
     expect(classifyUploadSurface('/api/v1/items', 'POST')).toBeNull();

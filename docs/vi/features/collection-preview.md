@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-09-01T19:25:54.674Z
+version: 3
+lastUpdated: 2026-11-15T19:48:31.600Z
 sourceLang: vi
-contentHash: 17fd5198b3a06b2c
-codeVerified: 2026-09-01T19:25:54.674Z
-codeVerifiedHash: 17fd5198b3a06b2c
+contentHash: 4c2cf39c35cb35f0
+codeVerified: 2026-11-15T19:48:31.600Z
+codeVerifiedHash: 4c2cf39c35cb35f0
 codeVerifiedClaims: 20
 ---
 
@@ -12,7 +12,7 @@ codeVerifiedClaims: 20
 
 > Preview = nhúng một `<iframe>` trong màn edit record của Studio, trỏ tới URL template do collection cấu hình, nội suy bằng field của record đang edit — để tác giả xem trước trang web thật ngay trong admin. Lấy cảm hứng từ tính năng Live Preview của Directus.
 
-**Trạng thái:** Đề xuất thiết kế (chưa implement). Không cần migration cho MVP.
+**Trạng thái:** Đề xuất thiết kế, đã được thay thế. Tính năng đã ship theo epic #667 với cú pháp placeholder `{token}`/`{id}`/`{slug}` (không phải `{{field}}`), preview token gắn site và ADR-014 — xem [Live preview & visual editing](./visual-editing.md). Phần dưới đây giữ lại làm bối cảnh thiết kế.
 
 ## 1. Ý tưởng
 

@@ -130,6 +130,14 @@ export default Sentry.withSentry(
           )
           .catch(() => console.error('[import] tick failed')),
       );
+      // Resume locale-generation jobs (#714), same lease guard as imports.
+      ctx.waitUntil(
+        Promise.all([import('./services/locale-generation-service'), import('./routes/locale-generation')])
+          .then(([{ runLocaleJobTick }, { localeJobDeps }]) =>
+            runLocaleJobTick(localeJobDeps(db, env as unknown as Bindings), { budgetMs: 25_000 }),
+          )
+          .catch(() => console.error('[locale-generation] tick failed')),
+      );
       return;
     }
 

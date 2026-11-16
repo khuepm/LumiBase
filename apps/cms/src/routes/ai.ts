@@ -5,6 +5,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv, AuthPrincipal } from '../env';
 import { buildAgentNotifier } from '../modules/notifications/notify-context';
+import { siteExternalToolRegistry } from '../extensions/mcp-extension-tools';
 import { AISecureHarness } from '../services/ai-harness';
 import { AccessService } from '../services/access-service';
 import { ConfigService } from '../services/config-service';
@@ -146,12 +147,18 @@ async function getUserCapabilities(c: Context<AppEnv>): Promise<string[]> {
  * forced dangerous, hence all park for approval) resolved with its service
  * absent. Both decision routes now share this builder.
  */
-export function buildAuthorizedHarness(c: Context<AppEnv>): AISecureHarness {
+export async function buildAuthorizedHarness(c: Context<AppEnv>): Promise<AISecureHarness> {
   const db = c.get('db');
   const siteId = c.get('siteId');
   const auth = c.get('auth');
   const runtime = c.get('runtime');
   const llm = createConfiguredLLMProvider(c.env as unknown as Record<string, string | undefined>);
+  const itemService = itemServiceForRequest(c);
+  // An approved extension tool (#715) is released here, so this harness must
+  // know the site's extension tools exactly as the one that parked it did.
+  const externalTools = await siteExternalToolRegistry({
+    db, siteId, env: c.env, dataAccess: itemService.extensionDataAccess(),
+  });
 
   return new AISecureHarness({
     db,
@@ -159,7 +166,8 @@ export function buildAuthorizedHarness(c: Context<AppEnv>): AISecureHarness {
     schemaService: new SchemaService({ db, siteId, cache: runtime.cache }),
     // Request-scoped so an executed skill enforces the same row/field RBAC the
     // caller's own token would.
-    itemService: itemServiceForRequest(c),
+    itemService,
+    externalTools,
     accessService: new AccessService({ db, siteId, userId: auth.userId ?? null, cache: runtime.cache }),
     intentService: new IntentService({ db, siteId, userId: auth.userId ?? null, llm }),
     configService: new ConfigService({ db, siteId }),
@@ -729,7 +737,7 @@ aiRouter.post('/approvals/:id/decide', async (c) => {
 
   if (decision === 'approved') {
     // Wire up real services for skill execution on approval only after authorization.
-    const authorizedHarness = buildAuthorizedHarness(c);
+    const authorizedHarness = await buildAuthorizedHarness(c);
     const result = await authorizedHarness.executeApproved(
       approvalId,
       userId,

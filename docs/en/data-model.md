@@ -1,11 +1,11 @@
 ---
-version: 21
-lastUpdated: 2026-11-15T21:51:33.293Z
+version: 24
+lastUpdated: 2026-11-15T23:40:59.736Z
 sourceLang: en
-contentHash: 9c5b4d6fa0ddd174
-codeVerified: 2026-11-15T21:51:33.293Z
-codeVerifiedHash: 9c5b4d6fa0ddd174
-codeVerifiedClaims: 20
+contentHash: ef6fd16483d977a5
+codeVerified: 2026-11-15T23:40:59.736Z
+codeVerifiedHash: ef6fd16483d977a5
+codeVerifiedClaims: 22
 ---
 
 # Data Model (Drizzle / Postgres)
@@ -30,12 +30,13 @@ Schema files are split by domain:
 | `core.ts` | `lumibase_organizations`, `lumibase_organization_members`, `lumibase_sites`, `lumibase_users`, `lumibase_user_sites`, `lumibase_teams`, `lumibase_team_members`, `lumibase_notifications` |
 | `access.ts` | `lumibase_roles`, `lumibase_policies`, `lumibase_role_policies`, `lumibase_user_policies`, `lumibase_permissions`, `lumibase_refresh_tokens` |
 | `cms.ts` | `lumibase_pages`, `lumibase_collections`, `lumibase_fields`, `lumibase_relations`, `lumibase_items`, `lumibase_revisions`, `lumibase_releases`, `lumibase_release_items`, `lumibase_activity`, `lumibase_flows`, `lumibase_flow_runs`, `lumibase_operations`, `lumibase_materialized_collections` |
-| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
+| `platform.ts` | `lumibase_folders`, `lumibase_files`, `lumibase_file_versions`, `lumibase_presets`, `lumibase_translations`, `lumibase_settings`, `lumibase_webhooks`, `lumibase_extensions`, `lumibase_translation_memory`, `lumibase_glossary`, `lumibase_push_subscriptions` |
 | `ai.ts` | `lumibase_ai_approvals`, `lumibase_agent_*` |
 | `firebase-sync.ts` | `lumibase_firebase_sync_pipelines`, `lumibase_firebase_sync_log` |
 | `external-auth.ts` | `lumibase_auth_external_issuers` |
 | `social-auth.ts` | `lumibase_user_identities`, `lumibase_social_auth_providers` |
 | `imports.ts` | `lumibase_import_jobs` |
+| `locale-generation.ts` | `lumibase_locale_generation_jobs`, `lumibase_translation_suggestions` |
 | `activation.ts` | `lumibase_activation_milestones`, `lumibase_telemetry_state` |
 
 Migrations live in `packages/database/migrations/` and `packages/database/drizzle/`.
@@ -172,6 +173,9 @@ Compiled schemas expose generated system fields in addition to user-defined rows
 | `userCreated`, `userUpdated` | text FK users |
 | `publishAt`, `unpublishAt` | timestamp nullable | Scheduling window (Req 7); the reconcile worker flips status, delivery filters to the window. |
 | `editorialState` | text nullable | Human review state (Req 9): `draft`/`in_review`/`approved`/`published`/`rejected`. Distinct from the AI veto-window. |
+| `firstPublishedAt` | timestamp nullable | First publish (#687, migration 0037). Set once, never moved by a re-publish. |
+| `publishedAt` | timestamp nullable | Most recent publish (#687). Kept when the item is unpublished. |
+| `hasUnpublishedChanges` | boolean, default false | Data edited since the last publish (#687); cleared by the next publish. Partial index `items_unpublished_changes_idx (siteId, collectionId) WHERE has_unpublished_changes AND deleted_at IS NULL`. |
 | `dekWrapped` | text nullable | Envelope mode (Req 4.5): the per-record DEK wrapped by the KEK. Non-null ⇒ this record's encrypted fields use a per-record DEK; null ⇒ shared-key mode. Reads are self-describing from this column. |
 | `createdAt`, `updatedAt` | timestamp |
 | `deletedAt` | timestamp nullable |
@@ -181,6 +185,7 @@ Primary key `(siteId, id)`. Indexes: `(siteId, collectionId, status)`, GIN on `d
 ### `revisions`
 - `id`, `siteId`, `itemId`, `collectionId`, `delta jsonb`, `parentId`, `userId`, `createdAt`.
 - `(siteId, itemId) → items (siteId, id)` (cascade): a revision always belongs to an item of its own site.
+- A `PATCH ?saveRevision=false` writes no revision (#693); a collection's `meta.revisionRetention: { maxRevisions?, maxAgeDays? }` lets the hourly `revision-retention` sweep prune old rows (never an item's newest, staged, release-pinned or agent revisions).
 
 ### `releases` (Content Releases)
 - A cross-collection publish bundle. `id`, `siteId`, `name`, `description`, `status` (`draft`|`scheduled`|`published`|`failed`|`partially_failed`), `atomicityMode` (`all_or_nothing`|`best_effort`), `publishAt`, `publishedAt`, `maintenanceWindow jsonb`, `statusReason`, `createdBy → users.id (set null)`, `createdAt`, `updatedAt`.
@@ -280,10 +285,15 @@ When seeding local/staging/prod, seed system collection permissions explicitly. 
 ## 4. Files & Assets (`platform.ts`)
 
 ### `files`
-- `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `createdAt`.
+- `id`, `siteId`, `storage` (`r2`/`s3`/external), `filenameDisk`, `filenameDownload`, `mime`, `filesize`, `width`, `height`, `duration`, `folder`, `metadata jsonb`, `uploadedBy`, `contentHash`, `version`, `scanStatus`, `createdAt`, `updatedAt`.
+- `contentHash` — full SHA-256 (hex) of the current binary, used for duplicate detection; index `(siteId, contentHash)`. `version` — bumped by every in-place replace (same id and `filenameDisk`). `scanStatus` — `skipped` (default) / `pending` / `clean` / `infected` / `error`; only `skipped` and `clean` are delivered. `metadata.embedded` holds extracted EXIF/IPTC/XMP and `metadata.searchText` the searchable summary. Migration `0038_dam_assets`.
+
+### `file_versions`
+- `id`, `siteId`, `fileId` (FK cascade), `version`, `filenameDisk` (archive key `sites/<site>/file-versions/<id>/v<n>`), `filenameDownload`, `mime`, `filesize`, `width`, `height`, `contentHash`, `metadata jsonb`, `replacedBy`, `createdAt`, `expiresAt`.
+- The file's state **before** a replace, kept until `expiresAt` for undo; pruned with its object afterwards. See [Digital Asset Management](./features/digital-asset-management.md).
 
 ### `folders`
-- `id`, `siteId`, `name`, `parent`.
+- `id`, `siteId`, `name`, `parent`. Paths, sub-trees and cycle checks are derived in `apps/cms/src/services/files/folder-tree.ts`.
 
 ## 5. UX state (`platform.ts`)
 
