@@ -1,10 +1,10 @@
 ---
-version: 2
-lastUpdated: 2026-11-12T11:48:21.842Z
+version: 3
+lastUpdated: 2026-11-16T20:33:00.302Z
 sourceLang: en
-contentHash: 815b076ad0385537
-codeVerified: 2026-11-12T11:48:21.842Z
-codeVerifiedHash: 815b076ad0385537
+contentHash: d7b612ca6449d260
+codeVerified: 2026-11-16T20:33:00.302Z
+codeVerifiedHash: d7b612ca6449d260
 codeVerifiedClaims: 14
 ---
 
@@ -108,6 +108,15 @@ Before backlog B131 the Worker had no such queue, so on Workers the index never
 saw a content change. When no queue is configured, or the Worker has no
 `content-indexing` binding, `ItemService` indexes inline. On Workers without
 `MEILISEARCH_HOST`, the consumer acks jobs without indexing.
+
+Jobs are applied as they arrive, and a failed job is retried later, after newer
+jobs for the same item may already have run. So the worker re-reads the item row
+before it applies a `search:index` snapshot. A deleted or missing item is removed
+from the index instead, so a retry cannot bring a deleted item back. Each job
+carries `dataHash`, a SHA-256 of the stored `data` at the write that produced it.
+If the stored data has changed since, the snapshot is skipped, because the newer
+write enqueued its own job. This needs a database connection on both runtimes
+(`rotatorDb` on Docker, the system connection on Workers).
 
 ### Reindex CLI
 
