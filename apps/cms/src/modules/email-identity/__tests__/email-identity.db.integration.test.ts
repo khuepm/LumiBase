@@ -18,7 +18,8 @@ import {
   setInstanceEmailIdentityMode,
   setSiteEmailIdentityStrict,
 } from '../service';
-import { EMAIL_ROOT_FIXTURES } from './fixtures';
+import { normalizeEmail } from '../../login-guard/email-normalize';
+import { EMAIL_NORMALIZE_FIXTURES, EMAIL_ROOT_FIXTURES } from './fixtures';
 
 /**
  * Email identity policy (#794 PR 1) against real Postgres: the SQL
@@ -119,6 +120,21 @@ describe.skipIf(!hasDbIntegrationUrl)('Email identity policy — DB integration'
       expect({ input, root: sqlRoot }).toEqual({ input, root: emailRoot(input) });
       expect(sqlRoot).toBe(expected);
     }
+  });
+
+  it('SQL lumibase_email_normalize() matches TS normalizeEmail() on every fixture (#862)', async () => {
+    for (const [input, expected] of EMAIL_NORMALIZE_FIXTURES) {
+      const rows = await db.execute(sql`SELECT lumibase_email_normalize(${input}) AS key`);
+      const sqlKey = (rows as unknown as Array<{ key: string }>)[0]?.key;
+      expect({ input, key: sqlKey }).toEqual({ input, key: normalizeEmail(input) });
+      expect(sqlKey).toBe(expected);
+    }
+  });
+
+  it('exact-mode trigger keys a padded address the way lookups do (#862)', async () => {
+    const u = await addUser(`\u00a0Pad.Eidit@${DOMAIN}\t`);
+    expect(u.canonical).toBe(`pad.eidit@${DOMAIN}`);
+    expect(u.root).toBe(`pad.eidit@${DOMAIN}`);
   });
 
   // ── triggers ─────────────────────────────────────────────────────────

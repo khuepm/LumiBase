@@ -1,13 +1,13 @@
 ---
-version: 13
-lastUpdated: 2026-11-14T02:32:19.524Z
+version: 14
+lastUpdated: 2026-11-16T20:35:15.500Z
 sourceLang: en
 translatedFrom: en
-sourceHash: 5fc1233101995b59
+sourceHash: 8657ce2b1478ab35
 mtEngine: manual
 syncStatus: human-translated
-codeVerified: 2026-11-14T02:32:19.524Z
-codeVerifiedHash: 5fc1233101995b59
+codeVerified: 2026-11-16T20:35:15.500Z
+codeVerifiedHash: 8657ce2b1478ab35
 codeVerifiedClaims: 122
 ---
 
@@ -111,7 +111,11 @@ với Gmail phần local còn bỏ dấu chấm và `googlemail.com` quy về `g
 Quy tắc nằm ở hai nơi, `emailRoot()`
 (`apps/cms/src/modules/email-identity/normalize.ts`) và hàm SQL
 `lumibase_email_root()` (migration `0027`); một integration test ghim cả hai
-vào cùng một danh sách fixture. Trigger database ghi `users.email_canonical` /
+vào cùng một danh sách fixture. Cả hai bắt đầu từ cùng một normaliser — trim
+các ký tự whitespace mà JS `trim()` loại bỏ, rồi chuyển chữ thường — trong
+`normalizeEmail()` và trong `lumibase_email_normalize()` (migration `0041`),
+cũng là khoá tài khoản ở mode `exact`. SCIM trim `userName` và từ chối giá trị
+không phải địa chỉ email. Trigger database ghi `users.email_canonical` /
 `users.email_root` và `user_sites.identity_key`, nên mọi writer — register,
 invite, SCIM, setup, seed — đều gán khoá giống nhau, và unique index (không
 phải kiểm-tra-rồi-chèn) bảo đảm kết quả.
