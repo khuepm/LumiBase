@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import fuzzAtoms from './fixtures/fuzz-atoms.json';
 import { htmlToRichText, isRichTextDocument, markdownToRichText, richTextToHtml, richTextToMarkdown, sanitizeHtml } from '../index';
 
 /** Hostile shapes that make naive parsers quadratic or blow the stack. */
@@ -45,7 +46,8 @@ describe('robustness', () => {
       seed = (seed * 1103515245 + 12345) & 0x7fffffff;
       return seed / 0x7fffffff;
     };
-    const atoms = ['<', '>', '/', '"', "'", '=', ' ', 'a', 'p', 'img', 'script', 'on', 'error', 'href', 'src', 'javascript', ':', '&', '#', ';', '*', '_', '[', ']', '(', ')', '`', '|', '-', '\n', '!', '\\', 'style', 'svg', '<!--', '-->', '--!>', '\t'];
+    // Markup-ish atoms (tag, comment and URL fragments) live in a JSON fixture.
+    const atoms: string[] = fuzzAtoms;
     for (let n = 0; n < 400; n++) {
       let s = '';
       const len = 5 + Math.floor(rand() * 60);
