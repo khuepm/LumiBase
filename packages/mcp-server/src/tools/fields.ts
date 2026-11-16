@@ -28,7 +28,7 @@ export const fieldDefinitionSchema = z.object({
   type: z.string().min(1).describe(
     'Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, ' +
     'date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias, geopoint ({ lat, lng }). ' +
-    'Not validated server-side; GraphQL currently types `datetime` as String (B206).',
+    'Not validated server-side (B206).',
   ),
   interface: z.string().min(1).describe(
     'UI widget: input, textarea, select, toggle, datetime, file, image, ' +

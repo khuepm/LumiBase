@@ -499,7 +499,7 @@
                 "type": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias, geopoint ({ lat, lng }). Not validated server-side; GraphQL currently types `datetime` as String (B206)."
+                  "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias, geopoint ({ lat, lng }). Not validated server-side (B206)."
                 },
                 "interface": {
                   "type": "string",
@@ -936,7 +936,7 @@
                 "type": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias, geopoint ({ lat, lng }). Not validated server-side; GraphQL currently types `datetime` as String (B206)."
+                  "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias, geopoint ({ lat, lng }). Not validated server-side (B206)."
                 },
                 "interface": {
                   "type": "string",
@@ -1266,7 +1266,7 @@
           "type": {
             "type": "string",
             "minLength": 1,
-            "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias, geopoint ({ lat, lng }). Not validated server-side; GraphQL currently types `datetime` as String (B206)."
+            "description": "Storage type (FieldType): string, text, integer, bigInteger, decimal, boolean, date, datetime, time, timestamp, json, uuid, csv, hash, geometry, alias, geopoint ({ lat, lng }). Not validated server-side (B206)."
           },
           "interface": {
             "type": "string",
