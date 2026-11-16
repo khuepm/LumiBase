@@ -1,11 +1,11 @@
 ---
-version: 3
-lastUpdated: 2026-11-16T15:01:18.909Z
+version: 4
+lastUpdated: 2026-11-16T15:30:00.304Z
 sourceLang: vi
-contentHash: c4ac58c71d04ec38
-codeVerified: 2026-11-16T15:01:18.909Z
-codeVerifiedHash: c4ac58c71d04ec38
-codeVerifiedClaims: 30
+contentHash: 4f705a5d0187a513
+codeVerified: 2026-11-16T15:30:00.304Z
+codeVerifiedHash: 4f705a5d0187a513
+codeVerifiedClaims: 32
 ---
 
 # Marketplace cho Extensions
@@ -28,6 +28,10 @@ LumiBase Marketplace cho phép publish và install extension đã được **ký
 | `downloadCount` | Tổng số lượt tải package (tăng qua `/download`) |
 | `submissionStatus` | Trạng thái community submission: `pending` / `approved` / `rejected` (null = không phải submission) |
 | `submittedBy` | User đã gửi extension qua luồng community |
+| `isOfficial` | Cờ official do **server suy ra**: chỉ true khi tên nằm trong namespace `lumibase-` **và** bundle verify được với một key có cờ `official`. Không bao giờ lấy từ client hay manifest |
+| `autoInstall` | Tự động cài khi setup bootstrap / reconcile lúc tạo site |
+| `enabledByDefault` | Giá trị `enabled` ban đầu lúc cài (admin có thể tắt sau) |
+| `verifiedAt` | Thời điểm verify chữ ký thành công gần nhất (điều khiển badge) |
 
 `extension_votes` ghi lại lượt upvote trên marketplace — mỗi `(userId, marketplaceSlug)` một dòng, được đảm bảo bằng unique index nên vote là idempotent. Vote được khoá theo slug nên vẫn giữ nguyên khi lên version.
 
@@ -48,7 +52,11 @@ Public keys được khai báo trong env var `MARKETPLACE_PUBLIC_KEYS` dưới d
 }
 ```
 
-Loaded một lần khi router init, không cache lâu dài (có thể rotate qua env update + redeploy).
+Env map được parse lại mỗi lần resolve key, không cache lâu dài (có thể rotate qua env update + redeploy).
+
+Ngoài env, key còn được đăng ký trong bảng `lumibase_publisher_keys` (`keyId` duy nhất, `publicKeyPem`, `publisher`, `official`, `revoked`). Khi resolve một `publisherKeyId`, dòng trong DB được ưu tiên hơn env, nên một env var bị sửa không thể đánh dấu key là official hay gỡ revoke cho nó. Key chỉ có trong env luôn được coi là third-party (`official: false`, `revoked: false`); key đã revoke luôn verify thất bại. Key official của LumiBase được seed vào bảng này lúc setup.
+
+Implementation: `apps/cms/src/services/extension-verifier.ts`.
 
 ## API endpoints
 
@@ -57,6 +65,7 @@ GET    /api/v1/marketplace/extensions              List published extensions
 GET    /api/v1/marketplace/extensions/:slug        Detail (kèm signature)
 GET    /api/v1/marketplace/extensions/:slug/download   Tải package (302 → bundle; ?redirect=0 → JSON)
 POST   /api/v1/marketplace/extensions/:slug/install    Install vào site hiện tại
+GET    /api/v1/marketplace/updates                 Bản cập nhật cho các extension đã cài trên site hiện tại
 POST   /api/v1/marketplace/extensions/:slug/vote       Upvote (cần auth; idempotent)
 DELETE /api/v1/marketplace/extensions/:slug/vote       Bỏ upvote (cần auth)
 POST   /api/v1/marketplace/publish                 Publish một extension đã upload (đã ký)
@@ -107,7 +116,7 @@ Khi `POST /install`:
 
 1. Fetch bundle từ `bundleUrl` (R2/S3/external).
 2. Recompute SHA-256 → so sánh với `bundleSha256`.
-3. Lookup `publisherKeyId` trong `MARKETPLACE_PUBLIC_KEYS`.
+3. Lookup `publisherKeyId` trong `lumibase_publisher_keys`, rồi tới `MARKETPLACE_PUBLIC_KEYS` (xem [Public keys registry](#public-keys-registry)).
 4. Verify `signature` qua `crypto.subtle.verify(algorithm, key, signatureBytes, sha256Bytes)`.
 5. Nếu thất bại → reject install, không mount.
 6. Nếu thành công → ghi extension vào DB cho `siteId` hiện tại với `enabled: false` mặc định, admin enable thủ công.
