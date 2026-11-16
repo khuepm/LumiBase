@@ -1,10 +1,10 @@
 ---
-version: 4
-lastUpdated: 2026-11-12T21:04:27.226Z
+version: 5
+lastUpdated: 2026-11-16T02:07:11.997Z
 sourceLang: en
-contentHash: 5644257d82b75cbc
-codeVerified: 2026-11-12T21:04:27.226Z
-codeVerifiedHash: 5644257d82b75cbc
+contentHash: 8c28b0e47b163455
+codeVerified: 2026-11-16T02:07:11.997Z
+codeVerifiedHash: 8c28b0e47b163455
 codeVerifiedClaims: 12
 ---
 
@@ -118,8 +118,12 @@ every row failed. The first 1,000 row errors are kept and the rest counted in
 `errorsTruncated`. Rows written before a cancel or timeout stay.
 
 Studio has the same flow under **Content → collection → Import**, with a
-progress bar, **Cancel import** and **Download error report**. Studio also
-receives an `import.progress` realtime event for the uploader.
+progress bar, **Cancel import** and **Download error report**. The progress bar
+follows the `import.progress` realtime event, which the server sends to the
+uploader after every chunk and when the job ends (counters only, never row
+data). Polling stays on as a fallback: every second while the realtime
+connection is down, every 10 seconds while it is up. An older snapshot never
+moves the counters back, and nothing replaces a finished job.
 
 **How it runs.** The upload request starts the job and works on it for up to
 about 20 seconds. After that, a one-minute cron (Workers Cron Trigger, or the
